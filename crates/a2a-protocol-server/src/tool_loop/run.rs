@@ -205,13 +205,27 @@ impl ToolLoop {
         cancel: &CancellationToken,
         budget: Option<&BudgetHandle>,
     ) -> Result<Answer, LoopError> {
+        self.run_drafting(scope, user_text, cancel, budget, None)
+            .await
+    }
+
+    /// [`run_scoped`](Self::run_scoped), each turn's text sent to `drafts`
+    /// as it arrives, with the turn's number, when given (audit L5).
+    pub(crate) async fn run_drafting(
+        &self,
+        scope: &str,
+        user_text: &str,
+        cancel: &CancellationToken,
+        budget: Option<&BudgetHandle>,
+        drafts: Option<&tokio::sync::mpsc::UnboundedSender<(usize, String)>>,
+    ) -> Result<Answer, LoopError> {
         let run = AgentRun::start(
             &self.meter,
             self.agent_name.as_deref(),
             self.model.model_name(),
         );
         let result = self
-            .run_counted(&run, scope, user_text, cancel, budget)
+            .run_counted(&run, scope, user_text, cancel, budget, drafts)
             .await;
         run.ended(result.as_ref().err().map(LoopError::error_type).as_deref());
         result
@@ -225,6 +239,7 @@ impl ToolLoop {
         user_text: &str,
         cancel: &CancellationToken,
         budget: Option<&BudgetHandle>,
+        drafts: Option<&tokio::sync::mpsc::UnboundedSender<(usize, String)>>,
     ) -> Result<Answer, LoopError> {
         let specs = self.tools.specs();
         let names = self.tools.names();
@@ -240,9 +255,9 @@ impl ToolLoop {
             }
             out_of_time(budget)?;
             run.inference_call();
-            let reply = self
-                .turn(ChatRequest::new(&self.preamble, &messages, &specs), cancel)
-                .await?;
+            let sink = drafts.map(|tx| super::model::TextSink::new(turn + 1, tx.clone()));
+            let request = ChatRequest::new(&self.preamble, &messages, &specs);
+            let reply = self.turn(request, cancel, sink.as_ref()).await?;
             charge_usage(budget, &reply)?;
 
             let mut text = reply.text;
@@ -309,6 +324,7 @@ impl ToolLoop {
         &self,
         request: ChatRequest<'_>,
         cancel: &CancellationToken,
+        sink: Option<&super::model::TextSink>,
     ) -> Result<super::model::ModelTurn, LoopError> {
         let span = GenAiSpan::chat(
             self.model.provider_name(),
@@ -319,7 +335,10 @@ impl ToolLoop {
         let result = tokio::select! {
             biased;
             () = cancel.cancelled() => return Err(LoopError::Cancelled),
-            result = span.instrument(self.model.complete(request)) => result,
+            result = span.instrument(sink.map_or_else(
+                || self.model.complete(request),
+                |sink| self.model.complete_streaming(request, sink),
+            )) => result,
         };
         match result {
             Ok(reply) => {

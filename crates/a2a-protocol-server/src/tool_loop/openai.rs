@@ -15,12 +15,10 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use http_body_util::{BodyExt as _, Full, LengthLimitError, Limited};
-use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use super::model::{
-    ChatMessage, ChatRequest, ModelError, ModelTurn, TokenUsage, ToolCall, ToolModel,
-};
+use super::model::{ChatMessage, ChatRequest, ModelError, ModelTurn, TextSink, ToolModel};
+use super::openai_parse::parse_completion;
 use crate::push::sender::PushHttpClient;
 
 /// How long one turn may take, request and whole response, by default.
@@ -37,6 +35,9 @@ pub const DEFAULT_MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 
 /// The most of an error response's body kept in [`ModelError::Status`].
 pub const ERROR_BODY_LIMIT: usize = 512;
+
+/// The media type of a streamed completion.
+const EVENT_STREAM: &str = "text/event-stream";
 
 /// A [`ToolModel`] that sends each turn as `POST {base}/chat/completions`.
 ///
@@ -194,11 +195,24 @@ impl OpenAiChatModel {
         Value::Object(body)
     }
 
-    /// Sends one turn and reads its answer, without the timeout.
-    async fn exchange(&self, body: Bytes) -> Result<ModelTurn, ModelError> {
+    /// Sends one turn, accepting `accept`; the response, refused unless it
+    /// is a success.
+    async fn send(
+        &self,
+        body: Bytes,
+        accept: &'static str,
+    ) -> Result<hyper::Response<hyper::body::Incoming>, ModelError> {
         let mut builder = hyper::Request::post(self.endpoint.clone())
             .header(hyper::header::CONTENT_TYPE, "application/json")
-            .header(hyper::header::ACCEPT, "application/json");
+            .header(hyper::header::ACCEPT, accept);
+        if accept == EVENT_STREAM {
+            // llama-server says `keep-alive` yet closes the connection just
+            // after a streamed answer; pooled, it would carry the next turn
+            // into the close ("connection closed before message completed").
+            // One connection per streamed turn costs a handshake, small
+            // beside the turn itself.
+            builder = builder.header(hyper::header::CONNECTION, "close");
+        }
         if let Some(key) = &self.api_key {
             let mut value = hyper::header::HeaderValue::from_str(&format!("Bearer {key}"))
                 .map_err(|_| {
@@ -216,7 +230,7 @@ impl OpenAiChatModel {
             .client
             .request(request)
             .await
-            .map_err(|e| ModelError::Transport(e.to_string()))?;
+            .map_err(|e| ModelError::Transport(with_causes(&e)))?;
         let status = response.status();
         if !status.is_success() {
             let body = read_prefix(response.into_body(), ERROR_BODY_LIMIT).await;
@@ -225,6 +239,20 @@ impl OpenAiChatModel {
                 body: truncated(&body, ERROR_BODY_LIMIT),
             });
         }
+        Ok(response)
+    }
+
+    /// Sends one turn and reads its answer, without the timeout.
+    async fn exchange(&self, body: Bytes) -> Result<ModelTurn, ModelError> {
+        let response = self.send(body, "application/json").await?;
+        self.whole(response).await
+    }
+
+    /// Reads a whole (unstreamed) completion.
+    async fn whole(
+        &self,
+        response: hyper::Response<hyper::body::Incoming>,
+    ) -> Result<ModelTurn, ModelError> {
         let body = Limited::new(response.into_body(), self.max_response_bytes)
             .collect()
             .await
@@ -237,6 +265,29 @@ impl OpenAiChatModel {
             })?
             .to_bytes();
         parse_completion(&body)
+    }
+
+    /// Sends one turn asking for a stream, and reads its events; a server
+    /// that answers with the whole completion instead is read whole, its
+    /// text handed to `sink` in one piece.
+    async fn exchange_streaming(
+        &self,
+        body: Bytes,
+        sink: &TextSink,
+    ) -> Result<ModelTurn, ModelError> {
+        let response = self.send(body, EVENT_STREAM).await?;
+        let streamed = response
+            .headers()
+            .get(hyper::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.starts_with(EVENT_STREAM));
+        if streamed {
+            return super::openai_stream::read(response.into_body(), self.max_response_bytes, sink)
+                .await;
+        }
+        let turn = self.whole(response).await?;
+        sink.push(&turn.text);
+        Ok(turn)
     }
 }
 
@@ -279,6 +330,28 @@ impl ToolModel for OpenAiChatModel {
         Box::pin(async move {
             let body = body.map_err(|e| ModelError::Config(format!("request encoding: {e}")))?;
             tokio::time::timeout(self.timeout, self.exchange(body))
+                .await
+                .unwrap_or(Err(ModelError::Timeout(self.timeout)))
+        })
+    }
+
+    /// Asks for the turn as a stream (`"stream": true`, with its usage), and
+    /// hands `text` each piece of the answer as it arrives. Each streamed
+    /// turn has a connection of its own (`Connection: close`).
+    fn complete_streaming<'a>(
+        &'a self,
+        request: ChatRequest<'a>,
+        text: &'a TextSink,
+    ) -> Pin<Box<dyn Future<Output = Result<ModelTurn, ModelError>> + Send + 'a>> {
+        let mut body = self.request_body(request);
+        if let Value::Object(fields) = &mut body {
+            fields.insert("stream".to_owned(), Value::Bool(true));
+            fields.insert("stream_options".to_owned(), json!({"include_usage": true}));
+        }
+        let body = serde_json::to_vec(&body).map(Bytes::from);
+        Box::pin(async move {
+            let body = body.map_err(|e| ModelError::Config(format!("request encoding: {e}")))?;
+            tokio::time::timeout(self.timeout, self.exchange_streaming(body, text))
                 .await
                 .unwrap_or(Err(ModelError::Timeout(self.timeout)))
         })
@@ -333,6 +406,19 @@ async fn read_prefix(mut body: hyper::body::Incoming, limit: usize) -> Vec<u8> {
     out
 }
 
+/// `error` and its causes, joined by `: `: hyper's own text, `client error
+/// (SendRequest)`, does not say what went wrong.
+fn with_causes(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut text = error.to_string();
+    let mut cause = error.source();
+    while let Some(next) = cause {
+        text.push_str(": ");
+        text.push_str(&next.to_string());
+        cause = next.source();
+    }
+    text
+}
+
 /// `bytes` as text, cut to at most `limit` bytes on a character boundary.
 fn truncated(bytes: &[u8], limit: usize) -> String {
     let text = String::from_utf8_lossy(bytes);
@@ -344,97 +430,6 @@ fn truncated(bytes: &[u8], limit: usize) -> String {
         end -= 1;
     }
     text[..end].to_owned()
-}
-
-#[derive(Deserialize)]
-struct Completion {
-    id: Option<String>,
-    #[serde(default)]
-    choices: Vec<Choice>,
-    usage: Option<Usage>,
-    model: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct Choice {
-    message: AssistantMessage,
-    finish_reason: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct AssistantMessage {
-    content: Option<Value>,
-    #[serde(default)]
-    tool_calls: Option<Vec<WireCall>>,
-}
-
-#[derive(Deserialize)]
-struct WireCall {
-    id: Option<String>,
-    function: WireFunction,
-}
-
-#[derive(Deserialize)]
-struct WireFunction {
-    name: String,
-    arguments: Option<Value>,
-}
-
-#[derive(Deserialize)]
-struct Usage {
-    prompt_tokens: Option<u64>,
-    completion_tokens: Option<u64>,
-}
-
-/// A chat completion's first choice as a [`ModelTurn`].
-fn parse_completion(body: &[u8]) -> Result<ModelTurn, ModelError> {
-    let completion: Completion = serde_json::from_slice(body)
-        .map_err(|e| ModelError::InvalidResponse(format!("not a chat completion: {e}")))?;
-    let Some(choice) = completion.choices.into_iter().next() else {
-        return Err(ModelError::InvalidResponse(
-            "the completion has no choices".to_owned(),
-        ));
-    };
-    let text = match choice.message.content {
-        Some(Value::String(text)) => text,
-        // The content-parts form: the text parts, in order.
-        Some(Value::Array(parts)) => parts
-            .iter()
-            .filter_map(|p| p.get("text").and_then(Value::as_str))
-            .collect(),
-        _ => String::new(),
-    };
-    let calls = choice
-        .message
-        .tool_calls
-        .unwrap_or_default()
-        .into_iter()
-        .map(|c| {
-            let arguments = match c.function.arguments {
-                Some(Value::String(s)) => s,
-                None | Some(Value::Null) => String::new(),
-                Some(other) => other.to_string(),
-            };
-            ToolCall::new(c.id.unwrap_or_default(), c.function.name, arguments)
-        })
-        .collect();
-    let mut turn = ModelTurn::new(text, calls);
-    if let Some(reason) = choice.finish_reason {
-        turn = turn.with_finish_reason(reason);
-    }
-    if let Some(id) = completion.id {
-        turn = turn.with_response_id(id);
-    }
-    if let Some(usage) = completion.usage {
-        turn = turn.with_usage(TokenUsage::new(
-            usage.prompt_tokens,
-            usage.completion_tokens,
-        ));
-    }
-    if let Some(model) = completion.model {
-        turn = turn.with_response_model(model);
-    }
-    Ok(turn)
 }
 
 #[cfg(test)]

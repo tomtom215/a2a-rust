@@ -49,17 +49,80 @@ pub const TRACE_ARTIFACT_ID: &str = "tool-trace";
 /// Each run's call keys are scoped to the task and the message it answers
 /// (ADR 0026): another message to the same task is new work, with new keys.
 ///
+/// [`with_drafts`](Self::with_drafts) also streams each turn's text as it
+/// arrives, to an artifact of its own.
+///
 /// [`ToolError::Fatal`]: super::ToolError::Fatal
 #[derive(Debug)]
 pub struct ToolLoopExecutor {
     tool_loop: ToolLoop,
+    drafts: bool,
 }
 
 impl ToolLoopExecutor {
     /// An executor running `tool_loop` for each message.
     #[must_use]
     pub const fn new(tool_loop: ToolLoop) -> Self {
-        Self { tool_loop }
+        Self {
+            tool_loop,
+            drafts: false,
+        }
+    }
+
+    /// Streams each turn's text, as the model sends it, to a draft artifact
+    /// of the turn's own, `draft-1`, `draft-2` and so on
+    /// ([`draft_artifact_id`](super::draft_artifact_id)), each closed with
+    /// `lastChunk` when the next turn starts or the run ends; the answer
+    /// artifact is sent at the end, as without (audit L5). A turn's text is
+    /// known to be the answer only when the turn ends, which is why it is
+    /// not streamed into the answer itself. Needs a model that streams
+    /// ([`ToolModel::complete_streaming`](super::ToolModel::complete_streaming);
+    /// [`OpenAiChatModel`](super::OpenAiChatModel) does); with one that
+    /// does not, no draft is sent. Off by default, since the drafts are
+    /// artifacts a client reading every artifact would now see.
+    #[must_use]
+    pub const fn with_drafts(mut self) -> Self {
+        self.drafts = true;
+        self
+    }
+
+    /// The run, its turns' text streamed to drafts when [`Self::drafts`].
+    async fn run(
+        &self,
+        ctx: &RequestContext,
+        emit: &EventEmitter<'_>,
+        prompt: &str,
+    ) -> A2aResult<Result<super::Answer, LoopError>> {
+        let scope = idempotency::task_scope(&ctx.task_id.0, &ctx.message.id.0);
+        let cancel = &ctx.cancellation_token;
+        if !self.drafts {
+            return Ok(self
+                .tool_loop
+                .run_scoped(&scope, prompt, cancel, ctx.budget())
+                .await);
+        }
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let run = self
+            .tool_loop
+            .run_drafting(&scope, prompt, cancel, ctx.budget(), Some(&tx));
+        tokio::pin!(run);
+        let mut drafts = super::drafts::Drafts::default();
+        let result = loop {
+            tokio::select! {
+                biased;
+                Some((turn, piece)) = rx.recv() => drafts.push(emit, turn, piece).await?,
+                result = &mut run => break result,
+            }
+        };
+        // Cancelled: the cancel path writes `Canceled`, and nothing after.
+        if matches!(result, Err(LoopError::Cancelled)) {
+            return Ok(result);
+        }
+        while let Ok((turn, piece)) = rx.try_recv() {
+            drafts.push(emit, turn, piece).await?;
+        }
+        drafts.close(emit).await?;
+        Ok(result)
     }
 }
 
@@ -83,16 +146,7 @@ impl AgentExecutor for ToolLoopExecutor {
             let emit = EventEmitter::new(ctx, queue);
             emit.status(TaskState::Working).await?;
 
-            match self
-                .tool_loop
-                .run_scoped(
-                    &idempotency::task_scope(&ctx.task_id.0, &ctx.message.id.0),
-                    &prompt,
-                    cancel,
-                    ctx.budget(),
-                )
-                .await
-            {
+            match self.run(ctx, &emit, &prompt).await? {
                 Ok(answer) => {
                     emit.artifact(
                         ANSWER_ARTIFACT_ID,

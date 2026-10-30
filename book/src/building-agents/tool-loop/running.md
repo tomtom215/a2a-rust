@@ -71,6 +71,31 @@ bytes until it ends. A client of a tool-loop agent should stream, or send with
 [Why the client streams](../../examples/tool-loop-agent.md#why-the-client-streams)
 shows the failure a blocking send hit.
 
+### Watching the text arrive
+
+The `answer` artifact comes at the end of the run, whole. To watch a long
+answer arrive, turn on drafts:
+
+```text
+ToolLoopExecutor::new(tool_loop).with_drafts()
+```
+
+Each model turn's text then streams, as the model sends it, to an artifact
+of its own, `draft-1`, `draft-2` and so on (`draft_artifact_id(turn)`), sent
+before the `answer` artifact. The first event creates a draft, the rest
+append to it, and the last carries `lastChunk`, when the next turn starts or
+the run ends. The loop learns that a turn's text is the answer only when the
+turn ends, which is why the text does not stream into `answer` itself: a
+turn that goes on to call tools would already have written there. A client
+that reads only `answer` and `tool-trace` sees nothing change.
+
+Pieces are coalesced: an append carries at least 256 bytes (`FLUSH_BYTES`),
+or whatever arrived once 250 ms (`FLUSH_AFTER`) have passed, so an answer is
+tens of appends rather than one per token. Drafts need a model that streams
+(`ToolModel::complete_streaming`); `OpenAiChatModel` does, and with a model
+that does not, no draft is sent. They are off by default, because a client
+that reads every artifact would now see them.
+
 ## Running it outside an executor
 
 The loop does not need A2A. `run` answers one prompt:

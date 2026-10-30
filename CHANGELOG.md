@@ -25,6 +25,26 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`ToolLoopExecutor::with_drafts`** (audit L5): each model turn's text
+  streams, as the model sends it, to a `draft-N` artifact of the turn's own
+  (`draft_artifact_id`), closed with `lastChunk` when the next turn starts or
+  the run ends; the `answer` artifact is still sent whole at the end, so a
+  client reading only it sees nothing change. Appends are coalesced to at
+  least 256 bytes (`FLUSH_BYTES`) or 250 ms (`FLUSH_AFTER`). Off by default.
+  It rests on `ToolModel::complete_streaming(request, text: &TextSink)`, a
+  provided method (the default calls `complete`, so existing models
+  compile and send no draft), which `OpenAiChatModel` implements with
+  `"stream": true`: server-sent events read as they arrive, tool calls put
+  together by `index`, usage kept, a server answering whole read whole, and
+  a stream ending with neither `[DONE]` nor a finish reason refused. Each
+  streamed turn has its own connection (`Connection: close`): `llama-server`
+  b11977 advertises keep-alive yet closes the connection after a streamed
+  answer, and four `live-model` runs failed 1 to 3 checks each with `client
+  error (SendRequest)` until it did. `live-model` gains an eleventh check,
+  "drafts"; two runs against Qwen3.5-2B passed 11 of 11 (2026-10-30).
+  `OpenAiChatModel`'s transport errors now carry their causes
+  (`client error (SendRequest): connection closed before message
+  completed`, not the first part alone).
 - **`a2a task subscribe <url> <task-id> [--from <event-id>]`** (CLI; audit
   L6): follows a task's events (`SubscribeToTask`), one JSON line each, to
   its end or until it parks; `--from` resumes after an event id, and a

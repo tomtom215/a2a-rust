@@ -4,6 +4,7 @@
 //! What `OpenAiChatModel` reads from a completion and its endpoint.
 
 use super::*;
+use crate::tool_loop::ToolCall;
 
 #[test]
 fn an_error_body_is_cut_on_a_character_boundary() {

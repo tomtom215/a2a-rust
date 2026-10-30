@@ -22,6 +22,7 @@ mod raw_http;
 
 mod executor;
 mod openai;
+mod streaming;
 
 /// Answers each turn with the next scripted reply; past the end, repeats
 /// the last.

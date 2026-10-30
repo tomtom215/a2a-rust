@@ -287,6 +287,33 @@ impl fmt::Display for ModelError {
 
 impl std::error::Error for ModelError {}
 
+/// Where a streaming turn sends its text as it arrives: see
+/// [`ToolModel::complete_streaming`]. Cheap to call for every piece; a piece
+/// sent after the run ended is dropped.
+#[derive(Debug, Clone)]
+pub struct TextSink {
+    turn: usize,
+    tx: tokio::sync::mpsc::UnboundedSender<(usize, String)>,
+}
+
+impl TextSink {
+    /// A sink for `turn`'s pieces, sent on `tx` with the turn number: what
+    /// the loop hands a streaming turn, and what a test of a model's
+    /// [`complete_streaming`](ToolModel::complete_streaming) can build.
+    #[must_use]
+    pub const fn new(turn: usize, tx: tokio::sync::mpsc::UnboundedSender<(usize, String)>) -> Self {
+        Self { turn, tx }
+    }
+
+    /// Hands on `piece`, the next stretch of the turn's answer text. An
+    /// empty piece is ignored.
+    pub fn push(&self, piece: &str) {
+        if !piece.is_empty() {
+            let _ = self.tx.send((self.turn, piece.to_owned()));
+        }
+    }
+}
+
 /// One completion turn of a model that can call tools.
 ///
 /// Object-safe, with boxed futures, like [`AgentExecutor`](crate::AgentExecutor):
@@ -321,6 +348,27 @@ pub trait ToolModel: Send + Sync + 'static {
         &'a self,
         request: ChatRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<ModelTurn, ModelError>> + Send + 'a>>;
+
+    /// Runs one turn as [`complete`](Self::complete) does, and hands
+    /// `text` each piece of the turn's text as the provider sends it, so a
+    /// caller can watch a long answer arrive (audit L5). The turn it
+    /// returns is the whole of it, its text the pieces joined.
+    ///
+    /// The default runs [`complete`](Self::complete) and sends no piece: a
+    /// model that cannot stream still works, and its turns arrive whole.
+    /// [`OpenAiChatModel`](super::OpenAiChatModel) streams.
+    ///
+    /// # Errors
+    ///
+    /// As [`complete`](Self::complete).
+    fn complete_streaming<'a>(
+        &'a self,
+        request: ChatRequest<'a>,
+        text: &'a TextSink,
+    ) -> Pin<Box<dyn Future<Output = Result<ModelTurn, ModelError>> + Send + 'a>> {
+        let _ = text;
+        self.complete(request)
+    }
 }
 
 #[cfg(test)]

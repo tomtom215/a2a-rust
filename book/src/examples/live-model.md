@@ -9,14 +9,15 @@ the executor is a model that can say anything.
 
 ## What it shows
 
-Ten checks, each an SDK feature exercised through a model rather than a
+Eleven checks, each an SDK feature exercised through a model rather than a
 scripted executor: the [Tool-Loop Agent](./tool-loop-agent.md)'s loop on all
 four bindings with signed parts, a refused key, idempotent tool calls, a
-budget running out, budgeted delegation, a halt and a two-approver quorum.
+budget running out, budgeted delegation, a halt, a two-approver quorum and
+each turn's text streamed as a draft before the answer.
 
 Three agents run on loopback:
 
-- a **worker**: `ToolLoopExecutor` over the model, with the read-only
+- a **worker**: `ToolLoopExecutor` over the model, with drafts on (`with_drafts`), with the read-only
   `list_services` and `service_status` tools of the
   [Tool-Loop Agent](./tool-loop-agent.md) and one tool with a side effect,
   `restart_service`, which counts what it really did. It signs what it serves
@@ -59,9 +60,10 @@ there: model files with checksums, llama.cpp commits, host, per-check timings
 and the telemetry feed. In short, every recorded run (2026-10-23 and
 2026-10-24, Qwen3-1.7B and Qwen3.5-2B on four shared vCPUs) exited 0 with
 10 of 10 checks passing and none not exercised, and no check took more than
-17 s.
+17 s. On 2026-10-30, with the drafts check added, two Qwen3.5-2B runs passed
+11 of 11.
 
-## The ten checks
+## The eleven checks
 
 | Check | Passes when |
 |---|---|
@@ -72,6 +74,7 @@ and the telemetry feed. In short, every recorded run (2026-10-23 and
 | Delegation under a budget | the coordinator, given a budget, completes with a relay naming the worker's task |
 | Halt | a `halt` at the first `WORKING` ends the run `CANCELED`, a send while halted is refused, and `resume` succeeds |
 | Quorum of two | the task waits `INPUT_REQUIRED`; the requester's own approval is refused; after bob it still waits; after carol it completes naming both |
+| Drafts | every `draft-N` artifact event arrives before the `answer` artifact, and the last draft's text is the answer |
 
 A check the model did not exercise (it completed without calling a tool, asked
 for the restart only once, or finished before the halt landed) is reported **not
@@ -80,7 +83,7 @@ exercised**, not passed.
 ## Key code
 
 `run` in `src/main.rs` starts the three agents, then runs the checks in order:
-the tool-loop check once per binding, then the other six. The checks live in
+the tool-loop check once per binding, then the other seven. The checks live in
 `src/checks.rs`, the agents in `src/agents.rs`. A client of the worker is built
 with the keys it trusts, so the provenance check builds one that trusts a
 freshly generated key instead of the worker's and expects the stream to fail.
