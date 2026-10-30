@@ -18,7 +18,7 @@ use sqlx::PgPool;
 /// audit store's.
 #[cfg(feature = "audit")]
 pub async fn pg_pool(url: &str) -> Result<PgPool, sqlx::Error> {
-    sqlx::postgres::PgPoolOptions::new()
+    crate::store::pg_retry::recycling_after_failover(sqlx::postgres::PgPoolOptions::new())
         .max_connections(10)
         .connect(url)
         .await

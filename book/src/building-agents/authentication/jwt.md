@@ -58,10 +58,17 @@ let interceptor =
 validator and the URL; `from_jwks_url_with_tls_config` (`tls-rustls`) serves an
 identity provider behind a private CA. Nothing is fetched at construction; the
 first request fetches the set, and `with_jwks_ttl` changes how long it is
-cached (one hour by default). A token naming an unknown `kid` forces one
-refetch. A fetch is bounded to 30 s and 256 KiB; if it fails, or the set holds
-no usable key, the call is refused with a server error (not `401`), because no
-verdict about the token could be reached. Only RSA keys and P-256 EC keys are
+cached (one hour by default). A token naming an unknown `kid` refetches the
+set, at most once per 10 s (`with_jwks_refetch_interval`): inside that
+interval of the last fetch it is refused with `401` and nothing is fetched,
+and requests that arrive while a refetch is under way wait for it. Before
+2026-10-30 every such token forced a fetch, so anyone, with no credential,
+could make the agent send the identity provider one request per request it
+received. A fetch is bounded to 30 s and 256 KiB. If the first fetch fails, or
+the set holds no usable key, the call is refused with a server error (not
+`401`), because no verdict about the token could be reached; a refetch for an
+unknown `kid` that fails leaves the keys in hand, and the token is refused
+with `401`. Only RSA keys and P-256 EC keys are
 loaded, and an RS256 key must be 2048 to 8192 bits; entries with
 `"use": "enc"` or another key type are skipped.
 

@@ -749,10 +749,18 @@ enum KeySource {
 struct RemoteJwks {
     url: String,
     ttl: Duration,
+    /// The least time between a fetch and a refetch a key-id miss asks for.
+    refetch_interval: Duration,
     cache: RwLock<Option<CachedJwks>>,
+    /// When the last fetch began, whether or not it succeeded; read and
+    /// written under `refresh_lock`.
+    last_attempt: std::sync::Mutex<Option<std::time::Instant>>,
     refresh_lock: tokio::sync::Mutex<()>,
     client: JwksHttpClient,
 }
+
+/// The default [`JwtAuthInterceptor::with_jwks_refetch_interval`].
+pub const DEFAULT_JWKS_REFETCH_INTERVAL: Duration = Duration::from_secs(10);
 
 struct CachedJwks {
     jwks: Jwks,
@@ -799,7 +807,8 @@ impl JwtAuthInterceptor {
 
     /// Creates an interceptor that fetches keys from a JWKS URL, caching them
     /// for `ttl` (default 1 hour) and refetching once on a key-id miss (key
-    /// rotation).
+    /// rotation), at most once per
+    /// [refetch interval](Self::with_jwks_refetch_interval).
     ///
     /// The keys are not fetched here — the first request triggers the fetch.
     ///
@@ -815,7 +824,9 @@ impl JwtAuthInterceptor {
             keys: KeySource::Remote(Box::new(RemoteJwks {
                 url,
                 ttl: DEFAULT_JWKS_TTL,
+                refetch_interval: DEFAULT_JWKS_REFETCH_INTERVAL,
                 cache: RwLock::new(None),
+                last_attempt: std::sync::Mutex::new(None),
                 refresh_lock: tokio::sync::Mutex::new(()),
                 client: build_jwks_client(),
             })),
@@ -846,7 +857,9 @@ impl JwtAuthInterceptor {
             keys: KeySource::Remote(Box::new(RemoteJwks {
                 url,
                 ttl: DEFAULT_JWKS_TTL,
+                refetch_interval: DEFAULT_JWKS_REFETCH_INTERVAL,
                 cache: RwLock::new(None),
+                last_attempt: std::sync::Mutex::new(None),
                 refresh_lock: tokio::sync::Mutex::new(()),
                 client: Client::builder(TokioExecutor::new()).build(https),
             })),
@@ -893,6 +906,26 @@ impl JwtAuthInterceptor {
         self
     }
 
+    /// Sets the least time between one fetch of the key set and the refetch
+    /// a token whose key id is not in it asks for. Default:
+    /// [`DEFAULT_JWKS_REFETCH_INTERVAL`] (10 s). No-op for a static key set.
+    ///
+    /// A token naming an unknown key id is refused, without a fetch, while
+    /// the last fetch began less than this long ago; requests that arrive
+    /// while a refetch is under way wait for it and use what it fetched.
+    /// Until 2026-10-30 every such token, unsigned and unauthenticated,
+    /// forced a fetch of its own, so anyone could make the agent send the
+    /// identity provider one request per request it received (audit SEC-04).
+    /// An identity provider publishes a new key before it signs with it, so
+    /// a key rotation is seen at the first refetch after the key appears.
+    #[must_use]
+    pub fn with_jwks_refetch_interval(mut self, interval: Duration) -> Self {
+        if let KeySource::Remote(ref mut r) = self.keys {
+            r.refetch_interval = interval;
+        }
+        self
+    }
+
     async fn authenticate(&self, ctx: &CallContext) -> A2aResult<AuthenticatedPrincipal> {
         let header = ctx
             .http_headers()
@@ -906,12 +939,17 @@ impl JwtAuthInterceptor {
                 .validate(token, jwks)
                 .map_err(ValidateOutcome::into_error),
             KeySource::Remote(remote) => {
-                let jwks = remote.get(false).await?;
+                let jwks = remote.get().await?;
                 match self.validator.validate(token, &jwks) {
                     Ok(principal) => Ok(principal),
                     Err(ValidateOutcome::KeyMiss) => {
-                        // Possible key rotation: force one refetch and retry.
-                        let fresh = remote.get(true).await?;
+                        // Possible key rotation: refetch, unless a fetch was
+                        // made too recently, and retry. A refetch that fails
+                        // leaves a token the keys in hand do not cover:
+                        // refused, as any such token is, not a server error.
+                        let Some(fresh) = remote.refetch().await else {
+                            return Err(ValidateOutcome::KeyMiss.into_error());
+                        };
                         self.validator
                             .validate(token, &fresh)
                             .map_err(ValidateOutcome::into_error)
@@ -975,17 +1013,47 @@ impl ServerInterceptor for JwtAuthInterceptor {
 }
 
 impl RemoteJwks {
-    /// Returns the cached JWKS, fetching when absent, stale, or `force`d.
-    async fn get(&self, force: bool) -> A2aResult<Jwks> {
-        if !force && let Some(jwks) = self.cached_fresh() {
+    /// Returns the cached JWKS, fetching when absent or stale.
+    async fn get(&self) -> A2aResult<Jwks> {
+        if let Some(jwks) = self.cached_fresh() {
             return Ok(jwks);
         }
         let _guard = self.refresh_lock.lock().await;
-        // Re-check after acquiring the lock (another caller may have fetched),
-        // unless we were explicitly forced to refetch for a rotation.
-        if !force && let Some(jwks) = self.cached_fresh() {
+        // Re-check after acquiring the lock: another caller may have fetched.
+        if let Some(jwks) = self.cached_fresh() {
             return Ok(jwks);
         }
+        self.fetch_and_cache().await
+    }
+
+    /// Fetches the key set again for a token whose key id the cached set
+    /// lacks, unless the last fetch began within `refetch_interval`; then,
+    /// or when the fetch fails, `None`. Callers queue on `refresh_lock`, so
+    /// those behind a refetch find it just made and fetch nothing.
+    async fn refetch(&self) -> Option<Jwks> {
+        let _guard = self.refresh_lock.lock().await;
+        let recent = self
+            .last_attempt
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_some_and(|at| at.elapsed() < self.refetch_interval);
+        if recent {
+            return None;
+        }
+        self.fetch_and_cache()
+            .await
+            .inspect_err(|_e| {
+                trace_warn!(error = %_e, "JWKS refetch for an unknown key id failed");
+            })
+            .ok()
+    }
+
+    /// Fetches the key set and caches it; the caller holds `refresh_lock`.
+    async fn fetch_and_cache(&self) -> A2aResult<Jwks> {
+        *self
+            .last_attempt
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(std::time::Instant::now());
         let jwks = self.fetch().await?;
         *self
             .cache
@@ -1560,7 +1628,7 @@ mod tests {
         let KeySource::Remote(remote) = &i.keys else {
             panic!("remote");
         };
-        let err = remote.get(false).await.expect_err("plaintext refused");
+        let err = remote.get().await.expect_err("plaintext refused");
         assert!(err.message.contains("https"), "{err}");
     }
 

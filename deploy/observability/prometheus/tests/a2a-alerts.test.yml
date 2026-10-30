@@ -141,21 +141,70 @@ tests:
               summary: "slow lf.a2a.v1.A2AService/SendMessage: p99 4.975s"
               description: "The 99th percentile of non-streaming calls has been above 2.5 s for 15 minutes. A blocking SendMessage includes the executor's work; set the threshold per method if your agents run long turns."
 
-  # Instance 1 stops pushing at minute 20; instance 2 keeps going.
+  # A rollout at minute 20: instance 1 stops and instance 3 replaces it;
+  # instance 2 keeps going. Nothing fires, past the hour either.
   - interval: 1m
     input_series:
       - series: 'target_info{job="a",instance="1"}'
-        values: '1x20 _x40'
+        values: '1x20 _x120'
       - series: 'target_info{job="a",instance="2"}'
-        values: '1x60'
+        values: '1x140'
+      - series: 'target_info{job="a",instance="3"}'
+        values: '_x20 1x120'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: A2AAgentSilent
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: A2AAgentInstancesLost
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: A2AAgentInstancesLost
+        exp_alerts: []
+
+  # The whole job stops at minute 20. It pages at once, and still pages two
+  # hours later (keyed on an instance over an hour, it resolved at 1h20m).
+  - interval: 1m
+    input_series:
+      - series: 'target_info{job="a",instance="1"}'
+        values: '1x20 _x160'
+      - series: 'target_info{job="a",instance="2"}'
+        values: '1x20 _x160'
+      - series: 'target_info{job="b",instance="9"}'
+        values: '1x180'
     alert_rule_test:
       - eval_time: 25m
         alertname: A2AAgentSilent
         exp_alerts: []
       - eval_time: 35m
         alertname: A2AAgentSilent
-        exp_alerts:
-          - exp_labels: {severity: critical, job: a, instance: "1"}
+        exp_alerts: &silent
+          - exp_labels: {severity: critical, job: a}
             exp_annotations:
-              summary: "a/1 has pushed no telemetry for 10 minutes"
-              description: "Over OTLP there is no scrape and so no `up` series; target_info comes with every export, so an agent seen in the last hour that has sent none for 10 minutes has stopped, or its exporter has. An instance retired on purpose also fires, for the rest of that hour."
+              summary: "a: no instance has pushed telemetry for 10 minutes"
+              description: "Over OTLP there is no scrape and so no `up` series; target_info comes with every export, so a job seen in the last day none of whose instances has sent any for 10 minutes has stopped, or its exporters have. Keyed on the job: a rollout or restart, which replaces instances, does not fire it, and it stays firing for a day."
+      - eval_time: 140m
+        alertname: A2AAgentSilent
+        exp_alerts: *silent
+
+  # Instance 1 of two stops at minute 70 and is not replaced.
+  - interval: 1m
+    input_series:
+      - series: 'target_info{job="a",instance="1"}'
+        values: '1x70 _x60'
+      - series: 'target_info{job="a",instance="2"}'
+        values: '1x130'
+    alert_rule_test:
+      - eval_time: 75m
+        alertname: A2AAgentInstancesLost
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: A2AAgentInstancesLost
+        exp_alerts:
+          - exp_labels: {severity: warning, job: a}
+            exp_annotations:
+              summary: "a: 1 instance(s) pushing telemetry, fewer than an hour ago"
+              description: "Fewer instances of the job sent telemetry in the last 10 minutes than in the same 10 minutes an hour before: an instance stopped and was not replaced, or the job was scaled in. A rollout replaces instances and does not fire it. It resolves within the hour, once the smaller count is what the hour before saw too."
+      - eval_time: 90m
+        alertname: A2AAgentSilent
+        exp_alerts: []

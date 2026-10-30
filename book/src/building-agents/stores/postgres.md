@@ -85,10 +85,24 @@ is why not everything is retried. Each second run is counted in
 `a2a.server.store_retries` with `operation="statement"` and
 `cause="connection_lost"`. This holds for a pool passed to `from_pool` too.
 
+**A failover to a new primary.** After a failover that moves a DNS name or a
+virtual IP, a connection still open to the old primary, now a standby,
+answers every write with `25006` (`read_only_sql_transaction`) and every
+ping with success, so nothing above would retire it. The first `25006` any
+store in the process meets marks every connection opened before it: each
+pool these stores open closes such a connection the next time it would hand
+it out, and opens a new one, which resolves the name afresh. A statement
+refused this way did not run, so the store runs it once more, counted with
+`cause="read_only"`, and the error is `A2aError::unavailable` rather than
+internal. A pool you build without `pool_options` does not retire its
+connections this way. Until 2026-10-30 a `25006` was internal, and every
+write failed until the old connections aged out of the pool (sqlx's default
+`max_lifetime`, 30 minutes).
+
 **"Not now" errors.** An error a retry may get past (no connection free
 before the pool's acquire timeout, a closed pool, a lost connection, a
 serialization failure or deadlock, a lock or statement timeout, too many
-connections, a server starting up or shutting down) is returned as
+connections, a server starting up or shutting down, a read-only server) is returned as
 `A2aError::unavailable`; a full disk and any other error stay
 `A2aError::internal`. What a client sees for each is under
 [Implementing a store](./custom.md#what-a-store-error-answers).

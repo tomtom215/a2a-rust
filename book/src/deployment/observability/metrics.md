@@ -72,7 +72,7 @@ reads as 100 s.
 | `outcome` on `a2a.server.push_deliveries` | `delivered`, `failed`, `timeout`, `timeout_truncated`, `dropped` (`push_outcome`) |
 | `operation` on `persistence_errors` and `store_retries` | `status_update`, `artifact_append`, `artifact_push`, `event_append`, `task_snapshot`, `failed_state`, `history_append`, `event_log_catchup`, `queue_handoff`, `statement`, `audit_append` (`persistence_operation`) |
 | `error` on `persistence_errors` | The A2A code label of the store's error, or one of the sub-kinds below |
-| `cause` on `store_retries` | `unavailable` (the store said not now; a turn's write, retried for up to `HandlerLimits::store_write_retry`), `connection_lost` (with `operation` `statement`: a PostgreSQL statement ran once more on a new connection) |
+| `cause` on `store_retries` | `unavailable` (the store said not now; a turn's write, retried for up to `HandlerLimits::store_write_retry`), `connection_lost` (with `operation` `statement`: a PostgreSQL statement ran once more on a new connection), `read_only` (with `operation` `statement`: a write a read-only server refused, after a failover, ran once more on a connection opened since) |
 
 Every one of these is a bounded set: none carries a task id, a message or a
 string the peer chose, so a client cannot inflate cardinality through them.

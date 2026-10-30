@@ -97,16 +97,34 @@ groups:
 
       - alert: A2AAgentSilent
         expr: |
-          group by (job, instance) (present_over_time(target_info[1h]))
+          group by (job) (present_over_time(target_info[1d]))
             unless
-          group by (job, instance) (present_over_time(target_info[10m]))
+          group by (job) (present_over_time(target_info[10m]))
         for: 0m
         labels:
           severity: critical
         annotations:
-          summary: "{{ $labels.job }}/{{ $labels.instance }} has pushed no telemetry for 10 minutes"
+          summary: "{{ $labels.job }}: no instance has pushed telemetry for 10 minutes"
           description: >-
             Over OTLP there is no scrape and so no `up` series; target_info comes
-            with every export, so an agent seen in the last hour that has sent
-            none for 10 minutes has stopped, or its exporter has. An instance
-            retired on purpose also fires, for the rest of that hour.
+            with every export, so a job seen in the last day none of whose
+            instances has sent any for 10 minutes has stopped, or its exporters
+            have. Keyed on the job: a rollout or restart, which replaces
+            instances, does not fire it, and it stays firing for a day.
+
+      - alert: A2AAgentInstancesLost
+        expr: |
+          count by (job) (group by (job, instance) (present_over_time(target_info[10m])))
+            <
+          count by (job) (group by (job, instance) (present_over_time(target_info[10m] offset 1h)))
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value }} instance(s) pushing telemetry, fewer than an hour ago"
+          description: >-
+            Fewer instances of the job sent telemetry in the last 10 minutes
+            than in the same 10 minutes an hour before: an instance stopped and
+            was not replaced, or the job was scaled in. A rollout replaces
+            instances and does not fire it. It resolves within the hour, once
+            the smaller count is what the hour before saw too.

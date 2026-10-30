@@ -246,7 +246,7 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   URL must be `https://`, or `http://` to a loopback host; a plaintext one
   is refused (every token, with the reason logged, for `from_jwks_url`).
   `JwtAuthInterceptor::new` is no longer `const`. Tests in `auth/jwt.rs` and
-  `tests/auth_jwt_e2e.rs`, each shown failing with its part reverted.
+  `tests/auth_jwt_e2e/`, each shown failing with its part reverted.
 - **The WebSocket listener refuses every browser by default** (server;
   `WebSocketDispatcher`; audit SEC-03). An upgrade that carries an `Origin`
   header is refused with `403` unless `with_allowed_origins` lists that
@@ -416,6 +416,35 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **`A2AAgentSilent` paged on every rollout and stopped paging for a dead
+  fleet after an hour** (`deploy/observability`; audit C-04). It was keyed on
+  the instance (a random id per process) over an hour. It is now keyed on
+  the job over a day: no instance exported for 10 minutes. A new warning,
+  `A2AAgentInstancesLost`, fires when fewer instances export than in the
+  same 10 minutes an hour before. `promtool test rules` (Prometheus
+  3.15.1) passes; against the old rules the new cases fail with the
+  finding's symptoms (a page for the retired instance; no page at 2h20m).
+- **Any caller could make the agent fetch the identity provider's keys once
+  per request** (server, `auth-jwt`; audit SEC-04). A token naming a key id
+  not in the cached set, unsigned and from anyone, forced a JWKS fetch, and
+  a failed one answered a server error. Now a key-id miss refetches at most
+  once per `JwtAuthInterceptor::with_jwks_refetch_interval` (new; 10 s by
+  default) since the last fetch began, requests behind a refetch wait for
+  it, and a miss inside the interval, or one whose refetch fails, is `401`.
+  `tests/auth_jwt_e2e/remote_jwks.rs`: 50 forged key ids, one fetch (each of three
+  mutants of the interval makes it fail); key rotation is still seen, at the
+  first refetch the interval allows.
+- **A PostgreSQL failover failed every write until the pool's connections
+  aged out** (server; audit D-15). A connection still open to the demoted
+  primary answers writes with `25006` and pings with success, so it was
+  never retired, and `25006` was an internal error, not retried: up to 30
+  minutes of failed writes (sqlx's `max_lifetime`). Now `25006` is
+  transient; the first one seen marks every connection opened before it,
+  and the task, push-config, audit and rate-limit stores' pools close such
+  connections at their next acquire; a statement refused this way runs once
+  more (`store_retries`, `cause="read_only"`). Tested against PostgreSQL 17
+  with a pool whose connections were made read only, as a standby's are
+  (`pg_retry::tests`); each of four mutants of the fix fails it.
 - **A webhook that did not answer stalled its task, held the turn's claim,
   and could be sent turns out of order** (server; audits D-02, E-F3, D-06).
   The streaming path awaited each event's push before storing the next, so

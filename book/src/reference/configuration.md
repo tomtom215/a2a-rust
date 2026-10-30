@@ -160,7 +160,7 @@ take the same three through their own `with_completion_grace`,
 | `TenantStoreConfig` | `max_tenants` 1,000 partitions (each caller's partition counts when tasks are isolated by caller); `max_total_tasks` none |
 | `WebSocketDispatcher` | handshake timeout 10s (`with_handshake_timeout`); idle timeout off (`with_idle_timeout`; `DEFAULT_WS_IDLE_TIMEOUT` is 75s); `with_max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
 | `HttpPushSender` | 10s request timeout (`HttpPushSender::with_timeout`), 5s DNS lookup bound (`with_dns_timeout`), `PushRetryPolicy` above; SSRF guard on unless `allow_private_urls()` |
-| `JwtValidator`, `JwtAuthInterceptor` | clock-skew leeway 60s (`JwtValidator::with_leeway`); a remote JWKS is cached for 3,600s (`JwtAuthInterceptor::with_jwks_ttl`) |
+| `JwtValidator`, `JwtAuthInterceptor` | clock-skew leeway 60s (`JwtValidator::with_leeway`); a remote JWKS is cached for 3,600s (`JwtAuthInterceptor::with_jwks_ttl`) and refetched for an unknown key id at most every 10s (`with_jwks_refetch_interval`) |
 
 ### Internal Limits
 

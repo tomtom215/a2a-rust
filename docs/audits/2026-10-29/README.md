@@ -99,7 +99,7 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | C-01 | High | `RUST_LOG` cannot reduce what is exported; spans and span-events from every crate at every level, DEBUG and TRACE included, are exported | fixed | span level filter + max level hints; test fails with filter removed |
 | C-02 | High | Model-controlled tool name is a metric label (unbounded cardinality, prompt-injectable) | fixed | unknown tool is _OTHER on metric and span name; tests |
 | C-03 | High | Push-webhook host (client-supplied) is a metric label | fixed | first 64 webhook hosts named, rest _OTHER; test |
-| C-04 | High | `A2AAgentSilent` pages critical on every restart or rollout, and auto-resolves for a truly dead agent | open | |
+| C-04 | High | `A2AAgentSilent` pages critical on every restart or rollout, and auto-resolves for a truly dead agent | fixed | keyed on the job over 1 d, plus `A2AAgentInstancesLost` (warning); `promtool test rules` 3.15.1 passes, the new cases fail on the old rules |
 | C-05 | Medium | No metrics↔traces correlation: the SDK emits no exemplars, and the stack does not store or link them | open | |
 | C-06 | Medium | No trace_id/span_id or JSON in stdout/stderr logs | open | |
 | C-07 | Medium | `OTEL_SDK_DISABLED=true` also silences all stderr diagnostics | open | |
@@ -138,7 +138,7 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | D-12 | Low | Client pool hygiene: idle race, no max-lifetime, no per-host cap, no HTTP/2 keepalive | open | |
 | D-13 | Low | Push SSRF: `https` is not pinned, and some reserved ranges are missing | open | |
 | D-14 | Medium | The SQLite migration runner leaves an exclusive transaction open on error or cancel | fixed | Transaction rolls back on error/drop; test |
-| D-15 | Medium | A PostgreSQL failover is classed as permanent, and poisoned connections stay pooled | open | |
+| D-15 | Medium | A PostgreSQL failover is classed as permanent, and poisoned connections stay pooled | fixed | `25006` transient; connections opened before a sighting retired at acquire (`pg_retry`); `a_write_refused_as_read_only_runs_again_on_a_new_connection` against PostgreSQL 17, fails before. Not run: a real Patroni or managed failover. `57P04` (database dropped) left internal |
 | D-16 | Low | A store outage during a continuation is reported as `Internal`, not `Unavailable` | open | |
 | D-17 | Low | A fixed per-store PostgreSQL pool of 10 exhausts `max_connections` at modest scale | open | |
 | D-18 | Low | In-memory capacity eviction can evict live or parked tasks | open | |
@@ -188,7 +188,7 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | SEC-01 | High | CSRF against loopback agents (no Content-Type, version in query) | fixed | confirmed live (SendMessage ran from a no-Content-Type POST); tests/browser_reachable_loopback.rs fails under the mutant |
 | SEC-02 | High | No Host-header validation, so DNS rebinding reaches localhost agents | fixed | confirmed live (ListTasks answered Host: evil.example); loopback listeners check Host; single-label names allowed |
 | SEC-03 | High; KNOWN | WebSocket accepts any `Origin` (cross-site WebSocket hijacking) | fixed | Default refuses every upgrade that carries an `Origin` unless listed (`with_allowed_origins`); no `Origin` (non-browser clients) accepted; `allow_any_origin()` opts out. Not "same host as `Host`", which DNS rebinding satisfies. Test fails with the old default; live in Chromium (2026-10-29): a page on another origin could not open the socket by default, could and read a GetTask answer when listed; a raw upgrade with no `Origin` got `101` |
-| SEC-04 | Medium | Forced JWKS refetch with a forged `kid`, no cooldown | open | |
+| SEC-04 | Medium | Forced JWKS refetch with a forged `kid`, no cooldown | fixed | `with_jwks_refetch_interval` (10 s); `forged_key_ids_do_not_each_fetch_the_key_set`: 50 forged kids, 1 fetch; mutants of the interval fail it |
 | SEC-05 | Medium | An empty API key fails open | fixed | CredentialSet::matching refuses an empty credential; unit test |
 | SEC-06 | Medium; partly KNOWN | JWT defaults: no `iss`/`aud`, `from_oidc_issuer` does not bind the issuer, plaintext JWKS | fixed | `iss` and `aud` checked by default: a validator naming neither refuses every token (logged at construction) unless `allow_any_issuer`/`allow_any_audience`; `from_oidc_issuer` checks the document's `issuer` (§4.3) and binds it; JWKS and discovery URLs must be https or loopback http. Six mutations, each failing a test |
 | SEC-07 | Medium | Internal error text returned verbatim to callers and persisted | open | |

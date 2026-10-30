@@ -48,13 +48,71 @@
 //! hands these options to a caller who builds the pool.
 
 use std::future::Future;
-use std::time::Duration;
+use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use sqlx::Connection as _;
 use sqlx::postgres::PgPoolOptions;
 
 /// A connection idle at least this long is pinged before it is handed out.
 pub const PING_WHEN_IDLE_FOR: Duration = Duration::from_secs(1);
+
+/// What [`READ_ONLY_SEEN`] counts from.
+static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
+
+/// When a statement last met a read-only server ([`read_only`]), in
+/// milliseconds after [`EPOCH`] plus one; zero until one has.
+///
+/// After a failover that moves a DNS name or a virtual IP to the new
+/// primary, a connection still open to the old one, now a standby, answers
+/// every write with `25006` and every ping with success, so neither sqlx's
+/// ping nor [`connection_lost`] retires it: until it aged out, a write on it
+/// failed, and the error was permanent (audit D-15). Every pool these stores
+/// open discards, at its next acquire, each connection opened before this
+/// instant ([`opened_before_read_only`]), and the new connections resolve
+/// the name afresh. Process-wide rather than per pool, because the error is
+/// seen where a statement fails, which knows no pool: a process with pools
+/// on two databases reconnects both, once.
+static READ_ONLY_SEEN: AtomicU64 = AtomicU64::new(0);
+
+/// Whether `e` is PostgreSQL refusing a write because the server is read
+/// only (`25006`, `read_only_sql_transaction`): a standby, or a primary
+/// demoted by a failover. The statement did not run.
+pub fn read_only(e: &sqlx::Error) -> bool {
+    matches!(e, sqlx::Error::Database(d) if d.code().is_some_and(|c| c == "25006"))
+}
+
+/// Records that a statement met a read-only server, when `e` says so.
+pub fn note_read_only(e: &sqlx::Error) {
+    if read_only(e) {
+        let at = u64::try_from(EPOCH.elapsed().as_millis()).unwrap_or(u64::MAX - 1);
+        READ_ONLY_SEEN.store(at + 1, Ordering::Relaxed);
+    }
+}
+
+/// Whether a connection opened `age` ago predates the last read-only
+/// sighting, so may be open to the server that refused.
+pub fn opened_before_read_only(age: Duration) -> bool {
+    match READ_ONLY_SEEN.load(Ordering::Relaxed) {
+        0 => false,
+        seen => {
+            let since = EPOCH
+                .elapsed()
+                .saturating_sub(Duration::from_millis(seen - 1));
+            age > since
+        }
+    }
+}
+
+/// `options`, discarding at acquire each connection opened before a
+/// read-only sighting; for the pools that keep sqlx's ping (the push-config,
+/// audit and rate-limit stores'). [`pool_options`] does the same.
+pub fn recycling_after_failover(options: PgPoolOptions) -> PgPoolOptions {
+    options.before_acquire(|_conn, meta| {
+        Box::pin(async move { Ok(!opened_before_read_only(meta.age)) })
+    })
+}
 
 tokio::task_local! {
     /// Set while a statement runs under [`checked`], or runs again under
@@ -78,6 +136,9 @@ pub fn pool_options() -> PgPoolOptions {
         .test_before_acquire(false)
         .before_acquire(|conn, meta| {
             Box::pin(async move {
+                if opened_before_read_only(meta.age) {
+                    return Ok(false);
+                }
                 if meta.idle_for >= PING_WHEN_IDLE_FOR || CHECKING.try_with(|()| ()).is_ok() {
                     conn.ping().await?;
                 }
@@ -119,11 +180,17 @@ where
 {
     static LOGGED: crate::trace::Throttle = crate::trace::Throttle::every(10);
     match statement().await {
-        Err(e) if connection_lost(&e) => {
-            metrics.on_store_retry(
-                crate::metrics::persistence_operation::STATEMENT,
-                "connection_lost",
-            );
+        Err(e) if connection_lost(&e) || read_only(&e) => {
+            // A read-only refusal did not run the statement, so a second run
+            // is safe for any statement; it runs on a connection opened
+            // since, which is to the new primary once the name has moved.
+            note_read_only(&e);
+            let cause = if read_only(&e) {
+                "read_only"
+            } else {
+                "connection_lost"
+            };
+            metrics.on_store_retry(crate::metrics::persistence_operation::STATEMENT, cause);
             if LOGGED.allow() {
                 trace_warn!(error = %e, "postgres: connection lost; running the statement again");
             } else {
@@ -180,6 +247,79 @@ mod tests {
         })
         .await;
         (runs, metrics.0.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    /// A sighting retires every connection opened before it, and none after.
+    #[test]
+    fn a_read_only_sighting_retires_older_connections_only() {
+        let _ = *EPOCH;
+        std::thread::sleep(Duration::from_millis(20));
+        let at = u64::try_from(EPOCH.elapsed().as_millis()).expect("ms");
+        READ_ONLY_SEEN.store(at + 1, Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(opened_before_read_only(Duration::from_millis(1_000)));
+        assert!(!opened_before_read_only(Duration::from_millis(1)));
+        assert!(!opened_before_read_only(Duration::ZERO));
+    }
+
+    /// A failover leaves the pool's connections open to the demoted primary,
+    /// now read only: emulated by making each of them read only, as a
+    /// standby's sessions are, while connections opened after stay writable.
+    /// A save then succeeds, run again on a connection opened since (audit
+    /// D-15). Until 2026-10-30 it failed as internal, and so did every write,
+    /// until the connections aged out of the pool.
+    #[tokio::test]
+    #[ignore = "needs a live PostgreSQL (A2A_TEST_POSTGRES_URL)"]
+    async fn a_write_refused_as_read_only_runs_again_on_a_new_connection() {
+        use crate::store::{PostgresTaskStore, TaskStore};
+        use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
+        let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+        let pool = pool_options()
+            .max_connections(2)
+            .connect(&url)
+            .await
+            .expect("pool");
+        let store = PostgresTaskStore::from_pool(pool.clone())
+            .await
+            .expect("store");
+        let id = TaskId::new(format!("d15-{}", uuid::Uuid::new_v4()));
+        let mut task = Task {
+            id: id.clone(),
+            context_id: ContextId::new("d15"),
+            status: TaskStatus::new(TaskState::Submitted),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        store.save(&task).await.expect("saved before the failover");
+
+        // The failover: both of the pool's connections now refuse writes.
+        let mut demoted = Vec::new();
+        for _ in 0..2 {
+            let mut conn = pool.acquire().await.expect("acquire");
+            sqlx::query("SET default_transaction_read_only = on")
+                .execute(&mut *conn)
+                .await
+                .expect("demote");
+            demoted.push(conn);
+        }
+        let refused = sqlx::query("UPDATE tasks SET state = state WHERE id = $1")
+            .bind(&id.0)
+            .execute(&mut *demoted[0])
+            .await
+            .expect_err("a demoted connection refuses writes");
+        assert!(read_only(&refused), "{refused}");
+        drop(demoted);
+
+        task.status = TaskStatus::new(TaskState::Working);
+        store
+            .save(&task)
+            .await
+            .expect("the save runs again on a connection opened since");
+        let stored = store.get(&id).await.expect("read").expect("stored");
+        assert_eq!(stored.status.state, TaskState::Working);
+        pool.close().await;
     }
 
     /// Only a lost connection runs the statement again: a statement that

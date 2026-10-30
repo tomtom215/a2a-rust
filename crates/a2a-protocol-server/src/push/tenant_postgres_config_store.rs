@@ -59,10 +59,11 @@ impl TenantAwarePostgresPushConfigStore {
     ///
     /// Returns an error if the database cannot be opened or migration fails.
     pub async fn new(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(10)
-            .connect(url)
-            .await?;
+        let pool =
+            crate::store::pg_retry::recycling_after_failover(sqlx::postgres::PgPoolOptions::new())
+                .max_connections(10)
+                .connect(url)
+                .await?;
         Self::from_pool(pool).await
     }
 

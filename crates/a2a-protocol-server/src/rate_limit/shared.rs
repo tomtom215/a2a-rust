@@ -198,18 +198,20 @@ mod postgres {
         /// [`A2aError::internal`] if the database cannot be reached or the
         /// table cannot be created.
         pub async fn new(url: &str) -> A2aResult<Self> {
-            let pool = sqlx::postgres::PgPoolOptions::new()
-                .after_connect(|conn, _meta| {
-                    Box::pin(async move {
-                        sqlx::query("SET synchronous_commit = off")
-                            .execute(&mut *conn)
-                            .await
-                            .map(|_| ())
-                    })
+            let pool = crate::store::pg_retry::recycling_after_failover(
+                sqlx::postgres::PgPoolOptions::new(),
+            )
+            .after_connect(|conn, _meta| {
+                Box::pin(async move {
+                    sqlx::query("SET synchronous_commit = off")
+                        .execute(&mut *conn)
+                        .await
+                        .map(|_| ())
                 })
-                .connect(url)
-                .await
-                .map_err(|e| A2aError::internal(format!("rate-limit counter connect: {e}")))?;
+            })
+            .connect(url)
+            .await
+            .map_err(|e| A2aError::internal(format!("rate-limit counter connect: {e}")))?;
             Self::from_pool(pool).await
         }
 
@@ -270,7 +272,10 @@ mod postgres {
                     .bind(window_no)
                     .fetch_one(&self.pool)
                     .await
-                    .map_err(|e| A2aError::internal(format!("rate-limit counter: {e}")))?;
+                    .map_err(|e| {
+                        crate::store::pg_retry::note_read_only(&e);
+                        A2aError::internal(format!("rate-limit counter: {e}"))
+                    })?;
 
                 let n = self.counted.fetch_add(1, Ordering::Relaxed);
                 if n > 0 && n.is_multiple_of(SWEEP_INTERVAL) {

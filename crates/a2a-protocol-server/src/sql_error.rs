@@ -27,6 +27,10 @@ pub enum Db {
 /// temporary ([`A2aError::unavailable`]) when a retry may get past it,
 /// internal otherwise.
 pub fn sql_error(db: Db, what: &str, e: &sqlx::Error) -> A2aError {
+    #[cfg(feature = "postgres")]
+    if matches!(db, Db::Postgres) {
+        crate::store::pg_retry::note_read_only(e);
+    }
     let message = format!("{what}: {e}");
     if is_transient(db, e) {
         A2aError::unavailable(message)
@@ -59,7 +63,10 @@ fn is_transient(db: Db, e: &sqlx::Error) -> bool {
 ///   be retried; a lock not available in time (`55P03`); insufficient
 ///   resources (`53000`), out of memory (`53200`) and too many connections
 ///   (`53300`); a server shutting down (`57P01`, `57P02`) or starting up
-///   (`57P03`); a session ended for idling (`57P05`); a statement cancelled,
+///   (`57P03`); a session ended for idling (`57P05`); a write refused by a
+///   read-only server (`25006`): a standby, or a primary a failover demoted,
+///   whose connections the pools then retire (`pg_retry::READ_ONLY_SEEN`);
+///   a statement cancelled,
 ///   by `statement_timeout` or a cancel request (`57014`), which rolls it
 ///   back. A full disk (`53100`) and a configured limit (`53400`) wait for an
 ///   operator, so they stay internal.
@@ -74,7 +81,8 @@ fn transient_code(db: Db, code: &str) -> bool {
             code.starts_with("08")
                 || matches!(
                     code,
-                    "40001"
+                    "25006"
+                        | "40001"
                         | "40P01"
                         | "55P03"
                         | "53000"
@@ -124,9 +132,9 @@ mod tests {
     const SQLITE_NOT_NOW: [&str; 7] = ["5", "261", "517", "773", "6", "262", "518"];
 
     #[cfg(feature = "postgres")]
-    const POSTGRES_NOT_NOW: [&str; 15] = [
-        "08000", "08003", "08006", "08P01", "40001", "40P01", "55P03", "53000", "53200", "53300",
-        "57P01", "57P02", "57P03", "57P05", "57014",
+    const POSTGRES_NOT_NOW: [&str; 16] = [
+        "08000", "08003", "08006", "08P01", "25006", "40001", "40P01", "55P03", "53000", "53200",
+        "53300", "57P01", "57P02", "57P03", "57P05", "57014",
     ];
 
     /// With both databases, each list is read as the other's codes too:

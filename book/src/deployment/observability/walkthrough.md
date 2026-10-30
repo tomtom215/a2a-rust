@@ -81,8 +81,7 @@ The CLI builds `Telemetry` too, so exporting `OTEL_EXPORTER_OTLP_ENDPOINT` in
 the shell that runs `drive.sh` feeds the **A2A client** dashboard from its
 calls. Each CLI run is a short-lived process, so its series are thin (see the
 [caveat](./dashboards.md#a2a-agents-genai)), and each run without a
-`service.instance.id` is a new instance that `A2AAgentSilent` reports when it
-goes quiet.
+`service.instance.id` is a new instance, a series of its own.
 
 ## 4. Read a dashboard
 

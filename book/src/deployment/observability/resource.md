@@ -42,8 +42,9 @@ reported at startup.
 
 `service.instance.id` is what tells replicas of one service apart. Without
 one set, each process invents a random UUID, so two replicas never write the
-same series — but every restart is a new series too, and an alert keyed on the
-instance (`A2AAgentSilent`) fires for each one a rollout retires. Set it to
+same series — but every restart is a new series too, and an alert of your own
+keyed on the instance fires for each one a rollout retires (the shipped ones
+are keyed on the job and on instance counts, so they do not). Set it to
 something stable per replica:
 
 ```bash
