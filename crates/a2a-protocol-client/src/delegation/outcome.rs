@@ -31,7 +31,8 @@ pub enum Outcome {
     Interrupted(TaskStatus),
     /// The agent answered with a message and created no task.
     Message(Message),
-    /// The child's stream failed or ended before the child settled. The
+    /// The child's stream failed or ended before the child settled, and
+    /// could not be resumed (see [`ResumePolicy`](super::ResumePolicy)). The
     /// child, if its id was known, was sent `CancelTask`.
     Lost(Option<ClientError>),
     /// A cancel was asked for, but the child's id was never learned within

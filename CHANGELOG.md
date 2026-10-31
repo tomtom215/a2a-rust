@@ -566,6 +566,33 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   PostgreSQL 16: the orphan's lease is gone and cannot be renewed, a running
   task's lease stays, the log holds exactly the ending at position 1, and
   the tasks left alone have no entry.
+- **A delegation cancelled its child on any blip of the connection, and a
+  restarted supervisor could not pick a child up** (client; audit H4, ADR
+  0030). Any end of the child's stream before the child settled, a reset,
+  a proxy rollout or the five-minute idle timeout, was read as "lost": the
+  delegation sent `CancelTask` and finished with `Outcome::Lost`, and in a
+  tree of delegations the cancel went on down. `Delegation::wait` now
+  resubscribes from the last event id first, under a `ResumePolicy` (default
+  five attempts, 200 ms doubling to 5 s, 30 s in all). When the
+  subscription is refused it reads the task, because a task that settled
+  while the stream was down cannot be subscribed to: a child that finished in
+  the gap is reported as what it became, not as `Lost`. Only a child still
+  running after the policy is spent is cancelled. A reopened stream that dies
+  without its position moving counts as spent, so a server that accepts and
+  drops a subscription is not asked for ever; one that delivered events starts
+  the count again. `with_resume(ResumePolicy::none())` restores the old
+  behaviour, which changes what `Outcome::Lost` means (0.16.0 is unreleased).
+  `Delegation::last_event_id` and `Delegation::reattach(client, tenant,
+  task_id, last_event_id)` let a supervisor that recorded those two follow its
+  child after a restart; a child that settled meanwhile comes back already
+  settled. Resubscribing now honours the delegation's tenant. Tested against
+  this repository's server through a proxy that severs and refuses
+  connections: a cut stream resumed with the child still running, a child that
+  finished during the gap, a link that stays down (bounded), a link that keeps
+  delivering (resumed past the attempt limit), reattach to a running and to a
+  settled child, and to one that does not exist; three hand mutations of the
+  resume logic each fail the test meant to catch them. The durable journal of
+  ADR 0030 is not built yet.
 - **The SSRF host check accepts what it should refuse** (server; audits
   SEC-12, B-22, D-13, N-SEC-1; each URL below was run through
   `check_public_url` on 2026-10-31 and accepted). A trailing dot hid an

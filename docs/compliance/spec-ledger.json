@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:11204 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:11231 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -452,7 +452,7 @@
     "crates/a2a-protocol-server/tests/continuation_message.rs:150 a_follow_up_answered_with_a_message_streams_a_task_and_a_status_update",
     "crates/a2a-protocol-server/tests/continuation_message.rs:185 a_subscriber_and_the_follow_up_s_stream_carry_the_same_payload",
     "crates/a2a-protocol-server/tests/continuation_message.rs:238 a_blocking_follow_up_answered_with_a_message_returns_the_task",
-    "crates/a2a-protocol-client/tests/delegation_tests.rs:222 a_follow_up_answered_with_a_message_leaves_the_child_waiting"
+    "crates/a2a-protocol-client/tests/delegation_tests.rs:224 a_follow_up_answered_with_a_message_leaves_the_child_waiting"
    ],
    "notes": "The executor's first event decides the send stream's pattern (InMemoryQueueReader::set_provisional_task): a Message makes a message-only stream, anything else a task stream that begins with the Task. A Message an executor writes once its task stream has begun (after a Task, status or artifact update) is sent, since 2026-10-23, as a TaskStatusUpdateEvent that keeps the state the turn last wrote (or, before any status, the state the turn began in) and carries the message in status.message. The writer folds it once, before the event takes its log position, so the send stream, a SubscribeToTask stream and a resumed replay carry one payload at that position (§3.5.2); the processors store it as a history entry and the status message, with no transition check, and push it. A fold in each stream's reader, tried first the same day, was reverted after an independent review: a replayed Message took the task's current state. The writer fold was reviewed independently (no critical or high findings); each part is shown to fail with it disabled (mutation, 2026-10-23). Since 2026-10-23 (maintainer's decision) a turn that continues a stored task folds every Message, its first included: §3.1.2 gives the message-only stream to the exchange with \"no task tracking\", and §3.7 gives an agent's message on a task the role \"Status Messages: Agents attach Messages to status update events\". So a follow-up answered with a Message gets a task stream, and a SubscribeToTask stream on the task the same status update (§3.1.6, §3.5.2); reviewed independently. A follow-up answered with messages alone, setting no state, is re-parked in the interrupted state it waited in, with the last message as its status message (TerminalTracking::repark_if_silent; a second review found the task otherwise left Submitted, which the SDK's client read as an incomplete stream). Not covered, by design: a client that found a brand-new task's id (ListTasks) and subscribed before that task's first-event Message, which stays a direct reply as §3.1.2 allows, receives it bare; the spec has that exchange track no task.",
    "auditor": "A",
@@ -568,7 +568,7 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1333 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/tests/delegation_tests.rs:202 a_direct_reply_is_a_message_outcome",
+    "crates/a2a-protocol-client/tests/delegation_tests.rs:204 a_direct_reply_is_a_message_outcome",
     "crates/a2a-protocol-server/tests/spec_s3_send_shapes.rs:177 streaming_direct_message_is_the_whole_stream"
    ],
    "notes": "A Message as the executor's first event is streamed as the whole response. Asserts a Message-answering agent streams exactly one Message and nothing else; shown able to fail by disabling the message-only branch in InMemoryQueueReader::read (2026-10-20)",
