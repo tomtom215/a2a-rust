@@ -177,7 +177,7 @@ async fn a_task_stream_that_ends_unsettled_is_lost_and_its_child_cancelled() {
     // The agent starts a task and returns without settling it, so the
     // stream closes with no final event, which the client reports as an
     // incomplete stream. With resuming off, nothing watches the child after
-    // that, so it is cancelled (`delegation_resume.rs` covers the default,
+    // that, so it is cancelled (`delegation_resume/` covers the default,
     // which resumes first).
     let client = worker().await;
     let d = Delegation::start(Arc::clone(&client), job("abandon"))
