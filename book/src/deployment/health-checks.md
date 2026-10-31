@@ -48,9 +48,14 @@ async fn route(
 
 ## What readiness checks
 
-`RequestHandler::task_store_health()` asks the task store for its `count()`,
-which every bundled store answers with a cheap query and no write, so a
-read-only replica or a store at its capacity limit still reports ready. It
+`RequestHandler::task_store_health()` asks the task store's `health()`. The
+SQL stores answer with one statement whose cost does not depend on how many
+tasks they hold (`SELECT pg_is_in_recovery()` on PostgreSQL, `SELECT 1` on
+SQLite); a PostgreSQL standby, which takes no writes, is not ready. A store
+at its capacity limit still reports ready: capacity is not reachability. A
+custom store that does not implement `health()` is asked for its `count()`.
+Until 0.16.0 the probe was `count()`, a `SELECT COUNT(*)` over every task,
+which slowed as the table grew until every replica's probe timed out at once. It
 records no span: a probe every few seconds per replica would otherwise be a
 trace each. On failure, expose
 `A2aError::metric_label` rather than the
@@ -59,28 +64,40 @@ error's message, which can name a host or a connection string; `A2aRouter`'s
 
 ## Kubernetes probes
 
-`examples/deploy-agent` adds `/healthz` and `/readyz` beside `A2aRouter`'s
-own two, the spelling most Kubernetes manifests use, and its
-`deployment.yaml` points the probes at them:
+`examples/deploy-agent` points its `deployment.yaml` at the two endpoints the
+HTTP+JSON dispatcher serves:
 
 ```yaml
+startupProbe:
+  httpGet:
+    path: /health
+    port: http
+  periodSeconds: 2
+  failureThreshold: 45
 livenessProbe:
   httpGet:
-    path: /healthz
+    path: /health
     port: http
-  initialDelaySeconds: 3
   periodSeconds: 10
+  timeoutSeconds: 2
 readinessProbe:
   httpGet:
-    path: /readyz
+    path: /ready
     port: http
-  initialDelaySeconds: 1
   periodSeconds: 5
+  timeoutSeconds: 3
 ```
 
-`/healthz` answers `ok` and checks nothing, on purpose: a liveness probe that
-follows a dependency turns that dependency's outage into a restart loop on
-every replica. `/readyz` calls `task_store_health()` and answers `503 not
-ready` when it fails, so a replica that cannot reach its database stops
-taking traffic without being restarted. The rest of that manifest is on
-[Docker and Kubernetes](./containers.md).
+`/health` checks nothing, on purpose: a liveness probe that follows a
+dependency turns that dependency's outage into a restart loop on every
+replica. `/ready` calls `RequestHandler::readiness()`: `503` while the task
+store fails `health()`, so a replica that cannot reach its database stops
+taking traffic without being restarted, and `503 draining` once the process
+is shutting down (`begin_draining`, which `Server` calls when its signal
+fires and `finish_in_flight` calls too). The startup probe holds the other
+two off while the database is first reached and its schema is applied. The
+rest of that manifest is on [Docker and Kubernetes](./containers.md).
+
+Until 0.16.0 the HTTP+JSON dispatcher's `/ready` (and so
+`CombinedDispatcher`'s) answered the same constant `200` as `/health`, and
+only the axum router's asked the store.

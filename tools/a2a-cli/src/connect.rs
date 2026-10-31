@@ -143,8 +143,10 @@ pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<A2aClient, CliError
     let timeout = Duration::from_secs(opts.timeout);
     let headers = header_map(opts);
 
+    let send_timeout = Duration::from_secs(opts.send_timeout);
     let mut builder = builder
         .with_timeout(timeout)
+        .with_send_timeout(send_timeout)
         .with_stream_connect_timeout(timeout)
         .with_connection_timeout(timeout.min(DEFAULT_CONNECT_TIMEOUT))
         .with_interceptor(HeaderInterceptor {
@@ -170,6 +172,7 @@ pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<A2aClient, CliError
         // transport's own documentation says per-request ones are dropped.
         let config = WebSocketTransportConfig::default()
             .with_request_timeout(timeout)
+            .with_send_timeout(send_timeout)
             .with_connect_timeout(timeout.min(DEFAULT_CONNECT_TIMEOUT))
             .with_extra_headers(headers);
         let transport = WebSocketTransport::connect_with_config(endpoint, config).await?;
@@ -221,6 +224,7 @@ mod tests {
         let opts = GlobalOpts {
             binding: Some(Binding::Rest),
             timeout: 30,
+            send_timeout: 600,
             headers: vec![],
             tenant: None,
             grpc_plaintext: false,

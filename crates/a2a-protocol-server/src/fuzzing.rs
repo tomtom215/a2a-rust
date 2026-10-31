@@ -44,6 +44,8 @@ pub fn jwt_validate(token: &str) -> bool {
         return false;
     };
     JwtValidator::new()
+        .allow_any_issuer()
+        .allow_any_audience()
         .with_hs256_secret(FUZZ_HS256_SECRET.to_vec())
         .validate(token, &jwks)
         .is_ok()

@@ -128,6 +128,8 @@ mod extensions;
 mod legacy_card;
 mod loopback;
 mod plaintext;
+#[cfg(feature = "tls-rustls")]
+mod proxy;
 mod received;
 mod redact;
 #[cfg(test)]

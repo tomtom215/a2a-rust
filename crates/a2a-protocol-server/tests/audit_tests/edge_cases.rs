@@ -231,7 +231,7 @@ fn builder_rejects_zero_timeout() {
     let err = result.unwrap_err();
     let err_msg = format!("{err:?}");
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::Config(_)),
         "expected InvalidParams for zero timeout, got {err_msg}"
     );
 }
@@ -249,7 +249,7 @@ fn builder_rejects_empty_interfaces() {
     let err = result.unwrap_err();
     let err_msg = format!("{err:?}");
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::Config(_)),
         "expected InvalidParams for empty interfaces, got {err_msg}"
     );
 }

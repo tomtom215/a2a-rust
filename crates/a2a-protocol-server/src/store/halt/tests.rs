@@ -196,6 +196,60 @@ async fn postgres_pushes_between_replicas() {
     db.drop_database().await;
 }
 
+/// The scratch database's URL on the server `A2A_TEST_POSTGRES_DIRECT_URL`
+/// names, when the tests' URL goes through a pooler; else the same URL.
+#[cfg(feature = "postgres")]
+fn direct(db: &Scratch) -> String {
+    std::env::var("A2A_TEST_POSTGRES_DIRECT_URL").map_or_else(
+        |_| db.url.clone(),
+        |d| format!("{}/{}", d.rsplit_once('/').expect("path").0, db.name),
+    )
+}
+
+/// A store that listens on a URL of its own pushes as one listening on its
+/// pool does: the route for a pooled `pool` with a direct `listen_url`
+/// (passes through `PgBouncer` in transaction mode, where
+/// `postgres_pushes_between_replicas` fails; 2026-10-30).
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
+async fn postgres_listening_at_a_url_pushes_between_replicas() {
+    let db = Scratch::new().await;
+    let pool = || async { sqlx::postgres::PgPool::connect(&db.url).await.unwrap() };
+    let writer = PostgresHaltStore::from_pool_without_listener(pool().await)
+        .await
+        .unwrap();
+    contract(&writer).await;
+    // Subscribed at once, as in `postgres_pushes_between_replicas`, so the
+    // signal saying it is listening is not missed.
+    let reader = PostgresHaltStore::from_pool_listening_at(pool().await, direct(&db))
+        .await
+        .unwrap();
+    signals_contract(&writer, &reader, Some(HaltSignal::Changed)).await;
+    drop((writer, reader));
+    db.drop_database().await;
+}
+
+/// A store without a listener keeps the contract and pushes nothing: its
+/// handlers rely on their poll. The route for a pooler with no direct
+/// connection to PostgreSQL.
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
+async fn postgres_without_a_listener_keeps_the_contract_and_pushes_nothing() {
+    let db = Scratch::new().await;
+    let pool = sqlx::postgres::PgPool::connect(&db.url).await.unwrap();
+    let store = PostgresHaltStore::from_pool_without_listener(pool)
+        .await
+        .unwrap();
+    assert!(store.signals().is_none(), "no listener, so no push");
+    contract(&store).await;
+    // A cancel is still announced, for stores that do listen.
+    store.publish_cancel("t1", "task-1").await.unwrap();
+    drop(store);
+    db.drop_database().await;
+}
+
 /// The listener, and the connection it holds, ends with the last clone of
 /// its store: its subscribers see the channel close. The mutation gate found
 /// the abort untested: a listener left running survived.

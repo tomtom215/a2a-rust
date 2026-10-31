@@ -43,7 +43,7 @@ the table above does not list for your crate is off until you ask for it:
 | Signing the content the server sends | `signing` |
 
 ```toml
-a2a-protocol-server = { version = "0.15", features = ["otlp", "sqlite"] }
+a2a-protocol-server = { version = "0.16", features = ["otlp", "sqlite"] }
 ```
 
 ## The agent logs nothing

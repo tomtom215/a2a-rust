@@ -30,7 +30,7 @@ impl RequestHandler {
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<TaskListResponse> {
         let start = Instant::now();
-        trace_info!(method = "ListTasks", "handling list tasks");
+        trace_debug!(method = "ListTasks", "handling list tasks");
         self.metrics.on_request("ListTasks");
 
         let tenant = self

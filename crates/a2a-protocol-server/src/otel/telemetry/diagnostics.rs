@@ -59,13 +59,30 @@ fn is_sdk_export_error(event_name: &str) -> bool {
 /// of a lost export and, when `logs_on_console` (the console log exporter
 /// already prints every event), anything that is not telemetry's own: those
 /// are the events no exporter takes.
+///
+/// `app`, when given, is a crate whose own INFO lines pass too: the
+/// application's, printed by default (`Telemetry::install_subscriber`). It
+/// matches that crate and its modules (`app`, `app::…`) only: a `Targets`
+/// directive matches by string prefix, so `a2a=info` (the CLI's) also let
+/// every `a2a_protocol_*` crate's INFO lines through.
 pub(super) fn layer<S>(
     filter: Targets,
     logs_on_console: bool,
+    app: Option<String>,
 ) -> impl Layer<S> + Send + Sync + 'static
 where
     S: tracing::Subscriber + for<'a> LookupSpan<'a>,
 {
+    use tracing_subscriber::filter::LevelFilter;
+    let app = app_name(app);
+    let has_app = app.is_some();
+    let app_info =
+        filter_fn(move |meta| shows_app_info(app.as_deref(), *meta.level(), meta.target()))
+            .with_max_level_hint(if has_app {
+                LevelFilter::INFO
+            } else {
+                LevelFilter::OFF
+            });
     let shown = filter_fn(move |meta| {
         !is_sdk_export_error(meta.name()) && (!logs_on_console || is_self_target(meta.target()))
     });
@@ -75,7 +92,25 @@ where
             std::io::IsTerminal::is_terminal(&std::io::stderr()),
             std::env::var_os("NO_COLOR").as_deref(),
         ))
-        .with_filter(filter.and(shown))
+        .with_filter(filter.or(app_info).and(shown))
+}
+
+/// Whether `target` is crate `app` or one of its modules.
+/// The application's crate name, when one is given: an empty one is none.
+fn app_name(app: Option<String>) -> Option<String> {
+    app.filter(|a| !a.is_empty())
+}
+
+/// Whether an event of `level` on `target` is the application's own `info`
+/// or louder, which the console shows beside the SDK's warnings.
+fn shows_app_info(app: Option<&str>, level: tracing::Level, target: &str) -> bool {
+    level <= tracing::Level::INFO && app.is_some_and(|app| is_app_target(app, target))
+}
+
+fn is_app_target(app: &str, target: &str) -> bool {
+    target
+        .strip_prefix(app)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with("::"))
 }
 
 /// Whether to colour the lines: only on a terminal, and not when `NO_COLOR`
@@ -157,6 +192,43 @@ mod tests {
         assert!(passes(&f, "my_agent::inner", Level::DEBUG));
         assert!(!passes(&f, "other", Level::WARN));
         assert!(passes(&f, "other", Level::ERROR));
+    }
+
+    /// The application's own lines are printed at INFO by default: until
+    /// 2026-10-29 `deploy-agent`'s "serving" and "connecting to PostgreSQL"
+    /// lines were hidden unless `RUST_LOG` named its crate (found live). Its
+    /// crate only: the CLI's `a2a` must not admit `a2a_protocol_client`.
+    #[test]
+    fn the_application_target_is_its_crate_and_modules_only() {
+        assert!(is_app_target("deploy_agent", "deploy_agent"));
+        assert!(is_app_target("deploy_agent", "deploy_agent::config"));
+        assert!(!is_app_target("a2a", "a2a_protocol_client::discovery"));
+        assert!(!is_app_target("deploy_agent", "deploy_agent_v2"));
+    }
+
+    #[test]
+    fn the_applications_info_and_louder_is_shown_and_its_debug_is_not() {
+        let app = Some("deploy_agent");
+        for level in [Level::ERROR, Level::WARN, Level::INFO] {
+            assert!(
+                shows_app_info(app, level, "deploy_agent::config"),
+                "{level}"
+            );
+        }
+        for level in [Level::DEBUG, Level::TRACE] {
+            assert!(
+                !shows_app_info(app, level, "deploy_agent::config"),
+                "{level}"
+            );
+        }
+        assert!(!shows_app_info(app, Level::INFO, "a2a_protocol_client"));
+        assert!(!shows_app_info(None, Level::INFO, "deploy_agent"));
+        assert_eq!(
+            app_name(Some("deploy_agent".into())).as_deref(),
+            Some("deploy_agent")
+        );
+        assert_eq!(app_name(Some(String::new())), None, "an empty name is none");
+        assert_eq!(app_name(None), None);
     }
 
     #[test]

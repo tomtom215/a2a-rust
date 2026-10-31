@@ -351,6 +351,7 @@ pub mod pages_reference_pitfalls {}
 #[doc = include_str!("../../book/src/reference/upgrading/0.12-to-0.13.md")]
 #[doc = include_str!("../../book/src/reference/upgrading/0.13-to-0.14.md")]
 #[doc = include_str!("../../book/src/reference/upgrading/0.14-to-0.15.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.15-to-0.16.md")]
 #[doc = include_str!("../../book/src/reference/upgrading/0.6-to-0.7.md")]
 #[doc = include_str!("../../book/src/reference/upgrading/0.7-to-0.8.md")]
 #[doc = include_str!("../../book/src/reference/upgrading/0.8-to-0.9.md")]
@@ -382,6 +383,7 @@ pub mod pages_concepts_transport_layers {}
 #[doc = include_str!("../../book/src/concepts/agent-cards/serving.md")]
 #[doc = include_str!("../../book/src/concepts/agent-cards/caching.md")]
 #[doc = include_str!("../../book/src/concepts/agent-cards/security.md")]
+#[doc = include_str!("../../book/src/concepts/agent-cards/local-discovery.md")]
 pub mod pages_concepts_agent_cards {}
 
 #[doc = include_str!("../../book/src/concepts/streaming/events.md")]

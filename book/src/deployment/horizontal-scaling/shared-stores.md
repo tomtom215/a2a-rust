@@ -18,15 +18,20 @@ PostgreSQL instance:
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
+# use a2a_protocol_server::push::PostgresPushConfigStore;
 # use a2a_protocol_server::store::PostgresTaskStore;
 # use a2a_protocol_server::{agent_executor, RequestHandlerBuilder};
 # struct MyExecutor;
 # agent_executor!(MyExecutor, |_ctx, _q| async { Ok(()) });
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-let store = PostgresTaskStore::new(&std::env::var("DATABASE_URL")?).await?;
+let url = std::env::var("DATABASE_URL")?;
 let handler = RequestHandlerBuilder::new(MyExecutor)
     .with_agent_card(card())
-    .with_task_store(store)
+    .with_task_store(PostgresTaskStore::new(&url).await?)
+    // Push configs too: one registered through one replica must be found by
+    // the replica running the task. `build()` refuses a card that declares
+    // push notifications over a shared task store without this.
+    .with_push_config_store(PostgresPushConfigStore::new(&url).await?)
     .build()?;
 # Ok(())
 # }
@@ -45,6 +50,30 @@ advisory lock, so they serialize. So do the audit, halt and lease stores,
 which have taken it since they were added. The key is the bytes of `"a2a_schm"` read as
 a big-endian `i64`; an application taking advisory locks of its own on the
 same database should avoid it.
+
+## How many connections
+
+Each store opened from a URL opens a pool of its own, of 10 connections
+(`DEFAULT_POOL_SIZE`) unless given another size with `new_with_pool_size(url,
+size)`; a halt store's listener holds one more, and the audit and shared
+rate-limit stores have pools of their own too. Every replica opens all of
+them, so what a replica can use is the sum of its pools, and what the
+database must allow is that sum times the replicas, plus one more replica's
+worth while a rolling update surges a pod. PostgreSQL's default
+`max_connections` is 100, with 3 reserved for superusers: at 10 for tasks
+and 10 for push configs, five replicas already ask for 100 (audit E-F6,
+D-17), and the sixth connection a new pod asks for is refused (`53300`),
+which the stores answer as unavailable and retry until their bound.
+
+So size the pools to what the work needs rather than to the default. A
+send makes a handful of statements on the task store's pool, and the push
+config store reads a task's configs once per delivery: `examples/deploy-agent`
+opens `DATABASE_POOL_SIZE` (10 by default) for tasks and 2 for push configs,
+and logs the sum at startup. A pool built by hand and passed to `from_pool`
+can be shared by the plain and tenant-aware task stores
+(`PostgresTaskStore::pool_options()`), and the push-config, audit and
+rate-limit stores can share one built with sqlx's defaults. Behind
+PgBouncer the arithmetic is the pooler's, not the database's (below).
 
 ## When a connection drops
 
@@ -107,5 +136,29 @@ opened before. So after setting `a2a.legacy_claim_ttl` (or a
 admin console) or wait for `server_lifetime`; until then the old value
 holds. The claims, the upgrade guard's mark and the schema lock each last
 one transaction, which a transaction-mode pooler keeps on one server
-connection. A pooler does stop the halt store's `LISTEN`, which then falls
-back to its poll.
+connection.
+
+The halt store's `LISTEN` does not survive such a pooler, and it is not
+stopped by one either: run on a lent server connection, it stays on that
+connection when the pooler lends it again, and the next notification
+arrives in the middle of a statement, which sqlx fails with `unexpected
+message: NotificationResponse`. On 2026-10-30, through PgBouncer 1.26.1,
+the halt itself failed to be written that way. Behind a transaction-mode
+pooler, build the halt store with
+`PostgresHaltStore::from_pool_listening_at(pool, direct_url)`, its listener
+on a connection straight to PostgreSQL, or
+`PostgresHaltStore::from_pool_without_listener(pool)`, the handlers then
+learning of other replicas' halts and cancels at their next poll
+(`with_halt_poll_interval`). `from_pool` is for a pool that reaches
+PostgreSQL directly.
+
+On 2026-10-30 every PostgreSQL test in the server crate ran through
+PgBouncer 1.26.1 (transaction mode, `max_prepared_statements = 200`, a
+wildcard database entry so each test's scratch database passes through):
+147 of 151 passed. The four that did not: the two halt-store tests that
+build with `from_pool`, as above; and two that end the database's
+backends and wait for the store to retry a lost connection, which the
+pooler hides: it drops the dead server connection and lends the next
+statement a new one, so nothing is lost and there is nothing to retry. A
+statement in flight when its backend ends is answered by the pooler with
+`08P01`, which the store retries as any `08` error.

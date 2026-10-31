@@ -10,8 +10,8 @@ rename and when it is not. Every Rust "after" block in the chapter is compiled
 against the current crates by `a2a-book-tests`; the "before" blocks are fenced
 as `text` because they no longer compile, which is the point.
 
-The newest minor boundary covered is 0.14 → 0.15, whose breaking section is
-`## [0.15.0]` in
+The newest minor boundary covered is 0.15 → 0.16, whose breaking section is
+`## [Unreleased]` until 0.16.0 is released, in
 [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
 A test, `book-tests/tests/upgrading_guide.rs`, fails when the changelog calls a
 release from 0.7 on breaking and this page has no `## X.Y → X.Z` section for
@@ -26,7 +26,8 @@ to the page with the migrations.
 
 | You are on | Read |
 |---|---|
-| 0.14.x | [0.14 → 0.15](#014--015) |
+| 0.15.x | [0.15 → 0.16](#015--016) |
+| 0.14.x | [0.14 → 0.15](#014--015), then the above |
 | 0.13.x | [0.13 → 0.14](#013--014), then the above |
 | 0.12.x | [0.12 → 0.13](#012--013), then the above |
 | 0.11.x | [0.11 → 0.12](#011--012), then the above |
@@ -184,6 +185,15 @@ current source.
 Enums follow the same rule: `ClientError`, and the protocol enums that can
 grow with the specification, are `#[non_exhaustive]`, so a `match` on one
 already carries a wildcard arm and a new variant does not break it.
+
+## 0.15 → 0.16
+
+The WebSocket listener refuses browser origins it was not told to allow; a
+`JwtValidator` checks `iss` and `aud` unless told not to; an internal error's
+text is withheld from callers; configuration errors are `ServerError::Config`
+and `ClientError::Config`; `ServeReport` is `#[must_use]`; `TlsConfig` is
+`#[non_exhaustive]`. [Upgrading from 0.15 to 0.16](./upgrading/0.15-to-0.16.md)
+has each, with the code to change.
 
 ## 0.14 → 0.15
 

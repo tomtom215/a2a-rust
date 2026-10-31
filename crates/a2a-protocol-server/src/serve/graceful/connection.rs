@@ -25,7 +25,13 @@ pub fn spawn_connection(
     config: &ServeConfig,
     connection: Option<connections::Connection>,
 ) {
-    let Accepted { stream, peer, .. } = accepted;
+    let Accepted {
+        stream,
+        peer,
+        listening,
+        ..
+    } = accepted;
+    let host_guard = super::super::host_guard::HostGuard::for_connection(listening, config);
     // Disable Nagle so small SSE frames are not held for a delayed ACK.
     let _ = stream.set_nodelay(true);
     // The idle timer wraps the socket *below* hyper, and below TLS, so it sees
@@ -52,6 +58,7 @@ pub fn spawn_connection(
                         peer,
                         certificate,
                         true,
+                        host_guard,
                     );
                     serve_io(io, service, watcher, header_read_timeout).await
                 }
@@ -66,7 +73,8 @@ pub fn spawn_connection(
             drop(permit);
             return;
         }
-        let service = super::super::service(dispatcher, requests, serving, peer, None, false);
+        let service =
+            super::super::service(dispatcher, requests, serving, peer, None, false, host_guard);
         let result = serve_io(io, service, watcher, header_read_timeout).await;
         if let Some(connection) = connection {
             connection.close(result.is_err());
@@ -79,6 +87,8 @@ pub fn spawn_connection(
 pub struct Accepted {
     pub stream: tokio::net::TcpStream,
     pub peer: SocketAddr,
+    /// The listener's own address: a loopback one gets the `Host` check.
+    pub listening: Option<SocketAddr>,
     #[cfg(feature = "tls-rustls")]
     pub tls: Option<super::tls::Tls>,
 }

@@ -43,7 +43,7 @@ fn bearer_card() -> AgentCard {
 
 fn build(builder: RequestHandlerBuilder) -> Result<(), String> {
     builder.build().map(|_| ()).map_err(|e| match e {
-        ServerError::InvalidParams(why) => why,
+        ServerError::Config(why) => why,
         other => format!("{other:?}"),
     })
 }

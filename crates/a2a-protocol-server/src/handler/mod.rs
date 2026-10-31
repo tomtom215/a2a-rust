@@ -24,6 +24,7 @@ mod capability;
 pub(crate) mod claims;
 mod concurrency;
 mod event_processing;
+pub(crate) use event_processing::PushLanes;
 pub(crate) mod halt;
 pub(crate) mod helpers;
 mod ids;
@@ -46,6 +47,18 @@ pub use claims::{DEFAULT_TURN_CLAIM_RENEWAL, DEFAULT_TURN_CLAIM_TTL, MIN_TURN_CL
 pub use halt::{DEFAULT_HALT_POLL_INTERVAL, HaltReport, HaltScope};
 pub use helpers::InboundTracePolicy;
 pub use lease::{DEFAULT_MAX_LEASE_TTL, MIN_LEASE_TTL};
+
+/// How long [`RequestHandler::readiness`] waits for the task store before it
+/// answers `"timeout"`.
+///
+/// A database that stops answering (paused, partitioned) leaves the store's
+/// probe waiting for a pooled connection, 30 s with sqlx's default; until
+/// 2026-10-29 `/ready` waited with it (run live against a paused
+/// PostgreSQL), and a balancer with a longer probe timeout kept routing to
+/// the replica meanwhile. Two seconds is below a typical probe timeout
+/// (`deploy-agent`'s manifest uses 3 s) and far above a healthy store's one
+/// statement.
+pub const READINESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 pub(crate) use messaging::FileUrls;
 pub(crate) use shutdown::InFlight;
 #[cfg(all(test, feature = "tracing"))]
@@ -93,6 +106,9 @@ pub struct RequestHandler {
     pub(crate) task_store: Arc<dyn TaskStore>,
     pub(crate) push_config_store: Arc<dyn PushConfigStore>,
     pub(crate) push_sender: Option<Arc<dyn PushSender>>,
+    /// One ordered push lane per task, which both send paths queue
+    /// deliveries on; see [`PushLanes`].
+    pub(crate) push_lanes: PushLanes,
     pub(crate) event_queue_manager: EventQueueManager,
     pub(crate) interceptors: ServerInterceptorChain,
     pub(crate) agent_card: Option<AgentCard>,
@@ -190,6 +206,9 @@ pub struct RequestHandler {
     /// The audit log, when the handler was built with one.
     #[cfg(feature = "audit")]
     pub(crate) audit: Option<Arc<crate::audit::AuditLog>>,
+    /// Set by [`begin_draining`](RequestHandler::begin_draining): readiness
+    /// answers "not ready" from then on.
+    pub(crate) draining: std::sync::atomic::AtomicBool,
 }
 
 /// Entry in the cancellation token map, tracking creation time for eviction.
@@ -303,6 +322,7 @@ impl RequestHandler {
         call: &mut crate::interceptor::InterceptedCall<'_>,
         call_ctx: &crate::call_context::CallContext,
     ) -> ServerResult<()> {
+        self.start_reaper();
         call.before().await?;
         self.enter_caller_partition(call_ctx)
     }

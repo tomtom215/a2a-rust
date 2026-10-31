@@ -17,7 +17,9 @@ use tokio_tungstenite::tungstenite::handshake::server::{
 /// The listener's origin policy.
 #[derive(Debug, Clone)]
 pub(super) struct Origins {
-    /// Lowercased; `None` accepts any origin.
+    /// Accept every origin, listed or not.
+    any: bool,
+    /// Lowercased; `None` lists none.
     allowed: Option<Arc<[String]>>,
     /// Refuse an upgrade with no `Origin` header.
     required: bool,
@@ -26,6 +28,17 @@ pub(super) struct Origins {
 impl Origins {
     /// Every origin, and none, accepted.
     pub(super) const ANY: Self = Self {
+        any: true,
+        allowed: None,
+        required: false,
+    };
+
+    /// The default: no browser origin, and an upgrade with none (a client
+    /// that is not a browser) accepted. A browser always sends `Origin` and
+    /// cannot forge it, so this refuses every web page until its origin is
+    /// listed (audit SEC-03).
+    pub(super) const NONE_LISTED: Self = Self {
+        any: false,
         allowed: None,
         required: false,
     };
@@ -43,6 +56,7 @@ impl Origins {
             .unwrap_or_default();
         allowed.extend(origins.into_iter().map(|o| o.into().to_ascii_lowercase()));
         Self {
+            any: false,
             allowed: Some(allowed.into()),
             ..self
         }
@@ -65,12 +79,15 @@ impl Origins {
         let origin = req
             .headers()
             .get(tokio_tungstenite::tungstenite::http::header::ORIGIN);
-        let acceptable = match (origin, &self.allowed) {
-            (None, _) => !self.required,
-            (Some(_), None) => true,
-            (Some(value), Some(allowed)) => value
-                .to_str()
-                .is_ok_and(|v| allowed.iter().any(|a| a.eq_ignore_ascii_case(v))),
+        let acceptable = match origin {
+            None => !self.required,
+            Some(_) if self.any => true,
+            Some(value) => value.to_str().is_ok_and(|v| {
+                self.allowed
+                    .iter()
+                    .flat_map(|a| a.iter())
+                    .any(|a| a.eq_ignore_ascii_case(v))
+            }),
         };
         if acceptable {
             return Ok(());
@@ -121,9 +138,23 @@ mod tests {
     }
 
     #[test]
-    fn the_default_accepts_every_origin_and_none() {
+    fn any_accepts_every_origin_and_none() {
         assert_eq!(status(&Origins::ANY, Some("https://evil.example")), 101);
         assert_eq!(status(&Origins::ANY, None), 101);
+    }
+
+    /// The default refuses every browser origin and accepts a client that
+    /// sends none (audit SEC-03).
+    #[test]
+    fn the_default_refuses_every_browser_origin() {
+        let p = Origins::NONE_LISTED;
+        assert_eq!(status(&p, Some("https://evil.example")), 403);
+        assert_eq!(status(&p, Some("http://localhost:8080")), 403);
+        assert_eq!(status(&p, Some("null")), 403);
+        assert_eq!(status(&p, None), 101);
+        let listed = Origins::NONE_LISTED.allowing(["https://app.example.com"]);
+        assert_eq!(status(&listed, Some("https://app.example.com")), 101);
+        assert_eq!(status(&listed, Some("https://evil.example")), 403);
     }
 
     #[test]

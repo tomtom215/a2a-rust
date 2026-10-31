@@ -379,8 +379,10 @@ async fn an_agent_failure_becomes_an_mcp_error_result_not_a_dead_session() {
         .expect("a failed A2A task is still an answered MCP call");
 
     assert_eq!(result.is_error, Some(true));
+    // What the agent tells its caller: an internal error's text is
+    // withheld by default (audit SEC-07), a reference in its place.
     assert!(
-        text_of(&result.content).contains("the agent refused"),
+        text_of(&result.content).contains("internal error (reference "),
         "{:?}",
         text_of(&result.content)
     );

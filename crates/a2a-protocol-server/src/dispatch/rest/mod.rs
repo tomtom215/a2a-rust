@@ -43,7 +43,7 @@ use query::{
     contains_path_traversal, list_push_configs_params, parse_list_tasks_query, parse_query_param,
     parse_query_param_u32, percent_decode_path, strip_tenant_prefix,
 };
-use response::health_response;
+use response::{health_response, ready_response};
 use span::HttpRoute;
 
 use crate::rpc_span::{RpcSystem, record_if_refused, refused};
@@ -123,7 +123,7 @@ impl RestDispatcher {
         let method = req.method().clone();
         let path = req.uri().path().to_owned();
         let query = req.uri().query().unwrap_or("").to_owned();
-        trace_info!(http_method = %method, %path, "dispatching REST request");
+        trace_debug!(http_method = %method, %path, "dispatching REST request");
 
         // Handle CORS preflight requests.
         if method == "OPTIONS" {
@@ -149,9 +149,16 @@ impl RestDispatcher {
             return resp;
         }
 
-        // Health check endpoint.
+        // Liveness is a constant; readiness asks the handler. Until
+        // 2026-10-29 `/ready` was the constant too on this dispatcher (and so
+        // on `CombinedDispatcher`), though it was documented as probing the
+        // task store: a replica whose database was gone stayed in rotation.
         if matches!(method.as_str(), "GET" | "HEAD") && (path == "/health" || path == "/ready") {
-            let mut resp = health_response();
+            let mut resp = if path == "/ready" {
+                ready_response(self.handler.readiness().await)
+            } else {
+                health_response()
+            };
             if let Some(ref cors) = self.cors {
                 cors.apply_headers(&mut resp);
             }

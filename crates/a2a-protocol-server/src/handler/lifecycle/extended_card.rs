@@ -350,8 +350,8 @@ mod tests {
 
     fn refusal(builder: RequestHandlerBuilder) -> String {
         match builder.build() {
-            Err(ServerError::InvalidParams(why)) => why,
-            other => panic!("expected InvalidParams, got: {other:?}"),
+            Err(ServerError::Config(why)) => why,
+            other => panic!("expected Config, got: {other:?}"),
         }
     }
 

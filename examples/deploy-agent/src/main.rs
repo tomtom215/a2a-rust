@@ -8,15 +8,16 @@
 //! A deployable A2A agent.
 //!
 //! `hello-agent` is the smallest thing that answers A2A. This is the smallest
-//! thing you can actually *ship*: same agent logic, plus the four things a
-//! container platform requires and an example otherwise never demonstrates.
+//! thing you can actually *ship*: same agent logic, plus what a container
+//! platform requires and an example otherwise never demonstrates.
 //!
 //! | Concern | Here | Why an in-process example never shows it |
 //! |---|---|---|
-//! | Configuration | `PORT`, `AGENT_URL` from the environment | Examples hardcode `127.0.0.1:3000`; a scheduler assigns the port |
-//! | Health checks | `GET /healthz`, `GET /readyz` | Nothing probes an example, so nothing notices it has no probe endpoint |
-//! | Graceful shutdown | `SIGTERM`/`SIGINT` drain the in-flight work | Examples are killed with Ctrl-C and nobody minds the truncated stream |
-//! | Bind address | `0.0.0.0`, not loopback | A loopback bind is invisible locally and unreachable in a container |
+//! | Configuration | `PORT`, `AGENT_URL`, `DATABASE_URL`, `DRAIN_DELAY_SECONDS` from the environment, checked before anything binds | Examples hardcode `127.0.0.1:3000`; a scheduler assigns the port |
+//! | Health checks | `GET /health` (liveness, a constant), `GET /ready` (readiness: the task store answers, and the process is not draining) | Nothing probes an example, so nothing notices it has no probe endpoint |
+//! | Graceful shutdown | `SIGTERM`: not ready at once, still serving for `DRAIN_DELAY_SECONDS`, then in-flight tasks end, then connections drain, each bounded | Examples are killed with Ctrl-C and nobody minds the truncated stream |
+//! | Bind address | every address, IPv6 and IPv4 (`[::]`, or `0.0.0.0` where the host has no IPv6) | A loopback bind is invisible locally and unreachable in a container |
+//! | Timeouts | the SDK's `Server`: a header-read and an idle timeout on every connection | `axum::serve` has neither, so a client that sends a byte a minute holds a connection forever |
 //! | Allocator | jemalloc, not glibc's | A short run never fills the task store; a long-running server's bounded store does, and glibc is slow in that heap |
 //! | Replicas | `DATABASE_URL` puts tasks and push configs in PostgreSQL | One process's memory is not another's: behind a load balancer, a task created on one replica is not found on the next |
 //!
@@ -28,25 +29,24 @@
 //!
 //! ```sh
 //! cargo run -p deploy-agent
-//! curl localhost:8080/healthz
+//! curl localhost:8080/health
 //! curl localhost:8080/.well-known/agent-card.json
 //! curl -X POST localhost:8080/message:send \
-//!   -H 'content-type: application/json' \
+//!   -H 'content-type: application/json' -H 'A2A-Version: 1.0' \
 //!   -d '{"message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"Ada"}]}}'
 //! ```
 //!
 //! # Ship it
 //!
 //! See this example's `README.md` for the container build and a Kubernetes
-//! manifest whose probes point at the endpoints below.
+//! manifest whose probes point at the endpoints above.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_sdk::prelude::*;
-use axum::Router;
-use axum::http::StatusCode;
-use axum::routing::get;
+use a2a_protocol_sdk::server::dispatch::CombinedDispatcher;
+use a2a_protocol_sdk::server::serve::ServeConfig;
 
 // ── The agent ───────────────────────────────────────────────────────────────
 
@@ -72,7 +72,7 @@ agent_executor!(DeployAgent, |ctx, queue| async {
 /// Everything this process needs from its environment.
 ///
 /// Read once at startup and passed down, rather than reached for wherever it
-/// happens to be needed: a missing variable should stop the process before it
+/// happens to be needed: a wrong variable should stop the process before it
 /// binds a port, not on the first request that touches that code path.
 struct Config {
     /// Port to bind. `PORT` is what most platforms inject.
@@ -80,7 +80,7 @@ struct Config {
     /// The externally reachable URL, which is what belongs on the agent card.
     ///
     /// This cannot be derived from the bind address: a container binds
-    /// `0.0.0.0:8080` while callers reach it at `https://agent.example.com`.
+    /// `[::]:8080` while callers reach it at `https://agent.example.com`.
     /// Publishing the bind address on the card is a deployment bug that only
     /// shows up as clients failing to call back.
     public_url: String,
@@ -90,158 +90,174 @@ struct Config {
     /// task (`store::claim`), so no session affinity is needed. Unset, the
     /// stores are in memory and the agent must run as one replica.
     database_url: Option<String>,
+    /// How long to go on accepting after `SIGTERM`, not ready, while load
+    /// balancers learn the pod is leaving (`ServeConfig::drain_delay`).
+    drain_delay: Duration,
+    /// Connections in the task store's pool (`DATABASE_POOL_SIZE`). Each
+    /// replica opens it and a push-config pool of [`PUSH_POOL_SIZE`], so
+    /// replicas × (this + 2), with a surge pod during a rollout, must stay
+    /// under PostgreSQL's `max_connections` (97 usable by default).
+    pool_size: u32,
 }
+
+/// The push-config store's pool: it reads a task's configs once per
+/// delivery and writes only when a client registers one.
+const PUSH_POOL_SIZE: u32 = 2;
 
 impl Config {
     fn from_env() -> Result<Self, String> {
-        let mut config =
-            Self::from_vars(std::env::var("PORT").ok(), std::env::var("AGENT_URL").ok())?;
-        config.database_url = std::env::var("DATABASE_URL").ok().filter(|u| !u.is_empty());
-        Ok(config)
+        let var = |name| std::env::var(name).ok().filter(|v: &String| !v.is_empty());
+        Self::from_vars(
+            var("PORT"),
+            var("AGENT_URL"),
+            var("DATABASE_URL"),
+            var("DRAIN_DELAY_SECONDS"),
+            var("DATABASE_POOL_SIZE"),
+        )
     }
 
-    /// The parsing behind [`from_env`](Self::from_env), with the two
-    /// variables' values passed in so it can be tested without writing the
-    /// process environment (which is `unsafe` in edition 2024: another test
-    /// thread may be reading it).
-    fn from_vars(port: Option<String>, agent_url: Option<String>) -> Result<Self, String> {
+    /// The parsing behind [`from_env`](Self::from_env), with the variables'
+    /// values passed in so it can be tested without writing the process
+    /// environment (which is `unsafe` in edition 2024: another test thread
+    /// may be reading it).
+    fn from_vars(
+        port: Option<String>,
+        agent_url: Option<String>,
+        database_url: Option<String>,
+        drain_delay: Option<String>,
+        pool_size: Option<String>,
+    ) -> Result<Self, String> {
         let port = match port {
-            Some(raw) => raw
-                .parse::<u16>()
-                .map_err(|_| format!("PORT is not a valid port number: {raw:?}"))?,
+            Some(raw) => match raw.parse::<u16>() {
+                Ok(0) | Err(_) => return Err(format!("PORT is not a valid port number: {raw:?}")),
+                Ok(port) => port,
+            },
             None => 8080,
         };
         let public_url = agent_url.unwrap_or_else(|| format!("http://localhost:{port}"));
+        if !(public_url.starts_with("http://") || public_url.starts_with("https://"))
+            || public_url.contains(char::is_whitespace)
+        {
+            return Err(format!(
+                "AGENT_URL must be the http:// or https:// URL callers use: {public_url:?}"
+            ));
+        }
+        let drain_delay = match drain_delay {
+            Some(raw) => Duration::from_secs(raw.parse::<u64>().map_err(|_| {
+                format!("DRAIN_DELAY_SECONDS is not a whole number of seconds: {raw:?}")
+            })?),
+            None => Duration::ZERO,
+        };
+        let pool_size = match pool_size {
+            Some(raw) => match raw.parse::<u32>() {
+                Ok(0) | Err(_) => {
+                    return Err(format!(
+                        "DATABASE_POOL_SIZE is not a whole number of connections from 1: {raw:?}"
+                    ));
+                }
+                Ok(size) => size,
+            },
+            None => a2a_protocol_sdk::server::store::DEFAULT_POOL_SIZE,
+        };
         Ok(Self {
             port,
             public_url,
-            database_url: None,
+            database_url,
+            drain_delay,
+            pool_size,
         })
+    }
+}
+
+/// `url` without its password, for a log line.
+fn redacted(url: &str) -> String {
+    match (url.find("://"), url.rfind('@')) {
+        (Some(scheme), Some(at)) if at > scheme => {
+            let userinfo = &url[scheme + 3..at];
+            let user = userinfo.split(':').next().unwrap_or("");
+            format!("{}{user}:***{}", &url[..scheme + 3], &url[at..])
+        }
+        _ => url.to_owned(),
     }
 }
 
 // ── Wiring ──────────────────────────────────────────────────────────────────
 
-/// Builds the router: A2A on `/`, operational endpoints beside it.
-///
-/// Returned rather than served so the tests below can drive the same router the
-/// container runs. A test that exercises a separately-assembled router proves
-/// something about the test.
-async fn app(config: &Config) -> Result<(Router, Arc<RequestHandler>), Box<dyn std::error::Error>> {
-    // The card advertises `public_url`, never the bind address — see the field
-    // docs on `Config::public_url`, and the test that enforces it.
-    let card = AgentCard {
-        // Not a mistake, and not the address: `url` is the pre-v1.0 field and
-        // is `skip_serializing`, so setting it here would publish nothing while
-        // reading as though it did. v1.0 addresses live in
-        // `supported_interfaces`.
-        url: None,
-        name: "deploy-agent".into(),
-        description: "A deployable A2A agent".into(),
-        version: env!("CARGO_PKG_VERSION").into(),
-        supported_interfaces: vec![AgentInterface {
-            url: config.public_url.clone(),
-            // `A2aRouter` serves the HTTP+JSON binding — `/message:send`,
-            // `/tasks`, and friends. Advertising `JSONRPC` here would publish a
-            // card describing a binding this process does not serve, and the
-            // only symptom is clients POSTing to `/` and getting a 404.
-            protocol_binding: "HTTP+JSON".into(),
-            protocol_version: a2a_protocol_sdk::types::A2A_VERSION.into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "greet".into(),
-            name: "Greet".into(),
-            description: "Greets whoever asks".into(),
-            tags: vec!["demo".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none().with_streaming(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    };
-
-    let mut builder = RequestHandlerBuilder::new(DeployAgent).with_agent_card(card);
-    if let Some(url) = &config.database_url {
-        // Both stores, not just the tasks: a push config registered through
-        // one replica must be found by the replica running the task.
-        builder = builder
-            .with_task_store(a2a_protocol_sdk::server::store::PostgresTaskStore::new(url).await?)
-            .with_push_config_store(
-                a2a_protocol_sdk::server::push::PostgresPushConfigStore::new(url).await?,
-            );
-    }
-    let handler = Arc::new(builder.build()?);
-
-    // `A2aRouter` already serves `/health` (liveness — a constant) and
-    // `/ready` (readiness — probes the task store). The `*z` aliases below
-    // exist only because that spelling is the convention most Kubernetes
-    // examples use; they forward to the same handlers rather than
-    // reimplementing them, so there is one source of truth for what "ready"
-    // means.
-    let handler_for_ready = Arc::clone(&handler);
-    let handler_for_shutdown = Arc::clone(&handler);
-    let router = A2aRouter::new(handler)
-        .into_router()
-        .route("/healthz", get(|| async { "ok" }))
-        .route(
-            "/readyz",
-            get(move || {
-                let handler = Arc::clone(&handler_for_ready);
-                async move {
-                    match handler.task_store_health().await {
-                        Ok(()) => (StatusCode::OK, "ready"),
-                        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "not ready"),
-                    }
-                }
-            }),
-        );
-
-    Ok((router, handler_for_shutdown))
+/// The agent's card: what it does, and where callers reach it.
+fn card(config: &Config) -> AgentCard {
+    // The card advertises `public_url`, never the bind address — see the
+    // field docs on `Config::public_url`, and the test that enforces it. Both
+    // bindings `CombinedDispatcher` serves, at the one URL: JSON-RPC on `/`,
+    // HTTP+JSON on `/message:send`, `/tasks` and the rest.
+    AgentCard::new(
+        "deploy-agent",
+        env!("CARGO_PKG_VERSION"),
+        AgentInterface::rest(&config.public_url),
+    )
+    .with_interface(AgentInterface::jsonrpc(&config.public_url))
+    .with_description("A deployable A2A agent")
+    .with_skill(AgentSkill::new("greet", "Greet", "Greets whoever asks").with_tags(["demo"]))
+    .with_capabilities(AgentCapabilities::none().with_streaming(true))
 }
 
-/// Resolves when the platform asks the process to stop.
-///
-/// SIGTERM is what a container runtime sends; SIGINT is Ctrl-C. Handling only
-/// SIGINT — the reflex when developing locally — means every rollout kills
-/// in-flight streams and the difference never shows up until production.
-async fn shutdown_signal() {
-    let interrupt = async {
-        tokio::signal::ctrl_c().await.ok();
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        use tokio::signal::unix::{SignalKind, signal};
-        match signal(SignalKind::terminate()) {
-            Ok(mut sig) => {
-                sig.recv().await;
-            }
-            // Without SIGTERM the process still stops, just abruptly. Say so
-            // rather than pretending the drain below will happen.
-            Err(e) => {
-                eprintln!("warning: cannot listen for SIGTERM ({e}); shutdown will not drain");
-                std::future::pending::<()>().await;
-            }
+/// Builds the handler: the agent, its card, and its stores.
+async fn handler(config: &Config) -> Result<Arc<RequestHandler>, Box<dyn std::error::Error>> {
+    let mut builder = RequestHandlerBuilder::new(DeployAgent).with_agent_card(card(config));
+    match &config.database_url {
+        Some(url) => {
+            tracing::info!(database = %redacted(url), "connecting to PostgreSQL");
+            // Both stores, not just the tasks: a push config registered through
+            // one replica must be found by the replica running the task.
+            tracing::info!(
+                task_pool = config.pool_size,
+                push_pool = PUSH_POOL_SIZE,
+                "PostgreSQL pools: {} connections per replica; PostgreSQL's max_connections \
+                 must exceed that times the replicas, a surge pod included",
+                config.pool_size + PUSH_POOL_SIZE
+            );
+            let tasks = a2a_protocol_sdk::server::store::PostgresTaskStore::new_with_pool_size(
+                url,
+                config.pool_size,
+            )
+            .await
+            .map_err(|e| format!("cannot open the task store at {}: {e}", redacted(url)))?;
+            let push = a2a_protocol_sdk::server::push::PostgresPushConfigStore::new_with_pool_size(
+                url,
+                PUSH_POOL_SIZE,
+            )
+            .await
+            .map_err(|e| {
+                format!(
+                    "cannot open the push-config store at {}: {e}",
+                    redacted(url)
+                )
+            })?;
+            tracing::info!("tasks and push configs in PostgreSQL; replicas may share it");
+            builder = builder.with_task_store(tasks).with_push_config_store(push);
         }
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        () = interrupt => println!("SIGINT received, draining"),
-        () = terminate => println!("SIGTERM received, draining"),
+        None => tracing::warn!(
+            "DATABASE_URL is unset: tasks are kept in this process's memory, so run one \
+             replica, or set DATABASE_URL to a PostgreSQL database every replica shares"
+        ),
     }
+    Ok(Arc::new(builder.build()?))
+}
+
+/// The listener on every address of `port`: IPv6 and IPv4 through one dual-stack
+/// socket where the host has IPv6, IPv4 alone where it does not.
+async fn bind(port: u16, config: ServeConfig) -> std::io::Result<Server> {
+    let server = match Server::bind(&format!("[::]:{port}")).await {
+        Ok(server) => server,
+        Err(_) => Server::bind(&format!("0.0.0.0:{port}")).await?,
+    };
+    Ok(server.with_config(config))
+}
+
+/// The limits the server runs with: the SDK's defaults (a 30 s header-read
+/// and a 75 s idle timeout, 5 s for tasks to end on their own, 10 s for them
+/// to act on cancellation, a 10 s connection drain) and the drain delay.
+fn serve_config(config: &Config) -> ServeConfig {
+    ServeConfig::default().with_drain_delay(config.drain_delay)
 }
 
 /// jemalloc rather than glibc's allocator; see `Cargo.toml` for the
@@ -252,59 +268,62 @@ async fn shutdown_signal() {
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> std::process::ExitCode {
     let _telemetry = telemetry();
-    let config = Config::from_env()?;
-    let (router, handler) = app(&config).await?;
+    match run().await {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        // `Display`, not the `Debug` a `main` returning `Result` prints: one
+        // line that says what failed and where.
+        Err(e) => {
+            tracing::error!("deploy-agent cannot start: {e}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
 
-    // 0.0.0.0, not 127.0.0.1: a loopback bind works on a laptop and is
-    // unreachable from outside the container, which is the single most common
-    // way a first deployment fails.
-    let listener = tokio::net::TcpListener::bind(("0.0.0.0", config.port)).await?;
-    println!(
-        "deploy-agent listening on 0.0.0.0:{} (advertising {})",
-        config.port, config.public_url
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::from_env()?;
+    let handler = handler(&config).await?;
+    let server = bind(config.port, serve_config(&config)).await?;
+    tracing::info!(
+        listening = %server.local_addr()?,
+        advertising = %config.public_url,
+        "deploy-agent serving JSON-RPC and HTTP+JSON"
     );
-    if config.database_url.is_none() {
-        eprintln!(
-            "warning: DATABASE_URL is unset: tasks are kept in this process's memory, \
-             so run one replica, or set DATABASE_URL to a PostgreSQL database every replica shares"
+
+    // `serve_with_shutdown` stops in order when the signal fires: readiness
+    // turns to "draining" and accepting goes on for the drain delay, then
+    // in-flight tasks get 5 s to finish and are cancelled with 10 s to act on
+    // it, then connections drain for up to 10 s. Each step is bounded, so the
+    // whole is (`deployment.yaml`, `terminationGracePeriodSeconds`).
+    let report = server
+        .serve_with_shutdown(
+            CombinedDispatcher::new(Arc::clone(&handler)),
+            shutdown_signal(),
+        )
+        .await;
+    if let Some(why) = &report.refused {
+        return Err(format!("the server refused to start: {why}").into());
+    }
+    if !report.drained {
+        tracing::warn!(
+            abandoned = report.abandoned,
+            "connections were still open at the drain deadline"
         );
     }
 
-    // In-flight agent work lives in the handler, not in axum, and it has to
-    // end *before* axum drains: an open SSE stream is a connection that stays
-    // open until its task ends, so a drain that runs first waits forever on
-    // tasks nobody has cancelled. So the signal future itself ends them: five
-    // seconds for short work to finish on its own, then cancellation and ten
-    // seconds for the executors to act on it — cancel what they delegated,
-    // write a terminal event — and only then does axum drain.
-    let tasks = Arc::clone(&handler);
-    axum::serve(listener, router)
-        .with_graceful_shutdown(async move {
-            shutdown_signal().await;
-            let report = tasks
-                .finish_in_flight(Duration::from_secs(5), Duration::from_secs(10))
-                .await;
-            if !report.finished {
-                eprintln!(
-                    "{} of {} task(s) did not end within the grace period",
-                    report.still_running, report.cancelled
-                );
-            }
-        })
-        .await?;
-
-    // Then the executor's cleanup hook. Report the outcome: a shutdown that
-    // cut live streams, or abandoned the cleanup, otherwise looks exactly like
-    // a clean one from outside.
-    let report = handler.shutdown_with_timeout(Duration::from_secs(5)).await;
-    if report.is_graceful() {
-        println!("drained cleanly, exiting");
+    // Then the executor's cleanup hook, and the release of every turn claim
+    // this replica holds. Report the outcome: a shutdown that cut live
+    // streams, or abandoned the cleanup, otherwise looks exactly like a clean
+    // one from outside.
+    let shutdown = handler.shutdown_with_timeout(Duration::from_secs(5)).await;
+    if shutdown.is_graceful() {
+        tracing::info!("drained cleanly, exiting");
     } else {
-        eprintln!(
-            "shutdown was not graceful: {} queue(s) force-destroyed, executor cleanup completed: {}",
-            report.queues_force_destroyed, report.executor_cleanup_completed
+        tracing::warn!(
+            queues_force_destroyed = shutdown.queues_force_destroyed,
+            executor_cleanup_completed = shutdown.executor_cleanup_completed,
+            "shutdown was not graceful"
         );
     }
     Ok(())
@@ -314,8 +333,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// `examples/hello-agent`: with an OTLP endpoint configured for a signal
 /// (`OTEL_EXPORTER_OTLP_ENDPOINT`, or that signal's own
 /// `OTEL_EXPORTER_OTLP_<SIGNAL>_ENDPOINT`), the signal goes there; without one
-/// no exporter and no export thread are built; the
-/// subscriber still prints warnings and errors, and one line saying where
+/// no exporter and no export thread are built; the subscriber still prints
+/// this process's lines and the SDK's warnings, and one line saying where
 /// each signal goes. Keep it for the life of the process: dropping it flushes.
 fn telemetry() -> a2a_protocol_sdk::server::otel::Telemetry {
     let telemetry = a2a_protocol_sdk::server::otel::Telemetry::builder()
@@ -335,165 +354,4 @@ fn telemetry() -> a2a_protocol_sdk::server::otel::Telemetry {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{Config, app};
-
-    /// Drives the real router over a real socket, because the point of this
-    /// example is the wiring — asserting on the handler directly would skip
-    /// exactly the part that can be wrong.
-    async fn spawn() -> String {
-        let config = Config {
-            port: 0,
-            public_url: "http://agent.example.com".to_string(),
-            database_url: None,
-        };
-        let (router, _handler) = app(&config).await.expect("build router");
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .expect("bind");
-        let addr = listener.local_addr().expect("addr");
-        tokio::spawn(async move {
-            axum::serve(listener, router).await.expect("serve");
-        });
-        format!("http://{addr}")
-    }
-
-    async fn get(url: &str) -> (u16, String) {
-        reqwest_get(url).await
-    }
-
-    async fn post(url: &str, body: &str) -> (u16, String) {
-        request("POST", url, Some(body)).await
-    }
-
-    /// Minimal HTTP over a raw socket — this example deliberately carries no
-    /// HTTP client dependency, and one test helper is cheaper than one.
-    async fn reqwest_get(url: &str) -> (u16, String) {
-        request("GET", url, None).await
-    }
-
-    async fn request(method: &str, url: &str, body: Option<&str>) -> (u16, String) {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-        let rest = url.strip_prefix("http://").expect("http url");
-        let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
-        let mut stream = tokio::net::TcpStream::connect(authority)
-            .await
-            .expect("connect");
-        // `A2A-Version` on every request, as a v1.0 client sends it: without
-        // it the router reads the request as 0.3 and refuses it (§3.6.2).
-        let mut req = format!(
-            "{method} /{path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\nA2A-Version: 1.0\r\n"
-        );
-        if let Some(b) = body {
-            req.push_str("content-type: application/json\r\n");
-            req.push_str(&format!("content-length: {}\r\n", b.len()));
-        }
-        req.push_str("\r\n");
-        if let Some(b) = body {
-            req.push_str(b);
-        }
-        stream.write_all(req.as_bytes()).await.expect("write");
-        let mut raw = String::new();
-        stream.read_to_string(&mut raw).await.expect("read");
-
-        let status = raw
-            .split_whitespace()
-            .nth(1)
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
-        let body = raw
-            .split_once("\r\n\r\n")
-            .map_or("", |(_, b)| b)
-            .to_string();
-        (status, body)
-    }
-
-    /// Both probes answer, and they answer *different* questions.
-    ///
-    /// `/healthz` is a constant on purpose — a liveness probe that follows a
-    /// downstream down restart-loops every replica during that downstream's
-    /// outage. `/readyz` reaches the task store, so a replica that cannot
-    /// persist stops taking traffic.
-    #[tokio::test]
-    async fn liveness_and_readiness_answer() {
-        let base = spawn().await;
-
-        let (status, body) = get(&format!("{base}/healthz")).await;
-        assert_eq!(status, 200, "/healthz should be 200");
-        assert_eq!(body, "ok", "/healthz body");
-
-        let (status, body) = get(&format!("{base}/readyz")).await;
-        assert_eq!(status, 200, "/readyz should be 200 with a working store");
-        assert_eq!(body, "ready", "/readyz body");
-    }
-
-    /// The SDK's own endpoints are served too, so a deployment can point its
-    /// probes at either spelling.
-    #[tokio::test]
-    async fn the_sdk_health_and_ready_endpoints_are_served() {
-        let base = spawn().await;
-
-        let (status, _) = get(&format!("{base}/health")).await;
-        assert_eq!(status, 200, "/health should be 200");
-
-        let (status, body) = get(&format!("{base}/ready")).await;
-        assert_eq!(status, 200, "/ready should be 200 with a working store");
-        assert!(body.contains("ready"), "unexpected /ready body: {body}");
-    }
-
-    /// The card must advertise the *public* URL. Publishing the bind address
-    /// is a deployment bug whose only symptom is clients failing to call back,
-    /// so it is worth an assertion rather than a comment.
-    #[tokio::test]
-    async fn agent_card_advertises_the_public_url_not_the_bind_address() {
-        let base = spawn().await;
-        let (status, body) = get(&format!("{base}/.well-known/agent-card.json")).await;
-
-        assert_eq!(status, 200, "agent card should be served");
-        assert!(
-            body.contains("agent.example.com"),
-            "card must advertise the configured public URL, got: {body}"
-        );
-        assert!(
-            !body.contains("127.0.0.1"),
-            "card must not leak the bind address, got: {body}"
-        );
-    }
-
-    /// The card must advertise the binding this process actually serves.
-    ///
-    /// This example first shipped advertising `JSONRPC` while `A2aRouter`
-    /// serves HTTP+JSON, which was caught by running it rather than by any
-    /// test: the card looked right, the agent started, and only a client
-    /// POSTing to `/` and getting 404 would have found it. A card that
-    /// describes a binding the process does not serve is worse than no card.
-    #[tokio::test]
-    async fn card_advertises_the_binding_the_router_actually_serves() {
-        let base = spawn().await;
-        let (_, card) = get(&format!("{base}/.well-known/agent-card.json")).await;
-        assert!(
-            card.contains("HTTP+JSON"),
-            "card should advertise HTTP+JSON, got: {card}"
-        );
-
-        // And that binding must answer where the card says it lives.
-        let (status, _) = post(
-            &format!("{base}/message:send"),
-            r#"{"message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"Ada"}]}}"#,
-        )
-        .await;
-        assert_eq!(status, 200, "the advertised binding should answer");
-    }
-
-    /// An unparseable `PORT` must stop startup, not silently fall back to the
-    /// default — a process that ignores its configuration is worse than one
-    /// that refuses to start, because the misconfiguration survives the deploy.
-    #[test]
-    fn invalid_port_is_rejected() {
-        let result = Config::from_vars(Some("not-a-port".to_owned()), None);
-
-        let err = result.err().expect("invalid PORT should be rejected");
-        assert!(err.contains("not a valid port"), "unhelpful error: {err}");
-    }
-}
+mod tests;

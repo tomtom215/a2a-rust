@@ -11,7 +11,7 @@ Part of [a2a-rust](https://github.com/tomtom215/a2a-rust), an independent
 
 ```toml
 [dependencies]
-a2a-protocol-server = "0.15"
+a2a-protocol-server = "0.16"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 

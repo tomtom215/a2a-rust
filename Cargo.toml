@@ -10,6 +10,7 @@ members = [
     "crates/a2a-protocol-client",
     "crates/a2a-protocol-server",
     "crates/a2a-protocol-sdk",
+    "crates/a2a-protocol-discovery",
     "examples/harness",
     "examples/hello-agent",
     "examples/deploy-agent",
@@ -96,8 +97,12 @@ features = ["runtime-tokio"]
 version = "0.8"
 features = ["html_reports"]
 
+# Unwinding, not `panic = "abort"`: the handler catches an executor's panic
+# and marks its task Failed, and that only works if the panic unwinds. With
+# abort, one panic in one task killed the process with every stream it served,
+# in every binary built here, the deploy-agent image included (audit A4,
+# 2026-10-29). An application's own crate uses its own profile.
 [profile.release]
-panic         = "abort"
 lto           = true
 opt-level     = 3
 codegen-units = 1

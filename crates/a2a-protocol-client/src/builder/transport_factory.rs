@@ -37,18 +37,18 @@ impl ClientBuilder {
     /// - [`ClientError::Transport`] if the selected transport cannot be
     ///   initialized; after fallbacks, it names every interface tried.
     pub fn build(mut self) -> ClientResult<A2aClient> {
-        if self.config.request_timeout.is_zero() {
-            return Err(ClientError::Transport(
-                "request_timeout must be non-zero".into(),
+        if self.config.request_timeout.is_zero() || self.config.send_timeout.is_zero() {
+            return Err(ClientError::Config(
+                "request_timeout and send_timeout must be non-zero".into(),
             ));
         }
         if self.config.stream_connect_timeout.is_zero() {
-            return Err(ClientError::Transport(
+            return Err(ClientError::Config(
                 "stream_connect_timeout must be non-zero".into(),
             ));
         }
         if self.config.connection_timeout.is_zero() {
-            return Err(ClientError::Transport(
+            return Err(ClientError::Config(
                 "connection_timeout must be non-zero".into(),
             ));
         }
@@ -180,9 +180,9 @@ impl ClientBuilder {
     pub async fn build_grpc(mut self) -> ClientResult<A2aClient> {
         use crate::transport::grpc::{GrpcTransport, GrpcTransportConfig};
 
-        if self.config.request_timeout.is_zero() {
-            return Err(ClientError::Transport(
-                "request_timeout must be non-zero".into(),
+        if self.config.request_timeout.is_zero() || self.config.send_timeout.is_zero() {
+            return Err(ClientError::Config(
+                "request_timeout and send_timeout must be non-zero".into(),
             ));
         }
         // Validated here for the same reason `build()` validates it: this path
@@ -190,7 +190,7 @@ impl ClientBuilder {
         // `stream_connect_timeout` and this one silently accepted it, because
         // it never read the field at all.
         if self.config.stream_connect_timeout.is_zero() {
-            return Err(ClientError::Transport(
+            return Err(ClientError::Config(
                 "stream_connect_timeout must be non-zero".into(),
             ));
         }
@@ -206,6 +206,7 @@ impl ClientBuilder {
         } else {
             let grpc_config = GrpcTransportConfig::default()
                 .with_timeout(self.config.request_timeout)
+                .with_send_timeout(self.config.send_timeout)
                 .with_connect_timeout(self.config.connection_timeout)
                 // Keep the response-size ceiling consistent across transports:
                 // a payload that fits the configured cap over JSON-RPC/REST
@@ -273,192 +274,64 @@ fn http_transport(
 ) -> ClientResult<Box<dyn Transport>> {
     match canonical_binding(binding) {
         Some(BINDING_JSONRPC) => Ok(Box::new(
-            JsonRpcTransport::with_all_timeouts(
+            JsonRpcTransport::from_client(
                 endpoint,
+                http_client(config, endpoint)?,
                 config.request_timeout,
                 config.stream_connect_timeout,
-                config.connection_timeout,
             )?
-            .with_max_response_size(config.max_response_size),
+            .with_max_response_size(config.max_response_size)
+            .with_send_timeout(config.send_timeout),
         )),
         Some(BINDING_HTTP_JSON) => Ok(Box::new(
-            RestTransport::with_all_timeouts(
+            RestTransport::from_client(
                 endpoint,
+                http_client(config, endpoint)?,
                 config.request_timeout,
                 config.stream_connect_timeout,
-                config.connection_timeout,
             )?
-            .with_max_response_size(config.max_response_size),
+            .with_max_response_size(config.max_response_size)
+            .with_send_timeout(config.send_timeout),
         )),
-        Some(BINDING_GRPC) => Err(ClientError::Transport(GRPC_NOT_SYNC.into())),
-        _ => Err(ClientError::Transport(format!(
+        Some(BINDING_GRPC) => Err(ClientError::Config(GRPC_NOT_SYNC.into())),
+        _ => Err(ClientError::Config(format!(
             "unknown protocol binding: {binding}"
         ))),
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::super::*;
-    use crate::config::{BINDING_GRPC, BINDING_HTTP_JSON, BINDING_REST};
-    use std::time::Duration;
+/// The HTTP client `config.tls` asks for, for a transport to `endpoint`.
+fn http_client(
+    config: &ClientConfig,
+    endpoint: &str,
+) -> ClientResult<crate::transport::HttpClient> {
+    use crate::config::TlsConfig;
 
-    #[test]
-    fn builder_defaults_to_jsonrpc() {
-        let client = ClientBuilder::new("http://localhost:8080")
-            .build()
-            .expect("build");
-        let _ = client;
+    let https = endpoint
+        .get(..8)
+        .is_some_and(|s| s.eq_ignore_ascii_case("https://"));
+    if matches!(config.tls, TlsConfig::Disabled) && https {
+        return Err(ClientError::InvalidEndpoint(format!(
+            "{endpoint} is https:// and TLS is disabled (ClientBuilder::without_tls)"
+        )));
     }
-
-    #[test]
-    fn builder_rest_transport() {
-        let client = ClientBuilder::new("http://localhost:8080")
-            .with_protocol_binding(BINDING_REST)
-            .build()
-            .expect("build");
-        let _ = client;
-    }
-
-    #[test]
-    fn builder_accepts_spec_http_json_binding() {
-        // "HTTP+JSON" is the canonical spec name for the REST binding; a card
-        // from an official SDK advertises it and must resolve, not error.
-        let client = ClientBuilder::new("http://localhost:8080")
-            .with_protocol_binding(BINDING_HTTP_JSON)
-            .build()
-            .expect("HTTP+JSON binding should resolve to the REST transport");
-        let _ = client;
-    }
-
-    #[test]
-    fn builder_grpc_sync_build_returns_error() {
-        let result = ClientBuilder::new("http://localhost:8080")
-            .with_protocol_binding(BINDING_GRPC)
-            .build();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn builder_invalid_url_returns_error() {
-        let result = ClientBuilder::new("not-a-url").build();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn builder_zero_request_timeout_errors() {
-        let result = ClientBuilder::new("http://localhost:8080")
-            .with_timeout(Duration::ZERO)
-            .build();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn builder_zero_stream_timeout_errors() {
-        let result = ClientBuilder::new("http://localhost:8080")
-            .with_stream_connect_timeout(Duration::ZERO)
-            .build();
-        assert!(result.is_err());
-    }
-
-    /// `build_grpc` must reject a zero `stream_connect_timeout`, exactly as
-    /// `build` does.
-    ///
-    /// Not symmetry for its own sake: the sync path validated the knob because
-    /// it used it, and the gRPC path accepted anything because it did not —
-    /// `build_grpc` passed `request_timeout` and `connection_timeout` and
-    /// dropped the third. The validation is the cheap, serverless half of
-    /// "this path reads the field at all"; the other half is
-    /// `the_stream_open_bound_follows_stream_connect_timeout_when_set` in
-    /// `transport::grpc`.
-    ///
-    /// The endpoint is deliberately one nothing is listening on. Validation
-    /// runs before the connect, so a passing test here proves the error came
-    /// from the check rather than from the dial.
-    #[cfg(feature = "grpc")]
-    #[tokio::test]
-    async fn build_grpc_zero_stream_timeout_errors() {
-        let result = ClientBuilder::new("http://127.0.0.1:1")
-            .with_stream_connect_timeout(Duration::ZERO)
-            .build_grpc()
-            .await;
-        let err = result.expect_err("a zero stream_connect_timeout is invalid");
-        assert!(
-            err.to_string().contains("stream_connect_timeout"),
-            "the error must name the knob that was wrong, not the dial that \
-             never should have been attempted: {err}"
-        );
-    }
-
-    #[test]
-    fn builder_zero_connection_timeout_errors() {
-        let result = ClientBuilder::new("http://localhost:8080")
-            .with_connection_timeout(Duration::ZERO)
-            .build();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn builder_unknown_binding_errors() {
-        let result = ClientBuilder::new("http://localhost:8080")
-            .with_protocol_binding("UNKNOWN_PROTOCOL")
-            .build();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn builder_rest_with_retry_policy() {
-        use crate::retry::RetryPolicy;
-
-        // Covers lines 60 (REST Box::new) and 91 (retry wrapping).
-        let client = ClientBuilder::new("http://localhost:8080")
-            .with_protocol_binding(BINDING_REST)
-            .with_retry_policy(RetryPolicy::default())
-            .build()
-            .expect("build");
-        let _ = client;
-    }
-
-    #[test]
-    fn builder_jsonrpc_with_retry_policy() {
-        use crate::retry::RetryPolicy;
-
-        // Covers line 91 (retry wrapping with JSONRPC transport).
-        let client = ClientBuilder::new("http://localhost:8080")
-            .with_retry_policy(RetryPolicy::default())
-            .build()
-            .expect("build");
-        let _ = client;
-    }
-
-    #[test]
-    fn builder_from_card_rejects_incompatible_binding() {
-        use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
-
-        let card = AgentCard {
-            url: None,
-            name: "test".into(),
-            version: "1.0".into(),
-            description: "Test agent".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:9090".into(),
-                protocol_binding: "UNKNOWN".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: None,
-            }],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
-            signatures: None,
+    #[cfg(feature = "tls-rustls")]
+    {
+        let tls = match &config.tls {
+            TlsConfig::Custom(tls) => (**tls).clone(),
+            _ => crate::tls::default_tls_config(),
         };
-
-        let result = ClientBuilder::from_card(&card).unwrap().build();
-        assert!(result.is_err(), "unknown binding should fail");
+        Ok(crate::tls::build_https_client_with_connect_timeout(
+            tls,
+            config.connection_timeout,
+        ))
     }
+    #[cfg(not(feature = "tls-rustls"))]
+    Ok(crate::transport::plain_http_client(
+        config.connection_timeout,
+    ))
 }
+
+#[cfg(test)]
+#[path = "transport_factory_tests.rs"]
+mod tests;

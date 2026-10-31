@@ -36,7 +36,7 @@ impl RestTransport {
         extra_headers: &HashMap<String, String>,
         query: &[(String, String)],
     ) -> ClientResult<EventStream> {
-        trace_info!(method, base_url = %self.inner.base_url, "opening REST SSE stream");
+        trace_debug!(method, base_url = %self.inner.base_url, "opening REST SSE stream");
 
         let req = self.build_request(method, &params, extra_headers, true, query)?;
 
@@ -51,7 +51,7 @@ impl RestTransport {
             })?
             .map_err(|e| {
                 trace_error!(method, error = %e, "HTTP client error");
-                ClientError::HttpClient(e.to_string())
+                ClientError::HttpClient(crate::error::chain(&e))
             })?;
 
         let status = resp.status();

@@ -87,6 +87,21 @@ mod sqlite {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_a_webhook_answers_each_turn_in_order() {
+        a_webhook_answers_each_turn_in_order(&TempDb::new("order")).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_a_hung_webhook_does_not_hold_events_out_of_the_store() {
+        a_hung_webhook_does_not_hold_events_out_of_the_store(&TempDb::new("hung-store")).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_a_hung_webhook_does_not_hold_the_turn_against_another_replica() {
+        a_hung_webhook_does_not_hold_the_turn_against_another_replica(&TempDb::new("hung")).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn sqlite_a_cancel_on_one_replica_stops_the_executor_on_the_other() {
         a_cancel_on_one_replica_stops_the_executor_on_the_other(&TempDb::new("cancel")).await;
     }
@@ -215,6 +230,30 @@ pub(crate) mod postgres {
     async fn postgres_a_send_to_a_task_another_replica_runs_is_refused() {
         let db = TestDb::create("refused").await;
         a_send_to_a_task_another_replica_runs_is_refused(&db).await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_webhook_answers_each_turn_in_order() {
+        let db = TestDb::create("order").await;
+        a_webhook_answers_each_turn_in_order(&db).await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_hung_webhook_does_not_hold_events_out_of_the_store() {
+        let db = TestDb::create("hung_store").await;
+        a_hung_webhook_does_not_hold_events_out_of_the_store(&db).await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_hung_webhook_does_not_hold_the_turn_against_another_replica() {
+        let db = TestDb::create("hung").await;
+        a_hung_webhook_does_not_hold_the_turn_against_another_replica(&db).await;
         db.drop_db().await;
     }
 

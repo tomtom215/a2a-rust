@@ -143,7 +143,7 @@ fn websocket_config_prints_header_names_only() {
     assert_eq!(
         shown,
         format!(
-            "WebSocketTransportConfig {{ request_timeout: 3s, \
+            "WebSocketTransportConfig {{ request_timeout: 3s, send_timeout: 600s, \
              extra_header_names: {SORTED_NAMES}, extensions: [\"urn:a2a:ext:x\"], \
              connect_timeout: 4s, max_message_size: 1024, max_pending_requests: 7{tls} }}"
         )

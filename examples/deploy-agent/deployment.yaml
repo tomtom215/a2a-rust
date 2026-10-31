@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 #
-# A Kubernetes Deployment and Service for deploy-agent.
+# A Kubernetes Deployment, Service and PodDisruptionBudget for deploy-agent.
 #
 # Every field below is here because omitting it breaks something specific; the
-# comments say which. Apply with:
+# comments say which. Before applying, create the database Secret and set the
+# image (README, "Kubernetes"). Then:
 #   kubectl apply -f examples/deploy-agent/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -17,24 +18,57 @@ spec:
   selector:
     matchLabels:
       app: deploy-agent
+  # One new pod up and ready before an old one is taken down, so a rollout
+  # never leaves fewer pods serving than it started with.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: deploy-agent
     spec:
-      # Must exceed the shutdown budget in main.rs (up to 5 s + 10 s for
-      # in-flight tasks, the HTTP drain, then one 5 s budget for the queue
-      # drain and the cleanup hook) plus, with telemetry on, the flush that
-      # runs as main returns: up to 15 s when the collector accepts
-      # connections and never answers, 1.8 s when it refuses them (measured on
-      # hello-agent, 2026-10-26). Otherwise SIGKILL arrives before the drain or
-      # the flush finishes and the shutdown is cut short.
-      terminationGracePeriodSeconds: 45
+      # Must exceed the shutdown budget in main.rs: DRAIN_DELAY_SECONDS (5),
+      # up to 5 s for tasks to end on their own, then cancellation and up to
+      # 10 s for the executors to act on it, up to 10 s of connection drain,
+      # up to 5 s for the cleanup hook and the release of the turn claims,
+      # then, with telemetry on, the flush as main returns: up to 15 s when
+      # the collector accepts connections and never answers, 1.8 s when it
+      # refuses them (measured on hello-agent, 2026-10-26). 35 s without
+      # telemetry; 50 s with it. Otherwise SIGKILL arrives before the drain
+      # or the flush finishes, the turn claims are left to expire (15 s, then
+      # another replica takes the tasks over), and the shutdown is cut short.
+      terminationGracePeriodSeconds: 60
+      # The agent calls no Kubernetes API: no token to steal.
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
+        # Pod Security Standards "restricted" refuses a pod without it.
+        seccompProfile:
+          type: RuntimeDefault
+      # Two replicas on one node are one failure. Spread across nodes (and
+      # zones, where the cluster has them), but still schedule on a one-node
+      # cluster (ScheduleAnyway).
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: deploy-agent
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: deploy-agent
       containers:
         - name: agent
+          # Set this to the image you pushed: `deploy-agent:latest` is pulled
+          # from Docker Hub by default and does not exist there (README).
           image: deploy-agent:latest
           ports:
             - containerPort: 8080
@@ -45,8 +79,18 @@ spec:
             # The externally reachable URL. This is what goes on the agent
             # card, and it is not derivable from inside the pod — get it wrong
             # and clients read the card, call the address on it, and fail.
+            # The in-cluster name below suits callers in this namespace; set
+            # the URL your ingress serves for callers outside it.
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
             - name: AGENT_URL
-              value: "http://deploy-agent.default.svc.cluster.local"
+              value: "http://deploy-agent.$(POD_NAMESPACE).svc.cluster.local"
+            # On SIGTERM the pod answers /ready with 503 at once and goes on
+            # serving for this long, while the Service's endpoints and every
+            # proxy in front learn it is leaving. Without it, requests still
+            # routed to the pod are refused on every rollout.
+            - name: DRAIN_DELAY_SECONDS
+              value: "5"
             # Two replicas behind one Service need one task store: without
             # it, a task created on one pod is not found on the other, and
             # half of all GetTask calls answer TaskNotFound (measured with two
@@ -55,7 +99,7 @@ spec:
             # pod at a time run a task, so the Service needs no session
             # affinity. Create the Secret first:
             #   kubectl create secret generic deploy-agent-db \
-            #     --from-literal=url='postgres://USER:PASSWORD@HOST:5432/DB'
+            #     --from-literal=url='postgres://USER:PASSWORD@HOST:5432/DB?sslmode=verify-full&sslrootcert=/path/ca.pem'
             # Not optional on purpose: a pod with no database would start, run
             # in memory, and lose tasks behind the balancer. For one replica
             # with no database, delete this entry and set `replicas: 1`.
@@ -73,32 +117,43 @@ spec:
             # it each process invents a random one.
             # - name: POD_NAME
             #   valueFrom: {fieldRef: {fieldPath: metadata.name}}
-            # - name: POD_NAMESPACE
-            #   valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
             # - name: OTEL_EXPORTER_OTLP_ENDPOINT
             #   value: "http://otel-collector.observability.svc.cluster.local:4318"
             # - name: OTEL_RESOURCE_ATTRIBUTES
             #   value: "service.instance.id=$(POD_NAME),k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE)"
-          # Liveness restarts a wedged process. It points at /healthz, which
+          # Startup: the port opens only once the database has answered and
+          # its schema is in place, which a cold or busy database can take
+          # tens of seconds to do. Liveness and readiness wait for this probe,
+          # so a slow start is not killed as a hung one (2 s × 45 = 90 s).
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 45
+          # Liveness restarts a wedged process. It points at /health, which
           # checks nothing on purpose: a liveness probe with a dependency turns
           # that dependency's outage into a restart loop.
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /health
               port: http
-            initialDelaySeconds: 3
             periodSeconds: 10
-          # Readiness gates traffic. Separate endpoint so that when this agent
-          # gains a dependency worth waiting for, only /readyz changes.
+            timeoutSeconds: 2
+          # Readiness gates traffic: 503 while the task store fails its
+          # health check (one statement, whatever the table's size) and while
+          # the pod is draining.
           readinessProbe:
             httpGet:
-              path: /readyz
+              path: /ready
               port: http
-            initialDelaySeconds: 1
             periodSeconds: 5
+            # Above the 2 s the readiness check gives the database before it
+            # answers 503 timeout.
+            timeoutSeconds: 3
           resources:
             requests:
-              cpu: 50m
+              cpu: 100m
               memory: 64Mi
             limits:
               memory: 256Mi
@@ -119,3 +174,14 @@ spec:
     - port: 80
       targetPort: http
       name: http
+---
+# A node drain (an upgrade, an autoscaler) takes at most one replica at a time.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: deploy-agent
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: deploy-agent

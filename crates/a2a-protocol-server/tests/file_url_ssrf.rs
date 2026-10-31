@@ -123,7 +123,7 @@ fn build_refuses_a_card_carrying_a_credential() {
         .with_agent_card(card)
         .build()
     {
-        Err(ServerError::InvalidParams(why)) => {
+        Err(ServerError::Config(why)) => {
             assert!(why.contains("supportedInterfaces[0].url"), "{why}");
         }
         other => panic!("expected a refusal, got {:?}", other.map(|_| ())),

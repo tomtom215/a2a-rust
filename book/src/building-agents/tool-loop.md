@@ -21,7 +21,7 @@ The feature is off by default:
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = { version = "0.15", features = ["tool-loop"] }
+a2a-protocol-sdk = { version = "0.16", features = ["tool-loop"] }
 ```
 
 It adds nothing to a default build's dependency graph: the model client runs

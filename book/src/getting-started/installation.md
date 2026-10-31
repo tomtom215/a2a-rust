@@ -12,7 +12,7 @@ The easiest way to use a2a-rust is through the umbrella SDK crate, which re-expo
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.15"
+a2a-protocol-sdk = "0.16"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -24,13 +24,13 @@ If you prefer fine-grained control, depend on individual crates:
 
 ```toml
 # Types only (no I/O, no async runtime)
-a2a-protocol-types = "0.15"
+a2a-protocol-types = "0.16"
 
 # Client only
-a2a-protocol-client = "0.15"
+a2a-protocol-client = "0.16"
 
 # Server only
-a2a-protocol-server = "0.15"
+a2a-protocol-server = "0.16"
 ```
 
 This is useful when:
@@ -137,11 +137,11 @@ Enable features in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = { version = "0.15", features = ["signing", "sqlite"] }
+a2a-protocol-sdk = { version = "0.16", features = ["signing", "sqlite"] }
 
 # Or with individual crates:
-a2a-protocol-server = { version = "0.15", features = ["sqlite", "axum"] }
-a2a-protocol-client = { version = "0.15", features = ["websocket"] }
+a2a-protocol-server = { version = "0.16", features = ["sqlite", "axum"] }
+a2a-protocol-client = { version = "0.16", features = ["websocket"] }
 ```
 
 ## Verifying the Installation

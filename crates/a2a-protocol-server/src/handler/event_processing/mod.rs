@@ -10,6 +10,8 @@
 //! streaming mode, which cannot hold a reference to `RequestHandler`).
 
 mod background;
+pub use background::PushLanes;
+pub use background::deliver_push_bg;
 #[cfg(test)]
 mod stale_reads;
 mod sync_collector;

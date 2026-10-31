@@ -53,10 +53,27 @@ const CLAIM_SQL: &str = "INSERT INTO a2a_task_claims
     WHERE a2a_task_claims.expires_at_ms < ?5
     RETURNING token";
 
+/// Tasks left `submitted` or `working` with no live claim, in each table.
+const ABANDONED_PLAIN_SQL: &str = "SELECT '' AS scope, t.id FROM tasks t
+    WHERE t.state IN ('TASK_STATE_SUBMITTED', 'TASK_STATE_WORKING')
+      AND t.updated_at < strftime('%Y-%m-%d %H:%M:%f', 'now', ?1)
+      AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c
+                      WHERE c.scope = '' AND c.task_id = t.id AND c.expires_at_ms > ?2)
+    ORDER BY t.updated_at LIMIT ?3";
+
+const ABANDONED_TENANT_SQL: &str = "SELECT t.tenant_id, t.id FROM tenant_tasks t
+    WHERE t.state IN ('TASK_STATE_SUBMITTED', 'TASK_STATE_WORKING')
+      AND t.updated_at < strftime('%Y-%m-%d %H:%M:%f', 'now', ?1)
+      AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c
+                      WHERE c.scope = t.tenant_id AND c.task_id = t.id AND c.expires_at_ms > ?2)
+    ORDER BY t.updated_at LIMIT ?3";
+
 /// Turn claims in a SQLite table, `a2a_task_claims`.
 #[derive(Debug, Clone)]
 pub struct SqliteTurnClaims {
     pool: SqlitePool,
+    /// The task table beside it, when a task store made it.
+    tasks: Option<super::ClaimedTasks>,
 }
 
 impl SqliteTurnClaims {
@@ -73,12 +90,15 @@ impl SqliteTurnClaims {
                 .await
                 .map_err(|e| A2aError::internal(format!("turn claims migrate: {e}")))?;
         }
-        Ok(Self { pool })
+        Ok(Self { pool, tasks: None })
     }
 
     /// Over a pool whose schema the caller has already applied.
-    pub(crate) const fn over(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub(crate) const fn over(pool: SqlitePool, tasks: super::ClaimedTasks) -> Self {
+        Self {
+            pool,
+            tasks: Some(tasks),
+        }
     }
 }
 
@@ -223,6 +243,28 @@ impl TurnClaimStore for SqliteTurnClaims {
                 .await
                 .map_err(|e| failed("sweep", &e))?;
             Ok(done.rows_affected())
+        })
+    }
+
+    fn abandoned(&self, quiet: Duration, limit: usize) -> Fut<'_, Vec<(String, String)>> {
+        Box::pin(async move {
+            let Some(tasks) = self.tasks else {
+                return Ok(Vec::new());
+            };
+            let sql = match tasks {
+                super::ClaimedTasks::Plain => ABANDONED_PLAIN_SQL,
+                super::ClaimedTasks::Tenant => ABANDONED_TENANT_SQL,
+            };
+            // `updated_at` is UTC text, 'YYYY-MM-DD HH:MM:SS.SSS', which
+            // compares in time order.
+            let cutoff = format!("-{} seconds", quiet.as_secs_f64());
+            sqlx::query_as::<_, (String, String)>(sql)
+                .bind(cutoff)
+                .bind(now_ms())
+                .bind(i64::try_from(limit).unwrap_or(i64::MAX))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| failed("abandoned", &e))
         })
     }
 }

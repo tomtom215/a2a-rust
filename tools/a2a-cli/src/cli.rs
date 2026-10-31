@@ -49,6 +49,7 @@ pub struct GlobalOpts {
     pub binding: Option<Binding>,
 
     /// Per-request timeout in seconds; also bounds establishing a stream.
+    /// `send` waits for the agent's turn, bounded by `--send-timeout`.
     #[arg(
         long,
         global = true,
@@ -57,6 +58,19 @@ pub struct GlobalOpts {
         value_parser = clap::value_parser!(u64).range(1..)
     )]
     pub timeout: u64,
+
+    /// How long `send` waits for the agent to finish its turn, in seconds. A
+    /// blocking send is answered only when the turn ends, which for an agent
+    /// calling a model takes as long as the model does; `stream` shows the
+    /// turn as it happens instead.
+    #[arg(
+        long,
+        global = true,
+        value_name = "SECS",
+        default_value_t = 600,
+        value_parser = clap::value_parser!(u64).range(1..)
+    )]
+    pub send_timeout: u64,
 
     /// Extra HTTP header sent with every request, e.g. `--header
     /// "Authorization=Bearer TOKEN"`. Repeatable. Over gRPC these become
@@ -277,6 +291,20 @@ pub enum TaskCommand {
 
     /// List tasks (`ListTasks`), one page at a time.
     List(ListArgs),
+
+    /// Follow a task's events (`SubscribeToTask`): one JSON line per event,
+    /// until the task ends or parks (input-required, auth-required).
+    Subscribe {
+        /// Agent URL (see --binding for what it must point at).
+        url: String,
+        /// The task id.
+        task_id: String,
+        /// Replay the events after this SSE event id first, then follow: what
+        /// a cut stream's error names to resume it. JSON-RPC and HTTP+JSON
+        /// only; gRPC and WebSocket frames carry no ids.
+        #[arg(long, value_name = "EVENT_ID")]
+        from: Option<String>,
+    },
 }
 
 /// Arguments for `task list`.

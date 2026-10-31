@@ -138,7 +138,9 @@ async fn rest_ready_check() {
     let addr = start_rest_server(make_handler()).await;
     let (status, body) = http_request(addr, "GET", "/ready", None, None).await;
     assert_eq!(status, 200);
-    assert!(body.contains("ok"));
+    // Readiness, not the liveness constant `{"status":"ok"}` it answered
+    // until 2026-10-29 (`tests/rest_readiness.rs`).
+    assert!(body.contains("\"ready\""), "{body}");
 }
 
 #[tokio::test]

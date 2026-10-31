@@ -32,10 +32,12 @@ pub enum CallOutcome<'a> {
     /// The handler answered and every [`after`](ServerInterceptor::after)
     /// hook succeeded: the caller is sent the handler's response.
     Succeeded,
-    /// The call failed, and this is the error the caller is sent. It came
-    /// from a [`before`](ServerInterceptor::before) hook that refused the
-    /// call, from the handler, or from an [`after`](ServerInterceptor::after)
-    /// hook.
+    /// The call failed, with this error. It came from a
+    /// [`before`](ServerInterceptor::before) hook that refused the call,
+    /// from the handler, or from an [`after`](ServerInterceptor::after) hook.
+    /// It is the error whole: the caller is sent it with an internal error's
+    /// text withheld ([`crate::error::withhold`]), unless the handler
+    /// [exposes them](crate::RequestHandlerBuilder::expose_internal_errors).
     Failed(&'a ServerError),
     /// The call's future was dropped before it answered, so the caller was
     /// sent nothing: the client disconnected, a timeout above the handler
@@ -179,6 +181,9 @@ pub trait ServerInterceptor: Send + Sync + 'static {
 #[derive(Default)]
 pub struct ServerInterceptorChain {
     interceptors: Vec<Arc<dyn ServerInterceptor>>,
+    /// Whether a caller is sent an internal error's own text; see
+    /// [`crate::error::withhold`].
+    expose_internal: bool,
 }
 
 impl ServerInterceptorChain {
@@ -186,6 +191,17 @@ impl ServerInterceptorChain {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sends callers internal errors' own text; see
+    /// [`RequestHandlerBuilder::expose_internal_errors`](crate::RequestHandlerBuilder::expose_internal_errors).
+    pub(crate) const fn expose_internal_errors(&mut self) {
+        self.expose_internal = true;
+    }
+
+    /// Whether callers are sent internal errors' own text.
+    pub(crate) const fn exposes_internal_errors(&self) -> bool {
+        self.expose_internal
     }
 
     /// Appends an interceptor to the chain.
@@ -245,6 +261,7 @@ impl fmt::Debug for ServerInterceptorChain {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ServerInterceptorChain")
             .field("count", &self.interceptors.len())
+            .field("expose_internal", &self.expose_internal)
             .finish()
     }
 }

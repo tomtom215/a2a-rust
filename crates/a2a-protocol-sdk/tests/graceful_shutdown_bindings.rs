@@ -226,8 +226,10 @@ async fn the_documented_shutdown_ends_the_delegation(binding: Binding) {
         cancelled_before_return,
         "the executor must be told to cancel before the server reports it has stopped"
     );
+    // `Failed`, failure class `transient`, since audit E-F2: shutdown is
+    // not a caller's cancel.
     assert!(
-        states.contains(&TaskState::Canceled),
+        states.contains(&TaskState::Failed) && !states.contains(&TaskState::Canceled),
         "the client must see the task end, not a stream that stops: {states:?}"
     );
     assert!(
@@ -268,7 +270,7 @@ async fn shutdown_is_seen_at_the_connection_ceiling(binding: Binding) {
     let (states, report, cancelled_before_return, _handler) =
         shut_down_during_a_delegation(binding, Some(1)).await;
     assert!(cancelled_before_return, "{report:?}");
-    assert!(states.contains(&TaskState::Canceled), "{states:?}");
+    assert!(states.contains(&TaskState::Failed), "{states:?}");
     assert!(report.drained, "{report:?}");
 }
 

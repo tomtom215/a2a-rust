@@ -232,6 +232,27 @@ fn a_temporary_failure_is_unavailable() {
     assert_eq!(status.code(), tonic::Code::Internal);
 }
 
+/// A temporary failure that names a delay — a server going away (audit
+/// E-F2) — is still `UNAVAILABLE`, with the delay as a `RetryInfo` detail,
+/// not the `RESOURCE_EXHAUSTED` of a rate limit.
+#[test]
+fn a_temporary_failure_with_a_delay_is_unavailable_with_retry_info() {
+    use a2a_protocol_types::error::A2aError;
+    use tonic_types::StatusExt as _;
+    let err = ServerError::Protocol(
+        A2aError::unavailable("shutting down").with_retry_after(std::time::Duration::from_secs(2)),
+    );
+    let status = server_error_to_status(&err);
+    assert_eq!(status.code(), tonic::Code::Unavailable);
+    assert_eq!(grpc_status_name(&err), "UNAVAILABLE");
+    let retry = status
+        .get_error_details()
+        .retry_info()
+        .cloned()
+        .expect("a RetryInfo detail");
+    assert_eq!(retry.retry_delay, Some(std::time::Duration::from_secs(2)));
+}
+
 // extract_metadata
 #[test]
 fn extract_metadata_ascii_keys() {

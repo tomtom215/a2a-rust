@@ -45,6 +45,7 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 | `max_token_age` | `Duration` | 1 hour | Stale token eviction age |
 | `push_delivery_timeout` | `Duration` | 30s | Per-webhook delivery timeout, retries included (the sender's own request timeout is 10s) |
 | `push_delivery_budget` | `Duration` | 30s | Time one event's deliveries are budgeted across all configs. Every config is attempted; the budget sets how many deliveries of an event run at once (`ceil(configs / (budget / push_delivery_timeout))`) |
+| `push_queue_capacity` | `usize` | 1024 | Deliveries that may wait behind the one under way for one task. A full lane drops the oldest that does not end a turn (`dropped`); a terminal or interrupted status is never dropped. Zero is read as one |
 | `executor_drain_timeout` | `Duration` | 5s | Bound on the blocking path's wait for the queue to close after the executor finished; also how long a continuation waits for a parked (`input-required`/`auth-required`) turn to finish: its executor to return and its events to be stored |
 | `max_artifacts_per_task` | `usize` | 1,000 | Maximum artifacts per task (prevents O(n²) serialization) |
 | `max_context_locks` | `usize` | 10,000 | Max per-context locks before cleanup |
@@ -159,7 +160,7 @@ take the same three through their own `with_completion_grace`,
 | `TenantStoreConfig` | `max_tenants` 1,000 partitions (each caller's partition counts when tasks are isolated by caller); `max_total_tasks` none |
 | `WebSocketDispatcher` | handshake timeout 10s (`with_handshake_timeout`); idle timeout off (`with_idle_timeout`; `DEFAULT_WS_IDLE_TIMEOUT` is 75s); `with_max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
 | `HttpPushSender` | 10s request timeout (`HttpPushSender::with_timeout`), 5s DNS lookup bound (`with_dns_timeout`), `PushRetryPolicy` above; SSRF guard on unless `allow_private_urls()` |
-| `JwtValidator`, `JwtAuthInterceptor` | clock-skew leeway 60s (`JwtValidator::with_leeway`); a remote JWKS is cached for 3,600s (`JwtAuthInterceptor::with_jwks_ttl`) |
+| `JwtValidator`, `JwtAuthInterceptor` | clock-skew leeway 60s (`JwtValidator::with_leeway`); a remote JWKS is cached for 3,600s (`JwtAuthInterceptor::with_jwks_ttl`) and refetched for an unknown key id at most every 10s (`with_jwks_refetch_interval`) |
 
 ### Internal Limits
 
@@ -177,7 +178,8 @@ take the same three through their own `with_completion_grace`,
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `with_protocol_binding` | `impl Into<String>` | `"JSONRPC"` (`new`); the card's first supported interface (`from_card`); the first ranked one the card offers (`from_card_preferring`) | Transport: `"JSONRPC"`, `"HTTP+JSON"` (alias `"REST"`), or `"GRPC"` — the last needs `build_grpc()`; `build()` refuses it |
-| `with_timeout` | `Duration` | 30s | Per-request timeout |
+| `with_timeout` | `Duration` | 30s | Per-request timeout, except a blocking send (below) |
+| `with_send_timeout` | `Duration` | 600s | Bound on a `SendMessage` that waits for the turn to end (`return_immediately` false, not streaming): the agent's work, not a round trip |
 | `with_connection_timeout` | `Duration` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout` | `Duration` | 30s | Establishing a stream: until the response headers (gRPC: until the call is accepted) |
 | `with_stream_first_event_timeout` | `Duration` | 5 min | Wait for a stream's first data (an event or a keep-alive) once established |
@@ -189,6 +191,7 @@ take the same three through their own `with_completion_grace`,
 | `with_return_immediately` | `bool` | false | Don't wait for completion |
 | `with_tenant` | `impl Into<String>` | None (auto from `AgentCard`) | Tenant sent on **every** request (spec §8.3.2 rule 4); a per-request `tenant` overrides it |
 | `with_grpc_bare_address_scheme` | `GrpcBareAddressScheme` | `HttpsExceptLoopback` | How `build_grpc` dials a card's bare `host:port` gRPC target: TLS except for loopback (default), always TLS, or always plaintext |
+| `with_tls_config` | `rustls::ClientConfig` | Mozilla roots plus `SSL_CERT_FILE` / `SSL_CERT_DIR` | `tls-rustls` feature: the TLS the JSON-RPC and HTTP+JSON bindings use — a private CA, a pinned self-signed certificate, or a client certificate (`tls::tls_config_from_pem` builds one from PEM). Proxies come from `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` / `NO_PROXY`, for every binding: WebSocket and gRPC through a `CONNECT` tunnel |
 | `with_grpc_tls_config` | `ClientTlsConfig` | None (bundled Mozilla roots) | `grpc-tls` feature: the TLS settings `build_grpc` uses for an `https://` endpoint, explicit or policy-chosen — a private CA, a client certificate, or a server name that differs from the host |
 | `with_interceptor` | `impl CallInterceptor` | Empty chain | Client middleware |
 | `with_max_response_size` | `usize` | 32 MiB | Largest buffered (non-streaming) response body; JSON-RPC and REST enforce it and gRPC takes it as its `max_message_size`. Not applied to a transport given to `with_custom_transport` (`WebSocketTransport` has its own `max_message_size`) |
@@ -196,11 +199,11 @@ take the same three through their own `with_completion_grace`,
 | `with_trace_propagation` | `bool` | true | Whether each call's `traceparent` names the call's own span (`otel`) |
 | `require_https_webhooks()` | — | Off | Refuse a push config whose webhook URL is plain `http://` to a non-loopback host (`ClientError::InsecureWebhook`, spec §13.2) |
 | `require_https_credentials()` | — | Off | Refuse a call that carries a credential to a non-loopback `http://`/`ws://` endpoint (spec §13.4) |
-| `without_tls()` | — | TLS on with `tls-rustls` | Plain HTTP only |
+| `without_tls()` | — | TLS on with `tls-rustls` | Plain HTTP only; `build` refuses an `https://` endpoint |
 | `without_capability_checks()` | — | Off | A client built from a card refuses, before sending, a call that needs a capability the card does not declare (`ClientError::CapabilityNotDeclared`); this sends them anyway |
 | `with_extensions` / `skip_required_extension_check()` | extension URIs | none | Ask the agent to use these extensions on every request (`A2A-Extensions`). A client built from a card refuses to build when the card marks an extension `required` that it did not ask for; `skip_required_extension_check()` builds anyway |
 
-`build()` returns an error if `request_timeout`, `stream_connect_timeout` or `connection_timeout` is zero.
+`build()` returns an error if `request_timeout`, `send_timeout`, `stream_connect_timeout` or `connection_timeout` is zero.
 
 ### GrpcTransportConfig
 
@@ -210,7 +213,8 @@ and the `with_*` setters.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `timeout` | `Duration` | 30s | Per-request timeout |
+| `timeout` | `Duration` | 30s | Per-request timeout, except a blocking send |
+| `send_timeout` | `Duration` | 600s | Bound on a blocking `SendMessage` (see `with_send_timeout` above) |
 | `connect_timeout` | `Duration` | 10s | Connection timeout |
 | `max_message_size` | `usize` | 4 MiB | Maximum message size |
 | `stream_channel_capacity` | `usize` | 64 | Streaming response buffer |

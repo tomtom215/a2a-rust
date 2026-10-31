@@ -34,6 +34,8 @@ agent_executor!(Exec, |_ctx, _q| async { Ok(()) });
 
 fn handler() -> Arc<RequestHandler> {
     let validator = JwtValidator::new()
+        .allow_any_issuer()
+        .allow_any_audience()
         .with_hs256_secret(SECRET)
         .require_scope("tasks:read")
         .require_scope("tasks:write");

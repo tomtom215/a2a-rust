@@ -452,9 +452,10 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | Type | Description |
 |------|-------------|
 | `ToolLoop` | Runs model turns until the model answers without a call, bounded by `with_max_turns` (default 8); tool errors go back to the model, and a call written as text is run as one; `with_agent_name` and `with_meter` for its `gen_ai.*` metrics |
-| `ToolLoopExecutor` | A `ToolLoop` as an `AgentExecutor`: `Working`, the `answer` and `tool-trace` artifacts, `Completed`; `Failed` as `internal` or `budget-exhausted` |
+| `ToolLoopExecutor` | A `ToolLoop` as an `AgentExecutor`: `Working`, the `answer` and `tool-trace` artifacts, `Completed`; `Failed` as `internal` or `budget-exhausted`; `with_drafts` streams each turn's text to a `draft-N` artifact first |
 | `ToolSet` | The tools a loop offers; refuses two of one name |
-| `OpenAiChatModel` | A `ToolModel` for `POST {base}/chat/completions` (OpenAI, llama-server, vLLM, Ollama) on the crate's hyper client; HTTPS with `tls-rustls` |
+| `OpenAiChatModel` | A `ToolModel` for `POST {base}/chat/completions` (OpenAI, llama-server, vLLM, Ollama) on the crate's hyper client; HTTPS with `tls-rustls`; streams for `complete_streaming` |
+| `TextSink` | Where `ToolModel::complete_streaming` hands each piece of a turn's text |
 
 ### Built-in Implementations
 

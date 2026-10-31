@@ -93,7 +93,7 @@ mod production_tests {
 
     fn refusal(b: RequestHandlerBuilder) -> String {
         match b.build() {
-            Err(crate::error::ServerError::InvalidParams(m)) => m,
+            Err(crate::error::ServerError::Config(m)) => m,
             other => panic!("expected a refusal, got {:?}", other.map(|_| ())),
         }
     }
@@ -206,7 +206,7 @@ mod tests {
 
     fn refusal(b: RequestHandlerBuilder) -> String {
         match b.build() {
-            Err(crate::error::ServerError::InvalidParams(m)) => m,
+            Err(crate::error::ServerError::Config(m)) => m,
             other => panic!("expected a refusal, got {:?}", other.map(|_| ())),
         }
     }

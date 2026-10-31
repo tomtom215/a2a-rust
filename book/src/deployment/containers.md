@@ -43,12 +43,16 @@ What the Dockerfile does, and why:
 - **Pinned bases.** `rust:1.94-bookworm` to build and `debian:bookworm-slim`
   to run, each pinned by digest. Debian slim rather than distroless or
   scratch, because the binary links glibc.
-- **No certificate store needed by the agent.** The SDK verifies TLS (push
-  notifications, the client, the telemetry exporters) against its bundled
-  Mozilla roots and never reads the image's store; `ca-certificates` is
-  installed for tools run inside the container. A private CA reaches the
-  agent through the SDK's CA options, and reaches telemetry through
-  `OTEL_EXPORTER_OTLP_CERTIFICATE` (a mounted PEM).
+- **Certificates.** The SDK verifies TLS against its bundled Mozilla roots,
+  so a public CA needs nothing from the image. A private CA (or a
+  TLS-inspecting proxy's root) reaches the A2A client, card discovery, JWKS
+  and the token provider through `SSL_CERT_FILE` or `SSL_CERT_DIR` (a mounted
+  PEM file or directory, trusted beside Mozilla's roots), or in code through
+  `ClientBuilder::with_tls_config`; it reaches telemetry through
+  `OTEL_EXPORTER_OTLP_CERTIFICATE`, and the PostgreSQL store through the
+  URL's `sslrootcert`. `ca-certificates` is installed for tools run inside
+  the container; `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt` makes the
+  client trust it too.
 - **Unprivileged.** It runs as uid 10001; many cluster admission policies
   refuse a container that runs as root.
 - **The binary is PID 1.** `ENTRYPOINT` is in exec form, so the process
@@ -103,14 +107,20 @@ What each part of the manifest is for:
 | Field | Value | Why |
 |---|---|---|
 | `replicas` | `2` | Both share PostgreSQL, whose turn claims let one pod at a time run a task, so the `Service` needs no session affinity ([Running More Than One Replica](./horizontal-scaling.md)) |
-| `terminationGracePeriodSeconds` | `45` | Must exceed the shutdown budget in `main.rs` plus the telemetry flush, or `SIGKILL` cuts the shutdown short ([Graceful shutdown](./production/graceful-shutdown.md)) |
-| `livenessProbe` | `GET /healthz` every 10 s | Checks nothing, so a database outage does not become a restart loop ([Health checks](./health-checks.md)) |
-| `readinessProbe` | `GET /readyz` every 5 s | Reaches the task store, so a pod that cannot stops receiving traffic |
-| `securityContext` (pod) | `runAsNonRoot: true`, `runAsUser: 10001` | Matches the image's user |
+| `strategy` | `RollingUpdate`, `maxSurge: 1`, `maxUnavailable: 0` | A new pod is ready before an old one goes |
+| `terminationGracePeriodSeconds` | `60` | Must exceed the shutdown budget in `main.rs` plus the telemetry flush, or `SIGKILL` cuts the shutdown short ([Graceful shutdown](./production/graceful-shutdown.md)) |
+| `startupProbe` | `GET /health` every 2 s, 45 tries | The port opens once the database has answered; liveness waits for it, so a slow first connection is not killed as a hang |
+| `livenessProbe` | `GET /health` every 10 s | Checks nothing, so a database outage does not become a restart loop ([Health checks](./health-checks.md)) |
+| `readinessProbe` | `GET /ready` every 5 s | `503` while the task store fails its health check or the pod is draining |
+| `DRAIN_DELAY_SECONDS` | `5` | After `SIGTERM`, not ready and still serving while the endpoints and proxies learn the pod is leaving |
+| `automountServiceAccountToken` | `false` | The agent calls no Kubernetes API |
+| `topologySpreadConstraints` | by node and by zone, `ScheduleAnyway` | Two replicas on one node are one failure |
+| `securityContext` (pod) | `runAsNonRoot: true`, `runAsUser: 10001`, `seccompProfile: RuntimeDefault` | Matches the image's user; Pod Security "restricted" refuses a pod without the seccomp profile |
 | `securityContext` (container) | `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `capabilities.drop: ["ALL"]` | The agent needs no privileges and writes nothing to the image |
-| `resources` | requests `cpu: 50m`, `memory: 64Mi`; limit `memory: 256Mi` | The example's values; size your own agent from its metrics |
-| `env` | `PORT`, `AGENT_URL`, `DATABASE_URL`, and commented `OTEL_*` entries | Uncomment the telemetry entries to export to an in-cluster Collector |
+| `resources` | requests `cpu: 100m`, `memory: 64Mi`; limit `memory: 256Mi` | The example's values; size your own agent from its metrics |
+| `env` | `PORT`, `AGENT_URL`, `DRAIN_DELAY_SECONDS`, `DATABASE_URL`, and commented `OTEL_*` entries | Uncomment the telemetry entries to export to an in-cluster Collector |
 | `Service` | port 80 to the container's `http` port | No session affinity |
+| `PodDisruptionBudget` | `maxUnavailable: 1` | A node drain takes one replica at a time |
 
 The commented telemetry entries set `OTEL_EXPORTER_OTLP_ENDPOINT` to a
 Collector's OTLP/HTTP port (4318; port 4317 is gRPC and also needs

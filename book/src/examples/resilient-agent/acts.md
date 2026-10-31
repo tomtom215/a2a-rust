@@ -69,7 +69,9 @@ failed task's id is refused: terminal tasks accept no new messages, so
 "retry" means "new task". The executor's error text is the `Failed` task's
 status message — an agent-role `Message` with one text part, which the sync
 collector copies onto the task and the store persists — so a blocking caller,
-and a `GetTask` after the fact, both read why. The act streams a second
+and a `GetTask` after the fact, both read why. The act builds its handler with
+`expose_internal_errors()`: by default an internal error's text is withheld
+from callers, who are given a reference to it in the log instead. The act streams a second
 failing send to show the event still carries `metadata.error` for streaming
 callers.
 

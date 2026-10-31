@@ -46,28 +46,13 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-#[cfg(not(feature = "tls-rustls"))]
-use http_body_util::Full;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper::body::Bytes;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::Client;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::connect::HttpConnector;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::rt::TokioExecutor;
-
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 use crate::transport::Transport;
 
 // ── Type aliases ──────────────────────────────────────────────────────────────
 
-#[cfg(not(feature = "tls-rustls"))]
-type HttpClient = Client<HttpConnector, Full<Bytes>>;
-
-#[cfg(feature = "tls-rustls")]
-type HttpClient = crate::tls::HttpsClient;
+use crate::transport::HttpClient;
 
 // ── RestTransport ─────────────────────────────────────────────────────────────
 
@@ -85,6 +70,8 @@ struct Inner {
     client: HttpClient,
     base_url: String,
     request_timeout: Duration,
+    /// How long a blocking `SendMessage` may wait for the turn.
+    send_timeout: Duration,
     stream_connect_timeout: Duration,
     max_response_size: usize,
 }
@@ -154,19 +141,7 @@ impl RestTransport {
             )));
         }
 
-        #[cfg(not(feature = "tls-rustls"))]
-        let client = {
-            let connector = crate::transport::connector::http_connector(connection_timeout);
-            Client::builder(TokioExecutor::new())
-                .pool_idle_timeout(Duration::from_secs(90))
-                .build(connector)
-        };
-
-        #[cfg(feature = "tls-rustls")]
-        let client = crate::tls::build_https_client_with_connect_timeout(
-            crate::tls::default_tls_config(),
-            connection_timeout,
-        );
+        let client = crate::transport::default_http_client(connection_timeout);
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -175,8 +150,39 @@ impl RestTransport {
                 request_timeout,
                 stream_connect_timeout,
                 max_response_size: super::DEFAULT_MAX_RESPONSE_SIZE,
+                send_timeout: super::DEFAULT_SEND_TIMEOUT,
             }),
         })
+    }
+
+    /// A transport to `base_url` over `client`, as the builder makes one.
+    pub(crate) fn from_client(
+        base_url: impl Into<String>,
+        client: HttpClient,
+        request_timeout: Duration,
+        stream_connect_timeout: Duration,
+    ) -> ClientResult<Self> {
+        let base_url = base_url.into();
+        super::jsonrpc::validate_url(&base_url)?;
+        Ok(Self {
+            inner: Arc::new(Inner {
+                client,
+                base_url,
+                request_timeout,
+                stream_connect_timeout,
+                max_response_size: super::DEFAULT_MAX_RESPONSE_SIZE,
+                send_timeout: super::DEFAULT_SEND_TIMEOUT,
+            }),
+        })
+    }
+
+    /// Sets how long a blocking `SendMessage` (one without
+    /// `return_immediately`) may wait for the agent's turn to end; see
+    /// [`DEFAULT_SEND_TIMEOUT`](super::DEFAULT_SEND_TIMEOUT).
+    #[must_use]
+    pub fn with_send_timeout(mut self, timeout: Duration) -> Self {
+        Arc::make_mut(&mut self.inner).send_timeout = timeout;
+        self
     }
 
     /// Sets the maximum size in bytes of a buffered (non-streaming) response

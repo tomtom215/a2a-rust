@@ -66,8 +66,12 @@ async fn executor_failures() -> Check {
 
 async fn executor_failures_inner() -> Result<String, String> {
     let tally = Arc::new(FlakyTally::failing_first(EXECUTOR_FAILURES));
+    // This act shows the caller why each send failed, so the handler sends
+    // the executor's error text; by default an internal error's text is
+    // withheld from callers (audit SEC-07).
     let handler = RequestHandlerBuilder::new(FlakyExecutor(Arc::clone(&tally)))
         .without_agent_card()
+        .expose_internal_errors()
         .build()
         .map_err(|e| format!("building the handler: {e}"))?;
     let (_handler, url) = serve(handler).await?;
@@ -205,6 +209,7 @@ async fn executor_failures_inner() -> Result<String, String> {
 async fn streamed_failure_text() -> Result<String, String> {
     let handler = RequestHandlerBuilder::new(FlakyExecutor(Arc::new(FlakyTally::failing_first(1))))
         .without_agent_card()
+        .expose_internal_errors()
         .build()
         .map_err(|e| format!("building the streaming handler: {e}"))?;
     let (_handler, url) = serve(handler).await?;

@@ -228,8 +228,10 @@ async fn a_refused_delegation_fails_the_task_as_transient() {
     assert_eq!(task.failure_class(), Some(FailureClass::Transient));
     let why = task.status.message.as_ref().expect("status message");
     let text = why.text().unwrap_or_default();
+    // The downstream address is the agent's to know, not its caller's: the
+    // client's error text is withheld (audit SEC-07), the class kept.
     assert!(
-        text.contains(&port.to_string()) || text.to_lowercase().contains("connect"),
-        "the client's own error text must reach the caller, got {text:?}"
+        !text.contains(&port.to_string()) && text.contains("internal error (reference "),
+        "the client's own error text is withheld from the caller, got {text:?}"
     );
 }

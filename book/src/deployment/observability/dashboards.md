@@ -99,13 +99,19 @@ points: tune `for:` and the ratios to your traffic.
 | `A2APushDeliveryTruncated` | warning | Any `timeout_truncated` push delivery over 15 m, for 5 m | `push_delivery_timeout` is shorter than the sender's retry schedule, so deliveries are given up with attempts remaining. A configuration problem: it will not resolve on its own and no webhook reports it |
 | `A2APushDeliveryFailing` | warning | `a2a:push_delivery_failure_ratio:rate5m > 0.2` for 15 m | Over 20% of push deliveries failed, timed out or were truncated. Split by outcome with `a2a:push_deliveries:rate5m` |
 | `A2AUnaryLatencyHigh` | warning | `a2a:rpc_server_unary_latency:p99_5m > 2.5` for 15 m | The p99 of non-streaming calls, per job and method, is above 2.5 s. A blocking `SendMessage` includes the executor's work: set the threshold per method if your agents run long turns |
-| `A2AAgentSilent` | critical | An instance with `target_info` in the last hour and none in the last 10 m | An agent, or its exporter, has stopped. Over OTLP there is no scrape and so no `up` series; `target_info` comes with every export |
+| `A2AAgentSilent` | critical | A job with `target_info` in the last day and none from any instance in the last 10 m | The agent, or its exporters, have stopped. Over OTLP there is no scrape and so no `up` series; `target_info` comes with every export |
+| `A2AAgentInstancesLost` | warning | Fewer instances of a job sent `target_info` in the last 10 m than in the same 10 m an hour before, for 5 m | An instance stopped and was not replaced, or the job was scaled in |
 
-`A2AAgentSilent` is keyed on the instance, so every instance a rollout retires
-fires it, from ten minutes after its last export until an hour has passed.
-Give each replica a stable `service.instance.id`
-([Resource attributes](./resource.md#one-identity-per-replica)) so a restart is
-not a new instance.
+`A2AAgentSilent` is keyed on the job, so a rollout or a restart, which
+replaces instances, does not fire it, and a job that stays down keeps it
+firing for a day. Until 2026-10-30 it was keyed on the instance over an
+hour: every instance a rollout retired paged, and a fleet that was really
+down stopped paging after an hour (audit C-04). `A2AAgentInstancesLost`
+compares counts, so it too ignores a rollout; it resolves within the hour,
+once the smaller fleet is what the hour before saw. A stable
+`service.instance.id` per replica
+([Resource attributes](./resource.md#one-identity-per-replica)) keeps a
+restart from being a new series.
 
 ### What each signal tells you
 
@@ -179,7 +185,7 @@ healthy, every recording rule has data and every dashboard query returns data:
 
 ```bash
 python3 deploy/observability/scripts/check_dashboards.py \
-  --grafana http://127.0.0.1:3000 --prometheus http://127.0.0.1:9090 \
+  --grafana http://127.0.0.1:3001 --prometheus http://127.0.0.1:9090 \
   deploy/observability/grafana/dashboards \
   --expect-empty "Persistence errors" "HTTP connections"
 ```

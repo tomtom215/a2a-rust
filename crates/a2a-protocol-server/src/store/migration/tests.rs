@@ -253,3 +253,31 @@ async fn composite_index_exists_after_v3() {
 
     assert_eq!(rows.len(), 1);
 }
+
+/// A migration that fails leaves no transaction open on the connection it
+/// used. Until 2026-10-29 every `?` after the raw `BEGIN EXCLUSIVE` returned
+/// with it open (audit D-14): the pool's one connection came back still in a
+/// transaction, and the next `BEGIN` on it failed.
+#[tokio::test]
+async fn a_failed_migration_rolls_its_transaction_back() {
+    static BROKEN: &[Migration] = &[Migration {
+        version: 1,
+        description: "a statement that cannot run",
+        sql: "CREATE TABLE ok_table (x INTEGER); THIS IS NOT SQL",
+    }];
+    let pool = memory_pool().await;
+    let runner = MigrationRunner::with_migrations(pool.clone(), BROKEN);
+    runner.run_pending().await.expect_err("the migration fails");
+
+    // The table it created inside the transaction is gone: rolled back.
+    let tables: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_master WHERE name = 'ok_table'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(tables, 0, "the failed migration's work was rolled back");
+    // And the connection can open a transaction again.
+    let mut tx = pool.begin().await.expect("no transaction left open");
+    sqlx::query("SELECT 1").execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+}

@@ -32,19 +32,30 @@ pub const BINDING_GRPC: &str = "GRPC";
 
 // ── TlsConfig ────────────────────────────────────────────────────────────────
 
-/// TLS configuration for the HTTP client.
+/// TLS configuration for the HTTP bindings (JSON-RPC, HTTP+JSON).
 ///
-/// When TLS is disabled, the client only supports plain HTTP (`http://` URLs).
-/// Enable the `tls-rustls` feature to support HTTPS.
+/// The gRPC and WebSocket transports take their own
+/// ([`ClientBuilder::with_grpc_tls_config`](crate::ClientBuilder), the
+/// WebSocket transport's constructor).
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum TlsConfig {
-    /// Plain HTTP only; HTTPS connections will fail.
+    /// Plain HTTP only: an `https://` endpoint is refused when the client is
+    /// built. Until 2026-10-29 this setting was never read (audit B-17).
     Disabled,
-    /// Enable TLS using the system's default configuration.
+    /// rustls with [`tls::default_tls_config`](crate::tls::default_tls_config):
+    /// Mozilla's roots plus any `SSL_CERT_FILE` / `SSL_CERT_DIR` names.
     ///
     /// Requires the `tls-rustls` feature.
     #[cfg(feature = "tls-rustls")]
     Rustls,
+    /// rustls with this config: extra roots, a pinned self-signed
+    /// certificate, a client certificate for mutual TLS
+    /// ([`tls::tls_config_from_pem`](crate::tls::tls_config_from_pem)).
+    ///
+    /// Requires the `tls-rustls` feature.
+    #[cfg(feature = "tls-rustls")]
+    Custom(std::sync::Arc<rustls::ClientConfig>),
 }
 
 #[allow(clippy::derivable_impls)]
@@ -144,10 +155,19 @@ pub struct ClientConfig {
     /// rather than waiting for completion.
     pub return_immediately: bool,
 
-    /// Per-request timeout for non-streaming calls.
+    /// Per-request timeout for non-streaming calls, except a blocking
+    /// `SendMessage` (see [`send_timeout`](Self::send_timeout)).
     ///
     /// Defaults to 30 seconds.
     pub request_timeout: Duration,
+
+    /// How long a blocking `SendMessage` (one without
+    /// [`return_immediately`](Self::return_immediately)) waits for the
+    /// agent's turn to end. Defaults to
+    /// [`DEFAULT_SEND_TIMEOUT`](crate::transport::DEFAULT_SEND_TIMEOUT), ten
+    /// minutes: the answer comes only when the turn ends, which for an agent
+    /// that calls a model is as long as the model takes.
+    pub send_timeout: Duration,
 
     /// Timeout for **establishing** a stream: until the response headers
     /// arrive (gRPC: until the call is accepted), and for reading the error
@@ -296,6 +316,7 @@ impl ClientConfig {
             history_length: None,
             return_immediately: false,
             request_timeout: Duration::from_secs(30),
+            send_timeout: crate::transport::DEFAULT_SEND_TIMEOUT,
             stream_connect_timeout: Duration::from_secs(30),
             stream_first_event_timeout: DEFAULT_STREAM_FIRST_EVENT_TIMEOUT,
             connection_timeout: Duration::from_secs(10),
@@ -320,6 +341,7 @@ impl Default for ClientConfig {
             history_length: None,
             return_immediately: false,
             request_timeout: Duration::from_secs(30),
+            send_timeout: crate::transport::DEFAULT_SEND_TIMEOUT,
             stream_connect_timeout: Duration::from_secs(30),
             stream_first_event_timeout: DEFAULT_STREAM_FIRST_EVENT_TIMEOUT,
             connection_timeout: Duration::from_secs(10),
@@ -377,6 +399,13 @@ impl ClientConfig {
         self
     }
 
+    /// Sets [`send_timeout`](Self::send_timeout).
+    #[must_use]
+    pub const fn with_send_timeout(mut self, timeout: Duration) -> Self {
+        self.send_timeout = timeout;
+        self
+    }
+
     /// Sets the timeout for establishing a stream (headers, or an error
     /// body). See [`stream_connect_timeout`](Self::stream_connect_timeout).
     #[must_use]
@@ -427,8 +456,11 @@ impl ClientConfig {
     }
 
     /// Sets the TLS configuration.
+    // Const only without `tls-rustls`: with it `TlsConfig` holds an `Arc`,
+    // whose destructor a const fn cannot run.
+    #[cfg_attr(not(feature = "tls-rustls"), allow(clippy::missing_const_for_fn))]
     #[must_use]
-    pub const fn with_tls(mut self, tls: TlsConfig) -> Self {
+    pub fn with_tls(mut self, tls: TlsConfig) -> Self {
         self.tls = tls;
         self
     }

@@ -663,13 +663,13 @@ async fn handle_health() -> axum::response::Response {
 /// — a bounded discriminant, never the store's message, which could carry a
 /// connection string.
 async fn handle_ready(State(state): State<A2aState>) -> axum::response::Response {
-    match state.handler.task_store_health().await {
+    match state.handler.readiness().await {
         Ok(()) => axum::Json(serde_json::json!({"status": "ready"})).into_response(),
-        Err(e) => (
+        Err(reason) => (
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
             axum::Json(serde_json::json!({
                 "status": "not_ready",
-                "reason": e.metric_label(),
+                "reason": reason,
             })),
         )
             .into_response(),

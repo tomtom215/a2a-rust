@@ -233,6 +233,10 @@ impl TaskStore for EncryptedTaskStore {
         self.inner.count()
     }
 
+    fn health(&self) -> Fut<'_, ()> {
+        self.inner.health()
+    }
+
     fn isolates_tenants(&self) -> bool {
         self.inner.isolates_tenants()
     }

@@ -31,11 +31,11 @@ COPY . .
 RUN cargo build --release --locked -p deploy-agent
 
 # Debian slim rather than distroless or scratch: the binary links glibc. The
-# SDK verifies TLS (push notifications, the client, the telemetry exporters)
-# against its bundled Mozilla roots and never reads this image's certificate
-# store, so `ca-certificates` below is for tools run inside the container, not
-# for the agent. A private CA reaches the agent through the SDK's CA options,
-# and reaches telemetry through OTEL_EXPORTER_OTLP_CERTIFICATE (a mounted PEM).
+# SDK verifies TLS against its bundled Mozilla roots, so a public CA needs
+# nothing here. A private CA reaches the A2A client through SSL_CERT_FILE or
+# SSL_CERT_DIR (a mounted PEM; set SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+# to trust this image's store), telemetry through OTEL_EXPORTER_OTLP_CERTIFICATE,
+# and PostgreSQL through the URL's sslrootcert.
 FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
 
 RUN apt-get update \

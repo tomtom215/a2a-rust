@@ -19,22 +19,103 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
+- **Branch `claude/amazing-turing-y8pjhv` (2026-10-29), from `main` at
+  `8dc4331`: a pre-release audit, not a release.** The maintainer asked for
+  every remaining gap to be found and fixed before 0.15.1 or later, with live
+  runs against llama.cpp and small Qwen and Gemma models.
+  - **The task list is `docs/audits/2026-10-29/README.md`**: eight
+    read-only reviews (reports A to H beside it) plus findings from live runs
+    (section L), and four low findings from re-reading this branch's own
+    fixes (section M). Its `Status` column is the only record of what was checked;
+    count it rather than trusting a figure here. At this commit, 226 rows:
+    149 `open`, 4 `confirmed (read)`, 59 `fixed`, 4 `fixed (part)`, 7
+    `verified live`, 1 refuted, 2 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
+    including a "Breaking Changes" section.
+  - **Not release-ready.** L5 (no token streaming in the tool loop) was
+    built as the maintainer chose on 2026-10-30: a draft artifact per turn
+    (`ToolLoopExecutor::with_drafts`), the `answer` artifact sent whole at
+    the end as before. 149 rows stay `open`. By the list's own labels: 3 S0
+    (H2, H3, H4), 9 S1 (H5 to H11, H13, H19), 1 high (B-03), 52 medium,
+    5 S2, 5 low to medium, 69 low and 5 info. **This handoff said "every
+    row judged release-relevant is fixed" until 2026-10-30; that was not
+    checked and is withdrawn.** Some open rows are likely stale (H2's
+    private CA and mTLS look covered by `TlsConfig::Custom`, H3's orphaned
+    `working` tasks by the turn-claim reaper), some are real (H4, the S1
+    designs), and none has been re-checked against the code since its
+    report was written.
+  - **How #184 was verified, the bar for what follows.** Before a push:
+    `scripts/preflight.sh --force`; every script gate (the list is in the
+    workflow's Static checks job); `cargo hack clippy -p a2a-protocol-types
+    -p a2a-protocol-client -p a2a-protocol-server -p a2a-protocol-sdk
+    --all-targets --each-feature -- -D warnings`, exactly as CI runs it
+    (one crate is not enough: 3dac520 failed the matrix that way);
+    `scripts/run_postgres_suites.py` against PostgreSQL; and, for each
+    crate a change touches, `cargo mutants --in-diff` on its diff from
+    `main` (the command is in `.github/workflows/mutants.yml`). Hand-picked
+    mutants are not that check: two CI mutation runs (on df86307 and
+    8ec32f4) found 47 survivors that hand-picking had missed (10 client,
+    10 discovery, 27 server). The
+    server's full run is 20 shards of about 50 minutes; locally, apply its
+    survivors by hand (scratchpad script pattern: replace, run the one
+    test, restore) and let CI's run be the full one. macOS and Windows
+    cannot be run here; CI is their check.
+  - **Pull request [#184](https://github.com/tomtom215/a2a-rust/pull/184)**
+    (2026-10-30). The workspace reads **0.16.0**, bumped there at the
+    maintainer's choice because `cargo-semver-checks` blocks the branch's
+    deliberate breaks under 0.15.x (0.15.1 was prepared, never published:
+    crates.io has 0.15.0). It is a version bump, not a release: no tag,
+    `CITATION.cff` and `ROADMAP.md` still name 0.15.1, and the
+    `0.15 → 0.16` upgrade guide is
+    `book/src/reference/upgrading/0.15-to-0.16.md`. Before tagging 0.16.0:
+    RELEASING.md's checklist, and STABILITY.md's cadence, since 0.15.0 was
+    a breaking release in October 2026 (a second one that month needs a
+    `**Cadence exception:**`). The SLIMRPC binding's requirements read
+    `0.16`; its own version (0.7.0) moves at its own release (RELEASING.md,
+    "releases separately").
+  - **mDNS discovery is built, not released:** `crates/a2a-protocol-discovery`
+    (ADR 0029, proposed) is `publish = false`. Publishing it needs its
+    crates.io name set up for trusted publishing and a place in
+    `.github/workflows/release.yml` (packaging steps, SBOM and attestation
+    lists); then `a2a discover` can join the CLI. Its round-trip tests need
+    multicast looped back on the CI runner. First run in CI on pull request
+    #184: on macOS the browse heard the agent only over loopback, and
+    `card_urls` left loopback out, so the card fetch had no URL; it now
+    falls back to loopback when that is all there is.
+  - **Run live 2026-10-30:** `live-model` 10 of 10 against Qwen3.5-4B and
+    against Gemma 4 E2B (task list L13 to L15); with the drafts check, 11
+    of 11 twice against Qwen3.5-2B (`examples/live-model/README.md`); every
+    server PostgreSQL test through PgBouncer 1.26.1, 147 of 151, which found the halt store's
+    `LISTEN` broken behind it (L16, fixed; L17).
+    `deploy-agent` as two hardened containers on PostgreSQL (L18).
+    `promtool test rules` (Prometheus 3.15.1, from its image) on
+    `deploy/observability/prometheus/tests/`: passes. CI does not run it.
+  - **Not yet run live:** the client dashboard with a
+    long-lived client (L11: short-lived CLI processes never export); the
+    `deploy-agent` Dockerfile's build stages (its runtime stage ran, L18).
+  - **First, next session (plan agreed with the maintainer 2026-10-30),
+    once #184 is green and merged:**
+    1. **Triage, no code.** Re-check every `open` row against the code on
+       `main`: read it, or run it where it is a behaviour. Mark each
+       `fixed` (with the commit), `confirmed (read)` or `verified live`
+       (still real), `not a defect`, or `needs decision` (a design the
+       maintainer chooses, as L5 was). Start with the S0, S1 and high rows
+       above, then the rest by severity. Correct the count here.
+    2. **Fix in themed pull requests**, each held to the bar above before
+       its first push: docs and READMEs (report G's 33 rows, mostly
+       cheap), then client, then stores, then the remaining SEC rows.
+    3. **The H-report designs** (retry budget and circuit breaker,
+       admission queue and fairness, task lineage and tree-scoped halt,
+       per-tenant metrics, polyglot swarm controls) each need an ADR and
+       the maintainer's choice before they are built; set out the options
+       for each, as was done for L5, rather than building one.
 - **Branch `claude/intelligent-bohr-9qraxk` (2026-10-28), on `main` at
   `568fc6c1` (pull request #182, the 0.15.1 preparation, merged; no tag).**
   The maintainer judged 0.15.0 not ready in practice and asked for everything
   to be run live before another release. Done here, each item verified by the
   run named in `CHANGELOG.md` `[Unreleased]`, where every change is listed:
-  - **Pull request [#183](https://github.com/tomtom215/a2a-rust/pull/183)
-    (draft) carries this branch; first, read its CI.** On the last full run
-    every job passed except three, none a defect of the branch: "Sign-off and
-    authorship" (the commits are the assistant's; the maintainer re-authors
-    and signs off), "Rust lockfiles" (OSV GHSA-qwgh-2vcv-g2f7 on
-    `block-buffer` 0.10.4, red on `main` too; now waived beside the four
-    lockfiles that carry it, because 0.10.4 does not have the advisory's
-    inline cursor, checked under Miri: `osv-scanner.toml`; remove the
-    waivers when the lock reaches `block-buffer` 0.12.1), and "Mutation Testing (incremental)", which wants the
-    `mutation-test` label. Run `scripts/preflight.sh` (CONTRIBUTING) before
-    each push; three CI failures in this round were gates it runs.
+  - **Merged as pull request
+    [#183](https://github.com/tomtom215/a2a-rust/pull/183)** (`8dc4331`).
+    Run `scripts/preflight.sh` (CONTRIBUTING) before each push.
   - **The review's follow-ups (2026-10-29)**, each in `CHANGELOG.md` or a
     commit message with its evidence: retry metrics
     (`a2a.server.store_retries`); the queue's write wait tied to
@@ -210,8 +291,8 @@ only: when something here is done, delete it rather than annotating it.
   the book with stale claims (`tools/a2a-cli` exit codes and `--header` on
   `card`, `tck/README.md` on BIND-EQUIV-004, `packaging/README.md` on the
   signing key).
-- **Working branch:** `claude/intelligent-bohr-9qraxk`, from `main` at
-  `568fc6c1`. `git log origin/main..` lists what it holds that `main` lacks.
+- **Working branch:** `claude/amazing-turing-y8pjhv`, from `main` at
+  `8dc4331`. `git log origin/main..` lists what it holds that `main` lacks.
 - **Merged in #179** (branch `claude/zealous-fermat-f4kg9z`, 2026-10-23 to
   2026-10-24; merged 2026-10-24 13:23 UTC as `2781bb69`). The PR head
   `6707f4d` had 104 check runs, 98 success and 6 skipped by their own

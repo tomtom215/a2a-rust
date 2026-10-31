@@ -29,7 +29,7 @@ use crate::streaming::{EventQueueManager, EventQueueWriter, InMemoryQueueWriter}
 use super::super::budget;
 #[cfg(feature = "tracing")]
 use super::create::continues;
-use super::terminal::TerminalTracking;
+use super::terminal::{Stop, TerminalTracking};
 
 mod run_timer;
 use run_timer::{RunTimer, run_outcome};
@@ -267,6 +267,7 @@ impl RequestHandler {
         // spawn was the one that did not.
         let tenant = crate::store::tenant::TenantContext::capture();
         let shutdown = self.in_flight.shutdown_token();
+        let expose_internal = self.interceptors.exposes_internal_errors();
         #[cfg(feature = "audit")]
         let audit = self.audit_hook();
 
@@ -314,16 +315,16 @@ impl RequestHandler {
             let writer = writer.with_recorder(recorder);
             let run = RunTimer::start(metrics);
             let result = budget::run_bounded(&ctx, executor_timeout, |timeout| {
-                run_executor(executor.as_ref(), &ctx, &writer, timeout)
+                run_executor(executor.as_ref(), &ctx, &writer, timeout, expose_internal)
             })
             .await;
-            let stopped = shutdown.is_cancelled() || turn.is_halted();
+            let stop = Stop::of(turn.is_halted(), shutdown.is_cancelled());
             run.finish(run_outcome(
                 &result,
-                stopped || ctx.cancellation_token.is_cancelled(),
+                stop != Stop::No || ctx.cancellation_token.is_cancelled(),
             ));
             writer
-                .finish_run(executor.as_ref(), &ctx, result, stopped)
+                .finish_run(executor.as_ref(), &ctx, result, stop)
                 .await;
             // The queue is released, and a continuation admitted, only once
             // the turn's events are logged and stored: its numbering resumes
@@ -350,25 +351,25 @@ impl RequestHandler {
 /// classified by [`error_class`]: a class the executor recorded on it with
 /// `set_error_class` (as the client's `From<ClientError>` does for a
 /// delegated call's timeout) wins over the one its code implies.
+/// An executor's internal error has its text withheld (SEC-07); a deadline's stays.
 async fn run_executor(
     executor: &dyn AgentExecutor,
     ctx: &RequestContext,
     writer: &dyn EventQueueWriter,
     timeout: Option<Duration>,
+    expose_internal: bool,
 ) -> Result<(), (A2aError, FailureClass)> {
+    let own = |mut e: A2aError| {
+        let class = error_class(&e);
+        crate::error::withhold_for_task(&mut e, &ctx.task_id, expose_internal);
+        (e, class)
+    };
     let Some(timeout) = timeout else {
-        return executor
-            .execute(ctx, writer)
-            .await
-            .map_err(|e| (error_class(&e), e))
-            .map_err(|(class, e)| (e, class));
+        return executor.execute(ctx, writer).await.map_err(own);
     };
     match tokio::time::timeout(timeout, executor.execute(ctx, writer)).await {
         Ok(Ok(())) => Ok(()),
-        Ok(Err(e)) => {
-            let class = error_class(&e);
-            Err((e, class))
-        }
+        Ok(Err(e)) => Err(own(e)),
         // A deadline is a bound that was hit, not an agent that broke, and
         // the classes exist so a caller can tell those apart: an identical
         // retry hits the identical deadline, a retry with more budget need
@@ -412,7 +413,11 @@ pub(super) async fn write_failure_event(
 
 /// The `Failed` status, carrying the error as an agent-role message with one
 /// text part.
-fn failure_status(ctx: &RequestContext, error: &A2aError, class: FailureClass) -> TaskStatus {
+pub(super) fn failure_status(
+    ctx: &RequestContext,
+    error: &A2aError,
+    class: FailureClass,
+) -> TaskStatus {
     let mut status = TaskStatus::with_timestamp(TaskState::Failed);
     let mut note = Message {
         id: MessageId::new(uuid::Uuid::new_v4().to_string()),

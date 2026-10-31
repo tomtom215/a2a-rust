@@ -314,7 +314,7 @@ impl JsonRpcDispatcher {
             return notification::no_content();
         }
         let id = rpc_req.id.to_response_id();
-        trace_info!(method = %rpc_req.method, "dispatching JSON-RPC request");
+        trace_debug!(method = %rpc_req.method, "dispatching JSON-RPC request");
 
         // Streaming methods return SSE, not JSON.
         match rpc_req.method.as_str() {

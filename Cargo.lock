@@ -26,6 +26,7 @@ name = "a2a-book-tests"
 version = "0.0.0"
 dependencies = [
  "a2a-protocol-client",
+ "a2a-protocol-discovery",
  "a2a-protocol-sdk",
  "a2a-protocol-server",
  "a2a-protocol-types",
@@ -44,7 +45,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-cli"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "a2a-protocol-client",
  "a2a-protocol-server",
@@ -88,7 +89,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-client"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "a2a-protocol-server",
  "a2a-protocol-types",
@@ -101,8 +102,10 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-util",
+ "mutants",
  "opentelemetry",
  "opentelemetry_sdk",
+ "pin-project-lite",
  "prost",
  "protoc-bin-vendored",
  "rcgen",
@@ -130,8 +133,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "a2a-protocol-discovery"
+version = "0.16.0"
+dependencies = [
+ "a2a-protocol-client",
+ "a2a-protocol-server",
+ "a2a-protocol-types",
+ "mdns-sd",
+ "tokio",
+]
+
+[[package]]
 name = "a2a-protocol-sdk"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "a2a-protocol-client",
  "a2a-protocol-server",
@@ -156,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-server"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "a2a-protocol-types",
  "async-trait",
@@ -211,7 +225,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-types"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "base64 0.23.1",
  "criterion",
@@ -1159,9 +1173,9 @@ name = "deploy-agent"
 version = "0.0.0"
 dependencies = [
  "a2a-protocol-sdk",
- "axum",
  "tikv-jemallocator",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2018,6 +2032,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "if-addrs"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0a05c691e1fae256cf7013d99dad472dc52d5543322761f83ec8d47eab40d2b"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "incident-response"
 version = "0.0.0"
 dependencies = [
@@ -2366,6 +2390,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mdns-sd"
+version = "0.21.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8562654710f72a9cbce4b0d5b7c366a2f94330ba1ce3740f15e932ea2d37b161"
+dependencies = [
+ "fastrand",
+ "flume",
+ "if-addrs",
+ "mio",
+ "socket-pktinfo",
+ "socket2",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2410,6 +2448,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1788edb87fdc09c7e26304471e2f5be8cdefb1b6930d6e3985fc02ff53bf86ee"
 dependencies = [
  "libc",
+ "log",
  "wasi",
  "windows-sys 0.61.2",
 ]
@@ -3918,6 +3957,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "socket-pktinfo"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "612942246d0cc239cfd83af1dfd39be47f649208a3524e5e9da651910128e0ac"
+dependencies = [
+ "libc",
+ "socket2",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "socket2"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3972,6 +4022,7 @@ dependencies = [
  "log",
  "memchr",
  "percent-encoding",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3981,6 +4032,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "url",
+ "webpki-roots 1.0.11",
 ]
 
 [[package]]

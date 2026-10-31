@@ -5,7 +5,7 @@
 
 A client for an agent that serves the gRPC binding, built from the same `ClientBuilder` with `build_grpc()`, or from a `GrpcTransport` you construct yourself.
 
-> Requires the `grpc` feature: `a2a-protocol-client = { version = "0.15", features = ["grpc"] }`
+> Requires the `grpc` feature: `a2a-protocol-client = { version = "0.16", features = ["grpc"] }`
 >
 > An `https://` endpoint, or a card's bare `host:port` on a host other than
 > loopback (dialled with TLS by default), also needs the `grpc-tls` feature

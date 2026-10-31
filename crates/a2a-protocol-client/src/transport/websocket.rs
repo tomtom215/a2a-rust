@@ -65,7 +65,7 @@
 //! Requires the `websocket` feature flag:
 //!
 //! ```toml
-//! a2a-protocol-client = { version = "0.15", features = ["websocket"] }
+//! a2a-protocol-client = { version = "0.16", features = ["websocket"] }
 //! ```
 
 use std::collections::HashMap;
@@ -208,6 +208,9 @@ pub struct WebSocketTransportConfig {
     /// returns, whichever transport produced it. This value remains the
     /// bound for a stream taken from the transport directly.
     pub request_timeout: Duration,
+    /// How long a blocking `SendMessage` waits for the agent's turn.
+    /// Default: [`DEFAULT_SEND_TIMEOUT`](super::DEFAULT_SEND_TIMEOUT).
+    pub send_timeout: Duration,
     /// Extra HTTP headers for the WebSocket upgrade request (e.g. an
     /// `Authorization` header produced by an
     /// [`AuthInterceptor`](crate::AuthInterceptor)).
@@ -281,6 +284,7 @@ impl std::fmt::Debug for WebSocketTransportConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut f = f.debug_struct("WebSocketTransportConfig");
         f.field("request_timeout", &self.request_timeout)
+            .field("send_timeout", &self.send_timeout)
             .field(
                 "extra_header_names",
                 &crate::redact::names(self.extra_headers.keys()),
@@ -299,6 +303,7 @@ impl Default for WebSocketTransportConfig {
     fn default() -> Self {
         Self {
             request_timeout: Duration::from_secs(30),
+            send_timeout: super::DEFAULT_SEND_TIMEOUT,
             connect_timeout: Duration::from_secs(10),
             extra_headers: HashMap::new(),
             extensions: Vec::new(),
@@ -330,6 +335,13 @@ impl WebSocketTransportConfig {
     #[must_use]
     pub const fn with_request_timeout(mut self, timeout: Duration) -> Self {
         self.request_timeout = timeout;
+        self
+    }
+
+    /// Sets [`send_timeout`](Self::send_timeout).
+    #[must_use]
+    pub const fn with_send_timeout(mut self, timeout: Duration) -> Self {
+        self.send_timeout = timeout;
         self
     }
 
@@ -443,6 +455,7 @@ struct Inner {
     /// full timeout against a connection that can no longer answer.
     closed: Arc<AtomicBool>,
     request_timeout: Duration,
+    send_timeout: Duration,
     /// See [`WebSocketTransportConfig::max_pending_requests`].
     max_pending_requests: usize,
     /// Background reader task, aborted on drop.
@@ -632,18 +645,49 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
         // pending with no OS timeout to rescue it.
         // The connector is used only for a `wss://` request; `ws://` stays
         // plain whatever it is.
+        //
+        // Through the proxy `HTTPS_PROXY` / `HTTP_PROXY` names for this URL,
+        // as the HTTP bindings go: a `CONNECT` tunnel, the TLS and the
+        // upgrade inside it (`crate::proxy::tunnelled_tcp`).
         #[cfg(feature = "tls-rustls")]
-        let connect = tokio_tungstenite::connect_async_tls_with_config(
-            ws_request,
-            Some(ws_config),
-            true,
-            Some(tokio_tungstenite::Connector::Rustls(
-                config.tls.as_ref().map_or_else(
-                    || Arc::new(crate::tls::default_tls_config()),
-                    |tls| Arc::clone(&tls.0),
-                ),
-            )),
-        );
+        let connect = async {
+            let connector = tokio_tungstenite::Connector::Rustls(config.tls.as_ref().map_or_else(
+                || Arc::new(crate::tls::default_tls_config()),
+                |tls| Arc::clone(&tls.0),
+            ));
+            let dst: hyper::Uri = endpoint.parse().map_err(|e| {
+                tokio_tungstenite::tungstenite::Error::Url(
+                    tokio_tungstenite::tungstenite::error::UrlError::UnableToConnect(format!(
+                        "{e}"
+                    )),
+                )
+            })?;
+            match crate::proxy::tunnelled_tcp(&dst).await {
+                Some(Ok(stream)) => {
+                    // As the direct path's `disable_nagle: true`.
+                    let _ = stream.set_nodelay(true);
+                    tokio_tungstenite::client_async_tls_with_config(
+                        ws_request,
+                        stream,
+                        Some(ws_config),
+                        Some(connector),
+                    )
+                    .await
+                }
+                Some(Err(e)) => Err(tokio_tungstenite::tungstenite::Error::Io(
+                    std::io::Error::other(format!("through the proxy: {e}")),
+                )),
+                None => {
+                    tokio_tungstenite::connect_async_tls_with_config(
+                        ws_request,
+                        Some(ws_config),
+                        true,
+                        Some(connector),
+                    )
+                    .await
+                }
+            }
+        };
         #[cfg(not(feature = "tls-rustls"))]
         let connect =
             tokio_tungstenite::connect_async_with_config(ws_request, Some(ws_config), true);
@@ -718,6 +762,7 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
             pending,
             closed,
             request_timeout: config.request_timeout,
+            send_timeout: config.send_timeout,
             max_pending_requests: config.max_pending_requests,
             reader_handle,
             writer_handle,
@@ -736,8 +781,9 @@ impl WebSocketTransport {
     ) -> ClientResult<serde_json::Value> {
         let inner = self.connection().await?;
         warn_dropped_per_request_headers(method, extra_headers, &inner.trace_drop_warned);
-        trace_info!(method, endpoint = %self.endpoint, "sending WebSocket JSON-RPC request");
+        trace_debug!(method, endpoint = %self.endpoint, "sending WebSocket JSON-RPC request");
 
+        let waits = super::waits_for_turn(method, &params);
         let rpc_req = build_rpc_request(method, params);
         let request_id = rpc_req
             .id
@@ -766,9 +812,15 @@ impl WebSocketTransport {
             .await
             .map_err(|_| ClientError::Transport("WebSocket writer task closed".into()))?;
 
-        let response_text = match tokio::time::timeout(inner.request_timeout, rx).await {
+        let budget = if waits {
+            inner.send_timeout
+        } else {
+            inner.request_timeout
+        };
+        let response_text = match tokio::time::timeout(budget, rx).await {
             Ok(received) => received
                 .map_err(|_| ClientError::Transport("WebSocket reader task closed".into()))??,
+            Err(_elapsed) if waits => return Err(super::timed_out(true, budget)),
             Err(_elapsed) => {
                 return Err(ClientError::Timeout("WebSocket response timed out".into()));
             }
@@ -779,7 +831,7 @@ impl WebSocketTransport {
 
         match envelope {
             JsonRpcResponse::Success(ok) => {
-                trace_info!(method, "WebSocket request succeeded");
+                trace_debug!(method, "WebSocket request succeeded");
                 Ok(ok.result)
             }
             JsonRpcResponse::Error(err) => {
@@ -806,7 +858,7 @@ impl WebSocketTransport {
     ) -> ClientResult<EventStream> {
         let inner = self.connection().await?;
         warn_dropped_per_request_headers(method, extra_headers, &inner.trace_drop_warned);
-        trace_info!(method, endpoint = %self.endpoint, "opening WebSocket stream");
+        trace_debug!(method, endpoint = %self.endpoint, "opening WebSocket stream");
 
         let rpc_req = build_rpc_request(method, params);
         let request_id = rpc_req

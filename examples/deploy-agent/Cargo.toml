@@ -12,9 +12,9 @@ rust-version.workspace = true
 license.workspace      = true
 
 [dependencies]
-a2a-protocol-sdk = { path = "../../crates/a2a-protocol-sdk", features = ["axum", "postgres"] }
-axum             = { version = "0.8", features = ["json", "query", "tokio", "http1"] }
+a2a-protocol-sdk = { path = "../../crates/a2a-protocol-sdk", features = ["postgres"] }
 tokio            = { workspace = true, features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
+tracing          = { workspace = true }
 
 # jemalloc in place of glibc's allocator. A server with a bounded task store
 # keeps a fixed-size heap full of freed holes, where glibc's allocator is

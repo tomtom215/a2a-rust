@@ -356,6 +356,13 @@ pub mod push_outcome {
     /// is worth its own label because the fix is a config change, not a
     /// webhook investigation.
     pub const TIMEOUT_TRUNCATED: &str = "timeout_truncated";
+    /// A delivery dropped before it started: its task's push lane was full.
+    ///
+    /// The lane (`HandlerLimits::push_queue_capacity`) fills when the webhook
+    /// is slower than the agent or not answering. Counted once per dropped
+    /// delivery (one event, or one blocking send's batch), not per config.
+    /// A terminal or interrupted status is never dropped.
+    pub const DROPPED: &str = "dropped";
     /// No longer reported.
     ///
     /// It counted configs the per-event delivery budget never reached; since

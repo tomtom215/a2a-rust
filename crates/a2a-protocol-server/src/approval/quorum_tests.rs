@@ -351,7 +351,7 @@ fn a_quorum_that_could_never_be_met_is_refused_at_build() {
             "names only 1",
         ),
     ] {
-        let Err(ServerError::InvalidParams(why)) = builder(gate, &resumed).build() else {
+        let Err(ServerError::Config(why)) = builder(gate, &resumed).build() else {
             panic!("expected a refusal for {says}");
         };
         assert!(why.contains(says), "{why}");
@@ -364,7 +364,7 @@ fn a_quorum_that_could_never_be_met_is_refused_at_build() {
     .without_agent_card()
     .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens(TOKENS))
     .with_approval_gate(ApprovalGate::new().allowing_self_approval().with_quorum(2));
-    let Err(ServerError::InvalidParams(why)) = isolated.build() else {
+    let Err(ServerError::Config(why)) = isolated.build() else {
         panic!("expected a refusal under caller isolation");
     };
     assert!(why.contains("could never be met"), "{why}");

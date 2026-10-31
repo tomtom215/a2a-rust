@@ -346,7 +346,7 @@ fn caller_isolation_refuses_a_gate_that_needs_a_second_caller() {
         (by_default, "an authenticating interceptor makes"),
         (explicitly, "isolate_tasks_by_caller keeps"),
     ] {
-        let Err(ServerError::InvalidParams(why)) = b.build() else {
+        let Err(ServerError::Config(why)) = b.build() else {
             panic!("expected a refusal");
         };
         assert!(why.contains(cause), "{why}");

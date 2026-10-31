@@ -104,6 +104,33 @@ impl TenantContext {
 
     /// The turn claim token this request's writes are fenced with, if it
     /// has claimed its task (`crate::store::claim::current_fence`).
+    /// Runs `f` as a turn of `partition` (a tenant, or a tenant and a
+    /// caller joined by [`CALLER_SEPARATOR`]) holding `fence`: what a store
+    /// call made outside any request needs to read and write that
+    /// partition's task under a claim (the reaper, `handler::claims`).
+    pub(crate) async fn scope_partition<F, R>(partition: &str, fence: &str, f: F) -> R
+    where
+        F: Future<Output = R>,
+    {
+        let (tenant, caller) = match partition.split_once(CALLER_SEPARATOR) {
+            Some((tenant, caller)) => (tenant.to_owned(), Some(caller.to_owned())),
+            None => (partition.to_owned(), None),
+        };
+        let caller_cell = std::cell::OnceCell::new();
+        if let Some(caller) = caller {
+            let _ = caller_cell.set(caller);
+        }
+        CURRENT_TENANT
+            .scope(
+                tenant,
+                CURRENT_CALLER.scope(
+                    caller_cell,
+                    CURRENT_FENCE.scope(std::cell::OnceCell::from(fence.to_owned()), f),
+                ),
+            )
+            .await
+    }
+
     #[must_use]
     pub(crate) fn fence() -> Option<String> {
         CURRENT_FENCE

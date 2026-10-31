@@ -35,6 +35,82 @@ pub mod websocket;
 #[cfg(feature = "grpc")]
 pub use grpc::GrpcTransport;
 pub use jsonrpc::JsonRpcTransport;
+
+/// The HTTP client the JSON-RPC and HTTP+JSON transports share.
+#[cfg(feature = "tls-rustls")]
+pub(crate) type HttpClient = crate::tls::HttpsClient;
+
+/// The HTTP client the JSON-RPC and HTTP+JSON transports share.
+#[cfg(not(feature = "tls-rustls"))]
+pub(crate) type HttpClient = hyper_util::client::legacy::Client<
+    hyper_util::client::legacy::connect::HttpConnector,
+    http_body_util::Full<hyper::body::Bytes>,
+>;
+
+/// A plain-HTTP client with `connection_timeout` on its connector.
+// No test can kill cargo-mutants' `Default::default()` here (ADR 0006): the
+// gate builds with every feature, where this function is compiled out, and
+// in a build without `tls-rustls`, the only one that has it, hyper-util's
+// `Client` has no `Default` (E0277, checked 2026-10-30), so the mutant does
+// not compile.
+#[cfg(not(feature = "tls-rustls"))]
+#[mutants::skip]
+pub(crate) fn plain_http_client(connection_timeout: std::time::Duration) -> HttpClient {
+    hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+        .pool_idle_timeout(std::time::Duration::from_secs(50))
+        .build(connector::http_connector(connection_timeout))
+}
+
+/// How long a blocking `SendMessage` waits for the agent's turn to end, by
+/// default: ten minutes.
+///
+/// A blocking send (`return_immediately` unset) is answered only when the
+/// agent's turn ends, and an agent that calls a model takes as long as the
+/// model does. Under the 30 s request timeout every other call has, the
+/// first slow turn failed with `request timed out` while the task went on
+/// running, and the caller never learned its id (audit D-01, run live
+/// against a model on 2026-10-29). A load balancer in front may still cut a
+/// response that takes longer than its own idle timeout (often 60 s): for
+/// long turns, stream (`send_streaming_message`) or send with
+/// `return_immediately` and follow the task.
+pub const DEFAULT_SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Whether `method` with `params` is a `SendMessage` that waits for the
+/// turn to end, and so is bounded by the send timeout.
+pub(crate) fn waits_for_turn(method: &str, params: &serde_json::Value) -> bool {
+    method == "SendMessage"
+        && params.pointer("/configuration/returnImmediately")
+            != Some(&serde_json::Value::Bool(true))
+}
+
+/// The timeout error for a call that waited `waited`: for a blocking send,
+/// what to do about it.
+pub(crate) fn timed_out(waits_for_turn: bool, waited: std::time::Duration) -> crate::ClientError {
+    if waits_for_turn {
+        crate::ClientError::Timeout(format!(
+            "SendMessage was not answered within {} s. A blocking send waits for the \
+             agent's whole turn, and the task goes on running on the agent: raise \
+             ClientBuilder::with_send_timeout, or stream (send_streaming_message), or \
+             send with return_immediately(true) and follow the task",
+            waited.as_secs()
+        ))
+    } else {
+        crate::ClientError::Timeout("request timed out".into())
+    }
+}
+
+/// The client a transport built without a [`crate::ClientBuilder`] uses.
+pub(crate) fn default_http_client(connection_timeout: std::time::Duration) -> HttpClient {
+    #[cfg(feature = "tls-rustls")]
+    {
+        crate::tls::build_https_client_with_connect_timeout(
+            crate::tls::default_tls_config(),
+            connection_timeout,
+        )
+    }
+    #[cfg(not(feature = "tls-rustls"))]
+    plain_http_client(connection_timeout)
+}
 pub use rest::RestTransport;
 #[cfg(feature = "websocket")]
 pub use websocket::{WebSocketTransport, WebSocketTransportConfig};

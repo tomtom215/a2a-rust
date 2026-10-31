@@ -9,7 +9,7 @@ Enable the `sqlite` feature for a production-ready persistent store:
 
 ```toml
 [dependencies]
-a2a-protocol-server = { version = "0.15", features = ["sqlite"] }
+a2a-protocol-server = { version = "0.16", features = ["sqlite"] }
 ```
 
 ```rust,no_run

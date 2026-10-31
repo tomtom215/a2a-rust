@@ -622,7 +622,7 @@ async fn fetch_inner(
     let resp = tokio::time::timeout_at(deadline, client.request(req))
         .await
         .map_err(|_| ClientError::Transport("agent card fetch timed out".into()))?
-        .map_err(|e| ClientError::HttpClient(e.to_string()))?;
+        .map_err(|e| ClientError::HttpClient(crate::error::chain(&e)))?;
 
     let status = resp.status();
     #[cfg(feature = "tracing")]

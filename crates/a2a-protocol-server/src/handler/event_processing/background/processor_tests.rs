@@ -94,8 +94,8 @@ const fn state_of(event: &StreamResponse) -> Option<TaskState> {
 
 struct Fixture {
     store: InMemoryTaskStore,
-    configs: InMemoryPushConfigStore,
-    pushes: Pushes,
+    pushes: Arc<Pushes>,
+    lanes: super::super::PushLanes,
     limits: HandlerLimits,
     gate: TerminalGate,
     cancel: CancellationToken,
@@ -118,11 +118,20 @@ impl Fixture {
             })
             .await
             .expect("config");
+        let pushes = Arc::new(Pushes::default());
+        let limits = HandlerLimits::default();
+        let lanes = super::super::PushLanes::new(
+            Arc::new(configs),
+            Some(Arc::clone(&pushes) as Arc<dyn PushSender>),
+            limits.clone(),
+            Arc::new(crate::metrics::NoopMetrics),
+            tokio_util::task::TaskTracker::new(),
+        );
         Self {
             store,
-            configs,
-            pushes: Pushes::default(),
-            limits: HandlerLimits::default(),
+            pushes,
+            lanes,
+            limits,
             gate: TerminalGate::default(),
             cancel: CancellationToken::new(),
         }
@@ -134,8 +143,7 @@ impl Fixture {
             task_id,
             BackgroundDeps {
                 task_store: &self.store,
-                push_config_store: &self.configs,
-                push_sender: Some(&self.pushes),
+                push: &self.lanes,
                 limits: &self.limits,
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -146,7 +154,12 @@ impl Fixture {
         )
     }
 
-    fn pushed(&self) -> Vec<TaskState> {
+    /// What was pushed, once every queued delivery has run: deliveries go
+    /// through the task's push lane, on a task of their own.
+    async fn pushed(&self) -> Vec<TaskState> {
+        while !self.lanes.is_idle() {
+            tokio::task::yield_now().await;
+        }
         self.pushes
             .0
             .lock()
@@ -187,7 +200,7 @@ async fn a_refused_write_supersedes_the_run() {
         run.last_task.status, stored.status,
         "the stored task, adopted"
     );
-    assert_eq!(f.pushed(), vec![TaskState::Canceled], "pushed once");
+    assert_eq!(f.pushed().await, vec![TaskState::Canceled], "pushed once");
     assert_eq!(run.last_task.status.state, TaskState::Canceled, "adopted");
 
     let mut ticket = f.gate.arm(2).expect("gate open");
@@ -197,7 +210,11 @@ async fn a_refused_write_supersedes_the_run() {
     assert_eq!(state_of(&verdict), Some(TaskState::Canceled));
 
     run.handle(Ok(artifact(3))).await;
-    assert_eq!(f.pushed(), vec![TaskState::Canceled], "not pushed again");
+    assert_eq!(
+        f.pushed().await,
+        vec![TaskState::Canceled],
+        "not pushed again"
+    );
     assert_eq!(
         f.logged().await,
         vec![(1, None)],
@@ -229,7 +246,7 @@ async fn a_refused_terminal_event_is_answered_and_logged_as_the_stored_state() {
     );
     assert_eq!(f.logged().await, vec![(4, Some(TaskState::Canceled))]);
     assert!(f.cancel.is_cancelled());
-    assert_eq!(f.pushed(), vec![TaskState::Canceled]);
+    assert_eq!(f.pushed().await, vec![TaskState::Canceled]);
 }
 
 /// The ordinary path: a terminal event that persists is answered with
@@ -248,7 +265,7 @@ async fn a_persisted_terminal_event_is_answered_with_itself() {
         Some(TaskState::Completed)
     );
     assert_eq!(f.logged().await, vec![(1, Some(TaskState::Completed))]);
-    assert_eq!(f.pushed(), vec![TaskState::Completed]);
+    assert_eq!(f.pushed().await, vec![TaskState::Completed]);
     assert!(!f.cancel.is_cancelled());
 
     run.handle(Ok(status(2, TaskState::Working))).await;
@@ -257,7 +274,7 @@ async fn a_persisted_terminal_event_is_answered_with_itself() {
         "a late event still stops the executor"
     );
     assert_eq!(
-        f.pushed(),
+        f.pushed().await,
         vec![TaskState::Completed],
         "no second terminal push over our own"
     );
@@ -280,13 +297,13 @@ async fn a_terminal_event_that_was_not_persisted_is_still_answered() {
         Some(TaskState::Canceled)
     );
     assert!(!f.cancel.is_cancelled(), "a repeat is not a conflict");
-    assert_eq!(f.pushed(), Vec::<TaskState>::new());
+    assert_eq!(f.pushed().await, Vec::<TaskState>::new());
     assert_eq!(f.logged().await, vec![(1, Some(TaskState::Canceled))]);
 
     // Nothing was pushed for it, so a later refusal still owes webhooks the
     // terminal state.
     run.handle(Ok(status(2, TaskState::Working))).await;
-    assert_eq!(f.pushed(), vec![TaskState::Canceled]);
+    assert_eq!(f.pushed().await, vec![TaskState::Canceled]);
 }
 
 /// Only a *terminal* status this processor pushed stands in for the
@@ -298,7 +315,7 @@ async fn a_persisted_running_update_does_not_count_as_the_terminal_push() {
     let mut run = f.processor(&id);
 
     run.handle(Ok(status(1, TaskState::Working))).await;
-    assert_eq!(f.pushed(), vec![TaskState::Working]);
+    assert_eq!(f.pushed().await, vec![TaskState::Working]);
 
     // Another replica cancels.
     f.store
@@ -307,7 +324,7 @@ async fn a_persisted_running_update_does_not_count_as_the_terminal_push() {
         .expect("cancel elsewhere");
     run.handle(Ok(artifact(2))).await;
     assert_eq!(
-        f.pushed(),
+        f.pushed().await,
         vec![TaskState::Working, TaskState::Canceled],
         "webhooks hear how the task ended"
     );
@@ -325,7 +342,7 @@ async fn a_panic_fails_a_running_task_but_not_a_finished_one() {
     let stored = f.store.get(&id).await.expect("get").expect("stored");
     assert_eq!(stored.status.state, TaskState::Canceled);
     assert!(f.cancel.is_cancelled(), "the refusal supersedes the run");
-    assert_eq!(f.pushed(), vec![TaskState::Canceled]);
+    assert_eq!(f.pushed().await, vec![TaskState::Canceled]);
 
     let f = Fixture::new(TaskState::Working).await;
     let mut run = f.processor(&id);
@@ -358,8 +375,7 @@ async fn a_refusal_is_trusted_over_a_stale_read() {
         &id,
         BackgroundDeps {
             task_store: &store,
-            push_config_store: &f.configs,
-            push_sender: Some(&f.pushes),
+            push: &f.lanes,
             limits: &f.limits,
             metrics: &crate::metrics::NoopMetrics,
         },
@@ -376,7 +392,7 @@ async fn a_refusal_is_trusted_over_a_stale_read() {
         Some(TaskState::Canceled)
     );
     assert_eq!(run.last_task.status.state, TaskState::Canceled);
-    assert_eq!(f.pushed(), vec![TaskState::Canceled]);
+    assert_eq!(f.pushed().await, vec![TaskState::Canceled]);
 }
 
 /// Each event the processor handles is marked stored, so a subscriber's
@@ -402,6 +418,7 @@ async fn a_status_update_is_marked_stored_before_its_push() {
     f.processor(&id)
         .handle(Ok(status(1, TaskState::Working)))
         .await;
+    assert_eq!(f.pushed().await, [TaskState::Working]);
     let stored = f.pushes.2.lock().unwrap().clone();
     assert_eq!(stored, [true], "pushed once, after the mark said stored");
 }
@@ -438,5 +455,5 @@ async fn a_carried_message_is_stored_logged_and_pushed() {
         "{stored:?}"
     );
     assert_eq!(f.logged().await, vec![(1, Some(TaskState::Working))]);
-    assert_eq!(f.pushed(), vec![TaskState::Working]);
+    assert_eq!(f.pushed().await, vec![TaskState::Working]);
 }

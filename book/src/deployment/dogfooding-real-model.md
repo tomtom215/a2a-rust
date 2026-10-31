@@ -118,11 +118,12 @@ llama-server -m qwen3-1.7b-q4_k_m.gguf -c 8192 --port 8080 --jinja
 LIVE_BASE_URL=http://127.0.0.1:8080/v1 cargo run --release -p live-model
 ```
 
-It runs 10 checks and reports each as pass, fail or not exercised: the tool
+It runs 11 checks and reports each as pass, fail or not exercised: the tool
 loop streamed and verified on each of the four bindings (4), a client holding
 another key failing the same stream, a repeated restart that runs once, an
 exhausted one-token budget, delegation under a budget, a halt that cancels a
-working run, and an approval quorum of two. It exits non-zero if any check
+working run, an approval quorum of two, and each turn's text streamed as a
+draft artifact before the answer. It exits non-zero if any check
 failed. `LIVE_BASE_URL` defaults to `http://127.0.0.1:8080/v1` and `LIVE_MODEL`
 to `qwen3:1.7b`; `LIVE_THINKING`, `LIVE_EXTRA_BODY` and
 `LIVE_MODEL_TIMEOUT_SECS` (600) are the other settings.
@@ -130,7 +131,8 @@ to `qwen3:1.7b`; `LIVE_THINKING`, `LIVE_EXTRA_BODY` and
 Its README records runs on 2026-10-23 (three with each of two models,
 Qwen3-1.7B Q4_K_M and Qwen3.5-2B Q4_K_M) and on 2026-10-24 (three more with
 Qwen3-1.7B). Every run exited 0, with 10 of 10 checks passing and none not
-exercised. These are SDK checks, not a model evaluation: they pass on any
+exercised. On 2026-10-30, with the drafts check added, two Qwen3.5-2B runs
+passed 11 of 11. These are SDK checks, not a model evaluation: they pass on any
 non-empty answer, and the README reads the answers by hand. On its billing
 question the Qwen3-1.7B file of 2026-10-23 was right 12 of 12 times and
 Qwen3.5-2B 2 of 12; the Qwen3-1.7B file of 2026-10-24, different weights, 1 of

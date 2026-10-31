@@ -23,7 +23,7 @@ use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 
-use super::{TenantAwarePostgresTaskStore, to_a2a_error};
+use super::{SAVE_SQL, TenantAwarePostgresTaskStore, to_a2a_error};
 use crate::store::event_log_sql::{
     decode_json_row, encode_json, limit_to_i64, report_no_op_append, seq_from_i64, seq_to_i64,
 };
@@ -31,28 +31,6 @@ use crate::store::task_store::{RecordedEvent, TaskStore};
 use crate::store::tenant::TenantContext;
 use crate::store::tenant_event_log as evlog;
 use crate::store::tenant_idempotency as idem;
-
-#[allow(clippy::manual_async_fn)]
-/// The upsert `save` makes: the terminal guard (`crate::store::terminal`)
-/// and the claim's fence in its `WHERE`.
-const SAVE_SQL: &str = concat!(
-    crate::store::terminal::sql_write_allowed!(
-        "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at, applied_seq)
-                 SELECT $1, $2, $3, $4, $5, COALESCE(($6)::timestamptz, now()), $7
-                 WHERE set_config('a2a.claims', 'on', true) = 'on'
-                 ON CONFLICT(tenant_id, id) DO UPDATE SET
-                     context_id = EXCLUDED.context_id,
-                     state = EXCLUDED.state,
-                     data = EXCLUDED.data,
-                     updated_at = EXCLUDED.updated_at,
-                     applied_seq = COALESCE(EXCLUDED.applied_seq, tenant_tasks.applied_seq)
-                 WHERE ",
-        "tenant_tasks.state",
-        "EXCLUDED.state",
-        " AND "
-    ),
-    crate::store::claim::fence_sql!(postgres "$8::text", "$2")
-);
 
 impl TaskStore for TenantAwarePostgresTaskStore {
     fn isolates_tenants(&self) -> bool {
@@ -69,7 +47,11 @@ impl TaskStore for TenantAwarePostgresTaskStore {
 
     fn turn_claims(&self) -> Option<std::sync::Arc<dyn crate::store::TurnClaimStore>> {
         Some(std::sync::Arc::new(
-            crate::store::claim::PostgresTurnClaims::over(self.pool.clone(), self.metrics.clone()),
+            crate::store::claim::PostgresTurnClaims::over(
+                self.pool.clone(),
+                self.metrics.clone(),
+                crate::store::claim::ClaimedTasks::Tenant,
+            ),
         ))
     }
 
@@ -480,6 +462,22 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             .map_err(|e| to_a2a_error(&e))?;
             #[allow(clippy::cast_sign_loss)]
             Ok(row.0 as u64)
+        })
+    }
+
+    fn health<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let (standby,): (bool,) = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query_as("SELECT pg_is_in_recovery()").fetch_one(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
+            if standby {
+                return Err(A2aError::unavailable(
+                    "the task store's database is a standby (pg_is_in_recovery), which takes no writes",
+                ));
+            }
+            Ok(())
         })
     }
 }

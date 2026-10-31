@@ -12,7 +12,7 @@ in CI (`postgres_store_tests.rs`):
 
 ```toml
 [dependencies]
-a2a-protocol-server = { version = "0.15", features = ["postgres"] }
+a2a-protocol-server = { version = "0.16", features = ["postgres"] }
 ```
 
 ```rust,no_run
@@ -71,6 +71,32 @@ theirs can meet a connection the server closed while it sat idle. A pool you
 build without `pool_options` keeps its own settings; with sqlx's defaults it
 pings before every statement.
 
+## Running as a role that does not own the schema
+
+Each store's constructor brings its schema up to date as it starts: it
+creates a table, an index or a function only when it is missing, and
+replaces a function only when the one there was installed by an earlier
+release (each records the release that installed it in its comment,
+`a2a 0.16.0`), all under one advisory lock. Against a schema that is up to
+date, that needs no privilege beyond using the tables, so an agent can run
+as a role with only these, once the schema's owner has started each store
+it uses, or run the migrations, once:
+
+```sql
+GRANT USAGE ON SCHEMA public TO a2a_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO a2a_app;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO a2a_app;
+```
+
+Run the owner's start again after an upgrade that adds a table or changes
+a function, before the app role's replicas start; until then they start as
+the earlier release's schema allows, and a write that needs what is missing
+fails. Until 2026-10-30 every start ran each statement as written, which
+on PostgreSQL 17 a role without the owner's privileges was refused
+("permission denied for schema public", audit A10), and an earlier
+release's replica, starting during a rollout or a rollback, put its
+function bodies back over the newer ones for every replica (audit E-F10).
+
 ## When the connection is lost or the database is busy
 
 **A lost connection.** When a statement fails because its connection is gone
@@ -85,10 +111,24 @@ is why not everything is retried. Each second run is counted in
 `a2a.server.store_retries` with `operation="statement"` and
 `cause="connection_lost"`. This holds for a pool passed to `from_pool` too.
 
+**A failover to a new primary.** After a failover that moves a DNS name or a
+virtual IP, a connection still open to the old primary, now a standby,
+answers every write with `25006` (`read_only_sql_transaction`) and every
+ping with success, so nothing above would retire it. The first `25006` any
+store in the process meets marks every connection opened before it: each
+pool these stores open closes such a connection the next time it would hand
+it out, and opens a new one, which resolves the name afresh. A statement
+refused this way did not run, so the store runs it once more, counted with
+`cause="read_only"`, and the error is `A2aError::unavailable` rather than
+internal. A pool you build without `pool_options` does not retire its
+connections this way. Until 2026-10-30 a `25006` was internal, and every
+write failed until the old connections aged out of the pool (sqlx's default
+`max_lifetime`, 30 minutes).
+
 **"Not now" errors.** An error a retry may get past (no connection free
 before the pool's acquire timeout, a closed pool, a lost connection, a
 serialization failure or deadlock, a lock or statement timeout, too many
-connections, a server starting up or shutting down) is returned as
+connections, a server starting up or shutting down, a read-only server) is returned as
 `A2aError::unavailable`; a full disk and any other error stay
 `A2aError::internal`. What a client sees for each is under
 [Implementing a store](./custom.md#what-a-store-error-answers).

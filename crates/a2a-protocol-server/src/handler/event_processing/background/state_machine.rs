@@ -13,14 +13,13 @@ use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
 use crate::handler::limits::HandlerLimits;
 use crate::metrics::persistence_operation;
-use crate::push::{PushConfigStore, PushSender};
 use crate::store::{ArtifactDelta, TaskStore, TerminalStateConflict};
 
-use super::push_delivery::deliver_push_bg;
+use super::push_delivery::PushLanes;
 
 /// The collaborators the background event processor writes through.
 ///
-/// Bundled rather than passed individually because there are five of them and
+/// Bundled rather than passed individually because there are four of them and
 /// they travel together everywhere: the alternative is an eight-argument
 /// function whose call sites are a wall of positional references, where
 /// swapping two `&dyn` parameters of different traits is the kind of mistake
@@ -29,10 +28,9 @@ use super::push_delivery::deliver_push_bg;
 pub(super) struct BackgroundDeps<'a> {
     /// Where task state is persisted.
     pub task_store: &'a dyn TaskStore,
-    /// Where push notification configs are read from.
-    pub push_config_store: &'a dyn PushConfigStore,
-    /// The push sender, if the handler was built with one.
-    pub push_sender: Option<&'a dyn PushSender>,
+    /// Where each stored event's push delivery is queued: handed over, not
+    /// awaited, so a webhook never holds the next event out of the store.
+    pub push: &'a PushLanes,
     /// Bounds on artifact growth, push fan-out and delivery timeouts.
     pub limits: &'a HandlerLimits,
     /// Where failures in this task are reported.
@@ -152,8 +150,7 @@ pub(super) async fn process_event_with(
 ) -> Outcome {
     let BackgroundDeps {
         task_store,
-        push_config_store,
-        push_sender,
+        push,
         limits,
         metrics,
     } = deps;
@@ -214,15 +211,7 @@ pub(super) async fn process_event_with(
             if let Some(on_persisted) = on_persisted {
                 on_persisted();
             }
-            deliver_push_bg(
-                task_id,
-                stream_resp,
-                push_config_store,
-                push_sender,
-                limits,
-                metrics,
-            )
-            .await;
+            push.push(task_id, stream_resp);
             Outcome::Persisted
         }
         Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
@@ -317,15 +306,7 @@ pub(super) async fn process_event_with(
                     }
                     return Outcome::NotPersisted;
                 }
-                deliver_push_bg(
-                    task_id,
-                    stream_resp,
-                    push_config_store,
-                    push_sender,
-                    limits,
-                    metrics,
-                )
-                .await;
+                push.push(task_id, stream_resp);
                 return Outcome::Persisted;
             }
             // A non-append update for an artifact the task already holds
@@ -367,15 +348,7 @@ pub(super) async fn process_event_with(
                     }
                     return Outcome::NotPersisted;
                 }
-                deliver_push_bg(
-                    task_id,
-                    stream_resp,
-                    push_config_store,
-                    push_sender,
-                    limits,
-                    metrics,
-                )
-                .await;
+                push.push(task_id, stream_resp);
                 return Outcome::Persisted;
             }
             // Artifact ID not found — fall through to push as new artifact.
@@ -415,15 +388,7 @@ pub(super) async fn process_event_with(
                 }
                 return Outcome::NotPersisted;
             }
-            deliver_push_bg(
-                task_id,
-                stream_resp,
-                push_config_store,
-                push_sender,
-                limits,
-                metrics,
-            )
-            .await;
+            push.push(task_id, stream_resp);
             Outcome::Persisted
         }
         Ok(StreamResponse::Task(task)) => {
@@ -651,15 +616,8 @@ async fn process_folded_message(
         last_task.status = prev_status;
     }
     if outcome == Outcome::Persisted && open {
-        deliver_push_bg(
-            task_id,
-            &StreamResponse::StatusUpdate(update.clone()),
-            deps.push_config_store,
-            deps.push_sender,
-            deps.limits,
-            deps.metrics,
-        )
-        .await;
+        deps.push
+            .push(task_id, &StreamResponse::StatusUpdate(update.clone()));
     }
     outcome
 }
@@ -721,7 +679,6 @@ mod tests {
         // be persisted into Task.history.
         use a2a_protocol_types::message::{Message, MessageId, MessageRole};
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-msg");
 
         task_store
@@ -746,8 +703,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -764,7 +720,6 @@ mod tests {
     #[tokio::test]
     async fn process_event_bg_status_update_valid_transition() {
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t1");
 
         task_store
@@ -781,8 +736,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -801,7 +755,6 @@ mod tests {
         // invalid (nothing re-enters the entry state) from a state that is
         // not terminal, so the task is still this processor's to fail.
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t1");
 
         task_store
@@ -817,8 +770,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -839,7 +791,6 @@ mod tests {
     #[tokio::test]
     async fn a_snapshot_moving_the_task_back_to_submitted_marks_it_failed() {
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t1");
         task_store
             .save(&make_task("t1", TaskState::Working))
@@ -855,8 +806,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -874,7 +824,6 @@ mod tests {
     #[tokio::test]
     async fn a_snapshot_in_the_same_state_is_stored() {
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t1");
         task_store
             .save(&make_task("t1", TaskState::Working))
@@ -890,8 +839,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -910,7 +858,6 @@ mod tests {
     #[tokio::test]
     async fn a_snapshot_leaving_a_terminal_state_is_refused_as_written() {
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-done");
         task_store
             .save(&make_task("t-done", TaskState::Completed))
@@ -925,7 +872,7 @@ mod tests {
             ))),
             &task_id,
             &mut last_task,
-            deps(&task_store, &push_store),
+            deps(&task_store),
         )
         .await;
 
@@ -948,7 +895,6 @@ mod tests {
     #[tokio::test]
     async fn a_submitted_snapshot_of_a_submitted_task_is_stored() {
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-new");
         task_store
             .save(&make_task("t-new", TaskState::Submitted))
@@ -963,7 +909,7 @@ mod tests {
             ))),
             &task_id,
             &mut last_task,
-            deps(&task_store, &push_store),
+            deps(&task_store),
         )
         .await;
 
@@ -972,16 +918,14 @@ mod tests {
         assert_eq!(stored.status.state, TaskState::Submitted);
     }
 
-    fn deps<'a>(
-        task_store: &'a dyn TaskStore,
-        push: &'a InMemoryPushConfigStore,
-    ) -> BackgroundDeps<'a> {
+    fn deps(task_store: &dyn TaskStore) -> BackgroundDeps<'_> {
         static LIMITS: std::sync::LazyLock<HandlerLimits> =
             std::sync::LazyLock::new(HandlerLimits::default);
+        static NO_PUSH: std::sync::LazyLock<PushLanes> =
+            std::sync::LazyLock::new(PushLanes::default);
         BackgroundDeps {
             task_store,
-            push_config_store: push,
-            push_sender: None,
+            push: &NO_PUSH,
             limits: &LIMITS,
             metrics: &crate::metrics::NoopMetrics,
         }
@@ -993,7 +937,6 @@ mod tests {
     #[tokio::test]
     async fn a_status_update_after_a_terminal_state_is_refused_not_written() {
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-done");
         task_store
             .save(&make_task("t-done", TaskState::Completed))
@@ -1005,7 +948,7 @@ mod tests {
             Ok(make_status_event("t-done", TaskState::Working)),
             &task_id,
             &mut last_task,
-            deps(&task_store, &push_store),
+            deps(&task_store),
         )
         .await;
 
@@ -1028,7 +971,6 @@ mod tests {
     #[tokio::test]
     async fn a_repeated_terminal_state_is_neither_written_nor_refused() {
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-again");
         task_store
             .save(&make_task("t-again", TaskState::Canceled))
@@ -1040,7 +982,7 @@ mod tests {
             Ok(make_status_event("t-again", TaskState::Canceled)),
             &task_id,
             &mut last_task,
-            deps(&task_store, &push_store),
+            deps(&task_store),
         )
         .await;
 
@@ -1054,7 +996,6 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::too_many_lines)]
     async fn a_store_refusal_is_reported_for_every_kind_of_write() {
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-lost");
         let refused = Outcome::Refused(TerminalStateConflict::new(
             task_id.clone(),
@@ -1135,13 +1076,8 @@ mod tests {
             let mut last_task = stored.clone();
             last_task.status = TaskStatus::new(TaskState::Working);
 
-            let outcome = process_event_bg(
-                event,
-                &task_id,
-                &mut last_task,
-                deps(&task_store, &push_store),
-            )
-            .await;
+            let outcome =
+                process_event_bg(event, &task_id, &mut last_task, deps(&task_store)).await;
             assert_eq!(outcome, expected, "{what}");
             let after = task_store.get(&task_id).await.unwrap().unwrap();
             assert_eq!(after.status.state, TaskState::Canceled, "{what}");
@@ -1153,7 +1089,6 @@ mod tests {
     #[tokio::test]
     async fn on_persisted_fires_for_persisted_status_and_snapshot_only() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-cb");
         let cases: Vec<(&str, StreamResponse, TaskState, usize)> = vec![
             (
@@ -1196,7 +1131,7 @@ mod tests {
                 Ok(event),
                 &task_id,
                 &mut last_task,
-                deps(&task_store, &push_store),
+                deps(&task_store),
                 Some(&count),
             )
             .await;
@@ -1207,7 +1142,6 @@ mod tests {
     #[tokio::test]
     async fn process_event_bg_artifact_update_appends() {
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t1");
 
         task_store
@@ -1223,8 +1157,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1245,7 +1178,6 @@ mod tests {
     #[tokio::test]
     async fn process_event_bg_error_marks_failed() {
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t1");
 
         task_store
@@ -1263,8 +1195,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1279,7 +1210,6 @@ mod tests {
     #[tokio::test]
     async fn process_event_bg_task_snapshot_replaces() {
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t1");
 
         task_store
@@ -1297,8 +1227,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1380,7 +1309,6 @@ mod tests {
     async fn a_failed_history_save_reverts_the_appended_message() {
         use a2a_protocol_types::message::{Message, MessageId, MessageRole};
         let task_store = FailingSaveStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-msg-revert");
 
         task_store
@@ -1416,8 +1344,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1448,7 +1375,6 @@ mod tests {
     async fn a_failed_history_save_at_the_cap_restores_what_the_trim_dropped() {
         use a2a_protocol_types::message::Message;
         let task_store = FailingSaveStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-cap-revert");
         task_store
             .inner
@@ -1470,8 +1396,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1528,7 +1453,14 @@ mod tests {
         let task_store = FailingSaveStore::new();
         let push_store = InMemoryPushConfigStore::new();
         register_webhook(&push_store, "t-carried").await;
-        let pushes = Counts::default();
+        let pushes = std::sync::Arc::new(Counts::default());
+        let lanes = PushLanes::new(
+            std::sync::Arc::new(push_store),
+            Some(std::sync::Arc::clone(&pushes) as std::sync::Arc<dyn crate::push::PushSender>),
+            default_limits(),
+            std::sync::Arc::new(crate::metrics::NoopMetrics),
+            tokio_util::task::TaskTracker::new(),
+        );
         let task_id = TaskId::new("t-carried");
         task_store
             .inner
@@ -1559,8 +1491,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: Some(&pushes),
+                push: &lanes,
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1569,6 +1500,7 @@ mod tests {
         .await;
 
         assert_eq!(outcome, Outcome::NotPersisted);
+        assert!(lanes.is_idle(), "nothing was queued for a refused write");
         assert_eq!(last_task.status, before.status);
         assert_eq!(last_task.history, before.history);
         assert_eq!(
@@ -1581,7 +1513,6 @@ mod tests {
     #[tokio::test]
     async fn status_update_save_failure_reverts_in_memory_state() {
         let task_store = FailingSaveStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-revert");
 
         // Seed the inner store via insert_if_absent (which delegates to inner).
@@ -1600,8 +1531,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1619,7 +1549,6 @@ mod tests {
     #[tokio::test]
     async fn artifact_update_save_failure_reverts_artifact_list() {
         let task_store = FailingSaveStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-art-revert");
 
         task_store
@@ -1636,8 +1565,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1654,7 +1582,6 @@ mod tests {
     #[tokio::test]
     async fn task_snapshot_save_failure_reverts_to_previous() {
         let task_store = FailingSaveStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-snap-revert");
 
         task_store
@@ -1672,8 +1599,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1690,7 +1616,6 @@ mod tests {
     #[tokio::test]
     async fn error_event_save_failure_reverts_status() {
         let task_store = FailingSaveStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-err-revert");
 
         task_store
@@ -1707,8 +1632,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1728,7 +1652,6 @@ mod tests {
     #[tokio::test]
     async fn invalid_transition_save_failure_still_marks_failed() {
         let task_store = FailingSaveStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-inv-fail");
 
         task_store
@@ -1748,8 +1671,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1768,7 +1690,6 @@ mod tests {
     #[tokio::test]
     async fn artifact_limit_enforced() {
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t-limit");
 
         task_store
@@ -1788,8 +1709,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &limits,
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1805,8 +1725,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &limits,
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1853,7 +1772,6 @@ mod tests {
 
     async fn run(event: StreamResponse, last_task: &mut Task, limits: &HandlerLimits) {
         let task_store = InMemoryTaskStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         task_store.save(last_task).await.expect("seed");
         process_event_bg(
             Ok(event),
@@ -1861,8 +1779,7 @@ mod tests {
             last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits,
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -2131,7 +2048,6 @@ mod tests {
     #[tokio::test]
     async fn save_failure_revert_targets_the_matching_artifact() {
         let task_store = FailingSaveStore::new();
-        let push_store = InMemoryPushConfigStore::new();
         let task_id = TaskId::new("t1");
 
         let mut last_task = make_task("t1", TaskState::Working);
@@ -2154,8 +2070,7 @@ mod tests {
             &mut last_task,
             BackgroundDeps {
                 task_store: &task_store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -2204,7 +2119,6 @@ mod failure_reporting_tests {
     use a2a_protocol_types::task::ContextId;
 
     use crate::metrics::Metrics;
-    use crate::push::InMemoryPushConfigStore;
     use crate::store::InMemoryTaskStore;
 
     use super::*;
@@ -2311,7 +2225,6 @@ mod failure_reporting_tests {
 
     async fn drive(event: StreamResponse, store: &dyn TaskStore) -> RecordingMetrics {
         let metrics = RecordingMetrics::default();
-        let push_store = InMemoryPushConfigStore::new();
         let limits = HandlerLimits::default();
         let mut task = working_task();
         process_event_bg(
@@ -2320,8 +2233,7 @@ mod failure_reporting_tests {
             &mut task,
             BackgroundDeps {
                 task_store: store,
-                push_config_store: &push_store,
-                push_sender: None,
+                push: &PushLanes::default(),
                 limits: &limits,
                 metrics: &metrics,
             },

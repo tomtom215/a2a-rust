@@ -93,6 +93,9 @@ use proto::a2a_service_client::A2aServiceClient;
 pub struct GrpcTransportConfig {
     /// Request timeout for unary calls. Default: 30 seconds.
     pub timeout: Duration,
+    /// How long a blocking `SendMessage` waits for the agent's turn.
+    /// Default: [`DEFAULT_SEND_TIMEOUT`](super::DEFAULT_SEND_TIMEOUT).
+    pub send_timeout: Duration,
     /// Connection timeout. Default: 10 seconds.
     pub connect_timeout: Duration,
     /// Maximum inbound message size. Default: 4 MiB.
@@ -114,6 +117,7 @@ impl Default for GrpcTransportConfig {
     fn default() -> Self {
         Self {
             timeout: Duration::from_secs(30),
+            send_timeout: super::DEFAULT_SEND_TIMEOUT,
             connect_timeout: Duration::from_secs(10),
             max_message_size: 4 * 1024 * 1024,
             stream_channel_capacity: 64,
@@ -129,6 +133,13 @@ impl GrpcTransportConfig {
     #[must_use]
     pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Sets [`send_timeout`](Self::send_timeout).
+    #[must_use]
+    pub const fn with_send_timeout(mut self, timeout: Duration) -> Self {
+        self.send_timeout = timeout;
         self
     }
 
@@ -299,18 +310,20 @@ impl GrpcTransport {
             .tcp_keepalive_interval(Some(super::connector::TCP_KEEPALIVE_INTERVAL))
             .tcp_keepalive_retries(Some(super::connector::TCP_KEEPALIVE_RETRIES));
         let endpoint = Self::apply_tls(endpoint, &endpoint_str, &config)?;
-        let channel = endpoint.connect().await.map_err(|e| {
-            if tls_by_policy {
-                ClientError::Transport(format!(
-                    "gRPC connect failed: {e} (`{raw}` was dialled with TLS by \
+        let channel = Self::dial(&endpoint, &endpoint_str, &config)
+            .await
+            .map_err(|e| {
+                if tls_by_policy {
+                    ClientError::Transport(format!(
+                        "gRPC connect failed: {e} (`{raw}` was dialled with TLS by \
                          {:?}; if this peer speaks plaintext, set \
                          GrpcBareAddressScheme::Http)",
-                    config.bare_address_scheme
-                ))
-            } else {
-                ClientError::Transport(format!("gRPC connect failed: {e}"))
-            }
-        })?;
+                        config.bare_address_scheme
+                    ))
+                } else {
+                    ClientError::Transport(format!("gRPC connect failed: {e}"))
+                }
+            })?;
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -481,6 +494,52 @@ impl GrpcTransport {
         serde_json::to_value(value).map_err(ClientError::Serialization)
     }
 
+    /// `UNAVAILABLE`: with a `RetryInfo` detail it is the server refusing
+    /// before any work (one shutting down, audit E-F2), and a send may be
+    /// repeated: the HTTP bindings' `503` with `Retry-After`. Without one it
+    /// may come from a proxy or a dropped connection after the request ran,
+    /// and stays a transport error a send is not repeated on.
+    fn unavailable_to_error(status: &tonic::Status) -> ClientError {
+        use tonic_types::StatusExt as _;
+        status
+            .get_details_retry_info()
+            .and_then(|i| i.retry_delay)
+            .map_or_else(
+                || ClientError::HttpClient(format!("gRPC unavailable: {}", status.message())),
+                |delay| ClientError::UnexpectedStatus {
+                    status: 503,
+                    body: status.message().to_owned(),
+                    retry_after: Some(delay.min(std::time::Duration::from_secs(3600))),
+                },
+            )
+    }
+
+    /// Connects `endpoint`: straight, or through the proxy `HTTPS_PROXY` /
+    /// `HTTP_PROXY` names for it, as a `CONNECT` tunnel with tonic's TLS and
+    /// HTTP/2 inside (`crate::proxy::grpc_tunnel`). The connection to the
+    /// proxy gets the socket options tonic's own connector would have set.
+    async fn dial(
+        endpoint: &tonic::transport::Endpoint,
+        endpoint_str: &str,
+        config: &GrpcTransportConfig,
+    ) -> Result<tonic::transport::Channel, tonic::transport::Error> {
+        #[cfg(feature = "tls-rustls")]
+        if let Ok(dst) = endpoint_str.parse::<hyper::Uri>() {
+            let mut tcp = hyper_util::client::legacy::connect::HttpConnector::new();
+            tcp.set_nodelay(true);
+            tcp.set_connect_timeout(Some(config.connect_timeout));
+            tcp.set_keepalive(Some(super::connector::TCP_KEEPALIVE_TIME));
+            tcp.set_keepalive_interval(Some(super::connector::TCP_KEEPALIVE_INTERVAL));
+            tcp.set_keepalive_retries(Some(super::connector::TCP_KEEPALIVE_RETRIES));
+            if let Some(tunnel) = crate::proxy::grpc_tunnel(&dst, tcp) {
+                return endpoint.connect_with_connector(tunnel).await;
+            }
+        }
+        #[cfg(not(feature = "tls-rustls"))]
+        let _ = (endpoint_str, config);
+        endpoint.connect().await
+    }
+
     fn status_to_error(status: &tonic::Status) -> ClientError {
         if is_truncation(status) {
             // The response ended with no `grpc-status`: the peer or something
@@ -512,9 +571,7 @@ impl GrpcTransport {
                 body: status.message().to_owned(),
                 retry_after: None,
             },
-            tonic::Code::Unavailable => {
-                ClientError::HttpClient(format!("gRPC unavailable: {}", status.message()))
-            }
+            tonic::Code::Unavailable => Self::unavailable_to_error(status),
             // ResourceExhausted is the gRPC analog of HTTP 429 (rate limited /
             // over quota): a transient, retryable condition. Mapping it through
             // the wildcard would make it a non-retryable `Protocol(InvalidParams)`,
@@ -578,14 +635,24 @@ impl GrpcTransport {
         );
 
         let mut client = self.client();
+        let waits = super::waits_for_turn(method, &params);
+        let budget = if waits {
+            self.inner.config.send_timeout
+        } else {
+            self.inner.config.timeout
+        };
         tokio::time::timeout(
-            self.inner.config.timeout,
+            budget,
             self.dispatch_unary(&mut client, method, params, extra_headers),
         )
         .await
         .map_err(|_| {
             trace_error!(method, "gRPC request timed out");
-            ClientError::Timeout("gRPC request timed out".into())
+            if waits {
+                super::timed_out(true, budget)
+            } else {
+                ClientError::Timeout("gRPC request timed out".into())
+            }
         })?
     }
 
@@ -604,10 +671,18 @@ impl GrpcTransport {
     ) -> ClientResult<serde_json::Value> {
         match method {
             "SendMessage" => {
+                let waits = super::waits_for_turn(method, &params);
                 let p: a2a_protocol_types::params::MessageSendParams = Self::parse_params(params)?;
                 let req = apb::SendMessageRequest::try_from(p).map_err(convert_error)?;
+                let mut req = self.request(req, extra_headers, true)?;
+                // The deadline sent to the server is the send's, not the
+                // 30 s every other call has: a blocking send is answered when
+                // the turn ends (`DEFAULT_SEND_TIMEOUT`).
+                if waits {
+                    req.set_timeout(self.inner.config.send_timeout);
+                }
                 let resp = client
-                    .send_message(self.request(req, extra_headers, true)?)
+                    .send_message(req)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
                 let domain: a2a_protocol_types::responses::SendMessageResponse = resp
@@ -1461,6 +1536,31 @@ mod tests {
         assert_eq!(delay(Some(secs(7))), Some(secs(7)));
         assert_eq!(delay(Some(secs(86_400))), Some(secs(3600)));
         assert_eq!(delay(None), None);
+    }
+
+    /// An `UNAVAILABLE` with a `RetryInfo` is a refusal before any work, as
+    /// a `503` with `Retry-After` is: a send may be repeated. Without one it
+    /// stays a transport error (audit E-F2).
+    #[test]
+    fn unavailable_with_a_delay_is_a_refusal_a_send_may_repeat() {
+        use tonic_types::StatusExt as _;
+        let status = tonic::Status::with_error_details(
+            tonic::Code::Unavailable,
+            "shutting down",
+            tonic_types::ErrorDetails::with_retry_info(Some(std::time::Duration::from_secs(1))),
+        );
+        let err = GrpcTransport::status_to_error(&status);
+        assert!(
+            matches!(
+                err,
+                ClientError::UnexpectedStatus { status: 503, retry_after: Some(d), .. }
+                    if d == std::time::Duration::from_secs(1)
+            ),
+            "{err:?}"
+        );
+        assert!(err.is_retryable());
+        let bare = GrpcTransport::status_to_error(&tonic::Status::unavailable("gone"));
+        assert!(matches!(bare, ClientError::HttpClient(_)), "{bare:?}");
     }
 
     #[test]

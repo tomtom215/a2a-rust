@@ -177,7 +177,7 @@ async fn a_peer_that_never_finishes_its_headers_is_disconnected() {
     );
 
     tx.send(()).ok();
-    serving.await.expect("join");
+    let _ = serving.await.expect("join");
 }
 
 /// The disabled path, pinned because it is the one that panicked. A server
@@ -214,7 +214,7 @@ async fn timeouts_can_be_turned_off_without_breaking_the_connection() {
     assert!(response.status().is_success());
 
     tx.send(()).ok();
-    serving.await.expect("join");
+    let _ = serving.await.expect("join");
 }
 
 /// A request still being served is not an idle connection. A blocking
@@ -264,7 +264,7 @@ async fn a_request_still_being_served_is_not_idle() {
     );
 
     tx.send(()).ok();
-    serving.await.expect("join");
+    let _ = serving.await.expect("join");
 }
 
 /// A server built from a listener the caller bound serves on that listener:

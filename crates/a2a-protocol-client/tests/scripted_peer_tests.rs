@@ -30,18 +30,23 @@ fn params() -> MessageSendParams {
 }
 
 async fn client(binding: Binding, url: &str) -> ClientResult {
+    // A blocking send waits `send_timeout` (10 min by default), not
+    // `request_timeout`: the peer here stalls a send, so both are bounded.
     let builder = ClientBuilder::new(url)
         .with_timeout(IDLE)
+        .with_send_timeout(IDLE)
         .with_stream_idle_timeout(Some(IDLE));
     match binding {
         Binding::JsonRpc => builder.build(),
         Binding::Rest => builder.with_protocol_binding("HTTP+JSON").build(),
         #[cfg(feature = "websocket")]
         Binding::WebSocket => {
-            // The WebSocket transport carries its own request bound (30 s by
-            // default), which the builder's `with_timeout` does not reach.
+            // The WebSocket transport carries its own request and send bounds
+            // (30 s and 10 min by default), which the builder's setters do
+            // not reach.
             let config = a2a_protocol_client::transport::WebSocketTransportConfig::default()
-                .with_request_timeout(IDLE);
+                .with_request_timeout(IDLE)
+                .with_send_timeout(IDLE);
             let transport =
                 a2a_protocol_client::transport::WebSocketTransport::connect_with_config(
                     url, config,

@@ -14,6 +14,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use a2a_protocol_server::auth::jwt::{Jwks, JwtAuthInterceptor, JwtValidator};
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
@@ -27,7 +28,7 @@ use hyper::body::Bytes;
 // use; allow(dead_code) on the wrapper keeps them from warning here.
 #[allow(dead_code)]
 mod vectors {
-    include!("../src/auth/jwt_test_vectors.rs");
+    include!("../../src/auth/jwt_test_vectors.rs");
 }
 use vectors::{
     RS256_E, RS256_EXPIRED, RS256_N, RS256_VALID, RS256_WRONG_AUD, RS256_WRONG_ISS, RS256_WRONG_KEY,
@@ -149,119 +150,8 @@ async fn valid_rs256_passes_and_invalid_is_rejected_over_http() {
     }
 }
 
-// ── Remote JWKS: fetch, cache, and rotation refetch ───────────────────────────
-
-/// A JWKS HTTP endpoint that serves whatever body `state` currently holds and
-/// counts hits.
-async fn spawn_jwks_endpoint(
-    state: Arc<std::sync::Mutex<String>>,
-    hits: Arc<AtomicUsize>,
-) -> std::net::SocketAddr {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                break;
-            };
-            let state = Arc::clone(&state);
-            let hits = Arc::clone(&hits);
-            tokio::spawn(async move {
-                let io = hyper_util::rt::TokioIo::new(stream);
-                let svc = hyper::service::service_fn(move |_req| {
-                    let state = Arc::clone(&state);
-                    let hits = Arc::clone(&hits);
-                    async move {
-                        hits.fetch_add(1, Ordering::SeqCst);
-                        let body = state.lock().unwrap().clone();
-                        Ok::<_, std::convert::Infallible>(
-                            hyper::Response::builder()
-                                .status(200)
-                                .header("content-type", "application/json")
-                                .body(Full::new(Bytes::from(body)))
-                                .unwrap(),
-                        )
-                    }
-                });
-                let _ = hyper::server::conn::http1::Builder::new()
-                    .serve_connection(io, svc)
-                    .await;
-            });
-        }
-    });
-    addr
-}
-
-fn jwks_json(kid: &str) -> String {
-    format!(
-        r#"{{"keys":[{{"kty":"RSA","kid":"{kid}","use":"sig","n":"{RS256_N}","e":"{RS256_E}"}}]}}"#
-    )
-}
-
-#[tokio::test]
-async fn remote_jwks_fetches_once_then_caches() {
-    let hits = Arc::new(AtomicUsize::new(0));
-    // Serve the key under the token's real kid ("rk1").
-    let state = Arc::new(std::sync::Mutex::new(jwks_json("rk1")));
-    let jwks_addr = spawn_jwks_endpoint(Arc::clone(&state), Arc::clone(&hits)).await;
-
-    let interceptor =
-        JwtAuthInterceptor::from_jwks_url(validator(), format!("http://{jwks_addr}/jwks"));
-    let addr = spawn_guarded_server(interceptor).await;
-
-    for _ in 0..3 {
-        let body = post_send_message(addr, Some(RS256_VALID)).await;
-        assert!(body.contains("result"), "valid token served: {body}");
-    }
-    assert_eq!(
-        hits.load(Ordering::SeqCst),
-        1,
-        "three requests must share a single cached JWKS fetch"
-    );
-}
-
-#[tokio::test]
-async fn remote_jwks_refetches_on_key_rotation() {
-    let hits = Arc::new(AtomicUsize::new(0));
-    // Start with a JWKS whose kid does NOT match the token ("rk-old"): the
-    // token names "rk1", so this is a rotation miss.
-    let state = Arc::new(std::sync::Mutex::new(jwks_json("rk-old")));
-    let jwks_addr = spawn_jwks_endpoint(Arc::clone(&state), Arc::clone(&hits)).await;
-
-    let interceptor =
-        JwtAuthInterceptor::from_jwks_url(validator(), format!("http://{jwks_addr}/jwks"));
-    let addr = spawn_guarded_server(interceptor).await;
-
-    // First attempt: cached JWKS has only rk-old → kid miss → one forced
-    // refetch, which STILL returns rk-old → rejected. Two fetches (initial +
-    // rotation retry).
-    let rejected = post_send_message(addr, Some(RS256_VALID)).await;
-    assert!(
-        rejected.contains("error"),
-        "kid miss must reject: {rejected}"
-    );
-    assert_eq!(
-        hits.load(Ordering::SeqCst),
-        2,
-        "initial fetch + one rotation retry"
-    );
-
-    // Now rotate the endpoint to publish the real key under kid "rk1".
-    *state.lock().unwrap() = jwks_json("rk1");
-
-    // Next request: cache still holds rk-old (fresh TTL) → kid miss → forced
-    // refetch picks up rk1 → accepted. One more fetch.
-    let ok = post_send_message(addr, Some(RS256_VALID)).await;
-    assert!(
-        ok.contains("result"),
-        "post-rotation token must be served: {ok}"
-    );
-    assert_eq!(
-        hits.load(Ordering::SeqCst),
-        3,
-        "rotation retry performs exactly one additional fetch"
-    );
-}
+mod remote_jwks;
+use remote_jwks::jwks_json;
 
 // ── OIDC discovery (`from_oidc_issuer`) ───────────────────────────────────────
 
@@ -346,10 +236,9 @@ async fn oidc_discovery_end_to_end_validates_tokens() {
 /// A discovery document without `jwks_uri` is a hard, described error.
 #[tokio::test]
 async fn oidc_discovery_missing_jwks_uri_errors() {
-    let discovery = Arc::new(std::sync::Mutex::new(String::from(
-        r#"{"issuer":"http://example.invalid"}"#,
-    )));
-    let issuer_addr = spawn_oidc_issuer(discovery, jwks_json("rk1"), 200).await;
+    let discovery = Arc::new(std::sync::Mutex::new(String::new()));
+    let issuer_addr = spawn_oidc_issuer(Arc::clone(&discovery), jwks_json("rk1"), 200).await;
+    *discovery.lock().unwrap() = format!(r#"{{"issuer":"http://{issuer_addr}"}}"#);
 
     let err = JwtAuthInterceptor::from_oidc_issuer(&format!("http://{issuer_addr}"), validator())
         .await
@@ -402,4 +291,73 @@ async fn oidc_discovery_unreachable_issuer_errors() {
         err.message.contains("OIDC discovery"),
         "error must name the failing step: {err}"
     );
+}
+
+/// A discovery document that names another issuer is refused (OpenID
+/// Connect Discovery 1.0 §4.3; audit SEC-06): its keys may sign for that
+/// issuer, not this one.
+#[tokio::test]
+async fn oidc_discovery_naming_another_issuer_is_refused() {
+    let discovery = Arc::new(std::sync::Mutex::new(String::new()));
+    let issuer_addr = spawn_oidc_issuer(Arc::clone(&discovery), jwks_json("rk1"), 200).await;
+    *discovery.lock().unwrap() = format!(
+        r#"{{"issuer":"https://login.example.com/common","jwks_uri":"http://{issuer_addr}/jwks"}}"#
+    );
+    let err = JwtAuthInterceptor::from_oidc_issuer(&format!("http://{issuer_addr}"), validator())
+        .await
+        .expect_err("another issuer's document must be refused");
+    assert!(err.message.contains("another issuer"), "{err}");
+}
+
+/// A validator that names no issuer is bound to the discovered one: a
+/// correctly signed token from another issuer sharing the keys is refused
+/// (audit SEC-06). `allow_any_issuer` keeps the old behaviour, on purpose.
+#[tokio::test]
+async fn oidc_discovery_binds_the_issuer_to_a_validator_that_names_none() {
+    let discovery = Arc::new(std::sync::Mutex::new(String::new()));
+    let issuer_addr = spawn_oidc_issuer(Arc::clone(&discovery), jwks_json("rk1"), 200).await;
+    *discovery.lock().unwrap() =
+        format!(r#"{{"issuer":"http://{issuer_addr}","jwks_uri":"http://{issuer_addr}/jwks"}}"#);
+    let issuer = format!("http://{issuer_addr}");
+
+    // RS256_VALID is signed by these keys, with `iss` https://issuer.test.
+    let bound = JwtAuthInterceptor::from_oidc_issuer(
+        &issuer,
+        JwtValidator::new().with_audience("a2a-agent"),
+    )
+    .await
+    .expect("discovery");
+    // Bound, not merely refusing everything for want of an issuer.
+    let shown = format!("{bound:?}");
+    assert!(shown.contains(&format!("\"{issuer}\"")), "{shown}");
+    let refused = post_send_message(spawn_guarded_server(bound).await, Some(RS256_VALID)).await;
+    assert!(
+        refused.contains("error"),
+        "another issuer's token: {refused}"
+    );
+
+    let any = JwtAuthInterceptor::from_oidc_issuer(
+        &issuer,
+        JwtValidator::new()
+            .with_audience("a2a-agent")
+            .allow_any_issuer(),
+    )
+    .await
+    .expect("discovery");
+    let served = post_send_message(spawn_guarded_server(any).await, Some(RS256_VALID)).await;
+    assert!(served.contains("result"), "allow_any_issuer: {served}");
+}
+
+/// A discovery document naming a plaintext `jwks_uri` off loopback is
+/// refused: whoever changes the keys in transit can sign any identity.
+#[tokio::test]
+async fn oidc_discovery_with_a_plaintext_jwks_uri_is_refused() {
+    let discovery = Arc::new(std::sync::Mutex::new(String::new()));
+    let issuer_addr = spawn_oidc_issuer(Arc::clone(&discovery), jwks_json("rk1"), 200).await;
+    *discovery.lock().unwrap() =
+        format!(r#"{{"issuer":"http://{issuer_addr}","jwks_uri":"http://203.0.113.1/jwks"}}"#);
+    let err = JwtAuthInterceptor::from_oidc_issuer(&format!("http://{issuer_addr}"), validator())
+        .await
+        .expect_err("plaintext jwks_uri");
+    assert!(err.message.contains("plaintext"), "{err}");
 }

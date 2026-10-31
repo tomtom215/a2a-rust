@@ -564,19 +564,15 @@ async fn shutdown_with_timeout() {
         "shutdown was not graceful: {report:?}"
     );
 
-    // After shutdown, handler can still accept new requests
-    let result = handler
+    // After shutdown a send is refused before any work, retryably, rather
+    // than admitted and stopped (audit E-F2).
+    let err = handler
         .on_send_message(make_params("after shutdown"), false, None)
-        .await;
-    // This should succeed (shutdown cancels in-flight, but doesn't prevent new ones)
-    let send_result = result.expect("send_message after shutdown should succeed");
-    assert!(
-        matches!(
-            send_result,
-            a2a_protocol_server::SendMessageResult::Response(_)
-        ),
-        "expected Response variant after shutdown"
-    );
+        .await
+        .expect_err("a send after shutdown is refused");
+    let wire = err.to_a2a_error();
+    assert!(wire.is_unavailable(), "{wire:?}");
+    assert!(wire.retry_after().is_some(), "{wire:?}");
 }
 
 // ── Concurrent list + send race ──────────────────────────────────────────────

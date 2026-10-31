@@ -50,6 +50,16 @@ as OpenAI does, or as an object, as some compatible servers do. A reply's
 budget and the spans. A non-2xx answer becomes `ModelError::Status` with the
 status and at most 512 bytes of the body (`ERROR_BODY_LIMIT`).
 
+For drafts, `complete_streaming` sends `"stream": true` with
+`"stream_options": {"include_usage": true}` and reads the server-sent
+events as they come, tool calls put together from their pieces by `index`;
+a server that answers whole instead is read whole. A stream that ends with
+neither `[DONE]` nor a finish reason is `ModelError::InvalidResponse`. Each
+streamed turn gets a connection of its own (`Connection: close`):
+`llama-server` advertises keep-alive and then closes the connection after a
+streamed answer, and a pooled connection carried the next turn into that
+close.
+
 Providers with another wire format (Anthropic's messages API, Gemini) are
 reached through their OpenAI-compatible endpoints, or through a `ToolModel`
 you write.
@@ -65,6 +75,7 @@ tools, retry or loop; `ToolLoop` does.
 | `provider_name()` | The provider, as `gen_ai.provider.name`: one of the `GenAI` conventions' well-known values (`openai`, `anthropic`, `gcp.gemini`, …) when one applies |
 | `server()` | Where the provider is served, as a host and port, for `server.address` and `server.port`. The default, `None`, records neither: a model running in this process has no server |
 | `complete(request)` | Runs one turn |
+| `complete_streaming(request, text)` | Runs one turn and hands `text` (a `TextSink`) each piece of the turn's text as it arrives, for [drafts](./running.md#watching-the-text-arrive). The default calls `complete` and hands on nothing |
 
 `complete` is given a `ChatRequest`: the `preamble` (empty for none), the
 `messages` so far, oldest first, and the `tools` as `ToolSpec`s. It returns a

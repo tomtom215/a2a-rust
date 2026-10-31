@@ -267,10 +267,10 @@ fn build_refuses_a_provider_without_an_extended_card() {
         .with_extended_card_provider(Tiers)
         .build();
     match built {
-        Err(ServerError::InvalidParams(why)) => {
+        Err(ServerError::Config(why)) => {
             assert!(why.contains("with_extended_agent_card"), "{why}");
         }
-        other => panic!("expected InvalidParams, got {other:?}"),
+        other => panic!("expected Config, got {other:?}"),
     }
 }
 

@@ -523,7 +523,7 @@
       "id": 13,
       "type": "timeseries",
       "title": "Push deliveries, by outcome",
-      "description": "delivered / failed / timeout / timeout_truncated.",
+      "description": "delivered / failed / timeout / timeout_truncated / dropped (a task's push lane full behind a slow webhook).",
       "datasource": {
         "type": "prometheus",
         "uid": "a2a-prometheus"

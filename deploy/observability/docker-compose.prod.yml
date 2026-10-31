@@ -10,7 +10,7 @@
 # What changes:
 # - Grafana asks for a login: no anonymous user, admin's password from
 #   GRAFANA_ADMIN_PASSWORD (Compose refuses to start without it), no sign-up.
-# - Only Grafana (3000) and the Collector's OTLP ports (4317, 4318) are
+# - Only Grafana (host port 3001) and the Collector's OTLP ports (4317, 4318) are
 #   published; Prometheus, Tempo and Loki are reached on the Compose network
 #   only, so nothing on the host network can query or write to them directly.
 # - The Collector has a memory limit, which its memory_limiter takes its

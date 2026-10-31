@@ -79,6 +79,15 @@ impl fmt::Display for CliError {
             Self::Client(e @ ClientError::CapabilityNotDeclared { .. }) => {
                 write!(f, "{e}\nhint: pass --no-capability-check to send it anyway")
             }
+            Self::Client(
+                e @ ClientError::IncompleteStream {
+                    last_event_id: Some(id),
+                    ..
+                },
+            ) => write!(
+                f,
+                "{e}\nhint: resume with `a2a task subscribe <url> <task-id> --from {id}`"
+            ),
             Self::Client(e) => write!(f, "{e}"),
             Self::Discovery { url, source } => write!(
                 f,
@@ -151,6 +160,26 @@ mod tests {
         assert!(text.contains("--no-capability-check"), "{text}");
         let e = CliError::Client(ClientError::Transport("x".into()));
         assert!(!e.to_string().contains("--no-capability-check"));
+    }
+
+    #[test]
+    fn a_cut_stream_names_the_event_to_resume_after() {
+        let cut = |id: Option<&str>| {
+            CliError::Client(ClientError::IncompleteStream {
+                last_event_id: id.map(str::to_owned),
+                detail: "body ended".into(),
+            })
+            .to_string()
+        };
+        let text = cut(Some("7"));
+        assert!(
+            text.contains("a2a task subscribe <url> <task-id> --from 7"),
+            "{text}"
+        );
+        assert!(
+            !cut(None).contains("--from"),
+            "no id, nothing to resume after"
+        );
     }
 
     #[test]

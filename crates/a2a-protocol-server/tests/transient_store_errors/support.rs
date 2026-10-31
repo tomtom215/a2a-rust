@@ -143,6 +143,11 @@ pub async fn every_part_and_position_is_stored(store: &dyn TaskStore, task: &Tas
     let expected: Vec<String> = (0..TICKS).map(|i| i.to_string()).collect();
     assert_eq!(parts, expected, "the task holds every part, in order");
 
+    // The terminal event is logged after the store saves the state it
+    // carries, so the log holds the verdict (`Processor::handle`): a log read
+    // the moment the task reads terminal can be one event short. Wait for it,
+    // as for the task above; a missing event still fails at the deadline.
+    logged_at_least(store, task, TICKS + 1).await;
     let logged: Vec<u64> = store
         .read_events(task, 0, 1_000)
         .await

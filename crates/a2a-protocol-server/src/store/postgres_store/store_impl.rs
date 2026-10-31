@@ -42,7 +42,11 @@ impl TaskStore for PostgresTaskStore {
 
     fn turn_claims(&self) -> Option<std::sync::Arc<dyn crate::store::TurnClaimStore>> {
         Some(std::sync::Arc::new(
-            crate::store::claim::PostgresTurnClaims::over(self.pool.clone(), self.metrics.clone()),
+            crate::store::claim::PostgresTurnClaims::over(
+                self.pool.clone(),
+                self.metrics.clone(),
+                crate::store::claim::ClaimedTasks::Plain,
+            ),
         ))
     }
 
@@ -723,6 +727,22 @@ impl TaskStore for PostgresTaskStore {
             .map_err(to_a2a_error)?;
             #[allow(clippy::cast_sign_loss)]
             Ok(row.0 as u64)
+        })
+    }
+
+    fn health<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let (standby,): (bool,) = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query_as("SELECT pg_is_in_recovery()").fetch_one(&self.pool)
+            })
+            .await
+            .map_err(to_a2a_error)?;
+            if standby {
+                return Err(A2aError::unavailable(
+                    "the task store's database is a standby (pg_is_in_recovery), which takes no writes",
+                ));
+            }
+            Ok(())
         })
     }
 }

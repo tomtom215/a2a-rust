@@ -161,6 +161,63 @@ pub async fn stream_on(worker: &Worker, binding: Binding) -> Result<(Verdict, St
     ))
 }
 
+/// Streams a question and watches the artifacts: each turn's text arrives
+/// in a draft before the answer, and the last turn's draft is the answer
+/// (audit L5). A model that sent no piece has not exercised it.
+pub async fn drafts(worker: &Worker) -> Result<(Verdict, String)> {
+    let client = worker.client(Binding::JsonRpc, worker.keys.clone()).await?;
+    let ask = Message::user_text(
+        uuid::Uuid::new_v4().to_string(),
+        "How is the billing service doing?",
+    );
+    let mut events = client.stream_message(MessageSendParams::new(ask)).await?;
+    let mut drafts: Vec<(String, String)> = Vec::new();
+    let mut answer = None;
+    let mut before = 0;
+    while let Some(event) = events.next().await {
+        if let StreamResponse::ArtifactUpdate(a) = event? {
+            let text: String = a
+                .artifact
+                .parts
+                .iter()
+                .filter_map(Part::text_content)
+                .collect();
+            if a.artifact.id.0 == ANSWER_ARTIFACT_ID {
+                answer = Some(text);
+                before = drafts.len();
+            } else if a.artifact.id.0.starts_with("draft-") {
+                drafts.push((a.artifact.id.0, text));
+            }
+        }
+    }
+    let answer = answer.ok_or("no answer artifact")?;
+    let last = drafts.last().map(|(id, _)| id.clone()).unwrap_or_default();
+    let last_text: String = drafts
+        .iter()
+        .filter(|(id, _)| *id == last)
+        .map(|(_, t)| t.as_str())
+        .collect();
+    let verdict = if drafts.is_empty() {
+        Verdict::NotExercised
+    } else if before == drafts.len() && last_text == answer {
+        Verdict::Pass
+    } else {
+        Verdict::Fail
+    };
+    let turns: std::collections::BTreeSet<&str> =
+        drafts.iter().map(|(id, _)| id.as_str()).collect();
+    Ok((
+        verdict,
+        format!(
+            "{} draft events over {:?} before the answer; last draft is the answer: {}; answer: {}",
+            drafts.len(),
+            turns,
+            last_text == answer,
+            short(&answer)
+        ),
+    ))
+}
+
 /// A client holding a key the worker did not sign with refuses its signed
 /// content.
 pub async fn provenance_refused(worker: &Worker) -> Result<(Verdict, String)> {

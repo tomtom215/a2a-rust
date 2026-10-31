@@ -30,7 +30,7 @@
 //! Requires the `websocket` feature flag:
 //!
 //! ```toml
-//! a2a-protocol-server = { version = "0.15", features = ["websocket"] }
+//! a2a-protocol-server = { version = "0.16", features = ["websocket"] }
 //! ```
 
 use std::collections::HashMap;
@@ -135,9 +135,10 @@ pub const DEFAULT_WS_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
 /// The listener is plaintext (`ws://`) unless
 /// [`with_tls`](Self::with_tls) is set, which makes it `wss://` only (spec
 /// §7.1 "Production deployments MUST use encrypted communication"). It
-/// accepts an upgrade from any `Origin` unless
-/// [`with_allowed_origins`](Self::with_allowed_origins) names the ones a
-/// browser may connect from.
+/// refuses an upgrade from a browser (one that carries an `Origin`) unless
+/// [`with_allowed_origins`](Self::with_allowed_origins) names that origin,
+/// and accepts one without an `Origin`, as clients that are not browsers
+/// send; [`allow_any_origin`](Self::allow_any_origin) accepts every origin.
 pub struct WebSocketDispatcher {
     handler: Arc<RequestHandler>,
     handshake_timeout: Duration,
@@ -178,7 +179,7 @@ impl WebSocketDispatcher {
             completion_grace: crate::serve::DEFAULT_COMPLETION_GRACE,
             task_grace: crate::serve::DEFAULT_TASK_GRACE,
             drain_timeout: crate::serve::DEFAULT_DRAIN_TIMEOUT,
-            origins: origin::Origins::ANY,
+            origins: origin::Origins::NONE_LISTED,
             agent_card_max_age: super::DEFAULT_AGENT_CARD_MAX_AGE,
             #[cfg(feature = "tls-rustls")]
             tls: None,
@@ -234,15 +235,17 @@ impl WebSocketDispatcher {
     }
 
     /// Accepts an upgrade whose `Origin` header is one of `origins`, and
-    /// refuses any other with HTTP 403 during the handshake. Default: every
-    /// origin is accepted.
+    /// refuses any other with HTTP 403 during the handshake. Default: no
+    /// origin is listed, so every browser is refused.
     ///
     /// A browser sends `Origin` on every WebSocket upgrade and cannot forge
-    /// it, and the handshake carries the browser's cookies, so without this
-    /// any page a user visits can open a connection that carries the user's
-    /// credentials (cross-site WebSocket hijacking). It does nothing against
-    /// a client that is not a browser, which can send any `Origin` or none;
-    /// authenticate those with an interceptor.
+    /// it, and the handshake carries the browser's cookies, and WebSocket is
+    /// outside CORS: a listener that accepted any origin let every page a
+    /// user visited open a connection carrying the user's credentials and
+    /// read the answers (cross-site WebSocket hijacking; audit SEC-03, the
+    /// default until this release). It does nothing against a client that
+    /// is not a browser, which can send any `Origin` or none; authenticate
+    /// those with an interceptor.
     ///
     /// Origins are compared whole and without regard to ASCII case, as
     /// serialised by the browser: scheme, host and a port only when it is
@@ -257,6 +260,17 @@ impl WebSocketDispatcher {
         S: Into<String>,
     {
         self.origins = self.origins.allowing(origins);
+        self
+    }
+
+    /// Accepts an upgrade from any origin, as this listener did before it
+    /// refused browsers by default. Only for a listener no browser can reach
+    /// with credentials worth taking, or one that authenticates every call
+    /// with something a page cannot send (not a cookie); prefer
+    /// [`with_allowed_origins`](Self::with_allowed_origins).
+    #[must_use]
+    pub fn allow_any_origin(mut self) -> Self {
+        self.origins = origin::Origins::ANY;
         self
     }
 

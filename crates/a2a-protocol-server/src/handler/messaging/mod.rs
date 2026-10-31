@@ -30,6 +30,14 @@ use crate::error::ServerResult;
 use super::helpers::build_call_context;
 use super::{RequestHandler, SendMessageResult};
 
+/// What a send arriving after shutdown began is told.
+pub const SHUTTING_DOWN: &str =
+    "this server is shutting down and takes no new sends; send again (another replica answers)";
+
+/// The delay that refusal names: long enough for a balancer to have taken
+/// the replica out, short enough not to stall a caller.
+const SHUTDOWN_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(1);
+
 mod admission;
 mod basis;
 mod claimed;
@@ -77,22 +85,32 @@ impl RequestHandler {
             "SendMessage"
         };
         let start = Instant::now();
-        trace_info!(method = method_name, streaming, "handling send message");
+        trace_debug!(method = method_name, streaming, "handling send message");
         #[cfg(feature = "tracing")]
         crate::rpc_span::record_message(&params.message);
         self.metrics.on_request(method_name);
 
-        let tenant = self
-            .resolve_tenant_counted(start, method_name, headers, params.tenant.as_deref())
-            .await?;
-        // Boxed: the send path's state is larger than clippy's
-        // `large_futures` bound, and every binding awaits this.
-        let result = crate::store::tenant::TenantContext::scope_request(tenant, async {
-            Box::pin(self.send_message_inner(params, streaming, method_name, headers)).await
-        })
-        .await
-        .map_err(crate::error::ServerError::not_retry_safe)
-        .and_then(|sent| self.outbound.sign_sent(sent));
+        // Shutdown has begun: refused before any work, so the client may
+        // send it again, to another replica (audit E-F2). Outside the
+        // `not_retry_safe` mapping, which is for failures after work began.
+        let result = if self.admits_sends() {
+            let tenant = self
+                .resolve_tenant_counted(start, method_name, headers, params.tenant.as_deref())
+                .await?;
+            // Boxed: the send path's state is larger than clippy's
+            // `large_futures` bound, and every binding awaits this.
+            crate::store::tenant::TenantContext::scope_request(tenant, async {
+                Box::pin(self.send_message_inner(params, streaming, method_name, headers)).await
+            })
+            .await
+            .map_err(crate::error::ServerError::not_retry_safe)
+            .and_then(|sent| self.outbound.sign_sent(sent))
+        } else {
+            Err(crate::error::ServerError::Protocol(
+                a2a_protocol_types::error::A2aError::unavailable(SHUTTING_DOWN)
+                    .with_retry_after(SHUTDOWN_RETRY_AFTER),
+            ))
+        };
         #[cfg(feature = "tracing")]
         if let Ok(SendMessageResult::Response(
             a2a_protocol_types::responses::SendMessageResponse::Task(task),

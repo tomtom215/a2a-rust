@@ -132,7 +132,8 @@ async fn a_call_a_client_may_not_repeat_is_not_called_temporary() {
     .await;
     assert_eq!(status, 500, "{body}");
     assert!(
-        body.contains("\"INTERNAL\"") && body.contains("pool timed out"),
+        // sqlx's own text is withheld from the caller (audit SEC-07).
+        body.contains("\"INTERNAL\"") && body.contains("internal error (reference "),
         "{body}"
     );
 
@@ -144,7 +145,8 @@ async fn a_call_a_client_may_not_repeat_is_not_called_temporary() {
     .await;
     assert_eq!(status, 500, "{body}");
     assert!(
-        body.contains("\"INTERNAL\"") && body.contains("pool timed out"),
+        // sqlx's own text is withheld from the caller (audit SEC-07).
+        body.contains("\"INTERNAL\"") && body.contains("internal error (reference "),
         "{body}"
     );
 }

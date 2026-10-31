@@ -71,18 +71,23 @@
 //! # drop(handler); Ok(()) }
 //! ```
 
+mod drafts;
 mod executor;
 mod idempotency;
 mod loop_error;
 mod model;
 mod openai;
+mod openai_parse;
+mod openai_stream;
 mod recover;
 mod run;
 mod tool;
 
+pub use drafts::{FLUSH_AFTER, FLUSH_BYTES, draft_artifact_id};
 pub use executor::{ANSWER_ARTIFACT_ID, TRACE_ARTIFACT_ID, ToolLoopExecutor};
 pub use model::{
-    ChatMessage, ChatRequest, ModelError, ModelTurn, TokenUsage, ToolCall, ToolModel, ToolSpec,
+    ChatMessage, ChatRequest, ModelError, ModelTurn, TextSink, TokenUsage, ToolCall, ToolModel,
+    ToolSpec,
 };
 pub use openai::{DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_TIMEOUT, ERROR_BODY_LIMIT, OpenAiChatModel};
 pub use run::{Answer, DEFAULT_MAX_TURNS, LoopError, ToolLoop};

@@ -259,6 +259,7 @@ pub(super) fn replicate(e: &ClientError) -> ClientError {
         ClientError::Serialization(inner) => ClientError::Transport(inner.to_string()),
         ClientError::Protocol(a) => ClientError::Protocol(a.clone()),
         ClientError::Transport(s) => ClientError::Transport(s.clone()),
+        ClientError::Config(s) => ClientError::Config(s.clone()),
         ClientError::InvalidEndpoint(s) => ClientError::InvalidEndpoint(s.clone()),
         ClientError::UnexpectedStatus {
             status,

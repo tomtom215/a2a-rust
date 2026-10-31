@@ -972,6 +972,23 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Sends callers the text of internal errors: what an executor, a store
+    /// or an outbound call wrote, as written.
+    ///
+    /// By default a caller is told only that an internal error happened,
+    /// with a reference to find its text in the log (feature `tracing`), in
+    /// the error it is answered with and in the `Failed` status of a task
+    /// whose executor returned one. That text is often not the caller's to
+    /// read: a URL with its API key, a database's table and constraint
+    /// names, an identity provider's response (audit SEC-07). Errors of any
+    /// other code, such as `InvalidParams`, are sent as they are written.
+    /// For development, or an agent whose callers are its operators.
+    #[must_use]
+    pub const fn expose_internal_errors(mut self) -> Self {
+        self.interceptors.expose_internal_errors();
+        self
+    }
+
     /// Accepts message parts whose `mediaType` the agent card does not
     /// declare.
     ///
@@ -1029,7 +1046,7 @@ impl RequestHandlerBuilder {
     ///
     /// # Errors
     ///
-    /// Returns [`ServerError::InvalidParams`](crate::error::ServerError::InvalidParams),
+    /// Returns [`ServerError::Config`](crate::error::ServerError::Config),
     /// naming what to change, if the configuration is one this handler cannot
     /// serve correctly:
     /// - an agent card the spec does not allow (`AgentCard::validate` and
@@ -1058,7 +1075,7 @@ impl RequestHandlerBuilder {
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ServerResult<RequestHandler> {
         if self.lease_store.is_some() && self.max_lease_ttl < crate::handler::MIN_LEASE_TTL {
-            return Err(crate::error::ServerError::InvalidParams(format!(
+            return Err(crate::error::ServerError::Config(format!(
                 "the longest lease must be at least {} ms",
                 crate::handler::MIN_LEASE_TTL.as_millis()
             )));
@@ -1068,14 +1085,21 @@ impl RequestHandlerBuilder {
                 || self.turn_claim_renewal.is_zero()
                 || self.turn_claim_renewal * 3 > self.turn_claim_ttl)
         {
-            return Err(crate::error::ServerError::InvalidParams(format!(
+            return Err(crate::error::ServerError::Config(format!(
                 "a turn claim's time to live must be at least {} ms, and its renewal \
                  interval more than zero and at most a third of it",
                 crate::handler::MIN_TURN_CLAIM_TTL.as_millis()
             )));
         }
+        if self.event_queue_capacity == Some(0) {
+            return Err(crate::error::ServerError::Config(
+                "the event queue capacity must be at least 1: a queue of 0 cannot hold \
+                 the event an executor writes"
+                    .to_owned(),
+            ));
+        }
         if self.halt_store.is_some() && self.halt_poll_interval.is_zero() {
-            return Err(crate::error::ServerError::InvalidParams(
+            return Err(crate::error::ServerError::Config(
                 "the halt poll interval must be greater than zero".to_owned(),
             ));
         }
@@ -1099,7 +1123,7 @@ impl RequestHandlerBuilder {
                 .validate()
                 .and_then(|()| card.validate_security_schemes())
             {
-                return Err(crate::error::ServerError::InvalidParams(format!(
+                return Err(crate::error::ServerError::Config(format!(
                     "the {which} is not valid: {why}"
                 )));
             }
@@ -1108,7 +1132,7 @@ impl RequestHandlerBuilder {
             // answers PushNotificationNotSupported. Until 2026-10-13 such a card
             // was served as it was.
             if card.capabilities.push_notifications == Some(true) && self.push_sender.is_none() {
-                return Err(crate::error::ServerError::InvalidParams(format!(
+                return Err(crate::error::ServerError::Config(format!(
                     "the {which} declares capabilities.pushNotifications, but no push \
                      sender is wired, so every push-config operation would answer \
                      PushNotificationNotSupported (spec §3.3.4): call with_push_sender(sender), \
@@ -1124,7 +1148,7 @@ impl RequestHandlerBuilder {
             &self.interceptors,
             self.auth_waivers.upstream,
         )
-        .map_err(crate::error::ServerError::InvalidParams)?;
+        .map_err(crate::error::ServerError::Config)?;
         let cards: Vec<&AgentCard> = public_card
             .into_iter()
             .chain(extended_card)
@@ -1134,7 +1158,7 @@ impl RequestHandlerBuilder {
         for (which, card) in public_card.into_iter().chain(extended_card) {
             let leaked = crate::agent_card::card_credentials(card);
             if !leaked.is_empty() {
-                return Err(crate::error::ServerError::InvalidParams(format!(
+                return Err(crate::error::ServerError::Config(format!(
                     "the {which} carries a credential in a URL ({}): a card is served to \
                      whoever asks, so it would be disclosed (spec §14: the card SHOULD NOT \
                      include sensitive credentials); move it out of the card",
@@ -1149,7 +1173,7 @@ impl RequestHandlerBuilder {
             }
         }
         if self.extended_card_provider.is_some() && extended_card.is_none() {
-            return Err(crate::error::ServerError::InvalidParams(
+            return Err(crate::error::ServerError::Config(
                 "an extended card provider is set, but no extended card: the provider \
                  chooses each caller's card from the one set with with_extended_agent_card, \
                  so set that card too"
@@ -1159,7 +1183,7 @@ impl RequestHandlerBuilder {
         if let (Some((_, public)), Some(_)) = (public_card, extended_card)
             && public.capabilities.extended_agent_card != Some(true)
         {
-            return Err(crate::error::ServerError::InvalidParams(
+            return Err(crate::error::ServerError::Config(
                 "an extended agent card is set, but the agent card does not declare \
                  capabilities.extendedAgentCard, so GetExtendedAgentCard answers \
                  UnsupportedOperation and the extended card is never served \
@@ -1186,24 +1210,24 @@ impl RequestHandlerBuilder {
         if let Some(timeout) = self.executor_timeout
             && timeout.is_zero()
         {
-            return Err(crate::error::ServerError::InvalidParams(
+            return Err(crate::error::ServerError::Config(
                 "executor timeout must be greater than zero".into(),
             ));
         }
 
         // Validate handler limits are sensible (zero values cause all requests to fail).
         if self.handler_limits.max_id_length == 0 {
-            return Err(crate::error::ServerError::InvalidParams(
+            return Err(crate::error::ServerError::Config(
                 "max_id_length must be greater than zero".into(),
             ));
         }
         if self.handler_limits.max_metadata_size == 0 {
-            return Err(crate::error::ServerError::InvalidParams(
+            return Err(crate::error::ServerError::Config(
                 "max_metadata_size must be greater than zero".into(),
             ));
         }
         if self.handler_limits.push_delivery_timeout.is_zero() {
-            return Err(crate::error::ServerError::InvalidParams(
+            return Err(crate::error::ServerError::Config(
                 "push_delivery_timeout must be greater than zero".into(),
             ));
         }
@@ -1363,6 +1387,29 @@ impl RequestHandlerBuilder {
         // that configured tenant-aware tasks gets tenant-aware push configs
         // too, rather than having every tenant refused because of a store it
         // never chose.
+        // A task store shared by several processes (one that hands out turn
+        // claims: the SQL stores) with push configs kept in this process's
+        // memory: a config registered on one replica is never seen by the
+        // replica running the task, so its webhook is never called, and
+        // every config is lost on restart (audit E-F4, 2026-10-29). Refused
+        // when the card promises push notifications.
+        if self.push_config_store.is_none()
+            && task_store.turn_claims().is_some()
+            && agent_card
+                .as_ref()
+                .is_some_and(|c| c.capabilities.push_notifications == Some(true))
+        {
+            return Err(crate::error::ServerError::Config(
+                "the agent card declares pushNotifications and the task store is shared \
+                 between processes, but push configs would be kept in this process's memory: \
+                 a config registered through one replica is not seen by another, and none \
+                 survives a restart. Call with_push_config_store with the store matching the \
+                 task store (PostgresPushConfigStore, SqlitePushConfigStore, or their \
+                 TenantAware forms), or with_push_config_store(InMemoryPushConfigStore::new()) \
+                 to keep them in memory on purpose"
+                    .to_owned(),
+            ));
+        }
         let push_config_store: Arc<dyn PushConfigStore> =
             self.push_config_store.unwrap_or_else(|| {
                 if task_store.isolates_tenants() {
@@ -1386,10 +1433,10 @@ impl RequestHandlerBuilder {
                  partition by tenant (the TenantAware* stores); these do not, so every \
                  caller would share one set of records"
             };
-            return Err(crate::error::ServerError::InvalidParams(why.to_owned()));
+            return Err(crate::error::ServerError::Config(why.to_owned()));
         }
         if isolate_callers && !interceptors.has_authenticator() {
-            return Err(crate::error::ServerError::InvalidParams(
+            return Err(crate::error::ServerError::Config(
                 "isolate_tasks_by_caller needs an authenticating interceptor to identify \
                  callers; without one every request would be refused"
                     .to_owned(),
@@ -1400,7 +1447,7 @@ impl RequestHandlerBuilder {
             .as_ref()
             .and_then(|gate| gate.unsatisfiable(isolate_callers))
         {
-            return Err(crate::error::ServerError::InvalidParams(why));
+            return Err(crate::error::ServerError::Config(why));
         }
         if isolate_callers
             && self
@@ -1421,10 +1468,10 @@ impl RequestHandlerBuilder {
                  instead, or let requesters answer their own runs with \
                  ApprovalGate::allowing_self_approval()"
             };
-            return Err(crate::error::ServerError::InvalidParams(why.to_owned()));
+            return Err(crate::error::ServerError::Config(why.to_owned()));
         }
         if card_unset {
-            return Err(crate::error::ServerError::InvalidParams(
+            return Err(crate::error::ServerError::Config(
                 "an A2A server must make an agent card available (spec §8.1): call \
                  with_agent_card(card), or without_agent_card() if the card is \
                  published elsewhere or this handler is not a public A2A server"
@@ -1439,7 +1486,7 @@ impl RequestHandlerBuilder {
             // in its own database: claims kept anywhere else never satisfy
             // that fence, and every turn's first write would be refused.
             TurnClaimsChoice::Given(_) if task_store.turn_claims().is_some() => {
-                return Err(crate::error::ServerError::InvalidParams(
+                return Err(crate::error::ServerError::Config(
                     "with_turn_claims: this task store provides its own turn claims and                      fences its writes against them, so claims kept elsewhere would refuse                      every write; drop with_turn_claims to use the store's own"
                         .to_owned(),
                 ));
@@ -1456,11 +1503,21 @@ impl RequestHandlerBuilder {
             ))
         });
 
+        let push_sender = signing_push(self.push_sender, &self.outbound);
+        let in_flight = crate::handler::InFlight::default();
+        let push_lanes = crate::handler::PushLanes::new(
+            Arc::clone(&push_config_store),
+            push_sender.clone(),
+            self.handler_limits.clone(),
+            Arc::clone(&self.metrics),
+            in_flight.background().clone(),
+        );
         Ok(RequestHandler {
             executor: self.executor,
             task_store,
             push_config_store,
-            push_sender: signing_push(self.push_sender, &self.outbound),
+            push_sender,
+            push_lanes,
             event_queue_manager: {
                 let mut mgr = self
                     .event_queue_capacity
@@ -1512,7 +1569,7 @@ impl RequestHandlerBuilder {
             )),
             context_locks: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             tenant_slots: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
-            in_flight: crate::handler::InFlight::default(),
+            in_flight,
             halts: Arc::default(),
             leases: self.lease_store.map(|store| crate::handler::lease::Leases {
                 store,
@@ -1528,6 +1585,7 @@ impl RequestHandlerBuilder {
             turn_claims,
             #[cfg(feature = "audit")]
             audit: self.audit,
+            draining: std::sync::atomic::AtomicBool::new(false),
         })
     }
 }
@@ -1536,7 +1594,7 @@ impl RequestHandlerBuilder {
     /// What [`Profile::Production`](crate::profile::Profile::Production)
     /// requires, each failure naming its fix.
     fn check_production(&self) -> ServerResult<()> {
-        let refuse = |why: &str| Err(crate::error::ServerError::InvalidParams(why.to_owned()));
+        let refuse = |why: &str| Err(crate::error::ServerError::Config(why.to_owned()));
         if !self.interceptors.has_authenticator() {
             return refuse(
                 "the production profile needs an authenticating interceptor: \
@@ -1575,7 +1633,7 @@ impl RequestHandlerBuilder {
     /// What [`Profile::Auditable`](crate::profile::Profile::Auditable)
     /// requires, each failure naming its fix.
     fn check_auditable(&self) -> ServerResult<()> {
-        let refuse = |why: &str| Err(crate::error::ServerError::InvalidParams(why.to_owned()));
+        let refuse = |why: &str| Err(crate::error::ServerError::Config(why.to_owned()));
         let Some(log) = &self.audit else {
             return refuse("the auditable profile needs an audit log");
         };
@@ -1689,7 +1747,7 @@ pub(crate) fn advertise(
             .is_some_and(|sigs| !sigs.is_empty())
     {
         let uris: Vec<&str> = missing.iter().map(|e| e.uri.as_str()).collect();
-        return Err(crate::error::ServerError::InvalidParams(format!(
+        return Err(crate::error::ServerError::Config(format!(
             "the {which} carries a signature but does not declare {}. \
              Advertising an extension edits `capabilities.extensions`, \
              which is inside the signed bytes, so the card this server \

@@ -176,7 +176,7 @@ cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 # Verify packaging (mirror the exclude list in ci.yml / release.yml exactly)
-cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude mcp-a2a-agent --exclude a2a-mcp-bridge --exclude genai-a2a-agent --exclude incident-response --exclude resilient-agent --exclude swarm --exclude langfuse-agent --exclude tool-loop-agent --exclude live-model --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks --exclude a2a-cli
+cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude mcp-a2a-agent --exclude a2a-mcp-bridge --exclude genai-a2a-agent --exclude incident-response --exclude resilient-agent --exclude swarm --exclude langfuse-agent --exclude tool-loop-agent --exclude live-model --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks --exclude a2a-cli --exclude a2a-protocol-discovery
 ```
 
 ### 2. Merge to main
@@ -331,7 +331,7 @@ above, and `release.yml` does not touch it. It lives outside the workspace with
 its own `Cargo.lock`, so it needs its own `cargo package` and `cargo publish`
 run from `bindings/a2a-protocol-slimrpc/`.
 
-It is versioned independently — currently `0.7.0` against the SDK's `0.15.1`. Numbering it
+It is versioned independently — currently `0.7.0` against the SDK's `0.16.0`. Numbering it
 to match would claim API stability it has not earned and force a bump on every
 SDK release even when nothing in it changed.
 

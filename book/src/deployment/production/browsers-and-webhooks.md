@@ -26,8 +26,8 @@ fn dispatcher(handler: Arc<RequestHandler>) -> JsonRpcDispatcher {
 ```
 
 `RestDispatcher` and `CombinedDispatcher` have the same `with_cors`. The
-WebSocket listener has its own origin check,
-`WebSocketDispatcher::with_allowed_origins`.
+WebSocket listener has its own origin check, which refuses every browser by
+default; `WebSocketDispatcher::with_allowed_origins` lets listed pages in.
 
 ## Push notification security
 

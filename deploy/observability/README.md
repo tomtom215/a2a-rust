@@ -24,12 +24,12 @@ the dashboards, rules and data sources provisioned. Then run any agent with
 OTEL_SERVICE_NAME=my-agent OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 my-agent
 ```
 
-and open Grafana on <http://localhost:3000> (no login: the anonymous user is
+and open Grafana on <http://localhost:3001> (no login: the anonymous user is
 an admin, so keep it off any network you do not control). The dashboards are
 in the folder "A2A"; traces and logs are under Explore, and a span opens the
 log lines written inside it, a log line its trace. An agent in a container on
 the stack's network (`a2a-observability_default`) uses
-`http://otel-collector:4318`. Published ports: 3000 Grafana, 9090 Prometheus,
+`http://otel-collector:4318`. Published ports: 3001 Grafana, 9090 Prometheus,
 4317/4318 the Collector, 3200 Tempo, 3100 Loki.
 
 Metrics travel Collector → Prometheus's OTLP receiver, so `service.name` and
@@ -69,7 +69,7 @@ run), for a Kubernetes liveness or readiness probe.
 | `docker-compose.prod.yml` | The stack closed down for a shared host: Grafana login, only Grafana and OTLP published, a memory limit on the Collector |
 | `otel-collector/config.yaml` | The Collector on its own: OTLP in on 4317 (gRPC) and 4318 (HTTP), a Prometheus exporter on 8889; traces and logs go to its `debug` exporter, so add exporters for your trace and log backends |
 | `prometheus/rules/a2a-recording.yml` | Recording rules: call rate, error ratio and latency quantiles per binding and method, unanswered requests, push-delivery outcomes, client-side calls |
-| `prometheus/rules/a2a-alerts.yml` | Eight alerts: error ratio, persistence errors, unanswered requests, event queues growing, push deliveries truncated or failing, non-streaming p99, an agent gone silent (`A2AAgentSilent`, `critical`, also fires for an instance a rollout retired: from ten minutes after its last export until an hour has passed) |
+| `prometheus/rules/a2a-alerts.yml` | Nine alerts: error ratio, persistence errors, unanswered requests, event queues growing, push deliveries truncated or failing, non-streaming p99, a job gone silent (`A2AAgentSilent`, `critical`: no instance has exported for 10 minutes; a rollout does not fire it), and fewer instances exporting than an hour before (`A2AAgentInstancesLost`, `warning`) |
 | `prometheus/tests/a2a-alerts.test.yml` | `promtool` unit tests: each alert fires on the input it is for and not on a control |
 | `grafana/dashboards/a2a-server.json`, `a2a-client.json`, `a2a-genai.json` | Three dashboards (server, client, and the tool loop's GenAI metrics), folder "A2A", data source uid `a2a-prometheus`; screenshots in `book/src/images/dashboards/` |
 | `grafana/provisioning/` | Data source and dashboard provisioning; set `PROMETHEUS_URL` and `A2A_DASHBOARDS_DIR` (both are required: unset, Grafana substitutes an empty string and the data source or the dashboards are missing) |
@@ -130,7 +130,7 @@ repository's `tck/sut` (`a2a-tck-sut`) and the `a2a` CLI at commit
   alert's expression was then broken in turn (a threshold, the outcome
   label, a range), and the tests failed every time (8 of 8 caught); a
   ninth case proves the unanswered-requests rule subtracts errors.
-- Direct OTLP: `check_dashboards.py --grafana http://127.0.0.1:3000
+- Direct OTLP: `check_dashboards.py --grafana http://127.0.0.1:3001
   --prometheus http://127.0.0.1:9090 grafana/dashboards --expect-empty
   "Persistence errors" "HTTP connections"`: ok. All 21 rules healthy, every
   recording rule with data, both dashboards provisioned in folder "A2A",

@@ -87,7 +87,7 @@ pub async fn fetch_jwks(url: &str, options: &CardFetchOptions) -> ClientResult<J
     let resp = tokio::time::timeout_at(deadline, client.request(req))
         .await
         .map_err(|_| ClientError::Transport("JWK Set fetch timed out".into()))?
-        .map_err(|e| ClientError::HttpClient(e.to_string()))?;
+        .map_err(|e| ClientError::HttpClient(crate::error::chain(&e)))?;
     let status = resp.status();
     let retry_after = crate::error::parse_retry_after(resp.headers());
 

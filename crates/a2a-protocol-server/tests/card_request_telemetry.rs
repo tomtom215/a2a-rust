@@ -133,7 +133,7 @@ fn a_card_request_is_an_http_server_span_and_a_duration() {
                         served,
                         &format!(
                             "GET /.well-known/agent-card.json?key=SECRET HTTP/1.1\r\n\
-                         host: agent.example.com:8443\r\nuser-agent: probe/1\r\n\
+                         host: agent.localhost:8443\r\nuser-agent: probe/1\r\n\
                          traceparent: 00-{TRACE_ID}-00f067aa0ba902b7-01\r\n"
                         ),
                     )
@@ -189,7 +189,7 @@ fn a_card_request_is_an_http_server_span_and_a_duration() {
         ("http.response.status_code", "200"),
         ("network.protocol.version", "1.1"),
         ("network.peer.address", "127.0.0.1"),
-        ("server.address", "agent.example.com"),
+        ("server.address", "agent.localhost"),
         ("server.port", "8443"),
         ("user_agent.original", "probe/1"),
     ] {

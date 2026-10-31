@@ -17,8 +17,10 @@
 //!
 //! `Delegator` below stands in for that coordinator: it streams `Working`,
 //! then waits for its cancellation token and "propagates" the cancel
-//! downstream (a flag) before returning, leaving the terminal `Canceled` to
-//! the default `cancel` hook — exactly what the audit's coordinator did.
+//! downstream (a flag) before returning, leaving the terminal state to the
+//! default `cancel` hook — exactly what the audit's coordinator did. Since
+//! audit E-F2 that state is `Failed`, failure class `transient`: shutdown is
+//! not a caller's cancel, and the send may be repeated elsewhere.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -213,8 +215,8 @@ async fn the_documented_shutdown_ends_the_delegation(binding: Binding) {
     // rather than the first.
     eprintln!(
         "{binding:?}: cancelled before serve returned: {cancelled_before_serve_returned}; \
-         Canceled on the wire: {}; serve: {report:?}; handler: {handler_report:?}",
-        wire.contains("TASK_STATE_CANCELED")
+         Failed on the wire: {}; serve: {report:?}; handler: {handler_report:?}",
+        wire.contains("TASK_STATE_FAILED")
     );
     assert!(
         cancelled_before_serve_returned,
@@ -222,8 +224,12 @@ async fn the_documented_shutdown_ends_the_delegation(binding: Binding) {
          before the server reports that it has shut down"
     );
     assert!(
-        wire.contains("TASK_STATE_CANCELED"),
+        wire.contains("TASK_STATE_FAILED") && wire.contains("transient"),
         "the client must see the task end, not a stream that stops:\n{wire}"
+    );
+    assert!(
+        !wire.contains("TASK_STATE_CANCELED"),
+        "nobody cancelled it:\n{wire}"
     );
     assert!(
         report.drained && report.abandoned == 0,
@@ -398,6 +404,7 @@ async fn a_task_that_finishes_inside_the_completion_window_is_not_cancelled() {
     let (wire, report) = quick_task_through_shutdown(GUARD, true).await;
     assert!(wire.contains("TASK_STATE_COMPLETED"), "{wire}");
     assert!(!wire.contains("TASK_STATE_CANCELED"), "{wire}");
+    assert!(!wire.contains("TASK_STATE_FAILED"), "{wire}");
     let tasks = report.tasks.expect("a handler was attached");
     assert_eq!(
         (tasks.completed, tasks.cancelled, tasks.finished),
@@ -407,11 +414,12 @@ async fn a_task_that_finishes_inside_the_completion_window_is_not_cancelled() {
     assert!(report.drained, "{report:?}");
 }
 
-/// With no window the same task is cancelled: `cancel_in_flight`'s order.
+/// With no window the same task is stopped at once, `cancel_in_flight`'s
+/// order, and ends a transient failure.
 #[tokio::test]
 async fn a_zero_completion_window_cancels_at_once() {
     let (wire, report) = quick_task_through_shutdown(Duration::ZERO, false).await;
-    assert!(wire.contains("TASK_STATE_CANCELED"), "{wire}");
+    assert!(wire.contains("TASK_STATE_FAILED"), "{wire}");
     let tasks = report.tasks.expect("a handler was attached");
     assert_eq!((tasks.completed, tasks.cancelled), (0, 1), "{tasks:?}");
 }
@@ -470,6 +478,6 @@ async fn shutdown_is_seen_at_the_connection_ceiling() {
         .unwrap();
     assert!(downstream_cancelled.load(Ordering::SeqCst), "{report:?}");
     let wire = tokio::time::timeout(GUARD, reader).await.unwrap().unwrap();
-    assert!(wire.contains("TASK_STATE_CANCELED"), "{wire}");
+    assert!(wire.contains("TASK_STATE_FAILED"), "{wire}");
     assert!(report.drained, "{report:?}");
 }

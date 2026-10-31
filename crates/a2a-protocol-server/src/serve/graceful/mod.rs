@@ -141,8 +141,13 @@ pub use config::{
 /// The counterpart to
 /// [`ShutdownReport`](crate::handler::ShutdownReport) one layer down: a drain
 /// that ran out of time says so instead of looking clean.
+///
+/// `#[must_use]`: a server that refused to start returns at once with
+/// [`refused`](Self::refused) set, and a caller that drops the report exits
+/// as though it had served (audit G-03, 2026-10-29).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
+#[must_use = "a refused start is reported only here: check `refused`"]
 pub struct ServeReport {
     /// Connections accepted over the server's life.
     pub accepted: u64,
@@ -220,7 +225,7 @@ impl Server {
 
     /// Applies limits to this server.
     #[must_use]
-    pub const fn with_config(mut self, config: ServeConfig) -> Self {
+    pub fn with_config(mut self, config: ServeConfig) -> Self {
         self.config = config;
         self
     }
@@ -283,9 +288,12 @@ impl Server {
             (Some(binding), Some(handler)) => handler.undeclared_binding(binding),
             _ => None,
         };
-        if let Some(why) =
+        let refusal = if config.max_connections == Some(0) {
+            Some("max_connections is 0: a server that may serve no connection accepts none".into())
+        } else {
             production::refusal(&config, listener.local_addr().ok(), encrypted, undeclared)
-        {
+        };
+        if let Some(why) = refusal {
             trace_error!(reason = %why, "listener refused to start");
             return ServeReport {
                 accepted: 0,
@@ -312,7 +320,12 @@ impl Server {
         // `None` is unbounded: a permit count no accept loop can exhaust is
         // simpler, and keeps one code path rather than two.
         let permits = Arc::new(Semaphore::new(
-            config.max_connections.unwrap_or(Semaphore::MAX_PERMITS),
+            // Clamped: `Semaphore::new` panics above `MAX_PERMITS` (audit G-02).
+            config
+                .max_connections
+                .map_or(Semaphore::MAX_PERMITS, |max| {
+                    max.min(Semaphore::MAX_PERMITS)
+                }),
         ));
 
         trace_info!(
@@ -321,6 +334,23 @@ impl Server {
             "A2A server listening (graceful)"
         );
 
+        // On the signal, readiness turns to "draining" at once; accepting
+        // goes on for `drain_delay`, while load balancers learn of it.
+        let draining = dispatcher.request_handler().cloned();
+        let drain_delay = config.drain_delay;
+        let shutdown = async move {
+            shutdown.await;
+            if let Some(handler) = &draining {
+                handler.begin_draining();
+            }
+            if !drain_delay.is_zero() {
+                trace_info!(
+                    delay_ms = u64::try_from(drain_delay.as_millis()).unwrap_or(u64::MAX),
+                    "shutdown signalled; not ready, still accepting for the drain delay"
+                );
+                tokio::time::sleep(drain_delay).await;
+            }
+        };
         let mut shutdown = std::pin::pin!(shutdown);
         loop {
             // Hold the permit before accepting, so an over-limit burst waits in
@@ -359,6 +389,7 @@ impl Server {
                 Accepted {
                     stream,
                     peer,
+                    listening: listener.local_addr().ok(),
                     #[cfg(feature = "tls-rustls")]
                     tls: tls.clone(),
                 },

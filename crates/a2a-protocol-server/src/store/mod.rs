@@ -35,6 +35,11 @@ pub mod sqlite_store;
 #[cfg(feature = "sqlite")]
 pub mod tenant_sqlite_store;
 
+/// How many connections a PostgreSQL store's own pool opens, unless given
+/// another size (`new_with_pool_size`).
+#[cfg(feature = "postgres")]
+pub const DEFAULT_POOL_SIZE: u32 = 10;
+
 #[cfg(feature = "postgres")]
 pub mod pg_migration;
 #[cfg(feature = "postgres")]

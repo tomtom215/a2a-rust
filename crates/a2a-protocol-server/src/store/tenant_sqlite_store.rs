@@ -265,7 +265,10 @@ impl TaskStore for TenantAwareSqliteTaskStore {
 
     fn turn_claims(&self) -> Option<std::sync::Arc<dyn crate::store::TurnClaimStore>> {
         Some(std::sync::Arc::new(
-            crate::store::claim::SqliteTurnClaims::over(self.pool.clone()),
+            crate::store::claim::SqliteTurnClaims::over(
+                self.pool.clone(),
+                crate::store::claim::ClaimedTasks::Tenant,
+            ),
         ))
     }
 
@@ -757,6 +760,16 @@ impl TaskStore for TenantAwareSqliteTaskStore {
             Ok(row.0 as u64)
         })
     }
+
+    fn health<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            sqlx::query("SELECT 1")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+            Ok(())
+        })
+    }
 }
 
 #[cfg(test)]
@@ -779,6 +792,15 @@ mod tests {
             artifacts: None,
             metadata: None,
         }
+    }
+
+    /// `health` asks the database: a store whose pool is closed is unhealthy.
+    #[tokio::test]
+    async fn health_fails_once_the_database_is_unreachable() {
+        let store = make_store().await;
+        assert!(store.health().await.is_ok());
+        store.pool.close().await;
+        assert!(store.health().await.is_err());
     }
 
     /// See the note on the in-memory tenant store's equivalent test: the send

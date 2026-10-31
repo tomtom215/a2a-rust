@@ -8,6 +8,7 @@ use super::selection::{self, Selection};
 use super::*;
 
 mod assemble;
+mod resource;
 
 /// Configures and builds a [`Telemetry`]; see [`Telemetry::builder`].
 #[allow(clippy::struct_excessive_bools)] // independent switches, each set by its own method
@@ -17,6 +18,7 @@ pub struct TelemetryBuilder {
     metrics: Option<bool>,
     logs: Option<bool>,
     log_level: tracing::Level,
+    span_level: tracing::Level,
     endpoint: Option<String>,
     protocol: Option<OtlpProtocol>,
     headers: Vec<(String, String)>,
@@ -57,6 +59,7 @@ impl TelemetryBuilder {
             metrics: None,
             logs: None,
             log_level: tracing::Level::INFO,
+            span_level: tracing::Level::INFO,
             endpoint: None,
             protocol: None,
             headers: Vec::new(),
@@ -129,11 +132,24 @@ impl TelemetryBuilder {
     }
 
     /// The least severe event exported as a log record (default `INFO`).
-    /// Spans are not filtered by level here; a subscriber-wide filter, such
-    /// as `tracing_subscriber::EnvFilter`, applies to both.
     #[must_use]
     pub const fn with_log_level(mut self, level: tracing::Level) -> Self {
         self.log_level = level;
+        self
+    }
+
+    /// The least severe span exported, and event recorded on one (default
+    /// `INFO`, the level of every span this SDK makes).
+    ///
+    /// Until 2026-10-29 spans had no level filter: every `DEBUG` and `TRACE`
+    /// event of every crate in the process (h2's frames, hyper's, sqlx's)
+    /// that happened inside an exported span was exported as a span event,
+    /// and `RUST_LOG`, which filters only what is printed, could not turn
+    /// them off (audit C-01). Each layer now tells `tracing` its most
+    /// verbose level, so callsites below it are not even evaluated.
+    #[must_use]
+    pub const fn with_span_level(mut self, level: tracing::Level) -> Self {
+        self.span_level = level;
         self
     }
 
@@ -437,54 +453,6 @@ impl TelemetryBuilder {
             ca_pem,
             client_identity,
         })
-    }
-
-    #[cfg(test)]
-    pub(super) fn resource(&self) -> Resource {
-        self.resource_and_notices().0
-    }
-
-    /// The resource, with `OTEL_RESOURCE_ATTRIBUTES` percent-decoded as the
-    /// specification requires (`resource_env.rs`), and what could not be.
-    pub(super) fn resource_and_notices(&self) -> (Resource, Vec<String>) {
-        let decoded = super::resource_env::decode(&*self.env);
-        (
-            super::resource_env::apply(self.sdk_resource(), decoded.attributes),
-            decoded.notices,
-        )
-    }
-
-    fn sdk_resource(&self) -> Resource {
-        // `Resource::builder` reads `OTEL_SERVICE_NAME` and
-        // `OTEL_RESOURCE_ATTRIBUTES` itself; the defaults are added only when
-        // they name none, so they never overwrite them.
-        let mut builder = Resource::builder();
-        if let Some(name) = &self.default_service_name
-            && !config::service_name_from_env(&*self.env)
-        {
-            builder = builder.with_service_name(name.clone());
-        }
-        // The conventions make `service.instance.id` the one attribute that
-        // tells two replicas of a service apart (`service.instance.id`,
-        // resource/service.md: "MUST be unique for each instance of the same
-        // service.namespace,service.name pair"). Prometheus turns it into
-        // `instance`, so without one every replica writes the same series.
-        // A random UUID is what the conventions recommend when nothing
-        // better names the process.
-        if !config::resource_attribute_from_env(&*self.env, "service.instance.id") {
-            builder = builder.with_attribute(opentelemetry::KeyValue::new(
-                "service.instance.id",
-                uuid::Uuid::new_v4().to_string(),
-            ));
-        }
-        if self.detect_resource {
-            for found in detect::attributes(&*self.env) {
-                if !config::resource_attribute_from_env(&*self.env, found.key.as_str()) {
-                    builder = builder.with_attribute(found);
-                }
-            }
-        }
-        builder.build()
     }
 }
 

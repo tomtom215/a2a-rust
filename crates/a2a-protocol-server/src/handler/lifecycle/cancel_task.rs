@@ -31,7 +31,7 @@ impl RequestHandler {
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<Task> {
         let start = Instant::now();
-        trace_info!(method = "CancelTask", task_id = %params.id, "handling cancel task");
+        trace_debug!(method = "CancelTask", task_id = %params.id, "handling cancel task");
         self.metrics.on_request("CancelTask");
 
         let tenant = self

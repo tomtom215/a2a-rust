@@ -29,15 +29,20 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 thread_local! {
     /// WARN events seen on this thread while armed; `None` when not.
     static WARNINGS: Cell<Option<usize>> = const { Cell::new(None) };
+    /// DEBUG events, likewise.
+    static DEBUGS: Cell<Option<usize>> = const { Cell::new(None) };
 }
 
 struct CountThisThread;
 
 impl<S: tracing::Subscriber> Layer<S> for CountThisThread {
     fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
-        if *event.metadata().level() == tracing::Level::WARN {
-            WARNINGS.with(|c| c.set(c.get().map(|n| n + 1)));
-        }
+        let counter = match *event.metadata().level() {
+            tracing::Level::WARN => &WARNINGS,
+            tracing::Level::DEBUG => &DEBUGS,
+            _ => return,
+        };
+        counter.with(|c| c.set(c.get().map(|n| n + 1)));
     }
 }
 
@@ -68,4 +73,14 @@ pub fn warnings_in(f: impl FnOnce()) -> usize {
     WARNINGS.with(|c| c.set(Some(0)));
     f();
     WARNINGS.with(|c| c.replace(None)).expect("armed above")
+}
+
+/// The DEBUG events this thread emits while `f` runs; its one caller is
+/// `tls`'s, so it exists where that module does.
+#[cfg(feature = "tls-rustls")]
+pub fn debugs_in(f: impl FnOnce()) -> usize {
+    install();
+    DEBUGS.with(|c| c.set(Some(0)));
+    f();
+    DEBUGS.with(|c| c.replace(None)).expect("armed above")
 }

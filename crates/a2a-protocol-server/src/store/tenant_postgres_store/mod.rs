@@ -88,8 +88,30 @@ impl TenantAwarePostgresTaskStore {
     ///
     /// Returns an error if the database cannot be opened or migration fails.
     pub async fn new(url: &str) -> Result<Self, sqlx::Error> {
+        Self::new_with_pool_size(url, crate::store::DEFAULT_POOL_SIZE).await
+    }
+
+    /// [`new`](Self::new), with a pool of `size` connections instead of
+    /// [`DEFAULT_POOL_SIZE`](crate::store::DEFAULT_POOL_SIZE) (10); zero is
+    /// read as one. The size is logged at INFO (feature `tracing`).
+    ///
+    /// Every replica opens its own pools, so the sum of every pool size in a
+    /// replica, times the replicas (and a surge pod during a rollout), must
+    /// stay under the server's `max_connections`: 100 by default, 3 of them
+    /// reserved for superusers (audit E-F6, D-17). The book's *Running More
+    /// Than One Replica* gives the arithmetic.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database cannot be opened or the schema migration fails.
+    pub async fn new_with_pool_size(url: &str, size: u32) -> Result<Self, sqlx::Error> {
+        let size = size.max(1);
+        trace_info!(
+            pool_size = size,
+            "PostgreSQL tenant task store: opening its pool"
+        );
         let pool = crate::store::pg_retry::pool_options()
-            .max_connections(10)
+            .max_connections(size)
             .connect(url)
             .await?;
         Self::from_pool(pool).await
@@ -209,6 +231,28 @@ impl TenantAwarePostgresTaskStore {
 fn to_a2a_error(e: &sqlx::Error) -> A2aError {
     crate::sql_error::sql_error(crate::sql_error::Db::Postgres, "postgres error", e)
 }
+
+#[allow(clippy::manual_async_fn)]
+/// The upsert `save` makes: the terminal guard (`crate::store::terminal`)
+/// and the claim's fence in its `WHERE`.
+const SAVE_SQL: &str = concat!(
+    crate::store::terminal::sql_write_allowed!(
+        "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at, applied_seq)
+                 SELECT $1, $2, $3, $4, $5, COALESCE(($6)::timestamptz, now()), $7
+                 WHERE set_config('a2a.claims', 'on', true) = 'on'
+                 ON CONFLICT(tenant_id, id) DO UPDATE SET
+                     context_id = EXCLUDED.context_id,
+                     state = EXCLUDED.state,
+                     data = EXCLUDED.data,
+                     updated_at = EXCLUDED.updated_at,
+                     applied_seq = COALESCE(EXCLUDED.applied_seq, tenant_tasks.applied_seq)
+                 WHERE ",
+        "tenant_tasks.state",
+        "EXCLUDED.state",
+        " AND "
+    ),
+    crate::store::claim::fence_sql!(postgres "$8::text", "$2")
+);
 
 mod caller_keys;
 mod list;

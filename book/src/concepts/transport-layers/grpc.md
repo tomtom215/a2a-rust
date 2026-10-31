@@ -9,10 +9,10 @@ The **gRPC** transport (`grpc` feature flag) provides high-performance RPC via p
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.15", features = ["grpc"] }
+a2a-protocol-server = { version = "0.16", features = ["grpc"] }
 
 # Client
-a2a-protocol-client = { version = "0.15", features = ["grpc"] }
+a2a-protocol-client = { version = "0.16", features = ["grpc"] }
 ```
 
 ## Serving it

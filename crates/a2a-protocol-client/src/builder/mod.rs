@@ -286,10 +286,20 @@ impl ClientBuilder {
         self
     }
 
-    /// Sets the per-request timeout for non-streaming calls.
+    /// Sets the per-request timeout for non-streaming calls, except a
+    /// blocking `SendMessage`, which [`with_send_timeout`](Self::with_send_timeout) bounds.
     #[must_use]
     pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.config.request_timeout = timeout;
+        self
+    }
+
+    /// Sets how long a blocking `SendMessage` (without
+    /// `return_immediately`) waits for the agent's turn to end (default ten
+    /// minutes; [`ClientConfig::send_timeout`]).
+    #[must_use]
+    pub const fn with_send_timeout(mut self, timeout: Duration) -> Self {
+        self.config.send_timeout = timeout;
         self
     }
 
@@ -503,10 +513,26 @@ impl ClientBuilder {
         self
     }
 
-    /// Disables TLS (plain HTTP only).
+    /// Disables TLS: plain HTTP only, and [`build`](Self::build) refuses an
+    /// `https://` endpoint.
+    // Const only without `tls-rustls`: with it `TlsConfig` holds an `Arc`,
+    // whose destructor a const fn cannot run.
+    #[cfg_attr(not(feature = "tls-rustls"), allow(clippy::missing_const_for_fn))]
     #[must_use]
-    pub const fn without_tls(mut self) -> Self {
+    pub fn without_tls(mut self) -> Self {
         self.config.tls = TlsConfig::Disabled;
+        self
+    }
+
+    /// Uses `tls` for the HTTP bindings (JSON-RPC, HTTP+JSON): extra roots,
+    /// a pinned self-signed certificate, or a client certificate for mutual
+    /// TLS. [`tls::tls_config_from_pem`](crate::tls::tls_config_from_pem)
+    /// builds one from PEM. Without it the client trusts what
+    /// [`tls::default_tls_config`](crate::tls::default_tls_config) trusts.
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn with_tls_config(mut self, tls: rustls::ClientConfig) -> Self {
+        self.config.tls = TlsConfig::Custom(std::sync::Arc::new(tls));
         self
     }
 

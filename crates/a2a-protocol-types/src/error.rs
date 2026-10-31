@@ -456,6 +456,27 @@ impl A2aError {
         err
     }
 
+    /// Asks the caller to try again after `retry_after`: a
+    /// `google.rpc.RetryInfo` detail on every binding, and `Retry-After` on
+    /// HTTP. On an [`unavailable`](Self::unavailable) error it says the
+    /// request was refused before any work began, so even a send may be
+    /// repeated; a server going away refuses new work this way. Rounded as
+    /// [`rate_limited`](Self::rate_limited) rounds.
+    ///
+    /// ```
+    /// use a2a_protocol_types::error::A2aError;
+    /// use std::time::Duration;
+    ///
+    /// let leaving = A2aError::unavailable("shutting down").with_retry_after(Duration::from_millis(1));
+    /// assert!(leaving.is_unavailable());
+    /// assert_eq!(leaving.retry_after(), Some(Duration::from_secs(1)));
+    /// ```
+    #[must_use]
+    pub fn with_retry_after(mut self, retry_after: std::time::Duration) -> Self {
+        self.retry_after_secs = Self::rate_limited("", retry_after).retry_after_secs;
+        self
+    }
+
     /// Whether this error is a temporary failure built with
     /// [`unavailable`](Self::unavailable). Never read from the wire: a client
     /// sees the binding's status instead.

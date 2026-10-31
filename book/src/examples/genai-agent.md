@@ -98,7 +98,7 @@ is on.
 | `A2A_MAX_CONCURRENT_TASKS` | Cap on tasks a tenant runs at once; a request past it is refused with `Overloaded` |
 | `A2A_BEARER_TOKEN` | Require `Authorization: Bearer <token>` |
 | `A2A_API_KEY` | Require `x-api-key: <key>` |
-| `A2A_JWT_HS256_SECRET` | Require an HS256 JWT; the secret must be at least 32 bytes. `A2A_JWT_ISS` and `A2A_JWT_AUD` add issuer and audience checks |
+| `A2A_JWT_HS256_SECRET` | Require an HS256 JWT; the secret must be at least 32 bytes. `A2A_JWT_ISS` and `A2A_JWT_AUD` add issuer and audience checks; each unset one is not checked, and the agent says so at startup |
 
 Set one authentication scheme: each adds an interceptor, and several would all
 have to pass. The plain agent card stays public.

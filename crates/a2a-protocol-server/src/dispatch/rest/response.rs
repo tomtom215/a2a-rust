@@ -78,6 +78,24 @@ pub(super) fn health_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
     build_json_response(200, body.to_vec())
 }
 
+/// `/ready`'s answer: `200 {"status":"ready"}`, or
+/// `503 {"status":"not_ready","reason":…}` with the bounded reason
+/// [`RequestHandler::readiness`](crate::RequestHandler::readiness) gave, as the
+/// axum router answers it.
+pub(super) fn ready_response(
+    readiness: Result<(), &'static str>,
+) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    match readiness {
+        Ok(()) => build_json_response(200, br#"{"status":"ready"}"#.to_vec()),
+        Err(reason) => build_json_response(
+            503,
+            serde_json::json!({"status": "not_ready", "reason": reason})
+                .to_string()
+                .into_bytes(),
+        ),
+    }
+}
+
 /// Builds a JSON HTTP response with the given status and body.
 ///
 /// Labelled `application/json` here; the dispatcher relabels it

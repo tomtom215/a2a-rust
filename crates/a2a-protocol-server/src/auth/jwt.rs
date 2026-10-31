@@ -286,13 +286,23 @@ pub const MIN_HS256_SECRET_LEN: usize = 32;
 
 /// The set of claim checks applied after a JWT's signature verifies.
 ///
-/// All checks are opt-in *except* signature and `exp`: if you set no issuer,
-/// the `iss` claim is not checked; likewise for audience. For anything beyond
-/// a demo, set both.
+/// Signature, `exp`, `iss` and `aud` are checked by default. A validator
+/// with no [issuer](Self::with_issuer) refuses every token, as does one with
+/// no [audience](Self::with_audience), unless
+/// [`allow_any_issuer`](Self::allow_any_issuer) or
+/// [`allow_any_audience`](Self::allow_any_audience) says that is meant (audit
+/// SEC-06). Without them, a key set that signs for more than one issuer or
+/// application (a multi-tenant identity provider, a token minted for another
+/// API) let any of its tokens in. Until this release both checks were
+/// skipped when unset.
 #[derive(Clone)]
 pub struct JwtValidator {
     issuers: HashSet<String>,
     audiences: HashSet<String>,
+    /// Accept a token whatever its `iss`, as no issuer is set.
+    any_issuer: bool,
+    /// Accept a token whatever its `aud`, as no audience is set.
+    any_audience: bool,
     leeway: Duration,
     require_exp: bool,
     /// Scopes every token must grant; see [`JwtValidator::require_scope`].
@@ -307,6 +317,8 @@ impl std::fmt::Debug for JwtValidator {
         f.debug_struct("JwtValidator")
             .field("issuers", &self.issuers)
             .field("audiences", &self.audiences)
+            .field("any_issuer", &self.any_issuer)
+            .field("any_audience", &self.any_audience)
             .field("leeway", &self.leeway)
             .field("require_exp", &self.require_exp)
             .field("required_scopes", &self.required_scopes)
@@ -325,12 +337,16 @@ impl Default for JwtValidator {
 }
 
 impl JwtValidator {
-    /// Creates a validator that checks signature and `exp` only.
+    /// Creates a validator that checks signature, `exp`, `iss` and `aud`.
+    /// Name the accepted issuers and audiences, or opt out of either check:
+    /// until then it refuses every token.
     #[must_use]
     pub fn new() -> Self {
         Self {
             issuers: HashSet::new(),
             audiences: HashSet::new(),
+            any_issuer: false,
+            any_audience: false,
             leeway: DEFAULT_LEEWAY,
             require_exp: true,
             required_scopes: Vec::new(),
@@ -372,6 +388,41 @@ impl JwtValidator {
     pub fn with_audience(mut self, audience: impl Into<String>) -> Self {
         self.audiences.insert(audience.into());
         self
+    }
+
+    /// Accepts a token whatever its `iss` when no issuer is set. For a key
+    /// set only one issuer signs with (an HS256 secret you hold, keys you
+    /// pinned); a remote key set should name its issuer instead.
+    #[must_use]
+    pub const fn allow_any_issuer(mut self) -> Self {
+        self.any_issuer = true;
+        self
+    }
+
+    /// Accepts a token whatever its `aud` when no audience is set. A token
+    /// minted for another API by the same issuer is then accepted here.
+    #[must_use]
+    pub const fn allow_any_audience(mut self) -> Self {
+        self.any_audience = true;
+        self
+    }
+
+    /// What this validator refuses every token for, if anything: no issuer
+    /// or no audience, and no opt-out. Logged when an interceptor is built.
+    fn refuses_everything(&self) -> Option<&'static str> {
+        if self.issuers.is_empty() && !self.any_issuer {
+            Some(
+                "JwtValidator names no issuer: every token is refused. Call with_issuer, \
+                 or allow_any_issuer if any issuer this key set signs for may call",
+            )
+        } else if self.audiences.is_empty() && !self.any_audience {
+            Some(
+                "JwtValidator names no audience: every token is refused. Call with_audience, \
+                 or allow_any_audience if a token for any application may call",
+            )
+        } else {
+            None
+        }
     }
 
     /// Sets the clock-skew leeway for `exp`/`nbf` (default 60 s).
@@ -557,13 +608,22 @@ impl JwtValidator {
         {
             return Err(()); // not yet valid
         }
-        if !self.issuers.is_empty() {
+        // Unset and not opted out of: refused (audit SEC-06).
+        if self.issuers.is_empty() {
+            if !self.any_issuer {
+                return Err(());
+            }
+        } else {
             match &claims.iss {
                 Some(iss) if self.issuers.contains(iss) => {}
                 _ => return Err(()),
             }
         }
-        if !self.audiences.is_empty() {
+        if self.audiences.is_empty() {
+            if !self.any_audience {
+                return Err(());
+            }
+        } else {
             let ok = claims
                 .aud
                 .as_ref()
@@ -689,10 +749,18 @@ enum KeySource {
 struct RemoteJwks {
     url: String,
     ttl: Duration,
+    /// The least time between a fetch and a refetch a key-id miss asks for.
+    refetch_interval: Duration,
     cache: RwLock<Option<CachedJwks>>,
+    /// When the last fetch began, whether or not it succeeded; read and
+    /// written under `refresh_lock`.
+    last_attempt: std::sync::Mutex<Option<std::time::Instant>>,
     refresh_lock: tokio::sync::Mutex<()>,
     client: JwksHttpClient,
 }
+
+/// The default [`JwtAuthInterceptor::with_jwks_refetch_interval`].
+pub const DEFAULT_JWKS_REFETCH_INTERVAL: Duration = Duration::from_secs(10);
 
 struct CachedJwks {
     jwks: Jwks,
@@ -729,7 +797,8 @@ impl JwtAuthInterceptor {
     /// Use an empty [`Jwks`] when validating HS256-only (the secret lives on
     /// the validator).
     #[must_use]
-    pub const fn new(validator: JwtValidator, jwks: Jwks) -> Self {
+    pub fn new(validator: JwtValidator, jwks: Jwks) -> Self {
+        report_misconfiguration(&validator, None);
         Self {
             validator,
             keys: KeySource::Static(jwks),
@@ -738,17 +807,26 @@ impl JwtAuthInterceptor {
 
     /// Creates an interceptor that fetches keys from a JWKS URL, caching them
     /// for `ttl` (default 1 hour) and refetching once on a key-id miss (key
-    /// rotation).
+    /// rotation), at most once per
+    /// [refetch interval](Self::with_jwks_refetch_interval).
     ///
     /// The keys are not fetched here — the first request triggers the fetch.
+    ///
+    /// `jwks_url` must be `https://`; `http://` is refused (every token is,
+    /// with the reason logged) except to a loopback host, since whoever can
+    /// change the keys in transit can sign any identity (audit SEC-06).
     #[must_use]
     pub fn from_jwks_url(validator: JwtValidator, jwks_url: impl Into<String>) -> Self {
+        let url = jwks_url.into();
+        report_misconfiguration(&validator, Some(&url));
         Self {
             validator,
             keys: KeySource::Remote(Box::new(RemoteJwks {
-                url: jwks_url.into(),
+                url,
                 ttl: DEFAULT_JWKS_TTL,
+                refetch_interval: DEFAULT_JWKS_REFETCH_INTERVAL,
                 cache: RwLock::new(None),
+                last_attempt: std::sync::Mutex::new(None),
                 refresh_lock: tokio::sync::Mutex::new(()),
                 client: build_jwks_client(),
             })),
@@ -772,12 +850,16 @@ impl JwtAuthInterceptor {
             .enable_http1()
             .enable_http2()
             .build();
+        let url = jwks_url.into();
+        report_misconfiguration(&validator, Some(&url));
         Self {
             validator,
             keys: KeySource::Remote(Box::new(RemoteJwks {
-                url: jwks_url.into(),
+                url,
                 ttl: DEFAULT_JWKS_TTL,
+                refetch_interval: DEFAULT_JWKS_REFETCH_INTERVAL,
                 cache: RwLock::new(None),
+                last_attempt: std::sync::Mutex::new(None),
                 refresh_lock: tokio::sync::Mutex::new(()),
                 client: Client::builder(TokioExecutor::new()).build(https),
             })),
@@ -788,12 +870,30 @@ impl JwtAuthInterceptor {
     /// (`{issuer}/.well-known/openid-configuration`) and builds a
     /// remote-JWKS interceptor for it.
     ///
+    /// The document's `issuer` must be `issuer` (`OpenID` Connect Discovery 1.0
+    /// §4.3; a trailing `/` on either is ignored), and a validator that names
+    /// no issuer is bound to the document's, the value its tokens carry, so a token from another issuer that shares
+    /// these keys (another tenant of a multi-tenant identity provider) is
+    /// refused (audit SEC-06). `issuer` and the `jwks_uri` must be
+    /// `https://`, except to a loopback host.
+    ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`] when discovery fails or the document has no
-    /// `jwks_uri`.
+    /// Returns an [`A2aError`] when discovery fails, the document names
+    /// another issuer or has no `jwks_uri`, or a URL is plaintext.
     pub async fn from_oidc_issuer(issuer: &str, validator: JwtValidator) -> A2aResult<Self> {
-        let jwks_url = discover_jwks_uri(issuer).await?;
+        let (discovered, jwks_url) = discover(issuer).await?;
+        if !trustworthy_url(&jwks_url) {
+            return Err(A2aError::internal(format!(
+                "OIDC discovery for {issuer} names a plaintext jwks_uri ({jwks_url}); \
+                 keys must be fetched over https (http only to a loopback host)"
+            )));
+        }
+        let validator = if validator.issuers.is_empty() && !validator.any_issuer {
+            validator.with_issuer(discovered)
+        } else {
+            validator
+        };
         Ok(Self::from_jwks_url(validator, jwks_url))
     }
 
@@ -802,6 +902,26 @@ impl JwtAuthInterceptor {
     pub fn with_jwks_ttl(mut self, ttl: Duration) -> Self {
         if let KeySource::Remote(ref mut r) = self.keys {
             r.ttl = ttl;
+        }
+        self
+    }
+
+    /// Sets the least time between one fetch of the key set and the refetch
+    /// a token whose key id is not in it asks for. Default:
+    /// [`DEFAULT_JWKS_REFETCH_INTERVAL`] (10 s). No-op for a static key set.
+    ///
+    /// A token naming an unknown key id is refused, without a fetch, while
+    /// the last fetch began less than this long ago; requests that arrive
+    /// while a refetch is under way wait for it and use what it fetched.
+    /// Until 2026-10-30 every such token, unsigned and unauthenticated,
+    /// forced a fetch of its own, so anyone could make the agent send the
+    /// identity provider one request per request it received (audit SEC-04).
+    /// An identity provider publishes a new key before it signs with it, so
+    /// a key rotation is seen at the first refetch after the key appears.
+    #[must_use]
+    pub fn with_jwks_refetch_interval(mut self, interval: Duration) -> Self {
+        if let KeySource::Remote(ref mut r) = self.keys {
+            r.refetch_interval = interval;
         }
         self
     }
@@ -819,12 +939,17 @@ impl JwtAuthInterceptor {
                 .validate(token, jwks)
                 .map_err(ValidateOutcome::into_error),
             KeySource::Remote(remote) => {
-                let jwks = remote.get(false).await?;
+                let jwks = remote.get().await?;
                 match self.validator.validate(token, &jwks) {
                     Ok(principal) => Ok(principal),
                     Err(ValidateOutcome::KeyMiss) => {
-                        // Possible key rotation: force one refetch and retry.
-                        let fresh = remote.get(true).await?;
+                        // Possible key rotation: refetch, unless a fetch was
+                        // made too recently, and retry. A refetch that fails
+                        // leaves a token the keys in hand do not cover:
+                        // refused, as any such token is, not a server error.
+                        let Some(fresh) = remote.refetch().await else {
+                            return Err(ValidateOutcome::KeyMiss.into_error());
+                        };
                         self.validator
                             .validate(token, &fresh)
                             .map_err(ValidateOutcome::into_error)
@@ -888,17 +1013,47 @@ impl ServerInterceptor for JwtAuthInterceptor {
 }
 
 impl RemoteJwks {
-    /// Returns the cached JWKS, fetching when absent, stale, or `force`d.
-    async fn get(&self, force: bool) -> A2aResult<Jwks> {
-        if !force && let Some(jwks) = self.cached_fresh() {
+    /// Returns the cached JWKS, fetching when absent or stale.
+    async fn get(&self) -> A2aResult<Jwks> {
+        if let Some(jwks) = self.cached_fresh() {
             return Ok(jwks);
         }
         let _guard = self.refresh_lock.lock().await;
-        // Re-check after acquiring the lock (another caller may have fetched),
-        // unless we were explicitly forced to refetch for a rotation.
-        if !force && let Some(jwks) = self.cached_fresh() {
+        // Re-check after acquiring the lock: another caller may have fetched.
+        if let Some(jwks) = self.cached_fresh() {
             return Ok(jwks);
         }
+        self.fetch_and_cache().await
+    }
+
+    /// Fetches the key set again for a token whose key id the cached set
+    /// lacks, unless the last fetch began within `refetch_interval`; then,
+    /// or when the fetch fails, `None`. Callers queue on `refresh_lock`, so
+    /// those behind a refetch find it just made and fetch nothing.
+    async fn refetch(&self) -> Option<Jwks> {
+        let _guard = self.refresh_lock.lock().await;
+        let recent = self
+            .last_attempt
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_some_and(|at| too_soon(at.elapsed(), self.refetch_interval));
+        if recent {
+            return None;
+        }
+        self.fetch_and_cache()
+            .await
+            .inspect_err(|_e| {
+                trace_warn!(error = %_e, "JWKS refetch for an unknown key id failed");
+            })
+            .ok()
+    }
+
+    /// Fetches the key set and caches it; the caller holds `refresh_lock`.
+    async fn fetch_and_cache(&self) -> A2aResult<Jwks> {
+        *self
+            .last_attempt
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(std::time::Instant::now());
         let jwks = self.fetch().await?;
         *self
             .cache
@@ -925,6 +1080,11 @@ impl RemoteJwks {
     }
 
     async fn fetch(&self) -> A2aResult<Jwks> {
+        if !trustworthy_url(&self.url) {
+            return Err(A2aError::internal(
+                "JWKS URL is plaintext; keys must be fetched over https (http only to a loopback host)",
+            ));
+        }
         let body = http_get_json(&self.client, &self.url, "JWKS").await?;
         let jwks = Jwks::from_json(&body)?;
         if jwks.is_empty() {
@@ -1048,11 +1208,21 @@ async fn http_get_json(client: &JwksHttpClient, url: &str, what: &str) -> A2aRes
         .map_err(|_| A2aError::internal(format!("{what} body read timed out")))?
 }
 
-/// Fetches `{issuer}/.well-known/openid-configuration` and returns `jwks_uri`.
-async fn discover_jwks_uri(issuer: &str) -> A2aResult<String> {
+/// Fetches `{issuer}/.well-known/openid-configuration` and returns the
+/// document's `issuer` and `jwks_uri`, once its `issuer` is checked to be
+/// `issuer` (`OpenID` Connect Discovery 1.0 §4.3: it "MUST be identical"; a
+/// trailing `/` on either is ignored, as this SDK always has for the
+/// argument).
+async fn discover(issuer: &str) -> A2aResult<(String, String)> {
     #[derive(serde::Deserialize)]
     struct Discovery {
+        issuer: Option<String>,
         jwks_uri: Option<String>,
+    }
+    if !trustworthy_url(issuer) {
+        return Err(A2aError::internal(format!(
+            "OIDC issuer {issuer} is plaintext; discovery must use https (http only to a loopback host)"
+        )));
     }
     let url = format!(
         "{}/.well-known/openid-configuration",
@@ -1062,8 +1232,59 @@ async fn discover_jwks_uri(issuer: &str) -> A2aResult<String> {
     let body = http_get_json(&client, &url, "OIDC discovery").await?;
     let doc: Discovery = serde_json::from_slice(&body)
         .map_err(|e| A2aError::internal(format!("OIDC discovery returned invalid JSON: {e}")))?;
-    doc.jwks_uri
-        .ok_or_else(|| A2aError::internal("OIDC discovery document has no jwks_uri"))
+    let named = doc
+        .issuer
+        .filter(|named| named.trim_end_matches('/') == issuer.trim_end_matches('/'))
+        .ok_or_else(|| {
+            A2aError::internal(format!(
+                "OIDC discovery for {issuer} names another issuer, or none; it must be identical"
+            ))
+        })?;
+    let jwks_uri = doc
+        .jwks_uri
+        .ok_or_else(|| A2aError::internal("OIDC discovery document has no jwks_uri"))?;
+    Ok((named, jwks_uri))
+}
+
+/// Whether keys may be fetched from `url`: `https://`, or `http://` to a
+/// loopback host (an identity provider in the same pod or test).
+fn trustworthy_url(url: &str) -> bool {
+    let Ok(uri) = url.parse::<hyper::Uri>() else {
+        return false;
+    };
+    match uri.scheme_str() {
+        Some("https") => true,
+        Some("http") => uri.host().is_some_and(|host| {
+            let host = host.trim_start_matches('[').trim_end_matches(']');
+            host.eq_ignore_ascii_case("localhost")
+                || host.to_ascii_lowercase().ends_with(".localhost")
+                || host
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback())
+        }),
+        _ => false,
+    }
+}
+
+/// Whether a forced refetch `elapsed` after the last fetch began comes too
+/// soon for `interval`: one is allowed once the whole interval has passed.
+fn too_soon(elapsed: Duration, interval: Duration) -> bool {
+    elapsed < interval
+}
+
+/// Logs, once per interceptor built, a validator that refuses every token
+/// and a key URL every fetch of will be refused: the failure is otherwise a
+/// `401` for every caller with no reason given to any of them.
+fn report_misconfiguration(validator: &JwtValidator, jwks_url: Option<&str>) {
+    if let Some(_why) = validator.refuses_everything() {
+        trace_error!(reason = _why, "JWT authentication refuses every token");
+    }
+    if let Some(_url) = jwks_url.filter(|u| !trustworthy_url(u)) {
+        trace_error!(
+            jwks_url = _url,
+            "JWKS URL is plaintext and not loopback: every key fetch is refused"
+        );
+    }
 }
 
 // ── Crypto helpers ────────────────────────────────────────────────────────────
@@ -1157,6 +1378,17 @@ fn decode_json<T: serde::de::DeserializeOwned>(b64: &str) -> Result<T, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A refetch inside the interval is too soon; at the interval, and
+    /// after it, it is allowed.
+    #[test]
+    fn a_refetch_is_allowed_once_the_whole_interval_has_passed() {
+        let interval = Duration::from_millis(300);
+        assert!(too_soon(Duration::from_millis(299), interval));
+        assert!(!too_soon(interval, interval));
+        assert!(!too_soon(Duration::from_millis(301), interval));
+        assert!(!too_soon(Duration::ZERO, Duration::ZERO), "no cooldown");
+    }
 
     // Test vectors generated by an independent implementation (Python
     // `cryptography` + `hmac`), verified here through `ring` — an
@@ -1342,13 +1574,79 @@ mod tests {
     // -- claim checks ---------------------------------------------------------
 
     #[tokio::test]
-    async fn audience_and_issuer_optional_when_unset() {
-        // A bare validator checks only signature + exp.
+    async fn unset_audience_and_issuer_refuse_every_token_unless_opted_out() {
+        // Audit SEC-06: a bare validator used to check signature and exp
+        // only, so a token for another issuer or application sharing the
+        // keys was accepted. Now unset means refused, and the opt-outs say so.
         let secret = URL_SAFE_NO_PAD.decode(HS256_SECRET_B64).unwrap();
-        let v = JwtValidator::new().with_hs256_secret(secret);
-        let i = JwtAuthInterceptor::new(v, Jwks::new());
-        // WRONG_ISS/AUD differ only in iss/aud; with no expectation set they pass.
-        assert!(i.before(&ctx_bearer(HS256_VALID)).await.is_ok());
+        let refuse = |v: JwtValidator| async move {
+            JwtAuthInterceptor::new(v, Jwks::new())
+                .before(&ctx_bearer(HS256_VALID))
+                .await
+                .is_err()
+        };
+        let bare = JwtValidator::new().with_hs256_secret(secret.clone());
+        assert!(bare.refuses_everything().is_some());
+        assert!(refuse(bare).await, "no issuer, no audience");
+        assert!(
+            refuse(
+                JwtValidator::new()
+                    .with_hs256_secret(secret.clone())
+                    .allow_any_issuer()
+            )
+            .await,
+            "no audience"
+        );
+        assert!(
+            refuse(
+                JwtValidator::new()
+                    .with_hs256_secret(secret.clone())
+                    .allow_any_audience()
+            )
+            .await,
+            "no issuer"
+        );
+        let open = JwtValidator::new()
+            .with_hs256_secret(secret)
+            .allow_any_issuer()
+            .allow_any_audience();
+        assert!(open.refuses_everything().is_none());
+        assert!(
+            !refuse(open).await,
+            "both opted out of: signature and exp only"
+        );
+    }
+
+    #[test]
+    fn keys_are_fetched_over_https_or_from_loopback_only() {
+        for ok in [
+            "https://idp.example.com/jwks",
+            "http://127.0.0.1:8080/jwks",
+            "http://[::1]/jwks",
+            "http://localhost/jwks",
+            "http://idp.localhost/jwks",
+        ] {
+            assert!(trustworthy_url(ok), "{ok}");
+        }
+        for bad in [
+            "http://203.0.113.1/jwks",
+            "http://idp.example.com/jwks",
+            "http://localhost.evil.example/jwks",
+            "ftp://idp.example.com/jwks",
+            "not a url",
+        ] {
+            assert!(!trustworthy_url(bad), "{bad}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_plaintext_jwks_url_is_refused_at_fetch() {
+        let i = JwtAuthInterceptor::from_jwks_url(base_validator(), "http://203.0.113.1/jwks");
+        let KeySource::Remote(remote) = &i.keys else {
+            panic!("remote");
+        };
+        let err = remote.get().await.expect_err("plaintext refused");
+        assert!(err.message.contains("https"), "{err}");
     }
 
     #[tokio::test]
@@ -1570,7 +1868,7 @@ mod tests {
     #[test]
     fn check_claims_require_exp_boundary() {
         // require_exp (the default) rejects a token with no `exp`.
-        let strict = JwtValidator::new();
+        let strict = JwtValidator::new().allow_any_issuer().allow_any_audience();
         assert!(
             strict
                 .check_claims_at(&claims_at(None, None), 1_000)
@@ -1578,7 +1876,10 @@ mod tests {
             "no exp must be rejected when exp is required"
         );
         // allow_missing_exp accepts it.
-        let lax = JwtValidator::new().allow_missing_exp();
+        let lax = JwtValidator::new()
+            .allow_any_issuer()
+            .allow_any_audience()
+            .allow_missing_exp();
         assert!(
             lax.check_claims_at(&claims_at(None, None), 1_000).is_ok(),
             "no exp must be accepted when exp is optional"
@@ -1602,6 +1903,8 @@ mod tests {
     fn check_claims_nbf_boundary_is_strict() {
         // Zero leeway so the boundary is exact and deterministic.
         let v = JwtValidator::new()
+            .allow_any_issuer()
+            .allow_any_audience()
             .allow_missing_exp()
             .with_leeway(std::time::Duration::ZERO);
         // now (1000) strictly before nbf (2000): not yet valid → rejected.
@@ -1628,7 +1931,10 @@ mod tests {
     fn check_claims_exp_boundary_is_fail_closed() {
         // RFC 7519 §4.1.4: the token MUST NOT be accepted "on or after" exp.
         // Zero leeway → exact, deterministic boundary.
-        let v = JwtValidator::new().with_leeway(std::time::Duration::ZERO);
+        let v = JwtValidator::new()
+            .allow_any_issuer()
+            .allow_any_audience()
+            .with_leeway(std::time::Duration::ZERO);
         assert!(
             v.check_claims_at(&claims_at(Some(999), None), 1_000)
                 .is_err(),
@@ -1647,7 +1953,10 @@ mod tests {
             "a token strictly before its exp is valid"
         );
         // Leeway widens the window up to — but not including — exp + leeway.
-        let lenient = JwtValidator::new().with_leeway(std::time::Duration::from_secs(60));
+        let lenient = JwtValidator::new()
+            .allow_any_issuer()
+            .allow_any_audience()
+            .with_leeway(std::time::Duration::from_secs(60));
         assert!(
             lenient
                 .check_claims_at(&claims_at(Some(1_000), None), 1_059)

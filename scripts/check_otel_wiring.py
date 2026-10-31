@@ -87,6 +87,10 @@ MAIN_EXEMPT: dict[str, str] = {
     "benches/sdk-comparison/harness/loadgen/src/main.rs": (
         "a load generator; an exporter would add to what it measures"
     ),
+    "crates/a2a-protocol-discovery/examples/browse.rs": (
+        "a one-shot listing of what the link announces; it serves nothing and "
+        "has nothing an exporter would be read for"
+    ),
     "scripts/live/replica/src/main.rs": (
         "the live scripts' measured replica, built against v0.15.0 too, which "
         "predates this wiring; an exporter would add to the round trips and "
@@ -102,6 +106,10 @@ MANIFEST_EXEMPT: dict[str, str] = {
         "crates below it"
     ),
     "fuzz/Cargo.toml": "fuzz targets run no process that exports",
+    "crates/a2a-protocol-discovery/Cargo.toml": (
+        "a library that records no telemetry of its own; an application that "
+        "enables the client's `otel` gets it here too, by feature unification"
+    ),
 }
 
 SDK_CRATES = ("a2a-protocol-client", "a2a-protocol-server", "a2a-protocol-sdk")

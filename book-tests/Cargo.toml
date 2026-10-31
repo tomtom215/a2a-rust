@@ -68,6 +68,8 @@ a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = [
     "websocket",
 ] }
 a2a-protocol-types  = { path = "../crates/a2a-protocol-types" }
+# The local-discovery page: compiled here so its blocks need not be `ignore`d.
+a2a-protocol-discovery = { path = "../crates/a2a-protocol-discovery" }
 
 # Crates the book's examples use alongside the SDK. A doctest that says
 # `#[tokio::main]` needs tokio to be a real dependency here, or the block fails

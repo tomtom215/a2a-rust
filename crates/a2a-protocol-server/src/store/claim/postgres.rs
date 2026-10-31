@@ -47,6 +47,22 @@ pub const MIGRATION_SQL: &str = concat!(create_table!(), ";", create_owner_index
 /// release holds the task (`upgrade`). `now()` is the database's clock.
 const CLAIM_SQL: &str = "SELECT a2a_claim_turn($1, $2, $3, $4, $5)";
 
+/// Tasks left `submitted` or `working` with no live claim, in each table.
+/// The database's clock decides both the claim's expiry and the quiet time.
+const ABANDONED_PLAIN_SQL: &str = "SELECT '' AS scope, t.id FROM tasks t
+    WHERE t.state IN ('TASK_STATE_SUBMITTED', 'TASK_STATE_WORKING')
+      AND t.updated_at < now() - $1 * interval '1 millisecond'
+      AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c
+                      WHERE c.scope = '' AND c.task_id = t.id AND c.expires_at > now())
+    ORDER BY t.updated_at LIMIT $2";
+
+const ABANDONED_TENANT_SQL: &str = "SELECT t.tenant_id, t.id FROM tenant_tasks t
+    WHERE t.state IN ('TASK_STATE_SUBMITTED', 'TASK_STATE_WORKING')
+      AND t.updated_at < now() - $1 * interval '1 millisecond'
+      AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c
+                      WHERE c.scope = t.tenant_id AND c.task_id = t.id AND c.expires_at > now())
+    ORDER BY t.updated_at LIMIT $2";
+
 const RENEW_SQL: &str = "UPDATE a2a_task_claims
     SET expires_at = now() + $2 * interval '1 millisecond'
     WHERE owner = $1 AND token = ANY($3)
@@ -56,6 +72,8 @@ const RENEW_SQL: &str = "UPDATE a2a_task_claims
 #[derive(Debug, Clone)]
 pub struct PostgresTurnClaims {
     pool: PgPool,
+    /// The task table beside it, when a task store made it.
+    tasks: Option<super::ClaimedTasks>,
     /// Where a statement run again after a lost connection is reported: the
     /// task store's, when the store made this.
     metrics: crate::metrics::MetricsHandle,
@@ -85,13 +103,23 @@ impl PostgresTurnClaims {
         .map_err(|e| A2aError::internal(format!("turn claims migrate: {e}")))?;
         Ok(Self {
             pool,
+            tasks: None,
             metrics: crate::metrics::MetricsHandle::default(),
         })
     }
 
-    /// Over a pool whose schema the caller has already applied.
-    pub(crate) const fn over(pool: PgPool, metrics: crate::metrics::MetricsHandle) -> Self {
-        Self { pool, metrics }
+    /// Over a pool whose schema the caller has already applied, beside the
+    /// task table `tasks`.
+    pub(crate) const fn over(
+        pool: PgPool,
+        metrics: crate::metrics::MetricsHandle,
+        tasks: super::ClaimedTasks,
+    ) -> Self {
+        Self {
+            pool,
+            tasks: Some(tasks),
+            metrics,
+        }
     }
 }
 
@@ -234,6 +262,27 @@ impl TurnClaimStore for PostgresTurnClaims {
             .await
             .map_err(|e| failed("sweep", &e))?;
             Ok(done.rows_affected())
+        })
+    }
+
+    fn abandoned(&self, quiet: Duration, limit: usize) -> Fut<'_, Vec<(String, String)>> {
+        Box::pin(async move {
+            let Some(tasks) = self.tasks else {
+                return Ok(Vec::new());
+            };
+            let sql = match tasks {
+                super::ClaimedTasks::Plain => ABANDONED_PLAIN_SQL,
+                super::ClaimedTasks::Tenant => ABANDONED_TENANT_SQL,
+            };
+            let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+            crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query_as::<_, (String, String)>(sql)
+                    .bind(millis(quiet))
+                    .bind(limit)
+                    .fetch_all(&self.pool)
+            })
+            .await
+            .map_err(|e| failed("abandoned", &e))
         })
     }
 }

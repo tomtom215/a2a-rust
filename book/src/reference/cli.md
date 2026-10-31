@@ -102,6 +102,7 @@ a2a stream http://127.0.0.1:3111 "stream me"
 | `a2a task get <URL> <TASK-ID>` | `GetTask` | The task |
 | `a2a task cancel <URL> <TASK-ID>` | `CancelTask` | The task after cancellation |
 | `a2a task list <URL> [--context-id ID] [--page-size N] [--page-token T]` | `ListTasks` | One page: `tasks`, `nextPageToken`, `pageSize`, `totalSize` |
+| `a2a task subscribe <URL> <TASK-ID> [--from EVENT-ID]` | `SubscribeToTask` | One JSON event per line, until the task ends or parks (input-required, auth-required). `--from` replays the events after that SSE id first; a stream cut short fails naming the id to resume from. A task that has ended is refused by the agent, exit 1 |
 
 - `--context-id` continues a conversation; `--task-id` addresses an existing
   task, for example one waiting in `input-required`.
@@ -225,7 +226,7 @@ variables.
 
 `cargo test -p a2a-cli` runs unit tests for the grammar, the header parser,
 the binding choice and the terminal-event rule, and two integration tests.
-`tests/e2e.rs` starts the SDK's own server in-process, JSON-RPC and HTTP+JSON
+`tests/e2e/` starts the SDK's own server in-process, JSON-RPC and HTTP+JSON
 on one loopback port, and runs the built binary against it, asserting exit
 codes and the JSON it prints. `tests/offline.rs` signs a card and verifies it
 (and a changed copy, which fails), and verifies an exported audit chain (and

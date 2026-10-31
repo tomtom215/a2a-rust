@@ -5,3 +5,24 @@
 # for the musl images, carried glibc artifacts in. `**/` also covers the
 # per-agent directories under benches/sdk-comparison/harness.
 **/target
+
+# Secrets and local configuration a developer keeps beside the source: none
+# belongs in a build context, where every stage that copies the tree keeps
+# it in a layer and in the build cache (audit A12, 2026-10-29).
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+
+# History, editor state and things no build reads: excluded so a commit or
+# a book edit does not invalidate the `COPY . .` layers and rebuild the
+# workspace.
+.git
+.github
+**/.DS_Store
+**/.idea
+**/.vscode
+book/book
+book/static

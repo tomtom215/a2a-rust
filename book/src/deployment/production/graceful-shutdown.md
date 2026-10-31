@@ -20,11 +20,23 @@ order that works:
    (default 5 s), then cancel the rest and wait up to `task_grace` (default
    10 s) for the executors to act on it — cancel what they delegated,
    return. An executor that returns without a terminal state has its `cancel`
-   hook called (or, if that writes none, the handler writes `Canceled`), so
-   its open streams end with a terminal event; one still running when the
-   grace ends is counted in `still_running` and cut off when the process
-   exits;
+   hook called, for what it releases, and its task ends `failed` with
+   failure class `transient`, so its open streams end with a terminal event
+   that tells the caller it may send again; one still running when the grace
+   ends is counted in `still_running` and cut off when the process exits;
 3. drain connections, for up to `drain_timeout` (default 15 s).
+
+From the start of step 2 a send (`SendMessage`, `SendStreamingMessage`) is
+refused before any work begins: HTTP `503` with `Retry-After`, gRPC
+`UNAVAILABLE`, and a `RetryInfo` detail on every binding. This SDK's client
+repeats a send only on such a refusal, which proves nothing ran, so with a
+retry policy its next attempt reaches another replica. Reads, cancels and
+subscriptions are still served.
+
+A task stopped by shutdown is not `canceled`: nobody cancelled it, and a
+client does not repeat a cancelled task. A `canceled` that the `cancel` hook
+writes during shutdown is written as the transient failure instead. A halt
+([operator oversight](../oversight.md)) still ends tasks `canceled`.
 
 <figure class="diagram">
 <a href="../../images/diagrams/dep-shutdown-order.light.svg"><img class="diagram-light" src="../../images/diagrams/dep-shutdown-order.light.svg" alt="The shutdown sequence of Server::serve_with_shutdown: stop accepting, let tasks finish for up to 5 s, cancel the rest and wait up to 10 s, drain connections for up to 15 s, then handler.shutdown and the telemetry flush, all before Kubernetes sends SIGKILL."></a>
@@ -77,24 +89,25 @@ such as `SO_REUSEPORT` — use `Server::from_listener(listener)` in place of
 
 With Axum (or anything else that owns the sockets), call
 `handler.finish_in_flight(completion, grace)` at the end of the future you pass to
-`with_graceful_shutdown`, so it runs before Axum starts draining —
-`examples/deploy-agent` does exactly that — and `handler.shutdown()` after
+`with_graceful_shutdown`, so it runs before Axum starts draining, and
+`handler.shutdown()` after
 `serve` returns. The gRPC and WebSocket dispatchers have their own
 `serve_with_shutdown(listener, signal)`, which runs the same three steps and
 returns the same `ServeReport`; set the three durations with
 `with_completion_grace`, `with_task_grace` and `with_drain_timeout` on the
 dispatcher. Two differences follow from the transports. gRPC connections are
 sent `GOAWAY` when accepting stops, so they take no new calls during the
-completion window, where HTTP and WebSocket connections still do. And a
+completion window, where HTTP and WebSocket connections still take reads and
+cancels (sends are refused, as above). And a
 WebSocket carries many requests on one connection, so once the tasks have
 ended each connection finishes the requests it has already read and is closed
 with a Close frame. `finish_in_flight` first lets tasks finish on
 their own for up to `completion` — so a short call in flight during a rolling
-deploy is answered rather than `Canceled` — and then does what
+deploy is answered rather than failed — and then does what
 `cancel_in_flight(grace)` does alone: cancels the rest and waits for them.
 
-`examples/deploy-agent` is the worked case: its own diagram and the budget
-behind its `terminationGracePeriodSeconds: 45` are on
+`examples/deploy-agent` is the worked case, on `Server`: its own diagram and
+the budget behind its `terminationGracePeriodSeconds: 60` are on
 [its page](../../examples/deploy-agent.md).
 
 ## Fitting inside Kubernetes' grace period

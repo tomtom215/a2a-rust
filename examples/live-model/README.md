@@ -6,7 +6,8 @@
 The SDK end to end against a real model behind an OpenAI-compatible API
 (llama.cpp's `llama-server`, vLLM, Ollama). Three agents run on loopback:
 
-* a **worker**: `ToolLoopExecutor` over the model, with `tool-loop-agent`'s
+* a **worker**: `ToolLoopExecutor` over the model, drafts on
+  (`with_drafts`), with `tool-loop-agent`'s
   read-only inventory (`list_services`, `service_status`) and one tool with
   a side effect (`restart_service`, which counts what it really did). It
   signs what it serves (`with_content_signer`), and is served on JSON-RPC,
@@ -45,6 +46,7 @@ non-zero if any check failed.
 | delegation under a budget | the coordinator, given a budget, completes with a relay naming the worker's task | — |
 | halt cancels a working run | `halt` at the first `WORKING` ends the run `CANCELED`, a send while halted is refused, and `resume` succeeds | the run completed before the halt |
 | quorum of two approvers | the task waits `INPUT_REQUIRED`; the requester's own approval is refused; after bob it still waits; after carol it completes naming both | — |
+| drafts: each turn's text streams before the answer | the worker runs `ToolLoopExecutor::with_drafts`: every `draft-N` artifact event of the billing question arrives before the `answer` artifact, and the last draft's text is the answer | no draft arrived |
 
 What the checks do not check:
 
@@ -172,6 +174,28 @@ whose source was not kept): that file answered the billing question correctly
 the difference is the file, the llama.cpp build, or chance, and three runs do
 not say which. What the SDK checks do not depend on it: the verdicts above are
 the same.
+
+## Recorded run, 2026-10-30
+
+| | |
+|---|---|
+| Server | llama.cpp `llama-server` build `b11977-7ac5727d6` (image `ghcr.io/ggml-org/llama.cpp:server`), `--jinja -c 16384 -np 2 -t 4` |
+| Model | Qwen3.5-2B Q4_K_M (`Qwen3.5-2B-Q4_K_M.gguf`, SHA-256 `aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223`) |
+| Settings | thinking off (the default above); no sampler settings |
+| Binary | `cargo build --release -p live-model`, rustc 1.99.1, with the drafts check |
+| Host | four vCPUs, no GPU |
+
+Two runs, one after the other: 11 of 11 checks passing in each, the drafts
+check with 14 and 15 draft events, all on `draft-3` (the first two turns
+called tools and said nothing).
+
+Before them, four runs failed one to three checks each with `client error
+(SendRequest)`: `llama-server` says `Keep-Alive: timeout=5` and then closes
+the connection with the last chunk of a streamed answer, and the pooled
+connection carried the next turn into the close. `OpenAiChatModel` now sends
+`Connection: close` on a streamed turn
+(`turn_after_turn_against_a_server_that_closes_after_streaming` in
+`crates/a2a-protocol-server/tests/tool_loop/streaming.rs`).
 
 ## Reproducing
 

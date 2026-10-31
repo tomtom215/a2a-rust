@@ -16,6 +16,19 @@
 
 pub(crate) mod applied;
 mod content;
+
+/// `capacity` as a broadcast channel can take it: tokio panics on zero and
+/// on more than `usize::MAX / 2`. A per-tenant capacity reaches here with no
+/// `build()` to refuse it, so it is clamped rather than trusted (audit G-02:
+/// `with_event_queue_capacity(0)` panicked on the first event).
+fn channel_capacity(capacity: usize) -> usize {
+    capacity.clamp(1, MAX_CHANNEL_CAPACITY)
+}
+
+/// The deepest a stream buffer is made, whatever was asked: far past any
+/// memory budget, and far below tokio's limit.
+const MAX_CHANNEL_CAPACITY: usize = 1 << 24;
+
 #[cfg(test)]
 mod final_snapshot_tests;
 #[cfg(test)]
@@ -227,7 +240,7 @@ pub fn new_in_memory_queue_with_options(
     max_event_size: usize,
     write_timeout: std::time::Duration,
 ) -> (InMemoryQueueWriter, InMemoryQueueReader) {
-    let (tx, rx) = broadcast::channel(capacity);
+    let (tx, rx) = broadcast::channel(channel_capacity(capacity));
     (
         InMemoryQueueWriter::new(tx, max_event_size, write_timeout),
         InMemoryQueueReader::new(rx),
@@ -274,7 +287,7 @@ pub fn new_in_memory_queue_with_persistence(
     InMemoryQueueReader,
     mpsc::Receiver<A2aResult<StreamEvent>>,
 ) {
-    let (tx, rx) = broadcast::channel(capacity);
+    let (tx, rx) = broadcast::channel(channel_capacity(capacity));
     // Use a large bounded mpsc channel for persistence — the background
     // processor is fast, and the capacity is sized so that it does not have
     // to be. "must never miss events" is what this comment used to say; see
@@ -306,7 +319,7 @@ pub(crate) fn new_in_memory_queue_with_shared_persistence(
     max_event_size: usize,
     write_timeout: std::time::Duration,
 ) -> (InMemoryQueueWriter, InMemoryQueueReader, PersistenceRx) {
-    let (tx, rx) = broadcast::channel(capacity);
+    let (tx, rx) = broadcast::channel(channel_capacity(capacity));
     let (persistence_tx, persistence_rx) = mpsc::channel(capacity.saturating_mul(16).max(1024));
     (
         InMemoryQueueWriter::new_with_persistence(
@@ -323,6 +336,21 @@ pub(crate) fn new_in_memory_queue_with_shared_persistence(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A capacity of zero is raised to one, one past the cap is lowered to
+    /// it, and any other is kept (audit G-02).
+    #[test]
+    fn a_channel_capacity_is_clamped_to_what_tokio_takes() {
+        assert_eq!(channel_capacity(0), 1);
+        assert_eq!(channel_capacity(1), 1);
+        assert_eq!(channel_capacity(64), 64);
+        assert_eq!(channel_capacity(MAX_CHANNEL_CAPACITY), MAX_CHANNEL_CAPACITY);
+        assert_eq!(
+            channel_capacity(MAX_CHANNEL_CAPACITY + 1),
+            MAX_CHANNEL_CAPACITY
+        );
+        assert_eq!(channel_capacity(usize::MAX), MAX_CHANNEL_CAPACITY);
+    }
 
     // ── new_in_memory_queue constructors ─────────────────────────────────
 

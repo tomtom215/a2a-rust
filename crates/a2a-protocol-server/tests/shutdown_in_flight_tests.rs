@@ -25,7 +25,7 @@ use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::{MessageSendParams, TaskQueryParams};
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
 
 const GUARD: Duration = Duration::from_secs(10);
 
@@ -43,6 +43,19 @@ enum OnCancel {
 struct Agent {
     on_cancel: OnCancel,
     hook_calls: Arc<AtomicUsize>,
+    /// What the `cancel` hook writes.
+    hook_writes: HookWrites,
+}
+
+/// What the `cancel` hook writes when it runs.
+#[derive(Clone, Copy)]
+enum HookWrites {
+    /// Nothing: it only releases what it holds.
+    Nothing,
+    /// A `Canceled` status update, as the default hook does.
+    Status,
+    /// A whole task in state `Canceled`.
+    Snapshot,
 }
 
 fn status(ctx: &RequestContext, state: TaskState) -> StreamResponse {
@@ -81,18 +94,36 @@ impl AgentExecutor for Agent {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             self.hook_calls.fetch_add(1, Ordering::SeqCst);
-            // What the default hook does.
-            let _ = queue.write(status(ctx, TaskState::Canceled)).await;
+            let event = match self.hook_writes {
+                HookWrites::Nothing => None,
+                HookWrites::Status => Some(status(ctx, TaskState::Canceled)),
+                HookWrites::Snapshot => Some(StreamResponse::Task(Task::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::with_timestamp(TaskState::Canceled),
+                ))),
+            };
+            if let Some(event) = event {
+                let _ = queue.write(event).await;
+            }
             Ok(())
         })
     }
 }
 
 fn handler(on_cancel: OnCancel) -> (Arc<RequestHandler>, Arc<AtomicUsize>) {
+    handler_with(on_cancel, HookWrites::Status)
+}
+
+fn handler_with(
+    on_cancel: OnCancel,
+    hook_writes: HookWrites,
+) -> (Arc<RequestHandler>, Arc<AtomicUsize>) {
     let hook_calls = Arc::new(AtomicUsize::new(0));
     let handler = RequestHandlerBuilder::new(Agent {
         on_cancel,
         hook_calls: Arc::clone(&hook_calls),
+        hook_writes,
     })
     .without_agent_card()
     .build()
@@ -156,6 +187,10 @@ async fn rest_of(mut reader: InMemoryQueueReader) -> Vec<TaskState> {
 }
 
 async fn stored_state(handler: &RequestHandler, id: &str) -> TaskState {
+    stored(handler, id).await.status.state
+}
+
+async fn stored(handler: &RequestHandler, id: &str) -> a2a_protocol_types::task::Task {
     handler
         .on_get_task(
             TaskQueryParams {
@@ -167,12 +202,27 @@ async fn stored_state(handler: &RequestHandler, id: &str) -> TaskState {
         )
         .await
         .unwrap()
-        .status
-        .state
 }
 
+/// A task this replica's shutdown stopped: `Failed`, failure class
+/// `transient`, saying it may be sent again (audit E-F2).
+async fn assert_ended_by_shutdown(handler: &RequestHandler, id: &str) {
+    let task = stored(handler, id).await;
+    assert_eq!(task.status.state, TaskState::Failed);
+    let note = task.status.message.expect("the failure says why");
+    assert_eq!(
+        a2a_protocol_types::failure::class_of(&note),
+        Some(a2a_protocol_types::failure::FailureClass::Transient)
+    );
+    let text = format!("{:?}", note.parts);
+    assert!(text.contains("shut down"), "{text}");
+}
+
+/// The cancel hook runs, for what it releases, but the `Canceled` it writes
+/// is written as a transient failure: nobody cancelled the task, and a
+/// caller does not repeat a cancelled one (audit E-F2).
 #[tokio::test]
-async fn an_executor_that_returns_is_ended_by_its_cancel_hook() {
+async fn an_executor_shutdown_stopped_runs_its_hook_and_ends_failed_transient() {
     let (handler, hook_calls) = handler(OnCancel::Return);
     let (id, reader) = start(&handler).await;
 
@@ -182,13 +232,40 @@ async fn an_executor_that_returns_is_ended_by_its_cancel_hook() {
     assert_eq!(report.still_running, 0, "{report:?}");
     assert!(report.finished, "{report:?}");
     assert_eq!(hook_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(rest_of(reader).await, [TaskState::Canceled]);
+    assert_eq!(rest_of(reader).await, [TaskState::Failed]);
     // Persisted before `cancel_in_flight` returned: it waits for the
     // background processor as well as the executor.
-    assert_eq!(stored_state(&handler, &id).await, TaskState::Canceled);
+    assert_ended_by_shutdown(&handler, &id).await;
     // Nothing left to cut, so the finishing step is graceful.
     let final_report = handler.shutdown().await;
     assert!(final_report.is_graceful(), "{final_report:?}");
+}
+
+/// A hook that only releases, writing nothing, gets the failure written
+/// after it.
+#[tokio::test]
+async fn a_hook_that_writes_nothing_still_ends_the_task_failed_transient() {
+    let (handler, hook_calls) = handler_with(OnCancel::Return, HookWrites::Nothing);
+    let (id, reader) = start(&handler).await;
+
+    assert!(handler.cancel_in_flight(GUARD).await.finished);
+
+    assert_eq!(hook_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(rest_of(reader).await, [TaskState::Failed]);
+    assert_ended_by_shutdown(&handler, &id).await;
+}
+
+/// A hook that writes the whole task as `Canceled`, not a status update,
+/// has it written as the same failure.
+#[tokio::test]
+async fn a_hook_that_writes_a_canceled_snapshot_still_ends_the_task_failed_transient() {
+    let (handler, hook_calls) = handler_with(OnCancel::Return, HookWrites::Snapshot);
+    let (id, _reader) = start(&handler).await;
+
+    assert!(handler.cancel_in_flight(GUARD).await.finished);
+
+    assert_eq!(hook_calls.load(Ordering::SeqCst), 1);
+    assert_ended_by_shutdown(&handler, &id).await;
 }
 
 #[tokio::test]
@@ -241,21 +318,32 @@ async fn shutdown_alone_reports_the_streams_it_cut() {
     assert!(!report.is_graceful());
 }
 
+/// A send after shutdown began is refused before any work, as temporary
+/// with a retry delay, so a client sends it again (to another replica);
+/// before, it was admitted and then stopped (audit E-F2). Streaming or not.
 #[tokio::test]
-async fn a_task_admitted_after_shutdown_began_starts_cancelled() {
+async fn a_send_after_shutdown_began_is_refused_to_be_sent_again() {
     let (handler, hook_calls) = handler(OnCancel::Return);
+    assert!(handler.admits_sends());
     let report = handler.cancel_in_flight(GUARD).await;
     assert_eq!(report.cancelled, 0);
     assert!(report.finished);
+    assert!(!handler.admits_sends());
 
-    let (id, reader) = start(&handler).await;
-
-    assert_eq!(rest_of(reader).await, [TaskState::Canceled]);
-    // The second call waits for it, as the first would have.
-    let again = handler.cancel_in_flight(GUARD).await;
-    assert!(again.finished, "{again:?}");
-    assert_eq!(hook_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(stored_state(&handler, &id).await, TaskState::Canceled);
+    for streaming in [false, true] {
+        let Err(err) = handler.on_send_message(params(), streaming, None).await else {
+            panic!("a send after shutdown began must be refused (streaming: {streaming})");
+        };
+        let wire = err.to_a2a_error();
+        assert!(wire.is_unavailable(), "{wire:?}");
+        assert_eq!(wire.retry_after(), Some(Duration::from_secs(1)), "{wire:?}");
+    }
+    assert_eq!(hook_calls.load(Ordering::SeqCst), 0, "nothing ran");
+    let listed = handler
+        .on_list_tasks(a2a_protocol_types::params::ListTasksParams::default(), None)
+        .await
+        .unwrap();
+    assert!(listed.tasks.is_empty(), "no task was created: {listed:?}");
 }
 
 #[tokio::test]

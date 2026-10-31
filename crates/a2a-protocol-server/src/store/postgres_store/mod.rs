@@ -96,7 +96,24 @@ impl PostgresTaskStore {
     ///
     /// Returns an error if the database cannot be opened or the schema migration fails.
     pub async fn new(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = pool::task_store_pool(url).await?;
+        Self::new_with_pool_size(url, crate::store::DEFAULT_POOL_SIZE).await
+    }
+
+    /// [`new`](Self::new), with a pool of `size` connections instead of
+    /// [`DEFAULT_POOL_SIZE`](crate::store::DEFAULT_POOL_SIZE) (10); zero is
+    /// read as one. The size is logged at INFO (feature `tracing`).
+    ///
+    /// Every replica opens its own pools, so the sum of every pool size in a
+    /// replica, times the replicas (and a surge pod during a rollout), must
+    /// stay under the server's `max_connections`: 100 by default, 3 of them
+    /// reserved for superusers (audit E-F6, D-17). The book's *Running More
+    /// Than One Replica* gives the arithmetic.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database cannot be opened or the schema migration fails.
+    pub async fn new_with_pool_size(url: &str, size: u32) -> Result<Self, sqlx::Error> {
+        let pool = pool::task_store_pool(url, size).await?;
         Self::from_pool(pool).await
     }
 
@@ -110,10 +127,14 @@ impl PostgresTaskStore {
     ///
     /// Returns an error if the database cannot be opened or any migration fails.
     pub async fn with_migrations(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = pool::task_store_pool(url).await?;
+        let pool = pool::task_store_pool(url, crate::store::DEFAULT_POOL_SIZE).await?;
 
         let runner = super::pg_migration::PgMigrationRunner::new(pool.clone());
         runner.run_pending().await?;
+        // Migration 9 installs the functions once; this brings them to this
+        // release's bodies, as `from_pool` does, and never back to an
+        // earlier one's (audit E-F10: the two constructors diverged).
+        super::pg_schema::apply(&pool, &crate::store::claim::upgrade::FUNCTIONS).await?;
 
         Ok(Self {
             pool,
@@ -253,6 +274,31 @@ impl PostgresTaskStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The pool is the size asked for, and zero is read as one (audit
+    /// E-F6, D-17: every URL constructor opened 10, with no way to change it
+    /// short of building the pool by hand).
+    #[tokio::test]
+    #[ignore = "needs a live PostgreSQL (A2A_TEST_POSTGRES_URL)"]
+    async fn the_pool_is_the_size_asked_for() {
+        let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+        for (asked, opened) in [(3, 3), (0, 1)] {
+            let store = PostgresTaskStore::new_with_pool_size(&url, asked)
+                .await
+                .expect("store");
+            assert_eq!(
+                store.pool.options().get_max_connections(),
+                opened,
+                "{asked}"
+            );
+            store.pool.close().await;
+        }
+        let store = PostgresTaskStore::new(&url).await.expect("store");
+        assert_eq!(
+            store.pool.options().get_max_connections(),
+            crate::store::DEFAULT_POOL_SIZE
+        );
+    }
 
     /// The public options are the stores' own: sqlx's default pings every
     /// connection before handing it out, the round trip they save.

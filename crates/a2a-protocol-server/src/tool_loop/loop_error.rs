@@ -51,6 +51,26 @@ impl fmt::Display for LoopError {
 impl std::error::Error for LoopError {}
 
 impl LoopError {
+    /// Whether the run failed for a reason that may pass: the model
+    /// provider overloaded or briefly away (HTTP 429, 502, 503, 504), not
+    /// answering in time, or not reachable. The task then ends failure class
+    /// `transient`, which tells the caller a retry may succeed; any other
+    /// failure is `internal`. Seen live (2026-10-30): `llama-server` answers
+    /// `503` while it loads a model, for minutes, and every task ended
+    /// `internal`, which a client does not retry.
+    pub(super) const fn is_transient(&self) -> bool {
+        matches!(
+            self,
+            Self::Model(
+                ModelError::Status {
+                    status: 429 | 502 | 503 | 504,
+                    ..
+                } | ModelError::Timeout(_)
+                    | ModelError::Transport(_)
+            )
+        )
+    }
+
     /// What the A2A caller is told when the run fails.
     ///
     /// Not [`Display`](fmt::Display): that carries what the provider sent
@@ -94,6 +114,28 @@ impl LoopError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_provider_that_may_come_back_is_transient_and_nothing_else_is() {
+        let status = |status| {
+            LoopError::Model(ModelError::Status {
+                status,
+                body: String::new(),
+            })
+        };
+        for s in [429, 502, 503, 504] {
+            assert!(status(s).is_transient(), "{s}");
+        }
+        for s in [400, 401, 404, 500, 501] {
+            assert!(!status(s).is_transient(), "{s}");
+        }
+        assert!(LoopError::Model(ModelError::Timeout(Duration::from_secs(1))).is_transient());
+        assert!(LoopError::Model(ModelError::Transport("refused".into())).is_transient());
+        assert!(!LoopError::Model(ModelError::InvalidResponse("x".into())).is_transient());
+        assert!(!LoopError::Model(ModelError::Config("x".into())).is_transient());
+        assert!(!LoopError::Model(ModelError::Other("x".into())).is_transient());
+        assert!(!LoopError::TurnLimit(3).is_transient());
+    }
 
     /// What a caller is told, per failure: the status or the kind, never the
     /// provider's body, URL or response text; the integrator's own words as

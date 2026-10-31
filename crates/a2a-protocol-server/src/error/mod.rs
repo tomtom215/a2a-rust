@@ -53,6 +53,12 @@ pub enum ServerError {
     PushNotSupported,
     /// An internal server error.
     Internal(String),
+    /// The handler cannot be built as configured: what
+    /// `RequestHandlerBuilder::build` refuses, saying what to change. A
+    /// mistake in the deploying code, never in a request, so no caller is
+    /// ever answered with it. Until 2026-10-30 these were `InvalidParams`,
+    /// which is also the `-32602` a request is refused with (audit G-11).
+    Config(String),
     /// The requested JSON-RPC method was not found.
     MethodNotFound(String),
     /// An A2A protocol error propagated from the executor.
@@ -98,6 +104,7 @@ impl fmt::Display for ServerError {
             Self::PushNotSupported => f.write_str("push notifications not supported"),
             Self::UnsupportedOperation(msg) => write!(f, "unsupported operation: {msg}"),
             Self::Internal(msg) => write!(f, "internal error: {msg}"),
+            Self::Config(msg) => write!(f, "configuration error: {msg}"),
             Self::MethodNotFound(m) => write!(f, "method not found: {m}"),
             Self::Protocol(e) => write!(f, "protocol error: {e}"),
             Self::PayloadTooLarge(msg) => write!(f, "payload too large: {msg}"),
@@ -145,6 +152,7 @@ impl ServerError {
             Self::Transport(_) => "transport",
             Self::PushNotSupported => "push_not_supported",
             Self::Internal(_) => "internal",
+            Self::Config(_) => "config",
             Self::MethodNotFound(_) => "method_not_found",
             // The A2A error the binding answers with, named by what it says:
             // a refused credential by its kind (spec §3.3.2 tells the two
@@ -195,11 +203,15 @@ impl ServerError {
                 _ => 403,
             };
         }
+        // An overload carries a retry hint too, but it is the server that is
+        // full, not the caller that sent too much: 503, with `Retry-After`.
+        // So is a temporary failure that names a delay (a server going
+        // away): 503 before the rate-limit rule below makes it 429.
+        if matches!(self, Self::Overloaded(_)) || self.is_unavailable() {
+            return 503;
+        }
         if self.retry_after().is_some() {
             return 429;
-        }
-        if self.is_unavailable() {
-            return 503;
         }
         match self {
             Self::PayloadTooLarge(_) => 413,
@@ -225,6 +237,7 @@ impl ServerError {
     pub(crate) const fn retry_after(&self) -> Option<std::time::Duration> {
         match self {
             Self::Protocol(e) => e.retry_after(),
+            Self::Overloaded(_) => Some(OVERLOAD_RETRY_AFTER),
             _ => None,
         }
     }
@@ -320,24 +333,34 @@ impl ServerError {
             }
             Self::Protocol(e) => e.clone(),
             Self::Http(e) => A2aError::internal(e.to_string()),
-            Self::HttpClient(msg) | Self::Transport(msg) | Self::Internal(msg) => {
-                A2aError::internal(msg.clone())
-            }
+            Self::HttpClient(msg)
+            | Self::Transport(msg)
+            | Self::Internal(msg)
+            | Self::Config(msg) => A2aError::internal(msg.clone()),
             Self::PayloadTooLarge(msg) => A2aError::new(ErrorCode::InvalidRequest, msg.clone()),
             Self::InvalidStateTransition { task_id, from, to } => A2aError::invalid_params(
                 format!("invalid state transition for task {task_id}: {from} → {to}"),
             ),
             // A2A/JSON-RPC define no throttling code, so this surfaces as an
-            // internal (server-side) condition — but with a clear, actionable
-            // message rather than the opaque one the cap path returned before.
-            // The gRPC dispatcher maps it to the more precise RESOURCE_EXHAUSTED.
-            Self::Overloaded(msg) => A2aError::internal(msg.clone()),
+            // internal (server-side) condition, carrying a `RetryInfo` detail
+            // as a rate-limit refusal does. Over JSON-RPC and WebSocket that
+            // detail is the only sign it is temporary (the HTTP status is
+            // 200): until 2026-10-29 it had none, so a client's retry policy
+            // treated a full server as a permanent failure (audit H1). The
+            // gRPC dispatcher maps it to RESOURCE_EXHAUSTED, HTTP+JSON to 503
+            // with `Retry-After`.
+            Self::Overloaded(msg) => A2aError::rate_limited(msg.clone(), OVERLOAD_RETRY_AFTER),
             // No A2A code means "stopped by an operator" either; the message
             // says so, and the HTTP and gRPC bindings answer 503/UNAVAILABLE.
             Self::Halted(msg) => A2aError::internal(format!("halted: {msg}")),
         }
     }
 }
+
+/// How long a caller refused by [`ServerError::Overloaded`] is asked to wait
+/// before retrying: long enough for an in-flight turn or stream to end, short
+/// enough not to idle a client behind a momentary burst.
+const OVERLOAD_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(1);
 
 // ── From impls ───────────────────────────────────────────────────────────────
 
@@ -368,5 +391,10 @@ pub type ServerResult<T> = Result<T, ServerError>;
 
 #[cfg(test)]
 mod label_tests;
+#[cfg(test)]
+mod status_tests;
+mod withheld;
+pub use withheld::{withhold, withhold_for_task};
+
 #[cfg(test)]
 mod tests;

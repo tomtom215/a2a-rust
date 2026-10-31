@@ -74,6 +74,9 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                 commands::task_cancel(global, &url, &task_id).await
             }
             TaskCommand::List(args) => commands::task_list(global, &args).await,
+            TaskCommand::Subscribe { url, task_id, from } => {
+                commands::task_subscribe(global, &url, &task_id, from.as_deref()).await
+            }
         },
     }
 }

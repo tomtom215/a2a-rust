@@ -514,8 +514,17 @@ pub fn build_sse_response(
     hyper::Response::builder()
         .status(200)
         .header("content-type", "text/event-stream")
-        .header("cache-control", "no-cache")
-        .header("transfer-encoding", "chunked")
+        // `no-transform`: a proxy must not compress or rewrite the stream,
+        // which would hold events until a buffer filled.
+        .header("cache-control", "no-cache, no-transform")
+        // nginx buffers a proxied response by default, so behind a default
+        // nginx (and ingress-nginx) events arrived in bursts or only when
+        // the stream ended (audit B-06, 2026-10-29). This header turns its
+        // buffering off for this response alone.
+        .header("x-accel-buffering", "no")
+        // No `transfer-encoding`: hyper frames a streaming HTTP/1.1 body as
+        // chunked itself, and the header is forbidden in HTTP/2 (RFC 9113
+        // §8.2.2), where hyper had to strip it.
         .body(body.boxed())
         .unwrap_or_else(|_| {
             hyper::Response::new(
@@ -703,16 +712,20 @@ mod tests {
                 .headers()
                 .get("cache-control")
                 .map(hyper::http::HeaderValue::as_bytes),
-            Some(b"no-cache".as_slice()),
-            "Cache-Control should be no-cache"
+            Some(b"no-cache, no-transform".as_slice()),
+            "Cache-Control should forbid caching and transformation"
         );
         assert_eq!(
             response
                 .headers()
-                .get("transfer-encoding")
+                .get("x-accel-buffering")
                 .map(hyper::http::HeaderValue::as_bytes),
-            Some(b"chunked".as_slice()),
-            "Transfer-Encoding should be chunked"
+            Some(b"no".as_slice()),
+            "nginx must be told not to buffer the stream"
+        );
+        assert!(
+            response.headers().get("transfer-encoding").is_none(),
+            "Transfer-Encoding is hyper's to set, and illegal in HTTP/2"
         );
     }
 

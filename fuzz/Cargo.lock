@@ -16,7 +16,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-client"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "a2a-protocol-types",
  "base64 0.23.1",
@@ -25,6 +25,7 @@ dependencies = [
  "httpdate",
  "hyper",
  "hyper-util",
+ "mutants",
  "serde",
  "serde_json",
  "tokio",
@@ -35,7 +36,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-server"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "a2a-protocol-types",
  "base64 0.23.1",
@@ -62,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-types"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "base64 0.23.1",
  "prost",

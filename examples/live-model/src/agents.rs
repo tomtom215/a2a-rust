@@ -101,7 +101,7 @@ impl Worker {
             .with_preamble(PREAMBLE)
             .with_agent_name("live-worker");
         let handler = Arc::new(
-            RequestHandlerBuilder::new(ToolLoopExecutor::new(tool_loop))
+            RequestHandlerBuilder::new(ToolLoopExecutor::new(tool_loop).with_drafts())
                 .without_agent_card()
                 .with_content_signer(signer)
                 .with_executor_timeout(EXECUTOR_TIMEOUT)

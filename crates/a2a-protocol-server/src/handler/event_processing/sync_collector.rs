@@ -130,9 +130,9 @@ pub struct SyncCollector {
     task_store: Arc<dyn crate::store::TaskStore>,
     push_config_store: Arc<dyn crate::push::PushConfigStore>,
     push_sender: Option<Arc<dyn crate::push::PushSender>>,
+    push_lanes: super::PushLanes,
     limits: crate::handler::HandlerLimits,
     metrics: Arc<dyn crate::metrics::Metrics>,
-    in_flight: crate::handler::shutdown::InFlight,
     cancellation_tokens: Arc<
         tokio::sync::RwLock<std::collections::HashMap<TaskId, crate::handler::CancellationEntry>>,
     >,
@@ -142,15 +142,15 @@ pub struct SyncCollector {
 
 impl RequestHandler {
     /// The collector for a blocking send, sharing this handler's stores,
-    /// token map and trackers.
+    /// token map and push lanes.
     pub(crate) fn sync_collector(&self) -> SyncCollector {
         SyncCollector {
             task_store: Arc::clone(&self.task_store),
             push_config_store: Arc::clone(&self.push_config_store),
             push_sender: self.push_sender.clone(),
+            push_lanes: self.push_lanes.clone(),
             limits: self.limits.clone(),
             metrics: Arc::clone(&self.metrics),
-            in_flight: self.in_flight.clone(),
             cancellation_tokens: Arc::clone(&self.cancellation_tokens),
             applied: None,
         }
@@ -856,16 +856,15 @@ impl SyncCollector {
             metrics: std::sync::Arc::clone(&self.metrics),
             timeout_label,
         };
-        // `task_local` tenant context does not cross `tokio::spawn`, so capture
-        // it explicitly, exactly as the streaming background processor does.
-        let tenant = crate::store::tenant::TenantContext::capture();
-        // Tracked, so a shutdown waits for the delivery it would otherwise cut.
-        self.in_flight
-            .background()
-            .spawn(crate::rpc_span::in_child_span(
-                "a2a.deliver_push",
-                tenant.scope(job.run()),
-            ));
+        // One delivery in the task's lane (`PushLanes`), behind any the
+        // task's earlier turns still have under way, so a webhook sees turns
+        // in order whichever send path ran them; the lane carries this
+        // request's tenant and span across to its worker, which shutdown
+        // waits for. Until 2026-10-30 each request spawned its own job,
+        // unbounded and unordered against the next turn's (audit D-06).
+        let ends_turn = job.events.iter().any(super::background::ends_turn);
+        let task_id = job.task_id.clone();
+        self.push_lanes.enqueue(&task_id, ends_turn, job.run());
     }
 }
 

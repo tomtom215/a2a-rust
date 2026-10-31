@@ -10,13 +10,19 @@ Accept tokens an identity provider signs (HS256, RS256 or ES256) with `JwtAuthIn
 Enable the `auth-jwt` feature. `JwtAuthInterceptor` verifies the token's
 signature, then its claims: `exp` must be present and in the future
 (`allow_missing_exp()` lifts that), and `nbf` is honoured when present, both
-with 60 s of clock-skew leeway (`with_leeway`). `iss` and `aud` are checked
-**only when you set them** (`with_issuer`, `with_audience`); a validator with
-neither accepts any correctly signed, unexpired token, so set both. Keys come
-from a static `Jwks`, a shared HS256 secret, or a remote JWKS endpoint.
+with 60 s of clock-skew leeway (`with_leeway`). `iss` and `aud` are always
+checked: name the accepted ones with `with_issuer` and `with_audience`. A
+validator that names no issuer, or no audience, refuses every token (and
+logs why when the interceptor is built) unless `allow_any_issuer()` or
+`allow_any_audience()` says that is meant. Without the check, a key set that
+signs for more than one issuer or application (another tenant of a
+multi-tenant identity provider, a token minted for another API) let any of
+its tokens in; that was the default until this release. Keys come from a
+static `Jwks`, a shared HS256 secret, or a remote JWKS endpoint. A remote
+JWKS or discovery URL must be `https://`, or `http://` to a loopback host.
 
 ```toml
-a2a-protocol-server = { version = "0.15", features = ["auth-jwt", "tls-rustls"] }
+a2a-protocol-server = { version = "0.16", features = ["auth-jwt", "tls-rustls"] }
 ```
 
 `tls-rustls` is needed to fetch JWKS or OIDC discovery documents over
@@ -27,7 +33,9 @@ only `auth-jwt`.
 
 `JwtAuthInterceptor::from_oidc_issuer` discovers the issuer's `jwks_uri` at
 construction, fetches and caches the set on the first request, and refetches it
-on key rotation:
+on key rotation. The discovery document's `issuer` must be the one you name
+(OpenID Connect Discovery 1.0 §4.3; a trailing `/` is ignored), and a
+validator that names no issuer is bound to it:
 
 ```rust,no_run
 # #[tokio::main]
@@ -50,10 +58,17 @@ let interceptor =
 validator and the URL; `from_jwks_url_with_tls_config` (`tls-rustls`) serves an
 identity provider behind a private CA. Nothing is fetched at construction; the
 first request fetches the set, and `with_jwks_ttl` changes how long it is
-cached (one hour by default). A token naming an unknown `kid` forces one
-refetch. A fetch is bounded to 30 s and 256 KiB; if it fails, or the set holds
-no usable key, the call is refused with a server error (not `401`), because no
-verdict about the token could be reached. Only RSA keys and P-256 EC keys are
+cached (one hour by default). A token naming an unknown `kid` refetches the
+set, at most once per 10 s (`with_jwks_refetch_interval`): inside that
+interval of the last fetch it is refused with `401` and nothing is fetched,
+and requests that arrive while a refetch is under way wait for it. Before
+2026-10-30 every such token forced a fetch, so anyone, with no credential,
+could make the agent send the identity provider one request per request it
+received. A fetch is bounded to 30 s and 256 KiB. If the first fetch fails, or
+the set holds no usable key, the call is refused with a server error (not
+`401`), because no verdict about the token could be reached; a refetch for an
+unknown `kid` that fails leaves the keys in hand, and the token is refused
+with `401`. Only RSA keys and P-256 EC keys are
 loaded, and an RS256 key must be 2048 to 8192 bits; entries with
 `"use": "enc"` or another key type are skipped.
 
@@ -78,7 +93,10 @@ let interceptor = JwtAuthInterceptor::new(
 // `try_with_hs256_secret` refuses a shorter one here, at startup.
 let secret = b"0123456789abcdef0123456789abcdef".to_vec(); // load yours from a secret store
 let interceptor = JwtAuthInterceptor::new(
-    JwtValidator::new().try_with_hs256_secret(secret)?,
+    JwtValidator::new()
+        .with_issuer("https://issuer")
+        .with_audience("agent")
+        .try_with_hs256_secret(secret)?,
     Jwks::new(),
 );
 # Ok(())

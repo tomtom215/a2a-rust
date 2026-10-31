@@ -81,6 +81,11 @@ async fn run() -> Result<Vec<Check>, Box<dyn std::error::Error>> {
     }
     let rest = [
         checks::run(
+            "drafts: each turn's text streams before the answer",
+            checks::drafts(&worker),
+        )
+        .await,
+        checks::run(
             "provenance: another key's client refuses",
             checks::provenance_refused(&worker),
         )

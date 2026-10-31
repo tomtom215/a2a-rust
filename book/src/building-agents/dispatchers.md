@@ -33,7 +33,7 @@ The rest of the chapter:
 Provides bidirectional A2A communication over WebSocket. Enable with the `websocket` feature flag:
 
 ```toml
-a2a-protocol-server = { version = "0.15", features = ["websocket"] }
+a2a-protocol-server = { version = "0.16", features = ["websocket"] }
 ```
 
 ```rust,no_run

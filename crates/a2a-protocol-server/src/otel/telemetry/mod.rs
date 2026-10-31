@@ -41,6 +41,7 @@ mod console;
 mod counting;
 mod detect;
 mod diagnostics;
+mod error;
 mod exporters;
 mod hints;
 mod http;
@@ -67,6 +68,7 @@ use tracing_subscriber::registry::LookupSpan;
 pub use builder::TelemetryBuilder;
 pub use compression::OtlpCompression;
 pub use config::OtlpProtocol;
+pub use error::TelemetryError;
 pub use langfuse::{LANGFUSE_SELF_HOSTED, Langfuse};
 
 use config::{Env, Signal};
@@ -124,6 +126,10 @@ pub struct Telemetry {
     meter: Option<SdkMeterProvider>,
     logger: Option<SdkLoggerProvider>,
     log_level: tracing::Level,
+    span_level: tracing::Level,
+    /// The default service name as a `tracing` target, whose INFO lines the
+    /// default filter prints.
+    app_target: Option<String>,
     /// Dropped after the providers, so their final flush still has it.
     runtime: Option<ExportRuntime>,
     /// Each signal's count of lost exports since the last report
@@ -179,11 +185,21 @@ impl Telemetry {
         // (tracing-subscriber 0.3.23, `layer/mod.rs`), and combined with the
         // other half that switched every span off process-wide — traces with
         // logs off (the Langfuse preset) recorded nothing.
+        use tracing_subscriber::filter::LevelFilter;
+        // Each filter states its most verbose level (`with_max_level_hint`),
+        // so `tracing` disables the callsites below every layer's level at
+        // once instead of asking these closures for each event.
+        let span_level = self.span_level;
         let spans: Box<dyn Layer<S> + Send + Sync> = match &self.tracer {
             Some(provider) => Box::new(
                 tracing_opentelemetry::layer()
                     .with_tracer(provider.tracer(SCOPE))
-                    .with_filter(filter_fn(|meta| !is_self_target(meta.target()))),
+                    .with_filter(
+                        filter_fn(move |meta| {
+                            *meta.level() <= span_level && !is_self_target(meta.target())
+                        })
+                        .with_max_level_hint(LevelFilter::from_level(span_level)),
+                    ),
             ),
             None => Box::new(Identity::new()),
         };
@@ -191,9 +207,14 @@ impl Telemetry {
         let logs: Box<dyn Layer<S> + Send + Sync> = match &self.logger {
             Some(provider) => Box::new(
                 opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(provider)
-                    .with_filter(filter_fn(move |meta| {
-                        meta.is_event() && *meta.level() <= level && !is_self_target(meta.target())
-                    })),
+                    .with_filter(
+                        filter_fn(move |meta| {
+                            meta.is_event()
+                                && *meta.level() <= level
+                                && !is_self_target(meta.target())
+                        })
+                        .with_max_level_hint(LevelFilter::from_level(level)),
+                    ),
             ),
             None => Box::new(Identity::new()),
         };
@@ -208,7 +229,12 @@ impl Telemetry {
     /// nothing at all.
     ///
     /// `RUST_LOG` sets what is printed, in `target=level` form (default: `warn`
-    /// everywhere, `info` for this module's own startup line). Installs
+    /// everywhere, `info` for this module's own startup line and for the
+    /// application's own crate, named after the default service name with `-`
+    /// as `_`: `with_default_service_name("deploy-agent")` prints
+    /// `deploy_agent`'s INFO lines). Until 2026-10-29 an application's INFO
+    /// lines (where it listens, which database it opened) were hidden unless
+    /// `RUST_LOG` named its crate. Installs
     /// nothing under `OTEL_SDK_DISABLED=true`. Returns whether it installed a
     /// subscriber: `false` also when a global subscriber was already set,
     /// which this never replaces. A process with its own subscriber adds
@@ -221,11 +247,17 @@ impl Telemetry {
         if self.disabled {
             return false;
         }
-        let (filter, not_understood) =
-            diagnostics::filter(std::env::var("RUST_LOG").ok().as_deref());
+        let rust_log = std::env::var("RUST_LOG").ok();
+        let (filter, not_understood) = diagnostics::filter(rust_log.as_deref());
+        // `RUST_LOG`, when set, says everything printed.
+        let app = rust_log
+            .as_deref()
+            .is_none_or(|v| v.trim().is_empty())
+            .then(|| self.app_target.clone())
+            .flatten();
         let installed = tracing_subscriber::registry()
             .with(self.layer())
-            .with(diagnostics::layer(filter, self.logs_on_console))
+            .with(diagnostics::layer(filter, self.logs_on_console, app))
             .try_init()
             .is_ok();
         if installed {
@@ -415,77 +447,6 @@ impl Telemetry {
 impl Drop for Telemetry {
     fn drop(&mut self) {
         let _ = self.shutdown_inner();
-    }
-}
-
-/// Why [`Telemetry`] could not be built, or lost telemetry.
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum TelemetryError {
-    /// A variable, or a value given in code, this crate cannot act on.
-    Config {
-        /// The variable or setting.
-        variable: String,
-        /// Its value.
-        value: String,
-        /// What is wrong with it.
-        reason: String,
-    },
-    /// `opentelemetry-otlp` refused to build an exporter.
-    Exporter {
-        /// `traces`, `metrics` or `logs`.
-        signal: &'static str,
-        /// Its error.
-        source: opentelemetry_otlp::ExporterBuildError,
-    },
-    /// The TLS configuration could not be built.
-    Tls(String),
-    /// The export thread could not be started.
-    Runtime(std::io::Error),
-    /// A flush or shutdown failed, per signal.
-    Export(Vec<String>),
-}
-
-impl TelemetryError {
-    fn config(variable: &str, value: &str, reason: impl Into<String>) -> Self {
-        Self::Config {
-            variable: variable.to_owned(),
-            value: value.to_owned(),
-            reason: reason.into(),
-        }
-    }
-}
-
-impl std::fmt::Display for TelemetryError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Config {
-                variable,
-                value,
-                reason,
-            } if value.is_empty() => {
-                write!(f, "{variable}: {reason}")
-            }
-            Self::Config {
-                variable,
-                value,
-                reason,
-            } => write!(f, "{variable}={value:?}: {reason}"),
-            Self::Exporter { signal, source } => write!(f, "{signal} exporter: {source}"),
-            Self::Tls(reason) => write!(f, "OTLP TLS: {reason}"),
-            Self::Runtime(e) => write!(f, "OTLP export thread: {e}"),
-            Self::Export(failed) => write!(f, "OTLP export failed: {}", failed.join("; ")),
-        }
-    }
-}
-
-impl std::error::Error for TelemetryError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Exporter { source, .. } => Some(source),
-            Self::Runtime(e) => Some(e),
-            _ => None,
-        }
     }
 }
 

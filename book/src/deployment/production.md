@@ -167,7 +167,7 @@ The client, the server and the SDK log through `tracing` by default (the
 
 ```toml
 [dependencies]
-a2a-protocol-server = "0.15"
+a2a-protocol-server = "0.16"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ```
 
