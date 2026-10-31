@@ -368,6 +368,37 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **A token endpoint on plaintext `http://` to another machine is refused
+  before any connection, and OIDC discovery must answer for the issuer it
+  was asked about** (client; audits SEC-08, N-SEC-3). The token request
+  carries the client secret (or, for a token exchange, the user's subject
+  token), and until now only "is TLS compiled in" was checked.
+  `OAuth2ClientCredentials`, `TokenExchange`, the `tokenUrl` an agent card
+  names (`from_agent_card`) and the discovery URL now return
+  `ClientError::InvalidEndpoint` for `http://` to a host other than
+  loopback; the message names the origin, not the path or query.
+  `allow_insecure_token_endpoint()` on the first two turns it off for a
+  network you trust; discovery has no such switch, so a plaintext identity
+  provider is reached with `new(token_url, ..)` and that call. Discovery
+  also compares the document's `issuer` with the issuer asked about
+  (trailing slashes ignored) and refuses a document with none, as OpenID
+  Connect Discovery section 4.3 and RFC 8414 section 3.3 require; before, a
+  document served for another issuer was believed. Tests: the unit tests in
+  `token_provider.rs` and `token_provider/exchange/tests.rs`, including that
+  a refused endpoint is never connected to; hand-disabling the plaintext
+  check fails six of them, hand-disabling the issuer comparison fails one.
+- **`a2a --header` is no longer sent to a host that only the agent card
+  names** (a2a-cli; audit SEC-09). A card is the agent's own word; one
+  naming an interface on another host used to receive the caller's
+  `Authorization` header on every call. With `--header` set and the card's
+  interface on a different host than the URL typed, the command now fails
+  and says so; `--follow-card-origin` restores the old behaviour. `card
+  verify` likewise keeps `--header` from a JWK Set on a host other than the
+  card's (a note on stderr), unless the flag is given. A card read from a
+  file has no host to compare, so a JWK Set URL given with one still gets
+  the header. `tests/e2e/card_origin.rs`; hand-disabling the check in
+  `resolve_target` fails the test for it. Not covered by a test: the
+  `card verify` half (read in `offline.rs`, not run).
 - **A tool-loop run whose model provider is briefly away ends failure class
   `transient`, not `internal`** (server; `tool-loop`): HTTP 429, 502, 503
   or 504 from the provider, no answer within the timeout, or no connection.
@@ -516,6 +547,19 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **`JwtAuthInterceptor` accepted a token whose header lists `crit`, and
+  `a2a` wrote an agent's error text to the terminal as it came** (server,
+  a2a-cli; audits SEC-18b, N-SEC-4). RFC 7515 section 4.1.11 says to reject
+  a token with a critical header the validator does not understand, and
+  this one understands none: it now refuses any token with a `crit` member
+  (`a_token_that_marks_an_extension_critical_is_refused`; fails with the
+  check disabled). The CLI printed an error's text, which can be an agent's
+  JSON-RPC message or an SSE event id, with whatever control characters it
+  held, so a hostile agent could send escape sequences to the caller's
+  terminal or forge a line starting `error:`. Error text on stderr now
+  shows them written out (`\n`, `\u{1b}`; `error::terminal_text`, two tests
+  that fail with the escaping disabled). Stdout is unchanged: it is
+  written through `serde_json`, which escapes them already.
 - **A PostgreSQL store's start needed the schema owner's privileges, and an
   earlier release's start reinstalled its function bodies** (server,
   postgres; audits A10, E-F10). Every start ran `CREATE TABLE IF NOT EXISTS`

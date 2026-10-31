@@ -277,6 +277,7 @@ async fn task_cancel_stops_a_running_task() {
     assert_eq!(json(&out)["status"]["state"], "TASK_STATE_CANCELED");
 }
 
+mod card_origin;
 mod subscribe;
 
 #[tokio::test(flavor = "multi_thread")]

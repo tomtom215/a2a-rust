@@ -509,6 +509,13 @@ impl JwtValidator {
         let (header_b64, claims_b64, sig_b64) = (parts[0], parts[1], parts[2]);
 
         let header: JwtHeader = decode_json(header_b64).map_err(|()| ValidateOutcome::Rejected)?;
+        // An issuer that marks an extension critical means a verifier that
+        // does not know it must not accept the token (RFC 7515 4.1.11).
+        // Ignoring the member, as this did until 2026-10-31, accepts tokens
+        // the issuer meant to be refused (audit SEC-18 b).
+        if header.crit.is_some() {
+            return Err(ValidateOutcome::Rejected);
+        }
         let signature = URL_SAFE_NO_PAD
             .decode(sig_b64)
             .map_err(|_| ValidateOutcome::Rejected)?;
@@ -666,6 +673,10 @@ struct JwtHeader {
     alg: String,
     #[serde(default)]
     kid: Option<String>,
+    /// RFC 7515 section 4.1.11: extensions the verifier MUST understand. This
+    /// validator understands none, so a token that lists any is refused.
+    #[serde(default)]
+    crit: Option<serde_json::Value>,
 }
 
 #[derive(serde::Deserialize)]
@@ -1813,6 +1824,49 @@ mod tests {
             nbf,
             scope: None,
             act: None,
+        }
+    }
+
+    /// An HS256 token like [`hs256_token`] but with `header` (a JSON object)
+    /// as its header.
+    fn hs256_token_with_header(secret: &[u8], header: &str) -> String {
+        let exp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 3600;
+        let header = URL_SAFE_NO_PAD.encode(header);
+        let claims = URL_SAFE_NO_PAD.encode(format!(
+            r#"{{"iss":"https://issuer.test","aud":"a2a-agent","sub":"s","exp":{exp}}}"#
+        ));
+        let input = format!("{header}.{claims}");
+        let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret);
+        let sig = URL_SAFE_NO_PAD.encode(ring::hmac::sign(&key, input.as_bytes()).as_ref());
+        format!("{input}.{sig}")
+    }
+
+    /// RFC 7515 4.1.11 (audit SEC-18 b): a header that lists critical
+    /// extensions is refused, because this validator understands none. The
+    /// same token without the member is accepted, so the refusal is the
+    /// member's doing and not the signature's or the claims'.
+    #[tokio::test]
+    async fn a_token_that_marks_an_extension_critical_is_refused() {
+        let secret = [9u8; MIN_HS256_SECRET_LEN];
+        let i = JwtAuthInterceptor::new(base_validator().with_hs256_secret(secret), Jwks::new());
+        let plain = r#"{"alg":"HS256","typ":"JWT"}"#;
+        assert!(
+            i.before(&ctx_bearer(&hs256_token_with_header(&secret, plain)))
+                .await
+                .is_ok()
+        );
+        for crit in [r#"["exp"]"#, r#"["b64"]"#, r"[]", r#""exp""#] {
+            let header = format!(r#"{{"alg":"HS256","typ":"JWT","crit":{crit}}}"#);
+            assert!(
+                i.before(&ctx_bearer(&hs256_token_with_header(&secret, &header)))
+                    .await
+                    .is_err(),
+                "crit {crit}"
+            );
         }
     }
 

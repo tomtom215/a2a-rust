@@ -17,7 +17,10 @@ logs why when the interceptor is built) unless `allow_any_issuer()` or
 `allow_any_audience()` says that is meant. Without the check, a key set that
 signs for more than one issuer or application (another tenant of a
 multi-tenant identity provider, a token minted for another API) let any of
-its tokens in; that was the default until this release. Keys come from a
+its tokens in; that was the default until this release. A token whose header
+has a `crit` member is refused: the validator understands no critical
+extension, and RFC 7515 section 4.1.11 says to reject what it does not
+understand. Keys come from a
 static `Jwks`, a shared HS256 secret, or a remote JWKS endpoint. A remote
 JWKS or discovery URL must be `https://`, or `http://` to a loopback host.
 
