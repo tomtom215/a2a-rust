@@ -351,6 +351,7 @@ impl RequestHandler {
             task_store: Arc::clone(&self.task_store),
             push_config_store: Arc::clone(&self.push_config_store),
             push_sender: self.push_sender.clone(),
+            leases: self.leases.as_ref().map(|l| Arc::clone(&l.store)),
             limits: self.limits.clone(),
             metrics: Arc::clone(&self.metrics),
         };

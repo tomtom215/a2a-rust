@@ -552,6 +552,20 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   blocking path, once and only when the store accepted the write. Still
   open (D-03 c, d): the panic's `Failed` is not in the event log, and a
   streaming client gets no terminal frame for it.
+- **A task the reaper ended kept its lease and had no entry in its log**
+  (server; audits H3 part b, N-E-2). The reaper ends a task whose replica
+  died, but the only code that released a lease was the watcher of the
+  process that ran the turn, which is the process that died: the lease row
+  stayed for good, and a `GetTask` that carried the lease extension went on
+  renewing it. The reaper now releases the lease of each task it ends, in
+  the task's tenant. It also appends the `Failed` status to the task's event
+  log one position after the last, so a client resuming from the log sees
+  the task end and, with the `audit` feature, the append makes the
+  `task.event` record the chain was missing (the audit record is made by the
+  audited store and was not tested separately here). Tested on SQLite and on
+  PostgreSQL 16: the orphan's lease is gone and cannot be renewed, a running
+  task's lease stays, the log holds exactly the ending at position 1, and
+  the tasks left alone have no entry.
 - **The SSRF host check accepts what it should refuse** (server; audits
   SEC-12, B-22, D-13, N-SEC-1; each URL below was run through
   `check_public_url` on 2026-10-31 and accepted). A trailing dot hid an
