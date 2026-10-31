@@ -55,7 +55,7 @@ only: when something here is done, delete it rather than annotating it.
     private-CA run, `scripts/run_postgres_suites.py` itself.
   - **Still open in the packages touched:** the SQLite journal, SEC-11 (needs
     the maintainer's D-1: hashing the token cache's key makes `ring`
-    mandatory), SEC-13/17 (an https webhook is resolved twice), B-13, D-22,
+    mandatory) and B-09, N-B-2, N-AL-1, N-AL-2 (the rest of package 3), SEC-13/17 (an https webhook is resolved twice), B-13, D-22,
     N-D-2/E-3, D-05 and D-03 c and d. Packages 5 and 7 to 14 are untouched.
   - **Commits** are authored and signed off as `Tom F.
     <tomf@tomtomtech.net>` with no other trailers, at the maintainer's
