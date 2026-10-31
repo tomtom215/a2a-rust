@@ -86,15 +86,18 @@ fn a_record_settles_once_and_a_settled_record_stops_changing() {
 fn open_lists_one_owners_unsettled_records_oldest_first() {
     let journal = InMemoryDelegationJournal::new();
     now(journal.begin(&record("c", "sup", 30)));
-    now(journal.begin(&record("a", "sup", 10)));
-    now(journal.begin(&record("b", "sup", 10)));
+    // Six that start together, inserted out of id order: the map's own order
+    // is arbitrary, so only the id can put them right.
+    for id in ["e", "b", "f", "a", "d", "c0"] {
+        now(journal.begin(&record(id, "sup", 10)));
+    }
     now(journal.begin(&record("done", "sup", 5)));
     now(journal.begin(&record("theirs", "someone", 1)));
     now(journal.settle("done", "completed", 6));
     let ids: Vec<_> = now(journal.open("sup")).into_iter().map(|r| r.id).collect();
     assert_eq!(
         ids,
-        ["a", "b", "c"],
+        ["a", "b", "c0", "d", "e", "f", "c"],
         "by start, ties by id; no settled, no other owner"
     );
 }

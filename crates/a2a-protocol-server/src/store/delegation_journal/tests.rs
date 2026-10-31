@@ -26,7 +26,11 @@ async fn contract(journal: &dyn DelegationJournal, tag: &str) {
 async fn begin_and_progress(journal: &dyn DelegationJournal, tag: &str, owner: &str) {
     let id = |n: &str| format!("{tag}-{n}");
     journal
-        .begin(&rec(&id("r1"), owner, 10).with_idempotency_key(Some("k1".into())))
+        .begin(
+            &rec(&id("r1"), owner, 10)
+                .with_idempotency_key(Some("k1".into()))
+                .with_tenant(Some("acme".into())),
+        )
         .await
         .unwrap();
     journal
@@ -41,6 +45,9 @@ async fn begin_and_progress(journal: &dyn DelegationJournal, tag: &str, owner: &
         .progress(&id("r1"), None, Some("evt-7"), 30)
         .await
         .unwrap();
+    // A write that names neither changes only the time. Last, so that nothing
+    // after it can put back what a wrong query cleared.
+    journal.progress(&id("r1"), None, None, 31).await.unwrap();
     // An unknown id is not an error, and creates nothing.
     journal
         .progress(&id("purged"), Some("t"), Some("e"), 5)
@@ -55,6 +62,10 @@ async fn open_and_settle(journal: &dyn DelegationJournal, tag: &str, owner: &str
     let id = |n: &str| format!("{tag}-{n}");
     journal.begin(&rec(&id("c"), owner, 30)).await.unwrap();
     journal.begin(&rec(&id("a"), owner, 10)).await.unwrap();
+    // Two that start together, inserted against their id order: only the id
+    // can put them right.
+    journal.begin(&rec(&id("y"), owner, 20)).await.unwrap();
+    journal.begin(&rec(&id("x"), owner, 20)).await.unwrap();
     journal.begin(&rec(&id("done"), owner, 5)).await.unwrap();
     journal
         .begin(&rec(&id("theirs"), &format!("{tag}-someone"), 1))
@@ -63,13 +74,19 @@ async fn open_and_settle(journal: &dyn DelegationJournal, tag: &str, owner: &str
     journal.settle(&id("done"), "completed", 6).await.unwrap();
     let open = journal.open(owner).await.unwrap();
     let ids: Vec<_> = open.iter().map(|r| r.id.clone()).collect();
-    assert_eq!(ids, [id("a"), id("r1"), id("c")], "by start, ties by id");
+    assert_eq!(
+        ids,
+        [id("a"), id("r1"), id("x"), id("y"), id("c")],
+        "by start, ties by id"
+    );
     let r1 = open.iter().find(|r| r.id == id("r1")).unwrap();
     assert_eq!(r1.owner, owner);
+    assert_eq!(r1.agent, "http://worker:8080");
+    assert_eq!(r1.tenant.as_deref(), Some("acme"));
     assert_eq!(r1.idempotency_key.as_deref(), Some("k1"));
     assert_eq!(r1.task_id.as_deref(), Some("task-1"));
     assert_eq!(r1.last_event_id.as_deref(), Some("evt-7"));
-    assert_eq!((r1.started_at_ms, r1.updated_at_ms), (10, 30));
+    assert_eq!((r1.started_at_ms, r1.updated_at_ms), (10, 31));
     assert!(r1.is_open());
 
     journal.settle(&id("r1"), "completed", 40).await.unwrap();
@@ -102,7 +119,7 @@ async fn purge(journal: &dyn DelegationJournal, tag: &str, owner: &str) {
         .collect();
     assert_eq!(
         still_open,
-        [id("a"), id("c")],
+        [id("a"), id("x"), id("y"), id("c")],
         "open records survive a purge"
     );
     assert_eq!(
