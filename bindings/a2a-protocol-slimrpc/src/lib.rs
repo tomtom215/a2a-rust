@@ -188,6 +188,9 @@ pub mod error;
 pub mod multicast;
 pub mod server;
 
+#[cfg(test)]
+mod test_tracing;
+
 pub use binding::{
     A2A_SERVICE_NAME, SLIMRPC_PROTOCOL_BINDING, SlimName, SlimNameError, slimrpc_address,
     slimrpc_interface,
