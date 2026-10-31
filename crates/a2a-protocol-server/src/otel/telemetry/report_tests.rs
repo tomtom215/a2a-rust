@@ -123,13 +123,16 @@ fn an_exporter_named_in_the_environment_overrides_a_signal_turned_off_in_code() 
     assert!(t.tracer_provider().is_some(), "{}", t.describe());
 }
 
-/// Under `OTEL_SDK_DISABLED` nothing is built, so nothing is installed and
-/// the answer says so. (The case where one is installed is
-/// `tests/telemetry_install_subscriber.rs`, which owns the global slot.)
+/// Under `OTEL_SDK_DISABLED` nothing is built, and the report says so.
+/// (`install_subscriber` still installs the printing layer then, which needs
+/// the global slot: `tests/telemetry_export/console.rs` runs it in a child
+/// process, audit C-07.)
 #[test]
-fn install_subscriber_installs_nothing_when_the_sdk_is_disabled() {
+fn a_disabled_sdk_builds_nothing_and_says_so() {
     let t = with_env(&[("OTEL_SDK_DISABLED", "true")]).build().unwrap();
-    assert!(!t.install_subscriber());
+    assert!(t.tracer_provider().is_none() && t.meter_provider().is_none());
+    assert!(t.logger_provider().is_none());
+    assert_eq!(t.describe(), "telemetry: disabled by OTEL_SDK_DISABLED");
 }
 
 #[test]

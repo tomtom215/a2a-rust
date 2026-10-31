@@ -134,7 +134,8 @@ pub struct Telemetry {
     /// Each signal's count of lost exports since the last report
     /// (`counting.rs`).
     failures: Vec<(Signal, Arc<AtomicU64>)>,
-    /// `OTEL_SDK_DISABLED` was set: nothing is built, nothing installed.
+    /// `OTEL_SDK_DISABLED` was set: nothing is built or exported. The printing
+    /// layer is still installed (audit C-07).
     disabled: bool,
     /// Whether `install_subscriber` logs [`describe`](Self::describe).
     startup_summary: bool,
@@ -233,9 +234,15 @@ impl Telemetry {
     /// as `_`: `with_default_service_name("deploy-agent")` prints
     /// `deploy_agent`'s INFO lines). Until 2026-10-29 an application's INFO
     /// lines (where it listens, which database it opened) were hidden unless
-    /// `RUST_LOG` named its crate. Installs
-    /// nothing under `OTEL_SDK_DISABLED=true`. Returns whether it installed a
-    /// subscriber: `false` also when a global subscriber was already set,
+    /// `RUST_LOG` named its crate.
+    ///
+    /// Under `OTEL_SDK_DISABLED=true` nothing is exported (`layer()` adds
+    /// nothing), but the printing layer is still installed: the variable
+    /// turns off the OpenTelemetry SDK, and says nothing about a process's own
+    /// warnings and errors. Until 2026-10-31 it installed nothing, so a process
+    /// told to export nothing also lost every warning, its own and the SDK's
+    /// (audit C-07). Returns whether it installed a
+    /// subscriber: `false` when a global subscriber was already set,
     /// which this never replaces. A process with its own subscriber adds
     /// `layer()` to it instead.
     // Called for its effect; the result is for a caller that cares.
@@ -243,9 +250,6 @@ impl Telemetry {
     pub fn install_subscriber(&self) -> bool {
         use tracing_subscriber::layer::SubscriberExt as _;
         use tracing_subscriber::util::SubscriberInitExt as _;
-        if self.disabled {
-            return false;
-        }
         let rust_log = std::env::var("RUST_LOG").ok();
         let (filter, not_understood) = diagnostics::filter(rust_log.as_deref());
         // `RUST_LOG`, when set, says everything printed.

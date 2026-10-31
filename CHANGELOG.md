@@ -368,6 +368,20 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **`OTEL_SDK_DISABLED=true` no longer silences the process's own warnings**
+  (server; audit C-07). `Telemetry::install_subscriber` returned `false` and
+  installed nothing when the variable was set, so a process told to export
+  nothing also lost every `tracing` warning and error, its own and the SDK's
+  (the CLI, the TCK binaries, the examples). The variable turns off the
+  OpenTelemetry SDK; it says nothing about diagnostics. The subscriber is
+  now installed with the layer that prints warnings and errors to standard
+  error and the startup line (`telemetry: disabled by OTEL_SDK_DISABLED`),
+  and no export layer: `layer()` still records nothing, and no console
+  exporter prints. It returns `true`, as it does when it installs one. The
+  unit test that pinned the old behaviour is replaced by
+  `console::a_disabled_sdk_exports_nothing_but_still_prints_warnings`, which
+  runs a child process with the console exporters asked for and the SDK
+  disabled; it fails with the early return put back.
 - **`X-Forwarded-For` can be believed only from the proxies' own address
   ranges, a port in an entry no longer makes a new key, and the auth-failure
   throttle keys an IPv6 client by its `/64`** (server; audits B-09 (a), (b),
