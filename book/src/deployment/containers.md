@@ -45,10 +45,16 @@ What the Dockerfile does, and why:
   scratch, because the binary links glibc.
 - **Certificates.** The SDK verifies TLS against its bundled Mozilla roots,
   so a public CA needs nothing from the image. A private CA (or a
-  TLS-inspecting proxy's root) reaches the A2A client, card discovery, JWKS
-  and the token provider through `SSL_CERT_FILE` or `SSL_CERT_DIR` (a mounted
-  PEM file or directory, trusted beside Mozilla's roots), or in code through
-  `ClientBuilder::with_tls_config`; it reaches telemetry through
+  TLS-inspecting proxy's root) reaches, through `SSL_CERT_FILE` or
+  `SSL_CERT_DIR` (a mounted PEM file or directory, trusted beside Mozilla's
+  roots), the client crate's HTTP and WebSocket bindings, card discovery,
+  JWKS and the token provider, and this crate's push delivery, JWKS and OIDC
+  discovery, and the tool loop's model client (until 2026-10-31 the server's
+  three did not read it); gRPC does not. In code the roots come through
+  `ClientBuilder::with_tls_config` and `CardFetchOptions::with_tls_config`
+  on the client, and `HttpPushSender::with_tls_config`,
+  `JwtAuthInterceptor::from_oidc_issuer_with_tls_config` and
+  `OpenAiChatModel::with_tls_config` on the server. It reaches telemetry through
   `OTEL_EXPORTER_OTLP_CERTIFICATE`, and the PostgreSQL store through the
   URL's `sslrootcert`. `ca-certificates` is installed for tools run inside
   the container; `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt` makes the

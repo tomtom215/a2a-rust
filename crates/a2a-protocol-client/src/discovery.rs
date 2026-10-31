@@ -115,6 +115,9 @@ pub struct CardFetchOptions {
     /// See [`with_require_signature`](Self::with_require_signature).
     #[cfg(feature = "signing")]
     require_signature: bool,
+    /// See [`with_tls_config`](Self::with_tls_config).
+    #[cfg(feature = "tls-rustls")]
+    tls: Option<Arc<rustls::ClientConfig>>,
 }
 
 impl std::fmt::Debug for CardFetchOptions {
@@ -125,6 +128,9 @@ impl std::fmt::Debug for CardFetchOptions {
         #[cfg(feature = "signing")]
         f.field("signature_keys", &self.signature_keys)
             .field("require_signature", &self.require_signature);
+        // Whether a configuration was set, never what is in it.
+        #[cfg(feature = "tls-rustls")]
+        f.field("tls_config", &self.tls.is_some());
         f.finish()
     }
 }
@@ -139,11 +145,41 @@ impl Default for CardFetchOptions {
             signature_keys: None,
             #[cfg(feature = "signing")]
             require_signature: true,
+            #[cfg(feature = "tls-rustls")]
+            tls: None,
         }
     }
 }
 
 impl CardFetchOptions {
+    /// Verifies the card's server against `tls` instead of the roots
+    /// [`default_tls_config`](crate::tls::default_tls_config) trusts: an agent
+    /// behind a private CA, or one that asks for a client certificate
+    /// ([`tls_config_from_pem`](crate::tls::tls_config_from_pem) builds one
+    /// from PEM). [`fetch_jwks`](crate::jwks::fetch_jwks) honours it too, so
+    /// the key server a signed card's keys come from can be private as well.
+    ///
+    /// Until 2026-10-31 the card resolver and the JWK Set fetch had no TLS
+    /// option at all: only `SSL_CERT_FILE` reached them, so an agent behind a
+    /// private CA could be called (`ClientBuilder::with_tls_config`) but not
+    /// discovered in code (audit B-03).
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn with_tls_config(mut self, tls: rustls::ClientConfig) -> Self {
+        self.tls = Some(Arc::new(tls));
+        self
+    }
+
+    /// The HTTP client a fetch with these options uses.
+    #[cfg(feature = "tls-rustls")]
+    pub(crate) fn https_client(&self) -> crate::tls::HttpsClient {
+        self.tls
+            .as_deref()
+            .map_or_else(crate::tls::build_https_client, |tls| {
+                crate::tls::build_https_client_with_config(tls.clone())
+            })
+    }
+
     /// Adds one header to the request. An invalid name or value is reported
     /// by the fetch as [`ClientError::Transport`], not here.
     #[must_use]
@@ -252,7 +288,9 @@ pub async fn resolve_agent_card_with_options(
     base_url: &str,
     options: &CardFetchOptions,
 ) -> ClientResult<AgentCard> {
-    trace_info!(base_url, "resolving agent card");
+    // The URL as the fetch's span records it: a card URL behind a gateway may
+    // carry a key in its query or a login in its userinfo (audit N-C-1).
+    trace_info!(url = %card_span::loggable(base_url), "resolving agent card");
     let url = build_card_url(base_url, AGENT_CARD_PATH)?;
     fetch_card(&url, None, options).await
 }
@@ -445,10 +483,10 @@ impl CachingCardResolver {
         if let Some(cached) = &cached
             && freshness::is_fresh(self.fresh_until(&cached.freshness), Instant::now())
         {
-            trace_debug!(url = %self.url, "agent card fresh in cache");
+            trace_debug!(url = %card_span::loggable(&self.url), "agent card fresh in cache");
             return Ok(cached.card.clone());
         }
-        trace_info!(url = %self.url, "resolving agent card (cached)");
+        trace_info!(url = %card_span::loggable(&self.url), "resolving agent card (cached)");
         let (card, etag, last_modified, freshness) =
             fetch_card_with_metadata(&self.url, cached.as_ref(), &self.options).await?;
 
@@ -574,11 +612,11 @@ async fn fetch_inner(
     };
 
     #[cfg(feature = "tls-rustls")]
-    let client = crate::tls::build_https_client();
+    let client = options.https_client();
 
     let mut builder = hyper::Request::builder()
         .method(hyper::Method::GET)
-        .uri(url)
+        .uri(crate::redact::without_userinfo(url))
         .header(header::ACCEPT, "application/json");
     // §3.6.1: "Clients MUST send the `A2A-Version` header with each
     // request", the card's fetch among them; until 2026-10-13 it went

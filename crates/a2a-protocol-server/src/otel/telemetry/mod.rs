@@ -49,7 +49,6 @@ mod langfuse;
 #[cfg(feature = "otel-prometheus")]
 mod prometheus;
 mod propagators;
-mod proxy;
 mod resource_env;
 mod runtime;
 mod selection;
@@ -71,10 +70,10 @@ pub use config::OtlpProtocol;
 pub use error::TelemetryError;
 pub use langfuse::{LANGFUSE_SELF_HOSTED, Langfuse};
 
+use crate::net::proxy::{self, ProxySetting};
 use config::{Env, Signal};
 use counting::Counting;
 use exporters::{ClientIdentity, Target};
-use proxy::ProxySetting;
 use runtime::ExportRuntime;
 
 /// The instrumentation scope this crate's spans are recorded under.

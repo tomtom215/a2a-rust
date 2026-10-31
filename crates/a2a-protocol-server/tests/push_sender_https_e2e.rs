@@ -268,8 +268,12 @@ async fn https_push_rejects_untrusted_certificate() {
     let config = config_with_auth(&url);
 
     let result = sender.send(&url, &event, &config).await;
+    let error = result.expect_err("delivery to a server with an untrusted certificate must fail");
+    // The cause is named: until 2026-10-31 every connect failure read
+    // `client error (Connect)`, whatever refused it (audit B-05, N-B-1).
     assert!(
-        result.is_err(),
-        "delivery to a server with an untrusted certificate must fail"
+        error.message.contains("UnknownIssuer"),
+        "the error names why the handshake failed: {}",
+        error.message
     );
 }

@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:11110 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:11143 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -1392,13 +1392,13 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/extended_card.rs:35 A2aClient::get_extended_agent_card",
     "crates/a2a-protocol-client/src/client.rs:184 A2aClient::adopt_capabilities",
-    "crates/a2a-protocol-client/src/discovery.rs:495 CachingCardResolver::install_extended_card"
+    "crates/a2a-protocol-client/src/discovery.rs:533 CachingCardResolver::install_extended_card"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:385 the_extended_card_replaces_the_capabilities_checked",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:429 a_failed_extended_card_fetch_changes_nothing",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:455 an_extended_card_does_not_turn_the_checks_on",
-    "crates/a2a-protocol-client/src/discovery.rs:1156 an_installed_extended_card_is_served_until_cleared"
+    "crates/a2a-protocol-client/src/discovery.rs:1194 an_installed_extended_card_is_served_until_cleared"
    ],
    "notes": "The SDK caches a card in two places. A2aClient caches the capabilities it checks calls against (DeclaredCapabilities, from the card it was built from); since 2026-10-13 get_extended_agent_card replaces them with the extended card's (A2aClient::adopt_capabilities), keeping extendedAgentCard declared, and only when the client checks at all. Before, it kept the public card's, so a capability only the extended card declared was refused locally with CapabilityNotDeclared. The other, the resolver's, is replaced when the application calls CachingCardResolver::install_extended_card, which serves the extended card from resolve() until clear_extended_card() or invalidate(); the application decides when the session ends.",
    "auditor": "A",
@@ -2993,14 +2993,14 @@
     "crates/a2a-protocol-client/src/transport/rest/request.rs:100 RestTransport::build_request",
     "crates/a2a-protocol-client/src/transport/grpc.rs:458 GrpcTransport::add_metadata",
     "crates/a2a-protocol-client/src/transport/websocket.rs:590 open",
-    "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata",
+    "crates/a2a-protocol-client/src/discovery.rs:580 fetch_card_with_metadata",
     "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs:47 metadata_from",
     "bindings/a2a-protocol-slimrpc/src/multicast/mod.rs:188 SlimRpcMulticast::send_message"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/grpc.rs:1298 add_metadata_injects_a2a_version",
     "crates/a2a-protocol-client/tests/rest_streaming_tests.rs:239 rest_send_message_returns_completed_task",
-    "crates/a2a-protocol-client/src/discovery.rs:1735 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
+    "crates/a2a-protocol-client/src/discovery.rs:1773 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
     "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs:168 every_call_declares_the_protocol_version",
     "bindings/a2a-protocol-slimrpc/tests/multicast.rs:102 every_invited_agent_answers_and_is_identifiable (against the version-required default)",
     "crates/a2a-protocol-sdk/tests/extensions_e2e.rs:103 json_rpc_sends_the_extensions_asked_for",
@@ -3301,7 +3301,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:500 refuse_an_unservable_config",
-    "crates/a2a-protocol-server/src/push/sender.rs:558 HttpPushSender::send"
+    "crates/a2a-protocol-server/src/push/sender.rs:541 HttpPushSender::send"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:1211 set_push_config_refuses_an_auth_scheme_it_cannot_send",
@@ -3412,7 +3412,7 @@
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:119 delivery_concurrency",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:145 deliver_to_every_config",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:885 SyncPushJob::run",
-    "crates/a2a-protocol-server/src/push/sender.rs:216 PushRetryPolicy::with_max_attempts"
+    "crates/a2a-protocol-server/src/push/sender.rs:196 PushRetryPolicy::with_max_attempts"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/budget.rs:22 every_config_is_attempted_within_the_budget",
@@ -3437,14 +3437,14 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:189 PushRetryPolicy",
-    "crates/a2a-protocol-server/src/push/sender.rs:200 PushRetryPolicy::default",
-    "crates/a2a-protocol-server/src/push/sender.rs:558 HttpPushSender::send"
+    "crates/a2a-protocol-server/src/push/sender.rs:169 PushRetryPolicy",
+    "crates/a2a-protocol-server/src/push/sender.rs:180 PushRetryPolicy::default",
+    "crates/a2a-protocol-server/src/push/sender.rs:541 HttpPushSender::send"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:192 retries_on_server_error_and_eventually_fails",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:271 backoff_is_paid_between_attempts_but_not_after_the_last",
-    "crates/a2a-protocol-server/src/push/sender.rs:853 push_retry_policy_default"
+    "crates/a2a-protocol-server/src/push/sender.rs:839 push_retry_policy_default"
    ],
    "notes": "PushRetryPolicy default 3 attempts, backoff [1s,2s]; only 5xx/408/429/transport errors are retried. Tests assert 3 attempts against a failing webhook, the backoff paid between attempts and not after the last, and the default doubling [1s, 2s] schedule; shown able to fail by fixing attempts at 1 (attempt-count tests fail), removing the backoff sleep (backoff test fails) and changing the default to [1s, 1s] (default-policy test fails) (2026-10-20).",
    "auditor": "C",
@@ -3460,12 +3460,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:161 DEFAULT_PUSH_REQUEST_TIMEOUT",
+    "crates/a2a-protocol-server/src/push/sender.rs:141 DEFAULT_PUSH_REQUEST_TIMEOUT",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:310 HandlerLimits::default",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:189 deliver_once"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:1053 the_default_schedule_starts_every_attempt_inside_the_default_bound",
+    "crates/a2a-protocol-server/src/push/sender.rs:1039 the_default_schedule_starts_every_attempt_inside_the_default_bound",
     "crates/a2a-protocol-server/src/handler/limits/tests.rs:13 default_values",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/mod.rs:319 deliver_push_bg_logs_delivery_timeout"
    ],
@@ -3483,9 +3483,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:189 PushRetryPolicy",
-    "crates/a2a-protocol-server/src/push/sender.rs:216 PushRetryPolicy::with_max_attempts",
-    "crates/a2a-protocol-server/src/push/sender.rs:558 HttpPushSender::send"
+    "crates/a2a-protocol-server/src/push/sender.rs:169 PushRetryPolicy",
+    "crates/a2a-protocol-server/src/push/sender.rs:196 PushRetryPolicy::with_max_attempts",
+    "crates/a2a-protocol-server/src/push/sender.rs:541 HttpPushSender::send"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:192 retries_on_server_error_and_eventually_fails",
@@ -4476,7 +4476,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:454 validate_header_value",
+    "crates/a2a-protocol-server/src/push/sender.rs:437 validate_header_value",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:180 contains_path_traversal",
     "crates/a2a-protocol-server/src/handler/ids.rs:29 refuse_control_chars",
     "crates/a2a-protocol-server/src/handler/ids.rs:60 validate_id"
@@ -4487,7 +4487,7 @@
     "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:147 jsonrpc_push_config_ids_with_crlf_are_invalid_params",
     "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:217 jsonrpc_tenant_with_control_character_is_invalid_params",
     "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:228 rest_message_and_task_ids_with_crlf_are_400",
-    "crates/a2a-protocol-server/src/push/sender.rs:1206 rejects_header_with_crlf",
+    "crates/a2a-protocol-server/src/push/sender.rs:1192 rejects_header_with_crlf",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:380 path_traversal_raw"
    ],
    "notes": "Split 2026-10-20 from the APPLICATION entry on this line (ledger audit): the SDK is an implementation, and what it takes from a request and uses itself is sanitized and tested. Push credential header values refuse CR/LF (validate_header_value), REST paths refuse traversal (contains_path_traversal), and every client-supplied identifier the server validates (message, context, task, reference task, push-config and tenant ids, and the ListTasks contextId filter) refuses any control character (handler/ids.rs, since 2026-10-20; until then validate_id refused only empty and over-long ids). The SQL stores bind values as placeholders; that was grepped, not audited, and is not claimed here.",
@@ -4664,7 +4664,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/tls.rs:280 build_https_client",
+    "crates/a2a-protocol-client/src/tls.rs:286 build_https_client",
     "crates/a2a-protocol-server/src/serve/graceful/tls.rs:38 Server::with_tls",
     "crates/a2a-protocol-server/src/serve/graceful/tls.rs:55 Server::with_tls_pem",
     "crates/a2a-protocol-server/src/serve/graceful/connection.rs:20 spawn_connection",
@@ -4712,9 +4712,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:173 CardFetchOptions::with_signature_keys",
-    "crates/a2a-protocol-client/src/discovery.rs:739 verify_card_signatures",
-    "crates/a2a-protocol-client/src/discovery.rs:391 CachingCardResolver::with_options",
+    "crates/a2a-protocol-client/src/discovery.rs:209 CardFetchOptions::with_signature_keys",
+    "crates/a2a-protocol-client/src/discovery.rs:777 verify_card_signatures",
+    "crates/a2a-protocol-client/src/discovery.rs:429 CachingCardResolver::with_options",
     "crates/a2a-protocol-client/src/builder/signed.rs:33 ClientBuilder::from_signed_card"
    ],
    "test_evidence": [
@@ -5800,7 +5800,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:90 canonicalize_card_json",
     "crates/a2a-protocol-types/src/signing.rs:718 verify_card_json_with_jwks",
-    "crates/a2a-protocol-client/src/discovery.rs:739 verify_card_signatures"
+    "crates/a2a-protocol-client/src/discovery.rs:777 verify_card_signatures"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/card_signature_as_received.rs:97 a_received_cards_defaults_are_dropped_before_canonicalizing",
@@ -5879,8 +5879,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:739 verify_card_signatures",
-    "crates/a2a-protocol-client/src/discovery.rs:189 CardFetchOptions::with_require_signature"
+    "crates/a2a-protocol-client/src/discovery.rs:777 verify_card_signatures",
+    "crates/a2a-protocol-client/src/discovery.rs:225 CardFetchOptions::with_require_signature"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/card_signature_verification.rs:76 a_signed_card_is_verified_when_keys_are_supplied",
@@ -5988,7 +5988,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:437 CachingCardResolver::resolve",
+    "crates/a2a-protocol-client/src/discovery.rs:475 CachingCardResolver::resolve",
     "crates/a2a-protocol-client/src/discovery/freshness.rs:75 Freshness::of",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:92 StaticAgentCardHandler::full_response",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:276 card_handler",
@@ -6096,9 +6096,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:437 CachingCardResolver::resolve",
-    "crates/a2a-protocol-client/src/discovery.rs:476 CachingCardResolver::fresh_until",
-    "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata",
+    "crates/a2a-protocol-client/src/discovery.rs:475 CachingCardResolver::resolve",
+    "crates/a2a-protocol-client/src/discovery.rs:514 CachingCardResolver::fresh_until",
+    "crates/a2a-protocol-client/src/discovery.rs:580 fetch_card_with_metadata",
     "crates/a2a-protocol-client/src/discovery/freshness.rs:75 Freshness::of",
     "crates/a2a-protocol-client/src/discovery/freshness.rs:126 Freshness::fresh_until",
     "crates/a2a-protocol-client/src/discovery/freshness.rs:137 is_fresh"
@@ -6137,11 +6137,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:437 CachingCardResolver::resolve",
-    "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata"
+    "crates/a2a-protocol-client/src/discovery.rs:475 CachingCardResolver::resolve",
+    "crates/a2a-protocol-client/src/discovery.rs:580 fetch_card_with_metadata"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:958 fetch_card_with_metadata_304_returns_cached",
+    "crates/a2a-protocol-client/src/discovery.rs:996 fetch_card_with_metadata_304_returns_cached",
     "crates/a2a-protocol-client/tests/card_revalidation.rs:67 a_cached_card_is_revalidated_with_its_validators"
    ],
    "notes": "CachingCardResolver revalidates on every resolve with If-None-Match and If-Modified-Since from the cached response; a server that answers 304 only to a request carrying both validators sees them on the second fetch. Shown to fail with the If-None-Match header removed.",
@@ -6157,8 +6157,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:422 CachingCardResolver::with_default_freshness",
-    "crates/a2a-protocol-client/src/discovery.rs:476 CachingCardResolver::fresh_until",
+    "crates/a2a-protocol-client/src/discovery.rs:460 CachingCardResolver::with_default_freshness",
+    "crates/a2a-protocol-client/src/discovery.rs:514 CachingCardResolver::fresh_until",
     "crates/a2a-protocol-client/src/discovery/freshness.rs:126 Freshness::fresh_until"
    ],
    "test_evidence": [
@@ -7801,7 +7801,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:478 authorization_header"
+    "crates/a2a-protocol-server/src/push/sender.rs:461 authorization_header"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:498 scheme_without_credentials_is_not_delivered",
@@ -7824,7 +7824,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:558 HttpPushSender::send"
+    "crates/a2a-protocol-server/src/push/sender.rs:541 HttpPushSender::send"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:970 a_webhook_that_never_answers_is_abandoned_at_the_timeout"
@@ -7843,15 +7843,15 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:189 PushRetryPolicy",
-    "crates/a2a-protocol-server/src/push/sender.rs:558 HttpPushSender::send",
-    "crates/a2a-protocol-server/src/push/sender.rs:200 PushRetryPolicy::default"
+    "crates/a2a-protocol-server/src/push/sender.rs:169 PushRetryPolicy",
+    "crates/a2a-protocol-server/src/push/sender.rs:541 HttpPushSender::send",
+    "crates/a2a-protocol-server/src/push/sender.rs:180 PushRetryPolicy::default"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:192 retries_on_server_error_and_eventually_fails",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:271 backoff_is_paid_between_attempts_but_not_after_the_last",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:359 retries_on_rate_limit_status",
-    "crates/a2a-protocol-server/src/push/sender.rs:853 push_retry_policy_default"
+    "crates/a2a-protocol-server/src/push/sender.rs:839 push_retry_policy_default"
    ],
    "notes": "3 attempts, backoff [1s,2s] (doubling; schedule is an explicit list whose last entry repeats, not computed exponential). Retries 5xx/408/429/transport errors only. Caveat: under the default 5s handler bound a timed-out first attempt leaves no time for retries (see 3110).",
    "auditor": "F",
@@ -7866,11 +7866,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:200 PushRetryPolicy::default",
-    "crates/a2a-protocol-server/src/push/sender.rs:558 HttpPushSender::send"
+    "crates/a2a-protocol-server/src/push/sender.rs:180 PushRetryPolicy::default",
+    "crates/a2a-protocol-server/src/push/sender.rs:541 HttpPushSender::send"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:801 push_retry_policy_with_max_attempts",
+    "crates/a2a-protocol-server/src/push/sender.rs:787 push_retry_policy_with_max_attempts",
     "crates/a2a-protocol-server/tests/optional_features/push_retry.rs:78 push_delivery_stops_after_the_configured_number_of_failures"
    ],
    "notes": "Per-event max_attempts only; no cross-event circuit breaker that disables a config after N consecutive failed events. Asserts a webhook failing every attempt gets exactly the configured 2, then 5, attempts and no more; shown able to fail by fixing the retry loop at one attempt; the count is per delivery, with no cross-event circuit breaker (2026-10-20).",
@@ -7889,13 +7889,13 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/url_guard.rs:41 check_public_url",
     "crates/a2a-protocol-server/src/url_guard.rs:56 resolve_public_url",
-    "crates/a2a-protocol-server/src/push/sender.rs:421 validate_webhook_url",
-    "crates/a2a-protocol-server/src/push/sender.rs:446 validate_webhook_url_with_dns",
+    "crates/a2a-protocol-server/src/push/sender.rs:404 validate_webhook_url",
+    "crates/a2a-protocol-server/src/push/sender.rs:429 validate_webhook_url_with_dns",
     "crates/a2a-protocol-server/src/handler/push_config.rs:500 refuse_an_unservable_config"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:1298 the_resolver_seam_checks_and_pins_what_it_is_given",
-    "crates/a2a-protocol-server/src/push/sender.rs:1506 https_with_tls_feature_still_enforces_ssrf",
+    "crates/a2a-protocol-server/src/push/sender.rs:1284 the_resolver_seam_checks_and_pins_what_it_is_given",
+    "crates/a2a-protocol-server/src/push/sender.rs:1492 https_with_tls_feature_still_enforces_ssrf",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:402 https_webhook_enforces_ssrf_with_tls_feature"
    ],
    "notes": "Synchronous host check at config creation, DNS-resolve-all + IP pinning at delivery (http), cert validation defeats rebinding for https. Bypassable only by explicit HttpPushSender::allow_private_urls().",
@@ -7915,11 +7915,11 @@
     "crates/a2a-protocol-server/src/url_guard.rs:171 is_private_ip"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:862 rejects_loopback_ipv4",
-    "crates/a2a-protocol-server/src/push/sender.rs:867 rejects_private_10_range",
-    "crates/a2a-protocol-server/src/push/sender.rs:872 rejects_private_172_range",
-    "crates/a2a-protocol-server/src/push/sender.rs:877 rejects_private_192_168_range",
-    "crates/a2a-protocol-server/src/push/sender.rs:979 rejects_decimal_integer_metadata"
+    "crates/a2a-protocol-server/src/push/sender.rs:848 rejects_loopback_ipv4",
+    "crates/a2a-protocol-server/src/push/sender.rs:853 rejects_private_10_range",
+    "crates/a2a-protocol-server/src/push/sender.rs:858 rejects_private_172_range",
+    "crates/a2a-protocol-server/src/push/sender.rs:863 rejects_private_192_168_range",
+    "crates/a2a-protocol-server/src/push/sender.rs:965 rejects_decimal_integer_metadata"
    ],
    "notes": "Also CGNAT, 0.0.0.0, IPv6 ULA, IPv4-mapped/NAT64 forms and inet_aton numeric encodings.",
    "auditor": "F",
@@ -7936,13 +7936,13 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/url_guard.rs:171 is_private_ip",
     "crates/a2a-protocol-server/src/url_guard.rs:193 check",
-    "crates/a2a-protocol-server/src/push/sender.rs:558 HttpPushSender::send"
+    "crates/a2a-protocol-server/src/push/sender.rs:541 HttpPushSender::send"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:882 rejects_link_local",
-    "crates/a2a-protocol-server/src/push/sender.rs:1097 rejects_localhost",
-    "crates/a2a-protocol-server/src/push/sender.rs:1261 rejects_ipv6_link_local",
-    "crates/a2a-protocol-server/src/push/sender.rs:1112 rejects_ipv6_loopback"
+    "crates/a2a-protocol-server/src/push/sender.rs:868 rejects_link_local",
+    "crates/a2a-protocol-server/src/push/sender.rs:1083 rejects_localhost",
+    "crates/a2a-protocol-server/src/push/sender.rs:1247 rejects_ipv6_link_local",
+    "crates/a2a-protocol-server/src/push/sender.rs:1098 rejects_ipv6_loopback"
    ],
    "notes": "localhost, *.local, *.internal hostnames and 169.254/16, fe80::/10 rejected.",
    "auditor": "F",
@@ -7957,8 +7957,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:373 HttpPushSender::with_allowed_hosts",
-    "crates/a2a-protocol-server/src/push/sender.rs:115 PushSender::allows_webhook_url",
+    "crates/a2a-protocol-server/src/push/sender.rs:356 HttpPushSender::with_allowed_hosts",
+    "crates/a2a-protocol-server/src/push/sender.rs:95 PushSender::allows_webhook_url",
     "crates/a2a-protocol-server/src/handler/push_config.rs:73 RequestHandler::validate_and_store_push_config"
    ],
    "test_evidence": [
@@ -8105,8 +8105,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:393 HttpPushSender::https_only",
-    "crates/a2a-protocol-server/src/push/sender.rs:558 HttpPushSender::send",
+    "crates/a2a-protocol-server/src/push/sender.rs:376 HttpPushSender::https_only",
+    "crates/a2a-protocol-server/src/push/sender.rs:541 HttpPushSender::send",
     "crates/a2a-protocol-server/src/handler/push_config.rs:500 refuse_an_unservable_config"
    ],
    "test_evidence": [
@@ -8412,13 +8412,13 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/extended_card.rs:35 A2aClient::get_extended_agent_card",
     "crates/a2a-protocol-client/src/client.rs:184 A2aClient::adopt_capabilities",
-    "crates/a2a-protocol-client/src/discovery.rs:495 CachingCardResolver::install_extended_card"
+    "crates/a2a-protocol-client/src/discovery.rs:533 CachingCardResolver::install_extended_card"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:385 the_extended_card_replaces_the_capabilities_checked",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:429 a_failed_extended_card_fetch_changes_nothing",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:455 an_extended_card_does_not_turn_the_checks_on",
-    "crates/a2a-protocol-client/src/discovery.rs:1156 an_installed_extended_card_is_served_until_cleared"
+    "crates/a2a-protocol-client/src/discovery.rs:1194 an_installed_extended_card_is_served_until_cleared"
    ],
    "notes": "The SDK caches a card in two places. A2aClient caches the capabilities it checks calls against (DeclaredCapabilities, from the card it was built from); since 2026-10-13 get_extended_agent_card replaces them with the extended card's (A2aClient::adopt_capabilities), keeping extendedAgentCard declared, and only when the client checks at all. Before, it kept the public card's, so a capability only the extended card declared was refused locally with CapabilityNotDeclared. The other, the resolver's, is replaced when the application calls CachingCardResolver::install_extended_card, which serves the extended card from resolve() until clear_extended_card() or invalidate(); the application decides when the session ends.",
    "auditor": "F",
@@ -8525,7 +8525,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/tls.rs:83 config_from_pem",
-    "crates/a2a-protocol-server/src/push/sender.rs:45 push_tls_config",
+    "crates/a2a-protocol-server/src/net/roots.rs:43 config_with_roots",
     "crates/a2a-protocol-client/Cargo.toml:42 \"tls-rustls\"",
     "crates/a2a-protocol-client/Cargo.toml:113 \"rustls\""
    ],
@@ -8571,7 +8571,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/tls.rs:100 default_tls_config",
-    "crates/a2a-protocol-server/src/push/sender.rs:45 push_tls_config",
+    "crates/a2a-protocol-server/src/net/roots.rs:43 config_with_roots",
     "crates/a2a-protocol-client/Cargo.toml:113 \"rustls         = { version = \">=0.23.46, <0.24\", optional = true\""
    ],
    "test_evidence": [
@@ -8671,7 +8671,7 @@
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:106 debug_names_no_accepted_credential",
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:135 accepting_and_refusing_logs_no_credential",
     "crates/a2a-protocol-server/tests/credential_rotation.rs:110 an_api_key_is_rotated_and_revoked_while_serving",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1747 debug_impls_render_type_and_redact_secrets"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1775 debug_impls_render_type_and_redact_secrets"
    ],
    "notes": "Constant-time comparison, Debug shows counts not keys, identity labels separate from credentials, push secrets redacted. Exception: SQL push-config stores keep credentials plaintext at rest (see 3131). Client: until 2026-10-14 (audit register R17) the derived Debug of ClientRequest, ClientResponse, CardFetchOptions and WebSocketTransportConfig printed header values (the Authorization an auth interceptor adds) and push-config params and results verbatim; they print header names and JSON keys now, never values.",
    "auditor": "F",
@@ -8690,7 +8690,7 @@
     "crates/a2a-protocol-server/src/auth/credentials.rs:44 CredentialSet::add",
     "crates/a2a-protocol-server/src/auth/mod.rs:257 ApiKeyAuthInterceptor::credentials",
     "crates/a2a-protocol-server/src/auth/mod.rs:375 BearerTokenAuthInterceptor::credentials",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1017 RemoteJwks::get"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1029 RemoteJwks::get"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/credential_rotation.rs:95 a_bearer_token_is_rotated_and_revoked_while_serving",
@@ -8714,7 +8714,7 @@
     "crates/a2a-protocol-client/src/plaintext.rs:94 Guard::check",
     "crates/a2a-protocol-client/src/builder/mod.rs:562 ClientBuilder::require_https_credentials",
     "crates/a2a-protocol-server/src/handler/push_config.rs:500 refuse_an_unservable_config",
-    "crates/a2a-protocol-server/src/push/sender.rs:393 HttpPushSender::https_only"
+    "crates/a2a-protocol-server/src/push/sender.rs:376 HttpPushSender::https_only"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/credentials_plaintext.rs:119 a_credential_to_a_plaintext_remote_agent_is_refused_before_sending",
@@ -8738,7 +8738,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/credentials.rs:58 CredentialSet::revoke",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1017 RemoteJwks::get"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1029 RemoteJwks::get"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/credential_rotation.rs:95 a_bearer_token_is_rotated_and_revoked_while_serving",
@@ -9796,7 +9796,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/selection.rs:54 is_compatible",
-    "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata",
+    "crates/a2a-protocol-client/src/discovery.rs:580 fetch_card_with_metadata",
     "crates/a2a-protocol-server/src/builder.rs:1076 RequestHandlerBuilder::build",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
     "crates/a2a-protocol-types/src/generated/agent_card.rs:16 AgentInterface",
@@ -9827,7 +9827,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/selection.rs:54 is_compatible",
-    "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata",
+    "crates/a2a-protocol-client/src/discovery.rs:580 fetch_card_with_metadata",
     "crates/a2a-protocol-server/src/builder.rs:1076 RequestHandlerBuilder::build",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
     "crates/a2a-protocol-types/src/generated/agent_card.rs:16 AgentInterface",
@@ -9886,7 +9886,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/selection.rs:54 is_compatible",
-    "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata",
+    "crates/a2a-protocol-client/src/discovery.rs:580 fetch_card_with_metadata",
     "crates/a2a-protocol-server/src/builder.rs:1076 RequestHandlerBuilder::build",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
     "crates/a2a-protocol-types/src/generated/agent_card.rs:16 AgentInterface",
@@ -9921,7 +9921,7 @@
     "crates/a2a-protocol-server/src/builder.rs:1076 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
-    "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata",
+    "crates/a2a-protocol-client/src/discovery.rs:580 fetch_card_with_metadata",
     "crates/a2a-protocol-types/src/required.rs:139 check_card",
     "crates/a2a-protocol-types/src/proto/convert/card.rs:446 AgentCard::try_from"
    ],
@@ -9950,7 +9950,7 @@
     "crates/a2a-protocol-server/src/builder.rs:1076 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
-    "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata",
+    "crates/a2a-protocol-client/src/discovery.rs:580 fetch_card_with_metadata",
     "crates/a2a-protocol-types/src/required.rs:139 check_card",
     "crates/a2a-protocol-types/src/proto/convert/card.rs:446 AgentCard::try_from"
    ],
@@ -10003,7 +10003,7 @@
     "crates/a2a-protocol-server/src/builder.rs:1076 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
-    "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata",
+    "crates/a2a-protocol-client/src/discovery.rs:580 fetch_card_with_metadata",
     "crates/a2a-protocol-types/src/required.rs:139 check_card",
     "crates/a2a-protocol-types/src/proto/convert/card.rs:446 AgentCard::try_from"
    ],
@@ -10029,7 +10029,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/agent_card.rs:76 AgentCard",
-    "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata",
+    "crates/a2a-protocol-client/src/discovery.rs:580 fetch_card_with_metadata",
     "crates/a2a-protocol-types/src/proto/convert/card.rs:446 AgentCard::try_from"
    ],
    "test_evidence": [
@@ -10699,7 +10699,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/security.rs:173 OAuthFlows",
     "crates/a2a-protocol-types/src/generated/security.rs:230 AuthorizationCodeFlow",
-    "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata"
+    "crates/a2a-protocol-client/src/discovery.rs:580 fetch_card_with_metadata"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/security.rs:491 oauth_flows_without_a_scopes_key_parse_as_empty"
@@ -10783,7 +10783,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/security.rs:173 OAuthFlows",
     "crates/a2a-protocol-types/src/generated/security.rs:255 ClientCredentialsFlow",
-    "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata"
+    "crates/a2a-protocol-client/src/discovery.rs:580 fetch_card_with_metadata"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/security.rs:491 oauth_flows_without_a_scopes_key_parse_as_empty"
@@ -10990,7 +10990,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/security.rs:173 OAuthFlows",
     "crates/a2a-protocol-types/src/generated/security.rs:318 DeviceCodeFlow",
-    "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata"
+    "crates/a2a-protocol-client/src/discovery.rs:580 fetch_card_with_metadata"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/security.rs:491 oauth_flows_without_a_scopes_key_parse_as_empty"
