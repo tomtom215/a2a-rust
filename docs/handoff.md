@@ -27,27 +27,36 @@ only: when something here is done, delete it rather than annotating it.
   has the fourteen work packages). Nothing here is release-ready.** The
   maintainer asked for every gap found, fixed and tested live (llama.cpp
   with Qwen and Gemma) before 0.16.0 is published.
-  - **State of #185, head `660196e`.** Built, gated locally and pushed:
-    package 1 (the server's outbound network: proxy and private CA), the SSRF
-    classifier and the push-delivery bounds, D-04 and part of D-03 (package
-    2), the reaper's lease release and event-log entry (H3 part b, N-E-2;
-    package 4), and H4's resume and reattach with ADR 0030 (package 6, first
-    part). CI on the first head (`09cfc26`) passed 20 of the 22 jobs of
-    `ci.yml` and the mutation job; the failures were Documentation (a doc
-    link, fixed), DCO (sign-off identity, fixed) and Coverage, whose log is
-    gone (404) and whose cause is unknown: it was not reproduced locally, and
-    the new head re-runs it. A safety-net check-in is scheduled for about
-    16:51Z. **First thing next session: read CI on `660196e`**, and kill any
-    mutation survivors with tests (`cargo mutants` was not run locally for
-    that batch; it takes about 2.5 minutes a mutant on four cores).
-  - **H4, pushed in the second batch:** `Delegation::wait` resubscribes before
-    it cancels (`ResumePolicy`, `last_event_id`, `reattach`), 22 of 22
-    delegation tests, three hand mutations each caught, client suite 1,137
-    passed. The `DelegationJournal` of ADR 0030 is **not built**: its types
-    would go in `a2a-protocol-types`, the SQLite and PostgreSQL versions in the
-    server crate (the ADR says why). Open in package 2:
-    SEC-13/17 (an https webhook is resolved twice), B-13, D-22, N-D-2/E-3, D-05
-    and D-03 c and d. Packages 3, 5, 7 to 14 are untouched.
+  - **State of #185, head `219670d`** (pushed 2026-10-31 about 19:00Z, over
+    `a0e6673`). Built, gated locally and pushed: package 1 (the server's
+    outbound network), package 2 in part (the SSRF classifier, the
+    push-delivery bounds, D-04, part of D-03), package 3 (SEC-18b, SEC-08,
+    N-SEC-3, N-SEC-4, SEC-09), package 4 in part (the reaper's lease release
+    and event-log entry: H3 part b, N-E-2), and package 6 in part (H4's resume
+    and reattach, and the delegation journal for memory and PostgreSQL, with
+    ADR 0030). CI on the first push (`660196e`): the main CI run passed 21 of
+    its 22 jobs (one skipped), every other workflow passed (Coverage, which
+    had failed on the first head with no log, among them), and Mutation
+    Testing failed with seven survivors in `delegation/resume.rs`, fixed in
+    `59e6ff0` and commented on the pull request. CI on `219670d` was running at
+    19:10Z with nothing red. **First thing next session: read CI on
+    `219670d`** (every job, and the mutation shards' logs for survivors), then
+    carry on with the packages not started.
+  - **What was run on that head** (the PR body is the record): 36 static-job
+    gates, DCO and the README doctests; `clippy` default, all-features and the
+    `cargo hack` matrix over the four published crates; the doc loop; 2,511
+    tests (types, client, sdk, discovery, a2a-cli, book) and 3,798 / 2,486
+    server tests (all features / no default features); the journal against
+    PostgreSQL 16; `live-model` 11 of 11 against Qwen3.5-2B; `cargo mutants`
+    on the new code (types 0 missed of 9 caught, client 0 missed of 37 caught,
+    all 21 of `resume.rs`: 0 missed) and 25 hand mutations of the security
+    checks and the journal's SQL, each failing its test. Not run locally:
+    macOS, Windows, Coverage, the tck and example test targets, a live Squid or
+    private-CA run, `scripts/run_postgres_suites.py` itself.
+  - **Still open in the packages touched:** the SQLite journal, SEC-11 (needs
+    the maintainer's D-1: hashing the token cache's key makes `ring`
+    mandatory), SEC-13/17 (an https webhook is resolved twice), B-13, D-22,
+    N-D-2/E-3, D-05 and D-03 c and d. Packages 5 and 7 to 14 are untouched.
   - **Commits** are authored and signed off as `Tom F.
     <tomf@tomtomtech.net>` with no other trailers, at the maintainer's
     instruction so that `scripts/check_dco.sh` passes. A stop hook suggests
@@ -82,9 +91,9 @@ only: when something here is done, delete it rather than annotating it.
     Qwen3.5-2B (debug build, llama.cpp `0ec4027`).
   - **Not release-ready, and not claimed to be.** Of the S0 rows, H2 is half
     fixed (the private CA works now; no shared pool), H3 is fixed in #185 (the
-    leaked lease row), and H4's resume and reattach are built but not pushed
-    (the maintainer chose resume-then-cancel with reattach and the journal;
-    the journal is not built). Of the worst new findings, N-B-1, SEC-12 with
+    leaked lease row), and H4's resume, reattach and journal are in #185 (the
+    maintainer chose resume-then-cancel with reattach and the journal; the
+    SQLite journal is not built). Of the worst new findings, N-B-1, SEC-12 with
     N-SEC-1, SEC-14 with N-SEC-6 and N-E-2 are fixed in #185. Still open: C-07
     and C-09 (stderr diagnostics vanish under `OTEL_SDK_DISABLED`; abandoned
     streams page as server errors), SEC-13/17, and everything in the packages
@@ -1165,6 +1174,26 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **Run CI's full gate list over the combined tree before the first mutation
+  run, not after.** On 2026-10-31 a clippy `too_many_lines` error (a function
+  at 62 lines) and a 510-line test file were found only when the whole list
+  ran, after the mutation work on that code had started; fixing them moved
+  the code the mutants had been generated from. CI's clippy job also runs the
+  default-feature workspace, which an all-features run does not stand in for.
+- **`cargo mutants` scoring a crate "30 unviable, 0 caught" has tested
+  nothing.** Functions returning a boxed future are replaced whole by values
+  that do not compile, so the SQL inside them is never mutated. Mutate it by
+  hand (replace, run the one test, restore by hash). Even then a test can be
+  blind: a position-only write was followed by a task-only write that set
+  the task id back, hiding `task_id = $2`; end such a sequence with a write
+  that names neither field, and insert tie-break rows against their id
+  order.
+- **`cargo mutants --in-place` leaves a mutant in the working tree while it
+  runs.** The stop hook's "uncommitted changes" during one is that mutant;
+  do not commit then. Check `git status` and grep for `changed by
+  cargo-mutants` after, before any commit or push. A run over a diff does not
+  re-test code the diff does not touch: re-run a file whole (`--file`) to
+  confirm CI's survivors there are dead.
 - **A `head`-truncated `git status` after a conflicted cherry-pick hid a second
   conflicted file, and the conflict markers were committed** (2026-10-31, the
   spec ledger; caught before the push by the ledger script failing to parse
