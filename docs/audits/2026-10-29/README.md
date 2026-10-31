@@ -12,6 +12,8 @@ the code by a model, not measurements**, and a finding in them is a claim to
 verify, not a fact. This file is the task list built from them; its
 `Status` column is the only place a finding is marked as checked.
 
+**Triage, 2026-10-31.** Every row that was `open` was re-checked against `main` at `a0e6673` (the merge of pull request #184). Nine read-only agents each took one report's rows, told to try to refute each finding first; the lead took H2, H3 and H4, and re-ran or re-read the claims marked `†` in section N and the ones its notes name. Their reports are in [`triage/`](triage/): per row, the evidence with file and line, a fix sketch, the test that would prove it, a size, whether it breaks a public API, and a theme. [`triage/DECISIONS.md`](triage/DECISIONS.md) gathers every choice the maintainer has to make, and [`triage/PLAN.md`](triage/PLAN.md) groups the confirmed rows into themed pull requests. **A verdict is one reader's reading unless the note says `run`.** Rows where several claims were bundled were split; the status shown is the row's overall one and the note says which part is which. Where a check changed a severity, the note says `Re-rated`; the Severity column keeps the reviewer's original.
+
 Status values:
 
 - `open`: reported by reading; nobody has confirmed or refuted it yet.
@@ -22,6 +24,10 @@ Status values:
 - `fixed`: changed, with the regression test or live run named in the note.
 - `fixed (part)`: partly changed; the note says what is still open.
 - `deferred`: real, and left for after this release, with the reason.
+- `confirmed (run)`: reproduced by running it (the note names the run).
+- `needs decision`: real, and the fix is a design or policy choice for the maintainer; the note points at the options and a recommendation in `triage/`.
+- `cannot check`: needs an environment this session did not have (the note says which).
+- `duplicate`: the same defect as the row the note names.
 
 Severity is the reviewer's; where a check changed it, the note says so.
 
@@ -41,56 +47,56 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | A10 | MEDIUM | Every replica runs DDL and `CREATE OR REPLACE FUNCTION` at every start, so the runtime database role must own the schema; least privilege is impossible | fixed | confirmed on PostgreSQL 17.11; tables and functions guarded in `pg_schema::apply`; `a_role_with_only_data_privileges_starts_a_store_its_owner_made`. Checked for the task store; the other stores share `apply` |
 | A11 | MEDIUM (conjecture) | `CREATE INDEX IF NOT EXISTS` at every replica start may take a SHARE lock on `tasks` and stall all writes behind any long transaction | fixed | confirmed on PostgreSQL 17.11 (a third writer waited 4.66 s); guarded by `to_regclass` in `pg_schema::apply`; `a_replica_start_does_not_stall_writes_behind_an_open_one` fails unguarded |
 | A12 | MEDIUM | `.dockerignore` excludes only `target`, so `COPY . .` puts `.env` files and `.git` into the build stages | fixed | .dockerignore: env files, keys, .git, built book |
-| A13 | MEDIUM | Following the top-level README's deploy commands fails twice (missing Secret, then `:latest` pull) | open | |
-| A14 | MEDIUM | The generic `DATABASE_URL` env var plus generic table names (`tasks`, `push_configs`) in the `public` schema collide with an existing database or a developer's shell | open | |
-| A15 | LOW | Pool sizes are fixed and doubled per replica, cannot be set through the environment, and readiness checks only one of the two pools | open | |
+| A13 | MEDIUM | Following the top-level README's deploy commands fails twice (missing Secret, then `:latest` pull) | confirmed (read) | (a) README.md:261-267 still the bare 3-command block: no Secret, no image edit; (b) :latest is a documented template placeholder: not a defect. Re-rated low. triage/AL.md |
+| A14 | MEDIUM | The generic `DATABASE_URL` env var plus generic table names (`tasks`, `push_configs`) in the `public` schema collide with an existing database or a developer's shell | confirmed (read) | (b) generic tasks/push_configs in the connection's default schema, no schema option or doc, foreign-table hazard traced; (a) generic DATABASE_URL: decision D-AL-1; (c) logging done. triage/AL.md |
+| A15 | LOW | Pool sizes are fixed and doubled per replica, cannot be set through the environment, and readiness checks only one of the two pools | fixed (part) | (a)-(c) fixed in a579fee (DATABASE_POOL_SIZE, 10 + 2 pools, logged); (d) readiness probes the task store only: decision D-AL-2 (recommend document). Re-rated info. triage/AL.md |
 | A16 | LOW | `AGENT_URL` is not validated, defaults to `localhost` behind a `0.0.0.0` bind, and the manifest hardcodes the `default` namespace | fixed | AGENT_URL and PORT=0 validated; namespace from the downward API |
 | A17 | LOW | deploy-agent's rustdoc "Run it" curl omits `A2A-Version` and gets `VERSION_NOT_SUPPORTED` | fixed | rustdoc curl has the A2A-Version header |
 | A18 | LOW | Startup output says nothing about the store; startup errors are bare `Debug` values; lifecycle lines bypass the log pipeline | fixed | tracing logs: store, redacted URL; Display errors |
-| A19 | LOW | Dockerfile details: no HEALTHCHECK, unpinned apt package, an inaccurate distroless rationale, and a slow rebuild | open | |
+| A19 | LOW | Dockerfile details: no HEALTHCHECK, unpinned apt package, an inaccurate distroless rationale, and a slow rebuild | confirmed (read) | (a) no HEALTHCHECK; (c) distroless rationale incomplete; (b) unpinned apt: decision D-AL-3; (d) cargo-chef in place but no CI builds the image (N-AL-5). Re-rated info. triage/AL.md |
 | A20 | LOW | The observability quick start puts Grafana on host port 3000, the port hello-agent hard-codes | fixed | Grafana on host port 3001 |
-| A21 | LOW | a2a-cli silently replaces the URL the user typed with the card's URL, and gives no hint when that URL is unreachable | open | |
-| A22 | LOW | Configuration names differ across binaries | open | |
-| A23 | LOW | deploy-agent cannot be copied out as a template, though the docs say to do exactly that | open | |
-| A24 | INFO | There is no ready-to-run server binary; every deployment means writing and building a Rust crate | open | |
-| A25 | LOW | No Ingress, TLS, NetworkPolicy or metrics-scrape objects, and `/metrics` needs a feature deploy-agent does not enable | open | |
-| A26 | LOW (conjecture) | With no CPU limit, the tokio worker count and jemalloc arena count follow the node's cores against a 256 Mi memory limit | open | |
-| A27 | LOW | The card's version is always `0.0.0` | open | |
+| A21 | LOW | a2a-cli silently replaces the URL the user typed with the card's URL, and gives no hint when that URL is unreachable | confirmed (read) | (b) no hint when the card's URL is unreachable (client errors never name the endpoint, N-AL-6); (a) replacement is spec 8.3.2 and in --help: not a defect. triage/AL.md |
+| A22 | LOW | Configuration names differ across binaries | confirmed (read) | (a) deploy-agent silently ignores A2A_BIND_ADDR; (b) four spellings: decision D-AL-1; (c) not a defect. Re-rated info. triage/AL.md |
+| A23 | LOW | deploy-agent cannot be copied out as a template, though the docs say to do exactly that | confirmed (read) | Cargo.toml inherits the workspace and path-depends; Dockerfile builds from the repo root only; (c) panic=abort: not a defect. Re-rated info. triage/AL.md |
+| A24 | INFO | There is no ready-to-run server binary; every deployment means writing and building a Rust crate | needs decision | No ready-to-run server binary or image: D-AL-4 (recommend none until signing and an image pipeline exist). Info. triage/AL.md |
+| A25 | LOW | No Ingress, TLS, NetworkPolicy or metrics-scrape objects, and `/metrics` needs a feature deploy-agent does not enable | confirmed (read) | No NetworkPolicy, Ingress or scrape objects, and not listed under 'not included'; /metrics needs otel-prometheus, documented: not a defect. Re-rated low. triage/AL.md |
+| A26 | LOW (conjecture) | With no CPU limit, the tokio worker count and jemalloc arena count follow the node's cores against a 256 Mi memory limit | confirmed (read) | (a) no CPU limit, TOKIO_WORKER_THREADS or jemalloc narenas in the manifest; (b) the OOM consequence: cannot check (needs a many-core node). Low (conjecture). triage/AL.md |
+| A27 | LOW | The card's version is always `0.0.0` | confirmed (read) | Card version is CARGO_PKG_VERSION of an example at 0.0.0 (main.rs:194). Re-rated info. triage/AL.md |
 
 ## B. TLS, CAs, proxies and the network ([report](B-tls-proxy-network.md))
 
 | ID | Severity | Finding | Status | Note |
 |---|---|---|---|---|
-| B-01 | critical | The default client bindings (JSON-RPC, HTTP+JSON) cannot trust a private CA or the system store, or present a client certificate | fixed | ClientBuilder::with_tls_config, tls_config_from_pem, SSL_CERT_FILE/SSL_CERT_DIR; tests/private_ca.rs |
-| B-02 | critical | Only OTLP export honours `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`; every other outbound path ignores them | fixed | confirmed live (main: client error (Connect) through a proxy-only path); HTTP bindings, discovery, JWKS, token provider; WebSocket (`ws`/`wss`) and gRPC through a CONNECT tunnel since 2026-10-30, tested through an in-process proxy and live through Squid 6 with the CLI |
-| B-03 | high | The card resolver, client JWKS fetch and token provider have no TLS option at all, so private-CA users of WebSocket and gRPC still cannot bootstrap | open | |
-| B-04 | medium | Server-side OIDC discovery cannot use a private CA, and JWKS over `http://` is accepted from any host | open | |
+| B-01 | critical | The default client bindings (JSON-RPC, HTTP+JSON) cannot trust a private CA or the system store, or present a client certificate | fixed (part) | ClientBuilder::with_tls_config, tls_config_from_pem, SSL_CERT_FILE/SSL_CERT_DIR; tests/private_ca.rs Triage 2026-10-31: Client crate only. The server's outbound paths (push sender, JWKS and OIDC discovery, OpenAI model client) still use webpki roots and ignore SSL_CERT_FILE: N-B-1, confirmed by reading push/sender.rs:39-70 and a grep of the server crate (2026-10-31). |
+| B-02 | critical | Only OTLP export honours `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`; every other outbound path ignores them | fixed (part) | confirmed live (main: client error (Connect) through a proxy-only path); HTTP bindings, discovery, JWKS, token provider; WebSocket (`ws`/`wss`) and gRPC through a CONNECT tunnel since 2026-10-30, tested through an in-process proxy and live through Squid 6 with the CLI Triage 2026-10-31: Client crate only. The server's push sender, JWKS and OIDC discovery and the tool loop's OpenAI model client ignore HTTPS_PROXY and NO_PROXY: only otel/ reads them. N-B-1, confirmed by reading and a grep (2026-10-31). |
+| B-03 | high | The card resolver, client JWKS fetch and token provider have no TLS option at all, so private-CA users of WebSocket and gRPC still cannot bootstrap | confirmed (read) | No TLS option on the card resolver, client JWKS fetch or token provider (discovery.rs:577, jwks.rs:73, token_provider.rs:706); the SSL_CERT_FILE route reaches them, untested. Re-rated medium. triage/B.md |
+| B-04 | medium | Server-side OIDC discovery cannot use a private CA, and JWKS over `http://` is accepted from any host | fixed (part) | (b) http:// JWKS/discovery from any host fixed (37c508d; tests named in the report); (a) server OIDC discovery cannot use a private CA, still open (jwt.rs:884,1134). triage/B.md |
 | B-05 | high | Connection, DNS and TLS failures surface only as `client error (Connect)`, losing the cause | fixed | confirmed live; error chain reported; tests/private_ca.rs asserts UnknownIssuer |
 | B-06 | high | SSE responses lack `X-Accel-Buffering: no`, so events stall behind a default nginx | refuted (live), headers added | nginx 1.29 default config did not buffer the stream with or without X-Accel-Buffering (first event 0.01 s both); headers kept for proxies that buffer or compress |
-| B-07 | medium | Client pool idle timeout (90 s) exceeds this server's idle timeout (75 s) and AWS ALB's (60 s), so stale connections get reused | fixed | client pool idle 50 s |
-| B-08 | medium | A path prefix from a reverse proxy becomes a tenant on HTTP+JSON, and the card is served only at the root | open | |
-| B-09 | medium | Trust in `X-Forwarded-For` is a hop count only; there is no trusted-proxy address check, `ip:port` entries make a new key per connection, and `Forwarded` is unsupported | open | |
-| B-10 | medium | Long-lived streams are not kept alive through L7 idle timeouts on the WebSocket and gRPC bindings (off by default) | open | |
-| B-11 | medium | A blocking `SendMessage` longer than the LB idle timeout returns 504; nothing keeps it alive and the docs do not warn | open | |
-| B-12 | medium | The WebSocket client dials addresses one at a time with no happy eyeballs, so dual-stack hosts with broken IPv6 fail inside the connect timeout | open | |
-| B-13 | medium | HTTP push delivery pins only the first resolved address, with no failover across A/AAAA records or retries | open | |
-| B-14 | medium | No certificate hot-reload; the gRPC listener cannot rotate certificates without a restart | open | |
-| B-15 | medium | The CLI has no TLS or proxy flags, so it cannot reach private-PKI, self-signed or proxy-only agents | open | |
+| B-07 | medium | Client pool idle timeout (90 s) exceeds this server's idle timeout (75 s) and AWS ALB's (60 s), so stale connections get reused | fixed (part) | client pool idle 50 s Triage 2026-10-31: The 50 s pool idle timeout covers the client crate only; the server's push, JWKS and OpenAI-model clients keep hyper-util's 90 s (N-B-3, grep 2026-10-31: pool_idle_timeout appears only in client/src). |
+| B-08 | medium | A path prefix from a reverse proxy becomes a tenant on HTTP+JSON, and the card is served only at the root | confirmed (read) | A kept path prefix becomes a tenant on HTTP+JSON (rest/query.rs:36-52); card served only at the root; no base-path option or doc. triage/B.md |
+| B-09 | medium | Trust in `X-Forwarded-For` is a hop count only; there is no trusted-proxy address check, `ip:port` entries make a new key per connection, and `Forwarded` is unsupported | confirmed (read) | X-Forwarded-For trusted by hop count only (rate_limit/identity.rs:68-82); ip:port entries mint a key per connection; no Forwarded support; also feeds AuthFailureThrottle. triage/B.md |
+| B-10 | medium | Long-lived streams are not kept alive through L7 idle timeouts on the WebSocket and gRPC bindings (off by default) | needs decision | WebSocket and gRPC keepalive defaults against L7 idle timeouts: D-B1; same knobs as D-20. Re-rated low. triage/B.md |
+| B-11 | medium | A blocking `SendMessage` longer than the LB idle timeout returns 504; nothing keeps it alive and the docs do not warn | needs decision | Blocking SendMessage past an LB idle timeout: D-B2; the client's default send_timeout is 600 s, so worse than reported. triage/B.md |
+| B-12 | medium | The WebSocket client dials addresses one at a time with no happy eyeballs, so dual-stack hosts with broken IPv6 fail inside the connect timeout | confirmed (read) | WebSocket direct dial is sequential, no happy eyeballs, no TCP keepalive. triage/B.md |
+| B-13 | medium | HTTP push delivery pins only the first resolved address, with no failover across A/AAAA records or retries | confirmed (read) | http:// webhook pins only the first resolved address, no failover; https is not pinned (see SEC-13). Re-rated low. triage/B.md |
+| B-14 | medium | No certificate hot-reload; the gRPC listener cannot rotate certificates without a restart | confirmed (read) | No certificate reload on the HTTP and WebSocket listeners; the gRPC listener cannot rotate without a restart. triage/B.md |
+| B-15 | medium | The CLI has no TLS or proxy flags, so it cannot reach private-PKI, self-signed or proxy-only agents | fixed (part) | (b)(c) proxy-only agents reachable through the environment variables (client proxy.rs), untested for the CLI; (a) no --cacert, --cert or --key flags. Re-rated low. triage/B.md |
 | B-16 | medium | The `deploy-agent` template binds `0.0.0.0` only, so it is unreachable in IPv6-only clusters, and it serves without `ConnectInfo` | fixed | binds [::] with 0.0.0.0 fallback |
 | B-17 | low | `TlsConfig` is dead configuration: `without_tls()` is a no-op and `Rustls` claims to use the system's configuration | fixed | without_tls refuses https at build; TlsConfig::Custom |
-| B-18 | low | `tls_config_with_extra_roots` silently drops an unparsable CA, while OTLP fails hard | open | |
-| B-19 | low | gRPC client through L7 or TLS-terminating proxies: ALPN `h2` is mandatory, plaintext means h2c prior-knowledge, and one connection pins one replica | open | |
-| B-20 | low | Root-store semantics differ between transports | open | |
+| B-18 | low | `tls_config_with_extra_roots` silently drops an unparsable CA, while OTLP fails hard | fixed (part) | (b) PEM helper added (tls_config_from_pem); (a) tls_config_with_extra_roots still drops an unusable CA with only a tracing-feature warning. triage/B.md |
+| B-19 | low | gRPC client through L7 or TLS-terminating proxies: ALPN `h2` is mandatory, plaintext means h2c prior-knowledge, and one connection pins one replica | confirmed (read) | ALPN h2 mandatory, plaintext gRPC is h2c prior knowledge, one Channel pins one replica behind L4: tonic properties, undocumented here. triage/B.md |
+| B-20 | low | Root-store semantics differ between transports | confirmed (read) | Root-store semantics differ: a caller's gRPC ClientTlsConfig replaces Mozilla roots while HTTP and WebSocket add to them; gRPC does not read SSL_CERT_FILE. triage/B.md |
 | B-21 | low | The SSE response sets `transfer-encoding: chunked` explicitly, which is illegal in HTTP/2 | fixed | as B-06 |
-| B-22 | low | The SSRF classifier misses some special ranges | open | |
-| B-23 | low | OTLP proxy handling differs from curl and Go in a few places, and some `NO_PROXY` forms are ignored | open | |
+| B-22 | low | The SSRF classifier misses some special ranges | duplicate | Of SEC-12 (the same is_private_v4 and is_private_ip in url_guard.rs); fold 2002::/16 and 2001::/32 into SEC-12's fix. triage/B.md |
+| B-23 | low | OTLP proxy handling differs from curl and Go in a few places, and some `NO_PROXY` forms are ignored | confirmed (read) | NO_PROXY host:port and *.domain forms never match; the upper-over-lower-case rule matches Go and hyper-util: not a defect. triage/B.md |
 | B-24 | low | No service discovery (mDNS, DNS-SD or registry) | fixed (part) | mDNS/DNS-SD: new crate `a2a-protocol-discovery` (ADR 0029), round trip over real multicast in its tests and live between two processes (2026-10-30); not published yet. DNS SRV, Kubernetes and a registry are not built: registries stay out of scope by decision |
-| B-25 | low | The WebSocket binding cannot share the HTTP port or router | open | |
-| B-26 | low | mTLS behind a TLS-terminating proxy has no forwarded-client-certificate support | open | |
-| B-27 | low | IPv6 edge cases | open | |
-| B-28 | low | DNS: no caching, the connect timeout does not cover resolution, and Kubernetes `ndots:5` amplifies lookups; push delivery has a lookup bound but transports do not | open | |
-| B-29 | low | Crypto provider and cipher constraints | open | |
-| B-30 | low | The push sender's connector sets no TCP connect timeout or keepalive | open | |
+| B-25 | low | The WebSocket binding cannot share the HTTP port or router | needs decision | WebSocket cannot share the HTTP port or router: D-B3; not documented as a limit. triage/B.md |
+| B-26 | low | mTLS behind a TLS-terminating proxy has no forwarded-client-certificate support | needs decision | Forwarded client certificates (XFCC and similar) unsupported: D-B4. triage/B.md |
+| B-27 | low | IPv6 edge cases | confirmed (read) | (a) ::ffff:127.0.0.1 not treated as loopback; (b) the zone-ID parse claim is refuted by reading, whether such a host dials: cannot check. triage/B.md |
+| B-28 | low | DNS: no caching, the connect timeout does not cover resolution, and Kubernetes `ndots:5` amplifies lookups; push delivery has a lookup bound but transports do not | confirmed (read) | No DNS cache; connect_timeout does not cover resolution; card and JWKS fetches rebuild client, root store and DNS every call (N-B-6). triage/B.md |
+| B-29 | low | Crypto provider and cipher constraints | needs decision | No FIPS (aws-lc-rs) option and no OCSP or CRL: D-B5; ring with TLS 1.2 and 1.3 is a fact, not a defect. Re-rated info. triage/B.md |
+| B-30 | low | The push sender's connector sets no TCP connect timeout or keepalive | confirmed (read) | The push sender's connector has no connect timeout or keepalive; the server's JWKS/OIDC client has no connect timeout in the default build. triage/B.md |
 
 ## C. Observability ([report](C-observability.md))
 
@@ -100,25 +106,25 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | C-02 | High | Model-controlled tool name is a metric label (unbounded cardinality, prompt-injectable) | fixed | unknown tool is _OTHER on metric and span name; tests |
 | C-03 | High | Push-webhook host (client-supplied) is a metric label | fixed | first 64 webhook hosts named, rest _OTHER; test |
 | C-04 | High | `A2AAgentSilent` pages critical on every restart or rollout, and auto-resolves for a truly dead agent | fixed | keyed on the job over 1 d, plus `A2AAgentInstancesLost` (warning); `promtool test rules` 3.15.1 passes, the new cases fail on the old rules |
-| C-05 | Medium | No metrics↔traces correlation: the SDK emits no exemplars, and the stack does not store or link them | open | |
-| C-06 | Medium | No trace_id/span_id or JSON in stdout/stderr logs | open | |
-| C-07 | Medium | `OTEL_SDK_DISABLED=true` also silences all stderr diagnostics | open | |
-| C-08 | Medium | Unknown or unsupported enum values are fatal at startup (spec says warn and ignore) | open | |
-| C-09 | Medium | Streams the peer abandons count as server errors, so the error-ratio alert fires on normal UI behaviour and on every deploy | open | |
-| C-10 | Medium | W3C baggage is never propagated across A2A, and `OTEL_PROPAGATORS` has no effect on the A2A wire | open | |
-| C-11 | Medium | Hot-path INFO logs are exported as OTLP log records by default (volume), and the client logs full endpoint URLs | fixed | confirmed live; per-request lines are DEBUG |
-| C-12 | Medium | The legacy `init_otlp_pipeline` is still public and violates several rules the new path fixed | open | |
-| C-13 | Medium | No process or runtime metrics and no telemetry self-metrics; exporter health is not observable except in logs | open | |
-| C-14 | Medium | Alert coverage gaps and an alert threshold that falls inside a coarse bucket | open | |
-| C-15 | Medium | The Collector itself is unobserved, and the base compose has no memory limit for `memory_limiter` | open | |
-| C-16 | Low | The Prometheus pull endpoint binds `localhost` by default and runs a separate unauthenticated listener | open | |
-| C-17 | Low | WebSocket per-call credential warning is not rate-limited (log spam) | open | |
-| C-18 | Low | Grafana trace→logs link likely queries the log line, not Loki structured metadata | open | |
-| C-19 | Low | Retention and persistence gaps in the deploy stack | open | |
-| C-20 | Low | No attribute-length limit for opt-in content capture | open | |
-| C-21 | Low | `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta` silently breaks the shipped stack | open | |
-| C-22 | Low | No Kubernetes / Helm equivalent | open | |
-| C-23 | Low | Instruments are rebuilt on every measurement | open | |
+| C-05 | Medium | No metrics↔traces correlation: the SDK emits no exemplars, and the stack does not store or link them | confirmed (read) | No exemplars emitted by the SDK (upstream limitation), none stored or linked by the stack. Re-rated low. triage/C.md |
+| C-06 | Medium | No trace_id/span_id or JSON in stdout/stderr logs | confirmed (read) | No trace_id or span_id on stderr logs, no JSON option in install_subscriber. Re-rated low. triage/C.md |
+| C-07 | Medium | `OTEL_SDK_DISABLED=true` also silences all stderr diagnostics | confirmed (read) | OTEL_SDK_DISABLED=true makes install_subscriber install nothing, silencing every stderr warning and error; a test pins the silence. triage/C.md |
+| C-08 | Medium | Unknown or unsupported enum values are fatal at startup (spec says warn and ignore) | needs decision | Unrecognised OTEL_* enum and number values are fatal at startup, deliberate and test-pinned, against the spec's warn-and-ignore: decision (recommend warn-and-fall-back for the three enum variables). triage/C.md |
+| C-09 | Medium | Streams the peer abandons count as server errors, so the error-ratio alert fires on normal UI behaviour and on every deploy | confirmed (read) | The error-ratio rules count abandoned (cancelled) streams as server errors and have no traffic floor; the book contradicts the code. triage/C.md |
+| C-10 | Medium | W3C baggage is never propagated across A2A, and `OTEL_PROPAGATORS` has no effect on the A2A wire | needs decision | Baggage never crosses A2A and OTEL_PROPAGATORS has no effect on the A2A wire: decision (recommend document now, opt-in baggage later). Re-rated low. triage/C.md |
+| C-11 | Medium | Hot-path INFO logs are exported as OTLP log records by default (volume), and the client logs full endpoint URLs | fixed (part) | confirmed live; per-request lines are DEBUG Triage 2026-10-31: Server hot-path lines are DEBUG, but the client card resolver still logs raw URLs at INFO (discovery.rs:255,451; N-C-1, read 2026-10-31). |
+| C-12 | Medium | The legacy `init_otlp_pipeline` is still public and violates several rules the new path fixed | confirmed (read) | init_otlp_pipeline[_with_endpoint] public and not deprecated, no service.instance.id, ignores OTEL_SDK_DISABLED. Re-rated low. triage/C.md |
+| C-13 | Medium | No process or runtime metrics and no telemetry self-metrics; exporter health is not observable except in logs | confirmed (read) | No process or runtime metrics and no telemetry self-metrics (lost exports visible only in a throttled warn). Re-rated low. triage/C.md |
+| C-14 | Medium | Alert coverage gaps and an alert threshold that falls inside a coarse bucket | confirmed (read) | (a) A2AUnaryLatencyHigh's 2.5 s threshold sits inside bucket (1,5] and its promtool test uses a le=2.5 bucket the instrument never emits; (b) no Alertmanager: decision; (c) coverage gaps. triage/C.md |
+| C-15 | Medium | The Collector itself is unobserved, and the base compose has no memory limit for `memory_limiter` | confirmed (read) | Collector self-telemetry not scraped or alerted; the base compose has no memory limit for memory_limiter. Re-rated low. triage/C.md |
+| C-16 | Low | The Prometheus pull endpoint binds `localhost` by default and runs a separate unauthenticated listener | confirmed (read) | (c) the Prometheus pull listener has no connection bound; (a) localhost default and (b) separate listener are documented: not defects. Re-rated info. triage/C.md |
+| C-17 | Low | WebSocket per-call credential warning is not rate-limited (log spam) | needs decision | The per-call WebSocket credential warning is not rate-limited, chosen and test-pinned: decision (recommend rate-limit it). triage/C.md |
+| C-18 | Low | Grafana trace→logs link likely queries the log line, not Loki structured metadata | cannot check | Needs live Grafana 13.2.4, Loki 3.7.9 and Tempo 2.9.0; by reading, the link config has no structured-metadata query. triage/C.md |
+| C-19 | Low | Retention and persistence gaps in the deploy stack | confirmed (read) | Loki has no retention or compactor and Prometheus no size cap in the deploy stack; Tempo's 24 h is stated: not a defect. triage/C.md |
+| C-20 | Low | No attribute-length limit for opt-in content capture | not a defect | Opt-in content capture is bounded by CONTENT_LIMIT (64 KiB, rpc_span/agent.rs:58,192); OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT is unsupported upstream. Re-rated info. triage/C.md |
+| C-21 | Low | `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta` silently breaks the shipped stack | confirmed (read) | Delta temporality silently breaks the shipped stack; a deliberate non-default. Re-rated info. triage/C.md |
+| C-22 | Low | No Kubernetes / Helm equivalent | needs decision | No Helm, kustomize, ServiceMonitor or PrometheusRule objects: a feature gap, decision. Re-rated info. triage/C.md |
+| C-23 | Low | Instruments are rebuilt on every measurement | confirmed (read) | Instruments rebuilt on every measurement at 9 sites; the cost is conjecture. Re-rated info. triage/C.md |
 
 ## D. Resilience ([report](D-resilience.md))
 
@@ -126,29 +132,29 @@ Severity is the reviewer's; where a check changed it, the note says so.
 |---|---|---|---|---|
 | D-01 | High | The default timeout cuts off a blocking `SendMessage` to a slow agent, and the task is orphaned | fixed | confirmed live (CLI exit 1 at 30 s, task kept running); send_timeout 600 s on all transports + CLI --send-timeout |
 | D-02 | High | A hung webhook stalls the streaming persistence pipeline (push runs inline per event) | fixed | per-task push lanes (`push_delivery/lanes.rs`); `tests/turn_claims/push.rs` `a_hung_webhook_does_not_hold_events_out_of_the_store` fails before (never parked in 15 s). Not done: the config list is still read per event, and no per-URL breaker (D-05) |
-| D-03 | Medium | An executor panic gives no `Failed` push and no terminal SSE frame | open | |
-| D-04 | Medium | A config-list failure drops the push silently | open | |
-| D-05 | Medium | Push is at-most-a-few-attempts, not durable, and has no dedupe id or dead-webhook handling | open | |
+| D-03 | Medium | An executor panic gives no `Failed` push and no terminal SSE frame | confirmed (read) | An executor panic gives no Failed push (streaming or blocking), no event-log entry and no terminal SSE frame. triage/D.md |
+| D-04 | Medium | A config-list failure drops the push silently | confirmed (read) | Both push paths drop silently when the push-config list fails. triage/D.md |
+| D-05 | Medium | Push is at-most-a-few-attempts, not durable, and has no dedupe id or dead-webhook handling | needs decision | Push is bounded in-memory attempts: durability and dead-webhook handling (a, c) are decisions; no delivery-id header (b) is a plain gap. triage/D.md |
 | D-06 | Medium | Blocking-path push jobs: unbounded spawn and no per-task ordering | fixed (part) | ordered with the streaming path in the task's lane, bounded per task; `a_webhook_answers_each_turn_in_order` fails before. Not done: no cap on concurrent deliveries across tasks |
-| D-07 | Medium | The server WebSocket read loop blocks on an untimed write, defeating the idle timeout | open | |
-| D-08 | Medium | A half-open client WebSocket stays wedged for about 15 minutes | open | |
-| D-09 | Low | WebSocket client connect errors are classed non-retryable | open | |
-| D-10 | Low | `Retry-After` is clamped to `max_backoff` and not jittered | open | |
-| D-11 | Low | No retry by default, and no automatic stream resume | open | |
-| D-12 | Low | Client pool hygiene: idle race, no max-lifetime, no per-host cap, no HTTP/2 keepalive | open | |
-| D-13 | Low | Push SSRF: `https` is not pinned, and some reserved ranges are missing | open | |
+| D-07 | Medium | The server WebSocket read loop blocks on an untimed write, defeating the idle timeout | confirmed (read) | Server WebSocket busy and binary replies and stream frames are written untimed in the read loop. Re-rated low. triage/D.md |
+| D-08 | Medium | A half-open client WebSocket stays wedged for about 15 minutes | confirmed (read) | The WebSocket client has no ping and no TCP keepalive; a timeout does not mark the connection dead and retries reuse it. triage/D.md |
+| D-09 | Low | WebSocket client connect errors are classed non-retryable | confirmed (read) | (a) connect timeout is non-retryable Transport; handshake Retry-After ignored; (b) TLS failures and resets are already retryable: not a defect. triage/D.md |
+| D-10 | Low | `Retry-After` is clamped to `max_backoff` and not jittered | confirmed (read) | Retry-After is not jittered and the HTTP-date form is ignored; (a) the clamp to max_backoff: decision. triage/D.md |
+| D-11 | Low | No retry by default, and no automatic stream resume | needs decision | Retries off by default and no automatic stream resume are decisions; TaskFollow never resubscribing after a cut is a plain defect (size S). triage/D.md |
+| D-12 | Low | Client pool hygiene: idle race, no max-lifetime, no per-host cap, no HTTP/2 keepalive | confirmed (read) | No max connection lifetime, no per-host cap, no HTTP/2 keepalive; idle 50 s fixed in 57f034e but no test pins it. triage/D.md |
+| D-13 | Low | Push SSRF: `https` is not pinned, and some reserved ranges are missing | duplicate | (b)(c) of SEC-12 (url_guard.rs ranges); (a) https not pinned is SEC-13. triage/D.md |
 | D-14 | Medium | The SQLite migration runner leaves an exclusive transaction open on error or cancel | fixed | Transaction rolls back on error/drop; test |
 | D-15 | Medium | A PostgreSQL failover is classed as permanent, and poisoned connections stay pooled | fixed | `25006` transient; connections opened before a sighting retired at acquire (`pg_retry`); `a_write_refused_as_read_only_runs_again_on_a_new_connection` against PostgreSQL 17, fails before. Not run: a real Patroni or managed failover. `57P04` (database dropped) left internal |
-| D-16 | Low | A store outage during a continuation is reported as `Internal`, not `Unavailable` | open | |
+| D-16 | Low | A store outage during a continuation is reported as `Internal`, not `Unavailable` | confirmed (read) | The continuation's event-log read during a store outage is reported Internal, not Unavailable or Overloaded, and the reply embeds store error text (N-D-1). triage/D.md |
 | D-17 | Low | A fixed per-store PostgreSQL pool of 10 exhausts `max_connections` at modest scale | fixed | `new_with_pool_size` on the four PostgreSQL stores, each logging its size; the budget documented (*Shared stores*) |
-| D-18 | Low | In-memory capacity eviction can evict live or parked tasks | open | |
-| D-19 | Low | Audit per-tenant locks are never evicted | open | |
-| D-20 | Low | gRPC and WebSocket listeners have no liveness bound by default | open | |
-| D-21 | Medium | A rolling deploy terminally cancels long tasks | open | |
-| D-22 | Low | Push DNS lookups occupy blocking-pool threads past their timeout | open | |
-| D-23 | Low | `tokio::spawn` from `Drop` impls | open | |
-| D-24 | Info | Panic surface on request paths | open | |
-| D-25 | Info | Areas checked and found sound | open | |
+| D-18 | Low | In-memory capacity eviction can evict live or parked tasks | needs decision | In-memory capacity eviction can evict live or parked tasks: a documented last resort on the dev and test store only. triage/D.md |
+| D-19 | Low | Audit per-tenant locks are never evicted | confirmed (read) | AuditLog per-tenant locks are never evicted; reachability narrower than reported. Re-rated info. triage/D.md |
+| D-20 | Low | gRPC and WebSocket listeners have no liveness bound by default | needs decision | gRPC and WebSocket liveness bounds off by default, deliberate and test-pinned; same decision as B-10 (D-B1). triage/D.md |
+| D-21 | Medium | A rolling deploy terminally cancels long tasks | fixed (part) | (a) a graceful stop now ends Failed/transient, documented (E-F2); (b) no hand-off of a running task to a peer replica: decision. Re-rated low. triage/D.md |
+| D-22 | Low | Push DNS lookups occupy blocking-pool threads past their timeout | confirmed (read) | Push DNS lookups hold a blocking-pool thread past their timeout (mechanism read, impact unmeasured). triage/D.md |
+| D-23 | Low | `tokio::spawn` from `Drop` impls | confirmed (read) | tokio spawns from Drop in CleanupGuard, DeferredExecutor and CommitGuard (a third the report missed); they panic outside a runtime. triage/D.md |
+| D-24 | Info | Panic surface on request paths | not a defect | The listed panic sites are not reachable from untrusted input; the assertions hold, the list is not exhaustive. triage/D.md |
+| D-25 | Info | Areas checked and found sound | not a defect | The listed areas hold, except one stale statement: an unbounded channel exists at tool_loop/executor.rs:104. triage/D.md |
 
 ## E. Several replicas ([report](E-replicas.md))
 
@@ -160,26 +166,26 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | E-F4 | Medium (High for anyone using push) | the default push-config store stays in-memory when the task store is SQL; build() is silent and the book snippet omits it | fixed | build() refuses when the card declares push over a shared task store; book shared-stores page fixed |
 | E-F5 | Medium-High | readiness runs a full COUNT(*), so all replicas go NotReady together, and a read-only database still reports ready | fixed | as A2; a standby is now not ready |
 | E-F6 | Medium | pool size × replicas runs out of PostgreSQL's default `max_connections` | fixed | as D-17, and `deploy-agent`'s `DATABASE_POOL_SIZE` with a 2-connection push pool (live: pool 3, 60 sends on 4 connections). Not done: the stores do not share one pool by default |
-| E-F7 | Medium | claim renewal competes with all other traffic for a 10-connection pool, can wait 30 s for a connection against a 15 s TTL, and an executor cut off from the database keeps running unfenced | open | |
-| E-F8 | Medium (conjecture) | after a takeover, an event position is reused, so subscribers that saw the old turn's live events silently miss the new turn's events | open | |
-| E-F9 | Medium (conjecture) | a cross-replica cancel of an executor that exits quietly on its token never pushes CANCELED | open | |
+| E-F7 | Medium | claim renewal competes with all other traffic for a 10-connection pool, can wait 30 s for a connection against a 15 s TTL, and an executor cut off from the database keeps running unfenced | confirmed (read) | Claim renewal shares the task pool (default 10) with no acquire_timeout, and no local self-fence when cut off from the database. triage/E.md |
+| E-F8 | Medium (conjecture) | after a takeover, an event position is reused, so subscribers that saw the old turn's live events silently miss the new turn's events | confirmed (read) | After a takeover, event positions the old owner already broadcast are reused (mechanism traced, frequency unobserved). Re-rated low-medium. triage/E.md |
+| E-F9 | Medium (conjecture) | a cross-replica cancel of an executor that exits quietly on its token never pushes CANCELED | confirmed (read) | A cross-replica cancel of an executor that exits quietly never pushes CANCELED (the common early-return executor). triage/E.md |
 | E-F10 | Medium | every replica re-runs CREATE OR REPLACE FUNCTION on every start, so the last replica to start sets the function bodies for the whole fleet (version skew) | fixed | a body is replaced only by a later release (its comment names the release); `an_earlier_release_does_not_replace_a_later_ones_function`; `with_migrations` now installs the same bodies (`with_migrations_installs_this_releases_functions_too`) |
-| E-F11 | Medium (conjecture, verify with pg_locks) | replica startup DDL takes SHARE locks on hot tables with `statement_timeout=0`, and can stall all writers fleet-wide | open | |
-| E-F12 | Medium | tenant `max_concurrent_tasks` is per process, so the fleet admits N× the limit | open | |
-| E-F13 | Medium | `Profile::Production` accepts in-memory halt and lease stores, so the kill switch is per-replica in a "production" fleet | open | |
-| E-F14 | Low | the per-task push-config cap uses a per-process lock, so it can be exceeded permanently across replicas | open | |
-| E-F15 | Low-Medium | `AuthFailureThrottle` is per process with no shared option | open | |
-| E-F16 | Low | rate-limit windows and sweeps use each replica's wall clock | open | |
-| E-F17 | Low-Medium | lease deadlines use the replica's wall clock | open | |
-| E-F18 | Medium | the audit chain is one optimistic append point for the whole fleet | open | |
-| E-F19 | Low | the audit run registry is per process | open | |
-| E-F20 | Low-Medium | a non-owner can synthesize the terminal frame without the real event's metadata | open | |
-| E-F21 | Low | concurrent retention sweeps are not "disjoint", and report `complete` early | open | |
-| E-F22 | Low | agent-card caching differs per replica | open | |
-| E-F23 | Low | a send waiting for a remote claim holds the per-context lock for up to 5 s | open | |
-| E-F24 | Low (conjecture) | a small idempotency replay window remains | open | |
-| E-F25 | Low-Medium (partly KNOWN) | reattach polling is unbounded and shares the pool | open | |
-| E-F26 | Low | SQLite claims use the wall clock, and nothing guards against network filesystems | open | |
+| E-F11 | Medium (conjecture, verify with pg_locks) | replica startup DDL takes SHARE locks on hot tables with `statement_timeout=0`, and can stall all writers fleet-wide | fixed | Same finding as A11: pg_schema::index_if_missing (8a31cf7); a_replica_start_does_not_stall_writes_behind_an_open_one is database-gated (read, not run here). triage/E.md |
+| E-F12 | Medium | tenant `max_concurrent_tasks` is per process, so the fleet admits N× the limit | needs decision | Tenant max_concurrent_tasks is per process and the docs are silent: decision (recommend document now). Re-rated low-medium. triage/E.md |
+| E-F13 | Medium | `Profile::Production` accepts in-memory halt and lease stores, so the kill switch is per-replica in a "production" fleet | needs decision | Profile::Production accepts in-memory halt and lease stores: decision (recommend refuse when the task store is shared). triage/E.md |
+| E-F14 | Low | the per-task push-config cap uses a per-process lock, so it can be exceeded permanently across replicas | confirmed (read) | The per-task push-config cap uses a per-process lock. triage/E.md |
+| E-F15 | Low-Medium | `AuthFailureThrottle` is per process with no shared option | confirmed (read) | AuthFailureThrottle is per process with no shared option (see also N-B-2). triage/E.md |
+| E-F16 | Low | rate-limit windows and sweeps use each replica's wall clock | confirmed (read) | Rate-limit windows and sweeps use each replica's wall clock. triage/E.md |
+| E-F17 | Low-Medium | lease deadlines use the replica's wall clock | confirmed (read) | Lease deadlines use the replica's wall clock. Re-rated low. triage/E.md |
+| E-F18 | Medium | the audit chain is one optimistic append point for the whole fleet | confirmed (read) | The audit chain is one optimistic append point fleet-wide, 8 retries without backoff or jitter. triage/E.md |
+| E-F19 | Low | the audit run registry is per process | confirmed (read) | The audit run registry is per process; the other sub-claims are not defects. Re-rated info. triage/E.md |
+| E-F20 | Low-Medium | a non-owner can synthesize the terminal frame without the real event's metadata | confirmed (read) | A non-owner can synthesize the terminal frame without the real event's metadata. Re-rated low. triage/E.md |
+| E-F21 | Low | concurrent retention sweeps are not "disjoint", and report `complete` early | confirmed (read) | Concurrent retention sweeps are not disjoint and report complete early (PostgreSQL stores). triage/E.md |
+| E-F22 | Low | agent-card caching differs per replica | confirmed (read) | Card Last-Modified is the process start; ES256 signatures are randomized so ETags differ per replica. Re-rated info and low. triage/E.md |
+| E-F23 | Low | a send waiting for a remote claim holds the per-context lock for up to 5 s | confirmed (read) | A send waiting for a remote claim holds the per-context lock for up to 5 s. triage/E.md |
+| E-F24 | Low (conjecture) | a small idempotency replay window remains | confirmed (read) | Idempotency replay window of about one database round trip (mechanism read). triage/E.md |
+| E-F25 | Low-Medium (partly KNOWN) | reattach polling is unbounded and shares the pool | needs decision | Idle reattach polling is unbounded and shares the claim pool: decision (recommend document plus a backoff knob). triage/E.md |
+| E-F26 | Low | SQLite claims use the wall clock, and nothing guards against network filesystems | confirmed (read) | SQLite claims use the wall clock by design (documented); a forward clock step makes live claims look expired. Re-rated info. triage/E.md |
 
 ## F. Security ([report](F-security.md))
 
@@ -192,82 +198,82 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | SEC-05 | Medium | An empty API key fails open | fixed | CredentialSet::matching refuses an empty credential; unit test |
 | SEC-06 | Medium; partly KNOWN | JWT defaults: no `iss`/`aud`, `from_oidc_issuer` does not bind the issuer, plaintext JWKS | fixed | `iss` and `aud` checked by default: a validator naming neither refuses every token (logged at construction) unless `allow_any_issuer`/`allow_any_audience`; `from_oidc_issuer` checks the document's `issuer` (§4.3) and binds it; JWKS and discovery URLs must be https or loopback http. Six mutations, each failing a test |
 | SEC-07 | Medium | Internal error text returned verbatim to callers and persisted | fixed | withheld by default with a logged reference (`error/withheld.rs`), `expose_internal_errors()` to opt out; the SDK's own text kept; an unavailable SQL error's sqlx text is still sent |
-| SEC-08 | Medium | OAuth client secret and tokens sent to `http://` endpoints and to card-controlled `tokenUrl` | open | |
-| SEC-09 | Medium | a2a-cli sends `--header` credentials to card-chosen hosts and to the JWKS host | open | |
+| SEC-08 | Medium | OAuth client secret and tokens sent to `http://` endpoints and to card-controlled `tokenUrl` | confirmed (read) | http:// token endpoints and a card-controlled tokenUrl are accepted (token_provider.rs:728-739, with a test asserting acceptance); TokenExchange the same. triage/SEC.md |
+| SEC-09 | Medium | a2a-cli sends `--header` credentials to card-chosen hosts and to the JWKS host | confirmed (read) | a2a-cli sends --header to card-chosen hosts and the JWKS host, with no env or file form, and never enables require_https_credentials. Re-rated low. triage/SEC.md |
 | SEC-10 | Low | Raw id logged at INFO before validation and before authentication | fixed (part) | per-request id lines moved to DEBUG; still logged at DEBUG before validation |
-| SEC-11 | Low; KNOWN | `BearerTokenTenantResolver::new()`/`Default` use the raw secret as the tenant | open | |
-| SEC-12 | Low | Gaps in the static SSRF host check | open | |
-| SEC-13 | Low; KNOWN | HTTPS webhooks are not pinned | open | |
-| SEC-14 | Low | Push fan-out amplification | open | |
-| SEC-15 | Low, example | SSRF in the `agent-team` health monitor | open | |
-| SEC-16 | Low, example | mcp-bridge forwards remote skill text as tool descriptions | open | |
-| SEC-17 | Info | A custom `PushSender` gets no delivery-time SSRF guard | open | |
-| SEC-18 | Info | Hardening notes | open | |
+| SEC-11 | Low; KNOWN | `BearerTokenTenantResolver::new()`/`Default` use the raw secret as the tenant | needs decision | BearerTokenTenantResolver::new() and Default use the raw token as the tenant: D-1 (recommend hash it and deprecate new). triage/SEC.md |
+| SEC-12 | Low | Gaps in the static SSRF host check | confirmed (run) | check_public_url accepts trailing-dot IP literals (169.254.169.254.), localhost., a.localhost, metadata, 198.18.0.1, fec0::1, 224/4 and 240/4 (ran 2026-10-31, controls refused); also the B-22 and D-13 ranges. triage/SEC.md, N-SEC-1 |
+| SEC-13 | Low; KNOWN | HTTPS webhooks are not pinned | confirmed (read) | https webhooks are not pinned: the connector resolves again (push/sender.rs:614,669); a blind connect only. Remedy shared with SEC-17. triage/SEC.md |
+| SEC-14 | Low | Push fan-out amplification | needs decision | No per-caller or per-host push cap, 100 requests per event times 3 attempts; with N-SEC-6 (no global in-flight cap) medium when push is on: D-2. triage/SEC.md |
+| SEC-15 | Low, example | SSRF in the `agent-team` health monitor | confirmed (read) | agent-team's health monitor probes client-supplied URLs; a loopback-only demo, and the report's resolve_public_url fix would break it. Re-rated info. triage/SEC.md |
+| SEC-16 | Low, example | mcp-bridge forwards remote skill text as tool descriptions | confirmed (read) | mcp-bridge forwards skill text and remote task text verbatim to the MCP host (N-SEC-5). triage/SEC.md |
+| SEC-17 | Info | A custom `PushSender` gets no delivery-time SSRF guard | needs decision | A custom PushSender gets no delivery-time guard and the book already says so: D-3 (recommend a public PublicOnlyResolver, the same code as SEC-13). triage/SEC.md |
+| SEC-18 | Info | Hardening notes | confirmed (read) | JWT crit ignored (low); typ ignored and constant_time_eq without black_box (info); the ring::constant_time suggestion is stale. triage/SEC.md |
 
 ## G. API ergonomics and documentation drift ([report](G-api-docs.md))
 
 | ID | Severity | Finding | Status | Note |
 |---|---|---|---|---|
-| G-01 | H | `without_tls()` is a no-op, and JSON-RPC/REST/discovery cannot trust a private CA | fixed | as B-01 |
+| G-01 | H | `without_tls()` is a no-op, and JSON-RPC/REST/discovery cannot trust a private CA | fixed (part) | as B-01 Triage 2026-10-31: As B-01: client crate only; the server's outbound paths are N-B-1. |
 | G-02 | H | `build()` accepts values that panic or hang at runtime | fixed | refuse 0 capacity at build, clamp channels, clamp/refuse max_connections |
 | G-03 | H | A production refusal exits 0 silently; `ServeReport` is not `#[must_use]` | fixed | ServeReport #[must_use]; hello-agent fails on refused |
-| G-04 | M | `build_grpc()` ignores card selection | open | |
-| G-05 | M | Examples copy the hand-rolled accept loop the SDK calls a defect | open | |
-| G-06 | M | Default features surprise in both directions | open | |
-| G-07 | M | Constructors produce invalid cards; streaming is opt-in | open | |
-| G-08 | M | `agent_executor!` bodies cannot reference `self` | open | |
-| G-09 | M | Too many ways to serve, with inconsistent shapes | open | |
-| G-10 | M | Wire types are exhaustive structs with all-public fields | open | |
+| G-04 | M | `build_grpc()` ignores card selection | confirmed (read) | from_card(..).build_grpc() dials the first interface's URL, not the card's gRPC one, and skips the connection_timeout zero check (transport_factory.rs:180-262). triage/GC.md |
+| G-05 | M | Examples copy the hand-rolled accept loop the SDK calls a defect | confirmed (read) | 20 example files hand-roll listener.accept(), 13 dispatch A2A requests; Err(_) => continue remains; no CI gate. Re-rated low. triage/GC.md |
+| G-06 | M | Default features surprise in both directions | needs decision | The server crate's default lacks tls-rustls (https push fails at delivery, no Server::with_tls): D-GC-2 (recommend add it); the SDK default is a dated decision. Re-rated low-medium. triage/GC.md |
+| G-07 | M | Constructors produce invalid cards; streaming is opt-in | confirmed (read) | AgentCard::new and AgentSkill::new return cards validate() refuses and its messages name no index; (c) streaming opt-in per spec 3.3.4: D-GC-3 (keep). Re-rated low. triage/GC.md |
+| G-08 | M | `agent_executor!` bodies cannot reference `self` | confirmed (read) | agent_executor! bodies cannot use self (macro hygiene, E0424; not compiled here). triage/GC.md |
+| G-09 | M | Too many ways to serve, with inconsistent shapes | needs decision | The serve entry points differ in shape and return types: D-GC-4 (recommend document now, ADR for 0.17). triage/GC.md |
+| G-10 | M | Wire types are exhaustive structs with all-public fields | needs decision | Generated wire structs (AgentCard, Message, Task and others) are not non_exhaustive, contradicting STABILITY 4: D-GC-1 (recommend the four card types now). triage/GC.md |
 | G-11 | M | Configuration errors masquerade as protocol or transport errors | fixed | `ServerError::Config` for every `build()` refusal; `ClientError::Config` for the client builder's (zero timeouts, unknown binding, gRPC through `build()`); the client's required-extension preflight keeps its A2A code. Not changed: `StaticAgentCardHandler::new` and the hot-reload path still refuse an unpublishable card with `InvalidParams` |
-| G-12 | M | `EventStream` is not a `futures::Stream` | open | |
-| G-13 | M | Every message constructor requires a caller-chosen id | open | |
-| G-14 | M | `Telemetry` ergonomics | open | |
-| G-15 | L-M | Naming inconsistencies | open | |
-| G-16 | L | `EventEmitter::artifact(id, parts, append: Option<bool>, last_chunk: Option<bool>)` | open | |
-| G-17 | L | `Arc` boilerplate | open | |
-| G-18 | L | `RequestContext.context_id: String` but `task_id: TaskId` | open | |
-| G-19 | L | Order-dependent builder calls | open | |
-| G-20 | L | Default timeouts disagree, and the timeout error is not actionable | open | |
-| G-21 | L | An executor returning `Ok(())` without a terminal state | open | |
-| G-22 | L | `SendMessageResponse` has no accessors | open | |
-| G-23 | L | Assorted best-practice items | open | |
-| G/D-01 | M | `without_tls()` "Disable TLS (plain HTTP only)" | open | |
-| G/D-02 | M | The server README is stale on `serve` | open | |
-| G/D-03 | L | `ServeConfig::with_max_connections` rustdoc predicts existing fields | open | |
-| G/D-04 | M | `packaging/README.md` says no signing key is committed | open | |
-| G/D-05 | M | `tools/a2a-cli/README.md` exit codes and `--header` | open | |
-| G/D-06 | L | Book graceful-shutdown page on gRPC | open | |
-| G/D-07 | L | Book Axum page models a misconfiguration | open | |
-| G/D-08 | L | Server crate quick start is outdated | open | |
-| G/D-09 | L | `is_retryable` doc contradicts its match | open | |
-| G/D-10 | L | The hello-agent framing | open | |
-| G/D-11 | L | Prelude rustdoc list is out of sync | open | |
-| G/C-01 | M | Size and readability | open | |
-| G/C-02 | M | 0.15.1, a patch, broke existing code | open | |
-| G/C-03 | L | Doctest coverage: what is not compiled | open | |
+| G-12 | M | `EventStream` is not a `futures::Stream` | confirmed (read) | EventStream is not a futures Stream (inherent async next only, no futures-core dependency). triage/GC.md |
+| G-13 | M | Every message constructor requires a caller-chosen id | needs decision | Every message constructor needs a caller-chosen id: D-GC-5 (recommend an SDK-level new_message_id()). Re-rated low. triage/GC.md |
+| G-14 | M | `Telemetry` ergonomics | confirmed (read) | Telemetry has no must_use; init_otlp_pipeline is not deprecated though ADR 0013 says it should be; (2) init() default export: D-GC-6. Re-rated low. triage/GC.md |
+| G-15 | L-M | Naming inconsistencies | needs decision | Seven naming inconsistencies, none misbehaves, each rename is a break: D-GC-7 (recommend additive aliases). Re-rated low. triage/GC.md |
+| G-16 | L | `EventEmitter::artifact(id, parts, append: Option<bool>, last_chunk: Option<bool>)` | confirmed (read) | EventEmitter::artifact takes two Option<bool>; no text_artifact or complete_with_text helper; the type's example is ignored by rustdoc. triage/GC.md |
+| G-17 | L | `Arc` boilerplate | confirmed (read) | build() returns RequestHandler while every dispatcher wants Arc<RequestHandler>; no build_arc. triage/GC.md |
+| G-18 | L | `RequestContext.context_id: String` but `task_id: TaskId` | needs decision | RequestContext.context_id is String beside task_id: TaskId, re-wrapped at 24 sites: D-GC-8 (recommend ContextId in the 0.16 batch). triage/GC.md |
+| G-19 | L | Order-dependent builder calls | confirmed (read) | with_tenant before with_protocol_binding loses the tenant (builder/mod.rs:425-438); only the documented order is tested. triage/GC.md |
+| G-20 | L | Default timeouts disagree, and the timeout error is not actionable | fixed (part) | send_timeout 600 s and an actionable timeout error on JSON-RPC, REST and WebSocket (57f034e, blocking_send_timeout.rs); residual: non-send timeouts name no knob, gRPC text untested. Re-rated info. triage/GC.md |
+| G-21 | L | An executor returning `Ok(())` without a terminal state | confirmed (read) | An executor returning Ok(()) with no terminal state logs nothing and the run metric calls it completed (terminal.rs:171-201, run_timer.rs:65; N-GC-4). triage/GC.md |
+| G-22 | L | `SendMessageResponse` has no accessors | confirmed (read) | SendMessageResponse and StreamResponse have no accessors (65 matches in examples/). triage/GC.md |
+| G-23 | L | Assorted best-practice items | confirmed (read) | (a) EventEmitter, A2aRouter and WebSocketDispatcher lack Debug; (b)(c)(e) not defects; (d) ServeConfig.production beside production() is info. Low. triage/GC.md |
+| G/D-01 | M | `without_tls()` "Disable TLS (plain HTTP only)" | fixed | 57f034e: build() refuses an https endpoint under without_tls() and the docs match; without_tls_refuses_an_https_endpoint passed in a run 2026-10-31 (gRPC and WebSocket ignore it: N-GD-3). triage/GD.md |
+| G/D-02 | M | The server README is stale on `serve` | confirmed (read) | Server README.md:61-67 and :128 say serve() has no idle timeout or limits; the defaults are 30 s header-read and 75 s idle. Re-rated low. triage/GD.md |
+| G/D-03 | L | `ServeConfig::with_max_connections` rustdoc predicts existing fields | confirmed (read) | ServeConfig::with_max_connections rustdoc predicts fields that already exist (graceful/config.rs:262-264). triage/GD.md |
+| G/D-04 | M | `packaging/README.md` says no signing key is committed | confirmed (read) | packaging/README.md:20-26 says no signing key is committed and lists committing one as step 1; one is (7e32313). Re-rated low. triage/GD.md |
+| G/D-05 | M | `tools/a2a-cli/README.md` exit codes and `--header` | fixed (part) | Exit-code table and repeat-header behaviour now documented (untested); open: header names are case-sensitive map keys, so X-A and x-a are both sent. Re-rated low. triage/GD.md |
+| G/D-06 | L | Book graceful-shutdown page on gRPC | confirmed (read) | graceful-shutdown.md:82-84 says gRPC and WebSocket return the same ServeReport; gRPC returns io::Result<ServeReport>. triage/GD.md |
+| G/D-07 | L | Book Axum page models a misconfiguration | confirmed (read) | The Axum book page builds its card with AgentInterface::jsonrpc for an HTTP+JSON router; the same on the rest, grpc and websocket pages (N-GD-4). triage/GD.md |
+| G/D-08 | L | Server crate quick start is outdated | confirmed (read) | The server crate's quick start (lib.rs:15) never mentions Server, ServeConfig or shutdown_signal. triage/GD.md |
+| G/D-09 | L | `is_retryable` doc contradicts its match | confirmed (read) | is_retryable's doc says HTTP connection and transport errors; the match retries Http, HttpClient, Timeout and IncompleteStream but not Transport. triage/GD.md |
+| G/D-10 | L | The hello-agent framing | needs decision | hello-agent is 106 lines above its tests (52 code lines), not 'one screen', and its README omits Telemetry and serve from 'what it demonstrates': decision (recommend reword). triage/GD.md |
+| G/D-11 | L | Prelude rustdoc list is out of sync | confirmed (read) | The prelude rustdoc list omits 22 exported names and the SDK README list is shorter still. triage/GD.md |
+| G/C-01 | M | Size and readability | needs decision | CHANGELOG.md is 785,059 bytes and 12,210 lines; [Unreleased] is 53 KB of engineering log with no Highlights block: decision (recommend a Highlights block plus a gate). triage/GD.md |
+| G/C-02 | M | 0.15.1, a patch, broke existing code | needs decision | 0.15.1's behaviour changes sit under 'Behaviour Changes', which STABILITY.md and check_release_tree.py do not gate; 0.15.1 was never published (crates.io newest is 0.15.0, checked 2026-10-31): decision (recommend gate it). triage/GD.md |
+| G/C-03 | L | Doctest coverage: what is not compiled | confirmed (read) | Book: 212 pages, all registered but SUMMARY.md; 5 rust,ignore (audit.md:361 escapes the ratchet), 14 ignored rustdoc blocks, several READMEs uncompiled. Low. triage/GD.md |
 
 ## H. Swarm-scale capability ([report](H-swarm-scale.md))
 
 | ID | Severity | Finding | Status | Note |
 |---|---|---|---|---|
 | H1 | S0 | Overload and halt look like permanent failures on JSON-RPC and WebSocket | fixed | Overloaded carries RetryInfo 1 s and Retry-After |
-| H2 | S0 | The HTTP client cannot use a private CA or mTLS, and every `A2aClient` owns a separate pool | open | |
-| H3 | S0 | Tasks orphaned by a crashed replica stay `working` forever, and their leases keep being renewed | open | |
-| H4 | S0 | Delegation cancels its child on any stream blip, and has no durable journal or reattach (G2 still open) | open | |
-| H5 | S1 (S0 at 10^6) | Control-plane cost is O(children) round trips and store operations per interval | open | |
-| H6 | S1 | No retry budget, circuit breaker or client-side concurrency limit; retries amplify overload | open | |
-| H7 | S1 | Readiness ignores saturation and halt; no load signal for balancers | open | |
-| H8 | S1 | Card discovery cost at fleet cold start | open | |
-| H9 | S1 | Admission control has refuse-only semantics: no queue, priority or weighted fairness | open | |
-| H10 | S1 | No task lineage, so there is no tree view and no "halt this job" scope | open | |
-| H11 | S1 | Metrics have no tenant, agent or job dimension and no control-plane instruments | open | |
-| H12 | S2 | No client load balancing across replicas of a peer, no outlier ejection, no hedging | open | |
-| H13 | S1 | Memory and payload scaling | open | |
-| H14 | S2 | Push delivery is not durable | open | |
-| H16 | S2 | The rate limiter fails closed above 10k distinct callers by default | open | |
-| H17 | S2 | The tool loop has no shared inference concurrency limit or 429 backoff | open | |
-| H18 | S2 | Ergonomics: wiring a child into the parent's context is manual | open | |
-| H19 | S1 for real fleets | Swarm controls are Rust-only, so polyglot trees lose control at the first non-Rust hop | open | |
+| H2 | S0 | The HTTP client cannot use a private CA or mTLS, and every `A2aClient` owns a separate pool | fixed (part) | TLS half fixed, re-run 2026-10-31: tests/private_ca.rs 4 of 4 pass, 2 of 4 fail with ClientBuilder's custom-TLS wiring mutated. Open: every build() makes its own hyper pool (transport_factory.rs:304-328); no shared HttpPool, h2c or per-host cap. Decision on the pool API. triage/S0.md |
+| H3 | S0 | Tasks orphaned by a crashed replica stay `working` forever, and their leases keep being renewed | fixed (part) | Orphans fixed by the reaper (E-F1): 3 SQLite and 2 PostgreSQL 16.15 reaper tests pass, all 5 fail with Reaper::look a no-op. Open (low): the reaper never releases the task's lease row (the only release is handler/lease.rs:181, in the dead process). triage/S0.md |
+| H4 | S0 | Delegation cancels its child on any stream blip, and has no durable journal or reattach (G2 still open) | needs decision | Confirmed by reading: Delegation::wait calls lost() on any stream error or end (client/delegation/mod.rs:337-338,383) and lost() sends CancelTask; no resubscribe, reattach or journal; delegation_tests.rs:176,351 pin it. Options in triage/S0.md |
+| H5 | S1 (S0 at 10^6) | Control-plane cost is O(children) round trips and store operations per interval | confirmed (read) | Renewal fetches the full task (renewal.rs never sets historyLength) and the idle-subscriber poll is a full-task get every 250 ms; (b) lease sweeper versus groups: decision D1. S1. triage/H.md |
+| H6 | S1 | No retry budget, circuit breaker or client-side concurrency limit; retries amplify overload | needs decision | No retry budget, circuit breaker or in-flight cap: D2; retries have no overall deadline (N-H-1). S1. triage/H.md |
+| H7 | S1 | Readiness ignores saturation and halt; no load signal for balancers | needs decision | /ready ignores saturation and halt: D3 (recommend reachability plus an informational body and a gauge). Re-rated S2. triage/H.md |
+| H8 | S1 | Card discovery cost at fleet cold start | confirmed (read) | Every card fetch builds a new HTTP client, with no single-flight and no stale-if-error. Re-rated S2. triage/H.md |
+| H9 | S1 | Admission control has refuse-only semantics: no queue, priority or weighted fairness | needs decision | Admission control is refuse-only: D4; sub-claim (c) is H1 (done). Re-rated S2. triage/H.md |
+| H10 | S1 | No task lineage, so there is no tree view and no "halt this job" scope | needs decision | No task lineage or job-scoped halt: D5. S1. triage/H.md |
+| H11 | S1 | Metrics have no tenant, agent or job dimension and no control-plane instruments | needs decision | Metrics have no tenant, agent or job dimension: D6. Re-rated S2. triage/H.md |
+| H12 | S2 | No client load balancing across replicas of a peer, no outlier ejection, no hedging | needs decision | No client load balancing, outlier ejection or hedging: D7 (recommend decline in core; a mesh does it). Re-rated low. triage/H.md |
+| H13 | S1 | Memory and payload scaling | confirmed (read) | (c) SQL stores lack a save_appending_history override (the trait rustdoc claims they have one: N-H-3); (d) the SQL event log is not trimmed for a live task; (a)(b) byte budget and offload: D8. Re-rated S2. triage/H.md |
+| H14 | S2 | Push delivery is not durable | confirmed (read) | Push delivery is not durable (bounded in-memory attempts); the durability design is D9. S2. triage/H.md |
+| H16 | S2 | The rate limiter fails closed above 10k distinct callers by default | confirmed (read) | The rate limiter fails closed above 10k distinct callers by default (constants quoted in the report); (c) the policy is D10. Re-rated low. triage/H.md |
+| H17 | S2 | The tool loop has no shared inference concurrency limit or 429 backoff | confirmed (read) | (a) 429 now ends transient (fixed); (b) the tool loop has no shared inference concurrency limit; (c) it never reads Retry-After. S2. triage/H.md |
+| H18 | S2 | Ergonomics: wiring a child into the parent's context is manual | confirmed (read) | Wiring a child into the parent's context is manual; should wrap H4's resume policy. Re-rated low. triage/H.md |
+| H19 | S1 for real fleets | Swarm controls are Rust-only, so polyglot trees lose control at the first non-Rust hop | needs decision | Swarm controls (halt, lease, budget) are Rust-only, so polyglot trees lose control at the first non-Rust hop: D11. S1 for real fleets. triage/H.md |
 
 ## L. Found by running it, in no report
 
@@ -287,17 +293,13 @@ HAProxy 3.2, the observability stack), not by any of the eight readings.
 | L8 | medium | Cross-replica subscribe and cancel: worked (13 parts streamed from r1 to a subscriber on r2, `CANCELED` delivered, r1's executor stopped one tick later) | verified live | recorded so it is not re-tested blind |
 | L9 | medium | `deploy-agent` drain: `/ready` 503 within 0.5 s of `SIGTERM`, sends answered for the 3 s delay, then a clean exit | verified live | |
 | L10 | high | PostgreSQL TLS: confirmed and fixed (A1); `verify-full` refuses a CA certificate used as a leaf, as it should | verified live | |
-| L11 | low | A short-lived client (the CLI, a batch job) never shows on the client dashboard: each process exports one sample under its own `service.instance.id`, and every panel is a per-series `rate()` that needs two (50 CLI runs: 50 one-sample series, no panel data) | open | a Collector `cumulativetodelta` plus a rule over `increase()`, or guidance; the server and GenAI dashboards had data on every panel (live, 2026-10-29) |
+| L11 | low | A short-lived client (the CLI, a batch job) never shows on the client dashboard: each process exports one sample under its own `service.instance.id`, and every panel is a per-series `rate()` that needs two (50 CLI runs: 50 one-sample series, no panel data) | confirmed (read) | Every client-dashboard panel is a per-series rate(); remedy D-AL-5 (recommend guidance now; an increase() rule alone cannot work on a one-sample series). triage/AL.md |
 | L12 | info | 321 executor panics across three replicas in 200 s of traffic: every replica kept serving, each task `failed` | verified live | the probe agent is built outside the workspace with Cargo's default (unwinding) profile, so this shows the recovery A4 restores, not the workspace profile itself |
-
-
 | L13 | info | `live-model` against Qwen3.5-4B (Q4_K_M, llama.cpp b11977, 2026-10-30): 10 of 10 checks, the tool loop on all four bindings; every answer matched the tool output (degraded, 4.2.1, 1,814,400 s) | verified live | the model maps "billing" to `payments-api` on every binding, which Qwen3.5-2B did not always |
 | L14 | info | `live-model` against Gemma 4 E2B (Q4_0, same server): 10 of 10 checks; on 3 of 4 bindings it asked for a service named "billing service", was told the inventory, and answered that none exists | not a defect | model quality; the SDK carried every turn, error and retry as it should |
 | L15 | medium | The tool loop failed every task `internal` while the model provider answered `503` (`llama-server` loading Gemma for 3 min 40 s), so a client was told not to retry a failure that would pass | fixed | `LoopError::is_transient`: 429/502/503/504, timeout and transport end `transient`; tests fail with it disabled; live, an unreachable provider now ends `transient` |
-
 | L16 | high | Behind PgBouncer in transaction mode, `PostgresHaltStore::from_pool`'s `LISTEN` stays on a lent server connection, and a halt write failed with `unexpected message: NotificationResponse` (2026-10-30) | fixed | `from_pool_listening_at` (listener on a direct URL) and `from_pool_without_listener` (poll only); both pass through PgBouncer, `from_pool` still fails there and is documented as direct-only. Whether other stores' statements on the same pooler fail the same way: not shown (a psql probe printed nothing) |
 | L17 | info | Every PostgreSQL test in the server crate through PgBouncer 1.26.1 (2026-10-30): 147 of 151 | verified live | the 4: L16's two `from_pool` tests, and two `transient_store_errors` cases whose backend kills the pooler hides (no statement lost, none to retry) |
-
 | L18 | info | `deploy-agent` as a container (2026-10-30): the Dockerfile's runtime stage (pinned `debian:bookworm-slim`, user 10001) with a host-built release binary (needs `GLIBC_2.34`, the image has 2.36), run as two replicas on PostgreSQL with `--read-only --cap-drop ALL --security-opt no-new-privileges`: healthy and ready at once; a task made on one read on the other; `docker stop` gave `/ready` 503 within 0.5 s, a send answered inside the 2 s drain delay, exit 0 at 2.7 s, the other replica serving throughout | verified live | not run: the Dockerfile's build stages, whose `cargo install` cannot reach crates.io through this sandbox's egress proxy without its CA in the image |
 
 ## M. Found re-reading this branch's own fixes
@@ -308,3 +310,78 @@ HAProxy 3.2, the observability stack), not by any of the eight readings.
 | M2 | low | A `Host` header that is not visible ASCII is answered rather than refused by the loopback host check (`to_str` fails, no URI authority, so no check) | confirmed (read) | not a DNS-rebinding path as far as read: browsers send the name in ASCII (punycode); a robustness gap |
 | M3 | low | The missing-`Content-Type` refusal keys on `Content-Length` or `Transfer-Encoding`; an HTTP/2 request may carry a body with neither | confirmed (read) | a browser speaks HTTP/2 only over TLS, so this reaches only an `https://` loopback agent; not run |
 | M4 | low | The reaper awaits each ended task's webhook delivery in turn (`reaper/mod.rs` `fail`, bounded per task by `push_delivery_timeout`, 30 s by default), so a pass of 32 abandoned tasks behind dead webhooks can take up to 16 minutes before the next pass looks again | confirmed (read) | the tasks are already `failed` when their delivery starts; only the next pass and the webhooks are late. Not run |
+
+## N. Found by the 2026-10-31 triage, in no report
+
+Each was met while a triage agent read the code around its rows, and is verified by reading unless the status says `run`. `†` marks the ones the lead re-read or ran itself; the rest are one agent's reading. The full text, file and line, a fix sketch and a test for each are in the report named in the note.
+
+| ID | Severity | Finding | Status | Note |
+|---|---|---|---|---|
+| N-AL-1 | low | deploy-agent's redacted() masks a password only in user:pass@host userinfo; a ?password= query value is logged in full at INFO. | confirmed (read) | triage/AL.md † |
+| N-AL-2 | low | The Secret recipes in the deploy-agent README and containers.md omit sslmode (the manifest comment has verify-full), so a copy-paste connects with sqlx's default prefer, which does not verify the server. | confirmed (read) | triage/AL.md † |
+| N-AL-3 | info | Stale statements: README.md:271 "a `0.0.0.0` bind, a two-stage container", examples/deploy-agent/README.md:82 and book examples/deploy-agent.md:142 "Two stages", ROADMAP.md:340 "two-stage `Dockerfile`". The Dockerfile has three build stages plus runtime (Dockerfile:12), and main.rs:248-253... | confirmed (read) | triage/AL.md |
+| N-AL-4 | low | `A2AAgentSilent` (critical, a2a-alerts.yml:98-113) fires 10 minutes after the last export of any job and stays firing for a day, and `A2AAgentInstancesLost` (:115-120) compares instance counts an hour apart. | confirmed (read) | triage/AL.md |
+| N-AL-5 | low | No workflow builds `examples/deploy-agent/Dockerfile` or validates `deployment.yaml`: `rg -i 'docker/kubeconform/kubectl/hadolint' .github scripts` finds only the ITK images in acts.yml:60-67 and itk-nightly.yml:84-95. The fixes for A8, A9, A12 and A19(d) therefore rest on one-off manual runs. | confirmed (read) | triage/AL.md |
+| N-AL-6 | low | `ClientError::HttpClient` and `ClientError::Timeout` never carry the endpoint (crates/a2a-protocol-client/src/transport/jsonrpc.rs:271, rest/request.rs:198, transport/mod.rs:88-99). | confirmed (read) | triage/AL.md |
+| N-AL-7 | unrated | The creation guards use `to_regclass('<name>')` (store/pg_schema/mod.rs:137,201), which PostgreSQL resolves through the whole `search_path`. | open | triage/AL.md (suspicion: not verified) |
+| N-AL-8 | info | `DRAIN_DELAY_SECONDS` accepts any `u64` (main.rs:144-150) and is not checked against the 60 s `terminationGracePeriodSeconds` the manifest sets, whose comment (deployment.yaml:33-43) says the grace period must exceed the shutdown budget. | confirmed (read) | triage/AL.md |
+| N-B-1 | high | B-01 and B-02 hold for the client crate only: the server's push sender, JWKS and OIDC discovery and the tool loop's OpenAI client use webpki roots and ignore HTTPS_PROXY, NO_PROXY and SSL_CERT_FILE. | confirmed (read) | triage/B.md † |
+| N-B-2 | medium | `AuthFailureThrottle` keys by the full IPv6 address (`auth/throttle.rs:190-196`, `addr.ip().to_canonical().to_string()`), while the rate limiter deliberately keys by `/64` because "a single host is routinely given a whole /64" (`rate_limit/identity.rs:44-60`). | confirmed (read) | triage/B.md |
+| N-B-3 | low | B-07 is `fixed` for the client pool only. The push sender, the OpenAI model client and the server's JWKS clients keep hyper-util's 90 s pool idle timeout (`rg 'pool_idle_timeout'` over `crates/a2a-protocol-server/src`: nothing), the stale-connection race B-07 describes, against receivers with 60... | confirmed (read) | triage/B.md † |
+| N-B-4 | low | `book/src/deployment/containers.md:46-56` says a private CA reaches "the A2A client, card discovery, JWKS and the token provider through `SSL_CERT_FILE`" in the paragraph about the deploy-agent image, which is a server. | confirmed (read) | triage/B.md |
+| N-B-5 | low | `env_roots()` (client `tls.rs:213-215`) reads `SSL_CERT_FILE/DIR` once per process into a `OnceLock`. | confirmed (read) | triage/B.md |
+| N-B-6 | low | The card, JWKS and token-discovery paths rebuild the whole `ClientConfig` (about 150 webpki roots re-extended, `tls.rs:201-211`) and the proxy matcher on every call (`discovery.rs:577`, `jwks.rs:73`, `token_provider.rs:664`), which a `CachingCardResolver` revalidating on a timer repeats. | confirmed (read) | triage/B.md |
+| N-B-7 | info | Three different loopback predicates guard "plaintext allowed": client `loopback.rs:15` (all of 127/8, `localhost`, `::1`), client `jwks.rs:123-140` (exactly `localhost`, `127.0.0.1`, `[::1]`, case-sensitive scheme), server `jwt.rs:1251-1267` (also `*.localhost` and every loopback IP). | confirmed (read) | triage/B.md |
+| N-C-1 | medium | C-11 is half fixed: the client card resolver still logs raw card URLs at INFO (discovery.rs:255,451) while its span scrubs userinfo and query. | confirmed (read) | triage/C.md † |
+| N-C-2 | medium | `A2AAgentInstancesLost` (the C-04 fix) should fire for several minutes about an hour after every rollout, and its test samples only at 35 m and 90 m. | confirmed (read) | triage/C.md |
+| N-C-3 | low | three duration metrics ignore `Telemetry::install_globally(false)` and `Telemetry::otel_metrics()`. | confirmed (read) | triage/C.md |
+| N-C-4 | low | more per-request INFO lines remain that C-11 did not demote. | confirmed (read) | triage/C.md |
+| N-C-5 | low | the latency alert's promtool fixture uses a bucket boundary the instrument never emits. | confirmed (read) | triage/C.md |
+| N-C-6 | low | the 64 named webhook hosts are first-come and never reset. | confirmed (read) | triage/C.md |
+| N-C-7 | low | a `rate(counter[5m]) > 0` alert cannot see the first increment of a counter that is created at 1. The OTel counter series appears with value 1 on first `add` (no preceding 0 sample), so `A2APersistenceErrors` (`a2a-alerts.yml:25-28`) would not fire for the first-ever error of a given... | open | triage/C.md (suspicion: not verified) |
+| N-C-8 | low | an invalid `OTEL_TRACES_SAMPLER` is silently replaced by `parentbased_always_on` (100 % sampling). | confirmed (read) | triage/C.md |
+| N-D-1 | low | SEC-07's withholding does not cover `ServerError::Internal` (error/withheld.rs:~80-98 leaves it alone: "carry the SDK's own text"), but these sites embed a store error `{e}` whose text `sql_error` built as `"{what}: {e}"` from sqlx (sql_error.rs:34 `let message = format!("{what}: {e}")`), so a... | confirmed (read) | triage/D.md |
+| N-D-2 | low | The new reaper (E-F1) awaits `deliver_push_bg` inline, one task after another (`look`, :86-100, up to `BATCH` = 32 per look). | confirmed (read) | triage/D.md |
+| N-D-3 | low | A result that fails to serialize is sent as a success with `result: null` (or an empty text frame); the HTTP JSON-RPC dispatcher answers `-32603 "result serialization failed"` (jsonrpc/response.rs:~30-40). | confirmed (read) | triage/D.md |
+| N-D-4 | info | Stale rationale: "HTTP-date form is not parsed (it would require a date-parsing dependency)", yet `httpdate` is a direct dependency of the crate (Cargo.toml:101, discovery/freshness.rs:158). | confirmed (read) | triage/D.md |
+| N-D-5 | info | One sentence is false at this commit: `unbounded_channel` exists in non-test code at tool_loop/executor.rs:104 (c0e0076). | confirmed (read) | triage/D.md |
+| N-D-6 | low | A plain `SendMessage` is retried only on 429/503/`RetryInfo`. | confirmed (read) | triage/D.md |
+| N-D-7 | info | A lane bound (`push_queue_capacity`) keeps terminal and interrupted deliveries past the bound ("kept, past the bound"), so a lane's memory is unbounded in the number of turns a task ends while its webhook is down; in practice bounded by turns per task. | confirmed (read) | triage/D.md |
+| N-E-1 | low | horizontal-scaling.md's short-version table omits the per-process state that remains: tenant concurrency, the push-config cap, AuthFailureThrottle, audit chain contention, lease clocks, in-memory halt and lease stores. | confirmed (read) | triage/E.md |
+| N-E-2 | medium | A task ended by the reaper leaves no terminal event in the event log and no task.event audit record (matters for Profile::Auditable). | confirmed (read) | triage/E.md † |
+| N-E-3 | low | `reaper/mod.rs` `look()` ends up to 32 tasks one after another, and `fail()` awaits `deliver_push_bg(..).await` inline (`push_delivery/mod.rs:70-99`), bounded only by `push_delivery_timeout` (30 s). | confirmed (read) | triage/E.md |
+| N-E-4 | low | Two pages still say replicas need task affinity: `book/src/deployment/production.md:103-105` ("In 0.15 several replicas are supported only when every turn of a task is routed to one replica") and `book/src/deployment/oversight.md:270-278` (quorum approvals "two replicas do not [serialize] ...... | confirmed (read) | triage/E.md |
+| N-E-5 | info | A lease renewal can move the deadline backwards: `store/lease/postgres.rs:89` sets `deadline_ms = $3 + ttl_ms` with no `GREATEST`, and the in-memory store (`lease/mod.rs` `renew`) assigns likewise, so two renewals racing from two replicas can land the older `now_ms` last. | confirmed (read) | triage/E.md |
+| N-E-6 | low | `book/src/deployment/production.md:82-83` shows `Profile::Production` with `InMemoryHaltStore` and `InMemoryLeaseStore` in the main code block; the multi-replica caveat comes in prose after the block. | confirmed (read) | triage/E.md |
+| N-E-7 | unrated | `PostgresTurnClaims::holds` (`store/claim/postgres.rs`) runs under `NoopMetrics`, so a fence-classification read that is retried after a lost connection is not counted in `on_store_retry`. | open | triage/E.md (suspicion: not verified) |
+| N-GC-1 | medium | STABILITY.md §4 (line ~127) says protocol structs that can grow with the spec are `#[non_exhaustive]`. | confirmed (read) | triage/GC.md |
+| N-GC-2 | low | `ServeConfig::with_allowed_hosts` lowercases (serve/graceful/config.rs, setter) but `allowed_hosts` is `pub` (:138) and `HostGuard::allows` compares the lowercased request host with the stored list verbatim (serve/host_guard.rs:86). | confirmed (read) | triage/GC.md |
+| N-GC-3 | low | `ClientBuilder::build` and `build_grpc` rustdoc `# Errors` (transport_factory.rs:26-33, :172-177) list `InvalidEndpoint` and `Transport` only; after the G-11 change they return `ClientError::Config` for zero timeouts, unknown binding and gRPC-through-`build()` (:40-55, :259 `GRPC_NOT_SYNC`) and... | confirmed (read) | triage/GC.md |
+| N-GC-4 | low | `run_outcome` maps every `Ok(())` to `executor_outcome::COMPLETED` (handler/messaging/execute/run_timer.rs:65), so the executor-run histogram counts a run that wrote no terminal state as completed. | confirmed (read) | triage/GC.md |
+| N-GC-5 | low | In a build without `tls-rustls` the server accepts an `https://` push-config registration (handler/push_config.rs:521 checks only `requires_https()`), then every delivery fails with an `internal` error (push/sender.rs:584-596). | confirmed (read) | triage/GC.md |
+| N-GC-6 | info | STABILITY.md §1 still calls 0.15.0 "the newest release"; CHANGELOG.md has a released `[0.15.1] - 2026-10-26` section and the workspace is 0.16.0. (Related to C-02, which is another group's row.) | confirmed (read) | triage/GC.md |
+| N-GC-7 | low | book/src/concepts/transport-layers/grpc.md:60 and client/builder/grpc.md:15 show `from_card(&card)?.build_grpc()` without saying it only works when gRPC is the card's first interface (G-04a). | confirmed (read) | triage/GC.md |
+| N-GD-1 | low | The shrink-only ratchet matches `^```rust[^\n]*\bignore\b` and `ln.startswith("```")` at column 0 only. | confirmed (read) | triage/GD.md |
+| N-GD-2 | low | STABILITY.md, ROADMAP.md, CITATION.cff, CHANGELOG.md and Cargo.toml give five different answers to the current release; 0.15.1 was never published. | confirmed (read) | triage/GD.md † |
+| N-GD-3 | low | `without_tls()` is documented as "Disables TLS: plain HTTP only" but `config.tls` is consulted only by `http_client()` for the JSON-RPC and REST transports. | confirmed (read) | triage/GD.md |
+| N-GD-4 | low | D-07's mistake is the shared hidden-line boilerplate: a `AgentInterface::jsonrpc(..)` card used with `RestDispatcher`, `GrpcDispatcher`, `WebSocketDispatcher` and `A2aRouter`. | confirmed (read) | triage/GD.md |
+| N-GD-5 | low | Real connection loss on WebSocket ("writer/reader task closed") and an SSE frame error are `ClientError::Transport`, which `is_retryable()` answers `false`; only `Http`/`HttpClient`/`Timeout` are retried. | confirmed (read) | triage/GD.md |
+| N-GD-6 | info | Two stale explanations of what is compiled. The lib.rs comment says `bindings/slimrpc.md` has "all three of its Rust blocks" ignored (the page and `.book-ignore-baseline` say 4). | confirmed (read) | triage/GD.md |
+| N-GD-7 | info | The module doc says a fully-qualified path means "the prelude has a gap"; `main.rs:81` writes `std::sync::Arc::new(..)` and `Arc` is not in the prelude (G-17). | confirmed (read) | triage/GD.md |
+| N-GD-8 | info | `ServeConfig::new()` doc: "this constructor is new enough to have no callers relying on the permissive behaviour" is a changelog remark in an API doc, stale since the constructor shipped. | confirmed (read) | triage/GD.md |
+| N-H-1 | medium | Server-directed delays are not jittered. `retry_delay` returns `after.min(max_backoff)` while only the computed backoff goes through `jittered()`. | confirmed (read) | triage/H.md |
+| N-H-2 | medium | health-checks.md says RestDispatcher and CombinedDispatcher answer /ready with a constant; the code calls handler.readiness(), and the page contradicts itself at lines 99-104. | confirmed (read) | triage/H.md † |
+| N-H-3 | low | The TaskStore trait doc says the SQL stores splice history in save_appending_history; neither SQL store overrides it. | confirmed (read) | triage/H.md † |
+| N-H-4 | low | Finding 8 still says the single-writer refusal does not cross replicas and names `the_single_writer_refusal_does_not_cross_replicas`; that test is now `the_single_writer_refusal_crosses_replicas` (`tests/multi_replica.rs:554`) and no file defines the old name. | confirmed (read) | triage/H.md |
+| N-H-5 | medium | Refines H5c. The idle-subscriber poll is `store.get()`, a full-task read (history up to 16 MiB, artifacts), because the trait has no state-only read. | confirmed (read) | triage/H.md |
+| N-H-6 | low | `evict_stale` keeps buckets whose window is the previous one, yet a returning caller's count is reset on the window roll (`admit_or_roll_window`, and the CAS path in `check`), so the extra window retains no information and halves the capacity at which the map refuses new callers. | confirmed (read) | triage/H.md |
+| N-H-7 | low | Every 256th `check` takes the map's write lock and runs `retain` over all live buckets. | open | triage/H.md (suspicion: not verified) |
+| N-H-8 | low | Any renewal error, permanent ones included (task not found, auth refused), is logged at debug and the loop carries on every ttl/3 until the handle drops. | confirmed (read) | triage/H.md |
+| N-SEC-1 | low | url_guard check() does not normalise a trailing dot, so http://169.254.169.254./ and http://127.0.0.1./ pass (ran 2026-10-31); per an agent's reading of url-2.5.8, the url crate treats them as the IPv4 literals. | confirmed (run) | triage/SEC.md † |
+| N-SEC-2 | low | Both serve on any address with anonymous access and hard-code `HttpPushSender::new().allow_private_urls()`, turning the webhook SSRF guard off for anyone who copies them as a deployment template. | confirmed (read) | triage/SEC.md |
+| N-SEC-3 | low | The client's OIDC discovery reads only `token_endpoint`: it does not compare the document's `issuer` with the requested issuer (RFC 8414 §3.3, OIDC Discovery §4.3) and does not require https for the endpoint. | confirmed (read) | triage/SEC.md |
+| N-SEC-4 | low | `CliError::report` does `eprintln!("error: {self}")`, and `A2aError`'s `Display` is `[code] message` with the message taken from the remote agent's JSON-RPC error. | confirmed (read) | triage/SEC.md |
+| N-SEC-5 | low | Remote task output (artifact text parts, status message text) is returned verbatim to the MCP host as tool results; a hostile agent can inject instructions in results, not just in the card. | confirmed (read) | triage/SEC.md |
+| N-SEC-6 | medium | No limit on in-flight webhook deliveries across tasks: N tasks times 100 configs is 100N concurrent outbound connections from an anonymous caller. | confirmed (read) | triage/SEC.md † |
+| N-SEC-7 | unrated | Verified: `lookup_host` on a string runs `getaddrinfo` inside `spawn_blocking`, and `tokio::time::timeout(dns_timeout, ..)` abandons the wait, not the blocking thread. | open | triage/SEC.md (suspicion: not verified) |
+| N-SEC-8 | info | Spec §14 says file references MUST be validated; the default is `FileUrls::Any`, a deliberate and tested choice ("an agent on a private network may read internal files"). | confirmed (read) | triage/SEC.md |
