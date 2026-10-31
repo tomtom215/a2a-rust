@@ -529,6 +529,30 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   role starts a task store its owner made, and writes and reads; a later
   release's body is kept and an earlier one's replaced. Three mutants of
   the guards each fail them. The book's PostgreSQL page gives the grants.
+- **The SSRF host check accepts what it should refuse** (server; audits
+  SEC-12, B-22, D-13, N-SEC-1; each URL below was run through
+  `check_public_url` on 2026-10-31 and accepted). A trailing dot hid an
+  address or a name: `http://169.254.169.254./` (the cloud metadata
+  address), `http://127.0.0.1./` and `http://localhost./` passed, and the
+  `url` crate and the resolver read them as the address and the name
+  without the dot. The address lists were missing `0.0.0.0/8`,
+  `192.0.0.0/24`, `198.18.0.0/15`, `224.0.0.0/4` and `240.0.0.0/4` (with
+  `255.255.255.255`), and, in IPv6, `fec0::/10`, `ff00::/8`,
+  `64:ff9b:1::/48`, Teredo `2001::/32`, `100::/64` and 6to4 `2002::/16`
+  (checked by the IPv4 address inside). Names under `.localhost` and
+  `.home.arpa`, names with no dot (`metadata`, `kubernetes`, a bare service
+  name: resolved through the search domains of whoever looks them up) and
+  names with an empty label are refused. The documentation ranges stay
+  allowed: nothing routes to them and tests everywhere use them as a public
+  host. This is the check push webhooks and `refuse_private_file_urls` make,
+  and the delivery-time check of resolved addresses, which shares the
+  classifier. `src/url_guard/tests.rs` tests every range at its first and
+  last address and one either side. A webhook to a single-label host
+  (`http://receiver/`), which was accepted, is now refused. The only sender
+  setting that still delivers to one is `HttpPushSender::allow_private_urls()`,
+  which turns off every address check; `with_allowed_hosts` narrows where a
+  sender delivers and does not lift the check. A receiver that needs to be
+  reached by a bare name has no narrower setting yet.
 - **A replica's start stalled every write behind any open one** (server,
   postgres; audit A11, measured). `CREATE INDEX IF NOT EXISTS` asks for a
   `SHARE` lock on its table before it finds the index there and skips: on

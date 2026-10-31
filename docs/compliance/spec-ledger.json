@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:11143 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:11167 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -7911,8 +7911,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/url_guard.rs:66 is_private_v4",
-    "crates/a2a-protocol-server/src/url_guard.rs:171 is_private_ip"
+    "crates/a2a-protocol-server/src/url_guard.rs:73 is_private_v4",
+    "crates/a2a-protocol-server/src/url_guard.rs:184 is_private_ip"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:848 rejects_loopback_ipv4",
@@ -7934,8 +7934,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/url_guard.rs:171 is_private_ip",
-    "crates/a2a-protocol-server/src/url_guard.rs:193 check",
+    "crates/a2a-protocol-server/src/url_guard.rs:184 is_private_ip",
+    "crates/a2a-protocol-server/src/url_guard.rs:219 check",
     "crates/a2a-protocol-server/src/push/sender.rs:541 HttpPushSender::send"
    ],
    "test_evidence": [
