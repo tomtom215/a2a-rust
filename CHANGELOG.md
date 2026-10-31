@@ -368,6 +368,20 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **An abandoned stream is no longer counted as a failed call, and
+  `A2AServerErrorRatioHigh` needs traffic** (deploy/observability; audit C-09).
+  A call whose client went away first carries `error_type="cancelled"`, and
+  the recording rules counted every non-empty `error_type`, so impatient
+  clients alone could page the on-call; the alert also had no traffic floor,
+  so one failure in two calls an hour was "50% failed". The error ratios (server
+  and client) now leave `cancelled` out; `a2a:rpc_server_cancelled:rate5m`
+  keeps them visible; the alert fires only while the job takes more than 0.1
+  calls a second (a starting point, like the 5% threshold, not a
+  measurement). `promtool` 3.15.1 (the Prometheus version the compose file
+  pins): `check rules` passes on both files; the unchanged rules pass the
+  existing tests; the two new cases (20% cancelled, and one failure in two
+  calls at 0.03 calls a second) fail against the old rules (the alert fires)
+  and pass against the new. Nothing in CI runs these tests yet.
 - **`OTEL_SDK_DISABLED=true` no longer silences the process's own warnings**
   (server; audit C-07). `Telemetry::install_subscriber` returned `false` and
   installed nothing when the variable was set, so a process told to export

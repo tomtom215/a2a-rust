@@ -107,7 +107,9 @@ call on every binding, with their attributes:
 
 **What counts as failed** is each binding's semantic conventions' rule, so
 `error.type` marks a server failure rather than every answer that was not a
-success: every JSON-RPC error code ("All JSON RPC error codes SHOULD be
+success, with one exception: `cancelled`, a call whose peer went away first,
+is set so it can be counted, and the recording rules and the error-ratio alert
+leave it out. Otherwise: every JSON-RPC error code ("All JSON RPC error codes SHOULD be
 considered errors"); on HTTP+JSON a 5xx but not a 4xx (the HTTP conventions
 leave a server span's status unset for a 4xx); on gRPC only `UNKNOWN`,
 `DEADLINE_EXCEEDED`, `UNIMPLEMENTED`, `INTERNAL`, `UNAVAILABLE` and

@@ -11,7 +11,14 @@ groups:
   - name: a2a-alerts
     rules:
       - alert: A2AServerErrorRatioHigh
-        expr: a2a:rpc_server_error_ratio:rate5m > 0.05
+        # A ratio needs traffic to mean anything: one failure in two calls
+        # an hour is 50% and nobody's problem. 0.1 calls a second (six a
+        # minute) is a starting point, like the threshold itself. Abandoned
+        # streams (error_type="cancelled") are not counted as failures.
+        expr: |
+          a2a:rpc_server_error_ratio:rate5m > 0.05
+            and on (job)
+          sum by (job) (a2a:rpc_server_calls:rate5m) > 0.1
         for: 10m
         labels:
           severity: warning
@@ -19,8 +26,10 @@ groups:
           summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of A2A calls failed over 5m"
           description: >-
             More than 5% of calls to {{ $labels.job }} failed for 10 minutes, by
-            the RPC conventions' definition of failure (error_type set). Split by
-            rpc_method and rpc_system_name with a2a:rpc_server_errors:rate5m.
+            the RPC conventions' definition of failure (error_type set, other
+            than a stream the client abandoned), while the job took more than
+            0.1 calls a second. Split by rpc_method and rpc_system_name with
+            a2a:rpc_server_errors:rate5m.
 
       - alert: A2APersistenceErrors
         expr: sum by (job, operation) (rate(a2a_server_persistence_errors_total[5m])) > 0
