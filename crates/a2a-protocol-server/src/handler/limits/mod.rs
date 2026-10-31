@@ -133,6 +133,43 @@ pub struct HandlerLimits {
     /// waiting deliveries rather than failures, since a lane only fills
     /// behind a webhook that is slower than the agent. Zero is read as one.
     pub push_queue_capacity: usize,
+    /// The most webhook deliveries in flight at once, across every task.
+    /// Default: 512. Zero is read as one.
+    ///
+    /// [`max_push_configs_per_task`](Self::max_push_configs_per_task) and the
+    /// per-event concurrency bound one event's fan-out, and a task's lane
+    /// serialises its own events, but until 2026-10-31 nothing bounded how
+    /// many tasks delivered at once: N tasks of 100 configs each opened up to
+    /// 100 x N outbound connections, for a caller who needs no credentials
+    /// where the agent is anonymous (audit N-SEC-6). A delivery beyond the
+    /// bound waits for one to finish, so every config is still attempted
+    /// (spec section 4.3.3); the wait counts against
+    /// [`push_delivery_timeout`](Self::push_delivery_timeout), so a gate that
+    /// stays full shows as `timeout` outcomes. Each delivery that waited is
+    /// reported once to [`Metrics::on_error`](crate::metrics::Metrics::on_error)
+    /// as `("PushDelivery", "push_throttled")`.
+    ///
+    /// The bound covers every sender behind a handler, a custom one
+    /// included; a sender used outside a handler is not bounded. 512 is a
+    /// choice, not a measurement: about five times one task's full fan-out.
+    /// Keep it well under the process's file-descriptor limit.
+    pub push_max_in_flight: usize,
+    /// The most deliveries in flight at once to one destination, host and
+    /// port. Default: 64. Zero is read as one.
+    ///
+    /// One caller can register up to
+    /// [`max_push_configs_per_task`](Self::max_push_configs_per_task)
+    /// webhooks on a task, all at a third party's address, and every event
+    /// goes to all of them (audit SEC-14). This bounds how many requests that
+    /// third party sees at once from this agent; it is not a rate limit. The
+    /// triage suggested 5 in flight and 20 a second; this takes the first
+    /// half at a higher number, because one orchestrator that receives the
+    /// callbacks of every agent behind it is a legitimate single destination
+    /// with a great many deliveries. A receiver that needs more raises it.
+    /// Names that mean the same destination (case, a trailing dot, an
+    /// address written in decimal or hex) share one count. A delivery beyond
+    /// the bound waits, as for [`push_max_in_flight`](Self::push_max_in_flight).
+    pub push_max_in_flight_per_host: usize,
     /// How long the blocking send path waits, after the executor has
     /// finished, for the event queue to close. Also how long a send that
     /// continues a parked task waits for the task's previous turn to finish.
@@ -316,6 +353,8 @@ impl Default for HandlerLimits {
             push_delivery_timeout: Duration::from_secs(30),
             push_delivery_budget: Duration::from_secs(30),
             push_queue_capacity: 1024,
+            push_max_in_flight: 512,
+            push_max_in_flight_per_host: 64,
             executor_drain_timeout: Duration::from_secs(5),
             max_artifacts_per_task: 1000,
             max_context_locks: 10_000,

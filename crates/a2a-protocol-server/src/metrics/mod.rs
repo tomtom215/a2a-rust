@@ -252,6 +252,12 @@ pub mod persistence_operation {
     /// (`store::pg_retry`); reported only through
     /// [`Metrics::on_store_retry`](super::Metrics::on_store_retry).
     pub const STATEMENT: &str = "statement";
+    /// Reading a task's webhook list to deliver an event.
+    ///
+    /// Reported through [`Metrics::on_store_retry`](super::Metrics::on_store_retry)
+    /// while the read is retried; when it gives up, the event's push is
+    /// reported as a `failed` delivery (`push_outcome::FAILED`).
+    pub const PUSH_CONFIG_LIST: &str = "push_config_list";
     /// Writing a record to the audit log (the `audit` feature).
     ///
     /// A call or event whose record failed was served or processed unrecorded; the
@@ -340,6 +346,12 @@ pub mod push_outcome {
     /// The webhook accepted the delivery.
     pub const DELIVERED: &str = "delivered";
     /// The webhook was reached and refused it, or the sender errored.
+    ///
+    /// Also reported, once for the event and not once per config, when the
+    /// task's webhook list could not be read (after the retry that a task
+    /// write gets, `persistence_operation::PUSH_CONFIG_LIST`), so none of its
+    /// webhooks was tried. Until 2026-10-31 that case reported nothing at all
+    /// (audit D-04).
     pub const FAILED: &str = "failed";
     /// The delivery did not complete within the configured timeout.
     pub const TIMEOUT: &str = "timeout";

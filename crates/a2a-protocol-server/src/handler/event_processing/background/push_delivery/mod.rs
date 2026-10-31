@@ -74,7 +74,7 @@ pub async fn deliver_push_bg(
     let Some(sender) = push_sender else {
         return;
     };
-    let Ok(configs) = push_config_store.list(task_id.as_ref()).await else {
+    let Some(configs) = list_configs(task_id, push_config_store, limits, metrics).await else {
         return;
     };
 
@@ -100,6 +100,40 @@ pub async fn deliver_push_bg(
         timeout_label,
     )
     .await;
+}
+
+/// A task's push configs, read with the retry a task write gets.
+///
+/// A store that is briefly unavailable is waited out (bounded by
+/// [`HandlerLimits::store_write_retry`]); one that stays down, or fails
+/// otherwise, costs this event its webhooks, and says so: a log line and one
+/// `failed` push outcome. Until 2026-10-31 both paths returned without a word,
+/// so a database outage looked like a task with no webhooks (audit D-04).
+pub async fn list_configs(
+    task_id: &TaskId,
+    store: &dyn PushConfigStore,
+    limits: &HandlerLimits,
+    metrics: &dyn Metrics,
+) -> Option<Vec<a2a_protocol_types::push::TaskPushNotificationConfig>> {
+    match crate::handler::event_processing::persisting(
+        limits.store_write_retry,
+        metrics,
+        crate::metrics::persistence_operation::PUSH_CONFIG_LIST,
+        || store.list(task_id.as_ref()),
+    )
+    .await
+    {
+        Ok(configs) => Some(configs),
+        Err(_err) => {
+            trace_warn!(
+                task_id = %task_id,
+                error = %_err,
+                "the task's push configs could not be read; its webhooks were not notified"
+            );
+            metrics.on_push_delivery(push_outcome::FAILED);
+            None
+        }
+    }
 }
 
 /// How many deliveries run at once so that `events` rounds of `width`

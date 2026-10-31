@@ -529,6 +529,29 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   role starts a task store its owner made, and writes and reads; a later
   release's body is kept and an earlier one's replaced. Three mutants of
   the guards each fail them. The book's PostgreSQL page gives the grants.
+- **Nothing bounded how many webhook deliveries ran at once, and a store
+  outage or an executor panic told no webhook** (server; audits N-SEC-6,
+  SEC-14, D-04, D-03 in part). N tasks of 100 webhook configs opened up to
+  100 x N outbound connections for a caller who needs no credentials where
+  the agent is anonymous, and any number of them could aim at one third
+  party. `HandlerLimits::push_max_in_flight` (512) and
+  `push_max_in_flight_per_host` (64) now bound deliveries across tasks and per
+  destination (host and port; case, a trailing dot and an address written in
+  decimal or hex count as one), in front of whatever sender the handler was
+  given. A delivery over a bound waits, so every config is still attempted
+  (spec 4.3.3), and is counted once as the error `push_throttled` on method
+  `PushDelivery`. The per-destination permit is taken first, so one slow
+  destination cannot hold the overall permits and stop the rest. Both
+  numbers are choices, not measurements. When a task's webhook list could
+  not be read, both delivery paths returned without a word; they now retry
+  as a task write does (`persistence_operation::PUSH_CONFIG_LIST`), then
+  log and count one `failed` push for the event. The test that was meant to
+  cover this passed no sender and so never reached the line; it is replaced
+  by four that do. An executor that panics now leaves the task `Failed`
+  with a message, and its webhooks are told, on the streaming and the
+  blocking path, once and only when the store accepted the write. Still
+  open (D-03 c, d): the panic's `Failed` is not in the event log, and a
+  streaming client gets no terminal frame for it.
 - **The SSRF host check accepts what it should refuse** (server; audits
   SEC-12, B-22, D-13, N-SEC-1; each URL below was run through
   `check_public_url` on 2026-10-31 and accepted). A trailing dot hid an

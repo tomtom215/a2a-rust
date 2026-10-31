@@ -25,6 +25,7 @@ mod cancel_and_push;
 mod extension_activation;
 mod list_empty_wire;
 mod not_found_wire;
+mod push_gate;
 mod required_extensions;
 mod required_fields;
 mod send_refusals;

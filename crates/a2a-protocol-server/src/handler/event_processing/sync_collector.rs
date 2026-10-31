@@ -495,7 +495,7 @@ impl SyncCollector {
         if !returned {
             trace_error!(task_id = %_task_id, "executor task panicked");
             if !state.task.status.state.is_terminal() {
-                state.task.status = TaskStatus::with_timestamp(TaskState::Failed);
+                let failed = super::panic_failure(&mut state.task);
                 state.saw_task_shaped_event = true;
                 super::persisting(
                     self.limits.store_write_retry,
@@ -504,6 +504,8 @@ impl SyncCollector {
                     || self.task_store.save(&state.task),
                 )
                 .await?;
+                // Saved, so the webhooks hear it too (audit D-03).
+                state.record_for_push(self.push_sender.is_some(), &failed);
             }
         }
         Ok(())
@@ -853,6 +855,7 @@ impl SyncCollector {
             events,
             push_delivery_timeout: self.limits.push_delivery_timeout,
             push_delivery_budget: self.limits.push_delivery_budget,
+            limits: self.limits.clone(),
             metrics: std::sync::Arc::clone(&self.metrics),
             timeout_label,
         };
@@ -877,13 +880,22 @@ struct SyncPushJob {
     events: Vec<StreamResponse>,
     push_delivery_timeout: std::time::Duration,
     push_delivery_budget: std::time::Duration,
+    /// For the retry of the config read; see `list_configs`.
+    limits: crate::handler::HandlerLimits,
     metrics: std::sync::Arc<dyn crate::metrics::Metrics>,
     timeout_label: &'static str,
 }
 
 impl SyncPushJob {
     async fn run(self) {
-        let Ok(configs) = self.store.list(self.task_id.as_ref()).await else {
+        let Some(configs) = super::background::list_configs(
+            &self.task_id,
+            self.store.as_ref(),
+            &self.limits,
+            self.metrics.as_ref(),
+        )
+        .await
+        else {
             return;
         };
         if configs.is_empty() {
@@ -2397,6 +2409,81 @@ mod tests {
             TaskState::Failed,
             "task should be marked Failed after executor panic"
         );
+    }
+
+    /// Records the state of every status update it is sent.
+    struct Heard(Arc<std::sync::Mutex<Vec<TaskState>>>);
+    impl crate::push::PushSender for Heard {
+        fn send<'a>(
+            &'a self,
+            _url: &'a str,
+            event: &'a StreamResponse,
+            _config: &'a a2a_protocol_types::push::TaskPushNotificationConfig,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            if let StreamResponse::StatusUpdate(u) = event {
+                self.0.lock().unwrap().push(u.status.state);
+            }
+            Box::pin(async { Ok(()) })
+        }
+        fn allows_private_urls(&self) -> bool {
+            true
+        }
+    }
+
+    /// The webhooks hear that a blocking send's executor panicked (audit
+    /// D-03): the task is stored `Failed` and delivered as `Failed`, once.
+    #[tokio::test]
+    async fn collect_events_executor_panic_tells_the_webhooks() {
+        use a2a_protocol_types::push::TaskPushNotificationConfig;
+
+        let heard = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-panic-push");
+        task_store
+            .save(&make_task("t-panic-push", TaskState::Submitted))
+            .await
+            .unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .with_push_sender(Heard(Arc::clone(&heard)))
+            .build()
+            .unwrap();
+        let config: TaskPushNotificationConfig = serde_json::from_value(serde_json::json!({
+            "taskId": "t-panic-push", "url": "https://hook.example.com/a"
+        }))
+        .unwrap();
+        handler.on_set_push_config(config, None).await.unwrap();
+
+        let (writer, reader) = collected_queue();
+        let executor_handle = tokio::spawn(async {
+            panic!("executor panicked!");
+        });
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            drop(writer);
+        });
+        let collected = handler
+            .collect_events(reader, task_id, executor_handle)
+            .await
+            .unwrap();
+        assert_eq!(collected.task.status.state, TaskState::Failed);
+
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while heard.lock().unwrap().is_empty() {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the webhook was told");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert_eq!(*heard.lock().unwrap(), vec![TaskState::Failed], "once");
     }
 
     // ── artifact limit enforcement in sync mode ─────────────────────────
