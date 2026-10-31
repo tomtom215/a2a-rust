@@ -95,6 +95,22 @@ impl ResumePolicy {
         self.deadline = deadline;
         self
     }
+
+    /// How long to wait before reopening attempt number `streak + 1`: nothing
+    /// before the first, then [`backoff`](Self::backoff), doubling each time,
+    /// never more than [`max_backoff`](Self::max_backoff). Pure, so that its
+    /// arithmetic is pinned exactly by the tests and not by how long a loop
+    /// happened to take.
+    pub(super) fn wait_before(&self, streak: u32) -> Duration {
+        let Some(doublings) = streak.checked_sub(1) else {
+            return Duration::ZERO;
+        };
+        // The clamp keeps the shift in range for a long streak; the cap below
+        // is what bounds the wait.
+        self.backoff
+            .saturating_mul(1_u32 << doublings.min(16))
+            .min(self.max_backoff)
+    }
 }
 
 /// What a lost stream came to.
@@ -238,11 +254,8 @@ impl Delegation {
             if self.streak >= policy.attempts {
                 break;
             }
-            if self.streak > 0 {
-                let wait = policy
-                    .backoff
-                    .saturating_mul(1_u32 << (self.streak - 1).min(16))
-                    .min(policy.max_backoff);
+            let wait = policy.wait_before(self.streak);
+            if !wait.is_zero() {
                 let left = policy.deadline.saturating_sub(started.elapsed());
                 if left.is_zero() {
                     break;
@@ -273,5 +286,59 @@ impl Delegation {
         }
         self.resumed_at.clone_from(&self.last_event_id);
         Resumed::GaveUp
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
+    #[test]
+    fn there_is_no_wait_before_the_first_attempt_and_it_doubles_after() {
+        let p = ResumePolicy::default(); // 200 ms, doubling, capped at 5 s
+        let waits: Vec<_> = (0..=7).map(|streak| p.wait_before(streak)).collect();
+        assert_eq!(
+            waits,
+            [
+                Duration::ZERO,
+                ms(200),
+                ms(400),
+                ms(800),
+                ms(1_600),
+                ms(3_200),
+                ms(5_000), // 6,400 capped
+                ms(5_000),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_cap_holds_for_any_streak_and_the_shift_cannot_overflow() {
+        let p = ResumePolicy::default().with_backoff(ms(7), Duration::from_secs(3_600));
+        assert_eq!(p.wait_before(1), ms(7));
+        assert_eq!(p.wait_before(2), ms(14));
+        assert_eq!(p.wait_before(3), ms(28));
+        // Far past the clamp: the cap, not a panic and not a wrapped shift.
+        assert_eq!(p.wait_before(17), ms(7 * 65_536));
+        assert_eq!(p.wait_before(18), ms(7 * 65_536));
+        assert_eq!(p.wait_before(u32::MAX), ms(7 * 65_536));
+        let capped = p.with_backoff(ms(300), ms(100));
+        assert_eq!(
+            capped.wait_before(1),
+            ms(100),
+            "the cap wins over the first wait"
+        );
+    }
+
+    #[test]
+    fn a_zero_backoff_never_waits() {
+        let p = ResumePolicy::none();
+        assert!((0..40).all(|s| p.wait_before(s).is_zero()));
+        let p = ResumePolicy::default().with_backoff(Duration::ZERO, Duration::from_secs(5));
+        assert!((0..40).all(|s| p.wait_before(s).is_zero()));
     }
 }
