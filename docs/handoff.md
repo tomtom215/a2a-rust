@@ -110,12 +110,12 @@ only: when something here is done, delete it rather than annotating it.
     long-lived client (L11: short-lived CLI processes never export); the
     `deploy-agent` Dockerfile's build stages (its runtime stage ran, L18).
   - **First, next session:**
-    1. **Ask the maintainer** `triage/DECISIONS.md` section 1 (X-1 to X-5):
-       the breaking batch for 0.16.0, delegation resume (H4), a shared HTTP
-       pool, how the fixes are delivered (one pushed branch per theme needs
-       the maintainer's permission; a session may push only its designated
-       branch), and what the release metadata says until the tag. Agent
-       Skills and A2A `v1.1.0-rc` are X-6 and X-7.
+    1. **Decided by the maintainer 2026-10-31** (`triage/DECISIONS.md`
+       section 0): a branch and a pull request per theme, never stacked,
+       local gates and `cargo mutants --in-diff` before the first push; all
+       four breaking changes and any others worth taking; delegation resume,
+       reattach and the journal now; Agent Skills with tool-loop activation
+       before 0.16.0 is tagged.
     2. **Fix in the order of `triage/PLAN.md`**, each pull request held to
        the bar above before its first push: server outbound network (1),
        SSRF and push limits (2), credentials (3), replicas and stores (4),
