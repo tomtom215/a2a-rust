@@ -63,10 +63,12 @@ certainly happen over hours: a node that disappears.
 The pieces exist: SQL stores, the event log, resubscribe from a cursor.
 Since 2026-10-31 (ADR 0030) the handle resumes a cut stream before it
 cancels the child, and `Delegation::reattach(client, tenant, task_id,
-last_event_id)` follows a child a restarted supervisor recorded. Still
-missing: the supervisor writing "I started child X on agent Y" to its own
-durable record *before* awaiting the child, and reading it back on restart;
-the journal that ADR 0030 specifies is not built yet.
+last_event_id)` follows a child a restarted supervisor recorded. The
+`DelegationJournal` trait and an in-memory journal exist
+(`Delegation::start_journaled` writes the record before the message is sent),
+and so does a PostgreSQL journal in the server crate
+(`PostgresDelegationJournal`, the `postgres` feature). A SQLite journal is not
+built.
 
 ### G3 — Tenant isolation fails open by default (R5)
 

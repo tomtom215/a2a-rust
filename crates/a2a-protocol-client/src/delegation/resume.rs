@@ -180,6 +180,7 @@ impl Delegation {
             last_event_id,
             streak: 0,
             resumed_at: None,
+            journal: None,
         };
         match this.reopen(&id).await {
             Ok(stream) => this.stream = Some(stream),

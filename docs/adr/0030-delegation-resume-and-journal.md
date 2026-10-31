@@ -8,6 +8,9 @@
 ("resume then cancel + reattach, and also build the journal now"); the
 choices below that the maintainer did not make (where the SQL lives, the
 defaults) are this ADR's and are open to change while 0.16.0 is unreleased.
+Built: points 1 to 3 (resume, reattach, the trait and the in-memory
+journal) and, of point 4, the PostgreSQL journal. Not built: a SQLite journal
+(the lease store, the precedent, has none either).
 **Author:** Tom F.
 
 ---
@@ -59,8 +62,9 @@ Two further gaps follow from the same design:
    (`progress`), settle, and list the records still open (`open`). The
    delegation calls it when one is attached with `with_journal`; without one
    nothing changes. An in-memory implementation ships beside the trait.
-4. **SQL journals live in the server crate**, behind its existing `sqlite`
-   and `postgres` features, and are re-exported by the SDK crate.
+4. **SQL journals live in the server crate**, behind its existing `postgres`
+   feature (and `sqlite`, if one is wanted), and are re-exported by the SDK
+   crate. The PostgreSQL one is `PostgresDelegationJournal`.
 
 ### Why the SQL lives in the server crate
 
@@ -98,5 +102,9 @@ implements it without a new dependency.
 
 ## What was and was not run
 
-Written before the code. The verification of what is built is in the
-pull request that carries this ADR, not here.
+Written before the code; the verification of what is built is in the pull
+request that carries it. The in-memory journal and the delegation's use of it
+are tested against this repository's server, and `PostgresDelegationJournal`
+runs the journal contract on PostgreSQL 16.15. The SQL has not been run on
+PostgreSQL 17, under concurrent replicas, or after a connection loss
+mid-statement (it uses the crate's `pg_retry`, which is tested elsewhere).

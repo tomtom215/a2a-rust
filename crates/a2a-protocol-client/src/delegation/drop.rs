@@ -37,6 +37,8 @@ impl Drop for Delegation {
             last_event_id: self.last_event_id.take(),
             streak: 0,
             resumed_at: None,
+            // The cancel the drop sends settles the record too.
+            journal: self.journal.take(),
         };
         let origin = self.origin.clone();
         rt.spawn(origin.carry(async move {

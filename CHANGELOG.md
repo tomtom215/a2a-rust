@@ -635,8 +635,37 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   finished during the gap, a link that stays down (bounded), a link that keeps
   delivering (resumed past the attempt limit), reattach to a running and to a
   settled child, and to one that does not exist; three hand mutations of the
-  resume logic each fail the test meant to catch them. The durable journal of
-  ADR 0030 is not built yet.
+  resume logic each fail the test meant to catch them.
+- **A supervisor can record its children so a restart finds them** (types and
+  client; audit H4, ADR 0030). `a2a_protocol_types::delegation_journal` has
+  `DelegationRecord`, the `DelegationJournal` trait (`begin`, `progress`,
+  `settle`, `open`, `purge_settled`) and `InMemoryDelegationJournal`.
+  `Delegation::start_journaled` writes the record (owner, the agent's URL, the
+  tenant, the message's idempotency key) **before** the message is sent, and
+  sends nothing if the journal cannot store it; the child's id and stream
+  position are noted as events arrive (at once when the child is named or
+  the stream is lost, otherwise at most every two seconds), and the record is
+  settled with the outcome however the delegation ends, a drop-time cancel
+  included. After a restart, `journal.open(owner)` lists what is still open,
+  `Delegation::reattach(..).with_journal(..)` picks each child up, and a
+  record that never learned its child's id is re-sent under its recorded
+  idempotency key. A journal write that fails after the start is logged and
+  does not stop the delegation. Tests: seven contract tests of the in-memory
+  journal; six against the real server (the record exists before the child
+  does, a journal that cannot record starts nothing, a restarted supervisor
+  finds and settles an open child, every ending settles its record, progress
+  is throttled); six hand mutations of the new code each fail the test meant to
+  catch them. `a2a_protocol_server::store::PostgresDelegationJournal` (the
+  `postgres` feature; table `a2a_delegations`, created under the crate's
+  schema lock, every statement inside `pg_retry`) keeps the records where a
+  restarted replica of the supervisor can read them. It runs the same
+  contract as the in-memory journal on PostgreSQL 16, plus a direct read of
+  the table for what the trait cannot show (a settled record keeps its first
+  outcome and stops changing); three hand mutations of its SQL (settle may
+  rewrite, progress may clear, purge removes the edge) each fail. **Not
+  built:** a SQLite journal. ADR 0030 listed one; the lease store, its
+  precedent, has none either, and a supervisor that shares records between
+  replicas needs PostgreSQL.
 - **The SSRF host check accepts what it should refuse** (server; audits
   SEC-12, B-22, D-13, N-SEC-1; each URL below was run through
   `check_public_url` on 2026-10-31 and accepted). A trailing dot hid an

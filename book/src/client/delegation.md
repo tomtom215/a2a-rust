@@ -130,6 +130,59 @@ A child that settled in the meantime comes back already settled. A lease or a
 budget grant is not restored; a supervisor that needs them records the grant
 itself (ADR 0030).
 
+## Remembering children across restarts: the journal
+
+`reattach` needs the id and the position, and a supervisor that dies between
+sending the message and recording them has neither. A `DelegationJournal`
+(ADR 0030) is the record that outlives the process.
+`Delegation::start_journaled` writes it before the message is sent, and sends
+nothing if the journal cannot store it; the child's id and position follow as
+events arrive, and the record is settled with the outcome however the
+delegation ends.
+
+```rust,no_run
+use std::sync::Arc;
+use a2a_protocol_client::{A2aClient, delegation::Delegation};
+use a2a_protocol_types::delegation_journal::{DelegationJournal, InMemoryDelegationJournal};
+use a2a_protocol_types::{Message, MessageSendParams, Part};
+# async fn run(client: Arc<A2aClient>) -> Result<(), Box<dyn std::error::Error>> {
+let journal: Arc<dyn DelegationJournal> = Arc::new(InMemoryDelegationJournal::new());
+
+// Start: the record is written before the message goes out.
+let params = MessageSendParams::new(Message::user("m-1", vec![Part::text("summarise")]));
+let child = Delegation::start_journaled(
+    Arc::clone(&client), params, Arc::clone(&journal), "orchestrator-1", "http://worker:8080",
+).await?;
+# drop(child);
+
+// After a restart: pick up what is still open.
+for record in journal.open("orchestrator-1").await? {
+    if let Some(task_id) = record.task_id.clone() {
+        let child = Delegation::reattach(
+            Arc::clone(&client), record.tenant.clone(), task_id, record.last_event_id.clone(),
+        )
+        .await?
+        .with_journal(Arc::clone(&journal), &record.id);
+        let done = child.wait(std::future::pending()).await;
+        println!("{:?}", done.outcome);
+    }
+    // A record with no task id died before the child was named: send the same
+    // message again under `record.idempotency_key` to reach the child the
+    // first send created.
+}
+# Ok(())
+# }
+```
+
+A record holds ids, keys, positions and an outcome label: no message text and
+no credentials. A write that fails after the start is logged and does not stop
+the delegation. The position can lag the stream by up to two seconds, so a
+reattach may replay a few events. Settled records stay until
+`purge_settled` removes them. `InMemoryDelegationJournal` serves one process; for a supervisor that must
+survive its own death use `PostgresDelegationJournal` (the server crate's
+`postgres` feature, table `a2a_delegations`), or implement the trait over a
+store of your own. There is no SQLite journal.
+
 ## A crashed parent: leases
 
 The handle dies with its process, so on its own it cannot cancel the child

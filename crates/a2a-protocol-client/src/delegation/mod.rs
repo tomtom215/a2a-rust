@@ -85,6 +85,7 @@ use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 
 mod drop;
+mod journal;
 mod origin;
 mod outcome;
 mod renewal;
@@ -139,6 +140,8 @@ pub struct Delegation {
     streak: u32,
     /// The position when the last loss was worked on.
     resumed_at: Option<String>,
+    /// The delegation's record in a journal, when it keeps one.
+    journal: Option<journal::Journaled>,
 }
 
 impl Delegation {
@@ -184,6 +187,7 @@ impl Delegation {
             last_event_id: None,
             streak: 0,
             resumed_at: None,
+            journal: None,
         })
     }
 
@@ -291,20 +295,26 @@ impl Delegation {
     /// when the stream has ended.
     pub async fn next_event(&mut self) -> Option<ClientResult<StreamResponse>> {
         let ev = self.stream.as_mut()?.next().await;
-        match &ev {
+        let ended = match &ev {
             Some(Ok(ev)) => {
                 self.observe(ev);
                 self.remember_position(None);
+                false
             }
             Some(Err(e)) => {
                 self.remember_position(Some(e));
                 self.stream = None;
+                true
             }
             None => {
                 self.remember_position(None);
                 self.stream = None;
+                true
             }
-        }
+        };
+        // At once when the stream ended: the position is what a resume or a
+        // restarted supervisor needs.
+        self.note_progress(ended).await;
         ev
     }
 
@@ -360,7 +370,7 @@ impl Delegation {
         tokio::pin!(cancel);
         loop {
             if let Some(outcome) = self.settled.take() {
-                return self.finish(outcome);
+                return self.finish(outcome).await;
             }
             tokio::select! {
                 ev = self.next_event() => {
@@ -371,7 +381,7 @@ impl Delegation {
                     };
                     match self.resume().await {
                         Resumed::Streaming => {}
-                        Resumed::Settled(outcome) => return self.finish(*outcome),
+                        Resumed::Settled(outcome) => return self.finish(*outcome).await,
                         Resumed::GaveUp => return self.lost(error).await,
                     }
                 }
@@ -393,10 +403,10 @@ impl Delegation {
         })
         .await;
         if let Some(outcome) = self.settled.take() {
-            return self.finish(outcome);
+            return self.finish(outcome).await;
         }
         let Some(id) = self.task_id.clone() else {
-            return self.finish(Outcome::Unreachable);
+            return self.finish(Outcome::Unreachable).await;
         };
         let outcome = match self.client.cancel_task_in(self.tenant.clone(), id).await {
             Ok(task) if task.status.state.is_terminal() => {
@@ -405,7 +415,7 @@ impl Delegation {
             Ok(task) => Outcome::CancelRequested(task.status),
             Err(e) => Outcome::CancelFailed(e),
         };
-        self.finish(outcome)
+        self.finish(outcome).await
     }
 
     /// Stops following the child without cancelling it, and returns its id
@@ -425,11 +435,12 @@ impl Delegation {
             // request, and that race is not an error.
             let _ = self.client.cancel_task_in(self.tenant.clone(), id).await;
         }
-        self.finish(Outcome::Lost(error))
+        self.finish(Outcome::Lost(error)).await
     }
 
-    fn finish(mut self, outcome: Outcome) -> Delegated {
+    async fn finish(mut self, outcome: Outcome) -> Delegated {
         self.armed = false;
+        self.note_settled(&outcome).await;
         if let Some((grant, last)) = self.budget.take() {
             grant.settle(last.as_ref());
         }
