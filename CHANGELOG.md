@@ -368,6 +368,22 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **The default `BearerTokenTenantResolver` names a token by a digest, not by
+  the token** (server; audit SEC-11). `BearerTokenTenantResolver::default()`,
+  and `new()`, used the raw bearer token as the tenant id, which stored a live
+  credential in every task row, telemetry attribute and audit record carrying
+  a tenant, readable by anyone with the database, a backup or the trace
+  backend. The tenant is now `tenant_id_for_token(token)`: `sha256:` and the
+  first 16 bytes of the SHA-256 as lowercase hex (39 characters, a stable
+  contract so data can be moved). `new()` is deprecated; neither verifies
+  the token, so neither isolates tenants, and `with_mapper` with a closure that
+  checks it is still the constructor for a deployment. **A running 0.15
+  deployment that used either loses sight of its stored tasks**: they sit
+  under the raw token and are asked for under the digest. Rewrite those rows'
+  tenant, or keep the old tenant with `with_mapper(|t| Some(t.to_owned()))`
+  (upgrade guide). New direct dependency: `sha2` 0.11, pure Rust, already in
+  the graph through `sqlx`. Known-answer tests against Python's `hashlib`
+  (three FIPS 180 vectors, a multi-byte token, a 1000-byte one).
 - **An abandoned stream is no longer counted as a failed call, and
   `A2AServerErrorRatioHigh` needs traffic** (deploy/observability; audit C-09).
   A call whose client went away first carries `error_type="cancelled"`, and

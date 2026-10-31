@@ -24,8 +24,11 @@ Three resolvers ship:
 | `HeaderTenantResolver` | a request header | a proxy you control sets it and strips any inbound copy |
 | `PathSegmentTenantResolver` | a URL path segment | the same, and never on its own |
 
-`BearerTokenTenantResolver::new()` uses the raw, unverified token as the tenant
-id, so the caller chooses its own tenant; it is for tests.
+`BearerTokenTenantResolver::default()` (and the deprecated `new()`) names the
+unverified token by a digest, `tenant_id_for_token(token)`, so the caller still
+chooses its own tenant, but the token itself is no longer stored, exported or
+audited as the tenant id; it is for tests. Until 0.16 the tenant was the raw
+token ([upgrading](../reference/upgrading/0.15-to-0.16.md)).
 
 A resolver does nothing until you install it with
 `RequestHandlerBuilder::with_tenant_resolver`. Without one the handler uses the
