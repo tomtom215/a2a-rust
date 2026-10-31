@@ -524,6 +524,8 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `PerTenantConfig` | Per-tenant configuration for timeouts, capacity limits, and executor selection |
 | `TenantLimits` | Resource limits declared for a single tenant |
 | `RateLimitConfig` | Configuration for `RateLimitInterceptor` |
+| `TrustedProxy` | An address range (`10.0.0.0/8`) of reverse proxies whose `X-Forwarded-For` is believed; set on `RateLimitConfig` and `AuthFailureThrottleConfig` |
+| `InvalidTrustedProxy` | Why a string is not a `TrustedProxy` |
 | `AuthFailureThrottleConfig` | Configuration for `AuthFailureThrottle` |
 | `PushRetryPolicy` | Retry policy for push notification delivery |
 | `ServerError` | Server-level error type |

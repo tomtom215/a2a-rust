@@ -271,3 +271,56 @@ fn debug_names_the_config_and_no_peer() {
     assert!(rendered.contains("AuthFailureThrottle") && rendered.contains("max_failures"));
     assert!(!rendered.contains("203.0.113.7"), "{rendered}");
 }
+
+/// Audit N-B-2: the limiter keys an IPv6 client by its `/64`; the throttle
+/// kept the full address, so a host rotating addresses in its `/64` was never
+/// refused.
+#[test]
+fn addresses_in_one_slash_64_share_a_count() {
+    set_now(6_000);
+    let throttle = throttle(2);
+    fail(&throttle, &from("[2001:db8:1:2::1]:1000"));
+    fail(&throttle, &from("[2001:db8:1:2:ffff::9]:1000"));
+    assert!(
+        refused(&throttle, &from("[2001:db8:1:2:1234::5]:9")),
+        "a third address in the /64 is the same peer"
+    );
+    assert!(
+        !refused(&throttle, &from("[2001:db8:1:3::1]:1")),
+        "another /64 is another peer"
+    );
+    assert!(
+        !refused(&throttle, &from("203.0.113.1:1")),
+        "an IPv4 peer is its own"
+    );
+}
+
+/// Audit B-09 (a), for the throttle: forging the header from a connection that
+/// is not a trusted proxy does not choose the peer that is counted.
+#[test]
+fn a_forged_forwarded_header_from_outside_the_trusted_ranges_counts_the_connection() {
+    set_now(6_000);
+    let throttle = AuthFailureThrottle::new(
+        AuthFailureThrottleConfig::default()
+            .with_max_failures(2)
+            .with_window_secs(WINDOW)
+            .with_trusted_proxy_hops(1)
+            .with_trusted_proxies(["10.0.0.0/8".parse().expect("a range")]),
+    )
+    .expect("throttle")
+    .with_clock(now);
+    let forged = |client: &str| {
+        from("203.0.113.9:4000").with_http_header("x-forwarded-for", client.to_owned())
+    };
+    fail(&throttle, &forged("198.51.100.1"));
+    fail(&throttle, &forged("198.51.100.2"));
+    assert!(
+        refused(&throttle, &forged("198.51.100.3")),
+        "three forged addresses, one connection"
+    );
+    let via_proxy = from("10.0.0.1:5000").with_http_header("x-forwarded-for", "198.51.100.1");
+    assert!(
+        !refused(&throttle, &via_proxy),
+        "a client a trusted proxy names is counted as that client"
+    );
+}

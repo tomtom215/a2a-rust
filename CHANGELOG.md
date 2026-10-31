@@ -368,6 +368,29 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **`X-Forwarded-For` can be believed only from the proxies' own address
+  ranges, a port in an entry no longer makes a new key, and the auth-failure
+  throttle keys an IPv6 client by its `/64`** (server; audits B-09 (a), (b),
+  N-B-2). The hop count (`trusted_proxy_hops`) said which entry of the header
+  to read, not whether the connection came through the proxies: a client
+  that reached the server directly could send a header with enough entries
+  and pick its own key, for the rate limiter and for the throttle.
+  `RateLimitConfig::with_trusted_proxies` and
+  `AuthFailureThrottleConfig::with_trusted_proxies` take `TrustedProxy`
+  ranges (`"10.0.0.0/8".parse()`, IPv4 or IPv6, a bare address is a host
+  range, an IPv4-mapped IPv6 peer is its IPv4 form); when any are named, the
+  header is believed only if the connection's peer is in one, and any other
+  connection is keyed by its own address. Empty (the default) keeps the old
+  behaviour, the hop count alone, so nothing changes until a deployment names
+  its proxies. `203.0.113.7:51234` and `[2001:db8::1]:443` in the header now
+  key as `203.0.113.7` and `2001:db8::/64`; before, each connection through a
+  proxy that records the source port minted a bucket, and filled the bounded
+  table. `AuthFailureThrottle` counted the full IPv6 address while the limiter
+  used the `/64`, so a host rotating addresses in its `/64` never reached
+  `max_failures`; both use the `/64` now (an IPv4 client is unchanged).
+  Not done: RFC 7239 `Forwarded` (B-09 (d)). Tests in
+  `rate_limit/keying_tests.rs`, `rate_limit/trusted/tests.rs` and
+  `auth/throttle_tests.rs`.
 - **A token endpoint on plaintext `http://` to another machine is refused
   before any connection, and OIDC discovery must answer for the issuer it
   was asked about** (client; audits SEC-08, N-SEC-3). The token request
