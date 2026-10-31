@@ -39,6 +39,7 @@ are rustdoc's job.
 | `audit` | Tamper-evident audit records: schema, hash chains, signed checkpoints, `verify_chain` (`audit` feature) |
 | `auth_rejection` | Why a request was refused on authentication or authorization grounds |
 | `budget` | The budget extension: `Budget`, a deadline and named meters a delegated turn may spend, and `BudgetStatus`, what is left and spent (ADR 0023) |
+| `delegation_journal` | A supervisor's record of the children it delegated to, so a restart can find them: the `DelegationJournal` trait, `DelegationRecord` and an in-memory journal (ADR 0030) |
 | `error` | A2A protocol error types |
 | `events` | Server-sent event types for A2A streaming |
 | `extensions` | Agent extension and card-signature types |
