@@ -86,3 +86,6 @@ impl std::fmt::Debug for HttpsClient {
         f.debug_struct("HttpsClient").finish_non_exhaustive()
     }
 }
+
+#[cfg(test)]
+mod tests;
