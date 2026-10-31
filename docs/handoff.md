@@ -27,41 +27,76 @@ only: when something here is done, delete it rather than annotating it.
   has the fourteen work packages). Nothing here is release-ready.** The
   maintainer asked for every gap found, fixed and tested live (llama.cpp
   with Qwen and Gemma) before 0.16.0 is published.
-  - **State of #185, head `219670d`** (pushed 2026-10-31 about 19:00Z, over
-    `a0e6673`). Built, gated locally and pushed: package 1 (the server's
-    outbound network), package 2 in part (the SSRF classifier, the
-    push-delivery bounds, D-04, part of D-03), package 3 (SEC-18b, SEC-08,
-    N-SEC-3, N-SEC-4, SEC-09), package 4 in part (the reaper's lease release
-    and event-log entry: H3 part b, N-E-2), and package 6 in part (H4's resume
-    and reattach, and the delegation journal for memory and PostgreSQL, with
-    ADR 0030). CI on the first push (`660196e`): the main CI run passed 21 of
-    its 22 jobs (one skipped), every other workflow passed (Coverage, which
-    had failed on the first head with no log, among them), and Mutation
-    Testing failed with seven survivors in `delegation/resume.rs`, fixed in
-    `59e6ff0` and commented on the pull request. CI on `219670d` was running at
-    19:10Z with nothing red. **First thing next session: read CI on
-    `219670d`** (every job, and the mutation shards' logs for survivors), then
-    carry on with the packages not started.
-  - **What was run on that head** (the PR body is the record): 36 static-job
-    gates, DCO and the README doctests; `clippy` default, all-features and the
-    `cargo hack` matrix over the four published crates; the doc loop; 2,511
-    tests (types, client, sdk, discovery, a2a-cli, book) and 3,798 / 2,486
-    server tests (all features / no default features); the journal against
-    PostgreSQL 16; `live-model` 11 of 11 against Qwen3.5-2B; `cargo mutants`
-    on the new code (types 0 missed of 9 caught, client 0 missed of 37 caught,
-    all 21 of `resume.rs`: 0 missed) and 25 hand mutations of the security
-    checks and the journal's SQL, each failing its test. Not run locally:
-    macOS, Windows, Coverage, the tck and example test targets, a live Squid or
-    private-CA run, `scripts/run_postgres_suites.py` itself.
-  - **Still open in the packages touched:** the SQLite journal, SEC-11 (needs
-    the maintainer's D-1: hashing the token cache's key makes `ring`
-    mandatory) and B-09, N-B-2, N-AL-1, N-AL-2 (the rest of package 3), SEC-13/17 (an https webhook is resolved twice), B-13, D-22,
-    N-D-2/E-3, D-05 and D-03 c and d. Packages 5 and 7 to 14 are untouched.
+  - **State of #185, head `94d92c7`** (pushed 2026-10-31 about 23:35Z, 28
+    commits over `a0e6673`). Built, gated locally and pushed: package 1 (the
+    server's outbound network); package 2 in part (the SSRF classifier, the
+    push-delivery bounds, D-04, part of D-03); package 3 except B-09 (d)
+    (SEC-18b, SEC-08, N-SEC-3, N-SEC-4, SEC-09, B-09 a and b, N-B-2, SEC-11,
+    N-AL-1, N-AL-2); package 4 in part (the reaper's lease release and
+    event-log entry: H3 part b, N-E-2); package 5 in part (C-07, C-09);
+    package 6 in part (H4's resume and reattach, and the delegation journal
+    for memory and PostgreSQL, ADR 0030); and ADRs 0031 to 0034, proposed,
+    nothing in them built. **CI on `d19ecfc`** (the head before this one):
+    104 check runs, two failed, "SLIMRPC binding (out-of-workspace)" and
+    "Test coverage", both on
+    `server::peer::tests::the_throttle_keys_a_verified_peer_by_its_address`;
+    cause N-B-2, fixed in `f9e7ffb`; everything else passed, including every
+    mutation shard and the macOS and Windows legs; commented on the pull
+    request. **First thing next session: read CI on `94d92c7`** (every check
+    run; a download of a failed job's log URL, since the API's tail is only
+    the PostgreSQL teardown; the mutation shards' logs for survivors), then
+    carry on with the packages not started. A check-in was scheduled for
+    2026-11-01 00:57Z.
+  - **What was run on that head** (the pull request comment
+    <https://github.com/tomtom215/a2a-rust/pull/185#issuecomment-6550654053>
+    is the record): 37 script gates and the DCO check; `clippy` on the
+    default workspace, all features and the `cargo hack` matrix (59
+    combinations) over the four published crates; the doc loop over five
+    crates; 2,517 tests (types, client, sdk, discovery, a2a-cli, book; 9
+    ignored) and 8 for `deploy-agent`; 3,815 server tests (all features) and
+    2,502 (no default features); the delegation journal and reaper against
+    PostgreSQL (7); the SLIMRPC binding's fmt, clippy and 128 tests (21 test
+    binaries); `cargo check` of `itk/`; `promtool check rules` and `promtool
+    test rules` (3.15.1). Mutation: 14 of 14 caught over `network_of` and
+    `is_discard_only`, 8 of 8 over the SEC-11 digest code. On earlier heads:
+    `live-model` 11 of 11 against Qwen3.5-2B; `cargo mutants` on the
+    delegation code (types 9 caught, client 37, `resume.rs` 21; none missed)
+    and 25 hand mutations of the security checks and the journal's SQL, each
+    failing its test. **Not run on this head:** macOS and Windows (CI passed
+    them on `d19ecfc`), `cargo-deny`, `cargo-semver-checks`, the fuzz targets,
+    `live-model`, a live Squid or private-CA run, and
+    `scripts/run_postgres_suites.py` itself.
+  - **Still open in the packages touched:** the SQLite journal; B-09 (d); SEC-13/17
+    (an https webhook is resolved twice); B-13; D-22; N-D-2/E-3; D-05; D-03 c
+    and d; and SEC-11's dependency reading (`ring` stayed optional; see
+    "Waiting on the maintainer"). Package 5 beyond C-07 and C-09, and packages
+    7 to 14, are untouched; 15 and 16 are designs only.
   - **Commits** are authored and signed off as `Tom F.
     <tomf@tomtomtech.net>` with no other trailers, at the maintainer's
     instruction so that `scripts/check_dco.sh` passes. A stop hook suggests
     resetting the author to `noreply@anthropic.com`; do not: that script
     rejects exactly that identity.
+  - **Four design records for a later session, at the maintainer's request
+    (2026-10-31). Nothing in them is built.** They are
+    `docs/adr/0031` to `0034` on pull request 185, each marked proposed and
+    each ending with the test that would settle it and its open questions;
+    the work is packages 11, 15 and 16 in `PLAN.md`. **0031** finds agents
+    beyond one link: an `AgentSource` interface with a static list, unicast
+    DNS-SD, Kubernetes DNS SRV and, behind a feature, the Kubernetes API,
+    every source requiring signed cards and a host allow-list (mDNS stays
+    link-local, ADR 0029). **0032** is an opt-in `HttpPool` that fixes one
+    TLS identity and proxy route and owns per-origin state (an in-flight
+    cap, a breaker, a retry budget, ejection); it also records the case for
+    a client-side balancing hook, which reverses the recorded H-D7 and is the
+    maintainer's to choose. **0033** is `DelegationGroup`: a required cap on
+    children in flight, a join rule, budget shares taken at start (a loop of
+    `BudgetHandle::grant` calls starves the later children, by design), one
+    cancel. **0034** is the lineage extension (`root`, `depth`; the root
+    defaults to the originating context) and `HaltScope::Root`, a claim that
+    scopes a halt and authorizes nothing. A suggested order once the batch in
+    flight is merged: 0032, 0034, 0033, then 0031. Not verifiable here, and
+    labelled so in the records: a real cluster, Route 53 or CoreDNS,
+    multicast across hosts, and any scale above the 256 workers measured.
   - **The task list is `docs/audits/2026-10-29/README.md`.** Its `Status`
     column and note now hold each row's triage, section N lists 68 findings
     the triage itself made, and the evidence is in
@@ -90,14 +125,13 @@ only: when something here is done, delete it rather than annotating it.
     re-checked. On this commit `live-model` passes 11 of 11 against
     Qwen3.5-2B (debug build, llama.cpp `0ec4027`).
   - **Not release-ready, and not claimed to be.** Of the S0 rows, H2 is half
-    fixed (the private CA works now; no shared pool), H3 is fixed in #185 (the
-    leaked lease row), and H4's resume, reattach and journal are in #185 (the
-    maintainer chose resume-then-cancel with reattach and the journal; the
-    SQLite journal is not built). Of the worst new findings, N-B-1, SEC-12 with
-    N-SEC-1, SEC-14 with N-SEC-6 and N-E-2 are fixed in #185. Still open: C-07
-    and C-09 (stderr diagnostics vanish under `OTEL_SDK_DISABLED`; abandoned
-    streams page as server errors), SEC-13/17, and everything in the packages
-    not started.
+    fixed (the private CA works now; no shared pool, which ADR 0032 designs),
+    H3 is fixed in #185 (the leaked lease row), and H4's resume, reattach and
+    journal are in #185 (the maintainer chose resume-then-cancel with reattach
+    and the journal; the SQLite journal is not built). Of the worst new
+    findings, N-B-1, SEC-12 with N-SEC-1, SEC-14 with N-SEC-6, N-E-2, C-07 and
+    C-09 are fixed in #185. Still open: SEC-13/17, and everything in the
+    packages not started.
   - **How #184 was verified, the bar for what follows.** Before a push:
     `scripts/preflight.sh --force`; every script gate (the list is in the
     workflow's Static checks job); `cargo hack clippy -p a2a-protocol-types
@@ -654,6 +688,15 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Waiting on the maintainer
 
+- **SEC-11's dependency, read narrowly (2026-10-31).** You wrote "add both
+  deps"; it was built as `sha2` only (the tenant digest, `tenant_id_for_token`)
+  and `ring` stays an optional dependency of the server crate. If `ring` was
+  meant to become mandatory too, `auth-jwt` and the feature-table gate change
+  with it. Say which.
+- **ADR 0032 and the recorded H-D7.** H-D7 declines client-side load
+  balancing in the core. The ADR argues for an `EndpointResolver` hook with
+  power-of-two choice and ejection, to be built only if a measurement shows
+  that L4 or L7 balancing leaves a fan-out uneven. Choose; neither is built.
 - **ADR 0028: whether Tokio stays mandatory on `wasm32-unknown-unknown`.**
   Proposed, not accepted. It asks you to qualify ADR 0003 (Tokio is mandatory
   on native targets; on wasm32 the crates assume no Tokio runtime) so that a
@@ -763,6 +806,11 @@ only: when something here is done, delete it rather than annotating it.
 
 None of this is in `ROADMAP.md`. Each line names where its evidence is.
 
+- **No CI job runs `promtool test rules`** (checked 2026-10-31: no file under
+  `.github` or `scripts` mentions `promtool`). The C-09 rules and their tests
+  were run with promtool 3.15.1, downloaded at the maintainer's choice and
+  checksum-verified. A job (the Prometheus image, or the release tarball with a
+  pinned checksum) would keep the rules and `a2a-alerts.test.yml` from drifting.
 - **Cross-replica, after turn claims (2026-10-28):** streaming on a replica
   not running the task is still fed by polling the event log every
   `subscribe_reattach_interval` (250 ms); `LISTEN`/`NOTIFY` could push it,
@@ -1174,6 +1222,34 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **The SLIMRPC binding, `itk/` and `fuzz/` build the server crate from outside
+  the workspace, so `--workspace` tests and the clippy matrices never compile
+  them.** N-B-2 (the auth throttle keys an IPv6 caller by its `/64`) folded the
+  binding's synthetic per-peer addresses, which sit in the discard-only block
+  `100::/64` (RFC 6666), into one key, and one peer's failed logins locked
+  out the rest. Two CI jobs failed on `d19ecfc` (the "SLIMRPC binding
+  (out-of-workspace)" job and "Test coverage"), both on the one test
+  `server::peer::tests::the_throttle_keys_a_verified_peer_by_its_address`
+  (74 passed, 1 failed). Before any push that touches the server crate, run
+  what that CI job runs (its steps are in `.github/workflows/ci.yml`; its test
+  run is `cargo test --tests --manifest-path bindings/a2a-protocol-slimrpc/Cargo.toml`)
+  and `cargo check --manifest-path itk/Cargo.toml`. A local `cargo test
+  --workspace` does not.
+- **A test that installs only a scoped `tracing` subscriber can lose its span
+  to a parallel test, and it shows up as a flake of a few percent.** Running
+  the SLIMRPC binding's library tests 100 times found
+  `server::methods::tests::an_answer_the_wire_cannot_carry_fails_its_span`
+  failing 4 times (the span recorded no field), and 0 of 200 runs alone:
+  `tracing` caches each callsite's interest process-wide. The code was
+  byte-identical to the base commit, so the flake predates #185; fixed in
+  `94d92c7` with a global enable-everything subscriber, the client crate's
+  `test_tracing` pattern (0 of 300 afterwards). Measure with the compiled test
+  binary run in a loop (the suite takes 0.2 s), not with `cargo test` each
+  time. `telemetry` and `client_telemetry` hold one test each and cannot race;
+  `undeclared_binding` failed 0 of 300 and was left alone.
+- **Run `check_spec_ledger.py --fix-lines` last.** Any edit to `CHANGELOG.md`
+  or to a cited source file moves a citation; in this batch the 0.5.0 entry's
+  line number moved with each of three CHANGELOG edits.
 - **Run CI's full gate list over the combined tree before the first mutation
   run, not after.** On 2026-10-31 a clippy `too_many_lines` error (a function
   at 62 lines) and a 510-line test file were found only when the whole list
