@@ -19,6 +19,7 @@ use serde_json::{Map, Value, json};
 
 use super::model::{ChatMessage, ChatRequest, ModelError, ModelTurn, TextSink, ToolModel};
 use super::openai_parse::parse_completion;
+use crate::causes::with_causes;
 use crate::push::sender::PushHttpClient;
 
 /// How long one turn may take, request and whole response, by default.
@@ -126,8 +127,11 @@ impl OpenAiChatModel {
     /// a private CA, or a client certificate for mutual TLS.
     #[cfg(feature = "tls-rustls")]
     #[must_use]
+    // By value, as it has always been taken: a public signature changed to a
+    // reference is a break.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn with_tls_config(mut self, tls_config: rustls::ClientConfig) -> Self {
-        self.client = crate::push::sender::build_push_https_client(tls_config);
+        self.client = crate::push::sender::build_push_https_client(&tls_config);
         self
     }
 
@@ -404,19 +408,6 @@ async fn read_prefix(mut body: hyper::body::Incoming, limit: usize) -> Vec<u8> {
         }
     }
     out
-}
-
-/// `error` and its causes, joined by `: `: hyper's own text, `client error
-/// (SendRequest)`, does not say what went wrong.
-fn with_causes(error: &(dyn std::error::Error + 'static)) -> String {
-    let mut text = error.to_string();
-    let mut cause = error.source();
-    while let Some(next) = cause {
-        text.push_str(": ");
-        text.push_str(&next.to_string());
-        cause = next.source();
-    }
-    text
 }
 
 /// `bytes` as text, cut to at most `limit` bytes on a character boundary.

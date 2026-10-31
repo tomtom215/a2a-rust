@@ -60,6 +60,14 @@ fn port(uri: &hyper::Uri) -> Option<u16> {
     })
 }
 
+/// `url` as a log line may carry it: scheme, host, port and path, with
+/// userinfo and query dropped, as the span records it. A URL that does not
+/// parse is replaced, not echoed.
+pub fn loggable(url: &str) -> String {
+    url.parse::<hyper::Uri>()
+        .map_or_else(|_| "(unparseable URL)".to_owned(), |uri| scrubbed(&uri))
+}
+
 /// `uri` as scheme, authority without userinfo, and path.
 fn scrubbed(uri: &hyper::Uri) -> String {
     let scheme = uri.scheme_str().unwrap_or("http");
@@ -79,6 +87,15 @@ mod tests {
         assert_eq!(port_of("http://agent.example/card"), Some(80));
         assert_eq!(port_of("https://agent.example:8443/card"), Some(8443));
         assert_eq!(port_of("/relative/card"), None);
+    }
+
+    #[test]
+    fn a_logged_url_carries_no_key_and_no_login() {
+        assert_eq!(
+            loggable("https://user:pw@agent.example:8443/cards/a.json?key=SECRET"),
+            "https://agent.example:8443/cards/a.json"
+        );
+        assert_eq!(loggable("not a url \u{0} at all"), "(unparseable URL)");
     }
 
     #[test]

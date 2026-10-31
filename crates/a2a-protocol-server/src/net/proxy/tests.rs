@@ -191,9 +191,11 @@ fn userinfo_in_the_proxy_url_becomes_basic_proxy_authorization() {
 }
 
 /// What `tracing` recorded at `WARN`.
+#[cfg(all(feature = "tracing", feature = "otlp"))]
 #[derive(Clone, Default)]
 struct Warnings(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
 
+#[cfg(all(feature = "tracing", feature = "otlp"))]
 impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Warnings {
     fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
         struct MessageText(String);
@@ -215,6 +217,7 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Warnings {
 /// A proxy of a kind the export cannot use is named when the first connection
 /// is made, and not again: the warning is for the person who configured it,
 /// not one line per batch.
+#[cfg(all(feature = "tracing", feature = "otlp"))]
 #[test]
 fn an_unsupported_proxy_is_named_on_the_first_connection_and_only_then() {
     use tower_service::Service as _;

@@ -301,6 +301,14 @@ jobs:
       - name: Feature tables agree with the manifests
         run: python3 scripts/check_feature_tables.py
 
+      # The client and the server each dial out over HTTP and share no crate,
+      # so the proxy connector and the SSL_CERT_FILE loader are written twice.
+      # The server's push sender, JWKS client and model client had neither until
+      # 2026-10-31 (audit N-B-1), the client had both: a fix in one never
+      # reached the other. The functions the copies share stay identical.
+      - name: Client and server outbound-HTTP copies agree
+        run: python3 scripts/check_net_copies.py --self-test && python3 scripts/check_net_copies.py
+
       # Each SQL store feature compiles only its own driver (release audit
       # F25): `postgres` alone linked SQLite until 2026-10-18.
       - name: SQL store features link only their own driver

@@ -43,7 +43,7 @@ tracing = ["dep:tracing"]
 ## (`Server::with_tls`, `Server::with_tls_pem`; spec §14), and
 ## `auth::MutualTlsAuthInterceptor`, which names a caller from its client
 ## certificate (`ring`, already in the graph through rustls).
-tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots", "dep:ring"]
+tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots", "dep:ring", "dep:http", "dep:tower-service", "hyper-util/client-proxy"]
 ## Enable SQLite-backed task and push config stores via `sqlx`.
 sqlite = ["dep:sqlx", "sqlx/sqlite"]
 ## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.

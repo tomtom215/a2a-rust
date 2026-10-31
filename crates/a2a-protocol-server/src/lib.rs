@@ -145,8 +145,14 @@ pub mod store;
 pub mod streaming;
 pub mod tenant_config;
 pub mod tenant_resolver;
+// An error written with its causes, for the outbound HTTP callers.
+mod causes;
 #[cfg(feature = "tls-rustls")]
 mod tls;
+// Outbound HTTP shared by push delivery, JWKS and OIDC discovery, the tool
+// loop's model client and OTLP export: proxies, trusted roots, pool tuning.
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
+mod net;
 #[cfg(feature = "tool-loop")]
 pub mod tool_loop;
 pub mod url_guard;
