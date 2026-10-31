@@ -80,6 +80,15 @@ fn ring_provider() -> Arc<rustls::crypto::CryptoProvider> {
 
 /// Serves the given JWKS body over TLS on loopback.
 async fn start_https_jwks(certs: &TestCerts, jwks_body: String) -> std::net::SocketAddr {
+    start_https_by_path(certs, move |_, _| jwks_body.clone()).await
+}
+
+/// Serves over TLS on loopback whatever `answer(path, port)` returns for the
+/// request's path, `port` being the one this server listens on.
+async fn start_https_by_path(
+    certs: &TestCerts,
+    answer: impl Fn(&str, u16) -> String + Send + Sync + 'static,
+) -> std::net::SocketAddr {
     let server_config = rustls::ServerConfig::builder_with_provider(ring_provider())
         .with_safe_default_protocol_versions()
         .expect("ring provider supports default protocol versions")
@@ -93,6 +102,8 @@ async fn start_https_jwks(certs: &TestCerts, jwks_body: String) -> std::net::Soc
     let acceptor = TlsAcceptor::from(Arc::new(server_config));
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("local addr");
+    let port = addr.port();
+    let answer = Arc::new(answer);
 
     tokio::spawn(async move {
         loop {
@@ -100,14 +111,14 @@ async fn start_https_jwks(certs: &TestCerts, jwks_body: String) -> std::net::Soc
                 break;
             };
             let acceptor = acceptor.clone();
-            let jwks_body = jwks_body.clone();
+            let answer = Arc::clone(&answer);
             tokio::spawn(async move {
                 let Ok(tls_stream) = acceptor.accept(stream).await else {
                     return;
                 };
                 let io = TokioIo::new(tls_stream);
-                let service = service_fn(move |_req| {
-                    let body = jwks_body.clone();
+                let service = service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
+                    let body = answer(req.uri().path(), port);
                     async move {
                         Ok::<_, std::convert::Infallible>(
                             Response::builder()
@@ -204,4 +215,45 @@ async fn jwks_from_untrusted_certificate_fails_closed() {
         result.is_err(),
         "an untrusted JWKS endpoint must fail closed: {result:?}"
     );
+}
+
+/// OIDC discovery of an identity provider behind a private CA (audit B-04):
+/// refused with the cause named under the default roots, and discovered, keys
+/// and all, with the issuer's CA in `from_oidc_issuer_with_tls_config`. Until
+/// 2026-10-31 there was no way to discover such an issuer at all.
+#[tokio::test]
+async fn oidc_discovery_behind_a_private_ca_takes_the_tls_configuration() {
+    let certs = generate_test_certs("localhost");
+    let addr = start_https_by_path(&certs, |path, port| {
+        if path == "/.well-known/openid-configuration" {
+            serde_json::json!({
+                "issuer": format!("https://localhost:{port}"),
+                "jwks_uri": format!("https://localhost:{port}/jwks"),
+            })
+            .to_string()
+        } else {
+            jwks_json("rk1")
+        }
+    })
+    .await;
+    let issuer = format!("https://localhost:{}", addr.port());
+
+    let Err(refused) = JwtAuthInterceptor::from_oidc_issuer(&issuer, validator()).await else {
+        panic!("an issuer behind an unknown CA is refused");
+    };
+    assert!(
+        refused.message.contains("UnknownIssuer"),
+        "the refusal names its cause: {}",
+        refused.message
+    );
+
+    let interceptor = JwtAuthInterceptor::from_oidc_issuer_with_tls_config(
+        &issuer,
+        validator(),
+        client_config_trusting(&certs.ca_cert_der),
+    )
+    .await
+    .expect("discovered with the issuer's CA");
+    let ok = interceptor.before(&ctx_with_token(RS256_VALID)).await;
+    assert!(ok.is_ok(), "keys fetched through the same config: {ok:?}");
 }

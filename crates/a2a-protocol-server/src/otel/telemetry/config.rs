@@ -19,15 +19,9 @@ use std::time::Duration;
 
 use super::TelemetryError;
 
-/// Where variables come from: the process environment, or a test's table.
-pub(super) type Env = dyn Fn(&str) -> Option<String> + Send + Sync;
-
-/// The process environment, with an empty value read as unset — as the
-/// specification asks ("an empty value MUST be treated as if it were not
-/// set").
-pub(super) fn process_env(name: &str) -> Option<String> {
-    std::env::var(name).ok().filter(|v| !v.trim().is_empty())
-}
+// Where variables come from (the process environment, or a test's table) and
+// how the process environment is read; shared with the outbound clients.
+pub(super) use crate::net::proxy::{Env, process_env};
 
 /// One of the three signals.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

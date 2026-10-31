@@ -839,17 +839,16 @@ impl JwtAuthInterceptor {
     /// webpki-roots trust store cannot verify the JWKS endpoint.
     #[cfg(feature = "tls-rustls")]
     #[must_use]
+    // Takes the configuration by value, as `HttpPushSender::with_tls_config`
+    // does; the client it builds clones what it needs, and a public signature
+    // changed to a reference is a break.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn from_jwks_url_with_tls_config(
         validator: JwtValidator,
         jwks_url: impl Into<String>,
         tls_config: rustls::ClientConfig,
     ) -> Self {
-        let https = hyper_rustls::HttpsConnectorBuilder::new()
-            .with_tls_config(tls_config)
-            .https_or_http()
-            .enable_http1()
-            .enable_http2()
-            .build();
+        let client = crate::net::client::HttpsClient::new(&tls_config);
         let url = jwks_url.into();
         report_misconfiguration(&validator, Some(&url));
         Self {
@@ -861,7 +860,7 @@ impl JwtAuthInterceptor {
                 cache: RwLock::new(None),
                 last_attempt: std::sync::Mutex::new(None),
                 refresh_lock: tokio::sync::Mutex::new(()),
-                client: Client::builder(TokioExecutor::new()).build(https),
+                client,
             })),
         }
     }
@@ -882,19 +881,32 @@ impl JwtAuthInterceptor {
     /// Returns an [`A2aError`] when discovery fails, the document names
     /// another issuer or has no `jwks_uri`, or a URL is plaintext.
     pub async fn from_oidc_issuer(issuer: &str, validator: JwtValidator) -> A2aResult<Self> {
-        let (discovered, jwks_url) = discover(issuer).await?;
-        if !trustworthy_url(&jwks_url) {
-            return Err(A2aError::internal(format!(
-                "OIDC discovery for {issuer} names a plaintext jwks_uri ({jwks_url}); \
-                 keys must be fetched over https (http only to a loopback host)"
-            )));
-        }
-        let validator = if validator.issuers.is_empty() && !validator.any_issuer {
-            validator.with_issuer(discovered)
-        } else {
-            validator
-        };
+        let (discovered, jwks_url) = discover(&build_jwks_client(), issuer).await?;
+        let validator = bind_discovered(issuer, validator, discovered, &jwks_url)?;
         Ok(Self::from_jwks_url(validator, jwks_url))
+    }
+
+    /// Like [`from_oidc_issuer`](Self::from_oidc_issuer), verifying the
+    /// identity provider (the discovery document and then the keys) against
+    /// `tls_config` instead of the default roots: an issuer behind a private
+    /// CA, or one that wants a client certificate. Until 2026-10-31 such an
+    /// issuer could not be discovered at all (audit B-04).
+    ///
+    /// # Errors
+    ///
+    /// As [`from_oidc_issuer`](Self::from_oidc_issuer).
+    #[cfg(feature = "tls-rustls")]
+    pub async fn from_oidc_issuer_with_tls_config(
+        issuer: &str,
+        validator: JwtValidator,
+        tls_config: rustls::ClientConfig,
+    ) -> A2aResult<Self> {
+        let client = crate::net::client::HttpsClient::new(&tls_config);
+        let (discovered, jwks_url) = discover(&client, issuer).await?;
+        let validator = bind_discovered(issuer, validator, discovered, &jwks_url)?;
+        Ok(Self::from_jwks_url_with_tls_config(
+            validator, jwks_url, tls_config,
+        ))
     }
 
     /// Sets the remote-JWKS cache TTL. No-op for a static key set.
@@ -1098,8 +1110,11 @@ impl RemoteJwks {
 
 use http_body_util::Full;
 use hyper::body::Bytes;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::Client;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::connect::HttpConnector;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::rt::TokioExecutor;
 
 /// Total budget for one JWKS or OIDC-discovery fetch — headers **and** body.
@@ -1124,7 +1139,7 @@ const JWKS_FETCH_BUDGET: Duration = Duration::from_secs(30);
 #[cfg(not(feature = "tls-rustls"))]
 type JwksHttpClient = Client<HttpConnector, Full<Bytes>>;
 #[cfg(feature = "tls-rustls")]
-type JwksHttpClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;
+type JwksHttpClient = crate::net::client::HttpsClient;
 
 /// One function with the feature split *inside* it, not two `#[cfg]` twins.
 /// Under `--all-features` a `#[cfg(not(feature = "tls-rustls"))]` twin is
@@ -1140,22 +1155,9 @@ fn build_jwks_client() -> JwksHttpClient {
     }
     #[cfg(feature = "tls-rustls")]
     {
-        let mut roots = rustls::RootCertStore::empty();
-        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        let tls = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
-            rustls::crypto::ring::default_provider(),
-        ))
-        .with_safe_default_protocol_versions()
-        .expect("ring provider supports the default protocol versions")
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-        let https = hyper_rustls::HttpsConnectorBuilder::new()
-            .with_tls_config(tls)
-            .https_or_http()
-            .enable_http1()
-            .enable_http2()
-            .build();
-        Client::builder(TokioExecutor::new()).build(https)
+        // Mozilla's roots plus `SSL_CERT_FILE` and `SSL_CERT_DIR`, through the
+        // environment's proxy (audit N-B-1).
+        crate::net::client::HttpsClient::new(&crate::net::roots::default_tls_config())
     }
 }
 
@@ -1176,7 +1178,12 @@ async fn http_get_json(client: &JwksHttpClient, url: &str, what: &str) -> A2aRes
     let resp = tokio::time::timeout_at(deadline, client.request(req))
         .await
         .map_err(|_| A2aError::internal(format!("{what} request timed out")))?
-        .map_err(|e| A2aError::internal(format!("{what} request failed: {e}")))?;
+        .map_err(|e| {
+            A2aError::internal(format!(
+                "{what} request failed: {}",
+                crate::causes::with_causes(&e)
+            ))
+        })?;
 
     if !resp.status().is_success() {
         return Err(A2aError::internal(format!(
@@ -1213,7 +1220,7 @@ async fn http_get_json(client: &JwksHttpClient, url: &str, what: &str) -> A2aRes
 /// `issuer` (`OpenID` Connect Discovery 1.0 §4.3: it "MUST be identical"; a
 /// trailing `/` on either is ignored, as this SDK always has for the
 /// argument).
-async fn discover(issuer: &str) -> A2aResult<(String, String)> {
+async fn discover(client: &JwksHttpClient, issuer: &str) -> A2aResult<(String, String)> {
     #[derive(serde::Deserialize)]
     struct Discovery {
         issuer: Option<String>,
@@ -1228,8 +1235,7 @@ async fn discover(issuer: &str) -> A2aResult<(String, String)> {
         "{}/.well-known/openid-configuration",
         issuer.trim_end_matches('/')
     );
-    let client = build_jwks_client();
-    let body = http_get_json(&client, &url, "OIDC discovery").await?;
+    let body = http_get_json(client, &url, "OIDC discovery").await?;
     let doc: Discovery = serde_json::from_slice(&body)
         .map_err(|e| A2aError::internal(format!("OIDC discovery returned invalid JSON: {e}")))?;
     let named = doc
@@ -1244,6 +1250,28 @@ async fn discover(issuer: &str) -> A2aResult<(String, String)> {
         .jwks_uri
         .ok_or_else(|| A2aError::internal("OIDC discovery document has no jwks_uri"))?;
     Ok((named, jwks_uri))
+}
+
+/// The validator a discovery result gives: the `jwks_uri` checked to be
+/// fetchable safely, and a validator that names no issuer bound to the
+/// document's, the value its tokens carry (audit SEC-06).
+fn bind_discovered(
+    issuer: &str,
+    validator: JwtValidator,
+    discovered: String,
+    jwks_url: &str,
+) -> A2aResult<JwtValidator> {
+    if !trustworthy_url(jwks_url) {
+        return Err(A2aError::internal(format!(
+            "OIDC discovery for {issuer} names a plaintext jwks_uri ({jwks_url}); \
+             keys must be fetched over https (http only to a loopback host)"
+        )));
+    }
+    Ok(if validator.issuers.is_empty() && !validator.any_issuer {
+        validator.with_issuer(discovered)
+    } else {
+        validator
+    })
 }
 
 /// Whether keys may be fetched from `url`: `https://`, or `http://` to a

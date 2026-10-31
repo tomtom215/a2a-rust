@@ -106,6 +106,39 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   reverted). Run live through Squid 6 with the CLI on both bindings
   (`TCP_TUNNEL/200` in its access log). Without `tls-rustls` they connect
   directly.
+- **The server's push delivery, JWKS and OIDC discovery, and the tool
+  loop's model client go through the same proxy variables and trust
+  `SSL_CERT_FILE` and `SSL_CERT_DIR`** (audit N-B-1, found 2026-10-31 by
+  reading B-01 and B-02's "fixed" against the server crate: both had been
+  fixed in the client crate only). Behind a proxy or a private CA, webhooks
+  were never delivered, an identity provider could not be discovered and the
+  model could not be called, while telemetry flowed. They share one
+  connector now (`net`, lifted from the OTLP exporter's; the client crate
+  keeps a copy, and `scripts/check_net_copies.py` fails when the copies
+  differ). Idle connections are closed after 50 s (hyper's 90 s sat above a
+  60 s load balancer, audit N-B-3), a TCP connect is bounded at 10 s and kept
+  alive at 30 s (B-30). New: `JwtAuthInterceptor::from_oidc_issuer_with_tls_config`
+  (B-04) and `CardFetchOptions::with_tls_config`, honoured by the card
+  resolver and by `fetch_jwks` (B-03). A failed connect now says why
+  (`UnknownIssuer`, `Connection refused`) instead of `client error
+  (Connect)`. Shown failing before and passing after by
+  `tests/outbound_proxy_and_roots.rs` (an in-process `CONNECT` proxy and a
+  TLS receiver on a private CA, one test because it writes the process
+  environment: before, `push notification failed: client error (Connect)`),
+  `tests/jwks_https_e2e.rs`, `tests/push_sender_https_e2e.rs` and the
+  client's `tests/private_ca.rs`. Not run: through Squid; the in-process
+  proxy answers the same `CONNECT` and forward requests the client's live
+  Squid 6.13 run exercised. Behind a proxy the proxy resolves an `https://`
+  webhook's name, so the SSRF screen does not bind what it dials: the book
+  says to enforce egress in the proxy.
+- **A card URL's login and key no longer reach the log** (client; audit
+  N-C-1, C-11 was half fixed). The INFO lines that announce a card fetch
+  logged the URL whole; they log it as the fetch's span records it (no
+  userinfo, no query). The request itself carries no userinfo either: hyper's
+  pool logged `ada:PASSWORD@host:port` as its key at trace level.
+  `tests/card_fetch_log_redaction.rs` fails on both. The default
+  `rustls` configuration is built once per process, not on every card, JWKS
+  and token fetch (N-B-6).
 - **`TaskStore::health()`** (server; provided method): what readiness asks.
   The SQL stores answer with one statement whose cost does not grow with the
   table (`SELECT pg_is_in_recovery()`, `SELECT 1`), and a PostgreSQL standby

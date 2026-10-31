@@ -98,7 +98,13 @@ fn ring_provider() -> Arc<CryptoProvider> {
 /// function is infallible.
 #[must_use]
 pub fn default_tls_config() -> ClientConfig {
-    config_with_roots(root_cert_store())
+    // Built once per process: the roots are (`SSL_CERT_FILE` is read once),
+    // and the card, JWKS and token fetches each asked for a fresh config,
+    // about 150 certificates extended into a new store, per call (audit
+    // N-B-6). A `ClientConfig` clones by reference counting.
+    static DEFAULT: std::sync::LazyLock<ClientConfig> =
+        std::sync::LazyLock::new(|| config_with_roots(root_cert_store()));
+    DEFAULT.clone()
 }
 
 /// Builds a [`ClientConfig`] with extra CA certificates added to the

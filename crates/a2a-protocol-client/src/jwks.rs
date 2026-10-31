@@ -70,11 +70,11 @@ pub async fn fetch_jwks(url: &str, options: &CardFetchOptions) -> ClientResult<J
             .build::<_, Full<Bytes>>(connector)
     };
     #[cfg(feature = "tls-rustls")]
-    let client = crate::tls::build_https_client();
+    let client = options.https_client();
 
     let mut builder = hyper::Request::builder()
         .method(hyper::Method::GET)
-        .uri(url)
+        .uri(crate::redact::without_userinfo(url))
         .header(header::ACCEPT, "application/jwk-set+json, application/json");
     for (name, value) in options.headers() {
         builder = builder.header(name.as_str(), value.as_str());

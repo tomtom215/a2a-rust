@@ -14,6 +14,28 @@ The built-in `HttpPushSender` includes:
 - **Header injection prevention** — Validates credentials contain no `\r` or `\n`
 - **HTTPS only, if you ask** — `HttpPushSender::new().https_only()` refuses an `http://` webhook (spec §13.2: webhook URLs SHOULD use HTTPS). A push config with one is refused at creation with `InvalidParams`, and a delivery to one is refused before connecting. Off by default.
 
+## Behind a proxy or a private CA
+
+`HttpPushSender` follows the environment a container or a corporate network
+sets, with no code: `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and `NO_PROXY`
+(upper or lower case; curl's `NO_PROXY` rules) choose the way out, and
+`SSL_CERT_FILE` and `SSL_CERT_DIR` add roots to Mozilla's, which is how a
+webhook behind a private CA is trusted. An `https://` webhook is reached over
+an `HTTP CONNECT` tunnel with TLS inside it; an `http://` one is a forward
+request, with `Proxy-Authorization` from the proxy URL's login. Until
+2026-10-31 none of this applied to push delivery (only telemetry read the
+proxy variables), so behind a proxy webhooks were never delivered and the log
+said only `client error (Connect)`; the log now names the cause.
+
+**The proxy resolves the name, so make it enforce egress.** The SSRF screen
+above resolves the webhook's host in this process and refuses a private
+answer, and for `http://` pins the checked address into the request. Through
+a proxy an `https://` webhook is a `CONNECT host:port`, and it is the proxy
+that resolves `host`: the screen checked one answer, the proxy may dial
+another. Deny private, loopback and link-local ranges (and the cloud metadata
+address) in the proxy's own policy, and use `NO_PROXY` for the hosts that must
+be reached directly.
+
 ## Retries and time limits
 
 <figure class="diagram">

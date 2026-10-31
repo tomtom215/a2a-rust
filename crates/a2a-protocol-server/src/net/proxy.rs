@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
-//! HTTP proxies for OTLP export: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and
-//! `NO_PROXY`, as curl, Go's `net/http` and reqwest read them.
+//! HTTP proxies for every outbound HTTP client of this crate: OTLP export,
+//! push-notification delivery, JWKS and OIDC discovery, and the model client of
+//! the tool loop. `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`, as
+//! curl, Go's `net/http` and reqwest read them.
 //!
-//! The export client dialled every collector directly and ignored all four.
-//! Measured 2026-10-26 against `hello-agent`: with `HTTP_PROXY` set and an
-//! endpoint only the proxy could resolve, the proxy received nothing. In a
+//! The OTLP export client dialled every collector directly and ignored all
+//! four. Measured 2026-10-26 against `hello-agent`: with `HTTP_PROXY` set and
+//! an endpoint only the proxy could resolve, the proxy received nothing. In a
 //! network whose only way out is a proxy, telemetry exported nothing and said
-//! nothing.
+//! nothing. The other outbound clients (push delivery, JWKS, the model) had
+//! the same fault until 2026-10-31 (audit N-B-1): they now share this
+//! connector. The client crate carries a copy of it (`a2a-protocol-client`'s
+//! `proxy.rs`), because the two crates share no dependency that could hold it;
+//! `scripts/check_net_copies.py` fails when the copies' shared functions differ.
 //!
 //! The rules are `hyper-util`'s [`Matcher`] (curl's `NO_PROXY` semantics:
 //! comma-separated hosts, domain suffixes, CIDR ranges, `*`), fed from the
@@ -41,13 +47,25 @@ use hyper_util::rt::TokioIo;
 use pin_project_lite::pin_project;
 use tokio::net::TcpStream;
 
-use super::config::Env;
+/// Where variables come from: the process environment, or a test's table.
+pub type Env = dyn Fn(&str) -> Option<String> + Send + Sync;
+
+/// The process environment, with an empty value read as unset — as the
+/// OpenTelemetry specification asks ("an empty value MUST be treated as if it
+/// were not set").
+pub fn process_env(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|v| !v.trim().is_empty())
+}
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// Where the proxy rules come from.
+///
+/// `Url` and `Off` are set only by the OTLP builder (`with_proxy_url`,
+/// `without_proxy`); the other outbound clients read the environment.
 #[derive(Clone, Debug, Default)]
-pub(super) enum ProxySetting {
+#[cfg_attr(not(feature = "otlp"), allow(dead_code))]
+pub enum ProxySetting {
     /// `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, in either case.
     #[default]
     Environment,
@@ -84,7 +102,7 @@ fn unbracketed(no_proxy: &str) -> String {
 }
 
 /// The rules `setting` and `env` give.
-pub(super) fn matcher(env: &Env, setting: &ProxySetting) -> Matcher {
+pub fn matcher(env: &Env, setting: &ProxySetting) -> Matcher {
     // CGI: a request header can set `HTTP_PROXY` there (httpoxy), so, like
     // curl and hyper-util's own `from_env`, no proxy is used.
     if env("REQUEST_METHOD").is_some() {
@@ -104,7 +122,7 @@ pub(super) fn matcher(env: &Env, setting: &ProxySetting) -> Matcher {
 
 /// The proxy that carries a request to `dst`, if one applies and is an
 /// `http://` proxy, the only kind this module speaks.
-pub(super) fn intercept(rules: &Matcher, dst: &http::Uri) -> Option<Intercept> {
+pub fn intercept(rules: &Matcher, dst: &http::Uri) -> Option<Intercept> {
     rules
         .intercept(dst)
         .filter(|i| i.uri().scheme_str() == Some("http"))
@@ -123,7 +141,7 @@ pin_project! {
     /// through a CONNECT tunnel (`Stream`, TLS where the scheme says so), or
     /// plain HTTP to a forward proxy (`Forwarded`).
     #[project = ConnProj]
-    pub(super) enum Conn {
+    pub enum Conn {
         Stream { #[pin] inner: hyper_rustls::MaybeHttpsStream<TokioIo<TcpStream>> },
         Forwarded { #[pin] inner: TokioIo<TcpStream> },
     }
@@ -179,10 +197,10 @@ impl Write for Conn {
     }
 }
 
-/// A connector for the OTLP/HTTP client that sends each destination straight
-/// or through the proxy the rules name for it.
+/// A connector for an HTTP client that sends each destination straight or
+/// through the proxy the rules name for it.
 #[derive(Clone)]
-pub(super) struct ProxyConnector {
+pub struct ProxyConnector {
     tls: rustls::ClientConfig,
     direct: hyper_rustls::HttpsConnector<HttpConnector>,
     tcp: HttpConnector,
@@ -191,15 +209,26 @@ pub(super) struct ProxyConnector {
 }
 
 impl ProxyConnector {
-    pub(super) fn new(tls: &rustls::ClientConfig, rules: Arc<Matcher>) -> Self {
+    #[cfg_attr(not(feature = "otlp"), allow(dead_code))]
+    pub fn new(tls: &rustls::ClientConfig, rules: Arc<Matcher>) -> Self {
+        Self::with_tcp(tls, rules, HttpConnector::new())
+    }
+
+    /// As [`new`](Self::new), dialling TCP with `tcp`, already tuned (connect
+    /// timeout, keepalive, `TCP_NODELAY`). The connector is told to accept
+    /// `https://` destinations, which the TLS layer above it handles.
+    pub fn with_tcp(
+        tls: &rustls::ClientConfig,
+        rules: Arc<Matcher>,
+        mut tcp: HttpConnector,
+    ) -> Self {
+        tcp.enforce_http(false);
         let direct = hyper_rustls::HttpsConnectorBuilder::new()
             .with_tls_config(tls.clone())
             .https_or_http()
             .enable_http1()
             .enable_http2()
-            .build();
-        let mut tcp = HttpConnector::new();
-        tcp.enforce_http(false);
+            .wrap_connector(tcp.clone());
         Self {
             tls: tls.clone(),
             direct,
@@ -225,7 +254,7 @@ impl ProxyConnector {
 
 /// A `CONNECT` tunnel through `proxy`, authenticated when its URL carried a
 /// user.
-pub(super) fn tunnel(proxy: &Intercept, tcp: HttpConnector) -> Tunnel<HttpConnector> {
+pub fn tunnel(proxy: &Intercept, tcp: HttpConnector) -> Tunnel<HttpConnector> {
     let tunnel = Tunnel::new(proxy.uri().clone(), tcp);
     match proxy.basic_auth() {
         Some(auth) => tunnel.with_auth(auth.clone()),
@@ -250,12 +279,12 @@ impl tower_service::Service<http::Uri> for ProxyConnector {
         let https = dst.scheme_str() == Some("https");
         match (intercept(&self.rules, &dst), https) {
             (None, _) => {
-                if let Some(scheme) = unsupported(&self.rules, &dst)
+                if let Some(_scheme) = unsupported(&self.rules, &dst)
                     && !self.said_unsupported.swap(true, Ordering::Relaxed)
                 {
-                    tracing::warn!(
-                        "OTLP export: the proxy for {dst} is `{scheme}://`, which is not \
-                         supported (only `http://` proxies are); exporting directly"
+                    trace_warn!(
+                        "the proxy for {dst} is `{_scheme}://`, which is not supported \
+                         (only `http://` proxies are); connecting directly"
                     );
                 }
                 let mut direct = self.direct.clone();
