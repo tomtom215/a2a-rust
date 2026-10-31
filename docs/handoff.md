@@ -19,30 +19,47 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-- **Branch `claude/amazing-turing-y8pjhv` (2026-10-29), from `main` at
-  `8dc4331`: a pre-release audit, not a release.** The maintainer asked for
-  every remaining gap to be found and fixed before 0.15.1 or later, with live
-  runs against llama.cpp and small Qwen and Gemma models.
-  - **The task list is `docs/audits/2026-10-29/README.md`**: eight
-    read-only reviews (reports A to H beside it) plus findings from live runs
-    (section L), and four low findings from re-reading this branch's own
-    fixes (section M). Its `Status` column is the only record of what was checked;
-    count it rather than trusting a figure here. At this commit, 226 rows:
-    149 `open`, 4 `confirmed (read)`, 59 `fixed`, 4 `fixed (part)`, 7
-    `verified live`, 1 refuted, 2 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
-    including a "Breaking Changes" section.
-  - **Not release-ready.** L5 (no token streaming in the tool loop) was
-    built as the maintainer chose on 2026-10-30: a draft artifact per turn
-    (`ToolLoopExecutor::with_drafts`), the `answer` artifact sent whole at
-    the end as before. 149 rows stay `open`. By the list's own labels: 3 S0
-    (H2, H3, H4), 9 S1 (H5 to H11, H13, H19), 1 high (B-03), 52 medium,
-    5 S2, 5 low to medium, 69 low and 5 info. **This handoff said "every
-    row judged release-relevant is fixed" until 2026-10-30; that was not
-    checked and is withdrawn.** Some open rows are likely stale (H2's
-    private CA and mTLS look covered by `TlsConfig::Custom`, H3's orphaned
-    `working` tasks by the turn-claim reaper), some are real (H4, the S1
-    designs), and none has been re-checked against the code since its
-    report was written.
+- **Branch `claude/jolly-wozniak-zc1vbe` (2026-10-31), from `main` at
+  `a0e6673` (pull request #184 merged): the 149 open audit rows are
+  triaged. No fix from them is built, and nothing here is release-ready.**
+  The maintainer asked for every gap found, fixed and tested live (llama.cpp
+  with Qwen and Gemma) before 0.16.0 is published.
+  - **The task list is `docs/audits/2026-10-29/README.md`.** Its `Status`
+    column and note now hold each row's triage, section N lists 68 findings
+    the triage itself made, and the evidence is in
+    `docs/audits/2026-10-29/triage/`: one report per group, `S0.md` (H2 to
+    H4, with the runs), `DECISIONS.md` (every choice the maintainer has to
+    make) and `PLAN.md` (eleven themed pull requests). Count the table rather
+    than trusting a figure here; it has 294 rows at this commit.
+  - **Result.** Of the 149 rows that were `open`: 94 confirmed by reading and
+    1 by running (SEC-12), 37 need a decision, 9 are partly fixed (H2, H3,
+    A15, B-04, B-15, B-18, D-21, G-20, G/D-05), 2 are fixed (E-F11, the same
+    finding as A11, and G/D-01), 3 are not defects (C-20, D-24, D-25), 2 are
+    duplicates (B-22 and D-13, of SEC-12), 1 cannot be checked here (C-18).
+    Five rows that were `fixed` are now `fixed (part)` (B-01, B-02, B-07,
+    C-11, G-01): the server's own outbound paths (push sender, JWKS and OIDC
+    discovery, the OpenAI model client) still ignore `HTTPS_PROXY`,
+    `NO_PROXY` and `SSL_CERT_FILE`, and keep a 90 s pool idle timeout (N-B-1,
+    N-B-3). Of the 68 new findings, 62 are confirmed by reading, 1 by running,
+    and 5 are suspicions.
+  - **How far to trust it.** Nine read-only agents each took one report's
+    rows and were told to try to refute each finding first; every verdict is
+    that reader's reading. The lead ran or re-read: H2 (`tests/private_ca.rs`
+    4 of 4, and 2 of 4 fail with the TLS wiring mutated), H3 (the reaper:
+    3 SQLite and 2 PostgreSQL 16.15 tests pass, all 5 fail with
+    `Reaper::look` a no-op), SEC-12 and N-SEC-1 (`check_public_url` run on 12
+    URLs), and the new findings marked `†`. Everything else is not
+    re-checked. On this commit `live-model` passes 11 of 11 against
+    Qwen3.5-2B (debug build, llama.cpp `0ec4027`).
+  - **Not release-ready, and not claimed to be.** Of the S0 rows, H2 is half
+    fixed (no shared pool), H3 half (a leaked lease row), and H4 is open and
+    needs the maintainer's choice. Worst new findings: N-B-1 (the server
+    cannot use a proxy or a private CA for push, OIDC or its model client);
+    SEC-12 with N-SEC-1 (the SSRF host check accepts `http://169.254.169.254./`
+    and the reserved ranges); SEC-14 with N-SEC-6 (no cap on concurrent
+    webhook deliveries); N-E-2 (a task the reaper ends has no audit record);
+    C-07 and C-09 (stderr diagnostics vanish under `OTEL_SDK_DISABLED`;
+    abandoned streams page as server errors).
   - **How #184 was verified, the bar for what follows.** Before a push:
     `scripts/preflight.sh --force`; every script gate (the list is in the
     workflow's Static checks job); `cargo hack clippy -p a2a-protocol-types
@@ -60,7 +77,7 @@ only: when something here is done, delete it rather than annotating it.
     test, restore) and let CI's run be the full one. macOS and Windows
     cannot be run here; CI is their check.
   - **Pull request [#184](https://github.com/tomtom215/a2a-rust/pull/184)**
-    (2026-10-30). The workspace reads **0.16.0**, bumped there at the
+    (merged 2026-10-30 as `a0e6673`). The workspace reads **0.16.0**, bumped there at the
     maintainer's choice because `cargo-semver-checks` blocks the branch's
     deliberate breaks under 0.15.x (0.15.1 was prepared, never published:
     crates.io has 0.15.0). It is a version bump, not a release: no tag,
@@ -92,22 +109,24 @@ only: when something here is done, delete it rather than annotating it.
   - **Not yet run live:** the client dashboard with a
     long-lived client (L11: short-lived CLI processes never export); the
     `deploy-agent` Dockerfile's build stages (its runtime stage ran, L18).
-  - **First, next session (plan agreed with the maintainer 2026-10-30),
-    once #184 is green and merged:**
-    1. **Triage, no code.** Re-check every `open` row against the code on
-       `main`: read it, or run it where it is a behaviour. Mark each
-       `fixed` (with the commit), `confirmed (read)` or `verified live`
-       (still real), `not a defect`, or `needs decision` (a design the
-       maintainer chooses, as L5 was). Start with the S0, S1 and high rows
-       above, then the rest by severity. Correct the count here.
-    2. **Fix in themed pull requests**, each held to the bar above before
-       its first push: docs and READMEs (report G's 33 rows, mostly
-       cheap), then client, then stores, then the remaining SEC rows.
-    3. **The H-report designs** (retry budget and circuit breaker,
-       admission queue and fairness, task lineage and tree-scoped halt,
-       per-tenant metrics, polyglot swarm controls) each need an ADR and
-       the maintainer's choice before they are built; set out the options
-       for each, as was done for L5, rather than building one.
+  - **First, next session:**
+    1. **Ask the maintainer** `triage/DECISIONS.md` section 1 (X-1 to X-5):
+       the breaking batch for 0.16.0, delegation resume (H4), a shared HTTP
+       pool, how the fixes are delivered (one pushed branch per theme needs
+       the maintainer's permission; a session may push only its designated
+       branch), and what the release metadata says until the tag. Agent
+       Skills and A2A `v1.1.0-rc` are X-6 and X-7.
+    2. **Fix in the order of `triage/PLAN.md`**, each pull request held to
+       the bar above before its first push: server outbound network (1),
+       SSRF and push limits (2), credentials (3), replicas and stores (4),
+       observability (5), client resilience (6), docs and release metadata
+       (7), deploy assets (8), limits and defaults (9), the breaking API
+       batch (10). The swarm designs (11) each need an ADR and the
+       maintainer's choice first.
+    3. **Installed this session, lost with the container:** the pinned,
+       patched `cargo-mutants` 27.1.0 and `cargo-nextest` 0.9.146
+       (`scripts/install_cargo_mutants.sh`). Not installed: `cargo-hack`,
+       `cargo-semver-checks`, `cargo-deny`, `promtool`.
 - **Branch `claude/intelligent-bohr-9qraxk` (2026-10-28), on `main` at
   `568fc6c1` (pull request #182, the 0.15.1 preparation, merged; no tag).**
   The maintainer judged 0.15.0 not ready in practice and asked for everything
@@ -1078,6 +1097,18 @@ into this file: the commit that records it changes it.
   replay is host-dependent: the same binary and seed gave different
   answers on a 2.10 GHz and a 2.80 GHz host (`GGML_NATIVE`), which is
   what the study's uptime gap turned out to be.
+- **Models and llama.cpp, 2026-10-31.** `git clone --depth 1` of llama.cpp
+  (HEAD `0ec4027`, which prints `version: 0.8.0-dev (build 1, ...)`) built
+  `llama-server` in about four minutes with `nice cmake --build ... -j3`
+  while other work ran; github.com's web pages answer 403 through the proxy
+  but `git clone` works. The smallest current models that fit four CPUs and
+  15 GB are Qwen3.5 2B and 4B and Gemma 4 E2B and E4B: Qwen3.6 exists only as
+  27B and 35B-A3B. Checked against the API's `lfs.oid` (full SHA-256):
+  `unsloth/Qwen3.5-2B-GGUF` `Qwen3.5-2B-Q4_K_M.gguf` `aaf42c8b…9223` and
+  `ggml-org/gemma-4-E2B-it-GGUF` `gemma-4-E2B-it-Q4_0.gguf` `8e30dff3…6a52`,
+  the same files as 2026-10-28. `llama-server -m <gguf> --port 11434 --host
+  127.0.0.1 --jinja -c 8192 -np 2 -t 2` was healthy in 5 s and answered a
+  capped, no-thinking request.
 - **A local OTLP collector breaks one test:**
   `otel_pipeline_default_endpoint` expects its flush to the default
   endpoint to fail, and fails whenever something listens on 4317. Stop the
@@ -1146,6 +1177,14 @@ into this file: the commit that records it changes it.
 - A `compile_fail` doctest needs a control that compiles.
 - A re-run after a fix must cover the binary that failed, not only the files
   edited.
+- A `( cmd ) &` inside a Bash call started with `run_in_background` ends the
+  wrapper at once, so its completion notice is not the command's: poll the
+  log for the child's own exit line (2026-10-31).
+- A triage agent's finding is a claim: of about a dozen the lead re-checked
+  by running or grepping (a trailing-dot SSRF bypass, the server's missing
+  proxy support, a stale `/ready` page, a trait doc that promises an override
+  no store has), every one held, and one agent's "no official TCK exists" was
+  a gap in its search. Spot-check the sharpest claims; do not copy the rest.
 - An independent review before committing found two defects in R69 that the
   change's own tests and 23 hand mutants did not; budget for one on any
   change to the stream or store contract. It did again on 2026-10-23: a
