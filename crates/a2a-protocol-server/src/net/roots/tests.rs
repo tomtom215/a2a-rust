@@ -105,6 +105,17 @@ fn a_directory_is_read_in_name_order_and_non_pem_files_are_skipped() {
 }
 
 #[test]
+fn an_empty_entry_in_the_list_is_ignored() {
+    let dir = scratch("emptyentry");
+    let good = dir.join("good.pem");
+    std::fs::write(&good, pem_for("good.test")).unwrap();
+    // `good.pem::` and `::good.pem` are legal lists, as in `PATH`.
+    let list = std::env::join_paths([&good, &PathBuf::new(), &good]).unwrap();
+    assert_eq!(read_env_roots(Some(&list), None).len(), 2);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn an_unreadable_directory_is_skipped() {
     let dir = scratch("nodir");
     let gone = dir.join("gone");
