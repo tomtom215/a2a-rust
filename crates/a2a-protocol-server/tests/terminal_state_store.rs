@@ -461,6 +461,18 @@ mod postgres {
     /// the store is unhealthy.
     #[tokio::test]
     #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_health_fails_once_the_database_is_gone() {
+        let db = TestDb::create("health").await;
+        let store = PostgresTaskStore::new(&db.url()).await.expect("store");
+        assert!(store.health().await.is_ok());
+        db.drop_db().await;
+        assert!(store.health().await.is_err());
+    }
+
+    /// `health` asks the database: once it is dropped under a live store,
+    /// the store is unhealthy.
+    #[tokio::test]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
     async fn tenant_postgres_health_fails_once_the_database_is_gone() {
         let db = TestDb::create("tenant_health").await;
         let store = TenantAwarePostgresTaskStore::new(&db.url())
