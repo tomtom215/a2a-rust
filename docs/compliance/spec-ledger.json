@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:11367 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:11390 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -7672,7 +7672,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/tenant_resolver.rs:92 TenantResolver",
+    "crates/a2a-protocol-server/src/tenant_resolver.rs:94 TenantResolver",
     "crates/a2a-protocol-server/src/call_context.rs:113 CallContext"
    ],
    "test_evidence": [
@@ -7784,7 +7784,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/deployment/multi-tenancy.md:12 \"Tenant identity has to come from somewhere trustworthy\"",
-    "crates/a2a-protocol-server/src/tenant_resolver.rs:92 TenantResolver"
+    "crates/a2a-protocol-server/src/tenant_resolver.rs:94 TenantResolver"
    ],
    "test_evidence": [],
    "notes": "Deployment documentation duty; the SDK documents its own (tenant-only) model in tenant_resolver.rs module docs and book/src/deployment/multi-tenancy.md. Re-examined 2026-10-18, kept: the spec leaves the authorization model to each agent. The SDK documents the model it enforces by default, caller isolation within a tenant (book/src/deployment/multi-tenancy.md); the earlier wording 'tenant-only' was stale. Re-verified against the code 2026-10-20 (ledger audit): the caller-isolation model is documented in book/src/deployment/multi-tenancy.md, now the first citation.",
