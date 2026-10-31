@@ -133,7 +133,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `requests_per_window` | `u64` | 100 | Max requests per caller per window |
 | `window_secs` | `u64` | 60 | Window duration in seconds |
 | `trusted_proxy_hops` | `usize` | 0 | How many `X-Forwarded-For` hops to trust (0 = ignore XFF entirely) |
-| `trusted_proxies` | `Vec<TrustedProxy>` | empty | Address ranges the proxies connect from; when set, XFF is believed only from a peer in one (no effect while `trusted_proxy_hops` is 0) |
+| `trusted_proxies` | `Vec<TrustedProxy>` | `[]` | Address ranges the proxies connect from; when set, XFF is believed only from a peer in one (no effect while `trusted_proxy_hops` is 0) |
 | `max_buckets` | `usize` | 10,000 | Hard bound on tracked caller buckets (fail-closed when full) |
 
 ### ServeConfig
