@@ -66,16 +66,31 @@ fn behind_trusted_proxy(ctx: &CallContext, hops: usize, trusted: &[TrustedProxy]
 /// `/64`. A single host is routinely given a whole `/64`, so keying by the
 /// full address would let it mint 2^64 buckets, and fill the bounded bucket
 /// map against everyone else, from one machine. A value that is not an
-/// address is returned unchanged.
+/// address is returned unchanged, and so is an address in the discard-only
+/// block `100::/64` ([`is_discard_only`]).
 pub fn network_of(canonical: &str) -> String {
     match canonical.parse::<std::net::IpAddr>() {
-        Ok(std::net::IpAddr::V6(v6)) => {
+        Ok(std::net::IpAddr::V6(v6)) if !is_discard_only(v6) => {
             let s = v6.segments();
             let net = std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0);
             format!("{net}/64")
         }
         _ => canonical.to_owned(),
     }
+}
+
+/// Whether `ip` is in `100::/64`, the IPv6 discard-only block (RFC 6666).
+///
+/// Nothing routes there, so an address in it is never a host. A binding with
+/// no IP address of its own to offer (the SLIMRPC binding's verified peers)
+/// puts one there to stand for a peer, with the peer's identity in the
+/// interface id, which is the low 64 bits. Aggregating those by `/64` would
+/// make every such peer one key, and one peer's failed logins would lock out
+/// all the others (found by that binding's tests, after the `/64` keying of
+/// the auth throttle, audit N-B-2).
+const fn is_discard_only(ip: std::net::Ipv6Addr) -> bool {
+    let s = ip.segments();
+    s[0] == 0x0100 && s[1] == 0 && s[2] == 0 && s[3] == 0
 }
 
 /// The client address `hops` trusted reverse proxies appended to

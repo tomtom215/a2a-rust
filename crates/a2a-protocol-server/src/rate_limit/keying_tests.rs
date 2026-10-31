@@ -193,3 +193,22 @@ fn a_port_in_a_forwarded_entry_does_not_make_a_new_key() {
     assert_eq!(key("[2001:db8::1]:443"), v6);
     assert_eq!(key("[2001:db8::1]"), v6);
 }
+
+/// The SLIMRPC binding stands for each verified peer with an address in
+/// `100::/64` (RFC 6666, discard-only) whose low 64 bits are a hash of the
+/// peer. `/64` keying must not fold those into one key, or one peer's failures
+/// lock out the rest; every neighbouring block is still an ordinary host range.
+#[test]
+fn the_discard_only_block_keeps_its_addresses_apart_and_its_neighbours_are_aggregated() {
+    use super::identity::network_of;
+    assert_eq!(network_of("100::1"), "100::1");
+    assert_eq!(network_of("100::ffff:1"), "100::ffff:1");
+    assert_ne!(network_of("100::1"), network_of("100::2"));
+    // One segment off in each of the four network segments is a real range.
+    assert_eq!(network_of("100:0:0:1::5"), "100:0:0:1::/64");
+    assert_eq!(network_of("100:0:0:1::5"), network_of("100:0:0:1::6"));
+    assert_eq!(network_of("100:0:1::1"), "100:0:1::/64");
+    assert_eq!(network_of("100:1::1"), "100:1::/64");
+    assert_eq!(network_of("101::1"), "101::/64");
+    assert_eq!(network_of("0::1"), "::/64");
+}

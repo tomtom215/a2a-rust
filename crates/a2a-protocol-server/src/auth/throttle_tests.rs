@@ -324,3 +324,20 @@ fn a_forged_forwarded_header_from_outside_the_trusted_ranges_counts_the_connecti
         "a client a trusted proxy names is counted as that client"
     );
 }
+
+/// The SLIMRPC binding's peers are addresses in `100::/64`, one per verified
+/// identity: each is its own peer to the throttle, not one `/64`.
+#[test]
+fn peers_that_adapters_stand_for_in_the_discard_only_block_are_counted_apart() {
+    set_now(6_000);
+    let throttle = throttle(1);
+    fail(&throttle, &from("[100::1]:0"));
+    assert!(
+        refused(&throttle, &from("[100::1]:0")),
+        "the first peer reached the limit"
+    );
+    assert!(
+        !refused(&throttle, &from("[100::2]:0")),
+        "another peer in the block is not that peer"
+    );
+}

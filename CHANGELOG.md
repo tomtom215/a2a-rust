@@ -431,7 +431,14 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   proxy that records the source port minted a bucket, and filled the bounded
   table. `AuthFailureThrottle` counted the full IPv6 address while the limiter
   used the `/64`, so a host rotating addresses in its `/64` never reached
-  `max_failures`; both use the `/64` now (an IPv4 client is unchanged).
+  `max_failures`; both use the `/64` now (an IPv4 client is unchanged),
+  except an address in `100::/64` (RFC 6666, discard-only: never a host),
+  which is kept whole. The SLIMRPC binding stands for each verified peer with
+  such an address, one per identity; folded by `/64` they were one peer, and
+  one peer's failed logins locked out all the others. CI's SLIMRPC job and its
+  coverage job caught that
+  (`server::peer::tests::the_throttle_keys_a_verified_peer_by_its_address`);
+  this repository's local gates did not build the binding.
   Not done: RFC 7239 `Forwarded` (B-09 (d)). Tests in
   `rate_limit/keying_tests.rs`, `rate_limit/trusted/tests.rs` and
   `auth/throttle_tests.rs`.
