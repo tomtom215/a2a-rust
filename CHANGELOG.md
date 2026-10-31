@@ -1033,6 +1033,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Internal
 
+- ADRs 0031 to 0034, proposed, with nothing built: finding agents beyond one
+  link (a static list, unicast DNS-SD, Kubernetes DNS SRV and the Kubernetes
+  API behind one `AgentSource` interface), an opt-in shared `HttpPool`,
+  group delegation for fan-out, and task lineage with a halt by root. Each
+  names the test that would settle it and its open questions. Audit H2, H6,
+  H8, H10 and H12 point at them.
 - OSV GHSA-qwgh-2vcv-g2f7 (`block-buffer` < 0.12.1, a caught panic leaves
   the cursor stored in the block invalid) is waived until 2027-01-29 in the
   `osv-scanner.toml` beside the four lockfiles that lock 0.10.4 (root,
