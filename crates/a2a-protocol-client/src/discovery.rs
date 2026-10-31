@@ -156,7 +156,7 @@ impl CardFetchOptions {
     /// [`default_tls_config`](crate::tls::default_tls_config) trusts: an agent
     /// behind a private CA, or one that asks for a client certificate
     /// ([`tls_config_from_pem`](crate::tls::tls_config_from_pem) builds one
-    /// from PEM). [`fetch_jwks`](crate::jwks::fetch_jwks) honours it too, so
+    /// from PEM). `jwks::fetch_jwks` (feature `signing`) honours it too, so
     /// the key server a signed card's keys come from can be private as well.
     ///
     /// Until 2026-10-31 the card resolver and the JWK Set fetch had no TLS
