@@ -85,9 +85,14 @@ docker run --rm -p 8080:8080 --network a2a-observability_default \
 
 ```bash
 kubectl create secret generic deploy-agent-db \
-  --from-literal=url='postgres://USER:PASSWORD@HOST:5432/DB'
+  --from-literal=url='postgres://USER:PASSWORD@HOST:5432/DB?sslmode=verify-full&sslrootcert=/path/ca.pem'
 kubectl apply -f examples/deploy-agent/deployment.yaml
 ```
+
+Keep the `sslmode` in that URL. The driver's default, `prefer`, falls back to
+plaintext and does not check who answered; `verify-full` checks the server's
+certificate and name. `sslrootcert` is the CA file as the pod sees it, so mount
+it there.
 
 Three edits first:
 

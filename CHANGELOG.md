@@ -570,6 +570,18 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **The `deploy-agent` example logged a password given in the database URL's
+  query, and two of its Secret recipes omitted `sslmode`** (examples; audits
+  N-AL-1, N-AL-2). The driver accepts `?user=u&password=p`, a form with no
+  `@`, so the redaction found nothing to mask and the URL went to the log in
+  full at INFO (and into the error strings); it now masks a `password`
+  parameter whatever its case, and an `@` inside a query value no longer
+  moves the user info. The README's and the container page's `kubectl create
+  secret` lines now carry `sslmode=verify-full&sslrootcert=...` as the
+  manifest's comment and the example page already did: the driver's default,
+  `prefer` (checked in `sqlx-postgres` 0.9.0's `PgSslMode`), falls back to
+  plaintext and verifies nothing. Five hand edits of `redacted` each fail a
+  test (`a_password_in_the_query_is_not_logged_either`).
 - **`JwtAuthInterceptor` accepted a token whose header lists `crit`, and
   `a2a` wrote an agent's error text to the terminal as it came** (server,
   a2a-cli; audits SEC-18b, N-SEC-4). RFC 7515 section 4.1.11 says to reject
