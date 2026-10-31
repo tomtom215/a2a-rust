@@ -20,16 +20,45 @@ only: when something here is done, delete it rather than annotating it.
 ## Now
 
 - **Branch `claude/jolly-wozniak-zc1vbe` (2026-10-31), from `main` at
-  `a0e6673` (pull request #184 merged): the 149 open audit rows are
-  triaged. No fix from them is built, and nothing here is release-ready.**
-  The maintainer asked for every gap found, fixed and tested live (llama.cpp
+  `a0e6673` (pull request #184 merged): the 149 open audit rows are triaged
+  here, and the fixes are on pull request #185 (branch
+  `claude/jolly-wozniak-zc1vbe-outbound-network`), which is the one pull
+  request for all of them (the maintainer asked to combine; `PLAN.md`
+  has the fourteen work packages). Nothing here is release-ready.** The
+  maintainer asked for every gap found, fixed and tested live (llama.cpp
   with Qwen and Gemma) before 0.16.0 is published.
+  - **State of #185, head `660196e`.** Built, gated locally and pushed:
+    package 1 (the server's outbound network: proxy and private CA), the SSRF
+    classifier and the push-delivery bounds, D-04 and part of D-03 (package
+    2), the reaper's lease release and event-log entry (H3 part b, N-E-2;
+    package 4), and H4's resume and reattach with ADR 0030 (package 6, first
+    part). CI on the first head (`09cfc26`) passed 20 of the 22 jobs of
+    `ci.yml` and the mutation job; the failures were Documentation (a doc
+    link, fixed), DCO (sign-off identity, fixed) and Coverage, whose log is
+    gone (404) and whose cause is unknown: it was not reproduced locally, and
+    the new head re-runs it. A safety-net check-in is scheduled for about
+    16:51Z. **First thing next session: read CI on `660196e`**, and kill any
+    mutation survivors with tests (`cargo mutants` was not run locally for
+    that batch; it takes about 2.5 minutes a mutant on four cores).
+  - **H4, pushed in the second batch:** `Delegation::wait` resubscribes before
+    it cancels (`ResumePolicy`, `last_event_id`, `reattach`), 22 of 22
+    delegation tests, three hand mutations each caught, client suite 1,137
+    passed. The `DelegationJournal` of ADR 0030 is **not built**: its types
+    would go in `a2a-protocol-types`, the SQLite and PostgreSQL versions in the
+    server crate (the ADR says why). Open in package 2:
+    SEC-13/17 (an https webhook is resolved twice), B-13, D-22, N-D-2/E-3, D-05
+    and D-03 c and d. Packages 3, 5, 7 to 14 are untouched.
+  - **Commits** are authored and signed off as `Tom F.
+    <tomf@tomtomtech.net>` with no other trailers, at the maintainer's
+    instruction so that `scripts/check_dco.sh` passes. A stop hook suggests
+    resetting the author to `noreply@anthropic.com`; do not: that script
+    rejects exactly that identity.
   - **The task list is `docs/audits/2026-10-29/README.md`.** Its `Status`
     column and note now hold each row's triage, section N lists 68 findings
     the triage itself made, and the evidence is in
     `docs/audits/2026-10-29/triage/`: one report per group, `S0.md` (H2 to
     H4, with the runs), `DECISIONS.md` (every choice the maintainer has to
-    make) and `PLAN.md` (eleven themed pull requests). Count the table rather
+    make) and `PLAN.md` (fourteen work packages, one pull request). Count the table rather
     than trusting a figure here; it has 294 rows at this commit.
   - **Result.** Of the 149 rows that were `open`: 94 confirmed by reading and
     1 by running (SEC-12), 37 need a decision, 9 are partly fixed (H2, H3,
@@ -52,14 +81,14 @@ only: when something here is done, delete it rather than annotating it.
     re-checked. On this commit `live-model` passes 11 of 11 against
     Qwen3.5-2B (debug build, llama.cpp `0ec4027`).
   - **Not release-ready, and not claimed to be.** Of the S0 rows, H2 is half
-    fixed (no shared pool), H3 half (a leaked lease row), and H4 is open and
-    needs the maintainer's choice. Worst new findings: N-B-1 (the server
-    cannot use a proxy or a private CA for push, OIDC or its model client);
-    SEC-12 with N-SEC-1 (the SSRF host check accepts `http://169.254.169.254./`
-    and the reserved ranges); SEC-14 with N-SEC-6 (no cap on concurrent
-    webhook deliveries); N-E-2 (a task the reaper ends has no audit record);
-    C-07 and C-09 (stderr diagnostics vanish under `OTEL_SDK_DISABLED`;
-    abandoned streams page as server errors).
+    fixed (the private CA works now; no shared pool), H3 is fixed in #185 (the
+    leaked lease row), and H4's resume and reattach are built but not pushed
+    (the maintainer chose resume-then-cancel with reattach and the journal;
+    the journal is not built). Of the worst new findings, N-B-1, SEC-12 with
+    N-SEC-1, SEC-14 with N-SEC-6 and N-E-2 are fixed in #185. Still open: C-07
+    and C-09 (stderr diagnostics vanish under `OTEL_SDK_DISABLED`; abandoned
+    streams page as server errors), SEC-13/17, and everything in the packages
+    not started.
   - **How #184 was verified, the bar for what follows.** Before a push:
     `scripts/preflight.sh --force`; every script gate (the list is in the
     workflow's Static checks job); `cargo hack clippy -p a2a-protocol-types
@@ -1135,6 +1164,23 @@ into this file: the commit that records it changes it.
   the "How to Reproduce Locally" block `mutants.yml` prints.
 
 ## Lessons
+
+- **A `head`-truncated `git status` after a conflicted cherry-pick hid a second
+  conflicted file, and the conflict markers were committed** (2026-10-31, the
+  spec ledger; caught before the push by the ledger script failing to parse
+  its JSON). After any cherry-pick or merge stop, list conflicts with
+  `git diff --name-only --diff-filter=U` and grep for `^<<<<<<<` before
+  `--continue`; never chain `--continue` behind a command whose failure a
+  pipe to `tail` swallows.
+- **`pgrep -f 'cargo-hack|cargo[ ]clippy'` matched the shell that was running
+  the command and killed it** (exit 144). Kill by PID from `ps -eo pid,comm`,
+  or use the `x[y]` trick on every alternative.
+- **Run CI's gates literally, including the ones that look like a subset of
+  something you ran.** `cargo doc --all-features` hid a link that needs a
+  feature; a per-crate `cargo test` run hid the SDK's book-defaults ratchet,
+  which only the other workspace members' tests exercise. The workspace-wide
+  gate (`cargo clippy --workspace --all-targets --all-features`) and a
+  `cargo test` of every other member are cheap next to a 75-minute CI run.
 
 - **A scoped tracing subscriber is not enough to capture a log line in a
   parallel test binary** (root cause of the 1-in-20 `log_redaction` flake,
