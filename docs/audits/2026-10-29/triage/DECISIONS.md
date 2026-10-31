@@ -7,6 +7,16 @@ Collected 2026-10-31 from the nine triage reports and the lead's own work, again
 
 Where the reports disagree, this file says so rather than picking.
 
+## 0. Answered by the maintainer, 2026-10-31
+
+| ID | Answer |
+|---|---|
+| X-4 | **A branch per theme, and open the pull requests.** The maintainer's concern: every pull request takes 60 to 90 minutes of CI, stacking them multiplies that by rebases and updates, and CI has not passed first time for a long while (mutants above all). So: each branch starts from `main`, not from another branch; branches are kept to disjoint files so they merge in any order; and the local gates, including `cargo mutants --in-diff` for every crate a diff touches, run before the first push. |
+| X-1 | **Take all four** (`#[non_exhaustive]` on `AgentCard`, `AgentSkill`, `AgentInterface`, `AgentProvider`; `tls-rustls` in the server's defaults; `ContextId` on `RequestContext`; a quieter `Telemetry::init()`), **and look for other breaking changes worth taking while they are free**, for production at scale and the best developer experience. The candidates found are in PLAN.md, pull request 10. |
+| X-2 | **Resume then cancel, with `Delegation::reattach`, and also the durable journal now** (ADR first; the ADR says where the database-backed implementations live). |
+| X-6 | **Agent Skills before 0.16.0 is tagged, with tool-loop activation.** The maintainer cites Anthropic's announcement of the donation to the Agentic AI Foundation (<https://www.anthropic.com/news/donating-agent-skills-to-the-agentic-ai-foundation>); what that page says is recorded in `S1-agent-skills.md` once fetched. |
+| X-3, X-5, X-7 | Not asked. Taken as recommended, and reversible: X-3 (an opt-in `HttpPool`, additive) when the client pull request needs it; X-5 (the release files say 0.15.0 is the newest and 0.16.0 is in preparation) in the docs pull request; X-7 (stay on A2A v1.0.1; `v1.1.0-rc` is a tag, not a release). |
+
 ## 1. Decisions that change what the next pull requests contain
 
 | ID | Rows | Question | Recommendation | Detail |
