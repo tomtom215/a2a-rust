@@ -108,16 +108,11 @@ pub async fn test_message_metadata(ctx: &TestContext) -> TestResult {
 
     let params = MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![Part::text("fn test() {}")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
+            vec![Part::text("fn test() {}")],
+        ),
         configuration: None,
         metadata: Some(serde_json::json!({
             "source": "agent-team-test",
@@ -404,14 +399,10 @@ pub async fn test_push_not_supported(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     println!("\nTest 19: Push config on no-push agent");
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
-    let config = TaskPushNotificationConfig {
-        tenant: None,
-        id: None,
-        task_id: Some("any-task-id".to_owned()),
-        url: format!("http://{}/webhook", ctx.webhook_addr),
-        token: None,
-        authentication: None,
-    };
+    let config = TaskPushNotificationConfig::new(
+        "any-task-id".to_owned(),
+        format!("http://{}/webhook", ctx.webhook_addr),
+    );
     match client.set_push_config(config).await {
         Ok(_) => TestResult::fail(
             "push-not-supported",

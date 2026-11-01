@@ -132,12 +132,11 @@ where
                 .ok_or_else(|| A2aError::invalid_params("message contains no text part"))?;
 
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
 
             let answer = match self.agent.prompt(user_text).await {
@@ -155,14 +154,14 @@ where
             };
 
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    artifact: Artifact::new("mcp-response", vec![Part::text(&answer.text)]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new("mcp-response", vec![Part::text(&answer.text)]),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
 
             // The trace names the MCP calls that produced the answer. Same
@@ -172,27 +171,23 @@ where
             // has no other way to see that it was reached at all.
             if !answer.trace.is_empty() {
                 queue
-                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ctx.context_id.clone(),
-                        artifact: Artifact::new(
-                            "tool-trace",
-                            vec![Part::text(answer.trace.join("\n"))],
-                        ),
-                        append: None,
-                        last_chunk: Some(true),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::ArtifactUpdate(
+                        TaskArtifactUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            ctx.context_id.clone(),
+                            Artifact::new("tool-trace", vec![Part::text(answer.trace.join("\n"))]),
+                        )
+                        .with_last_chunk(true),
+                    ))
                     .await?;
             }
 
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })

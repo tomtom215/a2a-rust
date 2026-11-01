@@ -30,14 +30,11 @@ agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
 const AN_HOUR: Duration = Duration::from_secs(3600);
 
 fn parked(id: &str) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus::new(TaskState::InputRequired),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("ctx-1"),
+        TaskStatus::new(TaskState::InputRequired),
+    )
 }
 
 fn handler(store: Arc<InMemoryTaskStore>, limits: HandlerLimits) -> RequestHandler {

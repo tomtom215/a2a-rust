@@ -24,16 +24,7 @@ it stays conformant and the TCK is unaffected.
 use a2a_protocol_types::idempotency::{IDEMPOTENCY_EXTENSION_URI, key_of, set_key};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 
-let mut message = Message {
-    id: MessageId::new("msg-1"),
-    role: MessageRole::User,
-    parts: vec![Part::text("summarise the incident")],
-    context_id: None,
-    task_id: None,
-    reference_task_ids: None,
-    extensions: None,
-    metadata: None,
-};
+let mut message = Message::new(MessageId::new("msg-1"), MessageRole::User, vec![Part::text("summarise the incident")]);
 
 set_key(&mut message, "8f14e45fceea167a5a36dedd4bea2543").expect("a valid key");
 

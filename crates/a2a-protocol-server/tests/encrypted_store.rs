@@ -42,17 +42,16 @@ fn assert_sealed(stored: &str) {
 }
 
 fn task(id: &str) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(TaskState::Working),
-        history: Some(vec![Message::user_text("h1", format!("{SECRET} asked"))]),
-        artifacts: Some(vec![Artifact::new(
-            "a",
-            vec![Part::text(format!("{SECRET} 0"))],
-        )]),
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("ctx"),
+        TaskStatus::new(TaskState::Working),
+    )
+    .with_history(vec![Message::user_text("h1", format!("{SECRET} asked"))])
+    .with_artifacts(vec![Artifact::new(
+        "a",
+        vec![Part::text(format!("{SECRET} 0"))],
+    )])
 }
 
 /// Every write path, then every read path, against one store.
@@ -78,9 +77,10 @@ async fn seals_at_rest(inner: Arc<dyn TaskStore>) {
         .await
         .unwrap();
 
-    t.status = TaskStatus {
-        message: Some(Message::agent_text("s", SECRET)),
-        ..TaskStatus::new(TaskState::InputRequired)
+    t.status = {
+        let mut built = TaskStatus::new(TaskState::InputRequired);
+        built.message = Some(Message::agent_text("s", SECRET));
+        built
     };
     store.save_status_delta(&t).await.unwrap();
 
@@ -102,14 +102,14 @@ async fn seals_at_rest(inner: Arc<dyn TaskStore>) {
     assert_eq!(json(&page.tasks), json(&vec![t.clone()]));
 
     if store.supports_event_log() {
-        let event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: id.clone(),
-            context_id: t.context_id.clone(),
-            artifact: Artifact::new("a", vec![Part::text(SECRET)]),
-            append: Some(true),
-            last_chunk: None,
-            metadata: None,
-        });
+        let event = StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                id.clone(),
+                t.context_id.clone(),
+                Artifact::new("a", vec![Part::text(SECRET)]),
+            )
+            .with_append(true),
+        );
         store.append_event(&id, 1, &event).await.unwrap();
         let raw = inner.read_events(&id, 0, 10).await.unwrap();
         assert_eq!(raw.len(), 1);

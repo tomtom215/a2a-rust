@@ -27,34 +27,19 @@ impl AgentExecutor for MyExecutor {
             let results = produce(&ctx.message).await;
 
             // Signal start
-            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            })).await?;
+            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), TaskStatus::new(TaskState::Working)))).await?;
 
             // Deliver results in chunks
             for (i, chunk) in results.iter().enumerate() {
                 queue.write(StreamResponse::ArtifactUpdate(
-                    TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ctx.context_id.clone(),
-                        artifact: Artifact::new("output", vec![Part::text(chunk)]),
-                        append: Some(i > 0),
-                        last_chunk: Some(i == results.len() - 1),
-                        metadata: None,
-                    }
+                    TaskArtifactUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), Artifact::new("output", vec![Part::text(chunk)]))
+                        .with_append(i > 0)
+                        .with_last_chunk(i == results.len() - 1)
                 )).await?;
             }
 
             // Signal completion
-            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Completed),
-                metadata: None,
-            })).await?;
+            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), TaskStatus::new(TaskState::Completed)))).await?;
 
             Ok(())
         })

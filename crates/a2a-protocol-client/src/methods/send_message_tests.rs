@@ -12,16 +12,11 @@ use a2a_protocol_types::{Message, MessageId, MessageRole, Part};
 fn make_params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new("msg-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("test")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new("msg-1"),
+            MessageRole::User,
+            vec![Part::text("test")],
+        ),
         configuration: None,
         metadata: None,
     }

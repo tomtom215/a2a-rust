@@ -336,25 +336,28 @@ mod tests {
         fn message(&mut self) -> Message {
             use a2a_protocol_types::message::{MessageId, MessageRole};
             use a2a_protocol_types::task::{ContextId, TaskId};
-            Message {
-                id: MessageId::new(self.string()),
-                role: if self.coin() {
-                    MessageRole::User
-                } else {
-                    MessageRole::Agent
-                },
-                parts: (0..=self.below(3)).map(|_| self.part()).collect(),
-                context_id: self.coin().then(|| ContextId::new(self.string())),
-                task_id: self.coin().then(|| TaskId::new(self.string())),
-                reference_task_ids: self.coin().then(|| {
+            {
+                let mut built = Message::new(
+                    MessageId::new(self.string()),
+                    if self.coin() {
+                        MessageRole::User
+                    } else {
+                        MessageRole::Agent
+                    },
+                    (0..=self.below(3)).map(|_| self.part()).collect(),
+                );
+                built.context_id = self.coin().then(|| ContextId::new(self.string()));
+                built.task_id = self.coin().then(|| TaskId::new(self.string()));
+                built.reference_task_ids = self.coin().then(|| {
                     (0..self.below(3))
                         .map(|_| TaskId::new(self.string()))
                         .collect()
-                }),
-                extensions: self
+                });
+                built.extensions = self
                     .coin()
-                    .then(|| (0..self.below(3)).map(|_| self.string()).collect()),
-                metadata: self.coin().then(|| self.value(0)),
+                    .then(|| (0..self.below(3)).map(|_| self.string()).collect());
+                built.metadata = self.coin().then(|| self.value(0));
+                built
             }
         }
     }
@@ -395,16 +398,12 @@ mod tests {
         data_part.media_type = Some(worst.clone());
         let cases = [
             Message::user_text(worst.clone(), worst.clone()),
-            Message {
-                id: MessageId::new("m"),
-                role: MessageRole::Agent,
-                parts: vec![data_part],
-                context_id: Some(ContextId::new(worst.clone())),
-                task_id: Some(TaskId::new(worst.clone())),
-                reference_task_ids: Some(vec![TaskId::new(worst.clone())]),
-                extensions: Some(vec![worst.clone()]),
-                metadata: Some(serde_json::json!({ "k": worst })),
-            },
+            Message::new(MessageId::new("m"), MessageRole::Agent, vec![data_part])
+                .with_context_id(ContextId::new(worst.clone()))
+                .with_task_id(TaskId::new(worst.clone()))
+                .with_reference_task_ids(vec![TaskId::new(worst.clone())])
+                .with_extensions(vec![worst.clone()])
+                .with_metadata(serde_json::json!({ "k": worst })),
         ];
         for message in &cases {
             let exact = serde_json::to_vec(message).unwrap().len();

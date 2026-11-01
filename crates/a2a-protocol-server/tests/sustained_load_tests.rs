@@ -88,16 +88,11 @@ fn handler_with_capacity(max_tasks: usize) -> Arc<RequestHandler> {
 fn params(seq: usize) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(format!("m{seq}")),
-            role: MessageRole::User,
-            parts: vec![Part::text("ping")],
-            task_id: None,
-            context_id: None,
-            metadata: None,
-            extensions: None,
-            reference_task_ids: None,
-        },
+        message: Message::new(
+            MessageId::new(format!("m{seq}")),
+            MessageRole::User,
+            vec![Part::text("ping")],
+        ),
         configuration: None,
         metadata: None,
     }

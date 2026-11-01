@@ -289,12 +289,14 @@ fn an_executors_own_exhaustion_is_not_relabelled() {
 #[test]
 fn report_writes_only_on_status_updates_and_keeps_other_metadata() {
     let h = BudgetHandle::start(&Budget::new().with_meter("tokens", 5).unwrap());
-    let mut update = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: Some(serde_json::json!({"error": "kept"})),
-    });
+    let mut update = StreamResponse::StatusUpdate(
+        TaskStatusUpdateEvent::new(
+            TaskId::new("t"),
+            ContextId::new("c"),
+            TaskStatus::new(TaskState::Working),
+        )
+        .with_metadata(serde_json::json!({"error": "kept"})),
+    );
     report(&mut update, Some(&h));
     let StreamResponse::StatusUpdate(u) = &update else {
         unreachable!()
@@ -306,14 +308,11 @@ fn report_writes_only_on_status_updates_and_keeps_other_metadata() {
             .is_some()
     );
 
-    let mut task = StreamResponse::Task(Task {
-        id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    });
+    let mut task = StreamResponse::Task(Task::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(TaskState::Working),
+    ));
     report(&mut task, Some(&h));
     let StreamResponse::Task(t) = &task else {
         unreachable!()

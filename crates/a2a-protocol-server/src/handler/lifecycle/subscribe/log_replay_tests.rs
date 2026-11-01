@@ -72,14 +72,11 @@ async fn with_log(
         .build()
         .expect("handler");
     let id = TaskId::new("t-page");
-    let task = Task {
-        id: id.clone(),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        id.clone(),
+        ContextId::new("c"),
+        TaskStatus::new(TaskState::Working),
+    );
     handler.task_store.save(&task).await.unwrap();
     log(&handler, &id, &task, logged).await;
     let (queue, _reader) = handler.event_queue_manager.get_or_create(&id).await;

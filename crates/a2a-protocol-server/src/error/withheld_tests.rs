@@ -68,16 +68,11 @@ crate::agent_executor!(Leaky, |_ctx, _queue| async {
 
 fn params() -> MessageSendParams {
     MessageSendParams {
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello")],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
+            vec![Part::text("hello")],
+        ),
         configuration: None,
         metadata: None,
         tenant: None,

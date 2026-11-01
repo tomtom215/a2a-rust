@@ -45,12 +45,11 @@ impl AgentExecutor for EchoExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
 
             let echo_text = ctx
@@ -64,26 +63,22 @@ impl AgentExecutor for EchoExecutor {
                 .unwrap_or_else(|| "no text".to_owned());
 
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    artifact: Artifact::new(
-                        ArtifactId::new("echo-art"),
-                        vec![Part::text(echo_text)],
-                    ),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new(ArtifactId::new("echo-art"), vec![Part::text(echo_text)]),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
 
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
 
             Ok(())
@@ -94,37 +89,16 @@ impl AgentExecutor for EchoExecutor {
 // ── Test helpers ─────────────────────────────────────────────────────────────
 
 fn test_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Test Echo Agent".into(),
-        description: "Echoes input for testing".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "http://localhost/rpc".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "echo".into(),
-            name: "Echo".into(),
-            description: "Echoes input".into(),
-            tags: vec!["test".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none().with_streaming(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "Test Echo Agent",
+        "1.0.0",
+        AgentInterface::new("http://localhost/rpc", "JSONRPC").with_protocol_version("1.0.0"),
+    )
+    .with_description("Echoes input for testing")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes input").with_tags(vec!["test"]))
+    .with_capabilities(AgentCapabilities::none().with_streaming(true))
 }
 
 async fn start_test_server() -> String {

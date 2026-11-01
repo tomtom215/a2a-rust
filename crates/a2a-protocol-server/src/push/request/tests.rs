@@ -8,22 +8,20 @@ use a2a_protocol_types::events::TaskStatusUpdateEvent;
 use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
 fn event() -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::with_timestamp(TaskState::Working),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::with_timestamp(TaskState::Working),
+    ))
 }
 
 fn config(token: Option<&str>) -> TaskPushNotificationConfig {
-    TaskPushNotificationConfig {
-        tenant: None,
-        id: Some("cfg".to_owned()),
-        task_id: Some("t".to_owned()),
-        url: "https://hooks.example/x".to_owned(),
-        token: token.map(str::to_owned),
-        authentication: None,
+    {
+        let mut built =
+            TaskPushNotificationConfig::new("t".to_owned(), "https://hooks.example/x".to_owned())
+                .with_id("cfg".to_owned());
+        built.token = token.map(str::to_owned);
+        built
     }
 }
 

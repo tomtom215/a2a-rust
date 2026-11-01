@@ -11,16 +11,7 @@ use a2a_protocol_types::message::{Message, MessageId, MessageRole};
 use a2a_protocol_types::task::TaskId;
 
 fn make_request_context() -> RequestContext {
-    let message = Message {
-        id: MessageId::new("test-msg"),
-        role: MessageRole::User,
-        parts: vec![],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    };
+    let message = Message::new(MessageId::new("test-msg"), MessageRole::User, vec![]);
     RequestContext::new(message, TaskId::new("test-task"), "test-ctx")
 }
 

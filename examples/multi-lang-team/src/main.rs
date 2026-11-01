@@ -114,16 +114,11 @@ fn extract_text(parts: &[Part]) -> String {
 fn user_message(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![Part::text(text)],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
+            vec![Part::text(text)],
+        ),
         configuration: None,
         metadata: None,
     }
@@ -209,12 +204,11 @@ impl AgentExecutor for CoordinatorExecutor {
 
             // Set status to working
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
 
             // Fan out to all workers concurrently — a slow or down worker
@@ -255,24 +249,23 @@ impl AgentExecutor for CoordinatorExecutor {
             // Combine results into a single artifact
             let combined = responses.join("\n");
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    artifact: Artifact::new("cross-lang-result", vec![Part::text(&combined)]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new("cross-lang-result", vec![Part::text(&combined)]),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
 
             // Complete
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
 
             Ok(())
@@ -281,41 +274,28 @@ impl AgentExecutor for CoordinatorExecutor {
 }
 
 fn make_coordinator_card(url: &str) -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Multi-Language Coordinator".into(),
-        description: "Coordinator that delegates to Python, JS, Go, Java and Rust worker agents"
-            .into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: url.into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "coordinate".into(),
-            name: "Cross-Language Coordination".into(),
-            description: "Delegates work to agents in 5 languages".into(),
-            tags: vec!["multi-lang".into(), "coordination".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none()
+    AgentCard::new(
+        "Multi-Language Coordinator",
+        "1.0.0",
+        AgentInterface::new(url, "JSONRPC"),
+    )
+    .with_description("Coordinator that delegates to Python, JS, Go, Java and Rust worker agents")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        AgentSkill::new(
+            "coordinate",
+            "Cross-Language Coordination",
+            "Delegates work to agents in 5 languages",
+        )
+        .with_tags(vec!["multi-lang", "coordination"]),
+    )
+    .with_capabilities(
+        AgentCapabilities::none()
             .with_streaming(true)
             .with_push_notifications(true)
             .with_extended_agent_card(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    )
 }
 
 /// Serves the JSON-RPC dispatcher on an already-bound listener.

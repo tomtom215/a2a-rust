@@ -31,33 +31,19 @@ agent_executor!(Completes, |ctx, queue| async {
 });
 
 fn card(grpc: &str) -> AgentCard {
-    let interface = |binding: &str, url: &str| AgentInterface {
-        url: url.into(),
-        protocol_binding: binding.into(),
-        protocol_version: "1.0".into(),
-        tenant: None,
-    };
-    AgentCard {
-        url: None,
-        name: "grpc-card-selection".into(),
-        description: "JSON-RPC first, gRPC second".into(),
-        version: "1.0.0".into(),
-        // Nothing listens on port 1.
-        supported_interfaces: vec![
-            interface("JSONRPC", "http://127.0.0.1:1"),
-            interface("GRPC", grpc),
-        ],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![],
-        capabilities: AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    let interface =
+        |binding: &str, url: &str| AgentInterface::new(url, binding).with_protocol_version("1.0");
+    AgentCard::new(
+        "grpc-card-selection",
+        "1.0.0",
+        interface("JSONRPC", "http://127.0.0.1:1"),
+    )
+    .with_description("JSON-RPC first, gRPC second")
+    // Nothing listens on port 1.
+    .with_interface(interface("GRPC", grpc))
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_capabilities(AgentCapabilities::none())
 }
 
 #[tokio::test]
@@ -84,16 +70,11 @@ async fn build_grpc_dials_the_cards_grpc_interface_not_its_first() {
     let sent = client
         .send_message(MessageSendParams {
             tenant: None,
-            message: Message {
-                id: MessageId::new("m"),
-                role: MessageRole::User,
-                parts: vec![Part::text("hi")],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            },
+            message: Message::new(
+                MessageId::new("m"),
+                MessageRole::User,
+                vec![Part::text("hi")],
+            ),
             configuration: None,
             metadata: None,
         })

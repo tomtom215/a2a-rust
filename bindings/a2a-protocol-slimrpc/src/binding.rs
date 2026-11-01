@@ -205,12 +205,7 @@ impl SlimName {
     /// onto an agent card's `supported_interfaces`.
     #[must_use]
     pub fn to_agent_interface(&self) -> AgentInterface {
-        AgentInterface {
-            url: self.to_string(),
-            protocol_binding: SLIMRPC_PROTOCOL_BINDING.to_string(),
-            protocol_version: A2A_PROTOCOL_VERSION.to_string(),
-            tenant: None,
-        }
+        AgentInterface::new(self.to_string(), SLIMRPC_PROTOCOL_BINDING.to_string()).with_protocol_version(A2A_PROTOCOL_VERSION.to_string())
     }
 }
 
@@ -255,23 +250,7 @@ mod tests {
 
     /// A minimal card carrying exactly the interfaces under test.
     fn card_with(supported_interfaces: Vec<AgentInterface>) -> AgentCard {
-        AgentCard {
-            name: "test".into(),
-            url: None,
-            description: "binding tests".into(),
-            version: "1.0.0".into(),
-            supported_interfaces,
-            default_input_modes: vec!["text/plain".into()],
-            default_output_modes: vec!["text/plain".into()],
-            skills: Vec::new(),
-            capabilities: AgentCapabilities::default(),
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            security_schemes: None,
-            security_requirements: None,
-            signatures: None,
-        }
+        { let mut built = AgentCard::new("test", "1.0.0", AgentInterface::jsonrpc(String::new())); built.url = None; built.description = "binding tests".into(); built.supported_interfaces = supported_interfaces; built.default_input_modes = vec!["text/plain".into()]; built.default_output_modes = vec!["text/plain".into()]; built.skills = Vec::new(); built.capabilities = AgentCapabilities::default(); built.provider = None; built.icon_url = None; built.documentation_url = None; built.security_schemes = None; built.security_requirements = None; built.signatures = None; built }
     }
 
     /// The three-component form with the canonical scheme.
@@ -431,12 +410,7 @@ mod tests {
     #[test]
     fn finds_the_slimrpc_interface_among_others() {
         let card = card_with(vec![
-            AgentInterface {
-                url: "https://agent.example.com/a2a".to_string(),
-                protocol_binding: "JSONRPC".to_string(),
-                protocol_version: A2A_PROTOCOL_VERSION.to_string(),
-                tenant: None,
-            },
+            AgentInterface::new("https://agent.example.com/a2a".to_string(), "JSONRPC".to_string()).with_protocol_version(A2A_PROTOCOL_VERSION.to_string()),
             SlimName::new("org", "ns", "agent").to_agent_interface(),
         ]);
 
@@ -460,12 +434,7 @@ mod tests {
     /// not a silent `None`: the agent said it speaks this binding.
     #[test]
     fn a_malformed_advertised_address_is_an_error() {
-        let card = card_with(vec![AgentInterface {
-            url: "slim://missing-components".to_string(),
-            protocol_binding: SLIMRPC_PROTOCOL_BINDING.to_string(),
-            protocol_version: A2A_PROTOCOL_VERSION.to_string(),
-            tenant: None,
-        }]);
+        let card = card_with(vec![AgentInterface::new("slim://missing-components".to_string(), SLIMRPC_PROTOCOL_BINDING.to_string()).with_protocol_version(A2A_PROTOCOL_VERSION.to_string())]);
 
         assert!(slimrpc_address(&card).is_err());
     }

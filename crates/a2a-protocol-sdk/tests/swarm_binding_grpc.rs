@@ -75,14 +75,13 @@ impl a2a_protocol_server::executor::AgentExecutor for ChannelExec {
         Box::pin(async move {
             let _ = queue
                 .write(a2a_protocol_types::events::StreamResponse::StatusUpdate(
-                    a2a_protocol_types::events::TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ctx.context_id.clone(),
-                        status: a2a_protocol_types::task::TaskStatus::with_timestamp(
+                    a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        a2a_protocol_types::task::TaskStatus::with_timestamp(
                             a2a_protocol_types::task::TaskState::InputRequired,
                         ),
-                        metadata: None,
-                    },
+                    ),
                 ))
                 .await;
             Ok(())
@@ -95,37 +94,19 @@ fn swarm_card() -> a2a_protocol_types::agent_card::AgentCard {
     use a2a_protocol_types::agent_card::{
         AgentCapabilities, AgentCard, AgentInterface, AgentSkill,
     };
-    AgentCard {
-        url: None,
-        name: "swarm-scale-grpc".into(),
-        description: "Coordination-channel experiment fixture".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "http://127.0.0.1:0".into(),
-            protocol_binding: "GRPC".into(),
-            protocol_version: "1.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "channel".into(),
-            name: "Channel".into(),
-            description: "Appends a post to a channel".into(),
-            tags: vec!["test".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "swarm-scale-grpc",
+        "1.0.0",
+        AgentInterface::new("http://127.0.0.1:0", "GRPC").with_protocol_version("1.0"),
+    )
+    .with_description("Coordination-channel experiment fixture")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        AgentSkill::new("channel", "Channel", "Appends a post to a channel")
+            .with_tags(vec!["test"]),
+    )
+    .with_capabilities(AgentCapabilities::none())
 }
 
 /// The same uncontended send, over the canonical gRPC binding.
@@ -181,15 +162,15 @@ async fn the_uncontended_send_over_grpc() {
 
                 let params = |task: Option<TaskId>, seq: u64| MessageSendParams {
                     tenant: None,
-                    message: Message {
-                        id: MessageId::new(format!("grpc-{agent}-{seq}")),
-                        role: MessageRole::User,
-                        parts: vec![Part::text("post")],
-                        context_id: Some(ContextId::new(context.clone())),
-                        task_id: task,
-                        reference_task_ids: None,
-                        extensions: None,
-                        metadata: None,
+                    message: {
+                        let mut built = Message::new(
+                            MessageId::new(format!("grpc-{agent}-{seq}")),
+                            MessageRole::User,
+                            vec![Part::text("post")],
+                        )
+                        .with_context_id(ContextId::new(context.clone()));
+                        built.task_id = task;
+                        built
                     },
                     configuration: None,
                     metadata: None,

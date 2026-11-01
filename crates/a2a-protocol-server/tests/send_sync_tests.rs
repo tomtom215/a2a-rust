@@ -101,16 +101,11 @@ mod direct_message_response {
     struct MessageOnlyExecutor;
     agent_executor!(MessageOnlyExecutor, |_ctx, queue| async {
         queue
-            .write(StreamResponse::Message(Message {
-                id: MessageId::new("agent-reply"),
-                role: MessageRole::Agent,
-                parts: vec![Part::text("Direct message response")],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            }))
+            .write(StreamResponse::Message(Message::new(
+                MessageId::new("agent-reply"),
+                MessageRole::Agent,
+                vec![Part::text("Direct message response")],
+            )))
             .await
     });
 
@@ -119,40 +114,30 @@ mod direct_message_response {
     struct MessageThenCompleteExecutor;
     agent_executor!(MessageThenCompleteExecutor, |ctx, queue| async {
         queue
-            .write(StreamResponse::Message(Message {
-                id: MessageId::new("agent-progress"),
-                role: MessageRole::Agent,
-                parts: vec![Part::text("working on it")],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            }))
+            .write(StreamResponse::Message(Message::new(
+                MessageId::new("agent-progress"),
+                MessageRole::Agent,
+                vec![Part::text("working on it")],
+            )))
             .await?;
         queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::with_timestamp(TaskState::Completed),
-                metadata: None,
-            }))
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                ctx.task_id.clone(),
+                ctx.context_id.clone(),
+                TaskStatus::with_timestamp(TaskState::Completed),
+            )))
             .await
     });
 
     fn params(ctx: &str) -> MessageSendParams {
         MessageSendParams {
             tenant: None,
-            message: Message {
-                id: MessageId::new(format!("msg-{ctx}")),
-                role: MessageRole::User,
-                parts: vec![Part::text("hello")],
-                context_id: Some(ContextId::new(ctx)),
-                task_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            },
+            message: Message::new(
+                MessageId::new(format!("msg-{ctx}")),
+                MessageRole::User,
+                vec![Part::text("hello")],
+            )
+            .with_context_id(ContextId::new(ctx)),
             configuration: None,
             metadata: None,
         }
@@ -234,12 +219,11 @@ mod direct_message_response {
         struct Silent;
         agent_executor!(Silent, |ctx, queue| async {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::with_timestamp(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::with_timestamp(TaskState::Completed),
+                )))
                 .await
         });
 

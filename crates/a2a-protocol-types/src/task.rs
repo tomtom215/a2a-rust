@@ -405,17 +405,10 @@ impl Task {
     /// use a2a_protocol_types::message::Part;
     /// use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
     ///
-    /// let task = Task {
-    ///     id: "t1".into(),
-    ///     context_id: ContextId::new("c1"),
-    ///     status: TaskStatus::new(TaskState::Completed),
-    ///     history: None,
-    ///     artifacts: Some(vec![
+    /// let task = Task::new("t1", ContextId::new("c1"), TaskStatus::new(TaskState::Completed)).with_artifacts(vec![
     ///         Artifact::new("chart", vec![Part::url("https://example.com/c.png")]),
     ///         Artifact::new("summary", vec![Part::text("revenue rose 4%")]),
-    ///     ]),
-    ///     metadata: None,
-    /// };
+    ///     ]);
     ///
     /// assert_eq!(task.text(), Some("revenue rose 4%"));
     /// ```
@@ -437,10 +430,7 @@ impl Task {
     /// # let mut note = Message::agent_text("m1", "rate limited upstream");
     /// # set_class(&mut note, FailureClass::Transient);
     /// # status.message = Some(note);
-    /// # let task = Task {
-    /// #     id: "t1".into(), context_id: ContextId::new("c1"), status,
-    /// #     history: None, artifacts: None, metadata: None,
-    /// # };
+    /// # let task = Task::new("t1", ContextId::new("c1"), status);
     /// match task.failure_class() {
     ///     Some(c) if c.is_retryable() => { /* back off and try again */ }
     ///     Some(c) if c.needs_human()  => { /* escalate, do not retry */ }

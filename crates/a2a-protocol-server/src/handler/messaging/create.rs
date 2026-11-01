@@ -62,13 +62,16 @@ pub(super) fn build_initial_task(
     // store has nothing to append to and falls back to an insert — this one
     // message is already the whole correct history.
     let history = vec![message.clone()];
-    Task {
-        id: task_id.clone(),
-        context_id: ContextId::new(context_id),
-        status: TaskStatus::with_timestamp(TaskState::Submitted),
-        history: Some(history),
-        artifacts: continuation.and_then(|s| s.artifacts.clone()),
-        metadata: continuation.and_then(|s| s.metadata.clone()),
+    {
+        let mut built = Task::new(
+            task_id.clone(),
+            ContextId::new(context_id),
+            TaskStatus::with_timestamp(TaskState::Submitted),
+        )
+        .with_history(history);
+        built.artifacts = continuation.and_then(|s| s.artifacts.clone());
+        built.metadata = continuation.and_then(|s| s.metadata.clone());
+        built
     }
 }
 
@@ -213,9 +216,10 @@ impl RequestHandler {
         // existence, SSRF screening, quotas — so this cannot become an
         // unguarded back door into the push config store.
         let stored = self
-            .validate_and_store_push_config(TaskPushNotificationConfig {
-                task_id: Some(task_id.0.clone()),
-                ..inline
+            .validate_and_store_push_config({
+                let mut built = inline;
+                built.task_id = Some(task_id.0.clone());
+                built
             })
             .await;
         let refused = match stored {
@@ -335,14 +339,11 @@ mod tests {
     use super::*;
 
     fn task(id: &str) -> Task {
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("c"),
-            status: TaskStatus::new(TaskState::InputRequired),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(
+            TaskId::new(id),
+            ContextId::new("c"),
+            TaskStatus::new(TaskState::InputRequired),
+        )
     }
 
     #[test]

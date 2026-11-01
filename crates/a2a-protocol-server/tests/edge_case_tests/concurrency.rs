@@ -16,14 +16,11 @@ async fn concurrent_save_to_same_task_id() {
     for i in 0..50 {
         let store = Arc::clone(&store);
         handles.push(tokio::spawn(async move {
-            let task = Task {
-                id: TaskId::new("shared-task"),
-                context_id: ContextId::new(format!("ctx-{i}")),
-                status: TaskStatus::new(TaskState::Working),
-                history: None,
-                artifacts: None,
-                metadata: None,
-            };
+            let task = Task::new(
+                TaskId::new("shared-task"),
+                ContextId::new(format!("ctx-{i}")),
+                TaskStatus::new(TaskState::Working),
+            );
             a2a_protocol_server::TaskStore::save(store.as_ref(), &task)
                 .await
                 .unwrap();
@@ -109,14 +106,11 @@ async fn insert_if_absent_atomicity() {
     for _ in 0..20 {
         let store = Arc::clone(&store);
         handles.push(tokio::spawn(async move {
-            let task = Task {
-                id: TaskId::new("atomic-task"),
-                context_id: ContextId::new("ctx"),
-                status: TaskStatus::new(TaskState::Submitted),
-                history: None,
-                artifacts: None,
-                metadata: None,
-            };
+            let task = Task::new(
+                TaskId::new("atomic-task"),
+                ContextId::new("ctx"),
+                TaskStatus::new(TaskState::Submitted),
+            );
             a2a_protocol_server::TaskStore::insert_if_absent(store.as_ref(), &task)
                 .await
                 .unwrap()

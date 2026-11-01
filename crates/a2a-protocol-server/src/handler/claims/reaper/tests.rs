@@ -50,14 +50,11 @@ impl PushSender for Recorder {
 }
 
 pub(super) fn task(id: &str, state: TaskState) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::with_timestamp(state),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("ctx"),
+        TaskStatus::with_timestamp(state),
+    )
 }
 
 type Age = Box<dyn Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;

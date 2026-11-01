@@ -41,27 +41,15 @@ use a2a_protocol_server::streaming::{EventQueueManager, EventQueueReader, EventQ
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn make_task(id: &str, ctx: &str, state: TaskState) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new(ctx),
-        status: TaskStatus::new(state),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(TaskId::new(id), ContextId::new(ctx), TaskStatus::new(state))
 }
 
 fn make_message(text: &str) -> Message {
-    Message {
-        id: MessageId::new("msg-1"),
-        role: MessageRole::User,
-        parts: vec![Part::text(text)],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    }
+    Message::new(
+        MessageId::new("msg-1"),
+        MessageRole::User,
+        vec![Part::text(text)],
+    )
 }
 
 fn make_send_params(text: &str) -> MessageSendParams {
@@ -84,20 +72,18 @@ impl AgentExecutor for QuickExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })

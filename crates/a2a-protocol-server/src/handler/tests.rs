@@ -344,14 +344,7 @@ fn send_message_result_response_variant() {
     use a2a_protocol_types::responses::SendMessageResponse;
     use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
 
-    let task = Task {
-        id: "t1".into(),
-        context_id: "c1".into(),
-        status: TaskStatus::new(TaskState::Completed),
-        artifacts: None,
-        history: None,
-        metadata: None,
-    };
+    let task = Task::new("t1", "c1", TaskStatus::new(TaskState::Completed));
     let result = SendMessageResult::Response(SendMessageResponse::Task(task));
     assert!(matches!(result, SendMessageResult::Response(_)));
 }

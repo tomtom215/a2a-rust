@@ -40,15 +40,14 @@ impl WritesWhileSubscribing {
         let mut task = self.0.get(task_id).await?.expect("the task");
         let artifact =
             a2a_protocol_types::artifact::Artifact::new("other-1", vec![Part::text("x")]);
-        let event =
-            StreamResponse::ArtifactUpdate(a2a_protocol_types::events::TaskArtifactUpdateEvent {
-                task_id: task.id.clone(),
-                context_id: task.context_id.clone(),
-                artifact: artifact.clone(),
-                append: None,
-                last_chunk: Some(true),
-                metadata: None,
-            });
+        let event = StreamResponse::ArtifactUpdate(
+            a2a_protocol_types::events::TaskArtifactUpdateEvent::new(
+                task.id.clone(),
+                task.context_id.clone(),
+                artifact.clone(),
+            )
+            .with_last_chunk(true),
+        );
         let seq = self.0.last_event_seq(task_id).await? + 1;
         self.0.append_event(task_id, seq, &event).await?;
         task.artifacts.get_or_insert_with(Vec::new).push(artifact);
@@ -130,14 +129,12 @@ impl StoresAfterTheRead {
             let artifact =
                 a2a_protocol_types::artifact::Artifact::new("other-1", vec![Part::text("x")]);
             let event = StreamResponse::ArtifactUpdate(
-                a2a_protocol_types::events::TaskArtifactUpdateEvent {
-                    task_id: task.id.clone(),
-                    context_id: task.context_id.clone(),
-                    artifact: artifact.clone(),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                },
+                a2a_protocol_types::events::TaskArtifactUpdateEvent::new(
+                    task.id.clone(),
+                    task.context_id.clone(),
+                    artifact.clone(),
+                )
+                .with_last_chunk(true),
             );
             let seq = self.0.last_event_seq(task_id).await? + 1;
             self.0.append_event(task_id, seq, &event).await?;

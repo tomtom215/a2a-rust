@@ -67,22 +67,20 @@ impl AgentExecutor for StressExecutor {
         let completed = Arc::clone(&self.completed_count);
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
             // Simulate a small delay to mimic real work.
             tokio::time::sleep(Duration::from_millis(1)).await;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             completed.fetch_add(1, Ordering::Relaxed);
             Ok(())
@@ -106,52 +104,26 @@ impl PushSender for NoopPushSender {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn minimal_agent_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Stress Test Agent".into(),
-        description: "Handles load tests".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "http://localhost/rpc".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "stress".into(),
-            name: "Stress".into(),
-            description: "Stress test skill".into(),
-            tags: vec!["test".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "Stress Test Agent",
+        "1.0.0",
+        AgentInterface::new("http://localhost/rpc", "JSONRPC").with_protocol_version("1.0.0"),
+    )
+    .with_description("Handles load tests")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("stress", "Stress", "Stress test skill").with_tags(vec!["test"]))
+    .with_capabilities(AgentCapabilities::none())
 }
 
 fn make_send_params(id: usize) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(format!("stress-msg-{id}")),
-            role: MessageRole::User,
-            parts: vec![Part::text(format!("stress request {id}"))],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(format!("stress-msg-{id}")),
+            MessageRole::User,
+            vec![Part::text(format!("stress request {id}"))],
+        ),
         configuration: None,
         metadata: None,
     }
@@ -368,14 +340,11 @@ async fn task_store_eviction_under_load() {
 
     // Insert 200 tasks — should trigger eviction.
     for i in 0..200 {
-        let task = Task {
-            id: TaskId::new(format!("evict-task-{i}")),
-            context_id: ContextId::new("ctx-evict"),
-            status: TaskStatus::new(TaskState::Completed),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        };
+        let task = Task::new(
+            TaskId::new(format!("evict-task-{i}")),
+            ContextId::new("ctx-evict"),
+            TaskStatus::new(TaskState::Completed),
+        );
         store.save(&task).await.unwrap();
     }
 
@@ -412,14 +381,11 @@ async fn concurrent_multi_tenant_isolation() {
             handles.push(tokio::spawn(TenantContext::scope(
                 tenant.clone(),
                 async move {
-                    let task = Task {
-                        id: TaskId::new(format!("task-{tenant_idx}-{task_idx}")),
-                        context_id: ContextId::new(format!("ctx-{tenant_idx}")),
-                        status: TaskStatus::new(TaskState::Completed),
-                        history: None,
-                        artifacts: None,
-                        metadata: None,
-                    };
+                    let task = Task::new(
+                        TaskId::new(format!("task-{tenant_idx}-{task_idx}")),
+                        ContextId::new(format!("ctx-{tenant_idx}")),
+                        TaskStatus::new(TaskState::Completed),
+                    );
                     store.save(&task).await.unwrap();
                 },
             )));

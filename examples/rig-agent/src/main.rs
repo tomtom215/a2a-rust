@@ -163,12 +163,11 @@ where
 
             // 2. Transition to Working
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
 
             // 3. Run the rig model. Provider errors propagate so the server
@@ -198,14 +197,14 @@ where
 
             // 4. Package the response as an A2A artifact
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    artifact: Artifact::new("rig-response", vec![Part::text(&answer.text)]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new("rig-response", vec![Part::text(&answer.text)]),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
 
             // 4b. If the answer took tool calls, publish what ran as a second
@@ -222,28 +221,24 @@ where
             //     is what lets it be unit-tested with no server at all.
             if !answer.trace.is_empty() {
                 queue
-                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ctx.context_id.clone(),
-                        artifact: Artifact::new(
-                            "tool-trace",
-                            vec![Part::text(answer.trace.join("\n"))],
-                        ),
-                        append: None,
-                        last_chunk: Some(true),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::ArtifactUpdate(
+                        TaskArtifactUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            ctx.context_id.clone(),
+                            Artifact::new("tool-trace", vec![Part::text(answer.trace.join("\n"))]),
+                        )
+                        .with_last_chunk(true),
+                    ))
                     .await?;
             }
 
             // 5. Transition to Completed
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
 
             Ok(())

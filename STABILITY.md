@@ -125,9 +125,19 @@ removing an unsafe surface; those are documented as such.
   with default implementations so external implementations keep compiling; the
   rules for doing that are in
   [CONTRIBUTING.md](CONTRIBUTING.md#extending-a-public-trait).
-- **Protocol enums and structs that can grow with the A2A specification** are
-  `#[non_exhaustive]`, so a new variant or field from a specification
-  revision is a patch-level addition. The three deliberate exceptions are
+- **Protocol enums, and the fourteen protocol structs that can grow with the
+  A2A specification,** are `#[non_exhaustive]`, so a new variant or field from
+  a specification revision is a patch-level addition. The structs are
+  `AgentCard`, `AgentSkill`, `AgentInterface`, `AgentProvider`,
+  `AgentExtension`, `AgentCapabilities`, `Message`, `Part`, `Task`,
+  `TaskStatus`, `Artifact`, `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`
+  and `TaskPushNotificationConfig`; each is built with `new` and `with_*`.
+  The other 26 wire structs (the method parameters and responses, the
+  security schemes and flows, `AuthenticationInfo`, `StringList`,
+  `SecurityRequirement`, `AgentCardSignature`) are exhaustive, and a field
+  added to one is a breaking change under §2. Until 0.16.0 this paragraph
+  said all of them were marked, and 13 of the 14 were not (audit G-10).
+  The three deliberate exceptions among the enums and result types are
   closed sets fixed by their underlying standards — `ApiKeyLocation` (OpenAPI's
   header/query/cookie), `JsonRpcResponse` (JSON-RPC 2.0's result/error) and
   `JsonRpcRequestId` (JSON-RPC 2.0's absent/null/value id states) — and stay

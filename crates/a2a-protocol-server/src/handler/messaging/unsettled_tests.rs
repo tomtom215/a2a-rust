@@ -22,12 +22,11 @@ struct Quiet;
 crate::agent_executor!(Quiet, |_ctx, _queue| async { Ok(()) });
 
 fn status(state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(state),
+    ))
 }
 
 fn context() -> RequestContext {

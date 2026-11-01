@@ -19,14 +19,11 @@ async fn make_store() -> SqliteTaskStore {
 }
 
 fn task(id: &str, state: TaskState) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(state),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("ctx"),
+        TaskStatus::new(state),
+    )
 }
 
 /// Backdates a row so a policy measured in days can be tested in milliseconds.
@@ -439,12 +436,11 @@ async fn event_log_orphans_are_reclaimed_when_the_cascade_does_not_fire() {
             &done.id,
             1,
             &a2a_protocol_types::events::StreamResponse::StatusUpdate(
-                a2a_protocol_types::events::TaskStatusUpdateEvent {
-                    task_id: done.id.clone(),
-                    context_id: done.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                },
+                a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+                    done.id.clone(),
+                    done.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                ),
             ),
         )
         .await

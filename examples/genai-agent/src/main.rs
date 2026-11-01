@@ -119,12 +119,11 @@ impl AgentExecutor for GenaiAgentExecutor {
 
             // 2. Transition to Working
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
 
             // 3. Call the LLM via genai. A provider failure propagates as an
@@ -178,24 +177,23 @@ impl AgentExecutor for GenaiAgentExecutor {
 
             // 4. Package as A2A artifact
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    artifact: Artifact::new("llm-response", vec![Part::text(response_text)]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new("llm-response", vec![Part::text(response_text)]),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
 
             // 5. Complete
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
 
             Ok(())
@@ -205,40 +203,31 @@ impl AgentExecutor for GenaiAgentExecutor {
 
 /// Builds the agent card advertised at `/.well-known/agent-card.json`.
 fn make_agent_card(url: &str, model: &str) -> AgentCard {
-    AgentCard {
-        url: Some(url.into()),
-        name: "Genai LLM Agent".into(),
-        description: format!("A2A agent backed by the '{model}' model via genai"),
-        version: env!("CARGO_PKG_VERSION").into(),
-        supported_interfaces: vec![AgentInterface {
-            url: url.into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "chat".into(),
-            name: "LLM Chat".into(),
-            description: "Sends the message text to the configured LLM and returns the completion"
-                .into(),
-            tags: vec!["llm".into(), "chat".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none()
-            .with_streaming(true)
-            .with_push_notifications(true)
-            .with_extended_agent_card(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
+    {
+        let mut built = AgentCard::new(
+            "Genai LLM Agent",
+            env!("CARGO_PKG_VERSION"),
+            AgentInterface::new(url, "JSONRPC"),
+        )
+        .with_description(format!("A2A agent backed by the '{model}' model via genai"))
+        .with_input_modes(vec!["text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(
+            AgentSkill::new(
+                "chat",
+                "LLM Chat",
+                "Sends the message text to the configured LLM and returns the completion",
+            )
+            .with_tags(vec!["llm", "chat"]),
+        )
+        .with_capabilities(
+            AgentCapabilities::none()
+                .with_streaming(true)
+                .with_push_notifications(true)
+                .with_extended_agent_card(true),
+        );
+        built.url = Some(url.into());
+        built
     }
 }
 

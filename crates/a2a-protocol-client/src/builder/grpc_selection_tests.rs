@@ -21,31 +21,30 @@ use crate::config::{BINDING_GRPC, BINDING_JSONRPC};
 use crate::error::ClientError;
 
 fn interface(binding: &str, version: &str, url: &str, tenant: Option<&str>) -> AgentInterface {
-    AgentInterface {
-        url: url.into(),
-        protocol_binding: binding.into(),
-        protocol_version: version.into(),
-        tenant: tenant.map(Into::into),
+    {
+        let mut built = AgentInterface::new(url, binding).with_protocol_version(version);
+        built.tenant = tenant.map(Into::into);
+        built
     }
 }
 
 fn card(interfaces: Vec<AgentInterface>) -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "selection".into(),
-        version: "1.0".into(),
-        description: "gRPC selection fixture".into(),
-        supported_interfaces: interfaces,
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        capabilities: AgentCapabilities::none(),
-        security_schemes: None,
-        security_requirements: None,
-        default_input_modes: vec![],
-        default_output_modes: vec![],
-        skills: vec![],
-        signatures: None,
+    {
+        let mut built = AgentCard::new("selection", "1.0", AgentInterface::jsonrpc(String::new()));
+        built.url = None;
+        built.description = "gRPC selection fixture".into();
+        built.supported_interfaces = interfaces;
+        built.provider = None;
+        built.icon_url = None;
+        built.documentation_url = None;
+        built.capabilities = AgentCapabilities::none();
+        built.security_schemes = None;
+        built.security_requirements = None;
+        built.default_input_modes = vec![];
+        built.default_output_modes = vec![];
+        built.skills = vec![];
+        built.signatures = None;
+        built
     }
 }
 

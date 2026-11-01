@@ -24,14 +24,7 @@ fn pending(requested_by: Option<&str>) -> (Task, ApprovalRequest) {
     req.attach(&mut note);
     let mut status = TaskStatus::new(TaskState::InputRequired);
     status.message = Some(note);
-    let task = Task {
-        id: TaskId::new("t-1"),
-        context_id: ContextId::new("c-1"),
-        status,
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(TaskId::new("t-1"), ContextId::new("c-1"), status);
     (task, req)
 }
 

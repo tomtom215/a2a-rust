@@ -332,14 +332,11 @@ fn tck_task_golden_deserialization() {
 /// Validates Task serialization uses camelCase field names.
 #[test]
 fn tck_task_camel_case_fields() {
-    let task = Task {
-        id: TaskId::new("t1"),
-        context_id: ContextId::new("c1"),
-        status: TaskStatus::new(TaskState::Submitted),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("t1"),
+        ContextId::new("c1"),
+        TaskStatus::new(TaskState::Submitted),
+    );
     let v = serde_json::to_value(&task).unwrap();
 
     // Must use camelCase
@@ -357,14 +354,11 @@ fn tck_task_camel_case_fields() {
 /// Optional fields must be absent when None (not null).
 #[test]
 fn tck_task_optional_fields_absent_not_null() {
-    let task = Task {
-        id: TaskId::new("t1"),
-        context_id: ContextId::new("c1"),
-        status: TaskStatus::new(TaskState::Submitted),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("t1"),
+        ContextId::new("c1"),
+        TaskStatus::new(TaskState::Submitted),
+    );
     let json_str = serde_json::to_string(&task).unwrap();
 
     assert!(
@@ -530,37 +524,16 @@ fn tck_agent_card_golden_format() {
 /// Validates that v1.0 removed fields are not present.
 #[test]
 fn tck_agent_card_no_legacy_fields() {
-    let card = AgentCard {
-        url: None,
-        name: "Test".into(),
-        description: "Test".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "https://example.com".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "s1".into(),
-            name: "S".into(),
-            description: "D".into(),
-            tags: vec![],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    };
+    let card = AgentCard::new(
+        "Test",
+        "1.0.0",
+        AgentInterface::new("https://example.com", "JSONRPC").with_protocol_version("1.0.0"),
+    )
+    .with_description("Test")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("s1", "S", "D"))
+    .with_capabilities(AgentCapabilities::none());
     let json_str = serde_json::to_string(&card).unwrap();
 
     // v1.0 removed fields — parse as JSON to check top-level keys only
@@ -1309,59 +1282,45 @@ fn tck_agent_extension_minimal() {
 /// JSON, deserializes back, and verifies equality.
 #[test]
 fn tck_full_round_trip_complex_task() {
-    let original = Task {
-        id: TaskId::new("task-round-trip"),
-        context_id: ContextId::new("ctx-round-trip"),
-        status: TaskStatus {
-            state: TaskState::Completed,
-            message: Some(Message {
-                id: MessageId::new("status-msg"),
-                role: MessageRole::Agent,
-                parts: vec![Part::text("All done")],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            }),
-            timestamp: Some("2026-03-15T12:00:00Z".into()),
-        },
-        history: Some(vec![
-            Message {
-                id: MessageId::new("msg-1"),
-                role: MessageRole::User,
-                parts: vec![Part::text("Input")],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: Some(vec!["ext:memory".into()]),
-                metadata: None,
-            },
-            Message {
-                id: MessageId::new("msg-2"),
-                role: MessageRole::Agent,
-                parts: vec![
-                    Part::text("Output text"),
-                    Part::file(
-                        FileContent::from_bytes("SGVsbG8=")
-                            .with_name("result.bin")
-                            .with_mime_type("application/octet-stream"),
-                    ),
-                    Part::data(json!({"key": "value"})),
-                ],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: Some(vec![TaskId::new("ref-task-1")]),
-                extensions: None,
-                metadata: Some(json!({"source": "model-v2"})),
-            },
-        ]),
-        artifacts: Some(vec![Artifact::new(
-            ArtifactId::new("art-1"),
-            vec![Part::text("Final output")],
-        )]),
-        metadata: Some(json!({"priority": "high", "tags": ["test", "round-trip"]})),
-    };
+    let original = Task::new(
+        TaskId::new("task-round-trip"),
+        ContextId::new("ctx-round-trip"),
+        TaskStatus::new(TaskState::Completed)
+            .with_message(Message::new(
+                MessageId::new("status-msg"),
+                MessageRole::Agent,
+                vec![Part::text("All done")],
+            ))
+            .at("2026-03-15T12:00:00Z"),
+    )
+    .with_history(vec![
+        Message::new(
+            MessageId::new("msg-1"),
+            MessageRole::User,
+            vec![Part::text("Input")],
+        )
+        .with_extensions(vec!["ext:memory"]),
+        Message::new(
+            MessageId::new("msg-2"),
+            MessageRole::Agent,
+            vec![
+                Part::text("Output text"),
+                Part::file(
+                    FileContent::from_bytes("SGVsbG8=")
+                        .with_name("result.bin")
+                        .with_mime_type("application/octet-stream"),
+                ),
+                Part::data(json!({"key": "value"})),
+            ],
+        )
+        .with_reference_task_ids(vec![TaskId::new("ref-task-1")])
+        .with_metadata(json!({"source": "model-v2"})),
+    ])
+    .with_artifacts(vec![Artifact::new(
+        ArtifactId::new("art-1"),
+        vec![Part::text("Final output")],
+    )])
+    .with_metadata(json!({"priority": "high", "tags": ["test", "round-trip"]}));
 
     let json_str = serde_json::to_string_pretty(&original).unwrap();
     let deserialized: Task = serde_json::from_str(&json_str).unwrap();
@@ -1393,28 +1352,21 @@ fn tck_full_round_trip_complex_task() {
 /// Full round-trip of an AgentCard with all security features populated.
 #[test]
 fn tck_full_round_trip_agent_card_with_security() {
-    let original = AgentCard {
-        url: None,
-        name: "Secure Agent".into(),
-        description: "Agent with full security config".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "https://secure.example.com/rpc".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: Some("tenant-1".into()),
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "secure-op".into(),
-            name: "Secure Operation".into(),
-            description: "Requires auth".into(),
-            tags: vec!["secure".into()],
-            examples: Some(vec!["Do something secure".into()]),
-            input_modes: None,
-            output_modes: None,
-            security_requirements: Some(vec![SecurityRequirement {
+    let original = AgentCard::new(
+        "Secure Agent",
+        "1.0.0",
+        AgentInterface::new("https://secure.example.com/rpc", "JSONRPC")
+            .with_protocol_version("1.0.0")
+            .with_tenant("tenant-1"),
+    )
+    .with_description("Agent with full security config")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        AgentSkill::new("secure-op", "Secure Operation", "Requires auth")
+            .with_tags(vec!["secure"])
+            .with_examples(vec!["Do something secure"])
+            .with_security_requirements(vec![SecurityRequirement {
                 schemes: HashMap::from([(
                     "oauth2".into(),
                     StringList {
@@ -1422,40 +1374,40 @@ fn tck_full_round_trip_agent_card_with_security() {
                     },
                 )]),
             }]),
-        }],
-        capabilities: AgentCapabilities::none()
+    )
+    .with_capabilities(
+        AgentCapabilities::none()
             .with_streaming(true)
             .with_push_notifications(true)
             .with_extended_agent_card(true),
-        provider: Some(AgentProvider {
-            organization: "SecureCorp".into(),
-            url: "https://securecorp.example.com".into(),
-        }),
-        icon_url: Some("https://secure.example.com/icon.png".into()),
-        documentation_url: Some("https://secure.example.com/docs".into()),
-        security_schemes: Some(HashMap::from([
-            (
-                "bearer".into(),
-                SecurityScheme::Http(HttpAuthSecurityScheme {
-                    scheme: "bearer".into(),
-                    bearer_format: Some("JWT".into()),
-                    description: None,
-                }),
-            ),
-            (
-                "api_key".into(),
-                SecurityScheme::ApiKey(ApiKeySecurityScheme {
-                    location: ApiKeyLocation::Header,
-                    name: "X-API-Key".into(),
-                    description: Some("API key for access".into()),
-                }),
-            ),
-        ])),
-        security_requirements: Some(vec![SecurityRequirement {
-            schemes: HashMap::from([("bearer".into(), StringList { list: vec![] })]),
-        }]),
-        signatures: None,
-    };
+    )
+    .with_provider(AgentProvider::new(
+        "SecureCorp",
+        "https://securecorp.example.com",
+    ))
+    .with_icon_url("https://secure.example.com/icon.png")
+    .with_documentation_url("https://secure.example.com/docs")
+    .with_security_schemes(HashMap::from([
+        (
+            "bearer".into(),
+            SecurityScheme::Http(HttpAuthSecurityScheme {
+                scheme: "bearer".into(),
+                bearer_format: Some("JWT".into()),
+                description: None,
+            }),
+        ),
+        (
+            "api_key".into(),
+            SecurityScheme::ApiKey(ApiKeySecurityScheme {
+                location: ApiKeyLocation::Header,
+                name: "X-API-Key".into(),
+                description: Some("API key for access".into()),
+            }),
+        ),
+    ]))
+    .with_security_requirements(vec![SecurityRequirement {
+        schemes: HashMap::from([("bearer".into(), StringList { list: vec![] })]),
+    }]);
 
     let json_str = serde_json::to_string_pretty(&original).unwrap();
     let deserialized: AgentCard = serde_json::from_str(&json_str).unwrap();

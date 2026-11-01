@@ -628,28 +628,22 @@ mod tests {
     }
 
     fn make_push_config(task_id: &str) -> TaskPushNotificationConfig {
-        TaskPushNotificationConfig {
-            tenant: None,
-            id: Some("cfg-1".to_owned()),
-            task_id: Some(task_id.to_owned()),
-            url: "https://example.com/webhook".to_owned(),
-            token: None,
-            authentication: None,
-        }
+        TaskPushNotificationConfig::new(
+            task_id.to_owned(),
+            "https://example.com/webhook".to_owned(),
+        )
+        .with_id("cfg-1".to_owned())
     }
 
     /// Saves a minimal task so push-config creates (which require the target
     /// task to exist, spec §3.1.7) can succeed.
     async fn save_task(handler: &RequestHandler, id: &str) {
         use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
-        let task = Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(TaskState::Submitted),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        };
+        let task = Task::new(
+            TaskId::new(id),
+            ContextId::new("ctx"),
+            TaskStatus::new(TaskState::Submitted),
+        );
         handler.task_store.save(&task).await.unwrap();
     }
 
@@ -768,14 +762,11 @@ mod tests {
             let each = Arc::clone(&handler);
             creates.push(tokio::spawn(async move {
                 each.on_set_push_config(
-                    TaskPushNotificationConfig {
-                        tenant: None,
-                        id: Some(format!("cfg-{i}")),
-                        task_id: Some("task-1".to_owned()),
-                        url: format!("https://example.com/hook/{i}"),
-                        token: None,
-                        authentication: None,
-                    },
+                    TaskPushNotificationConfig::new(
+                        "task-1".to_owned(),
+                        format!("https://example.com/hook/{i}"),
+                    )
+                    .with_id(format!("cfg-{i}")),
                     None,
                 )
                 .await
@@ -897,14 +888,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let config = TaskPushNotificationConfig {
-            tenant: None,
-            id: None,
-            task_id: None,
-            url: "https://example.com/webhook".to_owned(),
-            token: None,
-            authentication: None,
-        };
+        let config = TaskPushNotificationConfig::for_url("https://example.com/webhook".to_owned());
         let result = handler.on_set_push_config(config, None).await;
         match result {
             Err(crate::error::ServerError::InvalidField { message: msg, .. }) => {
@@ -956,14 +940,11 @@ mod tests {
             .unwrap();
         save_task(&handler, "task-ssrf").await;
 
-        let config = TaskPushNotificationConfig {
-            tenant: None,
-            id: Some("cfg-ssrf".to_owned()),
-            task_id: Some("task-ssrf".to_owned()),
-            url: "http://127.0.0.1:9000/webhook".to_owned(),
-            token: None,
-            authentication: None,
-        };
+        let config = TaskPushNotificationConfig::new(
+            "task-ssrf".to_owned(),
+            "http://127.0.0.1:9000/webhook".to_owned(),
+        )
+        .with_id("cfg-ssrf".to_owned());
 
         // The rejection surfaces as `ServerError::Protocol`, since
         // `validate_webhook_url` yields an `A2aError` that `?` converts.
@@ -1018,14 +999,11 @@ mod tests {
         // Two creates (distinct tasks) fill the global cap.
         for i in 0..2 {
             save_task(&handler, &format!("task-{i}")).await;
-            let cfg = TaskPushNotificationConfig {
-                tenant: None,
-                id: Some(format!("cfg-{i}")),
-                task_id: Some(format!("task-{i}")),
-                url: "https://example.com/webhook".to_owned(),
-                token: None,
-                authentication: None,
-            };
+            let cfg = TaskPushNotificationConfig::new(
+                format!("task-{i}"),
+                "https://example.com/webhook".to_owned(),
+            )
+            .with_id(format!("cfg-{i}"));
             handler
                 .on_set_push_config(cfg, None)
                 .await
@@ -1034,14 +1012,11 @@ mod tests {
 
         // The third distinct-task create exceeds the global ceiling.
         save_task(&handler, "task-x").await;
-        let cfg = TaskPushNotificationConfig {
-            tenant: None,
-            id: Some("cfg-x".to_owned()),
-            task_id: Some("task-x".to_owned()),
-            url: "https://example.com/webhook".to_owned(),
-            token: None,
-            authentication: None,
-        };
+        let cfg = TaskPushNotificationConfig::new(
+            "task-x".to_owned(),
+            "https://example.com/webhook".to_owned(),
+        )
+        .with_id("cfg-x".to_owned());
         let result = handler.on_set_push_config(cfg, None).await;
         assert!(
             matches!(result, Err(crate::error::ServerError::Overloaded(_))),
@@ -1083,13 +1058,9 @@ mod tests {
             .unwrap();
 
         save_task(&handler, "task-1").await;
-        let make = |url: &str| TaskPushNotificationConfig {
-            tenant: None,
-            id: Some("cfg-1".to_owned()),
-            task_id: Some("task-1".to_owned()),
-            url: url.to_owned(),
-            token: None,
-            authentication: None,
+        let make = |url: &str| {
+            TaskPushNotificationConfig::new("task-1".to_owned(), url.to_owned())
+                .with_id("cfg-1".to_owned())
         };
 
         // First create fills the task to its cap.
@@ -1142,31 +1113,18 @@ mod tests {
         caps: a2a_protocol_types::agent_card::AgentCapabilities,
     ) -> a2a_protocol_types::agent_card::AgentCard {
         use a2a_protocol_types::agent_card::{AgentCard, AgentInterface};
-        AgentCard {
-            url: None,
-            name: "Test Agent".into(),
-            description: "A test agent".into(),
-            version: "1.0.0".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:8080".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: None,
-            }],
-            default_input_modes: vec!["text/plain".into()],
-            default_output_modes: vec!["text/plain".into()],
-            skills: vec![
-                a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
-                    .with_tags(["test"]),
-            ],
-            capabilities: caps,
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            security_schemes: None,
-            security_requirements: None,
-            signatures: None,
-        }
+        AgentCard::new(
+            "Test Agent",
+            "1.0.0",
+            AgentInterface::new("http://localhost:8080", "JSONRPC").with_protocol_version("1.0.0"),
+        )
+        .with_description("A test agent")
+        .with_input_modes(vec!["text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(
+            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+        )
+        .with_capabilities(caps)
     }
 
     /// The proto marks `url` REQUIRED. With private URLs allowed the host

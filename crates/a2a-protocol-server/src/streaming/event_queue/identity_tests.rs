@@ -27,30 +27,20 @@ fn artifact_update(task_id: &str) -> StreamResponse {
     use a2a_protocol_types::artifact::Artifact;
     use a2a_protocol_types::events::TaskArtifactUpdateEvent;
     use a2a_protocol_types::message::Part;
-    StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-        task_id: TaskId::new(task_id),
-        context_id: ContextId::new(""),
-        artifact: Artifact::new("a-1", vec![Part::text("x")]),
-        append: None,
-        last_chunk: None,
-        metadata: None,
-    })
+    StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(
+        TaskId::new(task_id),
+        ContextId::new(""),
+        Artifact::new("a-1", vec![Part::text("x")]),
+    ))
 }
 
 fn task_snapshot(task_id: &str) -> StreamResponse {
     use a2a_protocol_types::task::Task;
-    StreamResponse::Task(Task {
-        id: TaskId::new(task_id),
-        context_id: ContextId::new(""),
-        status: TaskStatus {
-            state: TaskState::Working,
-            message: None,
-            timestamp: None,
-        },
-        history: None,
-        artifacts: None,
-        metadata: None,
-    })
+    StreamResponse::Task(Task::new(
+        TaskId::new(task_id),
+        ContextId::new(""),
+        TaskStatus::new(TaskState::Working),
+    ))
 }
 
 #[tokio::test]

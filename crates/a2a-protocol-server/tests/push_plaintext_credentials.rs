@@ -65,16 +65,11 @@ fn warnings_storing(mut config: TaskPushNotificationConfig) -> Vec<String> {
                 .expect("handler");
             let params = MessageSendParams {
                 tenant: None,
-                message: Message {
-                    id: MessageId::new("m1"),
-                    role: MessageRole::User,
-                    parts: vec![Part::text("hi")],
-                    task_id: None,
-                    context_id: None,
-                    reference_task_ids: None,
-                    extensions: None,
-                    metadata: None,
-                },
+                message: Message::new(
+                    MessageId::new("m1"),
+                    MessageRole::User,
+                    vec![Part::text("hi")],
+                ),
                 configuration: None,
                 metadata: None,
             };

@@ -49,39 +49,35 @@ impl PushSender for Pushes {
 }
 
 pub(super) fn task(state: TaskState) -> Task {
-    Task {
-        id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(state),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(state),
+    )
 }
 
 pub(super) fn status(seq: u64, state: TaskState) -> StreamEvent {
     StreamEvent::at(
         seq,
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
-            status: TaskStatus::new(state),
-            metadata: None,
-        }),
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new("t"),
+            ContextId::new("c"),
+            TaskStatus::new(state),
+        )),
     )
 }
 
 pub(super) fn artifact(seq: u64) -> StreamEvent {
     StreamEvent::at(
         seq,
-        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
-            artifact: Artifact::new(ArtifactId::new("late"), vec![Part::text("x")]),
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        }),
+        StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                TaskId::new("t"),
+                ContextId::new("c"),
+                Artifact::new(ArtifactId::new("late"), vec![Part::text("x")]),
+            )
+            .with_last_chunk(true),
+        ),
     )
 }
 
@@ -108,14 +104,7 @@ impl Fixture {
         store.save(&task(stored)).await.expect("seed");
         let configs = InMemoryPushConfigStore::new();
         configs
-            .set(TaskPushNotificationConfig {
-                tenant: None,
-                id: Some("cfg".into()),
-                task_id: Some("t".into()),
-                url: "https://example.com/hook".into(),
-                token: None,
-                authentication: None,
-            })
+            .set(TaskPushNotificationConfig::new("t", "https://example.com/hook").with_id("cfg"))
             .await
             .expect("config");
         let pushes = Arc::new(Pushes::default());

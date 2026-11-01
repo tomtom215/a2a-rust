@@ -178,14 +178,10 @@ executor!(NamelessArtifact, |ctx, queue| {
     let mut artifact = Artifact::new("placeholder", vec![Part::text("x")]);
     artifact.id = "".into();
     queue
-        .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ctx.context_id.clone(),
-            artifact,
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        }))
+        .write(StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), artifact)
+                .with_last_chunk(true),
+        ))
         .await?;
     if emit.is_cancelled() {
         return emit.status(TaskState::Canceled).await;

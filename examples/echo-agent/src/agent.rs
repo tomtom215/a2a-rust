@@ -62,35 +62,26 @@ agent_executor!(EchoExecutor, |ctx, queue| async {
 /// on the server it started.
 #[must_use]
 pub fn make_agent_card(ep: &Endpoints) -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Echo Agent".into(),
-        description: "A simple echo agent that mirrors your input".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: interfaces(ep),
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "echo".into(),
-            name: "Echo".into(),
-            description: "Echoes your message back as an artifact".into(),
-            tags: vec!["echo".into(), "demo".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none()
-            .with_streaming(true)
-            .with_push_notifications(true)
-            .with_extended_agent_card(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    let mut advertised = interfaces(ep).into_iter();
+    let first = advertised
+        .next()
+        .expect("the harness advertises at least one interface");
+    advertised
+        .fold(
+            AgentCard::new("Echo Agent", "1.0.0", first),
+            AgentCard::with_interface,
+        )
+        .with_description("A simple echo agent that mirrors your input")
+        .with_skill(
+            AgentSkill::new("echo", "Echo", "Echoes your message back as an artifact")
+                .with_tags(["echo", "demo"]),
+        )
+        .with_capabilities(
+            AgentCapabilities::none()
+                .with_streaming(true)
+                .with_push_notifications(true)
+                .with_extended_agent_card(true),
+        )
 }
 
 #[cfg(test)]
@@ -108,16 +99,7 @@ mod tests {
 
     fn ctx_with(parts: Vec<Part>) -> RequestContext {
         RequestContext::new(
-            Message {
-                id: MessageId::new("m-1"),
-                role: MessageRole::User,
-                parts,
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            },
+            Message::new(MessageId::new("m-1"), MessageRole::User, parts),
             TaskId::new("t-1"),
             "ctx-1".to_owned(),
         )

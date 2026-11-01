@@ -102,22 +102,19 @@ async fn a_limit_is_honoured_and_the_rest_is_still_reachable() {
 #[tokio::test]
 async fn appending_the_same_position_twice_leaves_one_event() {
     let store = InMemoryTaskStore::new();
-    let task = a2a_protocol_types::task::Task {
-        id: TaskId::new("t-1"),
-        context_id: a2a_protocol_types::task::ContextId::new("c-1"),
-        status: a2a_protocol_types::task::TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = a2a_protocol_types::task::Task::new(
+        TaskId::new("t-1"),
+        a2a_protocol_types::task::ContextId::new("c-1"),
+        a2a_protocol_types::task::TaskStatus::new(TaskState::Working),
+    );
     store.save(&task).await.expect("save");
 
-    let event = StreamResponse::StatusUpdate(a2a_protocol_types::events::TaskStatusUpdateEvent {
-        task_id: task.id.clone(),
-        context_id: task.context_id.clone(),
-        status: a2a_protocol_types::task::TaskStatus::new(TaskState::Working),
-        metadata: None,
-    });
+    let event =
+        StreamResponse::StatusUpdate(a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+            task.id.clone(),
+            task.context_id.clone(),
+            a2a_protocol_types::task::TaskStatus::new(TaskState::Working),
+        ));
     store
         .append_event(&task.id, 1, &event)
         .await
@@ -183,14 +180,11 @@ async fn a_store_without_a_log_says_so_rather_than_pretending() {
 #[tokio::test]
 async fn the_default_get_with_position_reads_the_task_and_reports_no_position() {
     let store = NoLog(Arc::new(InMemoryTaskStore::new()));
-    let task = Task {
-        id: TaskId::new("t-1"),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("t-1"),
+        ContextId::new("ctx-1"),
+        TaskStatus::new(TaskState::Working),
+    );
     store.save(&task).await.expect("save");
 
     let (found, position) = store

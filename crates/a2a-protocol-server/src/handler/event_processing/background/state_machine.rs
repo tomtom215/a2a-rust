@@ -181,10 +181,11 @@ pub(super) async fn process_event_with(
             }
             // Save previous state so we can revert on failure.
             let prev_status = last_task.status.clone();
-            last_task.status = TaskStatus {
-                state: next,
-                message: update.status.message.clone(),
-                timestamp: update.status.timestamp.clone(),
+            last_task.status = {
+                let mut built = TaskStatus::new(next);
+                built.message.clone_from(&update.status.message);
+                built.timestamp.clone_from(&update.status.timestamp);
+                built
             };
             if let Err(e) = crate::handler::event_processing::persisting(
                 retry,
@@ -639,34 +640,26 @@ mod tests {
     use super::*;
 
     fn make_task(id: &str, state: TaskState) -> Task {
-        Task {
-            id: id.into(),
-            context_id: ContextId::new("ctx-1"),
-            status: TaskStatus::new(state),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(id, ContextId::new("ctx-1"), TaskStatus::new(state))
     }
 
     fn make_status_event(task_id: &str, state: TaskState) -> StreamResponse {
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new(task_id),
-            context_id: ContextId::new("ctx-1"),
-            status: TaskStatus::new(state),
-            metadata: None,
-        })
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new(task_id),
+            ContextId::new("ctx-1"),
+            TaskStatus::new(state),
+        ))
     }
 
     fn make_artifact_event(task_id: &str) -> StreamResponse {
-        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: TaskId::new(task_id),
-            context_id: ContextId::new("ctx-1"),
-            artifact: Artifact::new(ArtifactId::new("art-1"), vec![Part::text("output")]),
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        })
+        StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                TaskId::new(task_id),
+                ContextId::new("ctx-1"),
+                Artifact::new(ArtifactId::new("art-1"), vec![Part::text("output")]),
+            )
+            .with_last_chunk(true),
+        )
     }
 
     fn default_limits() -> HandlerLimits {
@@ -687,16 +680,11 @@ mod tests {
             .unwrap();
         let mut last_task = make_task("t-msg", TaskState::Working);
 
-        let msg = Message {
-            id: MessageId::new("agent-m1"),
-            role: MessageRole::Agent,
-            parts: vec![Part::text("hello from agent")],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        };
+        let msg = Message::new(
+            MessageId::new("agent-m1"),
+            MessageRole::Agent,
+            vec![Part::text("hello from agent")],
+        );
         process_event_bg(
             Ok(StreamResponse::Message(msg)),
             &task_id,
@@ -1002,16 +990,11 @@ mod tests {
             TaskState::Canceled,
             TaskState::Working,
         ));
-        let message = a2a_protocol_types::message::Message {
-            id: a2a_protocol_types::message::MessageId::new("m"),
-            role: a2a_protocol_types::message::MessageRole::Agent,
-            parts: vec![Part::text("late")],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        };
+        let message = a2a_protocol_types::message::Message::new(
+            a2a_protocol_types::message::MessageId::new("m"),
+            a2a_protocol_types::message::MessageRole::Agent,
+            vec![Part::text("late")],
+        );
         let mut appended = make_artifact_event("t-lost");
         if let StreamResponse::ArtifactUpdate(ref mut e) = appended {
             e.append = Some(true);
@@ -1317,27 +1300,17 @@ mod tests {
             .await
             .unwrap();
         let mut last_task = make_task("t-msg-revert", TaskState::Working);
-        last_task.history = Some(vec![Message {
-            id: MessageId::new("m-existing"),
-            role: MessageRole::User,
-            parts: vec![Part::text("already recorded")],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        }]);
+        last_task.history = Some(vec![Message::new(
+            MessageId::new("m-existing"),
+            MessageRole::User,
+            vec![Part::text("already recorded")],
+        )]);
 
-        let msg = Message {
-            id: MessageId::new("agent-refused"),
-            role: MessageRole::Agent,
-            parts: vec![Part::text("this write will fail")],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        };
+        let msg = Message::new(
+            MessageId::new("agent-refused"),
+            MessageRole::Agent,
+            vec![Part::text("this write will fail")],
+        );
         process_event_bg(
             Ok(StreamResponse::Message(msg)),
             &task_id,
@@ -1431,14 +1404,13 @@ mod tests {
     async fn register_webhook(store: &InMemoryPushConfigStore, task_id: &str) {
         use crate::push::PushConfigStore as _;
         store
-            .set(a2a_protocol_types::push::TaskPushNotificationConfig {
-                tenant: None,
-                id: Some("cfg".into()),
-                task_id: Some(task_id.into()),
-                url: "https://example.com/hook".into(),
-                token: None,
-                authentication: None,
-            })
+            .set(
+                a2a_protocol_types::push::TaskPushNotificationConfig::new(
+                    task_id,
+                    "https://example.com/hook",
+                )
+                .with_id("cfg"),
+            )
             .await
             .expect("config");
     }
@@ -1473,16 +1445,13 @@ mod tests {
 
         let mut carried = crate::streaming::StreamEvent::at(
             1,
-            StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: task_id.clone(),
-                context_id: ContextId::new("ctx-1"),
-                status: TaskStatus {
-                    state: TaskState::InputRequired,
-                    message: Some(Message::agent_text("refused", "this write will fail")),
-                    timestamp: Some("2026-10-23T00:00:00.000Z".into()),
-                },
-                metadata: None,
-            }),
+            StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                task_id.clone(),
+                ContextId::new("ctx-1"),
+                TaskStatus::new(TaskState::InputRequired)
+                    .with_message(Message::agent_text("refused", "this write will fail"))
+                    .at("2026-10-23T00:00:00.000Z"),
+            )),
         );
         carried.folded_message = true;
         let outcome = process_queued_event(
@@ -1752,21 +1721,17 @@ mod tests {
         parts: Vec<Part>,
         append: Option<bool>,
     ) -> StreamResponse {
-        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: TaskId::new(task_id),
-            context_id: ContextId::new("ctx-1"),
-            // Built literally rather than via `Artifact::new`, which
-            // debug-asserts non-empty parts — and an empty artifact is
-            // precisely the spec violation the guard under test exists to
-            // reject, so it has to be constructible here.
-            artifact: Artifact {
-                id: ArtifactId::new(artifact_id),
-                parts,
-                ..Artifact::new(ArtifactId::new(artifact_id), vec![Part::text("seed")])
-            },
-            append,
-            last_chunk: None,
-            metadata: None,
+        StreamResponse::ArtifactUpdate({
+            let mut built =
+                TaskArtifactUpdateEvent::new(TaskId::new(task_id), ContextId::new("ctx-1"), {
+                    let mut built =
+                        Artifact::new(ArtifactId::new(artifact_id), vec![Part::text("seed")]);
+                    built.id = ArtifactId::new(artifact_id);
+                    built.parts = parts;
+                    built
+                });
+            built.append = append;
+            built
         })
     }
 
@@ -2213,14 +2178,11 @@ mod failure_reporting_tests {
     }
 
     fn working_task() -> Task {
-        Task {
-            id: TaskId::new("t1"),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(TaskState::Working),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(
+            TaskId::new("t1"),
+            ContextId::new("ctx"),
+            TaskStatus::new(TaskState::Working),
+        )
     }
 
     async fn drive(event: StreamResponse, store: &dyn TaskStore) -> RecordingMetrics {
@@ -2243,23 +2205,23 @@ mod failure_reporting_tests {
     }
 
     fn artifact_event() -> StreamResponse {
-        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: TaskId::new("t1"),
-            context_id: ContextId::new("ctx"),
-            artifact: Artifact::new("a", vec![Part::text("chunk")]),
-            append: Some(false),
-            last_chunk: Some(true),
-            metadata: None,
-        })
+        StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                TaskId::new("t1"),
+                ContextId::new("ctx"),
+                Artifact::new("a", vec![Part::text("chunk")]),
+            )
+            .with_append(false)
+            .with_last_chunk(true),
+        )
     }
 
     fn completed_event() -> StreamResponse {
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("t1"),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(TaskState::Completed),
-            metadata: None,
-        })
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new("t1"),
+            ContextId::new("ctx"),
+            TaskStatus::new(TaskState::Completed),
+        ))
     }
 
     #[tokio::test]

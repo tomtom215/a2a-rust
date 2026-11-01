@@ -8,6 +8,7 @@
 /// Artifacts represent task outputs.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct Artifact {
     /// Unique identifier (e.g. UUID) for the artifact. It must be unique within a task.
     #[serde(rename = "artifactId", alias = "artifact_id")]

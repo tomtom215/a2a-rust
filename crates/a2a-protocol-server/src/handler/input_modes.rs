@@ -129,28 +129,16 @@ mod tests {
         if let Some(modes) = skill {
             s = s.with_input_modes(modes.iter().copied());
         }
-        AgentCard {
-            url: None,
-            name: "Test Agent".into(),
-            description: "A test agent".into(),
-            version: "1.0.0".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:8080".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: None,
-            }],
-            default_input_modes: default.iter().map(|m| (*m).to_owned()).collect(),
-            default_output_modes: vec!["text/plain".into()],
-            skills: vec![s],
-            capabilities: AgentCapabilities::none(),
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            security_schemes: None,
-            security_requirements: None,
-            signatures: None,
-        }
+        AgentCard::new(
+            "Test Agent",
+            "1.0.0",
+            AgentInterface::new("http://localhost:8080", "JSONRPC").with_protocol_version("1.0.0"),
+        )
+        .with_description("A test agent")
+        .with_input_modes(default.iter().copied())
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(s)
+        .with_capabilities(AgentCapabilities::none())
     }
 
     fn with_part(media_type: Option<&str>) -> Message {

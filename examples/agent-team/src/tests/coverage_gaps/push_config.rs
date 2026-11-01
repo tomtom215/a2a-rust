@@ -67,14 +67,11 @@ pub async fn test_webhook_url_scheme_validation(_ctx: &TestContext) -> TestResul
 
     let sender = a2a_protocol_server::push::HttpPushSender::new();
     let event = a2a_protocol_types::events::StreamResponse::StatusUpdate(
-        a2a_protocol_types::events::TaskStatusUpdateEvent {
-            task_id: a2a_protocol_types::task::TaskId::new("t1"),
-            context_id: a2a_protocol_types::task::ContextId::new("c1"),
-            status: a2a_protocol_types::task::TaskStatus::new(
-                a2a_protocol_types::task::TaskState::Working,
-            ),
-            metadata: None,
-        },
+        a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+            a2a_protocol_types::task::TaskId::new("t1"),
+            a2a_protocol_types::task::ContextId::new("c1"),
+            a2a_protocol_types::task::TaskStatus::new(a2a_protocol_types::task::TaskState::Working),
+        ),
     );
     let config =
         a2a_protocol_types::push::TaskPushNotificationConfig::new("t1", "ftp://evil.com/hook");

@@ -22,12 +22,11 @@ use a2a_protocol_server::streaming::{
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn status_event(task_id: &str, state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new(task_id),
-        context_id: "ctx".into(),
-        status: TaskStatus::new(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new(task_id),
+        "ctx",
+        TaskStatus::new(state),
+    ))
 }
 
 // ── 1. Writer/reader lifecycle ───────────────────────────────────────────────

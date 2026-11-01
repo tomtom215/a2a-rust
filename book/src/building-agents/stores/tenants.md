@@ -27,8 +27,7 @@ For multi-tenant deployments, use `TenantAwareInMemoryTaskStore` which provides 
 # #[tokio::main]
 # async fn main() -> () {
 # let task_id = TaskId::new("task-1");
-# let task = Task { id: task_id.clone(), context_id: ContextId::new("ctx-1"),
-#     status: TaskStatus::new(TaskState::Submitted), history: None, artifacts: None, metadata: None };
+# let task = Task::new(task_id.clone(), ContextId::new("ctx-1"), TaskStatus::new(TaskState::Submitted));
 use a2a_protocol_server::store::{TaskStore, TenantAwareInMemoryTaskStore, TenantContext};
 use std::sync::Arc;
 

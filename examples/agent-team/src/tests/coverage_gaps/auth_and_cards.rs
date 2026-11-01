@@ -46,37 +46,18 @@ pub async fn test_real_auth_rejection(ctx: &TestContext) -> TestResult {
     // Spin up a dedicated agent with a rejecting interceptor.
     let (listener, addr) = bind_listener().await;
     let url = format!("http://{addr}");
-    let card = AgentCard {
-        url: None,
-        name: "AuthTestAgent".into(),
-        description: "Agent that rejects unauthenticated requests".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: url.clone(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "auth-test".into(),
-            name: "Auth Test".into(),
-            description: "Tests auth rejection".into(),
-            tags: vec!["test".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    };
+    let card = AgentCard::new(
+        "AuthTestAgent",
+        "1.0.0",
+        AgentInterface::new(url.clone(), "JSONRPC").with_protocol_version("1.0.0"),
+    )
+    .with_description("Agent that rejects unauthenticated requests")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        AgentSkill::new("auth-test", "Auth Test", "Tests auth rejection").with_tags(vec!["test"]),
+    )
+    .with_capabilities(AgentCapabilities::none());
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(crate::executors::CodeAnalyzerExecutor)
@@ -239,31 +220,19 @@ impl AgentCardProducer for CountingProducer {
             let n = self
                 .counter
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok(AgentCard {
-                url: None,
-                name: format!("DynamicAgent-v{n}"),
-                description: "Dynamically generated agent card".into(),
-                version: format!("1.0.{n}"),
-                supported_interfaces: vec![AgentInterface {
-                    url: "http://localhost:0".into(),
-                    protocol_binding: "JSONRPC".into(),
-                    protocol_version: "1.0.0".into(),
-                    tenant: None,
-                }],
-                default_input_modes: vec!["text/plain".into()],
-                default_output_modes: vec!["text/plain".into()],
-                skills: vec![
-                    a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
-                        .with_tags(["test"]),
-                ],
-                capabilities: AgentCapabilities::none(),
-                provider: None,
-                icon_url: None,
-                documentation_url: None,
-                security_schemes: None,
-                security_requirements: None,
-                signatures: None,
-            })
+            Ok(AgentCard::new(
+                format!("DynamicAgent-v{n}"),
+                format!("1.0.{n}"),
+                AgentInterface::new("http://localhost:0", "JSONRPC").with_protocol_version("1.0.0"),
+            )
+            .with_description("Dynamically generated agent card")
+            .with_input_modes(vec!["text/plain"])
+            .with_output_modes(vec!["text/plain"])
+            .with_skill(
+                a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
+                    .with_tags(["test"]),
+            )
+            .with_capabilities(AgentCapabilities::none()))
         })
     }
 }

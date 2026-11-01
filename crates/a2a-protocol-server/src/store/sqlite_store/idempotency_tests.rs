@@ -105,14 +105,11 @@ async fn a_key_survives_the_deletion_of_its_task() {
     use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
 
     let store = store().await;
-    let task = Task {
-        id: TaskId::new("t1"),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("t1"),
+        ContextId::new("ctx"),
+        TaskStatus::new(TaskState::Completed),
+    );
     store.save(&task).await.unwrap();
     store
         .claim_idempotency_key(KEY, &MessageId::new("m1"), &task.id)

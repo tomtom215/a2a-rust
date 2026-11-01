@@ -103,16 +103,11 @@ async fn send_over(config: GrpcTransportConfig, addr: SocketAddr) -> Result<(), 
     client
         .send_message(MessageSendParams {
             tenant: None,
-            message: Message {
-                id: MessageId::new("m"),
-                role: MessageRole::User,
-                parts: vec![Part::text("hi")],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            },
+            message: Message::new(
+                MessageId::new("m"),
+                MessageRole::User,
+                vec![Part::text("hi")],
+            ),
             configuration: None,
             metadata: None,
         })

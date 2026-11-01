@@ -84,25 +84,19 @@ async fn start_tls_agent(pki: &Pki, mutual: bool) -> String {
     let url = format!("https://localhost:{port}");
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoAgent)
-            .with_agent_card(AgentCard {
-                url: Some(url.clone()),
-                name: "cli-tls-agent".into(),
-                version: "0.0.0".into(),
-                description: "echo agent over TLS".into(),
-                supported_interfaces: vec![AgentInterface::jsonrpc(&url)],
-                provider: None,
-                icon_url: None,
-                documentation_url: None,
-                capabilities: AgentCapabilities::none(),
-                security_schemes: None,
-                security_requirements: None,
-                default_input_modes: vec!["text/plain".into()],
-                default_output_modes: vec!["text/plain".into()],
-                skills: vec![
-                    a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
-                        .with_tags(["test"]),
-                ],
-                signatures: None,
+            .with_agent_card({
+                let mut built =
+                    AgentCard::new("cli-tls-agent", "0.0.0", AgentInterface::jsonrpc(&url))
+                        .with_description("echo agent over TLS")
+                        .with_input_modes(vec!["text/plain"])
+                        .with_output_modes(vec!["text/plain"])
+                        .with_skill(
+                            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
+                                .with_tags(["test"]),
+                        )
+                        .with_capabilities(AgentCapabilities::none());
+                built.url = Some(url.clone());
+                built
             })
             .build()
             .unwrap(),

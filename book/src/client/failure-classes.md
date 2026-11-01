@@ -43,10 +43,7 @@ match task.failure_class() {
 # set_class(&mut note, FailureClass::Transient);
 # let mut status = TaskStatus::new(TaskState::Failed);
 # status.message = Some(note);
-# let task = Task {
-#     id: "t1".into(), context_id: ContextId::new("c1"), status,
-#     history: None, artifacts: None, metadata: None,
-# };
+# let task = Task::new("t1", ContextId::new("c1"), status);
 # assert_eq!(decide(&task), "back off and try the same request again");
 ```
 

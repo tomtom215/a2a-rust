@@ -22,14 +22,11 @@ use hyper::body::{Bytes, Frame};
 use prost::Message as _;
 
 fn stored_task() -> Task {
-    Task {
-        id: TaskId::new("task-42"),
-        context_id: ContextId::new("ctx-7"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new("task-42"),
+        ContextId::new("ctx-7"),
+        TaskStatus::new(TaskState::Completed),
+    )
 }
 
 /// Answers `GetTask` for `stored_task()`'s id with that task, as one

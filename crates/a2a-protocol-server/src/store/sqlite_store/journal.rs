@@ -237,14 +237,11 @@ mod tests {
     use a2a_protocol_types::{Artifact, ContextId, Part, Task, TaskId, TaskState, TaskStatus};
 
     fn bare_task() -> Task {
-        Task {
-            id: TaskId::new("t1"),
-            context_id: ContextId::new("c1"),
-            status: TaskStatus::new(TaskState::Working),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(
+            TaskId::new("t1"),
+            ContextId::new("c1"),
+            TaskStatus::new(TaskState::Working),
+        )
     }
 
     fn task_with_parts(texts: &[&str]) -> Task {

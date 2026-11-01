@@ -13,6 +13,7 @@
 /// protocol version; [`AgentInterface::new`] takes an arbitrary binding.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct AgentInterface {
     /// The URL where this interface is available. Must be a valid absolute HTTPS URL in production.
     /// Example: `"https://api.example.com/a2a/v1"`, `"https://grpc.example.com/a2a"`
@@ -81,6 +82,7 @@ pub struct AgentInterface {
 /// without finding them, which is what this section is here to prevent.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct AgentCard {
     /// A human readable name for the agent.
     /// Example: "Recipe Agent"
@@ -164,6 +166,7 @@ pub struct AgentCard {
 /// Represents the service provider of an agent.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct AgentProvider {
     /// A URL for the agent provider's website or relevant documentation.
     /// Example: `"https://ai.google.dev"`
@@ -203,6 +206,7 @@ pub struct AgentCapabilities {
 /// the two mode lists are set by the `with_*` methods beside it.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct AgentSkill {
     /// A unique identifier for the agent's skill.
     pub id: String,

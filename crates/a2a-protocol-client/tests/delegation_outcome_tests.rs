@@ -217,12 +217,11 @@ async fn a_refused_cancel_is_reported() {
 /// snapshot (§3.1.2 allows either). The lease is renewed from that event's id.
 #[tokio::test]
 async fn a_lease_is_renewed_when_a_status_update_names_the_child_first() {
-    let update = serde_json::to_value(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("child-1"),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    }))
+    let update = serde_json::to_value(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("child-1"),
+        ContextId::new("ctx-1"),
+        TaskStatus::new(TaskState::Working),
+    )))
     .expect("json");
     let log = Arc::new(Mutex::new(Vec::new()));
     let url = fake_peer_logged(

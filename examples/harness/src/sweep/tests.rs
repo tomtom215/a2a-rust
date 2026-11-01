@@ -68,27 +68,19 @@ fn only_a_protocol_answer_counts_as_a_refusal() {
 // ── task_id_of ───────────────────────────────────────────────────────────────
 
 fn task(id: &str) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("ctx"),
+        TaskStatus::new(TaskState::Working),
+    )
 }
 
 fn message() -> Message {
-    Message {
-        id: MessageId::new("m-1"),
-        role: MessageRole::Agent,
-        parts: vec![Part::text("hi")],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    }
+    Message::new(
+        MessageId::new("m-1"),
+        MessageRole::Agent,
+        vec![Part::text("hi")],
+    )
 }
 
 /// The sweep learns the task id it must later get, cancel and subscribe to
@@ -102,23 +94,22 @@ fn task_id_is_read_from_every_event_that_carries_one() {
         Some("t-task".to_string())
     );
     assert_eq!(
-        task_id_of(&StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("t-status"),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(TaskState::Working),
-            metadata: None,
-        })),
+        task_id_of(&StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new("t-status"),
+            ContextId::new("ctx"),
+            TaskStatus::new(TaskState::Working)
+        ))),
         Some("t-status".to_string())
     );
     assert_eq!(
-        task_id_of(&StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: TaskId::new("t-artifact"),
-            context_id: ContextId::new("ctx"),
-            artifact: a2a_protocol_types::artifact::Artifact::new("a", vec![Part::text("x")]),
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        })),
+        task_id_of(&StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                TaskId::new("t-artifact"),
+                ContextId::new("ctx"),
+                a2a_protocol_types::artifact::Artifact::new("a", vec![Part::text("x")])
+            )
+            .with_last_chunk(true)
+        )),
         Some("t-artifact".to_string())
     );
 }

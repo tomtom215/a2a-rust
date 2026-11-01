@@ -418,12 +418,14 @@ pub(super) async fn write_failure_event(
     class: FailureClass,
 ) {
     trace_error!(task_id = %ctx.task_id, error = %error, "executor failed");
-    let fail_event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: ctx.task_id.clone(),
-        context_id: ctx.context_id.clone(),
-        status: failure_status(ctx, error, class),
-        metadata: Some(serde_json::json!({ "error": error.to_string() })),
-    });
+    let fail_event = StreamResponse::StatusUpdate(
+        TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            failure_status(ctx, error, class),
+        )
+        .with_metadata(serde_json::json!({ "error": error.to_string() })),
+    );
     if let Err(_write_err) = writer.write(fail_event).await {
         trace_error!(
             task_id = %ctx.task_id,
@@ -441,16 +443,13 @@ pub(super) fn failure_status(
     class: FailureClass,
 ) -> TaskStatus {
     let mut status = TaskStatus::with_timestamp(TaskState::Failed);
-    let mut note = Message {
-        id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-        role: MessageRole::Agent,
-        parts: vec![Part::text(error.to_string())],
-        task_id: Some(ctx.task_id.clone()),
-        context_id: Some(ctx.context_id.clone()),
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    };
+    let mut note = Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::Agent,
+        vec![Part::text(error.to_string())],
+    )
+    .with_task_id(ctx.task_id.clone())
+    .with_context_id(ctx.context_id.clone());
     // The class rides the status message beside the prose, so a caller can
     // branch on a value instead of matching English. An executor that
     // classified for itself emits its own terminal status and never reaches

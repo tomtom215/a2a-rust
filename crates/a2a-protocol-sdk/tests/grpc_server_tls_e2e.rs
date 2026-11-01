@@ -47,12 +47,11 @@ impl AgentExecutor for CompletingExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -60,37 +59,16 @@ impl AgentExecutor for CompletingExecutor {
 }
 
 fn card(grpc_url: &str) -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "grpc-server-tls-e2e".into(),
-        description: "Serves gRPC over TLS in-process".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: grpc_url.to_owned(),
-            protocol_binding: "GRPC".into(),
-            protocol_version: "1.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "noop".into(),
-            name: "Noop".into(),
-            description: "Completes immediately".into(),
-            tags: vec!["test".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "grpc-server-tls-e2e",
+        "1.0.0",
+        AgentInterface::new(grpc_url.to_owned(), "GRPC").with_protocol_version("1.0"),
+    )
+    .with_description("Serves gRPC over TLS in-process")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("noop", "Noop", "Completes immediately").with_tags(vec!["test"]))
+    .with_capabilities(AgentCapabilities::none())
 }
 
 fn dispatcher() -> GrpcDispatcher {
@@ -171,16 +149,11 @@ fn pinned(pems: &Pems) -> ClientTlsConfig {
 fn send_params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new("m-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello over TLS")],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new("m-1"),
+            MessageRole::User,
+            vec![Part::text("hello over TLS")],
+        ),
         configuration: None,
         metadata: None,
     }

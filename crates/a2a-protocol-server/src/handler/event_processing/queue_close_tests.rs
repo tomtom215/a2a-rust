@@ -42,14 +42,11 @@ enum Ends {
 }
 
 fn task(id: &str) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("c"),
+        TaskStatus::new(TaskState::Working),
+    )
 }
 
 /// A handler over a store holding `id` as `working`, with the drain bound set.

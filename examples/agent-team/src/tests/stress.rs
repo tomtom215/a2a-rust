@@ -100,16 +100,12 @@ pub async fn test_context_continuation(ctx: &TestContext) -> TestResult {
     let context_id = ContextId::new(uuid::Uuid::new_v4().to_string());
     let params1 = MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![Part::text("fn first() {}")],
-            task_id: None,
-            context_id: Some(context_id.clone()),
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
+            vec![Part::text("fn first() {}")],
+        )
+        .with_context_id(context_id.clone()),
         configuration: None,
         metadata: None,
     };
@@ -117,16 +113,12 @@ pub async fn test_context_continuation(ctx: &TestContext) -> TestResult {
     let task1_ok = matches!(&resp1, Ok(SendMessageResponse::Task(t)) if t.status.state == TaskState::Completed);
     let params2 = MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![Part::text("fn second() {}")],
-            task_id: None,
-            context_id: Some(context_id.clone()),
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
+            vec![Part::text("fn second() {}")],
+        )
+        .with_context_id(context_id.clone()),
         configuration: None,
         metadata: None,
     };
@@ -251,17 +243,12 @@ pub async fn test_push_delivery_e2e(ctx: &TestContext) -> TestResult {
             let task_id = crate::helpers::first_task_id(&mut stream, 10).await;
             let mut set_config_err = None;
             if let Some(ref tid) = task_id {
-                let push_config = TaskPushNotificationConfig {
-                    tenant: None,
-                    id: None,
-                    task_id: Some(tid.clone()),
-                    url: webhook_url.clone(),
-                    token: Some("e2e-push-token".into()),
-                    authentication: Some(AuthenticationInfo {
+                let push_config = TaskPushNotificationConfig::new(tid.clone(), webhook_url.clone())
+                    .with_token("e2e-push-token")
+                    .with_authentication(AuthenticationInfo {
                         scheme: "bearer".into(),
                         credentials: Some("push-secret".into()),
-                    }),
-                };
+                    });
                 if let Err(e) = client.set_push_config(push_config).await {
                     set_config_err = Some(format!("{e}"));
                 }

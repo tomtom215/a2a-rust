@@ -135,12 +135,11 @@ async fn each_operation_answers_as_the_wrapped_store() {
             .len(),
         1
     );
-    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: id.clone(),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    });
+    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        id.clone(),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::Working),
+    ));
     store.append_event(&id, 1, &event).await.unwrap();
     assert_eq!(store.last_event_seq(&id).await.unwrap(), 1);
     assert_eq!(store.earliest_event_seq(&id).await.unwrap(), Some(1));

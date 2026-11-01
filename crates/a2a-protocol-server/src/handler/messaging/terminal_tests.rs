@@ -28,23 +28,19 @@ use a2a_protocol_types::events::TaskStatusUpdateEvent;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 fn status(state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(state),
+    ))
 }
 
 fn snapshot(state: TaskState) -> StreamResponse {
-    StreamResponse::Task(Task {
-        id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(state),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    })
+    StreamResponse::Task(Task::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(state),
+    ))
 }
 
 #[tokio::test]

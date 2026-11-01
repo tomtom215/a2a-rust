@@ -139,16 +139,11 @@ pub async fn test_empty_parts_rejected(ctx: &TestContext) -> TestResult {
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
     let params = MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![], // Empty!
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
+            vec![],
+        ),
         configuration: None,
         metadata: None,
     };
@@ -262,14 +257,11 @@ pub async fn test_push_crud_jsonrpc(ctx: &TestContext) -> TestResult {
     let resp = client.send_message(make_send_params("ping")).await.unwrap();
     if let SendMessageResponse::Task(task) = resp {
         let tid = task.id.to_string();
-        let config = TaskPushNotificationConfig {
-            tenant: None,
-            id: None,
-            task_id: Some(tid.clone()),
-            url: format!("http://{}/webhook", ctx.webhook_addr),
-            token: Some("jsonrpc-test-token".into()),
-            authentication: None,
-        };
+        let config = TaskPushNotificationConfig::new(
+            tid.clone(),
+            format!("http://{}/webhook", ctx.webhook_addr),
+        )
+        .with_token("jsonrpc-test-token");
         match client.set_push_config(config).await {
             Ok(stored) => {
                 let cid = stored.id.clone().unwrap_or_default();
@@ -419,16 +411,11 @@ pub async fn test_error_metrics_tracked(ctx: &TestContext) -> TestResult {
     // empty parts itself, before anything reaches the server.
     let params = MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
+            vec![],
+        ),
         configuration: None,
         metadata: None,
     };

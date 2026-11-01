@@ -26,12 +26,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Highlights
 
-- **Action required if you build against the SDK (ten breaking items, each with its migration in `book/src/reference/upgrading/0.15-to-0.16.md`):** `RequestContext.context_id` is a `ContextId`; `AgentCard::new` declares streaming; `a2a-protocol-server` enables `tls-rustls` by default; `sign_agent_card` is removed; configuration errors are `ServerError::Config`/`ClientError::Config`; internal error text is withheld from callers; `JwtValidator` checks `iss` and `aud`; the WebSocket listener refuses browsers unless allowed; `ServeReport` is `#[must_use]`; `tls::HttpsClient` is a struct.
+- **Action required if you build against the SDK (eleven breaking items, each with its migration in `book/src/reference/upgrading/0.15-to-0.16.md`):** `RequestContext.context_id` is a `ContextId`; thirteen protocol structs (`Task`, `Message`, `Part`, `AgentCard`, the update events and others) are `#[non_exhaustive]`, built with `new` and `with_*`; `AgentCard::new` declares streaming; `a2a-protocol-server` enables `tls-rustls` by default; `sign_agent_card` is removed; configuration errors are `ServerError::Config`/`ClientError::Config`; internal error text is withheld from callers; `JwtValidator` checks `iss` and `aud`; the WebSocket listener refuses browsers unless allowed; `ServeReport` is `#[must_use]`; `tls::HttpsClient` is a struct.
 - **Action required if you deploy it:** loopback is never sent to a proxy (`A2A_PROXY_LOOPBACK=1` restores it); `Profile::Production` refuses an in-memory halt, lease, push-config or audit store over a shared task store (`allow_process_local_stores()` opts out); a wrong `OTEL_*` value is noted instead of stopping the process; an exporter named `zipkin` no longer takes a fleet down.
 - **Several replicas on one PostgreSQL database need no session affinity:** each turn claims its task, a cancel reaches the executor on another replica within about a second, a dead replica's tasks are handed over, and a replica that stalls past its claim writes nothing more.
 - **A task's ending always reaches its webhooks, its log and its caller;** an executor that panics leaves the task `failed`; a blocking send over gRPC is no longer cut at the request timeout; credentials go only to the host the caller named; a private CA and mutual TLS reach every binding, the token provider included.
 - **Shipping:** a signed `deploy-agent` image on GHCR with build provenance, a card that reports its version, and retention of finished tasks; OpenTelemetry export through proxies with gzip, console and Prometheus exporters, resource detection and lost-export warnings; WebSocket connections that detect a dead peer.
-- **Not in this release:** `#[non_exhaustive]` on the wire structs (decided, not yet built), the swarm designs beyond the four fixes, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
+- **Not in this release:** `#[non_exhaustive]` on the other 26 wire structs (parameters, responses, security schemes), the swarm designs beyond the four fixes, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
 
 ### Added
 
@@ -526,6 +526,35 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   examples have no page.
 
 ### Breaking Changes
+
+- **Thirteen protocol structs are `#[non_exhaustive]`** (types; audit G-10):
+  `AgentCard`, `AgentSkill`, `AgentInterface`, `AgentProvider`,
+  `AgentExtension`, `Message`, `Part`, `Task`, `TaskStatus`, `Artifact`,
+  `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent` and
+  `TaskPushNotificationConfig` (`AgentCapabilities` already was). They cannot
+  be written as struct literals outside `a2a-protocol-types`, so a field the
+  specification adds is a minor-version addition for callers that build them
+  with `new` and the `with_*` setters. `STABILITY.md` §4 said all wire structs
+  were marked and 13 of 14 protocol structs were not; it now names the 14 and
+  the 26 that stay exhaustive. New: `TaskStatusUpdateEvent::new`,
+  `TaskArtifactUpdateEvent::new` (with `with_append`, `with_last_chunk`,
+  `with_metadata`), `TaskStatus::with_message` and `at`, `Task::with_history`,
+  `with_artifacts`, `with_metadata`, `Artifact::with_name`,
+  `with_description`, `with_metadata`, `with_extensions`,
+  `Artifact::unchecked`, `TaskPushNotificationConfig::for_url`, `with_id`,
+  `with_token`, `with_authentication`, `with_tenant`, `AgentExtension`'s
+  `with_description`, `with_required`, `with_params`, `AgentProvider::new`,
+  `AgentCapabilities::with_extensions` and `AgentInterface::with_protocol_version`.
+  The migration, with a before and after for each type, is in
+  `book/src/reference/upgrading/0.15-to-0.16.md`. Every literal of the thirteen
+  in this repository (several hundred outside the types crate, in the
+  library crates, tests, benchmarks, examples, the CLI, the TCK and the book) was
+  converted with a script that matches braces outside strings and comments and
+  declines what it cannot convert; the sites it declined, and every
+  `E0639`/inference error the compiler reported after it, were fixed by hand,
+  and all of it compiles with `--all-targets --all-features`. Where a field
+  had a computed value or a comment, the result assigns the field after `new`
+  (assignment is not restricted).
 
 - **Configuration errors have a variant of their own** (server, client;
   audit G-11). Every `RequestHandlerBuilder::build()` refusal was

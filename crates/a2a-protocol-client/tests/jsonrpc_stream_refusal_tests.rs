@@ -114,16 +114,12 @@ async fn start_stub(head: &'static str, body: &'static str) -> String {
 }
 
 fn continuation_of(task_id: &str) -> MessageSendParams {
-    let message = Message {
-        id: MessageId::new("m-1"),
-        role: MessageRole::User,
-        parts: vec![Part::text("hi")],
-        task_id: Some(TaskId::new(task_id)),
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    };
+    let message = Message::new(
+        MessageId::new("m-1"),
+        MessageRole::User,
+        vec![Part::text("hi")],
+    )
+    .with_task_id(TaskId::new(task_id));
     MessageSendParams {
         tenant: None,
         message,

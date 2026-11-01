@@ -37,37 +37,24 @@ impl AgentExecutor for NoopExecutor {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn test_agent_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Extended Test Agent".into(),
-        description: "Agent for extended card test".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "https://agent.example.com/rpc".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "private-skill".into(),
-            name: "Private Skill".into(),
-            description: "A private skill visible only via extended card".into(),
-            tags: vec!["private".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none().with_extended_agent_card(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "Extended Test Agent",
+        "1.0.0",
+        AgentInterface::new("https://agent.example.com/rpc", "JSONRPC")
+            .with_protocol_version("1.0.0"),
+    )
+    .with_description("Agent for extended card test")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        AgentSkill::new(
+            "private-skill",
+            "Private Skill",
+            "A private skill visible only via extended card",
+        )
+        .with_tags(vec!["private"]),
+    )
+    .with_capabilities(AgentCapabilities::none().with_extended_agent_card(true))
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────

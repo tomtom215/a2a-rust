@@ -14,14 +14,11 @@ struct DummyExecutor;
 agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
 
 fn make_completed_task(id: &str) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("ctx-1"),
+        TaskStatus::new(TaskState::Completed),
+    )
 }
 
 /// A task carrying `len` history messages, oldest first, each identifiable
@@ -31,15 +28,12 @@ fn make_task_with_history(id: &str, len: usize) -> Task {
     let mut task = make_completed_task(id);
     task.history = Some(
         (0..len)
-            .map(|i| Message {
-                id: MessageId::new(format!("{id}-m{i}")),
-                role: MessageRole::User,
-                parts: vec![Part::text(format!("message {i}"))],
-                context_id: None,
-                task_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
+            .map(|i| {
+                Message::new(
+                    MessageId::new(format!("{id}-m{i}")),
+                    MessageRole::User,
+                    vec![Part::text(format!("message {i}"))],
+                )
             })
             .collect(),
     );

@@ -162,13 +162,12 @@ async fn a_token_fences_only_its_own_task(store: &dyn crate::store::TaskStore) {
         format!("fenced-b-{run}"),
         format!("tok-{run}"),
     );
-    let task = |id: &str| Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("fenced"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: None,
-        metadata: None,
+    let task = |id: &str| {
+        Task::new(
+            TaskId::new(id),
+            ContextId::new("fenced"),
+            TaskStatus::new(TaskState::Working),
+        )
     };
     // B exists before the turn, so its append is refused by the fence and
     // not by a missing row.
@@ -206,12 +205,11 @@ async fn appends_are_fenced_to_their_own_task(
     use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
     let event = |id: &str| {
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new(id),
-            context_id: ContextId::new("fenced"),
-            status: TaskStatus::new(TaskState::Working),
-            metadata: None,
-        })
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new(id),
+            ContextId::new("fenced"),
+            TaskStatus::new(TaskState::Working),
+        ))
     };
     for _ in 0..2 {
         store

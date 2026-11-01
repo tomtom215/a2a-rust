@@ -120,25 +120,21 @@ async fn status(
     note: Option<&str>,
 ) -> A2aResult<()> {
     queue
-        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ctx.context_id.clone(),
-            status: TaskStatus {
-                state,
-                message: note.map(|text| Message {
-                    id: MessageId::new(format!("note-{text}")),
-                    role: MessageRole::Agent,
-                    parts: vec![Part::text(text)],
-                    task_id: None,
-                    context_id: None,
-                    reference_task_ids: None,
-                    extensions: None,
-                    metadata: None,
-                }),
-                timestamp: None,
+        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            {
+                let mut built = TaskStatus::new(state);
+                built.message = note.map(|text| {
+                    Message::new(
+                        MessageId::new(format!("note-{text}")),
+                        MessageRole::Agent,
+                        vec![Part::text(text)],
+                    )
+                });
+                built
             },
-            metadata: None,
-        }))
+        )))
         .await
 }
 
@@ -148,14 +144,14 @@ async fn emit_artifact(
     text: &str,
 ) -> A2aResult<()> {
     queue
-        .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ctx.context_id.clone(),
-            artifact: Artifact::new("report", vec![Part::text(text)]),
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        }))
+        .write(StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                ctx.task_id.clone(),
+                ctx.context_id.clone(),
+                Artifact::new("report", vec![Part::text(text)]),
+            )
+            .with_last_chunk(true),
+        ))
         .await
 }
 

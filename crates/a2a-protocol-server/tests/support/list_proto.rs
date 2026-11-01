@@ -18,14 +18,7 @@ use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 fn task(id: &str, context: &str, state: TaskState, at: &str) -> Task {
     let mut status = TaskStatus::new(state);
     status.timestamp = Some(at.to_owned());
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new(context),
-        status,
-        artifacts: None,
-        history: None,
-        metadata: None,
-    }
+    Task::new(TaskId::new(id), ContextId::new(context), status)
 }
 
 fn ids(tasks: &[Task]) -> Vec<&str> {

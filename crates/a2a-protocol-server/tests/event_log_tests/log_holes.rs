@@ -105,22 +105,18 @@ async fn a_lag_across_a_hole_in_the_log_is_reported() {
 async fn a_resume_across_a_hole_in_the_log_starts_from_the_snapshot() {
     let store = Arc::new(InMemoryTaskStore::new());
     let handler = handler_with(&store);
-    let task = Task {
-        id: TaskId::new("t-hole"),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::InputRequired),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("t-hole"),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::InputRequired),
+    );
     store.save(&task).await.expect("save");
     for seq in [1, 2, 4, 5] {
-        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: task.id.clone(),
-            context_id: task.context_id.clone(),
-            status: TaskStatus::new(TaskState::Working),
-            metadata: None,
-        });
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            task.id.clone(),
+            task.context_id.clone(),
+            TaskStatus::new(TaskState::Working),
+        ));
         store
             .append_event(&task.id, seq, &event)
             .await

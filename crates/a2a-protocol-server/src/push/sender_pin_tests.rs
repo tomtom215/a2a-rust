@@ -162,23 +162,15 @@ async fn plain_receiver(seen: Arc<Seen>) -> u16 {
 }
 
 fn event() -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::with_timestamp(TaskState::Completed),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::with_timestamp(TaskState::Completed),
+    ))
 }
 
 fn config(url: &str) -> TaskPushNotificationConfig {
-    TaskPushNotificationConfig {
-        tenant: None,
-        id: Some("cfg".to_owned()),
-        task_id: Some("t".to_owned()),
-        url: url.to_owned(),
-        token: None,
-        authentication: None,
-    }
+    TaskPushNotificationConfig::new("t".to_owned(), url.to_owned()).with_id("cfg".to_owned())
 }
 
 fn loopback(port: u16) -> SocketAddr {

@@ -34,66 +34,36 @@ pub(crate) fn make_card(
     description: &str,
     skill: &str,
 ) -> AgentCard {
-    AgentCard {
-        url: Some(url.into()),
-        name: name.into(),
-        description: description.into(),
-        version: env!("CARGO_PKG_VERSION").into(),
-        supported_interfaces: vec![
-            AgentInterface {
-                url: url.into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            },
+    {
+        let mut built = AgentCard::new(
+            name,
+            env!("CARGO_PKG_VERSION"),
+            AgentInterface::new(url, "JSONRPC"),
+        )
+        .with_description(description)
+        .with_interface(
             // The same socket answers REST: JSON-RPC owns POST `/`, the REST
             // dispatcher owns the `/v1/...` paths.
-            AgentInterface {
-                url: url.into(),
-                protocol_binding: "HTTP+JSON".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            },
-            AgentInterface {
-                url: grpc.into(),
-                protocol_binding: "GRPC".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            },
-            AgentInterface {
-                url: ws.into(),
-                protocol_binding: "WEBSOCKET".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            },
-        ],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: skill.into(),
-            name: skill.into(),
-            description: description.into(),
-            tags: vec!["incident-response".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
+            AgentInterface::new(url, "HTTP+JSON"),
+        )
+        .with_interface(AgentInterface::new(grpc, "GRPC"))
+        .with_interface(AgentInterface::new(ws, "WEBSOCKET"))
+        .with_input_modes(vec!["text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(AgentSkill::new(skill, skill, description).with_tags(vec!["incident-response"]))
         // `extended_agent_card` joins the other two because the surface
         // sweep drives `GetExtendedAgentCard`, and the server answers
         // `UnsupportedOperation` for a card that does not advertise it
         // (spec §3.1.11) — an undriven method and an unavailable one look the
         // same from the client, and only one of them is this example's fault.
-        capabilities: AgentCapabilities::none()
-            .with_streaming(true)
-            .with_push_notifications(true)
-            .with_extended_agent_card(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
+        .with_capabilities(
+            AgentCapabilities::none()
+                .with_streaming(true)
+                .with_push_notifications(true)
+                .with_extended_agent_card(true),
+        );
+        built.url = Some(url.into());
+        built
     }
 }
 

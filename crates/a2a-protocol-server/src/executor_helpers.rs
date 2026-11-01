@@ -172,12 +172,11 @@ impl<'a> EventEmitter<'a> {
     /// Returns an error if the event queue write fails.
     pub async fn status(&self, state: TaskState) -> A2aResult<()> {
         self.queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: self.ctx.task_id.clone(),
-                context_id: self.ctx.context_id.clone(),
-                status: TaskStatus::new(state),
-                metadata: None,
-            }))
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                self.ctx.task_id.clone(),
+                self.ctx.context_id.clone(),
+                TaskStatus::new(state),
+            )))
             .await
     }
 
@@ -219,12 +218,11 @@ impl<'a> EventEmitter<'a> {
         status.message = Some(note);
 
         self.queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: self.ctx.task_id.clone(),
-                context_id: self.ctx.context_id.clone(),
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                self.ctx.task_id.clone(),
+                self.ctx.context_id.clone(),
                 status,
-                metadata: None,
-            }))
+            )))
             .await
     }
 
@@ -272,12 +270,11 @@ impl<'a> EventEmitter<'a> {
         let mut status = TaskStatus::new(TaskState::InputRequired);
         status.message = Some(note);
         self.queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: self.ctx.task_id.clone(),
-                context_id: self.ctx.context_id.clone(),
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                self.ctx.task_id.clone(),
+                self.ctx.context_id.clone(),
                 status,
-                metadata: None,
-            }))
+            )))
             .await?;
         Ok(request)
     }
@@ -295,13 +292,15 @@ impl<'a> EventEmitter<'a> {
         last_chunk: Option<bool>,
     ) -> A2aResult<()> {
         self.queue
-            .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id: self.ctx.task_id.clone(),
-                context_id: self.ctx.context_id.clone(),
-                artifact: Artifact::new(id, parts),
-                append,
-                last_chunk,
-                metadata: None,
+            .write(StreamResponse::ArtifactUpdate({
+                let mut built = TaskArtifactUpdateEvent::new(
+                    self.ctx.task_id.clone(),
+                    self.ctx.context_id.clone(),
+                    Artifact::new(id, parts),
+                );
+                built.append = append;
+                built.last_chunk = last_chunk;
+                built
             }))
             .await
     }
@@ -371,12 +370,11 @@ impl<'a> EventEmitter<'a> {
         let mut status = TaskStatus::new(state);
         status.message = Some(note);
         self.queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: self.ctx.task_id.clone(),
-                context_id: self.ctx.context_id.clone(),
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                self.ctx.task_id.clone(),
+                self.ctx.context_id.clone(),
                 status,
-                metadata: None,
-            }))
+            )))
             .await
     }
 

@@ -108,22 +108,18 @@ async fn serve(store: &Arc<InMemoryTaskStore>, binding: &str) -> SocketAddr {
 /// A task parked in `INPUT_REQUIRED` with `count` events in its log.
 /// Parked, because subscribing to a terminal task is refused (§3.1.6).
 async fn parked(store: &Arc<InMemoryTaskStore>, count: u64) -> TaskId {
-    let task = Task {
-        id: TaskId::new("t-resume"),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::InputRequired),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("t-resume"),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::InputRequired),
+    );
     store.save(&task).await.expect("save");
     for seq in 1..=count {
-        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: task.id.clone(),
-            context_id: task.context_id.clone(),
-            status: TaskStatus::new(TaskState::Working),
-            metadata: None,
-        });
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            task.id.clone(),
+            task.context_id.clone(),
+            TaskStatus::new(TaskState::Working),
+        ));
         store
             .append_event(&task.id, seq, &event)
             .await

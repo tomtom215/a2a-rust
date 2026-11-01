@@ -70,12 +70,11 @@ impl<S: tracing::Subscriber> Layer<S> for Capture {
 }
 
 fn event() -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(TaskState::Working),
+    ))
 }
 
 /// Sends one push to `url` with `sender` and returns every event it logged.

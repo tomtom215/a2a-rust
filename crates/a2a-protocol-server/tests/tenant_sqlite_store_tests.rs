@@ -15,14 +15,7 @@ use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 fn make_task(id: &str, ctx: &str, state: TaskState) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new(ctx),
-        status: TaskStatus::new(state),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(TaskId::new(id), ContextId::new(ctx), TaskStatus::new(state))
 }
 
 async fn new_store() -> TenantAwareSqliteTaskStore {
@@ -584,12 +577,11 @@ impl a2a_protocol_server::metrics::Metrics for Recorder {
 
 fn status_event(id: &str, state: TaskState) -> a2a_protocol_types::events::StreamResponse {
     a2a_protocol_types::events::StreamResponse::StatusUpdate(
-        a2a_protocol_types::events::TaskStatusUpdateEvent {
-            task_id: TaskId::new(id),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(state),
-            metadata: None,
-        },
+        a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+            TaskId::new(id),
+            ContextId::new("ctx"),
+            TaskStatus::new(state),
+        ),
     )
 }
 

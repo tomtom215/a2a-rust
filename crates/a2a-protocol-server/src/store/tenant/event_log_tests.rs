@@ -11,23 +11,19 @@ use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
 fn make_task(id: &str, state: TaskState) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx-default"),
-        status: TaskStatus::new(state),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("ctx-default"),
+        TaskStatus::new(state),
+    )
 }
 
 fn event(id: &str, state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new(id),
-        context_id: ContextId::new("ctx-default"),
-        status: TaskStatus::new(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new(id),
+        ContextId::new("ctx-default"),
+        TaskStatus::new(state),
+    ))
 }
 
 /// The earliest position still held, from the tenant's own partition:

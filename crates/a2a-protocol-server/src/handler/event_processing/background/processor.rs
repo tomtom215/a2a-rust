@@ -129,12 +129,11 @@ impl<'a> Processor<'a> {
     /// Tells the task's webhooks how it ended, unless this processor already
     /// did, and records the ending in its log at the next position.
     async fn announce(&mut self, status: TaskStatus) {
-        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: self.task_id.clone(),
-            context_id: self.last_task.context_id.clone(),
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            self.task_id.clone(),
+            self.last_task.context_id.clone(),
             status,
-            metadata: None,
-        });
+        ));
         super::super::append_ending(
             self.deps.task_store,
             self.task_id,
@@ -285,12 +284,11 @@ impl<'a> Processor<'a> {
             // Unreadable, or gone: the refusal itself says what state won.
             _ => self.last_task.status = TaskStatus::new(conflict.stored),
         }
-        let verdict = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: self.task_id.clone(),
-            context_id: self.last_task.context_id.clone(),
-            status: self.last_task.status.clone(),
-            metadata: None,
-        });
+        let verdict = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            self.task_id.clone(),
+            self.last_task.context_id.clone(),
+            self.last_task.status.clone(),
+        ));
 
         if terminal {
             self.answer(seq, verdict.clone());
@@ -320,12 +318,11 @@ impl<'a> Processor<'a> {
         if let Ok(Some(stored)) = self.deps.task_store.get(self.task_id).await {
             self.last_task = stored;
         }
-        let verdict = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: self.task_id.clone(),
-            context_id: self.last_task.context_id.clone(),
-            status: self.last_task.status.clone(),
-            metadata: None,
-        });
+        let verdict = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            self.task_id.clone(),
+            self.last_task.context_id.clone(),
+            self.last_task.status.clone(),
+        ));
         if terminal {
             self.answer(seq, verdict.clone());
         }

@@ -47,26 +47,21 @@ agent_executor!(EchoAgent, |ctx, queue| async {
 
 fn card_for(addr: SocketAddr) -> AgentCard {
     let url = format!("http://{addr}");
-    AgentCard {
-        url: Some(url.clone()),
-        name: "cli-test-agent".into(),
-        version: "0.0.0".into(),
-        description: "echo agent for the a2a CLI tests".into(),
-        // REST first, on purpose: the CLI's default must still pick JSONRPC,
-        // which is the preference `ClientBuilder::from_card` applies.
-        supported_interfaces: vec![AgentInterface::rest(&url), AgentInterface::jsonrpc(&url)],
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        capabilities: AgentCapabilities::none().with_streaming(true),
-        security_schemes: None,
-        security_requirements: None,
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![
-            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
-        ],
-        signatures: None,
+    {
+        let mut built = AgentCard::new("cli-test-agent", "0.0.0", AgentInterface::rest(&url))
+            .with_description("echo agent for the a2a CLI tests")
+            // REST first, on purpose: the CLI's default must still pick JSONRPC,
+            // which is the preference `ClientBuilder::from_card` applies.
+            .with_interface(AgentInterface::jsonrpc(&url))
+            .with_input_modes(vec!["text/plain"])
+            .with_output_modes(vec!["text/plain"])
+            .with_skill(
+                a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
+                    .with_tags(["test"]),
+            )
+            .with_capabilities(AgentCapabilities::none().with_streaming(true));
+        built.url = Some(url.clone());
+        built
     }
 }
 

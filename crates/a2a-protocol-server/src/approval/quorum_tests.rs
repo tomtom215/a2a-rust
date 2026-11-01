@@ -380,14 +380,7 @@ fn a_record_for_another_digest_or_a_refused_name_counts_for_nothing() {
     req.attach(&mut note);
     let mut status = TaskStatus::new(TaskState::InputRequired);
     status.message = Some(note);
-    let task = Task {
-        id: TaskId::new("t-1"),
-        context_id: ContextId::new("c-1"),
-        status,
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(TaskId::new("t-1"), ContextId::new("c-1"), status);
     let with_record = |digest: &str, names: &[&str]| {
         let mut t = task.clone();
         let m = t.status.message.as_mut().unwrap();

@@ -341,14 +341,11 @@ mod tests {
     #[cfg(any(feature = "sqlite", feature = "postgres"))]
     #[test]
     fn a_refusal_names_the_stored_state_or_says_the_row_is_gone() {
-        let task = Task {
-            id: TaskId::new("t-r"),
-            context_id: a2a_protocol_types::task::ContextId::new("c"),
-            status: a2a_protocol_types::task::TaskStatus::new(TaskState::Completed),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        };
+        let task = Task::new(
+            TaskId::new("t-r"),
+            a2a_protocol_types::task::ContextId::new("c"),
+            a2a_protocol_types::task::TaskStatus::new(TaskState::Completed),
+        );
         assert_eq!(
             TerminalStateConflict::from_error(&refusal(&task, Some("TASK_STATE_CANCELED"))),
             Some(TerminalStateConflict::new(

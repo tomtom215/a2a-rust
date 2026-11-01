@@ -12,28 +12,20 @@ use a2a_protocol_types::trace_context::TraceContext;
 
 /// Helper: creates a minimal user message.
 fn make_message(text: &str) -> Message {
-    Message {
-        id: MessageId::new("msg-1"),
-        role: MessageRole::User,
-        parts: vec![Part::text(text)],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    }
+    Message::new(
+        MessageId::new("msg-1"),
+        MessageRole::User,
+        vec![Part::text(text)],
+    )
 }
 
 /// Helper: creates a minimal task.
 fn make_task() -> Task {
-    Task {
-        id: TaskId::new("task-1"),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus::new(TaskState::Submitted),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new("task-1"),
+        ContextId::new("ctx-1"),
+        TaskStatus::new(TaskState::Submitted),
+    )
 }
 
 // ── new ────────────────────────────────────────────────────────────────

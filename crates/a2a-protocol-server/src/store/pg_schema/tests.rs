@@ -112,14 +112,11 @@ async fn a_role_with_only_data_privileges_starts_a_store_its_owner_made() {
 
     let started = PostgresTaskStore::new(&app_url).await;
     let store = started.expect("a data-only role starts a store on its owner's schema");
-    let task = Task {
-        id: TaskId::new("a10"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(TaskState::Submitted),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("a10"),
+        ContextId::new("c"),
+        TaskStatus::new(TaskState::Submitted),
+    );
     store.save(&task).await.expect("and writes");
     assert!(store.get(&task.id).await.expect("and reads").is_some());
     drop(store);

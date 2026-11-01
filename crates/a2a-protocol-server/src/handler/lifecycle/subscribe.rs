@@ -656,12 +656,11 @@ async fn finished(
         0
     };
     Reattached::Final {
-        event: StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: task.id,
-            context_id: task.context_id,
-            status: task.status,
-            metadata: None,
-        }),
+        event: StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            task.id,
+            task.context_id,
+            task.status,
+        )),
         through,
     }
 }
@@ -843,14 +842,11 @@ mod tests {
             .without_agent_card()
             .build()
             .unwrap();
-        let task = Task {
-            id: TaskId::new("t-resub-1"),
-            context_id: ContextId::new("ctx-1"),
-            status: TaskStatus::new(TaskState::Completed),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        };
+        let task = Task::new(
+            TaskId::new("t-resub-1"),
+            ContextId::new("ctx-1"),
+            TaskStatus::new(TaskState::Completed),
+        );
         handler.task_store.save(&task).await.unwrap();
 
         let params = TaskIdParams {
@@ -891,14 +887,11 @@ mod tests {
                 .build()
                 .unwrap(),
         );
-        let mut task = Task {
-            id: TaskId::new("t-resub-nonterminal"),
-            context_id: ContextId::new("ctx-1"),
-            status: TaskStatus::new(TaskState::Working),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        };
+        let mut task = Task::new(
+            TaskId::new("t-resub-nonterminal"),
+            ContextId::new("ctx-1"),
+            TaskStatus::new(TaskState::Working),
+        );
         handler.task_store.save(&task).await.unwrap();
 
         let params = TaskIdParams {
@@ -982,14 +975,11 @@ mod tests {
             )
             .build()
             .unwrap();
-        let mut task = Task {
-            id: TaskId::new("t-tenant-reattach"),
-            context_id: ContextId::new("ctx-1"),
-            status: TaskStatus::new(TaskState::Working),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        };
+        let mut task = Task::new(
+            TaskId::new("t-tenant-reattach"),
+            ContextId::new("ctx-1"),
+            TaskStatus::new(TaskState::Working),
+        );
         TenantContext::scope("acme", handler.task_store.save(&task))
             .await
             .unwrap();
@@ -1043,14 +1033,11 @@ mod tests {
             )
             .build()
             .unwrap();
-        let task = Task {
-            id: TaskId::new("t-parked"),
-            context_id: ContextId::new("ctx-1"),
-            status: TaskStatus::new(TaskState::InputRequired),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        };
+        let task = Task::new(
+            TaskId::new("t-parked"),
+            ContextId::new("ctx-1"),
+            TaskStatus::new(TaskState::InputRequired),
+        );
         handler.task_store.save(&task).await.unwrap();
 
         let mut reader = handler
@@ -1096,14 +1083,11 @@ mod tests {
             .unwrap();
         handler
             .task_store
-            .save(&Task {
-                id: TaskId::new("t-parked"),
-                context_id: ContextId::new("ctx-1"),
-                status: TaskStatus::new(TaskState::InputRequired),
-                history: None,
-                artifacts: None,
-                metadata: None,
-            })
+            .save(&Task::new(
+                TaskId::new("t-parked"),
+                ContextId::new("ctx-1"),
+                TaskStatus::new(TaskState::InputRequired),
+            ))
             .await
             .unwrap();
         let mut reader = handler
@@ -1158,24 +1142,20 @@ mod tests {
         let working = TaskStatus::new(TaskState::Working);
         handler
             .task_store
-            .save(&Task {
-                id: id.clone(),
-                context_id: ContextId::new("ctx-1"),
-                status: working.clone(),
-                history: None,
-                artifacts: None,
-                metadata: None,
-            })
+            .save(&Task::new(
+                id.clone(),
+                ContextId::new("ctx-1"),
+                working.clone(),
+            ))
             .await
             .unwrap();
         let (writer, _first) = handler.event_queue_manager.get_or_create(&id).await;
         for seq in 1..=3 {
-            let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: id.clone(),
-                context_id: ContextId::new("ctx-1"),
-                status: working.clone(),
-                metadata: None,
-            });
+            let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                id.clone(),
+                ContextId::new("ctx-1"),
+                working.clone(),
+            ));
             writer.write(event.clone()).await.unwrap();
             handler
                 .task_store
@@ -1223,14 +1203,11 @@ mod tests {
         let working = TaskStatus::new(TaskState::Working);
         handler
             .task_store
-            .save(&Task {
-                id: id.clone(),
-                context_id: ContextId::new("ctx-1"),
-                status: working.clone(),
-                history: None,
-                artifacts: None,
-                metadata: None,
-            })
+            .save(&Task::new(
+                id.clone(),
+                ContextId::new("ctx-1"),
+                working.clone(),
+            ))
             .await
             .unwrap();
         let (writer, _first) = handler.event_queue_manager.get_or_create(&id).await;
@@ -1248,12 +1225,11 @@ mod tests {
             .expect("subscribed");
         for _ in 0..4 {
             writer
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: id.clone(),
-                    context_id: ContextId::new("ctx-1"),
-                    status: working.clone(),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    id.clone(),
+                    ContextId::new("ctx-1"),
+                    working.clone(),
+                )))
                 .await
                 .unwrap();
         }
@@ -1284,16 +1260,12 @@ mod tests {
 
         // Send a streaming message to create a task with an active event queue.
         let params = MessageSendParams {
-            message: Message {
-                id: MessageId::new("msg-resub"),
-                role: MessageRole::User,
-                parts: vec![Part::text("hello")],
-                context_id: Some(ContextId::new("ctx-resub")),
-                task_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            },
+            message: Message::new(
+                MessageId::new("msg-resub"),
+                MessageRole::User,
+                vec![Part::text("hello")],
+            )
+            .with_context_id(ContextId::new("ctx-resub")),
             configuration: None,
             metadata: None,
             tenant: None,

@@ -400,14 +400,11 @@ pub async fn test_sqlite_push_config(ctx: &TestContext) -> TestResult {
     let task_id = task.id.to_string();
 
     // Create push config.
-    let config = a2a_protocol_types::push::TaskPushNotificationConfig {
-        tenant: None,
-        id: None,
-        task_id: Some(task_id.clone()),
-        url: format!("http://{}/webhook", ctx.webhook_addr),
-        token: Some("sqlite-test".into()),
-        authentication: None,
-    };
+    let config = a2a_protocol_types::push::TaskPushNotificationConfig::new(
+        task_id.clone(),
+        format!("http://{}/webhook", ctx.webhook_addr),
+    )
+    .with_token("sqlite-test");
 
     let stored = match client.set_push_config(config).await {
         Ok(s) => s,

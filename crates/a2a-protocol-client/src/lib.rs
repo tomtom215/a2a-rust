@@ -19,16 +19,7 @@
 //!
 //! let params = MessageSendParams {
 //!     tenant: None,
-//!     message: Message {
-//!         id: MessageId::new("msg-1"),
-//!         role: MessageRole::User,
-//!         parts: vec![Part::text("Hello, agent!")],
-//!         task_id: None,
-//!         context_id: None,
-//!         reference_task_ids: None,
-//!         extensions: None,
-//!         metadata: None,
-//!     },
+//!     message: Message::new(MessageId::new("msg-1"), MessageRole::User, vec![Part::text("Hello, agent!")]),
 //!     configuration: None,
 //!     metadata: None,
 //! };
@@ -48,9 +39,7 @@
 //! # let client = ClientBuilder::new("http://localhost:8080").build()?;
 //! # let params = MessageSendParams {
 //! #     tenant: None,
-//! #     message: Message { id: MessageId::new("m"), role: MessageRole::User,
-//! #         parts: vec![], task_id: None, context_id: None,
-//! #         reference_task_ids: None, extensions: None, metadata: None },
+//! #     message: Message::new(MessageId::new("m"), MessageRole::User, vec![]),
 //! #     configuration: None, metadata: None,
 //! # };
 //! let mut stream = client.stream_message(params).await?;

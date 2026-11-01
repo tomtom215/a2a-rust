@@ -112,9 +112,10 @@ fn the_surface_sweeps_pause_prefix_names_no_known_service() {
 fn extract_text_joins_text_parts_and_ignores_the_rest() {
     let parts = vec![
         Part::text("payments-api"),
-        Part {
-            content: PartContent::Data(serde_json::json!({"severity": "page"})),
-            ..Part::text("")
+        {
+            let mut built = Part::text("");
+            built.content = PartContent::Data(serde_json::json!({"severity": "page"}));
+            built
         },
         Part::text("latency spike"),
     ];
@@ -127,9 +128,10 @@ fn extract_text_joins_text_parts_and_ignores_the_rest() {
 fn extract_text_of_a_textless_message_is_empty() {
     // An empty string finds no service, so a textless message parks or fails
     // rather than being silently treated as a valid alert.
-    let parts = vec![Part {
-        content: PartContent::Url("https://example.invalid/x".to_string()),
-        ..Part::text("")
+    let parts = vec![{
+        let mut built = Part::text("");
+        built.content = PartContent::Url("https://example.invalid/x".to_string());
+        built
     }];
     assert_eq!(extract_text(&parts), "");
     assert_eq!(extract_text(&[]), "");

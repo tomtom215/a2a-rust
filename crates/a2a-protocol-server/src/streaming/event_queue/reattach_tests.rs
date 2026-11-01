@@ -22,16 +22,11 @@ use super::{
 use crate::store::RecordedEvent;
 
 fn status(state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus {
-            state,
-            message: None,
-            timestamp: None,
-        },
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(state),
+    ))
 }
 
 /// A log holding positions 1 to `until`, all `Working` but the one at

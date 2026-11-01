@@ -41,14 +41,13 @@ async fn malformed_provenance_is_refused_when_written() {
                 let mut artifact = Artifact::new("a", vec![Part::text("x")]);
                 artifact.metadata = Some(serde_json::json!({"a2a-rust.com/provenance": 7}));
                 let refused = queue
-                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ctx.context_id.clone(),
-                        artifact,
-                        append: None,
-                        last_chunk: None,
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::ArtifactUpdate(
+                        TaskArtifactUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            ctx.context_id.clone(),
+                            artifact,
+                        ),
+                    ))
                     .await;
                 assert!(refused.is_err(), "the writer refuses it");
                 EventEmitter::new(ctx, queue)
@@ -98,14 +97,14 @@ async fn a_signature_survives_the_grpc_conversion() {
                 artifact.description = Some(String::new());
                 artifact.extensions = Some(Vec::new());
                 queue
-                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ctx.context_id.clone(),
-                        artifact,
-                        append: None,
-                        last_chunk: Some(true),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::ArtifactUpdate(
+                        TaskArtifactUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            ctx.context_id.clone(),
+                            artifact,
+                        )
+                        .with_last_chunk(true),
+                    ))
                     .await?;
                 EventEmitter::new(ctx, queue)
                     .status(TaskState::Completed)

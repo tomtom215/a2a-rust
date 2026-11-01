@@ -84,14 +84,10 @@ async fn lanes(capacity: usize) -> (PushLanes, Arc<Gated>, Arc<Outcomes>) {
     let store = InMemoryPushConfigStore::new();
     for task in ["t1", "t2"] {
         store
-            .set(TaskPushNotificationConfig {
-                tenant: None,
-                id: Some(format!("cfg-{task}")),
-                task_id: Some(task.into()),
-                url: "https://example.com/hook".into(),
-                token: None,
-                authentication: None,
-            })
+            .set(
+                TaskPushNotificationConfig::new(task, "https://example.com/hook")
+                    .with_id(format!("cfg-{task}")),
+            )
             .await
             .expect("config");
     }
@@ -108,23 +104,19 @@ async fn lanes(capacity: usize) -> (PushLanes, Arc<Gated>, Arc<Outcomes>) {
 }
 
 fn status(task: &str, state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new(task),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new(task),
+        ContextId::new("c"),
+        TaskStatus::new(state),
+    ))
 }
 
 fn chunk(task: &str, id: &str) -> StreamResponse {
-    StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-        task_id: TaskId::new(task),
-        context_id: ContextId::new("c"),
-        artifact: Artifact::new(ArtifactId::new(id), vec![Part::text("x")]),
-        append: None,
-        last_chunk: None,
-        metadata: None,
-    })
+    StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(
+        TaskId::new(task),
+        ContextId::new("c"),
+        Artifact::new(ArtifactId::new(id), vec![Part::text("x")]),
+    ))
 }
 
 /// Yields until `done` holds, failing after five seconds.

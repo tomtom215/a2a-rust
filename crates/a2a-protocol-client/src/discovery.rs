@@ -907,22 +907,26 @@ mod tests {
         {
             let mut guard = resolver.cache.write().await;
             *guard = Some(CachedCard {
-                card: AgentCard {
-                    url: None,
-                    name: "cached".into(),
-                    version: "1.0".into(),
-                    description: "Cached agent".into(),
-                    supported_interfaces: vec![],
-                    provider: None,
-                    icon_url: None,
-                    documentation_url: None,
-                    capabilities: AgentCapabilities::none(),
-                    security_schemes: None,
-                    security_requirements: None,
-                    default_input_modes: vec![],
-                    default_output_modes: vec![],
-                    skills: vec![],
-                    signatures: None,
+                card: {
+                    let mut built = AgentCard::new(
+                        "cached",
+                        "1.0",
+                        a2a_protocol_types::AgentInterface::jsonrpc(String::new()),
+                    );
+                    built.url = None;
+                    built.description = "Cached agent".into();
+                    built.supported_interfaces = vec![];
+                    built.provider = None;
+                    built.icon_url = None;
+                    built.documentation_url = None;
+                    built.capabilities = AgentCapabilities::none();
+                    built.security_schemes = None;
+                    built.security_requirements = None;
+                    built.default_input_modes = vec![];
+                    built.default_output_modes = vec![];
+                    built.skills = vec![];
+                    built.signatures = None;
+                    built
                 },
                 etag: Some("test-etag".into()),
                 last_modified: None,
@@ -1023,22 +1027,26 @@ mod tests {
         });
 
         let cached = CachedCard {
-            card: AgentCard {
-                url: None,
-                name: "cached-agent".into(),
-                version: "2.0".into(),
-                description: "Cached".into(),
-                supported_interfaces: vec![],
-                provider: None,
-                icon_url: None,
-                documentation_url: None,
-                capabilities: AgentCapabilities::none(),
-                security_schemes: None,
-                security_requirements: None,
-                default_input_modes: vec![],
-                default_output_modes: vec![],
-                skills: vec![],
-                signatures: None,
+            card: {
+                let mut built = AgentCard::new(
+                    "cached-agent",
+                    "2.0",
+                    a2a_protocol_types::AgentInterface::jsonrpc(String::new()),
+                );
+                built.url = None;
+                built.description = "Cached".into();
+                built.supported_interfaces = vec![];
+                built.provider = None;
+                built.icon_url = None;
+                built.documentation_url = None;
+                built.capabilities = AgentCapabilities::none();
+                built.security_schemes = None;
+                built.security_requirements = None;
+                built.default_input_modes = vec![];
+                built.default_output_modes = vec![];
+                built.skills = vec![];
+                built.signatures = None;
+                built
             },
             etag: Some("\"abc123\"".into()),
             last_modified: None,
@@ -1113,28 +1121,16 @@ mod tests {
     async fn caching_resolver_resolve_fetches_and_caches() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
-        let card = AgentCard {
-            url: None,
-            name: "resolver-test".into(),
-            version: "1.0".into(),
-            description: "Resolver test agent".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:9090".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: None,
-            }],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec!["text/plain".into()],
-            default_output_modes: vec!["text/plain".into()],
-            skills: vec![echo_skill()],
-            signatures: None,
-        };
+        let card = AgentCard::new(
+            "resolver-test",
+            "1.0",
+            AgentInterface::new("http://localhost:9090", "JSONRPC").with_protocol_version("1.0.0"),
+        )
+        .with_description("Resolver test agent")
+        .with_input_modes(vec!["text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(echo_skill())
+        .with_capabilities(AgentCapabilities::none());
         let card_json = serde_json::to_string(&card).unwrap();
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1199,22 +1195,26 @@ mod tests {
             l.local_addr().unwrap()
         };
         let resolver = CachingCardResolver::new(&format!("http://{closed}")).unwrap();
-        let extended = AgentCard {
-            url: None,
-            name: "extended".into(),
-            version: "1.0".into(),
-            description: "for authenticated callers".into(),
-            supported_interfaces: vec![],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec!["text/plain".into()],
-            default_output_modes: vec!["text/plain".into()],
-            skills: vec![echo_skill()],
-            signatures: None,
+        let extended = {
+            let mut built = AgentCard::new(
+                "extended",
+                "1.0",
+                a2a_protocol_types::AgentInterface::jsonrpc(String::new()),
+            );
+            built.url = None;
+            built.description = "for authenticated callers".into();
+            built.supported_interfaces = vec![];
+            built.provider = None;
+            built.icon_url = None;
+            built.documentation_url = None;
+            built.capabilities = AgentCapabilities::none();
+            built.security_schemes = None;
+            built.security_requirements = None;
+            built.default_input_modes = vec!["text/plain".into()];
+            built.default_output_modes = vec!["text/plain".into()];
+            built.skills = vec![echo_skill()];
+            built.signatures = None;
+            built
         };
 
         resolver.install_extended_card(extended.clone()).await;
@@ -1255,28 +1255,16 @@ mod tests {
     async fn fetch_card_from_url_success() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
-        let card = AgentCard {
-            url: None,
-            name: "url-fetch-test".into(),
-            version: "1.0".into(),
-            description: "URL fetch test".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:9090".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: None,
-            }],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec!["text/plain".into()],
-            default_output_modes: vec!["text/plain".into()],
-            skills: vec![echo_skill()],
-            signatures: None,
-        };
+        let card = AgentCard::new(
+            "url-fetch-test",
+            "1.0",
+            AgentInterface::new("http://localhost:9090", "JSONRPC").with_protocol_version("1.0.0"),
+        )
+        .with_description("URL fetch test")
+        .with_input_modes(vec!["text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(echo_skill())
+        .with_capabilities(AgentCapabilities::none());
         let card_json = serde_json::to_string(&card).unwrap();
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1318,28 +1306,16 @@ mod tests {
     async fn resolve_agent_card_with_path_success() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
-        let card = AgentCard {
-            url: None,
-            name: "path-resolve-test".into(),
-            version: "2.0".into(),
-            description: "Path resolve test".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:9090".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: None,
-            }],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec!["text/plain".into()],
-            default_output_modes: vec!["text/plain".into()],
-            skills: vec![echo_skill()],
-            signatures: None,
-        };
+        let card = AgentCard::new(
+            "path-resolve-test",
+            "2.0",
+            AgentInterface::new("http://localhost:9090", "JSONRPC").with_protocol_version("1.0.0"),
+        )
+        .with_description("Path resolve test")
+        .with_input_modes(vec!["text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(echo_skill())
+        .with_capabilities(AgentCapabilities::none());
         let card_json = serde_json::to_string(&card).unwrap();
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1607,22 +1583,26 @@ mod tests {
         });
 
         let cached = CachedCard {
-            card: AgentCard {
-                url: None,
-                name: "lm-cached".into(),
-                version: "1.0".into(),
-                description: "Last-modified cached".into(),
-                supported_interfaces: vec![],
-                provider: None,
-                icon_url: None,
-                documentation_url: None,
-                capabilities: AgentCapabilities::none(),
-                security_schemes: None,
-                security_requirements: None,
-                default_input_modes: vec![],
-                default_output_modes: vec![],
-                skills: vec![],
-                signatures: None,
+            card: {
+                let mut built = AgentCard::new(
+                    "lm-cached",
+                    "1.0",
+                    a2a_protocol_types::AgentInterface::jsonrpc(String::new()),
+                );
+                built.url = None;
+                built.description = "Last-modified cached".into();
+                built.supported_interfaces = vec![];
+                built.provider = None;
+                built.icon_url = None;
+                built.documentation_url = None;
+                built.capabilities = AgentCapabilities::none();
+                built.security_schemes = None;
+                built.security_requirements = None;
+                built.default_input_modes = vec![];
+                built.default_output_modes = vec![];
+                built.skills = vec![];
+                built.signatures = None;
+                built
             },
             etag: None,
             last_modified: Some("Mon, 01 Jan 2026 00:00:00 GMT".into()),

@@ -39,6 +39,7 @@ pub enum MessageRole {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct Part {
     /// The content of this part (text, raw, url, or data).
     #[serde(flatten)]
@@ -86,6 +87,7 @@ pub enum PartContent {
 /// `task_id` is provided, the server will infer `context_id` from it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct Message {
     /// The unique identifier (e.g. UUID) of the message. This is created by the message creator.
     #[serde(rename = "messageId", alias = "message_id")]

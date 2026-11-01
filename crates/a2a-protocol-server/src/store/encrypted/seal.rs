@@ -118,12 +118,7 @@ impl Sealer<'_> {
         let value = serde_json::json!({
             SEALED_KEY: { "v": VERSION, "c": STANDARD.encode(sealed) }
         });
-        Ok(Part {
-            content: PartContent::Data(value),
-            metadata: None,
-            filename: None,
-            media_type: Some(SEALED_MEDIA_TYPE.to_owned()),
-        })
+        Ok(Part::data(value).with_media_type(SEALED_MEDIA_TYPE.to_owned()))
     }
 
     pub async fn open_part(&self, part: Part, context: &[u8]) -> A2aResult<Part> {
@@ -379,14 +374,10 @@ impl Sealer<'_> {
 /// it anyway fails the read rather than returning it — under
 /// `accept_unsealed_parts` too, since it is labelled sealed.
 fn placeholder() -> Part {
-    Part {
-        content: PartContent::Data(serde_json::json!({
-            SEALED_KEY: { "v": VERSION, "c": "" }
-        })),
-        metadata: None,
-        filename: None,
-        media_type: Some(SEALED_MEDIA_TYPE.to_owned()),
-    }
+    Part::data(serde_json::json!({
+        SEALED_KEY: { "v": VERSION, "c": "" }
+    }))
+    .with_media_type(SEALED_MEDIA_TYPE.to_owned())
 }
 
 /// `parts` as as many placeholders, so every count a store compares holds.
@@ -397,41 +388,36 @@ fn placeholders(parts: &[Part]) -> Vec<Part> {
 /// `task` with every part a placeholder and the status message dropped:
 /// everything around the parts as it is, without copying a part's content.
 fn shell(task: &Task) -> Task {
-    let shell_message = |m: &Message| Message {
-        id: m.id.clone(),
-        context_id: m.context_id.clone(),
-        task_id: m.task_id.clone(),
-        role: m.role,
-        parts: placeholders(&m.parts),
-        metadata: m.metadata.clone(),
-        extensions: m.extensions.clone(),
-        reference_task_ids: m.reference_task_ids.clone(),
+    let shell_message = |m: &Message| {
+        let mut built = Message::new(m.id.clone(), m.role, placeholders(&m.parts));
+        built.context_id.clone_from(&m.context_id);
+        built.task_id.clone_from(&m.task_id);
+        built.metadata.clone_from(&m.metadata);
+        built.extensions.clone_from(&m.extensions);
+        built.reference_task_ids.clone_from(&m.reference_task_ids);
+        built
     };
-    Task {
-        id: task.id.clone(),
-        context_id: task.context_id.clone(),
-        status: a2a_protocol_types::task::TaskStatus {
-            state: task.status.state,
-            message: None,
-            timestamp: task.status.timestamp.clone(),
-        },
-        history: task
+    {
+        let mut built = Task::new(task.id.clone(), task.context_id.clone(), {
+            let mut built = a2a_protocol_types::task::TaskStatus::new(task.status.state);
+            built.timestamp.clone_from(&task.status.timestamp);
+            built
+        });
+        built.history = task
             .history
             .as_ref()
-            .map(|h| h.iter().map(shell_message).collect()),
-        artifacts: task.artifacts.as_ref().map(|artifacts| {
+            .map(|h| h.iter().map(shell_message).collect());
+        built.artifacts = task.artifacts.as_ref().map(|artifacts| {
             artifacts
                 .iter()
-                .map(|a| Artifact {
-                    id: a.id.clone(),
-                    name: a.name.clone(),
-                    description: a.description.clone(),
-                    parts: placeholders(&a.parts),
-                    metadata: a.metadata.clone(),
-                    extensions: a.extensions.clone(),
+                .map(|a| {
+                    let mut shell = a.clone();
+                    shell.parts = placeholders(&a.parts);
+                    shell
                 })
                 .collect()
-        }),
-        metadata: task.metadata.clone(),
+        });
+        built.metadata.clone_from(&task.metadata);
+        built
     }
 }

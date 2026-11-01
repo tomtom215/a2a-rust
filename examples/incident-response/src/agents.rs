@@ -228,19 +228,16 @@ impl AgentExecutor for TriageExecutor {
                     .unwrap()
                     .insert(ctx.task_id.0.clone(), alert);
                 return queue
-                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ctx.context_id.clone(),
-                        status: TaskStatus {
-                            state: TaskState::InputRequired,
-                            message: Some(agent_message(&format!(
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        TaskStatus::new(TaskState::InputRequired).with_message(agent_message(
+                            &format!(
                                 "Which service is affected? I have runbooks for: {}",
                                 known_services().join(", ")
-                            ))),
-                            timestamp: None,
-                        },
-                        metadata: None,
-                    }))
+                            ),
+                        )),
+                    )))
                     .await;
             };
 

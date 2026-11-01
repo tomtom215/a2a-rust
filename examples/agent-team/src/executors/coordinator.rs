@@ -192,16 +192,11 @@ impl CoordinatorExecutor {
         ];
         let params = MessageSendParams {
             tenant: None,
-            message: Message {
-                id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-                role: MessageRole::User,
+            message: Message::new(
+                MessageId::new(uuid::Uuid::new_v4().to_string()),
+                MessageRole::User,
                 parts,
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            },
+            ),
             configuration: None,
             metadata: None,
         };

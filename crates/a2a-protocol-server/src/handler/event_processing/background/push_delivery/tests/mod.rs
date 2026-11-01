@@ -27,12 +27,11 @@ mod config_list;
 mod log_redaction;
 
 fn make_status_event(task_id: &str, state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new(task_id),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus::new(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new(task_id),
+        ContextId::new("ctx-1"),
+        TaskStatus::new(state),
+    ))
 }
 
 fn default_limits() -> HandlerLimits {
@@ -93,14 +92,11 @@ async fn deliver_push_bg_attempts_every_config_within_the_deadline() {
 
     // Register many configs: more than one-at-a-time would reach in 30s.
     for i in 0..50 {
-        let config = TaskPushNotificationConfig {
-            tenant: None,
-            id: Some(format!("cfg-{i}")),
-            task_id: Some("t-deadline".to_owned()),
-            url: format!("https://example.com/hook{i}"),
-            token: None,
-            authentication: None,
-        };
+        let config = TaskPushNotificationConfig::new(
+            "t-deadline".to_owned(),
+            format!("https://example.com/hook{i}"),
+        )
+        .with_id(format!("cfg-{i}"));
         store.set(config).await.unwrap();
     }
 
@@ -179,14 +175,13 @@ async fn store_with_configs(task_id: &str, count: usize) -> InMemoryPushConfigSt
     let store = InMemoryPushConfigStore::new();
     for i in 0..count {
         store
-            .set(TaskPushNotificationConfig {
-                tenant: None,
-                id: Some(format!("cfg-{i}")),
-                task_id: Some(task_id.to_owned()),
-                url: format!("https://example.com/hook{i}"),
-                token: None,
-                authentication: None,
-            })
+            .set(
+                TaskPushNotificationConfig::new(
+                    task_id.to_owned(),
+                    format!("https://example.com/hook{i}"),
+                )
+                .with_id(format!("cfg-{i}")),
+            )
             .await
             .expect("in-memory store accepts the config");
     }
@@ -218,14 +213,9 @@ async fn deliver_push_bg_logs_delivery_failure() {
     let event = make_status_event("t-fail", TaskState::Working);
 
     // Register a push config so deliver_push_bg actually calls the sender.
-    let config = TaskPushNotificationConfig {
-        tenant: None,
-        id: Some("cfg-fail".to_owned()),
-        task_id: Some("t-fail".to_owned()),
-        url: "https://example.com/hook".to_owned(),
-        token: None,
-        authentication: None,
-    };
+    let config =
+        TaskPushNotificationConfig::new("t-fail".to_owned(), "https://example.com/hook".to_owned())
+            .with_id("cfg-fail".to_owned());
     store.set(config).await.unwrap();
 
     let sender = FailingPushSender;
@@ -271,14 +261,11 @@ async fn deliver_push_bg_logs_delivery_timeout() {
     let task_id = TaskId::new("t-timeout");
     let event = make_status_event("t-timeout", TaskState::Working);
 
-    let config = TaskPushNotificationConfig {
-        tenant: None,
-        id: Some("cfg-timeout".to_owned()),
-        task_id: Some("t-timeout".to_owned()),
-        url: "https://example.com/hook".to_owned(),
-        token: None,
-        authentication: None,
-    };
+    let config = TaskPushNotificationConfig::new(
+        "t-timeout".to_owned(),
+        "https://example.com/hook".to_owned(),
+    )
+    .with_id("cfg-timeout".to_owned());
     store.set(config).await.unwrap();
 
     let sender = SlowForeverPushSender;

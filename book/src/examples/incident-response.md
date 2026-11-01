@@ -153,19 +153,11 @@ an `INPUT_REQUIRED` status:
 # fn known_services() -> Vec<&'static str> { vec!["payments-api", "checkout", "search"] }
 # async fn park(ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
 return queue
-    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: ctx.task_id.clone(),
-        context_id: ctx.context_id.clone(),
-        status: TaskStatus {
-            state: TaskState::InputRequired,
-            message: Some(agent_message(&format!(
+    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), TaskStatus::new(TaskState::InputRequired)
+        .with_message(agent_message(&format!(
                 "Which service is affected? I have runbooks for: {}",
                 known_services().join(", ")
-            ))),
-            timestamp: None,
-        },
-        metadata: None,
-    }))
+            ))))))
     .await;
 # }
 ```

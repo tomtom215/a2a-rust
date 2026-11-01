@@ -19,23 +19,15 @@ use super::*;
 use crate::metrics::NoopMetrics;
 
 fn event() -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t1"),
-        context_id: ContextId::new("c1"),
-        status: TaskStatus::with_timestamp(TaskState::Working),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t1"),
+        ContextId::new("c1"),
+        TaskStatus::with_timestamp(TaskState::Working),
+    ))
 }
 
 fn config(url: &str) -> TaskPushNotificationConfig {
-    TaskPushNotificationConfig {
-        tenant: None,
-        id: Some("cfg".to_owned()),
-        task_id: Some("t1".to_owned()),
-        url: url.to_owned(),
-        token: None,
-        authentication: None,
-    }
+    TaskPushNotificationConfig::new("t1".to_owned(), url.to_owned()).with_id("cfg".to_owned())
 }
 
 /// Counts how many sends run at once and holds each for `hold`, or, for a

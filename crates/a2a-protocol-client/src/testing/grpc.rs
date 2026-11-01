@@ -33,12 +33,11 @@ fn grpc_frame(payload: &[u8]) -> Bytes {
 }
 
 fn working_frame() -> Bytes {
-    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    });
+    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(TaskState::Working),
+    ));
     let encoded = pb::StreamResponse::try_from(event)
         .map(|m| m.encode_to_vec())
         .unwrap_or_default();

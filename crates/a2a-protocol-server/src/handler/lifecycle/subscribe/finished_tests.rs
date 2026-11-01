@@ -25,23 +25,19 @@ use crate::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 use crate::streaming::event_queue::Reattached;
 
 fn terminal_task() -> Task {
-    Task {
-        id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(TaskState::Failed),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(TaskState::Failed),
+    )
 }
 
 fn event(state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(state),
+    ))
 }
 
 /// A store that keeps a log, holding positions 1 and 2.

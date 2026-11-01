@@ -389,12 +389,11 @@ async fn a_store_that_cannot_honour_keys_advertises_nothing() {
 async fn an_operators_own_declaration_is_left_alone() {
     use a2a_protocol_types::extensions::AgentExtension;
     let mut c = card();
-    c.capabilities.extensions = Some(vec![AgentExtension {
-        uri: a2a_protocol_types::idempotency::IDEMPOTENCY_EXTENSION_URI.to_owned(),
-        description: Some("operator wording".to_owned()),
-        required: Some(true),
-        params: None,
-    }]);
+    c.capabilities.extensions = Some(vec![
+        AgentExtension::new(a2a_protocol_types::idempotency::IDEMPOTENCY_EXTENSION_URI.to_owned())
+            .with_description("operator wording".to_owned())
+            .with_required(true),
+    ]);
 
     let handler = RequestHandlerBuilder::new(CountingExecutor(Arc::new(AtomicUsize::new(0))))
         .with_agent_card(c)

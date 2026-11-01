@@ -178,12 +178,11 @@ impl Reaper {
             "ended a task its replica left running: failed, failure class transient"
         );
         self.release_lease(task_id).await;
-        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: id.clone(),
-            context_id: task.context_id.clone(),
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            id.clone(),
+            task.context_id.clone(),
             status,
-            metadata: None,
-        });
+        ));
         crate::handler::event_processing::append_ending(
             &*self.task_store,
             &id,

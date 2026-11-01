@@ -195,23 +195,16 @@ async fn proxy(seen: Seen) -> u16 {
 }
 
 fn status_event() -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("task-env"),
-        context_id: ContextId::new("ctx-env"),
-        status: TaskStatus::with_timestamp(TaskState::Completed),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("task-env"),
+        ContextId::new("ctx-env"),
+        TaskStatus::with_timestamp(TaskState::Completed),
+    ))
 }
 
 fn config(url: &str) -> TaskPushNotificationConfig {
-    TaskPushNotificationConfig {
-        tenant: None,
-        id: Some("cfg-env".to_owned()),
-        task_id: Some("task-env".to_owned()),
-        url: url.to_owned(),
-        token: None,
-        authentication: None,
-    }
+    TaskPushNotificationConfig::new("task-env".to_owned(), url.to_owned())
+        .with_id("cfg-env".to_owned())
 }
 
 #[test]

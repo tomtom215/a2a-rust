@@ -58,28 +58,23 @@ impl AgentExecutor for Scripted {
             let context_id = ctx.context_id.clone();
             for step in self.0 {
                 let event = match *step {
-                    Step::Status(state) => StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: context_id.clone(),
-                        status: TaskStatus::new(state),
-                        metadata: None,
-                    }),
-                    Step::Snapshot => StreamResponse::Task(Task {
-                        id: ctx.task_id.clone(),
-                        context_id: context_id.clone(),
-                        status: TaskStatus::new(TaskState::Submitted),
-                        history: None,
-                        artifacts: None,
-                        metadata: None,
-                    }),
-                    Step::Artifact => StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: context_id.clone(),
-                        artifact: Artifact::new("a-1", vec![Part::text("result")]),
-                        append: None,
-                        last_chunk: None,
-                        metadata: None,
-                    }),
+                    Step::Status(state) => {
+                        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            context_id.clone(),
+                            TaskStatus::new(state),
+                        ))
+                    }
+                    Step::Snapshot => StreamResponse::Task(Task::new(
+                        ctx.task_id.clone(),
+                        context_id.clone(),
+                        TaskStatus::new(TaskState::Submitted),
+                    )),
+                    Step::Artifact => StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        context_id.clone(),
+                        Artifact::new("a-1", vec![Part::text("result")]),
+                    )),
                     Step::Say(id) => StreamResponse::Message(Message::agent_text(id, "progress")),
                 };
                 queue.write(event).await?;

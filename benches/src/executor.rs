@@ -43,34 +43,32 @@ impl AgentExecutor for EchoExecutor {
         Box::pin(async move {
             // Working
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
 
             // Artifact
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    artifact: Artifact::new("echo", vec![Part::text("Echo: benchmark")]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new("echo", vec![Part::text("Echo: benchmark")]),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
 
             // Completed
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
 
             Ok(())
@@ -98,20 +96,18 @@ impl AgentExecutor for NoopExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -140,39 +136,38 @@ impl AgentExecutor for MultiEventExecutor {
             // The state machine only allows Working → Completed (not Working → Working),
             // so we emit Working once and use artifact events for the streaming volume.
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
 
             // Emit N artifact events (the streaming payload).
             for i in 0..self.event_pairs {
                 queue
-                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ctx.context_id.clone(),
-                        artifact: Artifact::new(
-                            format!("chunk-{i}"),
-                            vec![Part::text(format!("Streaming chunk {i}"))],
-                        ),
-                        append: Some(true),
-                        last_chunk: Some(i == self.event_pairs - 1),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::ArtifactUpdate(
+                        TaskArtifactUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            ctx.context_id.clone(),
+                            Artifact::new(
+                                format!("chunk-{i}"),
+                                vec![Part::text(format!("Streaming chunk {i}"))],
+                            ),
+                        )
+                        .with_append(true)
+                        .with_last_chunk(i == self.event_pairs - 1),
+                    ))
                     .await?;
             }
 
             // Final completed status
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
 
             Ok(())
@@ -209,38 +204,37 @@ impl AgentExecutor for AppendingExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
 
             // One artifact id for every chunk — the append-merge path.
             for i in 0..self.chunks {
                 queue
-                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ctx.context_id.clone(),
-                        artifact: Artifact::new(
-                            "streamed-response",
-                            vec![Part::text(format!("Streaming chunk {i}"))],
-                        ),
-                        append: Some(true),
-                        last_chunk: Some(i == self.chunks - 1),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::ArtifactUpdate(
+                        TaskArtifactUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            ctx.context_id.clone(),
+                            Artifact::new(
+                                "streamed-response",
+                                vec![Part::text(format!("Streaming chunk {i}"))],
+                            ),
+                        )
+                        .with_append(true)
+                        .with_last_chunk(i == self.chunks - 1),
+                    ))
                     .await?;
             }
 
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
 
             Ok(())
@@ -263,12 +257,11 @@ impl AgentExecutor for FailingExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Failed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Failed),
+                )))
                 .await?;
 
             Err(a2a_protocol_types::error::A2aError::internal(

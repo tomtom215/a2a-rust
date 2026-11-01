@@ -550,22 +550,16 @@ pub async fn test_tenant_id_independence(_ctx: &TestContext) -> TestResult {
     let store = Arc::new(TenantAwareInMemoryTaskStore::new());
 
     // Insert a task with the same ID under two different tenants.
-    let task_a = Task {
-        id: TaskId::new("shared-id"),
-        context_id: a2a_protocol_types::task::ContextId::new("ctx-a"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
-    let task_b = Task {
-        id: TaskId::new("shared-id"),
-        context_id: a2a_protocol_types::task::ContextId::new("ctx-b"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task_a = Task::new(
+        TaskId::new("shared-id"),
+        a2a_protocol_types::task::ContextId::new("ctx-a"),
+        TaskStatus::new(TaskState::Completed),
+    );
+    let task_b = Task::new(
+        TaskId::new("shared-id"),
+        a2a_protocol_types::task::ContextId::new("ctx-b"),
+        TaskStatus::new(TaskState::Working),
+    );
 
     TenantContext::scope("alpha".to_string(), {
         let store = store.clone();
@@ -621,14 +615,11 @@ pub async fn test_tenant_count(_ctx: &TestContext) -> TestResult {
         let store = store.clone();
         TenantContext::scope(format!("tenant-{i}"), async move {
             store
-                .save(&Task {
-                    id: TaskId::new(format!("t-{i}")),
-                    context_id: a2a_protocol_types::task::ContextId::new("ctx"),
-                    status: TaskStatus::new(TaskState::Completed),
-                    history: None,
-                    artifacts: None,
-                    metadata: None,
-                })
+                .save(&Task::new(
+                    TaskId::new(format!("t-{i}")),
+                    a2a_protocol_types::task::ContextId::new("ctx"),
+                    TaskStatus::new(TaskState::Completed),
+                ))
                 .await
                 .unwrap();
         })

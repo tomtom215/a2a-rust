@@ -23,37 +23,17 @@ use ring::signature::{self, EcdsaKeyPair, KeyPair};
 
 /// Build a minimal valid `AgentCard` for testing.
 fn minimal_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Test Agent".into(),
-        description: "A test agent".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "https://agent.example.com/rpc".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "echo".into(),
-            name: "Echo".into(),
-            description: "Echoes input".into(),
-            tags: vec!["echo".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "Test Agent",
+        "1.0.0",
+        AgentInterface::new("https://agent.example.com/rpc", "JSONRPC")
+            .with_protocol_version("1.0.0"),
+    )
+    .with_description("A test agent")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes input").with_tags(vec!["echo"]))
+    .with_capabilities(AgentCapabilities::none())
 }
 
 /// Generate a fresh ES256 PKCS#8 key pair, returning (pkcs8_bytes, public_key_bytes).

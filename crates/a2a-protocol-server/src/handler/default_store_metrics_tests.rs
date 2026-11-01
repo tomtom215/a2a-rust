@@ -52,12 +52,11 @@ async fn append_for_a_missing_task(builder: RequestHandlerBuilder, recorder: &Ar
         .append_event(
             &TaskId::new("gone"),
             1,
-            &StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: TaskId::new("gone"),
-                context_id: ContextId::new("ctx"),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            }),
+            &StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                TaskId::new("gone"),
+                ContextId::new("ctx"),
+                TaskStatus::new(TaskState::Working),
+            )),
         )
         .await
         .expect("a missing task must not fail the agent");

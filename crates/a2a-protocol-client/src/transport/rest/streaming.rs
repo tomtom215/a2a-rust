@@ -235,12 +235,11 @@ mod tests {
         use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
         // Build a bare StreamResponse SSE frame (REST binding — no JSON-RPC envelope).
-        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("t1"),
-            context_id: ContextId::new("c1"),
-            status: TaskStatus::new(TaskState::Completed),
-            metadata: None,
-        });
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new("t1"),
+            ContextId::new("c1"),
+            TaskStatus::new(TaskState::Completed),
+        ));
         let sse_body = format!("data: {}\n\n", serde_json::to_string(&event).unwrap());
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

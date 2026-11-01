@@ -38,12 +38,11 @@ impl AgentExecutor for EchoExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::with_timestamp(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::with_timestamp(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -53,30 +52,18 @@ impl AgentExecutor for EchoExecutor {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn make_agent_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "test-agent".into(),
-        version: "1.0".into(),
-        description: "Test agent".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "http://localhost:8080".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        capabilities: AgentCapabilities::none(),
-        security_schemes: None,
-        security_requirements: None,
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![
-            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
-        ],
-        signatures: None,
-    }
+    AgentCard::new(
+        "test-agent",
+        "1.0",
+        AgentInterface::new("http://localhost:8080", "JSONRPC").with_protocol_version("1.0.0"),
+    )
+    .with_description("Test agent")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+    )
+    .with_capabilities(AgentCapabilities::none())
 }
 
 fn make_dispatcher_with_cors() -> Arc<JsonRpcDispatcher> {
@@ -1572,14 +1559,13 @@ mod dispatch_guards {
             Box::pin(async move {
                 queue
                     .write(a2a_protocol_types::events::StreamResponse::StatusUpdate(
-                        a2a_protocol_types::events::TaskStatusUpdateEvent {
-                            task_id: ctx.task_id.clone(),
-                            context_id: ctx.context_id.clone(),
-                            status: a2a_protocol_types::task::TaskStatus::with_timestamp(
+                        a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            ctx.context_id.clone(),
+                            a2a_protocol_types::task::TaskStatus::with_timestamp(
                                 a2a_protocol_types::task::TaskState::Working,
                             ),
-                            metadata: None,
-                        },
+                        ),
                     ))
                     .await?;
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;

@@ -16,23 +16,19 @@ use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 use super::{EventQueueReader, EventQueueWriter, FinalSnapshotFn, new_in_memory_queue};
 
 fn status(state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(state),
+    ))
 }
 
 fn task() -> StreamResponse {
-    StreamResponse::Task(Task {
-        id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    })
+    StreamResponse::Task(Task::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(TaskState::Completed),
+    ))
 }
 
 /// A hook that answers `answer` after `delay`, recording each position it

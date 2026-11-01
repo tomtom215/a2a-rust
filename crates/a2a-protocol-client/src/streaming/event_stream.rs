@@ -829,16 +829,11 @@ mod tests {
     const TEST_TIMEOUT: Duration = Duration::from_secs(5);
 
     fn make_status_event(state: TaskState, _is_final: bool) -> StreamResponse {
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("t1"),
-            context_id: a2a_protocol_types::ContextId::new("c1"),
-            status: TaskStatus {
-                state,
-                message: None,
-                timestamp: None,
-            },
-            metadata: None,
-        })
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new("t1"),
+            a2a_protocol_types::ContextId::new("c1"),
+            TaskStatus::new(state),
+        ))
     }
 
     fn sse_frame(event: &StreamResponse) -> String {
@@ -994,28 +989,20 @@ mod tests {
             assert!(!ends_stream(&make_status_event(state, false)), "{state:?}");
         }
         let task = |state| {
-            StreamResponse::Task(Task {
-                id: TaskId::new("t"),
-                context_id: a2a_protocol_types::ContextId::new("c"),
-                status: TaskStatus::new(state),
-                history: None,
-                artifacts: None,
-                metadata: None,
-            })
+            StreamResponse::Task(Task::new(
+                TaskId::new("t"),
+                a2a_protocol_types::ContextId::new("c"),
+                TaskStatus::new(state),
+            ))
         };
         assert!(ends_stream(&task(TaskState::Completed)));
         assert!(ends_stream(&task(TaskState::InputRequired)));
         assert!(!ends_stream(&task(TaskState::Working)));
-        let message = StreamResponse::Message(Message {
-            id: MessageId::new("m"),
-            role: MessageRole::Agent,
-            parts: vec![Part::text("hi")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        });
+        let message = StreamResponse::Message(Message::new(
+            MessageId::new("m"),
+            MessageRole::Agent,
+            vec![Part::text("hi")],
+        ));
         assert!(ends_stream(&message));
     }
 
@@ -1063,12 +1050,11 @@ mod tests {
         let (tx, rx) = mpsc::channel(8);
         let mut stream = EventStream::from_event_channel(rx);
 
-        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("task-1"),
-            context_id: a2a_protocol_types::ContextId::new("ctx-1"),
-            status: TaskStatus::new(TaskState::Working),
-            metadata: None,
-        });
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new("task-1"),
+            a2a_protocol_types::ContextId::new("ctx-1"),
+            TaskStatus::new(TaskState::Working),
+        ));
         tx.send(Ok(event)).await.expect("send");
         drop(tx);
 
@@ -1138,12 +1124,13 @@ mod tests {
         let (tx, rx) = mpsc::channel(8);
         let mut stream = EventStream::from_event_channel(rx);
 
-        tx.send(Ok(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("task-1"),
-            context_id: a2a_protocol_types::ContextId::new("ctx-1"),
-            status: TaskStatus::new(TaskState::Completed),
-            metadata: None,
-        })))
+        tx.send(Ok(StreamResponse::StatusUpdate(
+            TaskStatusUpdateEvent::new(
+                TaskId::new("task-1"),
+                a2a_protocol_types::ContextId::new("ctx-1"),
+                TaskStatus::new(TaskState::Completed),
+            ),
+        )))
         .await
         .expect("send");
 

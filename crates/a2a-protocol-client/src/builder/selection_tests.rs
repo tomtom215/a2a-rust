@@ -14,32 +14,28 @@ use crate::config::{BINDING_GRPC, BINDING_HTTP_JSON, BINDING_JSONRPC};
 use crate::error::ClientError;
 
 fn card(interfaces: Vec<AgentInterface>) -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "selection".into(),
-        version: "1.0".into(),
-        description: "Interface selection fixture".into(),
-        supported_interfaces: interfaces,
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        capabilities: AgentCapabilities::none(),
-        security_schemes: None,
-        security_requirements: None,
-        default_input_modes: vec![],
-        default_output_modes: vec![],
-        skills: vec![],
-        signatures: None,
+    {
+        let mut assembled =
+            AgentCard::new("selection", "1.0", AgentInterface::jsonrpc(String::new()));
+        assembled.url = None;
+        assembled.description = "Interface selection fixture".into();
+        assembled.supported_interfaces = interfaces;
+        assembled.provider = None;
+        assembled.icon_url = None;
+        assembled.documentation_url = None;
+        assembled.capabilities = AgentCapabilities::none();
+        assembled.security_schemes = None;
+        assembled.security_requirements = None;
+        assembled.default_input_modes = vec![];
+        assembled.default_output_modes = vec![];
+        assembled.skills = vec![];
+        assembled.signatures = None;
+        assembled
     }
 }
 
 fn iface(binding: &str, version: &str, url: &str) -> AgentInterface {
-    AgentInterface {
-        url: url.into(),
-        protocol_binding: binding.into(),
-        protocol_version: version.into(),
-        tenant: None,
-    }
+    AgentInterface::new(url, binding).with_protocol_version(version)
 }
 
 /// What an a2a-go agent serving both protocol versions publishes: the v0.3

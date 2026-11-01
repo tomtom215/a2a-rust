@@ -93,18 +93,15 @@ impl RequestHandler {
 
                     // Build a request context for the cancel call.
                     let ctx = RequestContext::new(
-                        a2a_protocol_types::message::Message {
-                            id: a2a_protocol_types::message::MessageId::new(
+                        a2a_protocol_types::message::Message::new(
+                            a2a_protocol_types::message::MessageId::new(
                                 uuid::Uuid::new_v4().to_string(),
                             ),
-                            role: a2a_protocol_types::message::MessageRole::User,
-                            parts: vec![],
-                            task_id: Some(task_id.clone()),
-                            context_id: Some(task.context_id.clone()),
-                            reference_task_ids: None,
-                            extensions: None,
-                            metadata: None,
-                        },
+                            a2a_protocol_types::message::MessageRole::User,
+                            vec![],
+                        )
+                        .with_task_id(task_id.clone())
+                        .with_context_id(task.context_id.clone()),
                         task_id.clone(),
                         task.context_id.0.clone(),
                     )
@@ -228,25 +225,19 @@ mod tests {
     );
 
     fn make_completed_task(id: &str) -> Task {
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx-1"),
-            status: TaskStatus::new(TaskState::Completed),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(
+            TaskId::new(id),
+            ContextId::new("ctx-1"),
+            TaskStatus::new(TaskState::Completed),
+        )
     }
 
     fn make_submitted_task(id: &str) -> Task {
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx-1"),
-            status: TaskStatus::new(TaskState::Submitted),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(
+            TaskId::new(id),
+            ContextId::new("ctx-1"),
+            TaskStatus::new(TaskState::Submitted),
+        )
     }
 
     #[tokio::test]

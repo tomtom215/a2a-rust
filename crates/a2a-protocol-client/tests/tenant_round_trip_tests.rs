@@ -65,12 +65,11 @@ impl AgentExecutor for CompletingExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -93,56 +92,32 @@ impl a2a_protocol_server::push::PushSender for NoopPushSender {
 /// One interface per binding, both naming the tenant. `url` is filled in once
 /// the listener is bound.
 fn agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
-    let interface = |url: &str, binding: &str| AgentInterface {
-        url: url.to_owned(),
-        protocol_binding: binding.to_owned(),
-        protocol_version: "1.0".into(),
-        tenant: Some(TENANT.into()),
+    let interface = |url: &str, binding: &str| {
+        AgentInterface::new(url.to_owned(), binding.to_owned())
+            .with_protocol_version("1.0")
+            .with_tenant(TENANT)
     };
-    AgentCard {
-        url: None,
-        name: "tenant-round-trip".into(),
-        description: "Card whose interfaces name a tenant".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![
-            interface(jsonrpc_url, BINDING_JSONRPC),
-            interface(rest_url, BINDING_HTTP_JSON),
-        ],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "noop".into(),
-            name: "Noop".into(),
-            description: "Completes immediately".into(),
-            tags: vec!["test".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none().with_push_notifications(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "tenant-round-trip",
+        "1.0.0",
+        interface(jsonrpc_url, BINDING_JSONRPC),
+    )
+    .with_description("Card whose interfaces name a tenant")
+    .with_interface(interface(rest_url, BINDING_HTTP_JSON))
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("noop", "Noop", "Completes immediately").with_tags(vec!["test"]))
+    .with_capabilities(AgentCapabilities::none().with_push_notifications(true))
 }
 
 fn send_params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new("msg-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new("msg-1"),
+            MessageRole::User,
+            vec![Part::text("hello")],
+        ),
         configuration: None,
         metadata: None,
     }

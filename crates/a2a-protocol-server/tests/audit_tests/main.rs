@@ -49,32 +49,29 @@ impl AgentExecutor for EchoExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
 
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    artifact: Artifact::new("art-1", vec![Part::text("echo response")]),
-                    append: None,
-                    last_chunk: None,
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new("art-1", vec![Part::text("echo response")]),
+                    ),
+                ))
                 .await?;
 
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
 
             Ok(())
@@ -106,12 +103,11 @@ impl AgentExecutor for SlowExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
             // Wait for cancellation instead of a fixed sleep, so shutdown
             // tests complete quickly.
@@ -124,16 +120,11 @@ impl AgentExecutor for SlowExecutor {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn make_message(text: &str) -> Message {
-    Message {
-        id: MessageId::new("msg-1"),
-        role: MessageRole::User,
-        parts: vec![Part::text(text)],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    }
+    Message::new(
+        MessageId::new("msg-1"),
+        MessageRole::User,
+        vec![Part::text(text)],
+    )
 }
 
 fn make_send_params(text: &str) -> MessageSendParams {
@@ -157,35 +148,15 @@ fn unwrap_send_err(
 }
 
 fn minimal_agent_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Test Agent".into(),
-        description: "A test agent".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "https://agent.example.com/rpc".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "echo".into(),
-            name: "Echo".into(),
-            description: "Echoes input".into(),
-            tags: vec!["echo".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "Test Agent",
+        "1.0.0",
+        AgentInterface::new("https://agent.example.com/rpc", "JSONRPC")
+            .with_protocol_version("1.0.0"),
+    )
+    .with_description("A test agent")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes input").with_tags(vec!["echo"]))
+    .with_capabilities(AgentCapabilities::none())
 }

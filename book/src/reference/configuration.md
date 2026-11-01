@@ -218,7 +218,6 @@ and the `with_*` setters.
 |-------|------|---------|-------------|
 | `timeout` | `Duration` | 30s | Per-request timeout, except a blocking send |
 | `send_timeout` | `Duration` | 600s | Bound on a blocking `SendMessage` (see `with_send_timeout` above) |
-| `ping_interval` | `Option<Duration>` | 15s | Idle pings; two silent intervals in a row close the connection (`without_ping()` for none) |
 | `connect_timeout` | `Duration` | 10s | Connection timeout |
 | `max_message_size` | `usize` | 4 MiB | Maximum message size |
 | `stream_channel_capacity` | `usize` | 64 | Streaming response buffer |

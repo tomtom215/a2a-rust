@@ -16,14 +16,11 @@ use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 fn make_task(id: &str) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus::with_timestamp(TaskState::Submitted),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("ctx-1"),
+        TaskStatus::with_timestamp(TaskState::Submitted),
+    )
 }
 
 // ── Tenant isolation: InMemoryTaskStore ─────────────────────────────────────
@@ -215,14 +212,8 @@ async fn tenant_task_store_prune_empty() {
 // ── Tenant isolation: InMemoryPushConfigStore ───────────────────────────────
 
 fn make_push_config(task_id: &str) -> TaskPushNotificationConfig {
-    TaskPushNotificationConfig {
-        tenant: None,
-        id: None,
-        task_id: Some(task_id.to_owned()),
-        url: "http://example.com/webhook".to_owned(),
-        token: Some("secret".to_owned()),
-        authentication: None,
-    }
+    TaskPushNotificationConfig::new(task_id.to_owned(), "http://example.com/webhook".to_owned())
+        .with_token("secret".to_owned())
 }
 
 #[tokio::test]

@@ -14,23 +14,16 @@ When the agent needs clarification:
 ```rust
 # use a2a_protocol_sdk::prelude::*;
 # async fn f(ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
-queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-    task_id: ctx.task_id.clone(),
-    context_id: ctx.context_id.clone(),
-    status: TaskStatus {
-        state: TaskState::InputRequired,
-        message: Some(Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::Agent,
-            parts: vec![Part::text("Which format would you like: PDF or HTML?")],
-            // ...remaining fields
-            task_id: None, context_id: None, reference_task_ids: None,
-            extensions: None, metadata: None,
-        }),
-        timestamp: None,
-    },
-    metadata: None,
-})).await?;
+let question = Message::new(
+    MessageId::new(uuid::Uuid::new_v4().to_string()),
+    MessageRole::Agent,
+    vec![Part::text("Which format would you like: PDF or HTML?")],
+);
+queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+    ctx.task_id.clone(),
+    ctx.context_id.clone(),
+    TaskStatus::new(TaskState::InputRequired).with_message(question),
+))).await?;
 # Ok(())
 # }
 ```

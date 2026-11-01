@@ -28,14 +28,11 @@ fn empty_lists_and_names_are_unset() {
     let mut artifact = Artifact::new("a-1", vec![Part::text("x")]);
     artifact.extensions = Some(Vec::new());
     artifact.name = Some(String::new());
-    let mut event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-        task_id: TaskId::new("t-1"),
-        context_id: ContextId::new("c-1"),
+    let mut event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(
+        TaskId::new("t-1"),
+        ContextId::new("c-1"),
         artifact,
-        append: None,
-        last_chunk: None,
-        metadata: None,
-    });
+    ));
     make_portable(&mut event).unwrap();
     let StreamResponse::ArtifactUpdate(update) = event else {
         unreachable!("an update stays an update")
@@ -76,12 +73,11 @@ fn malformed_provenance_is_refused_in_every_place_content_rides() {
         s
     };
     let update = |bad: bool| {
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("t-1"),
-            context_id: ContextId::new("c-1"),
-            status: status(bad),
-            metadata: None,
-        })
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new("t-1"),
+            ContextId::new("c-1"),
+            status(bad),
+        ))
     };
     let task = |status_bad: bool, artifact_bad: bool, history_bad: bool| {
         let mut t = Task::new("t-1", "c-1", status(status_bad));

@@ -51,26 +51,21 @@ fn card_with(url: &str, skills: Vec<AgentSkill>) -> AgentCard {
 }
 
 fn task_in(state: TaskState, artifact_text: Option<&str>, note: Option<&str>) -> Task {
-    Task {
-        id: TaskId::new("t-1"),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus {
-            state,
-            message: note.map(|text| Message {
-                id: MessageId::new("m-note"),
-                role: MessageRole::Agent,
-                parts: vec![Part::text(text)],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            }),
-            timestamp: None,
-        },
-        history: None,
-        artifacts: artifact_text.map(|text| vec![Artifact::new("out", vec![Part::text(text)])]),
-        metadata: None,
+    {
+        let mut built = Task::new(TaskId::new("t-1"), ContextId::new("ctx-1"), {
+            let mut built = TaskStatus::new(state);
+            built.message = note.map(|text| {
+                Message::new(
+                    MessageId::new("m-note"),
+                    MessageRole::Agent,
+                    vec![Part::text(text)],
+                )
+            });
+            built
+        });
+        built.artifacts =
+            artifact_text.map(|text| vec![Artifact::new("out", vec![Part::text(text)])]);
+        built
     }
 }
 
@@ -225,22 +220,21 @@ impl AgentExecutor for TestAgent {
             }
 
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    artifact: Artifact::new("out", vec![Part::text(format!("hint={hint}"))]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new("out", vec![Part::text(format!("hint={hint}"))]),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })

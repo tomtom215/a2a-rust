@@ -40,14 +40,11 @@ mod tests {
     use crate::store::TaskStore;
 
     fn task(id: &str) -> Task {
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(TaskState::Working),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(
+            TaskId::new(id),
+            ContextId::new("ctx"),
+            TaskStatus::new(TaskState::Working),
+        )
     }
 
     /// The count is every task and every key removed, and a second run

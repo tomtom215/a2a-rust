@@ -17,18 +17,15 @@ async fn task_store_eviction_on_write() {
 
     // Write 3 tasks, first two completed
     for i in 0..3 {
-        let task = Task {
-            id: TaskId::new(format!("task-{i}")),
-            context_id: ContextId::new("ctx"),
-            status: if i < 2 {
+        let task = Task::new(
+            TaskId::new(format!("task-{i}")),
+            ContextId::new("ctx"),
+            if i < 2 {
                 TaskStatus::new(TaskState::Completed)
             } else {
                 TaskStatus::new(TaskState::Working)
             },
-            history: None,
-            artifacts: None,
-            metadata: None,
-        };
+        );
         a2a_protocol_server::TaskStore::save(&store, &task)
             .await
             .unwrap();
@@ -76,14 +73,11 @@ async fn task_store_background_eviction() {
     );
 
     // Insert a completed task
-    let task = Task {
-        id: TaskId::new("evict-me"),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("evict-me"),
+        ContextId::new("ctx"),
+        TaskStatus::new(TaskState::Completed),
+    );
     a2a_protocol_server::TaskStore::save(&store, &task)
         .await
         .unwrap();

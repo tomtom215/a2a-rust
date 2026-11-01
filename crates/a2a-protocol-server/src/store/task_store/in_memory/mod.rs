@@ -1368,26 +1368,16 @@ mod tests {
 
     /// Helper to create a task with the given ID and state.
     fn make_task(id: &str, state: TaskState) -> Task {
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx-default"),
-            status: TaskStatus::new(state),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(
+            TaskId::new(id),
+            ContextId::new("ctx-default"),
+            TaskStatus::new(state),
+        )
     }
 
     /// Helper to create a task with a specific context ID.
     fn make_task_with_ctx(id: &str, ctx: &str, state: TaskState) -> Task {
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new(ctx),
-            status: TaskStatus::new(state),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(TaskId::new(id), ContextId::new(ctx), TaskStatus::new(state))
     }
 
     // ── save_status_delta ────────────────────────────────────────────────
@@ -1582,12 +1572,11 @@ mod tests {
         let task = make_task("t-log", TaskState::Working);
         store.save(&task).await.expect("seed");
         let event = a2a_protocol_types::events::StreamResponse::StatusUpdate(
-            a2a_protocol_types::events::TaskStatusUpdateEvent {
-                task_id: task.id.clone(),
-                context_id: task.context_id.clone(),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            },
+            a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+                task.id.clone(),
+                task.context_id.clone(),
+                TaskStatus::new(TaskState::Working),
+            ),
         );
         store
             .append_event(&task.id, 1, &event)
@@ -1889,11 +1878,7 @@ mod tests {
     /// Helper: a task whose status carries an explicit ISO 8601 timestamp.
     fn make_task_with_ts(id: &str, state: TaskState, ts: &str) -> Task {
         let mut task = make_task(id, state);
-        task.status = TaskStatus {
-            state,
-            message: None,
-            timestamp: Some(ts.to_owned()),
-        };
+        task.status = TaskStatus::new(state).at(ts.to_owned());
         task
     }
 
@@ -2534,13 +2519,14 @@ mod artifact_delta_tests {
     use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
     fn task_with(id: &str, artifacts: Option<Vec<Artifact>>) -> Task {
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(TaskState::Working),
-            history: None,
-            artifacts,
-            metadata: None,
+        {
+            let mut built = Task::new(
+                TaskId::new(id),
+                ContextId::new("ctx"),
+                TaskStatus::new(TaskState::Working),
+            );
+            built.artifacts = artifacts;
+            built
         }
     }
 

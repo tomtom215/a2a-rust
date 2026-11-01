@@ -57,12 +57,11 @@ impl AgentExecutor for EchoExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::with_timestamp(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::with_timestamp(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -75,33 +74,23 @@ impl AgentExecutor for EchoExecutor {
 /// verdict — but leaving capabilities off would mean the routing check never
 /// reached the handlers behind four of the eleven methods.
 fn full_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "routing-completeness-agent".into(),
-        version: "1.0".into(),
-        description: "Agent advertising every capability".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "http://localhost".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-            tenant: None,
-        }],
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        capabilities: AgentCapabilities::none()
+    AgentCard::new(
+        "routing-completeness-agent",
+        "1.0",
+        AgentInterface::new("http://localhost", "JSONRPC"),
+    )
+    .with_description("Agent advertising every capability")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+    )
+    .with_capabilities(
+        AgentCapabilities::none()
             .with_streaming(true)
             .with_push_notifications(true)
             .with_extended_agent_card(true),
-        security_schemes: None,
-        security_requirements: None,
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![
-            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
-        ],
-        signatures: None,
-    }
+    )
 }
 
 async fn start_server() -> std::net::SocketAddr {

@@ -40,12 +40,11 @@ fn with_bearer(mut c: TaskPushNotificationConfig, credentials: &str) -> TaskPush
 }
 
 fn status_update(task: &str, state: TaskState) -> Vec<u8> {
-    serde_json::to_vec(&StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new(task),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(state),
-        metadata: None,
-    }))
+    serde_json::to_vec(&StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new(task),
+        ContextId::new("ctx"),
+        TaskStatus::new(state),
+    )))
     .unwrap()
 }
 
@@ -175,15 +174,14 @@ fn foreign_task_id_is_403() {
     assert_eq!(foreign.status(), 403);
 
     let message = |task_id: Option<&str>| {
-        serde_json::to_vec(&StreamResponse::Message(Message {
-            id: MessageId::new("m"),
-            role: MessageRole::Agent,
-            parts: vec![Part::text("hi")],
-            task_id: task_id.map(TaskId::new),
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
+        serde_json::to_vec(&StreamResponse::Message({
+            let mut built = Message::new(
+                MessageId::new("m"),
+                MessageRole::Agent,
+                vec![Part::text("hi")],
+            );
+            built.task_id = task_id.map(TaskId::new);
+            built
         }))
         .unwrap()
     };
@@ -192,28 +190,24 @@ fn foreign_task_id_is_403() {
     assert_eq!(r.receive(&h, &message(Some(TASK))).status(), 200);
 
     let task = |id: &str| {
-        serde_json::to_vec(&StreamResponse::Task(Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(TaskState::Completed),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }))
+        serde_json::to_vec(&StreamResponse::Task(Task::new(
+            TaskId::new(id),
+            ContextId::new("ctx"),
+            TaskStatus::new(TaskState::Completed),
+        )))
         .unwrap()
     };
     assert_eq!(r.receive(&h, &task("task-2")).status(), 403);
     assert_eq!(r.receive(&h, &task(TASK)).status(), 200);
 
     let artifact = |id: &str| {
-        serde_json::to_vec(&StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: TaskId::new(id),
-            context_id: ContextId::new("ctx"),
-            artifact: Artifact::new("a-1", vec![Part::text("out")]),
-            append: None,
-            last_chunk: None,
-            metadata: None,
-        }))
+        serde_json::to_vec(&StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                TaskId::new(id),
+                ContextId::new("ctx"),
+                Artifact::new("a-1", vec![Part::text("out")]),
+            ),
+        ))
         .unwrap()
     };
     assert_eq!(r.receive(&h, &artifact("task-2")).status(), 403);

@@ -124,16 +124,11 @@ fn grpc_goes_through_the_proxy_the_environment_names() {
             let sent = client
                 .send_message(MessageSendParams {
                     tenant: None,
-                    message: Message {
-                        id: MessageId::new("g1"),
-                        role: MessageRole::User,
-                        parts: vec![Part::text("hi")],
-                        task_id: None,
-                        context_id: None,
-                        reference_task_ids: None,
-                        extensions: None,
-                        metadata: None,
-                    },
+                    message: Message::new(
+                        MessageId::new("g1"),
+                        MessageRole::User,
+                        vec![Part::text("hi")],
+                    ),
                     configuration: None,
                     metadata: None,
                 })

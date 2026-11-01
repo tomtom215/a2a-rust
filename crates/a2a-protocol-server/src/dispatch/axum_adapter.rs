@@ -950,14 +950,11 @@ mod tests {
 
     async fn seed_task(state: &A2aState, id: &str) {
         use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
-        let task = Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(TaskState::Submitted),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        };
+        let task = Task::new(
+            TaskId::new(id),
+            ContextId::new("ctx"),
+            TaskStatus::new(TaskState::Submitted),
+        );
         state.handler.task_store.save(&task).await.unwrap();
     }
 

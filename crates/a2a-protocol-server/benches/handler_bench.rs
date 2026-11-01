@@ -16,32 +16,24 @@ use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 fn sample_task(i: usize) -> Task {
-    Task {
-        id: TaskId::new(format!("task-bench-{i:04}")),
-        context_id: ContextId::new("ctx-bench-001"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: Some(vec![Message {
-            id: MessageId::new(format!("msg-{i}")),
-            role: MessageRole::User,
-            parts: vec![Part::text("Hello, agent!")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        }]),
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(format!("task-bench-{i:04}")),
+        ContextId::new("ctx-bench-001"),
+        TaskStatus::new(TaskState::Completed),
+    )
+    .with_history(vec![Message::new(
+        MessageId::new(format!("msg-{i}")),
+        MessageRole::User,
+        vec![Part::text("Hello, agent!")],
+    )])
 }
 
 fn sample_status_event(i: usize) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new(format!("task-{i}")),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new(format!("task-{i}")),
+        ContextId::new("ctx-1"),
+        TaskStatus::new(TaskState::Working),
+    ))
 }
 
 // ── TaskStore benchmarks ────────────────────────────────────────────────────

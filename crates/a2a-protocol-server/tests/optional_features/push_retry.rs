@@ -43,12 +43,11 @@ async fn failing_webhook() -> (String, Arc<AtomicUsize>) {
 }
 
 fn event() -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("task-1"),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("task-1"),
+        ContextId::new("ctx"),
+        TaskStatus::new(TaskState::Working),
+    ))
 }
 
 async fn attempts_made(max_attempts: usize) -> usize {

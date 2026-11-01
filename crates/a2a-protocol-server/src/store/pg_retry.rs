@@ -307,14 +307,11 @@ mod tests {
             .await
             .expect("store");
         let id = TaskId::new(format!("d15-{}", uuid::Uuid::new_v4()));
-        let mut task = Task {
-            id: id.clone(),
-            context_id: ContextId::new("d15"),
-            status: TaskStatus::new(TaskState::Submitted),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        };
+        let mut task = Task::new(
+            id.clone(),
+            ContextId::new("d15"),
+            TaskStatus::new(TaskState::Submitted),
+        );
         store.save(&task).await.expect("saved before the failover");
 
         // The failover: both of the pool's connections now refuse writes.

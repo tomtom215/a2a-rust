@@ -136,16 +136,11 @@ fn client(recorder: &Recorder, require_https: bool) -> A2aClient {
 fn send_with_push(url: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new("m-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("hi")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new("m-1"),
+            MessageRole::User,
+            vec![Part::text("hi")],
+        ),
         configuration: Some(SendMessageConfiguration {
             task_push_notification_config: Some(TaskPushNotificationConfig::new("t-1", url)),
             ..SendMessageConfiguration::default()

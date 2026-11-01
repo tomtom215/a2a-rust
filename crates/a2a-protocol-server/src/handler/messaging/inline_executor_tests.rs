@@ -43,12 +43,11 @@ struct GatedExec {
 
 async fn write_state(ctx: &RequestContext, queue: &dyn EventQueueWriter, state: TaskState) {
     queue
-        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ctx.context_id.clone(),
-            status: TaskStatus::with_timestamp(state),
-            metadata: None,
-        }))
+        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            TaskStatus::with_timestamp(state),
+        )))
         .await
         .expect("queue accepts the event");
 }

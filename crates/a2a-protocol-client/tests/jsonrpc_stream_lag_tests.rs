@@ -34,12 +34,11 @@ async fn lagged_body(id: serde_json::Value) -> String {
     let (writer, reader) = new_in_memory_queue_with_capacity(2);
     for n in 0..8 {
         writer
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: TaskId::new(format!("task-{n}")),
-                context_id: ContextId::new("ctx-1"),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            }))
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                TaskId::new(format!("task-{n}")),
+                ContextId::new("ctx-1"),
+                TaskStatus::new(TaskState::Working),
+            )))
             .await
             .expect("write");
     }

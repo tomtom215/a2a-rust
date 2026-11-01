@@ -147,6 +147,7 @@ pub mod serde_helpers;
 pub mod signing;
 pub mod task;
 pub mod trace_context;
+mod wire_builders;
 
 #[cfg(kani)]
 mod kani_proofs;

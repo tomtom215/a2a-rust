@@ -1702,16 +1702,11 @@ mod tests {
     // never emit anything into `tx`.
 
     fn status_update_event() -> apb::StreamResponse {
-        let event = TaskStatusUpdateEvent {
-            task_id: TaskId("t-1".into()),
-            context_id: ContextId("c-1".into()),
-            status: TaskStatus {
-                state: TaskState::Working,
-                message: None,
-                timestamp: None,
-            },
-            metadata: None,
-        };
+        let event = TaskStatusUpdateEvent::new(
+            TaskId("t-1".into()),
+            ContextId("c-1".into()),
+            TaskStatus::new(TaskState::Working),
+        );
         apb::StreamResponse {
             payload: Some(apb::stream_response::Payload::StatusUpdate(
                 event.try_into().unwrap(),

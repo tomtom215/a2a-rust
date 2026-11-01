@@ -36,17 +36,16 @@ fn task(id: &str, context: &str, state: TaskState, messages: usize) -> Task {
             )
         })
         .collect();
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new(context),
-        status: TaskStatus::new(state),
-        history: Some(history),
-        artifacts: Some(vec![Artifact::new(
-            "a",
-            vec![Part::text("x".repeat(64 * 1024))],
-        )]),
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new(context),
+        TaskStatus::new(state),
+    )
+    .with_history(history)
+    .with_artifacts(vec![Artifact::new(
+        "a",
+        vec![Part::text("x".repeat(64 * 1024))],
+    )])
 }
 
 async fn median_lookup(handler: &RequestHandler, context: &str) -> Duration {

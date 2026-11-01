@@ -64,26 +64,19 @@ impl Transport for Recorder {
 }
 
 fn card(capabilities: AgentCapabilities) -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "capability-test".into(),
-        version: "1.0".into(),
-        description: "declares what each test says".into(),
-        supported_interfaces: vec![AgentInterface::new("http://127.0.0.1:1/", "JSONRPC")],
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        capabilities,
-        security_schemes: None,
-        security_requirements: None,
-        // A card the client accepts when it arrives as an extended card.
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![
-            a2a_protocol_types::AgentSkill::new("echo", "Echo", "Echoes input").with_tags(["echo"]),
-        ],
-        signatures: None,
-    }
+    AgentCard::new(
+        "capability-test",
+        "1.0",
+        AgentInterface::new("http://127.0.0.1:1/", "JSONRPC"),
+    )
+    .with_description("declares what each test says")
+    // A card the client accepts when it arrives as an extended card.
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        a2a_protocol_types::AgentSkill::new("echo", "Echo", "Echoes input").with_tags(["echo"]),
+    )
+    .with_capabilities(capabilities)
 }
 
 fn client_for(card: &AgentCard, recorder: &Recorder) -> A2aClient {
@@ -97,16 +90,11 @@ fn client_for(card: &AgentCard, recorder: &Recorder) -> A2aClient {
 fn message() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new("m-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new("m-1"),
+            MessageRole::User,
+            vec![Part::text("hello")],
+        ),
         configuration: None,
         metadata: None,
     }

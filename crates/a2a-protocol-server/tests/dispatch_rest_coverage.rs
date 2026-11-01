@@ -50,20 +50,18 @@ impl AgentExecutor for SimpleExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -86,43 +84,25 @@ impl PushSender for MockPushSender {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn minimal_agent_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Test Agent".into(),
-        description: "A test agent".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "https://agent.example.com/rpc".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "echo".into(),
-            name: "Echo".into(),
-            description: "Echoes input".into(),
-            tags: vec!["echo".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        // The handler under test serves streaming (SSE), push notifications and
-        // an extended card, so the card advertises all three — capability
-        // validation (spec §3.3.4) rejects those operations otherwise.
-        capabilities: AgentCapabilities::none()
+    AgentCard::new(
+        "Test Agent",
+        "1.0.0",
+        AgentInterface::new("https://agent.example.com/rpc", "JSONRPC")
+            .with_protocol_version("1.0.0"),
+    )
+    .with_description("A test agent")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes input").with_tags(vec!["echo"]))
+    // The handler under test serves streaming (SSE), push notifications and
+    // an extended card, so the card advertises all three — capability
+    // validation (spec §3.3.4) rejects those operations otherwise.
+    .with_capabilities(
+        AgentCapabilities::none()
             .with_streaming(true)
             .with_push_notifications(true)
             .with_extended_agent_card(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    )
 }
 
 fn make_handler() -> Arc<a2a_protocol_server::RequestHandler> {
@@ -153,16 +133,11 @@ fn make_handler_no_push() -> Arc<a2a_protocol_server::RequestHandler> {
 fn make_send_params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new("msg-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new("msg-1"),
+            MessageRole::User,
+            vec![Part::text("hello")],
+        ),
         configuration: None,
         metadata: None,
     }

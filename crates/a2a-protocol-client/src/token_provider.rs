@@ -1221,22 +1221,26 @@ mod tests {
                 description: None,
             })),
         );
-        AgentCard {
-            name: "a".into(),
-            url: None,
-            description: "d".into(),
-            version: "1".into(),
-            supported_interfaces: vec![],
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
-            capabilities: AgentCapabilities::none(),
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            security_schemes: Some(schemes),
-            security_requirements: None,
-            signatures: None,
+        {
+            let mut built = AgentCard::new(
+                "a",
+                "1",
+                a2a_protocol_types::AgentInterface::jsonrpc(String::new()),
+            );
+            built.url = None;
+            built.description = "d".into();
+            built.supported_interfaces = vec![];
+            built.default_input_modes = vec![];
+            built.default_output_modes = vec![];
+            built.skills = vec![];
+            built.capabilities = AgentCapabilities::none();
+            built.provider = None;
+            built.icon_url = None;
+            built.documentation_url = None;
+            built.security_schemes = Some(schemes);
+            built.security_requirements = None;
+            built.signatures = None;
+            built
         }
     }
 

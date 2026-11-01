@@ -120,22 +120,18 @@ async fn serve(store: &Arc<InMemoryTaskStore>) -> (SocketAddr, tokio::task::Join
 /// also why the stream below stays open after the replay and has to be read
 /// with a deadline rather than to EOF.
 async fn parked(store: &Arc<InMemoryTaskStore>, count: u64) -> TaskId {
-    let task = Task {
-        id: TaskId::new("t-wire"),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::InputRequired),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("t-wire"),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::InputRequired),
+    );
     store.save(&task).await.expect("save");
     for seq in 1..=count {
-        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: task.id.clone(),
-            context_id: task.context_id.clone(),
-            status: TaskStatus::new(TaskState::Working),
-            metadata: None,
-        });
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            task.id.clone(),
+            task.context_id.clone(),
+            TaskStatus::new(TaskState::Working),
+        ));
         store
             .append_event(&task.id, seq, &event)
             .await

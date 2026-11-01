@@ -125,16 +125,11 @@ fn make_client_with_interceptor(
 fn make_send_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new("msg-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text(text)],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new("msg-1"),
+            MessageRole::User,
+            vec![Part::text(text)],
+        ),
         configuration: None,
         metadata: None,
     }

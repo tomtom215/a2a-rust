@@ -283,17 +283,12 @@ pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
         }
     };
     let webhook_url = format!("http://{}/webhook", ctx.webhook_addr);
-    let push_config = TaskPushNotificationConfig {
-        tenant: None,
-        id: None,
-        task_id: Some(task_id.clone()),
-        url: webhook_url.clone(),
-        token: Some("test-token-123".into()),
-        authentication: Some(AuthenticationInfo {
+    let push_config = TaskPushNotificationConfig::new(task_id.clone(), webhook_url.clone())
+        .with_token("test-token-123")
+        .with_authentication(AuthenticationInfo {
             scheme: "bearer".into(),
             credentials: Some("my-secret-bearer".into()),
-        }),
-    };
+        });
 
     let stored = match client.set_push_config(push_config).await {
         Ok(s) => s,
@@ -370,16 +365,11 @@ pub async fn test_multi_part_message(ctx: &TestContext) -> TestResult {
     ];
     let params = MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
+        message: Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
             parts,
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        ),
         configuration: None,
         metadata: None,
     };

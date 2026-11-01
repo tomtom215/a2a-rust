@@ -184,25 +184,15 @@ async fn oversized_event_rejected() {
 
     // Create an event with a large payload that exceeds 128 bytes.
     let big_text = "x".repeat(500);
-    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("big-task"),
-        context_id: ContextId::new("big-ctx"),
-        status: TaskStatus {
-            state: TaskState::Working,
-            message: Some(Message {
-                id: MessageId::new("m1"),
-                role: MessageRole::Agent,
-                parts: vec![Part::text(&big_text)],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            }),
-            timestamp: None,
-        },
-        metadata: None,
-    });
+    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("big-task"),
+        ContextId::new("big-ctx"),
+        TaskStatus::new(TaskState::Working).with_message(Message::new(
+            MessageId::new("m1"),
+            MessageRole::Agent,
+            vec![Part::text(&big_text)],
+        )),
+    ));
 
     let err = writer.write(event).await.unwrap_err();
     assert_eq!(

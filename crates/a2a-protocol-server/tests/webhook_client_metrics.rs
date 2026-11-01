@@ -65,12 +65,11 @@ async fn webhook(status: &'static str) -> (String, u16) {
 }
 
 async fn deliver(url: &str) {
-    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("task-1"),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    });
+    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("task-1"),
+        ContextId::new("ctx"),
+        TaskStatus::new(TaskState::Working),
+    ));
     let _ = HttpPushSender::new()
         .allow_private_urls()
         .with_retry_policy(PushRetryPolicy::default().with_max_attempts(1))

@@ -18,14 +18,11 @@ use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
 fn make_task(id: &str, context_id: &str) -> Task {
-    Task {
-        id: TaskId(id.to_string()),
-        context_id: a2a_protocol_types::task::ContextId(context_id.to_string()),
-        status: TaskStatus::new(TaskState::Submitted),
-        artifacts: None,
-        history: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId(id.to_string()),
+        a2a_protocol_types::task::ContextId(context_id.to_string()),
+        TaskStatus::new(TaskState::Submitted),
+    )
 }
 
 // ── TaskStore tests ──────────────────────────────────────────────────────────
@@ -144,14 +141,8 @@ async fn new_push_store() -> SqlitePushConfigStore {
 }
 
 fn make_push_config(task_id: &str) -> TaskPushNotificationConfig {
-    TaskPushNotificationConfig {
-        task_id: Some(task_id.to_string()),
-        id: None,
-        tenant: None,
-        url: "https://example.com/push".to_string(),
-        token: Some("tok".to_string()),
-        authentication: None,
-    }
+    TaskPushNotificationConfig::new(task_id.to_string(), "https://example.com/push".to_string())
+        .with_token("tok".to_string())
 }
 
 #[tokio::test]

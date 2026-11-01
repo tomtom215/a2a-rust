@@ -16,14 +16,11 @@ use super::{TenantAwareInMemoryTaskStore, TenantContext, TenantStoreConfig};
 use crate::store::TaskStore;
 
 fn task(id: &str, state: TaskState) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(state),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("ctx"),
+        TaskStatus::new(state),
+    )
 }
 
 fn capped(max: usize) -> TenantAwareInMemoryTaskStore {

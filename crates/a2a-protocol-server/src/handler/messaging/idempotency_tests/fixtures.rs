@@ -55,16 +55,11 @@ pub(super) fn counting_handler() -> (RequestHandler, Arc<AtomicUsize>) {
 }
 /// A send whose message id is `msg_id`, carrying `key` when one is given.
 pub(super) fn keyed_params(msg_id: &str, key: Option<&str>) -> MessageSendParams {
-    let mut message = Message {
-        id: MessageId::new(msg_id),
-        role: MessageRole::User,
-        parts: vec![Part::text("hello")],
-        context_id: None,
-        task_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    };
+    let mut message = Message::new(
+        MessageId::new(msg_id),
+        MessageRole::User,
+        vec![Part::text("hello")],
+    );
     if let Some(key) = key {
         set_key(&mut message, key).expect("test key must be valid");
     }
@@ -84,30 +79,18 @@ pub(super) fn task_of(result: &SendMessageResult) -> &Task {
 }
 pub(super) fn card() -> a2a_protocol_types::AgentCard {
     use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
-    AgentCard {
-        url: None,
-        name: "test".into(),
-        version: "1.0".into(),
-        description: "Test agent".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "http://localhost:8080".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        capabilities: AgentCapabilities::none(),
-        security_schemes: None,
-        security_requirements: None,
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![
-            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
-        ],
-        signatures: None,
-    }
+    AgentCard::new(
+        "test",
+        "1.0",
+        AgentInterface::new("http://localhost:8080", "JSONRPC").with_protocol_version("1.0.0"),
+    )
+    .with_description("Test agent")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+    )
+    .with_capabilities(AgentCapabilities::none())
 }
 
 pub(super) fn advertised(

@@ -1354,41 +1354,40 @@ impl RequestHandlerBuilder {
         let mut wanted: Vec<AgentExtension> = Vec::new();
         if agent_card.is_some() || extended_agent_card.is_some() {
             if task_store.supports_idempotency() {
-                wanted.push(AgentExtension {
-                    uri: idempotency::IDEMPOTENCY_EXTENSION_URI.to_owned(),
-                    description: Some(
-                        "Client-supplied idempotency keys on message/send: a \
+                wanted.push(
+                    AgentExtension::new(idempotency::IDEMPOTENCY_EXTENSION_URI.to_owned())
+                        .with_description(
+                            "Client-supplied idempotency keys on message/send: a \
                          retried send returns the task the first one created \
                          instead of starting a second."
-                            .to_owned(),
-                    ),
-                    required: Some(false),
-                    params: None,
-                });
+                                .to_owned(),
+                        )
+                        .with_required(false),
+                );
             }
             if self.lease_store.is_some() {
-                wanted.push(AgentExtension {
-                    uri: a2a_protocol_types::lease::LEASE_EXTENSION_URI.to_owned(),
-                    description: Some(
-                        "A delegated task is stopped when its parent stops renewing \
+                wanted.push(
+                    AgentExtension::new(a2a_protocol_types::lease::LEASE_EXTENSION_URI.to_owned())
+                        .with_description(
+                            "A delegated task is stopped when its parent stops renewing \
                          its lease; a GetTask activating this extension renews it."
-                            .to_owned(),
-                    ),
-                    required: Some(false),
-                    params: None,
-                });
+                                .to_owned(),
+                        )
+                        .with_required(false),
+                );
             }
             if self.approval_gate.is_some() {
-                wanted.push(AgentExtension {
-                    uri: a2a_protocol_types::approval::APPROVAL_EXTENSION_URI.to_owned(),
-                    description: Some(
+                wanted.push(
+                    AgentExtension::new(
+                        a2a_protocol_types::approval::APPROVAL_EXTENSION_URI.to_owned(),
+                    )
+                    .with_description(
                         "An agent asks before it acts; the answer is bound to the \
                          digest of the action and checked against who may approve."
                             .to_owned(),
-                    ),
-                    required: Some(false),
-                    params: None,
-                });
+                    )
+                    .with_required(false),
+                );
             }
             wanted.extend(crate::handler::budget::always_declared());
 
@@ -1999,25 +1998,29 @@ mod tests {
     fn builder_empty_agent_card_interfaces_errors() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard};
 
-        let card = AgentCard {
-            url: None,
-            name: "empty".into(),
-            version: "1.0".into(),
-            description: "No interfaces".into(),
-            supported_interfaces: vec![],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec!["text/plain".into()],
-            default_output_modes: vec!["text/plain".into()],
-            skills: vec![
+        let card = {
+            let mut assembled = AgentCard::new(
+                "empty",
+                "1.0",
+                a2a_protocol_types::AgentInterface::jsonrpc(String::new()),
+            );
+            assembled.url = None;
+            assembled.description = "No interfaces".into();
+            assembled.supported_interfaces = vec![];
+            assembled.provider = None;
+            assembled.icon_url = None;
+            assembled.documentation_url = None;
+            assembled.capabilities = AgentCapabilities::none();
+            assembled.security_schemes = None;
+            assembled.security_requirements = None;
+            assembled.default_input_modes = vec!["text/plain".into()];
+            assembled.default_output_modes = vec!["text/plain".into()];
+            assembled.skills = vec![
                 a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
                     .with_tags(["test"]),
-            ],
-            signatures: None,
+            ];
+            assembled.signatures = None;
+            assembled
         };
 
         let result = RequestHandlerBuilder::new(TestExecutor)
@@ -2063,31 +2066,18 @@ mod tests {
     fn builder_with_all_options() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
-        let card = AgentCard {
-            url: None,
-            name: "test".into(),
-            version: "1.0".into(),
-            description: "Test agent".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:8080".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: None,
-            }],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec!["text/plain".into()],
-            default_output_modes: vec!["text/plain".into()],
-            skills: vec![
-                a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
-                    .with_tags(["test"]),
-            ],
-            signatures: None,
-        };
+        let card = AgentCard::new(
+            "test",
+            "1.0",
+            AgentInterface::new("http://localhost:8080", "JSONRPC").with_protocol_version("1.0.0"),
+        )
+        .with_description("Test agent")
+        .with_input_modes(vec!["text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(
+            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+        )
+        .with_capabilities(AgentCapabilities::none());
 
         let result = RequestHandlerBuilder::new(TestExecutor)
             .with_agent_card(card)

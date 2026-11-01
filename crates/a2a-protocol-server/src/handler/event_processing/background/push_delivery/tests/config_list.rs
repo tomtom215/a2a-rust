@@ -124,14 +124,13 @@ impl crate::push::PushSender for Sends {
 async fn store(failures: usize, error: fn() -> A2aError) -> FlakyList {
     let inner = InMemoryPushConfigStore::new();
     inner
-        .set(TaskPushNotificationConfig {
-            tenant: None,
-            id: Some("cfg".to_owned()),
-            task_id: Some("t1".to_owned()),
-            url: "https://hook.example.com/a".to_owned(),
-            token: None,
-            authentication: None,
-        })
+        .set(
+            TaskPushNotificationConfig::new(
+                "t1".to_owned(),
+                "https://hook.example.com/a".to_owned(),
+            )
+            .with_id("cfg".to_owned()),
+        )
         .await
         .unwrap();
     FlakyList {

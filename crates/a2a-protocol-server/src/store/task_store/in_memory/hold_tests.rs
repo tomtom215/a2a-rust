@@ -15,23 +15,19 @@ use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 use super::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 
 fn task(id: &str) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::Working),
+    )
 }
 
 fn event() -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t-1"),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t-1"),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::Working),
+    ))
 }
 
 /// A store bounded at four events a task, with `factor` as its ceiling.

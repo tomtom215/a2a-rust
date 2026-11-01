@@ -63,12 +63,11 @@ async fn event_queue_write_and_read_events() {
     let mut reader = reader.expect("should get reader");
 
     // Write an event.
-    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: task_id.clone(),
-        context_id: "ctx".into(),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    });
+    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        task_id.clone(),
+        "ctx",
+        TaskStatus::new(TaskState::Working),
+    ));
     writer.write(event).await.expect("write");
 
     // Drop writer and manager reference to close channel.

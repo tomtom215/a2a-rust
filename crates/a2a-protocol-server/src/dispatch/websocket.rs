@@ -1558,20 +1558,18 @@ mod tests {
     struct EchoExec;
     agent_executor!(EchoExec, |ctx, queue| async {
         queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            }))
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                ctx.task_id.clone(),
+                ctx.context_id.clone(),
+                TaskStatus::new(TaskState::Working),
+            )))
             .await?;
         queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Completed),
-                metadata: None,
-            }))
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                ctx.task_id.clone(),
+                ctx.context_id.clone(),
+                TaskStatus::new(TaskState::Completed),
+            )))
             .await?;
         Ok(())
     });
@@ -1811,12 +1809,11 @@ mod tests {
         > {
             Box::pin(async move {
                 let status = |state: TaskState| {
-                    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ctx.context_id.clone(),
-                        status: TaskStatus::new(state),
-                        metadata: None,
-                    })
+                    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        TaskStatus::new(state),
+                    ))
                 };
                 for _ in 0..self.count {
                     tokio::time::sleep(self.step).await;
@@ -2914,12 +2911,11 @@ mod tests {
         agent_executor!(FloodExec, |ctx, queue| async {
             for _ in 0..512 {
                 queue
-                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ctx.context_id.clone(),
-                        status: TaskStatus::new(TaskState::Working),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        TaskStatus::new(TaskState::Working),
+                    )))
                     .await?;
             }
             Ok(())

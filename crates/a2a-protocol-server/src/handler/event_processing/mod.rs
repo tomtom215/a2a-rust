@@ -29,26 +29,24 @@ pub fn panic_failure(
     use a2a_protocol_types::task::{TaskState, TaskStatus};
 
     let mut status = TaskStatus::with_timestamp(TaskState::Failed);
-    status.message = Some(Message {
-        id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-        role: MessageRole::Agent,
-        parts: vec![Part::text(
-            "The agent stopped unexpectedly before it finished this task.",
-        )],
-        task_id: Some(task.id.clone()),
-        context_id: Some(task.context_id.clone()),
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    });
+    status.message = Some(
+        Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::Agent,
+            vec![Part::text(
+                "The agent stopped unexpectedly before it finished this task.",
+            )],
+        )
+        .with_task_id(task.id.clone())
+        .with_context_id(task.context_id.clone()),
+    );
     task.status = status.clone();
     a2a_protocol_types::events::StreamResponse::StatusUpdate(
-        a2a_protocol_types::events::TaskStatusUpdateEvent {
-            task_id: task.id.clone(),
-            context_id: task.context_id.clone(),
+        a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+            task.id.clone(),
+            task.context_id.clone(),
             status,
-            metadata: None,
-        },
+        ),
     )
 }
 #[cfg(test)]

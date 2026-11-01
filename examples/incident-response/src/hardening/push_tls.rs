@@ -63,12 +63,12 @@ pub(super) async fn https_push() -> Check {
     // One attempt each: a retry loop would only make the failing leg slow, and
     // the property under test is the verdict, not the retry behaviour.
     let once = PushRetryPolicy::default().with_max_attempts(1);
-    let event = StreamResponse::StatusUpdate(a2a_protocol_types::events::TaskStatusUpdateEvent {
-        task_id: TaskId::new("harden-push"),
-        context_id: a2a_protocol_types::task::ContextId::new("harden-ctx"),
-        status: TaskStatus::new(TaskState::Completed),
-        metadata: None,
-    });
+    let event =
+        StreamResponse::StatusUpdate(a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+            TaskId::new("harden-push"),
+            a2a_protocol_types::task::ContextId::new("harden-ctx"),
+            TaskStatus::new(TaskState::Completed),
+        ));
     let config = TaskPushNotificationConfig::new("harden-push", webhook.clone());
 
     let trusting = HttpPushSender::with_tls_config(client_config)

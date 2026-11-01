@@ -83,16 +83,7 @@ pub(crate) fn behaviour(ctx: &RequestContext) -> Option<(&'static str, bool)> {
 }
 
 fn agent_message(ctx: &RequestContext, text: &str) -> Message {
-    Message {
-        id: MessageId::new(format!("acts-{}", crate::uuid_v4())),
-        role: MessageRole::Agent,
-        parts: vec![Part::text(text)],
-        task_id: Some(ctx.task_id.clone()),
-        context_id: Some(ctx.context_id.clone()),
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    }
+    Message::new(MessageId::new(format!("acts-{}", crate::uuid_v4())), MessageRole::Agent, vec![Part::text(text)]).with_task_id(ctx.task_id.clone()).with_context_id(ctx.context_id.clone())
 }
 
 async fn status(
@@ -115,14 +106,7 @@ async fn artifact(
     last_chunk: bool,
 ) -> A2aResult<()> {
     queue
-        .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ctx.context_id.clone(),
-            artifact: Artifact::new(id, vec![part]),
-            append: Some(append),
-            last_chunk: Some(last_chunk),
-            metadata: None,
-        }))
+        .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), Artifact::new(id, vec![part])).with_append(append).with_last_chunk(last_chunk)))
         .await
 }
 

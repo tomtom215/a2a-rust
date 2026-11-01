@@ -322,24 +322,18 @@ impl TerminalTracking {
         let Some(message) = said else {
             return;
         };
-        let update = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ctx.context_id.clone(),
-            status: TaskStatus {
-                state: waited,
-                message: Some(message),
-                timestamp: None,
-            },
-            metadata: None,
-        });
+        let update = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            TaskStatus::new(waited).with_message(message),
+        ));
         // The span has the reply's parts from the `Message` already; it sees
         // the state alone, or records the reply twice.
-        let seen = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ctx.context_id.clone(),
-            status: TaskStatus::new(waited),
-            metadata: None,
-        });
+        let seen = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            TaskStatus::new(waited),
+        ));
         if let Err(_e) = self.put(update, Some(&seen)).await {
             trace_warn!(task_id = %ctx.task_id, error = %_e, "re-parking a follow-up failed");
         }

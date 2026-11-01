@@ -34,28 +34,16 @@ impl<S: tracing::Subscriber> Layer<S> for CountWarnings {
 }
 
 fn card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Hot Reload".into(),
-        description: "A card on disk".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "https://agent.example.com/rpc".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![],
-        capabilities: AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "Hot Reload",
+        "1.0.0",
+        AgentInterface::new("https://agent.example.com/rpc", "JSONRPC")
+            .with_protocol_version("1.0.0"),
+    )
+    .with_description("A card on disk")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_capabilities(AgentCapabilities::none())
 }
 
 /// The watcher remembers the mtime of the last failed reload and warns again
