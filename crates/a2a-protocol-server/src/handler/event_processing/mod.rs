@@ -51,6 +51,8 @@ pub fn panic_failure(
         },
     )
 }
+#[cfg(test)]
+mod queue_close_tests;
 mod sync_collector;
 
 /// What a background processor needs from the send that spawned it, beyond
@@ -116,6 +118,61 @@ where
             }
             done => return done,
         }
+    }
+}
+
+/// Appends `event`, the ending of a task that no queued event carries, to the
+/// task's event log (audit D-03, E-F9).
+///
+/// A panicked executor, a cancel taken on another replica and a task the
+/// reaper ends all store a terminal status without the executor having
+/// written one, and so without a position for it. Until 2026-11-01 the log
+/// then stopped short of the ending: a client resuming from it never saw the
+/// task end, and with the audit feature the chain had no `task.event` for it,
+/// because that record is made by the append (audit N-E-2).
+///
+/// The position is one past the later of the log's end and the position the
+/// stored task reflects, as `admission::resume_after` numbers a turn: past
+/// both, an append that failed earlier leaves a hole the replay reports and no
+/// position names two events. A failure is logged and counted, never raised:
+/// the status is already stored, and the log is a record of the run.
+pub async fn append_ending(
+    task_store: &dyn crate::store::TaskStore,
+    task_id: &a2a_protocol_types::task::TaskId,
+    event: &a2a_protocol_types::events::StreamResponse,
+    metrics: &dyn crate::metrics::Metrics,
+    retry: std::time::Duration,
+) {
+    if !task_store.supports_event_log() {
+        return;
+    }
+    let appended = persisting(
+        retry,
+        metrics,
+        crate::metrics::persistence_operation::EVENT_APPEND,
+        || async {
+            let end = task_store.last_event_seq(task_id).await?;
+            let stored = task_store
+                .get_with_position(task_id)
+                .await?
+                .and_then(|(_, position)| position)
+                .unwrap_or(0);
+            task_store
+                .append_event(task_id, end.max(stored).saturating_add(1), event)
+                .await
+        },
+    )
+    .await;
+    if let Err(e) = appended {
+        trace_warn!(
+            task_id = %task_id,
+            error = %e,
+            "the ending of a task is not in its event log"
+        );
+        metrics.on_persistence_error(
+            crate::metrics::persistence_operation::EVENT_APPEND,
+            e.metric_label(),
+        );
     }
 }
 

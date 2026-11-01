@@ -218,8 +218,33 @@ impl TerminalTracking {
             self.end_transient(executor, ctx, CLAIM_LAPSED, "a lapsed claim")
                 .await;
         } else {
+            if result.is_ok() && self.left_unsettled(ctx) {
+                trace_warn!(
+                    task_id = %ctx.task_id,
+                    "the executor returned Ok(()) with the task still submitted or working, \
+                     having written no terminal or interrupted state; the task stays that way \
+                     and is not completed. Write completed, failed, canceled, rejected, \
+                     input-required or auth-required before returning"
+                );
+            }
             self.repark_if_silent(ctx).await;
         }
+    }
+
+    /// Whether a turn that returned `Ok` left its task `submitted` or
+    /// `working` (audit G-21).
+    ///
+    /// The task stays in the last state written (the executor guide says so),
+    /// and nothing says why: with the database stores the reaper ends it
+    /// `failed` a claim lifetime later, without the in-memory store it stays
+    /// `working` for good. A turn the caller cancelled, or one that wrote a
+    /// terminal state or asked for input, is not this. Neither is one that
+    /// answered with a message alone: it set no state.
+    pub(super) fn left_unsettled(&self, ctx: &RequestContext) -> bool {
+        self.stated.load(Ordering::Acquire)
+            && !self.terminal_written()
+            && !self.turn.is_parked()
+            && !ctx.cancellation_token.is_cancelled()
     }
 
     /// Ends a turn this replica stopped for a reason of its own, its shutdown
@@ -411,3 +436,7 @@ impl EventQueueWriter for TerminalTracking {
 #[cfg(test)]
 #[path = "terminal_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "unsettled_tests.rs"]
+mod unsettled_tests;

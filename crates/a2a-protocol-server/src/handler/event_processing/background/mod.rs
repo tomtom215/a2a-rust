@@ -76,135 +76,155 @@ impl RequestHandler {
         self.in_flight
             .background()
             .spawn(crate::rpc_span::in_child_span(
-                "a2a.process_events",
-                // Boxed before the tenant scope, span and tracker wrap it:
-                // each of them, and tokio's task cell, moved this ~5.6 KB
-                // future by value. Measured, streaming, one worker, jemalloc,
-                // two replicates of 10 interleaved runs: +4.4% and +7% (p
-                // 0.049 and 0.023, Mann-Whitney); no change on two workers.
-                tenant.scope(Box::pin(async move {
-                    let super::ProcessorLinks {
-                        cancel,
-                        gate,
-                        applied,
-                        claim,
-                        saved_whole,
-                    } = links;
-                    // Held to this processor's last write (`handler::claims`),
-                    // and no longer: push deliveries are queued on the task's
-                    // lane, not awaited here (audit E-F3).
-                    let _claim = claim;
-                    // Closes the gate however this task ends — including by panic —
-                    // so no writer waits out its timeout on a processor that is gone.
-                    let _gate_guard = gate.clone().map(CloseOnDrop);
+            "a2a.process_events",
+            // Boxed before the tenant scope, span and tracker wrap it:
+            // each of them, and tokio's task cell, moved this ~5.6 KB
+            // future by value. Measured, streaming, one worker, jemalloc,
+            // two replicates of 10 interleaved runs: +4.4% and +7% (p
+            // 0.049 and 0.023, Mann-Whitney); no change on two workers.
+            tenant.scope(Box::pin(async move {
+                let super::ProcessorLinks {
+                    cancel,
+                    gate,
+                    applied,
+                    claim,
+                    saved_whole,
+                } = links;
+                // Held to this processor's last write (`handler::claims`),
+                // and no longer: push deliveries are queued on the task's
+                // lane, not awaited here (audit E-F3).
+                let _claim = claim;
+                // Closes the gate however this task ends — including by panic —
+                // so no writer waits out its timeout on a processor that is gone.
+                let _gate_guard = gate.clone().map(CloseOnDrop);
 
-                    // H5 FIX: Use the dedicated persistence mpsc channel instead
-                    // of the broadcast channel. The mpsc channel is not affected
-                    // by slow SSE consumers and will never lose events.
-                    let Some(mut persistence_reader) = persistence_rx else {
-                        trace_warn!(
-                            task_id = %task_id,
-                            "background event processor: no persistence channel provided"
-                        );
-                        return;
-                    };
-
-                    // Get the current task from the store. The send path saved it
-                    // just before spawning this processor; a miss here means the
-                    // row vanished in that tiny window (capacity eviction under
-                    // extreme churn, or a store fault). Returning early would drop
-                    // the persistence receiver and silently lose every subsequent
-                    // state transition and push notification for the task while
-                    // its stream kept delivering — so fall back to the send path's
-                    // snapshot and (for a confirmed miss) re-assert the row.
-                    // A task the send saved whole (`ProcessorLinks::saved_whole`)
-                    // is the row as stored, so it is not read back: that read
-                    // was a round trip to learn nothing. If the row is evicted
-                    // in the window, the first fold's write (an upsert) puts it
-                    // back from this same snapshot.
-                    let last_task = if saved_whole {
-                        initial_task
-                    } else {
-                        match task_store.get(&task_id).await {
-                            Ok(Some(task)) => task,
-                            Ok(None) => {
-                                trace_warn!(
-                                    task_id = %task_id,
-                                    "background processor: task missing at start; \
-                                     re-asserting from the send-path snapshot"
-                                );
-                                if let Err(e) = task_store.save(&initial_task).await {
-                                    trace_error!(
-                                        task_id = %task_id,
-                                        error = %e,
-                                        "background processor: failed to re-assert evicted task"
-                                    );
-                                    metrics.on_persistence_error(
-                                        crate::metrics::persistence_operation::TASK_SNAPSHOT,
-                                        e.metric_label(),
-                                    );
-                                }
-                                initial_task
-                            }
-                            Err(_e) => {
-                                trace_warn!(
-                                    task_id = %task_id,
-                                    "background processor: store read failed at start; \
-                                     continuing from the send-path snapshot"
-                                );
-                                initial_task
-                            }
-                        }
-                    };
-
-                    let mut run = Processor::new(
-                        &task_id,
-                        BackgroundDeps {
-                            task_store: &*task_store,
-                            push: &push,
-                            limits: &limits,
-                            metrics: &*metrics,
-                        },
-                        last_task,
-                        cancel,
-                        gate.as_deref(),
-                        applied.as_deref(),
+                // H5 FIX: Use the dedicated persistence mpsc channel instead
+                // of the broadcast channel. The mpsc channel is not affected
+                // by slow SSE consumers and will never lose events.
+                let Some(mut persistence_reader) = persistence_rx else {
+                    trace_warn!(
+                        task_id = %task_id,
+                        "background event processor: no persistence channel provided"
                     );
-                    let mut executor_done = false;
-                    let mut handle_fuse = executor_handle;
+                    return;
+                };
 
-                    loop {
-                        if executor_done {
-                            // Executor finished — drain remaining events from the
-                            // persistence channel.
-                            match persistence_reader.recv().await {
-                                Some(event) => run.handle(crate::streaming::event_queue::unshare(event)).await,
-                                None => break,
+                // Get the current task from the store. The send path saved it
+                // just before spawning this processor; a miss here means the
+                // row vanished in that tiny window (capacity eviction under
+                // extreme churn, or a store fault). Returning early would drop
+                // the persistence receiver and silently lose every subsequent
+                // state transition and push notification for the task while
+                // its stream kept delivering — so fall back to the send path's
+                // snapshot and (for a confirmed miss) re-assert the row.
+                // A task the send saved whole (`ProcessorLinks::saved_whole`)
+                // is the row as stored, so it is not read back: that read
+                // was a round trip to learn nothing. If the row is evicted
+                // in the window, the first fold's write (an upsert) puts it
+                // back from this same snapshot.
+                let last_task = if saved_whole {
+                    initial_task
+                } else {
+                    match task_store.get(&task_id).await {
+                        Ok(Some(task)) => task,
+                        Ok(None) => {
+                            trace_warn!(
+                                task_id = %task_id,
+                                "background processor: task missing at start; \
+                                 re-asserting from the send-path snapshot"
+                            );
+                            if let Err(e) = task_store.save(&initial_task).await {
+                                trace_error!(
+                                    task_id = %task_id,
+                                    error = %e,
+                                    "background processor: failed to re-assert evicted task"
+                                );
+                                metrics.on_persistence_error(
+                                    crate::metrics::persistence_operation::TASK_SNAPSHOT,
+                                    e.metric_label(),
+                                );
                             }
-                        } else {
-                            tokio::select! {
-                                biased;
-                                event = persistence_reader.recv() => {
-                                    match event {
-                                        Some(event) => run.handle(crate::streaming::event_queue::unshare(event)).await,
-                                        None => break,
-                                    }
-                                }
-                                result = &mut handle_fuse => {
-                                    executor_done = true;
-                                    if result.is_err() {
+                            initial_task
+                        }
+                        Err(_e) => {
+                            trace_warn!(
+                                task_id = %task_id,
+                                "background processor: store read failed at start; \
+                                 continuing from the send-path snapshot"
+                            );
+                            initial_task
+                        }
+                    }
+                };
+
+                let mut run = Processor::new(
+                    &task_id,
+                    BackgroundDeps {
+                        task_store: &*task_store,
+                        push: &push,
+                        limits: &limits,
+                        metrics: &*metrics,
+                    },
+                    last_task,
+                    cancel,
+                    gate.as_deref(),
+                    applied.as_deref(),
+                );
+                let mut executor_done = false;
+                let mut handle_fuse =
+                    crate::handler::messaging::WatchedExecutor::Spawned(Some(executor_handle));
+
+                loop {
+                    if executor_done {
+                        // Executor finished — drain remaining events from the
+                        // persistence channel.
+                        let Some(event) = persistence_reader.recv().await else {
+                            break;
+                        };
+                        run.handle(crate::streaming::event_queue::unshare(event))
+                            .await;
+                    } else {
+                        tokio::select! {
+                            biased;
+                            event = persistence_reader.recv() => {
+                                if let Some(event) = event {
+                                    run.handle(crate::streaming::event_queue::unshare(event)).await;
+                                } else {
+                                    // The queue closes inside the executor's
+                                    // cleanup, ahead of its task's end, and a
+                                    // panic's unwind runs that cleanup first:
+                                    // stopping here left a panicked task
+                                    // `working` for good (audit NEW-d-1).
+                                    if handle_fuse
+                                        .ended_within(limits.executor_drain_timeout)
+                                        .await
+                                        == Some(false)
+                                    {
                                         trace_error!(
                                             task_id = %task_id,
                                             "executor task panicked (background processor)"
                                         );
                                         run.executor_panicked().await;
                                     }
+                                    break;
+                                }
+                            }
+                            returned = &mut handle_fuse => {
+                                executor_done = true;
+                                if !returned {
+                                    trace_error!(
+                                        task_id = %task_id,
+                                        "executor task panicked (background processor)"
+                                    );
+                                    run.executor_panicked().await;
                                 }
                             }
                         }
                     }
-                })),
-            ));
+                }
+                run.close_out().await;
+            })),
+        ));
     }
 }
 

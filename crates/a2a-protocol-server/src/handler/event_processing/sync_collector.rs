@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use a2a_protocol_types::events::StreamResponse;
+use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
@@ -208,6 +208,9 @@ impl SyncCollector {
             true,
         )
         .await?;
+        if !state.task.status.state.is_interrupted() {
+            self.close_out(&task_id, &mut state).await;
+        }
         Ok(self.answer(&task_id, &mut state))
     }
 
@@ -257,6 +260,9 @@ impl SyncCollector {
             return;
         }
         let interrupted = state.task.status.state.is_interrupted();
+        if !interrupted {
+            self.close_out(&task_id, &mut state).await;
+        }
         // The caller may have gone; what was collected is stored either way.
         let _ = answer.send(Ok(self.answer(&task_id, &mut state)));
         if !interrupted {
@@ -279,6 +285,7 @@ impl SyncCollector {
                 "storing a task's events after its interrupted state failed"
             );
         }
+        self.close_out(&task_id, &mut state).await;
         self.spawn_push_delivery(task_id, std::mem::take(&mut state.push_events));
     }
 
@@ -340,9 +347,12 @@ impl SyncCollector {
                 tokio::select! {
                     biased;
                     event = events.recv() => {
-                        match event.map(crate::streaming::event_queue::unshare) {
-                            Some(event) => self.fold(event, task_id, state).await?,
-                            None => break,
+                        if let Some(event) = event.map(crate::streaming::event_queue::unshare) {
+                            self.fold(event, task_id, state).await?;
+                        } else {
+                            self.on_queue_closed(task_id, executor, state, executor_done)
+                                .await?;
+                            break;
                         }
                     }
                     returned = &mut *executor => {
@@ -481,6 +491,73 @@ impl SyncCollector {
         Ok(())
     }
 
+    /// The collection is over and no terminal event reached it. A task that
+    /// is terminal in the store was ended by another writer — `CancelTask`
+    /// taken on another replica, whose throwaway writer has no queue to this
+    /// one — while the executor here stopped on its token and returned
+    /// without writing. The caller is answered with the task as stored, not
+    /// the stale state this collection held, and the ending is recorded in the
+    /// log and queued for the webhooks, as an ending the executor wrote would
+    /// be (audit E-F9). A task not terminal in the store is left as it is.
+    async fn close_out(&self, task_id: &TaskId, state: &mut CollectState) {
+        if state.task.status.state.is_terminal() {
+            return;
+        }
+        let Ok(Some(stored)) = self.task_store.get(task_id).await else {
+            return;
+        };
+        if !stored.status.state.is_terminal() {
+            return;
+        }
+        let ending = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: task_id.clone(),
+            context_id: stored.context_id.clone(),
+            status: stored.status.clone(),
+            metadata: None,
+        });
+        state.task = stored;
+        state.saw_task_shaped_event = true;
+        super::append_ending(
+            &*self.task_store,
+            task_id,
+            &ending,
+            &*self.metrics,
+            self.limits.store_write_retry,
+        )
+        .await;
+        state.record_for_push(self.push_sender.is_some(), &ending);
+    }
+
+    /// The queue closed before the executor was seen to end: learns how it
+    /// ended, within `executor_drain_timeout`, so a panic still fails the task.
+    ///
+    /// The queue closes inside the executor's cleanup, ahead of its task's
+    /// end, and a panic's unwind runs that cleanup first. On a multi-thread
+    /// runtime the collector can see the closed queue before the join result,
+    /// and stopping there left the task `working` for good (audit NEW-d-1).
+    /// Normally the wait is the few instructions left of the executor's
+    /// cleanup; the bound is for the executor that does not end.
+    async fn on_queue_closed(
+        &self,
+        task_id: &TaskId,
+        executor: &mut crate::handler::messaging::WatchedExecutor,
+        state: &mut CollectState,
+        executor_done: &mut bool,
+    ) -> ServerResult<()> {
+        // timeout-nesting: the other wait on this bound, the drain in `run`,
+        // happens only once the executor has ended, and this one only while it
+        // has not; a call takes one of them, then stops.
+        let Some(returned) = executor
+            .ended_within(self.limits.executor_drain_timeout)
+            .await
+        else {
+            return Ok(());
+        };
+        *executor_done = true;
+        let folded = self.on_executor_finished(returned, task_id, state).await;
+        self.unless_superseded(folded, task_id, state).await
+    }
+
     /// Handles the executor ending mid-collection; `returned` is false when
     /// it panicked or was aborted.
     ///
@@ -489,11 +566,11 @@ impl SyncCollector {
     async fn on_executor_finished(
         &self,
         returned: bool,
-        _task_id: &TaskId,
+        task_id: &TaskId,
         state: &mut CollectState,
     ) -> ServerResult<()> {
         if !returned {
-            trace_error!(task_id = %_task_id, "executor task panicked");
+            trace_error!(task_id = %task_id, "executor task panicked");
             if !state.task.status.state.is_terminal() {
                 let failed = super::panic_failure(&mut state.task);
                 state.saw_task_shaped_event = true;
@@ -504,7 +581,16 @@ impl SyncCollector {
                     || self.task_store.save(&state.task),
                 )
                 .await?;
-                // Saved, so the webhooks hear it too (audit D-03).
+                // Saved, so the webhooks hear it too and the log records it
+                // (audit D-03).
+                super::append_ending(
+                    &*self.task_store,
+                    task_id,
+                    &failed,
+                    &*self.metrics,
+                    self.limits.store_write_retry,
+                )
+                .await;
                 state.record_for_push(self.push_sender.is_some(), &failed);
             }
         }

@@ -46,6 +46,7 @@ mod commit_guard;
 mod continuation;
 mod create;
 mod decisions;
+mod drop_spawn;
 mod eviction;
 mod execute;
 pub use execute::WatchedExecutor;

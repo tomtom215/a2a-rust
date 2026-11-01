@@ -183,8 +183,16 @@ executor runs on replica A:
    executor's events. A client streaming from A ends on `Canceled`, not on
    whatever A's executor emitted; a blocking `SendMessage` waiting on A is
    answered with the `Canceled` task; A delivers `Canceled` to the task's
-   webhooks, which nothing else would, because B has no processor for the
-   task.
+   webhooks and appends it to the task's event log, which nothing else would,
+   because B has no processor for the task.
+
+   This does not depend on A's executor writing anything. One that simply
+   returns when its token fires writes nothing, and until 2026-11-01 then
+   nothing was delivered or logged, and a blocking `SendMessage` was answered
+   `working`. Now, once A has stored the turn's events, a task that is
+   terminal in the store without a terminal event having come through A is
+   pushed once and logged at the next position, and the blocking call is
+   answered with the stored task.
 
 The client B answered is therefore never contradicted: before this was
 enforced, all three stores let A overwrite `Canceled` with `Completed`, and

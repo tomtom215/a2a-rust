@@ -390,6 +390,21 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **A continuation refused because the store was briefly unavailable is
+  answered 503 with `Retry-After`, not 500** (server; audit D-16). Admitting a
+  continuation reads the task's event log position first; a store that
+  answered "not now" there became `INTERNAL`, which tells a caller that
+  retrying will not help, while a new task's send in the same blip got 503.
+  Nothing ran when the read failed, so the retry is safe, and the answer is
+  now the same for both. A read that failed for any other reason is still
+  `INTERNAL`. `an_unavailable_store_refuses_the_lease_as_overloaded`.
+- **The reaper's message no longer says the replica stopped** (server; audit
+  NEW-g-api-3). A task left `submitted` or `working` with no replica running
+  it is ended `failed`, class `transient`, whether its replica died or its
+  executor returned without writing a terminal or interrupted state; the
+  reaper cannot tell which, and the old text named only the first. It now
+  says that no replica is running the task, and gives both causes.
+
 - **A replica that cannot renew a turn's claim stops the turn** (server;
   audit E-F7, NEW-e-1, NEW-h-s0-1). A replica cut off from its database learned
   nothing: renewals failed and were logged, the executor ran on, and another
@@ -720,6 +735,59 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `SIGABRT` (status 134) in the release profile.
 
 ### Fixed
+
+- **An executor that panicked could leave its task `working` for good** (server;
+  audit NEW-d-1, D-03). A panic's unwind closes the task's event queue from
+  the turn's cleanup, a moment before the executor's own task ends. The task
+  that stores the turn's events (and the blocking send's collector) treated
+  the closed queue as the end and never asked how the executor ended, so on a
+  multi-thread runtime it could stop before the join result arrived, and
+  nothing marked the task `failed`. It now asks, waiting at most
+  `executor_drain_timeout` (5 s) for an executor that has not ended. The
+  `Failed` a panic stores is also recorded in the event log, which only the
+  push had. `tests/executor_panic_terminal.rs` failed 31 of 40 runs before and
+  0 of 40 after; the ordering is fixed deterministically in
+  `queue_close_tests` (four hand edits of the wait each fail a test). Open:
+  a `SendStreamingMessage` stream whose executor panics still closes without a
+  terminal frame (D-03 d).
+- **A cancel taken by another replica was never pushed or logged, and a
+  blocking send could answer `working` for a task stored `canceled`** (server;
+  audit E-F9, NEW-e-2). `CancelTask` on a replica that does not run the task
+  stores `Canceled` through a writer with no queue to the owner. An executor
+  that simply returns on its token writes nothing, so the owner's processor
+  never saw a terminal event: the webhooks never heard `CANCELED`, the log (and
+  with the audit feature the chain) had no ending, and a blocking send
+  answered the state it last held. When the turn's events are all stored, a
+  task that is terminal in the store without a terminal event having reached
+  the processor is now pushed once and appended to the log at the next
+  position; a blocking send is answered with the stored task. The book said
+  the owner already delivered it; that was true only if the executor wrote
+  after the cancel. `close_out_tests` (seven cases, including no second push
+  or log entry for a terminal the processor handled, and nothing after a lost
+  claim) and `the_collector_answers_with_an_ending_only_the_store_holds`,
+  which answered `working` before.
+- **A stream attached through a replica that does not run the task could end
+  on a terminal frame without the event's `error` metadata** (server; audit
+  E-F20). The owner appends the terminal event one round trip after the store
+  takes the terminal save; a reattaching stream that read in between built
+  the frame from the stored status alone. It now waits, up to
+  `subscribe_replay_catchup` (2 s), for the log to reach the position the
+  stored task reflects, so the stream's replay holds the real event (by
+  reading `close_through`: the built frame is queued only when the replay has
+  no terminal event). `finished_tests` covers the wait and its bound, not a
+  whole stream.
+- **Three `Drop` impls on the send path panicked outside a Tokio runtime**
+  (server; audit D-23). `CleanupGuard`, `DeferredExecutor` and `CommitGuard`
+  spawned their release with `tokio::spawn`, which panics with no runtime in
+  context, and a panic in a `Drop` during an unwind aborts the process. They
+  spawn through `drop_spawn`, which drops the release unrun when there is no
+  runtime (and still marks the turn finished, which needs no await). Each of
+  three hand reversions fails its test.
+- **An executor that returned `Ok(())` and left its task `working` said nothing**
+  (server; audit G-21). It now logs a warning naming the task (not for a
+  task the caller cancelled, one that settled, or a reply by message alone).
+  The executor guide already said the task stays in the last state written;
+  nothing at run time said so.
 
 - **The `deploy-agent` example logged a password given in the database URL's
   query, and two of its Secret recipes omitted `sslmode`** (examples; audits

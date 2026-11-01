@@ -211,11 +211,7 @@ impl RequestHandler {
                             // `Existing` for every later send.
                             drop((writer, reader, persistence_rx));
                             self.event_queue_manager.destroy(task_id).await;
-                            return Err(ServerError::Internal(format!(
-                                "task {task_id}: could not read the event log's last \
-                                 position, so this turn's events could not be numbered \
-                                 without colliding with the previous turn's: {e}"
-                            )));
+                            return Err(unreadable_log(task_id, &e));
                         }
                     }
                 }
@@ -278,6 +274,24 @@ impl RequestHandler {
     }
 }
 
+/// The refusal of a turn whose log position could not be read.
+///
+/// It is at lease time, before the executor runs and with the queue just
+/// destroyed: nothing ran, so a store that is only unavailable for now is
+/// answered as a new task's send is in the same blip, 503 with `Retry-After`,
+/// not a 500 that says retrying will not help (audit D-16).
+fn unreadable_log(task_id: &TaskId, e: &a2a_protocol_types::error::A2aError) -> ServerError {
+    let refusal = format!(
+        "task {task_id}: could not read the event log's last position, so this turn's \
+         events could not be numbered without colliding with the previous turn's: {e}"
+    );
+    if e.is_unavailable() {
+        ServerError::Overloaded(refusal)
+    } else {
+        ServerError::Internal(refusal)
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -310,8 +324,8 @@ mod tests {
     }
 
     /// A store that keeps a log but cannot say where it is — a pool that has
-    /// gone away, or `SQLITE_BUSY` under contention.
-    struct UnreadableLogStore;
+    /// gone away, or `SQLITE_BUSY` under contention. Says so with `error`.
+    struct UnreadableLogStore(fn() -> A2aError);
 
     impl TaskStore for UnreadableLogStore {
         fn save<'a>(
@@ -351,7 +365,8 @@ mod tests {
             &'a self,
             _id: &'a TaskId,
         ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
-            Box::pin(async { Err(A2aError::internal("the pool is gone")) })
+            let error = (self.0)();
+            Box::pin(async move { Err(error) })
         }
     }
 
@@ -365,7 +380,9 @@ mod tests {
     async fn an_unreadable_log_position_refuses_the_lease_rather_than_renumbering() {
         let handler = RequestHandlerBuilder::new(NoopExecutor)
             .without_agent_card()
-            .with_task_store(UnreadableLogStore)
+            .with_task_store(UnreadableLogStore(|| {
+                A2aError::internal("the pool is gone")
+            }))
             .build()
             .expect("handler");
 
@@ -388,5 +405,34 @@ mod tests {
             0,
             "the failed lease must leave no queue behind"
         );
+    }
+
+    /// A store that is only unavailable for now (a busy database, a pool at
+    /// its limit) refuses the continuation as it refuses a new task in the
+    /// same blip: 503 with `Retry-After`, not 500 (audit D-16). The task
+    /// still is not renumbered and nothing is left behind.
+    #[tokio::test]
+    async fn an_unavailable_store_refuses_the_lease_as_overloaded() {
+        let handler = RequestHandlerBuilder::new(NoopExecutor)
+            .without_agent_card()
+            .with_task_store(UnreadableLogStore(|| {
+                A2aError::unavailable("the database is busy")
+            }))
+            .build()
+            .expect("handler");
+
+        let task_id = TaskId("t-1".to_owned());
+        let err = handler
+            .lease_event_queue(&task_id, true, false, None)
+            .await
+            .expect_err("an unreadable log position must refuse the lease");
+
+        assert!(
+            matches!(err, ServerError::Overloaded(_)),
+            "expected overloaded, got {err:?}"
+        );
+        assert_eq!(err.http_status(), 503);
+        assert!(err.retry_after().is_some(), "{err:?}");
+        assert_eq!(handler.event_queue_manager.active_count().await, 0);
     }
 }

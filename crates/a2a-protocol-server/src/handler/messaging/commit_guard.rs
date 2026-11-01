@@ -180,11 +180,64 @@ impl Drop for CommitGuard {
             // task.
             drop(context);
         };
-        tokio::spawn(async move {
+        // Without a runtime nothing can run it, and dropping the future drops
+        // what it owns, the context lock included (audit D-23).
+        super::drop_spawn::spawn(async move {
             match tenant {
                 Some(tenant) => tenant.scope(release).await,
                 None => release.await,
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use a2a_protocol_types::task::TaskId;
+
+    use super::CommitGuard;
+    use crate::push::InMemoryPushConfigStore;
+    use crate::store::InMemoryTaskStore;
+    use crate::streaming::EventQueueManager;
+
+    fn guard(context: Arc<tokio::sync::Mutex<()>>) -> CommitGuard {
+        CommitGuard::new(
+            TaskId::new("t"),
+            EventQueueManager::new(),
+            Arc::default(),
+            Arc::new(InMemoryTaskStore::new()),
+            Arc::new(InMemoryPushConfigStore::new()),
+            None,
+            context.try_lock_owned().expect("free"),
+        )
+    }
+
+    /// A send dropped mid-commit where no runtime runs cannot release what it
+    /// took, and must not panic trying to (audit D-23). The context lock it
+    /// held is released with the unrun release.
+    #[test]
+    fn dropped_outside_a_runtime_it_does_not_panic_and_frees_the_context_lock() {
+        let context = Arc::new(tokio::sync::Mutex::new(()));
+        let held = guard(Arc::clone(&context));
+        std::thread::spawn(move || {
+            assert!(tokio::runtime::Handle::try_current().is_err());
+            drop(held);
+        })
+        .join()
+        .expect("dropping outside a runtime must not panic");
+        assert!(context.try_lock().is_ok(), "the context lock was released");
+    }
+
+    /// Inside a runtime the release runs and frees the context lock.
+    #[tokio::test]
+    async fn dropped_inside_a_runtime_it_releases_and_frees_the_context_lock() {
+        let context = Arc::new(tokio::sync::Mutex::new(()));
+        drop(guard(Arc::clone(&context)));
+        let freed = tokio::time::timeout(std::time::Duration::from_secs(5), context.lock())
+            .await
+            .is_ok();
+        assert!(freed, "the release ran");
     }
 }

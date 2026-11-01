@@ -83,6 +83,7 @@ impl RequestHandler {
         let store = std::sync::Arc::clone(&self.task_store);
         let interval = self.limits.subscribe_reattach_interval;
         let max_idle = self.limits.subscribe_max_idle;
+        let catchup = self.limits.subscribe_replay_catchup;
         let partition = crate::store::tenant::TenantContext::capture();
 
         std::sync::Arc::new(move |after| {
@@ -98,7 +99,7 @@ impl RequestHandler {
                 // second for as long as the client stays.
                 let mut store_failing = false;
                 loop {
-                    match store.get(&task_id).await {
+                    match store.get_with_position(&task_id).await {
                         // The task finished between queues, so the client
                         // never saw the terminal frame on the wire. The
                         // processor logs an event before it stores the state
@@ -107,8 +108,8 @@ impl RequestHandler {
                         // the stored status stands in when it does not, and
                         // the stream does not close having reported no
                         // terminal state.
-                        Ok(Some(t)) if t.status.state.is_terminal() => {
-                            return finished(store.as_ref(), t, after).await;
+                        Ok(Some((t, position))) if t.status.state.is_terminal() => {
+                            return finished(store.as_ref(), t, position, after, catchup).await;
                         }
                         // Deleted out from under us: nothing left to stream.
                         Ok(None) => return Reattached::End,
@@ -628,13 +629,29 @@ impl RequestHandler {
 /// status built from the stored task, and how far the log reaches, which the
 /// stream replays first. `after`, the stream's own position, when the log's
 /// end cannot be read: the replay is then all that says what was lost.
+///
+/// The terminal event is appended after the store has ruled on it, one round
+/// trip behind the terminal save, so the log can trail the stored task by
+/// that event, and the frame built here carries only the stored status: not
+/// the event's `error` metadata or its budget report. `position`, how far the
+/// stored task reflects, says whether that is so, and the log is waited for,
+/// at most `catchup`, until it reaches it (audit E-F20). Past the bound the
+/// stream replays what the log holds and the built frame stands in, as before.
 async fn finished(
     store: &dyn crate::store::TaskStore,
     task: a2a_protocol_types::task::Task,
+    position: Option<u64>,
     after: u64,
+    catchup: Duration,
 ) -> Reattached {
     let through = if store.supports_event_log() {
-        store.last_event_seq(&task.id).await.unwrap_or(after)
+        let deadline = tokio::time::Instant::now() + catchup;
+        let mut through = store.last_event_seq(&task.id).await.unwrap_or(after);
+        while position.is_some_and(|p| through < p) && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            through = store.last_event_seq(&task.id).await.unwrap_or(through);
+        }
+        through
     } else {
         0
     };
@@ -782,6 +799,9 @@ impl LogReplay {
 
 #[cfg(test)]
 mod gap_tests;
+
+#[cfg(test)]
+mod finished_tests;
 mod hold;
 #[cfg(test)]
 mod log_replay_tests;
