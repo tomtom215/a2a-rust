@@ -20,38 +20,56 @@ only: when something here is done, delete it rather than annotating it.
 ## Now
 
 - **Branch `claude/pensive-bardeen-c6ofm8` (2026-11-01), from `main` at `4a8243c`
-  (the merge of pull request #185): the 149 open audit rows are triaged, and groups A to D of the
-  fix plan are committed (below). One pull request, opened only when the groups the maintainer wants
-  pass the bar; none is open.**
-  - **Fix work, in `git log 4a8243c..`.** Five local commits, none pushed beyond the triage:
-    A `a3a5dde` + `78fcd2c` (credentials follow the host the caller named: SEC-08, SEC-09, SEC-18,
-    NEW-f-1, NEW-f-5, NEW-f-6, G/D-05); B (a turn's claim is watched, and a replica that cannot renew it
-    stops the turn: E-F7, NEW-e-1, NEW-h-s0-1/5/9, E-F11, H3); C (a task's ending always reaches its
-    webhooks, its log and its caller: NEW-d-1, D-03 a to c, E-F9, NEW-e-2, E-F20, D-16, D-23, G-21,
-    NEW-g-api-3); D (gRPC honours its send timeout, its card and the process's roots; one TLS identity
-    reaches every path: NEW-g-api-1, G-20, G-04, NEW-g-api-2, B-20, B-03, B-15, B-18 part, B-19). Every
-    commit is `Tom F.`, signed off, no other trailer (DCO). Each has a regression test that failed before
-    its fix (the commit messages say how each was shown), and hand reversions of the fix that each fail a
-    test. **Group H (documentation drift) is edited and not committed**; a subagent was making the 13
-    `ignore`d rustdoc blocks compile (G/C-03) when this was written.
-  - **Verified so far, and what was not.** The per-feature clippy matrix
-    (`cargo hack clippy -p a2a-protocol-types -p a2a-protocol-client -p a2a-protocol-server -p
-    a2a-protocol-sdk --all-targets --each-feature -- -D warnings`, 59 invocations) passed on A, B and C
-    together (HEAD `f094a8a` before the history was rewritten); it caught two real defects on the way
-    (a lint in a test, and a test that did not compile without `tracing`). It has **not** been run on D.
-    `cargo mutants --in-diff` was started on A to D for the client and server crates (the command is in
-    `.github/workflows/mutants.yml`, `--jobs 3`, diff from `4a8243c`); the first results showed two
-    survivors in D's code (`env_roots_pem`), killed by a new client-crate test
-    (`tests/grpc_env_roots_tests.rs`, in the working tree, to be folded into D) because `cargo mutants -p
-    X` runs only X's tests. **Read the final results before pushing.** PostgreSQL suites, `nextest` for
-    the whole workspace and the toxiproxy partition run for group B were not run after the changes.
-    Script gates: 36 of 36 on the last commit. The CLI is not in the matrix; clippy for it
-    (`cargo clippy -p a2a-cli --all-targets --all-features`) found a lint in group A's test, now fixed.
-  - **Not built, waiting on the maintainer:** `DECISIONS.md` F1 to F15 (F13 to F15 are new: event
-    positions after a takeover, a stream whose executor panics, certificate reload). Groups G (image,
-    F8), E (loopback proxies, F2), I (OTel env, F3), B2 (F4), M (F5), O (F7), P (F6), N (F1) and R
-    (F12) each wait on a fork or are very large; K, L, J, Q and F have parts that need none.
-    Nothing in A to D forecloses any of them.
+  (the merge of pull request #185): the 149 open audit rows are triaged and most fix groups are
+  committed (below). One pull request, opened only when the groups the maintainer wants pass the bar;
+  none is open and nothing past the triage is pushed.**
+  - **Fix work, `git log 4a8243c..` (oldest first; every commit is `Tom F.`, signed off, no other
+    trailer, for DCO):**
+      - `4a3cbe1` docs(audit): triage the 149 open rows of the 2026-10-29 audit against main@4a8243c
+      - `a3a5dde` fix(client,cli): --header goes only to the interface that was checked (audit SEC-09, NEW-f-1)
+      - `78fcd2c` fix: credentials go only to the host the caller named (audit SEC-08, SEC-09, SEC-18, NEW-f-5, NEW-f-6, G/D-05)
+      - `c902c46` fix(server): a replica that cannot renew a claim stops the turn before anyone can take the task (audit E-F7, NEW-e-1, NEW-h-s0-1, NEW-h-s0-5, NEW-h-s0
+      - `aa6e4ff` fix(server): a task's ending always reaches its webhooks, its log and its caller (audit NEW-d-1, D-03, E-F9, NEW-e-2, E-F20, D-16, D-23, G-21, NEW-g-a
+      - `6d746dd` fix(client,server,cli): gRPC honours its send timeout, its card and the process's roots; one TLS identity reaches every path (audit NEW-g-api-1, G-20,
+      - `065f0a0` docs: documentation that disagreed with the code, the book's ignore ratchet, and thirteen rustdoc blocks nothing compiled (audit G/D-02 to G/D-11, G/C
+      - `50242e0` docs(adr): Agent Skills and steering a running task, proposed (triage forks F9, F10)
+      - `4b6b382` fix(client,server): loopback is never sent to a proxy, NO_PROXY is read as Go reads it, the WebSocket dials like the HTTP transports (audit NEW-b-2, B
+      - `9c69ef6` feat(server): the production profile refuses process-local stores over a shared task store (audit E-F13; amends ADR 0025)
+      - `4fd80d0` fix(server): a wrong OTEL_* value is noted and the process starts, as the specification asks (audit C-08, NEW-c-5)
+      - `636eaf0` feat(deploy-agent): a signed image from the release workflow, a version on the card, retention in PostgreSQL (audit A13, A27, NEW-a-l-1, NEW-a-l-3, NE
+      - `41756f1` feat!: RequestContext.context_id is a ContextId, AgentCard::new declares streaming, the server crate defaults to tls-rustls, sign_agent_card is remove
+      - `0b06ec2` docs: 0.15.1 was never released, so its notes are 0.16.0's; the release notes open with a Highlights block (audit G/C-01, G/C-02, NEW-t-1; forks F6, F
+      - `7b36d51` feat: SendMessageResponse accessors, build_arc, agent_executor! with a receiver, new_message_id, Debug for EventEmitter and A2aRouter (audit G-22, G-1
+      - `4ec89f3` fix(client): a tenant the caller set is kept in whichever order the builder is called (audit G-19)
+      - `a8bf45e` fix: Retry-After is spread, the rate limiter overflows to one bucket, an unread halt store is retryable and not ready, an unknown halt row halts every
+      - `e2712ec` fix(client,server): a WebSocket peer that stopped reading is dropped, one that went silent is found out, a failed handshake says whether to retry (aud
+    Each fix has a regression test that failed before it (the commit messages say how each was
+    shown, and which hand-applied mutants each test kills).
+  - **Verified, and what was not.** `cargo nextest run -p a2a-protocol-types -p a2a-protocol-client
+    -p a2a-protocol-server --all-features --profile ci` and the three crates' doctests pass on the
+    tip (the last commit message gives the counts); 36 of 36 script gates; `cargo fmt --check`.
+    The per-feature clippy matrix (`cargo hack clippy ... --each-feature -- -D warnings`) passed 59
+    of 59 on groups A to C, and 21 of 21 on the server crate alone at the tree with B2 and I; it
+    has **not** been run on D, E, G, N or the batch after, nor for the CLI. `cargo mutants --in-diff`:
+    the client crate on A to E ran 70 mutants (48 caught, 21 unviable, 1 missed, killed afterwards by
+    extra `NO_PROXY` negatives, shown by hand); the **server crate's run was stopped at 20 of 168**
+    for CPU and disk and **must be run on the final tip** (`.github/workflows/mutants.yml` has the
+    command). Not run at all: the PostgreSQL suites, the sdk crate's tests, the toxiproxy
+    partition run for group B, Kubernetes, the official TCK, `cargo-semver-checks` against
+    v0.15.0 (needed for the breaking list), and a live pass of the Squid, private-CA and model
+    probes after the fixes. Live: the `deploy-agent` image was built from this tree and run (it
+    found that the build fails behind a TLS-inspecting proxy; fixed with a BuildKit secret), and the
+    retention sweep ran against the local PostgreSQL.
+  - **Not built (open), by the plan's group** (`docs/audits/2026-11-01-triage/PLAN.md`):
+    `#[non_exhaustive]` on about 40 wire structs (G-10, decided option A, XL: about 2,400 literal
+    sites outside the types crate; start with the 13 protocol objects if it must be cut), G-12,
+    G-16, G-09/G-14/G-15 (undecided), the rest of I (C-06, C-09, C-10, C-12, C-13, C-16, C-22,
+    C-23, NEW-c-3/-4), all of J, K (push: https pinning D-13/SEC-13, D-22, B-13, NEW-d-3,
+    NEW-f-2, D-05's delivery id), L, M (delegation hand-off on shutdown, F5), O and the HttpPool
+    (F7, ADR 0032), the swarm designs beyond the four fixes, Q, most of G (A14, A15, A19, A21-A23,
+    A25, A26, NEW-a-l-2, -4a, -5), B-10/B-11/D-20 (gRPC and idle defaults), D-03(d), E-F8 (F13),
+    B-14 cert reload (F15), NEW-b-1/-5 (F16). Nothing built forecloses any of them.
+    **Unasked forks F13 to F16 in `DECISIONS.md` still wait on the maintainer.**
   The maintainer's brief: find every way the SDK fails a real deployment (local, Docker, Kubernetes,
   proxy or none, public/private/self-signed CA, mDNS, replicas, outages, disconnects), with live runs
   against llama.cpp and small Qwen and Gemma models, A2A v1.0.1 conformance, OpenTelemetry, the EU AI
@@ -127,12 +145,12 @@ only: when something here is done, delete it rather than annotating it.
     of 11 twice against Qwen3.5-2B (`examples/live-model/README.md`); every
     server PostgreSQL test through PgBouncer 1.26.1, 147 of 151, which found the halt store's
     `LISTEN` broken behind it (L16, fixed; L17).
-    `deploy-agent` as two hardened containers on PostgreSQL (L18).
+    `deploy-agent` as two hardened containers on PostgreSQL (L18); its Dockerfile's build stages ran on 2026-11-01 (see above).
     `promtool test rules` (Prometheus 3.15.1, from its image) on
     `deploy/observability/prometheus/tests/`: passes. CI does not run it.
   - **Not yet run live:** the client dashboard with a
     long-lived client (L11: short-lived CLI processes never export); the
-    `deploy-agent` Dockerfile's build stages (its runtime stage ran, L18).
+    (the `deploy-agent` Dockerfile's build stages ran on 2026-11-01.)
   - **First, next (2026-11-01).** The maintainer chose **one large pull request**, built as the
     19 commit groups of `docs/audits/2026-11-01-triage/PLAN.md`; open it only when the groups meant for
     0.16.0 pass the bar above (a pushed branch starts no CI; the workflows run on `pull_request`).
@@ -1203,6 +1221,24 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **A liveness check that compares a clock with the interval is decided by
+  timer jitter** (found 2026-11-01 by a test that failed 22 of 40 runs on an
+  idle machine). The WebSocket client's first keepalive asked "has the idle
+  time reached the interval?" at each tick; right after a pong the idle time
+  was 99 ms against a 100 ms interval, so that tick sent no ping and the next
+  saw 200 ms and closed a live connection. At the 15 s default the same thing
+  would have dropped healthy idle connections about every other timer run. It
+  now counts quiet ticks (`Keepalive`, `transport/websocket.rs`): a ping on the
+  first, close on the second, any frame resets. Count events, do not compare a
+  duration with the period that produces the sample.
+- **Restoring a mutated file by `shutil.move` of a backup leaves cargo with a
+  stale binary.** The backup was copied before the mutant was written, so the
+  restored file's modification time is older than the mutant's build output, and
+  cargo does not rebuild: the next test run still contains the last mutant
+  (`a2a_extensions_is_not_reported_as_a_dropped_header` failed with left 1,
+  right 0 on correct source). Restore by writing the content back, or `touch`
+  the file, and treat any failure that follows a mutant run as stale until a
+  rebuild shows it.
 - **A scoped tracing subscriber is not enough to capture a log line in a
   parallel test binary** (root cause of the 1-in-20 `log_redaction` flake,
   found 2026-10-24). `tracing-core` 0.1.36 keeps `has_just_one` true while
