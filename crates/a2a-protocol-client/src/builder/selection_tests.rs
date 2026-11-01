@@ -199,6 +199,60 @@ fn an_explicit_binding_is_not_substituted() {
     assert!(err.to_string().contains("gRPC"), "{err}");
 }
 
+/// A caller who attaches a credential for the interface they chose can ask
+/// not to be moved to another one (audit SEC-09): the card's next interface
+/// may be on any host. The error is the chosen interface's own.
+#[test]
+fn without_interface_fallback_fails_instead_of_moving_to_another_host() {
+    let mut elsewhere = iface(BINDING_JSONRPC, "1.0", "http://elsewhere.example");
+    // The tenant is how a test sees which interface was used (as in
+    // `a_fallback_carries_its_own_tenant`).
+    elsewhere.tenant = Some("elsewhere".into());
+    let card = card(vec![
+        iface("SOMETHING-NEW", "1.0", "http://agent.example"),
+        elsewhere,
+    ]);
+    // The control: the default does move on, to the other host.
+    let moved = ClientBuilder::from_card(&card)
+        .expect("from_card")
+        .build()
+        .expect("falls back by default");
+    assert_eq!(moved.config().tenant.as_deref(), Some("elsewhere"));
+
+    let err = ClientBuilder::from_card(&card)
+        .expect("from_card")
+        .without_interface_fallback()
+        .build()
+        .expect_err("the chosen interface cannot be built, and nothing else is tried");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("SOMETHING-NEW"),
+        "names the chosen binding: {msg}"
+    );
+    assert!(
+        !msg.contains("elsewhere.example"),
+        "never mentions, let alone tries, the other host: {msg}"
+    );
+}
+
+/// Pinning changes nothing when the chosen interface builds, and keeps the
+/// card's tenant for it.
+#[test]
+fn without_interface_fallback_keeps_a_usable_first_choice() {
+    let mut first = iface(BINDING_JSONRPC, "1.0", "http://agent.example");
+    first.tenant = Some("acme".into());
+    let card = card(vec![
+        first,
+        iface(BINDING_HTTP_JSON, "1.0", "http://elsewhere.example"),
+    ]);
+    let client = ClientBuilder::from_card(&card)
+        .expect("from_card")
+        .without_interface_fallback()
+        .build()
+        .expect("the first interface builds");
+    assert_eq!(client.config().tenant.as_deref(), Some("acme"));
+}
+
 /// When nothing on the card can be built, the error names every attempt.
 #[test]
 fn when_nothing_builds_every_attempt_is_reported() {

@@ -155,11 +155,36 @@ async fn resolve_target(url: &str, opts: &GlobalOpts) -> Result<Target, CliError
              --header would send your credentials there; pass --follow-card-origin if that is intended"
         )));
     }
+    // The check above covers the interface `from_card` chose. `build()` moves
+    // on to the card's later interfaces when that one cannot be built, and
+    // those can be on any host: with a credential attached the client uses
+    // the checked interface or none (audit SEC-09, NEW-f-1).
+    let builder = if pins_the_interface(opts) {
+        builder.without_interface_fallback()
+    } else {
+        builder
+    };
     Ok(Target {
         endpoint,
         binding,
         builder,
     })
+}
+
+/// Whether the client is held to the card interface whose host was checked:
+/// a card was fetched, `--header` carries a credential, and the caller has
+/// not said the card may steer it.
+fn pins_the_interface(opts: &GlobalOpts) -> bool {
+    opts.binding.is_none() && !opts.headers.is_empty() && !opts.follow_card_origin
+}
+
+/// The refusal for a pinned client whose chosen interface cannot be built.
+fn pinned_interface_unusable(endpoint: &str, cause: &a2a_protocol_client::ClientError) -> CliError {
+    CliError::Failed(format!(
+        "the agent card's chosen interface {endpoint} cannot be used ({cause}); with --header the \
+         client does not fall back to the card's other interfaces, which may be on other hosts. \
+         Pass --follow-card-origin to allow that"
+    ))
 }
 
 /// Builds a client for `url` from the global flags.
@@ -212,6 +237,10 @@ pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<A2aClient, CliError
             .with_extra_headers(headers);
         let transport = WebSocketTransport::connect_with_config(endpoint, config).await?;
         builder.with_custom_transport(transport).build()?
+    } else if pins_the_interface(opts) {
+        builder
+            .build()
+            .map_err(|e| pinned_interface_unusable(&endpoint, &e))?
     } else {
         builder.build()?
     };

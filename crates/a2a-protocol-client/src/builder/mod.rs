@@ -438,6 +438,28 @@ impl ClientBuilder {
         self
     }
 
+    /// Uses only the interface [`from_card`](Self::from_card) chose: when it
+    /// cannot be built, [`build`](Self::build) fails instead of moving on.
+    ///
+    /// Without this, `build` falls back to the card's next interface when the
+    /// chosen one cannot be built here (a binding this SDK does not implement,
+    /// a scheme the transports refuse), and the client then talks to whatever
+    /// host that interface names. That suits a caller who trusts the card. It is
+    /// wrong for one who attaches a credential for the host of the interface
+    /// they chose, such as an interceptor that adds `Authorization` or a token
+    /// provider: the card is the agent's word, the next interface can be on any
+    /// host, and the credential would follow it (audit SEC-09).
+    ///
+    /// The error is the chosen interface's own, so it says why it could not be
+    /// built. A builder from [`ClientBuilder::new`] has nothing to fall back to,
+    /// and [`with_protocol_binding`](Self::with_protocol_binding) already does
+    /// this, so neither is affected.
+    #[must_use]
+    pub fn without_interface_fallback(mut self) -> Self {
+        self.fallback_interfaces.clear();
+        self
+    }
+
     /// Sets how a bare `host:port` gRPC interface address is dialled.
     ///
     /// A card's gRPC `url` is a gRPC target with no scheme. The default

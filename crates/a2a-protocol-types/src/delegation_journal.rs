@@ -35,8 +35,11 @@
 //! The trait is in the style of the stores: boxed futures and no macro, so an
 //! implementation needs no new dependency. [`InMemoryDelegationJournal`]
 //! serves one process (tests, and a supervisor that only needs to survive a
-//! reattach within its own lifetime); the SQLite and PostgreSQL versions are
-//! in the server crate behind its `sqlite` and `postgres` features.
+//! reattach within its own lifetime). The only durable journal is
+//! `PostgresDelegationJournal`, in the server crate behind its `postgres`
+//! feature; there is no `SQLite` one, so a supervisor that must survive a
+//! restart needs a `PostgreSQL` database or its own implementation of the
+//! trait (audit NEW-h-s0-4).
 
 use std::collections::HashMap;
 use std::future::Future;

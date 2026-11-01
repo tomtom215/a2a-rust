@@ -25,6 +25,11 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`ClientBuilder::without_interface_fallback`** (client; audit SEC-09,
+  NEW-f-1): use only the interface `from_card` chose, and make `build()` fail
+  instead of moving to the card's next interface. For a caller who attaches a
+  credential for the host of the interface they chose; the card's other
+  interfaces can be on any host. `with_protocol_binding` already behaved so.
 - **`ToolLoopExecutor::with_drafts`** (audit L5): each model turn's text
   streams, as the model sends it, to a `draft-N` artifact of the turn's own
   (`draft_artifact_id`), closed with `lastChunk` when the next turn starts or
@@ -473,6 +478,21 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   the header. `tests/e2e/card_origin.rs`; hand-disabling the check in
   `resolve_target` fails the test for it. Not covered by a test: the
   `card verify` half (read in `offline.rs`, not run).
+- **`a2a --header` no longer follows a card's fallback to another host**
+  (a2a-cli; audit NEW-f-1, found by running it). The check above looked only
+  at the interface `from_card` chose, and `build()` moves on to the card's
+  later interfaces when that one cannot be built (a binding the client
+  lacks, a scheme that is not `http(s)`), so a card whose first interface
+  was on the typed host but unusable, and whose second was elsewhere, still
+  received the credential. With `--header` and without `--follow-card-origin`
+  the client now uses the checked interface or fails, and the error names the
+  flag. Reproduced before the fix with both variants
+  (`docs/audits/2026-11-01-triage/live-results.md`); the two new tests in
+  `tests/e2e/card_origin.rs` fail without it, and the headerless fallback and
+  the flag's opt-in are pinned beside them.
+- **The `delegation_journal` module doc no longer says a SQLite journal
+  exists** (types; audit NEW-h-s0-4). The only durable journal is
+  `PostgresDelegationJournal`.
 - **A tool-loop run whose model provider is briefly away ends failure class
   `transient`, not `internal`** (server; `tool-loop`): HTTP 429, 502, 503
   or 504 from the provider, no answer within the timeout, or no connection.
