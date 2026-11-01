@@ -14,6 +14,43 @@ pub use background::PushLanes;
 pub use background::deliver_push_bg;
 #[cfg(test)]
 mod stale_reads;
+
+/// Marks a task whose executor panicked `Failed`, and returns the event that
+/// tells its subscribers.
+///
+/// The status carries a fixed message and no detail of the panic: what an
+/// executor panicked with is its own business (SEC-07 withholds an executor's
+/// internal error text for the same reason). Until 2026-10-31 the status had
+/// no message at all, and nobody but the store was told (audit D-03).
+pub fn panic_failure(
+    task: &mut a2a_protocol_types::task::Task,
+) -> a2a_protocol_types::events::StreamResponse {
+    use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+    use a2a_protocol_types::task::{TaskState, TaskStatus};
+
+    let mut status = TaskStatus::with_timestamp(TaskState::Failed);
+    status.message = Some(Message {
+        id: MessageId::new(uuid::Uuid::new_v4().to_string()),
+        role: MessageRole::Agent,
+        parts: vec![Part::text(
+            "The agent stopped unexpectedly before it finished this task.",
+        )],
+        task_id: Some(task.id.clone()),
+        context_id: Some(task.context_id.clone()),
+        reference_task_ids: None,
+        extensions: None,
+        metadata: None,
+    });
+    task.status = status.clone();
+    a2a_protocol_types::events::StreamResponse::StatusUpdate(
+        a2a_protocol_types::events::TaskStatusUpdateEvent {
+            task_id: task.id.clone(),
+            context_id: task.context_id.clone(),
+            status,
+            metadata: None,
+        },
+    )
+}
 mod sync_collector;
 
 /// What a background processor needs from the send that spawned it, beyond

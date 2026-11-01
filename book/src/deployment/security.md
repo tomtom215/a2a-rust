@@ -37,8 +37,8 @@ give it a label (`with_labelled_tokens`, `with_labelled_keys`); an unlabelled
 one proves only that the caller knew a secret.
 
 Pair it with `BearerTokenTenantResolver::with_mapper` if you are multi-tenant,
-with a closure that verifies the token and returns its tenant claim: `new()`
-takes the raw token as the tenant id. See [Multi-Tenancy](./multi-tenancy.md),
+with a closure that verifies the token and returns its tenant claim: `default()`
+verifies nothing, and names the token by a digest as the tenant id. See [Multi-Tenancy](./multi-tenancy.md),
 where the failure mode of getting this wrong is spelled out.
 
 ## Transport

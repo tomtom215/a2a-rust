@@ -13,7 +13,7 @@ use a2a_protocol_types::artifact::{Artifact, ArtifactId};
 use a2a_protocol_types::events::TaskArtifactUpdateEvent;
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
-use a2a_protocol_types::task::ContextId;
+use a2a_protocol_types::task::{ContextId, TaskState};
 
 use super::*;
 use crate::handler::limits::HandlerLimits;
@@ -350,6 +350,16 @@ async fn a_panic_fails_a_running_task_but_not_a_finished_one() {
     let stored = f.store.get(&id).await.expect("get").expect("stored");
     assert_eq!(stored.status.state, TaskState::Failed);
     assert!(!f.cancel.is_cancelled());
+    // The webhooks hear it too (audit D-03), and the stored status says
+    // something a person can read without leaking what the executor panicked
+    // with.
+    assert_eq!(f.pushed().await, vec![TaskState::Failed]);
+    let note = stored.status.message.expect("a message on the failure");
+    assert_eq!(note.role, a2a_protocol_types::message::MessageRole::Agent);
+    assert!(
+        format!("{note:?}").contains("stopped unexpectedly"),
+        "{note:?}"
+    );
 
     // Already finished here: a panic after our own terminal changes nothing.
     let f = Fixture::new(TaskState::Completed).await;
@@ -359,6 +369,20 @@ async fn a_panic_fails_a_running_task_but_not_a_finished_one() {
     let stored = f.store.get(&id).await.expect("get").expect("stored");
     assert_eq!(stored.status.state, TaskState::Completed);
     assert!(!f.cancel.is_cancelled());
+    assert_eq!(f.pushed().await, vec![], "and tells no one anything");
+}
+
+/// A terminal state this processor already pushed is not pushed over.
+#[tokio::test]
+async fn a_panic_after_a_pushed_terminal_pushes_nothing_more() {
+    let id = TaskId::new("t");
+    let f = Fixture::new(TaskState::Working).await;
+    let mut run = f.processor(&id);
+    run.pushed_terminal = true;
+    run.executor_panicked().await;
+    assert_eq!(f.pushed().await, vec![]);
+    let stored = f.store.get(&id).await.expect("get").expect("stored");
+    assert_eq!(stored.status.state, TaskState::Failed, "still stored");
 }
 
 /// The store's reads lag its writes: the refusal names `Canceled`, and the

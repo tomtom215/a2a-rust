@@ -14,7 +14,8 @@ from the first event that names it, and cancels the child when:
 
 - the parent cancels: the `cancel` future passed to `wait` completes, or the
   parent calls `cancel()`;
-- the child's stream is lost before the child settled; or
+- the child's stream is lost before the child settled and could not be
+  [resumed](#a-cut-stream-and-a-restarted-parent); or
 - the handle is dropped before the child settled. That happens when the
   parent's own future is aborted, or when its code returns early.
 
@@ -67,7 +68,7 @@ instead of `wait`. The handle still tracks the child's id and state.
 | `Completed`, `Failed`, `Canceled` | The child reached that state. `Failed` covers `failed` and `rejected` and carries its [failure class](./failure-classes.md) (`Internal` if the child declared none). |
 | `Interrupted` | `input-required` or `auth-required`. The child was not cancelled. |
 | `Message` | The agent answered with a message and created no task. |
-| `Lost` | The stream failed or closed before the child settled. If its id was known, the child was sent `CancelTask`. |
+| `Lost` | The stream failed or closed before the child settled, and the [resume policy](#a-cut-stream-and-a-restarted-parent) was spent without getting it back. If the child's id was known, it was sent `CancelTask`. |
 | `CancelRequested` | `CancelTask` was accepted. The task it returned was not yet terminal. |
 | `CancelFailed` | `CancelTask` was refused or failed. |
 | `Unreachable` | A cancel was asked for before any event named the child, and none did within the id wait (`with_id_wait`, 5 s by default). No `CancelTask` could be sent. |
@@ -79,7 +80,108 @@ not the client's default.
 
 `detach()` stops following the child without cancelling it, and returns its
 id. Use it to hand the child over, for instance to a supervisor that records
-the id durably and later reattaches with `subscribe_to_task_from`.
+the id and `last_event_id()` durably and later calls `Delegation::reattach`.
+
+## A cut stream and a restarted parent
+
+A connection that ends before the child settled (a reset, a proxy rollout,
+the idle timeout) used to cancel the child, and in a tree of delegations
+the cancel went on down. Now `wait` first reopens the stream from the last
+event id, under a `ResumePolicy`: by default five attempts, 200 ms apart and
+doubling to 5 s, inside 30 s of one loss. If the subscription is refused it
+reads the task, because a task that settled while the stream was down cannot
+be subscribed to and is reported as what it became, not as `Lost`. Only a
+child still running after the policy is spent is cancelled.
+
+- An attempt that gets a stream and loses it again without the position
+  moving counts as spent, so a server that accepts and drops a subscription
+  is not asked for ever. A stream that delivered events starts the count
+  again.
+- Positions come from the agent's event ids. gRPC and WebSocket streams carry
+  none, so every loss there costs an attempt.
+- `with_resume(ResumePolicy::none())` restores the old behaviour: the first
+  loss cancels the child.
+
+A supervisor that restarts can follow its child again:
+
+```rust,no_run
+use std::sync::Arc;
+use a2a_protocol_client::{A2aClient, delegation::Delegation};
+# async fn run(
+#     client: Arc<A2aClient>,
+#     child: Delegation,
+#     parent_cancelled: tokio::sync::oneshot::Receiver<()>,
+# ) -> Result<(), Box<dyn std::error::Error>> {
+// Before it stops: record these two.
+let id = child.task_id().map(str::to_owned);
+let position = child.last_event_id().map(str::to_owned);
+child.detach();
+// After it restarts:
+if let Some(id) = id {
+    let child = Delegation::reattach(client, None, id, position).await?;
+    let done = child.wait(async { let _ = parent_cancelled.await; }).await;
+    println!("{:?}", done.outcome);
+}
+# Ok(())
+# }
+```
+
+A child that settled in the meantime comes back already settled. A lease or a
+budget grant is not restored; a supervisor that needs them records the grant
+itself (ADR 0030).
+
+## Remembering children across restarts: the journal
+
+`reattach` needs the id and the position, and a supervisor that dies between
+sending the message and recording them has neither. A `DelegationJournal`
+(ADR 0030) is the record that outlives the process.
+`Delegation::start_journaled` writes it before the message is sent, and sends
+nothing if the journal cannot store it; the child's id and position follow as
+events arrive, and the record is settled with the outcome however the
+delegation ends.
+
+```rust,no_run
+use std::sync::Arc;
+use a2a_protocol_client::{A2aClient, delegation::Delegation};
+use a2a_protocol_types::delegation_journal::{DelegationJournal, InMemoryDelegationJournal};
+use a2a_protocol_types::{Message, MessageSendParams, Part};
+# async fn run(client: Arc<A2aClient>) -> Result<(), Box<dyn std::error::Error>> {
+let journal: Arc<dyn DelegationJournal> = Arc::new(InMemoryDelegationJournal::new());
+
+// Start: the record is written before the message goes out.
+let params = MessageSendParams::new(Message::user("m-1", vec![Part::text("summarise")]));
+let child = Delegation::start_journaled(
+    Arc::clone(&client), params, Arc::clone(&journal), "orchestrator-1", "http://worker:8080",
+).await?;
+# drop(child);
+
+// After a restart: pick up what is still open.
+for record in journal.open("orchestrator-1").await? {
+    if let Some(task_id) = record.task_id.clone() {
+        let child = Delegation::reattach(
+            Arc::clone(&client), record.tenant.clone(), task_id, record.last_event_id.clone(),
+        )
+        .await?
+        .with_journal(Arc::clone(&journal), &record.id);
+        let done = child.wait(std::future::pending()).await;
+        println!("{:?}", done.outcome);
+    }
+    // A record with no task id died before the child was named: send the same
+    // message again under `record.idempotency_key` to reach the child the
+    // first send created.
+}
+# Ok(())
+# }
+```
+
+A record holds ids, keys, positions and an outcome label: no message text and
+no credentials. A write that fails after the start is logged and does not stop
+the delegation. The position can lag the stream by up to two seconds, so a
+reattach may replay a few events. Settled records stay until
+`purge_settled` removes them. `InMemoryDelegationJournal` serves one process; for a supervisor that must
+survive its own death use `PostgresDelegationJournal` (the server crate's
+`postgres` feature, table `a2a_delegations`), or implement the trait over a
+store of your own. There is no SQLite journal.
 
 ## A crashed parent: leases
 

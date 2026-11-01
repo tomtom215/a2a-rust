@@ -102,8 +102,11 @@ missing, then the image cannot be pulled):
   URL callers will use (see the trap below).
 - **The database.** The manifest runs two replicas and takes `DATABASE_URL`
   from the Secret `deploy-agent-db`, which you create:
-  `kubectl create secret generic deploy-agent-db --from-literal=url='postgres://USER:PASSWORD@HOST:5432/DB'`.
-  A pod without it does not start (`CreateContainerConfigError`), on purpose:
+  `kubectl create secret generic deploy-agent-db --from-literal=url='postgres://USER:PASSWORD@HOST:5432/DB?sslmode=verify-full&sslrootcert=/path/ca.pem'`.
+  Keep the `sslmode`: the driver's default, `prefer`, falls back to plaintext
+  and does not check who answered, while `verify-full` checks the server's
+  certificate and name. `sslrootcert` is the CA file as the pod sees it, so
+  mount it there. A pod without the Secret does not start (`CreateContainerConfigError`), on purpose:
   two replicas on in-memory stores answer `TaskNotFound` for every task the
   other one created. For one replica and no database, delete the entry and
   set `replicas: 1`.

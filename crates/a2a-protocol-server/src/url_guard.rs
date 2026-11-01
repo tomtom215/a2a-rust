@@ -60,15 +60,26 @@ pub async fn resolve_public_url(
     resolve(url, "URL", dns_timeout).await
 }
 
-/// Returns `true` if the given IPv4 address is private, loopback, link-local,
-/// unspecified, or shared (CGNAT).
+/// Returns `true` if the given IPv4 address is not one a public host can have:
+/// the special-purpose registry (RFC 6890) less its documentation ranges.
+///
+/// Until 2026-10-31 the list was loopback, private, link-local, `0.0.0.0` and
+/// CGNAT, and `198.18.0.1`, `224.0.0.1`, `240.0.0.1` and `0.1.2.3` all passed
+/// (audit SEC-12, B-22, D-13; run, not read). The documentation ranges
+/// (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`) are still allowed:
+/// nothing routes to them, so a webhook there never succeeds, and tests across
+/// the ecosystem use them as stand-ins for a public host.
 #[allow(clippy::missing_const_for_fn)] // IpAddr methods aren't const-stable everywhere
 pub(crate) fn is_private_v4(v4: Ipv4Addr) -> bool {
+    let [a, b, c, _] = v4.octets();
     v4.is_loopback()          // 127.0.0.0/8
         || v4.is_private()    // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
         || v4.is_link_local() // 169.254.0.0/16
-        || v4.is_unspecified() // 0.0.0.0
-        || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64) // 100.64.0.0/10 (CGNAT)
+        || a == 0             // 0.0.0.0/8, "this network" (RFC 1122)
+        || (a == 100 && (b & 0xC0) == 64) // 100.64.0.0/10 (CGNAT)
+        || (a == 192 && b == 0 && c == 0) // 192.0.0.0/24, IETF protocol assignments
+        || (a == 198 && (b & 0xFE) == 18) // 198.18.0.0/15, benchmarking
+        || a >= 224 // 224.0.0.0/4 multicast; 240.0.0.0/4 reserved and 255.255.255.255
 }
 
 /// Parses the non-canonical numeric IPv4 encodings that `Ipv4Addr::from_str`
@@ -142,9 +153,10 @@ pub(crate) fn parse_c_integer(s: &str) -> Option<u64> {
 
 /// Recovers an embedded IPv4 address from the IPv6 forms that actually route to
 /// IPv4: IPv4-mapped (`::ffff:a.b.c.d`, what dual-stack sockets dial), the NAT64
-/// well-known prefix (`64:ff9b::a.b.c.d`, RFC 6052), and the deprecated
-/// IPv4-compatible form (`::a.b.c.d`, RFC 4291 — excluding `::` and `::1`, which
-/// are handled as unspecified/loopback by the caller).
+/// well-known prefix (`64:ff9b::a.b.c.d`, RFC 6052), 6to4 (`2002:aabb:ccdd::`,
+/// RFC 3056) and the deprecated IPv4-compatible form (`::a.b.c.d`, RFC 4291 —
+/// excluding `::` and `::1`, which are handled as unspecified/loopback by the
+/// caller).
 ///
 /// Without this, an attacker could smuggle a loopback/private/metadata IPv4
 /// target past the SSRF filter by wrapping it in one of these IPv6 encodings.
@@ -158,10 +170,11 @@ pub(crate) fn embedded_ipv4(v6: Ipv6Addr) -> Option<Ipv4Addr> {
         Ipv4Addr::new(a, b, c, d)
     };
     match v6.segments() {
-        // NAT64 well-known prefix 64:ff9b::/96 (RFC 6052).
-        [0x0064, 0xff9b, 0, 0, 0, 0, g, h] => Some(v4_from(g, h)),
         // IPv4-compatible ::a.b.c.d (deprecated), excluding :: and ::1.
         [0, 0, 0, 0, 0, 0, g, h] if !(g == 0 && (h == 0 || h == 1)) => Some(v4_from(g, h)),
+        // NAT64 well-known prefix 64:ff9b::/96 (RFC 6052), or 6to4 2002::/16
+        // (RFC 3056), whose IPv4 address is the 32 bits after the prefix.
+        [0x0064, 0xff9b, 0, 0, 0, 0, g, h] | [0x2002, g, h, ..] => Some(v4_from(g, h)),
         _ => None,
     }
 }
@@ -178,18 +191,31 @@ pub(crate) fn is_private_ip(ip: IpAddr) -> bool {
             if let Some(v4) = embedded_ipv4(v6) {
                 return is_private_v4(v4);
             }
+            let s = v6.segments();
             v6.is_loopback()          // ::1
                 || v6.is_unspecified() // ::
                 // fc00::/7 (unique local)
-                || (v6.segments()[0] & 0xfe00) == 0xfc00
+                || (s[0] & 0xfe00) == 0xfc00
                 // fe80::/10 (link-local)
-                || (v6.segments()[0] & 0xffc0) == 0xfe80
+                || (s[0] & 0xffc0) == 0xfe80
+                // fec0::/10 (site-local, deprecated by RFC 3879 but routed on
+                // some internal networks)
+                || (s[0] & 0xffc0) == 0xfec0
+                // ff00::/8 (multicast)
+                || (s[0] & 0xff00) == 0xff00
+                // 64:ff9b:1::/48 (local-use NAT64, RFC 8215): an operator's
+                // own translation prefix, not the well-known one
+                || (s[0] == 0x0064 && s[1] == 0xff9b && s[2] == 0x0001)
+                // 2001::/32 (Teredo, RFC 4380): the IPv4 address inside is
+                // obfuscated, so it cannot be classified
+                || (s[0] == 0x2001 && s[1] == 0)
+                // 100::/64 (discard-only, RFC 6666)
+                || (s[0] == 0x0100 && s[1] == 0 && s[2] == 0 && s[3] == 0)
         }
     }
 }
 
 /// [`check_public_url`], with `what` naming the URL in the error.
-#[allow(clippy::case_sensitive_file_extension_comparisons)] // host_lower is already lowercased
 pub(crate) fn check(url: &str, what: &str) -> A2aResult<()> {
     // Parse the URL to extract the host.
     let uri: hyper::Uri = url
@@ -217,6 +243,11 @@ pub(crate) fn check(url: &str, what: &str) -> A2aResult<()> {
 
     // Strip brackets from IPv6 addresses (hyper::Uri returns "[::1]" as host).
     let host_bare = host.trim_start_matches('[').trim_end_matches(']');
+    // One trailing dot is the root label: to the resolver, and to the `url`
+    // crate, `169.254.169.254.` is `169.254.169.254` and `localhost.` is
+    // `localhost`. Every test below used to see the dot and match nothing
+    // (audit N-SEC-1; run: both were accepted).
+    let host_bare = host_bare.strip_suffix('.').unwrap_or(host_bare);
 
     // Try to parse the host as an IP address directly.
     if let Ok(ip) = host_bare.parse::<IpAddr>() {
@@ -237,19 +268,46 @@ pub(crate) fn check(url: &str, what: &str) -> A2aResult<()> {
                 "{what} targets private/loopback address: {host} ({v4})"
             )));
         }
+    } else {
+        check_name(host_bare, host, what)?;
     }
 
-    // Check for well-known private hostnames.
-    let host_lower = host.to_ascii_lowercase();
+    Ok(())
+}
+
+/// The rules for a host that is a name, not an address in any form
+/// [`check`] recognises. They must not run on an address: `134744072` is
+/// 8.8.8.8 and has no dot, which this would refuse as a single-label name.
+#[allow(clippy::case_sensitive_file_extension_comparisons)] // the name is lowercased first
+fn check_name(host_bare: &str, host: &str, what: &str) -> A2aResult<()> {
+    let host_lower = host_bare.to_ascii_lowercase();
     if host_lower == "localhost"
+        || host_lower.ends_with(".localhost") // RFC 6761
         || host_lower.ends_with(".local")
         || host_lower.ends_with(".internal")
+        || host_lower.ends_with(".home.arpa")
+    // RFC 8375
     {
         return Err(A2aError::invalid_params(format!(
             "{what} targets local/internal hostname: {host}"
         )));
     }
-
+    // A name with an empty label (`a..b`) is no name, and an address spelled
+    // in a form nothing above recognised (`999999999999`) is not one either.
+    if host_bare.split('.').any(str::is_empty) {
+        return Err(A2aError::invalid_params(format!(
+            "{what} host has an empty label: {host}"
+        )));
+    }
+    // A name with no dot is resolved through the search domains of whatever
+    // runs the lookup: `metadata` is the cloud metadata service on GCP,
+    // `kubernetes` and a bare service name are the cluster's. No public host
+    // is addressed that way.
+    if !host_bare.contains('.') {
+        return Err(A2aError::invalid_params(format!(
+            "{what} targets a single-label hostname, which names an internal host: {host}"
+        )));
+    }
     Ok(())
 }
 
@@ -377,3 +435,6 @@ where
         })
         .map(Some)
 }
+
+#[cfg(test)]
+mod tests;

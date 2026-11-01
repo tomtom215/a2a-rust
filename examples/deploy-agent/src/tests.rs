@@ -219,3 +219,40 @@ fn the_logged_database_url_has_no_password() {
     );
     assert_eq!(redacted("postgres://db/a2a"), "postgres://db/a2a");
 }
+
+/// Audit N-AL-2's neighbour, N-AL-1: the driver also takes the password as a
+/// query parameter, and that form has no `@`, so it was logged in full.
+#[test]
+fn a_password_in_the_query_is_not_logged_either() {
+    assert_eq!(
+        redacted("postgres://db:5432/a2a?user=u&password=s3cret&sslmode=require"),
+        "postgres://db:5432/a2a?user=u&password=***&sslmode=require"
+    );
+    assert_eq!(
+        redacted("postgres://db/a2a?Password=s3cret"),
+        "postgres://db/a2a?Password=***",
+        "the key's case does not matter"
+    );
+    assert_eq!(
+        redacted("postgres://agent:one@db/a2a?password=two"),
+        "postgres://agent:***@db/a2a?password=***",
+        "both, when both are there"
+    );
+    // An `@` inside a query value is not the end of the user info, and a
+    // parameter that only starts with the word is left alone.
+    assert_eq!(
+        redacted("postgres://db/a2a?password=p@ss&passwordless=yes"),
+        "postgres://db/a2a?password=***&passwordless=yes"
+    );
+    assert_eq!(
+        redacted("postgres://agent:s3cret@db/a2a?options=-c%20x@y"),
+        "postgres://agent:***@db/a2a?options=-c%20x@y",
+        "an `@` in another value does not move the user info"
+    );
+    // With no path, the query itself ends the authority.
+    assert_eq!(
+        redacted("postgres://db?password=p@ss"),
+        "postgres://db?password=***"
+    );
+    assert_eq!(redacted("not a url"), "not a url");
+}

@@ -39,6 +39,7 @@ are rustdoc's job.
 | `audit` | Tamper-evident audit records: schema, hash chains, signed checkpoints, `verify_chain` (`audit` feature) |
 | `auth_rejection` | Why a request was refused on authentication or authorization grounds |
 | `budget` | The budget extension: `Budget`, a deadline and named meters a delegated turn may spend, and `BudgetStatus`, what is left and spent (ADR 0023) |
+| `delegation_journal` | A supervisor's record of the children it delegated to, so a restart can find them: the `DelegationJournal` trait, `DelegationRecord` and an in-memory journal (ADR 0030) |
 | `error` | A2A protocol error types |
 | `events` | Server-sent event types for A2A streaming |
 | `extensions` | Agent extension and card-signature types |
@@ -483,7 +484,7 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `DynamicAgentCardHandler` | Dynamic agent card with producer |
 | `HotReloadAgentCardHandler` | Agent card with live reloading |
 | `HeaderTenantResolver` | `TenantResolver` that reads a configurable request header |
-| `BearerTokenTenantResolver` | `TenantResolver` that takes the `Authorization: Bearer` token as the tenant, or what a `with_mapper` closure makes of it; `new()` trusts the raw, unverified token, so use `with_mapper` with a closure that verifies the token |
+| `BearerTokenTenantResolver` | `TenantResolver` that takes the `Authorization: Bearer` token as the tenant (a digest of it), or what a `with_mapper` closure makes of it; `default()` (and the deprecated `new()`) names the unverified token by its digest (`tenant_resolver::tenant_id_for_token`), so use `with_mapper` with a closure that verifies the token |
 | `PathSegmentTenantResolver` | `TenantResolver` that parses tenant from a configurable path segment |
 | `RateLimitInterceptor` | Per-caller rate limiting interceptor |
 | `PostgresRateLimitCounter` | A `RateLimitCounter` backed by a PostgreSQL table (`postgres` feature) |
@@ -523,6 +524,8 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `PerTenantConfig` | Per-tenant configuration for timeouts, capacity limits, and executor selection |
 | `TenantLimits` | Resource limits declared for a single tenant |
 | `RateLimitConfig` | Configuration for `RateLimitInterceptor` |
+| `TrustedProxy` | An address range (`10.0.0.0/8`) of reverse proxies whose `X-Forwarded-For` is believed; set on `RateLimitConfig` and `AuthFailureThrottleConfig` |
+| `InvalidTrustedProxy` | Why a string is not a `TrustedProxy` |
 | `AuthFailureThrottleConfig` | Configuration for `AuthFailureThrottle` |
 | `PushRetryPolicy` | Retry policy for push notification delivery |
 | `ServerError` | Server-level error type |

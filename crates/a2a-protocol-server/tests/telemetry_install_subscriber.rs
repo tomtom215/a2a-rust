@@ -9,8 +9,9 @@
 //! Before 0.15.1 it installed nothing when no trace or log provider was built, so
 //! "a process run without a collector keeps no subscriber at all". That left a
 //! process with no collector showing nothing — not its own warnings, not how to
-//! turn export on — so it now always installs one (except under
-//! `OTEL_SDK_DISABLED`, which `src/otel/telemetry/tests.rs` covers).
+//! turn export on — so it now always installs one, under
+//! `OTEL_SDK_DISABLED` too (its printing layer; `tests/telemetry_export/console.rs`
+//! covers that case).
 
 #![cfg(feature = "otlp")]
 

@@ -11,6 +11,12 @@
 # The `error_type` label is set only on a call the OpenTelemetry RPC
 # conventions count as failed (a JSON-RPC error, an HTTP 5xx on HTTP+JSON,
 # one of six server-side gRPC codes), so an error ratio counts exactly those.
+#
+# One value is set on a call that did not fail: `error_type="cancelled"`, an
+# abandoned stream (the client went away before the agent finished). The error
+# ratios leave it out, because a client hanging up is not the server failing
+# and a fleet of impatient clients would otherwise page the on-call
+# (a2a:rpc_server_cancelled:rate5m keeps them visible).
 
 groups:
   - name: a2a-rpc-server
@@ -19,10 +25,12 @@ groups:
       - record: a2a:rpc_server_calls:rate5m
         expr: sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count[5m]))
       - record: a2a:rpc_server_errors:rate5m
-        expr: sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{error_type!=""}[5m]))
+        expr: sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{error_type!="",error_type!="cancelled"}[5m]))
+      - record: a2a:rpc_server_cancelled:rate5m
+        expr: sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{error_type="cancelled"}[5m]))
       - record: a2a:rpc_server_error_ratio:rate5m
         expr: |
-          sum by (job) (rate(rpc_server_call_duration_seconds_count{error_type!=""}[5m]))
+          sum by (job) (rate(rpc_server_call_duration_seconds_count{error_type!="",error_type!="cancelled"}[5m]))
             /
           sum by (job) (rate(rpc_server_call_duration_seconds_count[5m]))
       # Streaming methods last as long as their stream, so latency quantiles
@@ -63,7 +71,7 @@ groups:
         expr: sum by (job, rpc_system_name, rpc_method, server_address) (rate(rpc_client_call_duration_seconds_count[5m]))
       - record: a2a:rpc_client_error_ratio:rate5m
         expr: |
-          sum by (job, server_address) (rate(rpc_client_call_duration_seconds_count{error_type!=""}[5m]))
+          sum by (job, server_address) (rate(rpc_client_call_duration_seconds_count{error_type!="",error_type!="cancelled"}[5m]))
             /
           sum by (job, server_address) (rate(rpc_client_call_duration_seconds_count[5m]))
       - record: a2a:rpc_client_unary_latency:p95_5m

@@ -7,6 +7,8 @@
 
 //! What the limiter is configured with, separate from what it does with it.
 
+use super::trusted::TrustedProxy;
+
 /// Configuration for [`RateLimitInterceptor`](super::RateLimitInterceptor).
 ///
 /// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
@@ -42,6 +44,17 @@ pub struct RateLimitConfig {
     /// identified is keyed by the connection's peer address instead.
     pub trusted_proxy_hops: usize,
 
+    /// The address ranges the trusted proxies connect from.
+    ///
+    /// Empty (the default) believes `x-forwarded-for` on the hop count alone,
+    /// so a client that reaches this server without going through the proxy
+    /// can send a header with enough entries and choose its own key. With
+    /// ranges named, the header is believed only when the connection's peer is
+    /// in one of them; any other connection is keyed by its own address, as
+    /// if no proxy were configured. Has no effect while
+    /// [`trusted_proxy_hops`](Self::trusted_proxy_hops) is `0`.
+    pub trusted_proxies: Vec<TrustedProxy>,
+
     /// Maximum number of caller buckets tracked at once.
     ///
     /// Bounds the limiter's memory. When the map is full, stale buckets from
@@ -60,6 +73,7 @@ impl Default for RateLimitConfig {
             requests_per_window: 100,
             window_secs: 60,
             trusted_proxy_hops: 0,
+            trusted_proxies: Vec::new(),
             max_buckets: DEFAULT_MAX_BUCKETS,
         }
     }
@@ -89,6 +103,14 @@ impl RateLimitConfig {
         self
     }
 
+    /// Sets the address ranges the trusted proxies connect from. See
+    /// [`trusted_proxies`](Self::trusted_proxies).
+    #[must_use]
+    pub fn with_trusted_proxies(mut self, proxies: impl IntoIterator<Item = TrustedProxy>) -> Self {
+        self.trusted_proxies = proxies.into_iter().collect();
+        self
+    }
+
     /// Sets the maximum number of caller buckets tracked at once. Must be
     /// non-zero.
     #[must_use]
@@ -100,21 +122,25 @@ impl RateLimitConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::RateLimitConfig;
+    use super::{RateLimitConfig, TrustedProxy};
 
     /// Every setter writes its own field, against values that differ from
     /// the defaults, so a setter reduced to `Default::default()` fails here.
     #[test]
     fn every_setter_sets_its_field() {
         let d = RateLimitConfig::default();
+        let proxy: TrustedProxy = "10.0.0.0/8".parse().expect("a range");
         let cfg = RateLimitConfig::default()
             .with_requests_per_window(d.requests_per_window + 1)
             .with_window_secs(d.window_secs + 1)
             .with_trusted_proxy_hops(d.trusted_proxy_hops + 1)
+            .with_trusted_proxies([proxy])
             .with_max_buckets(d.max_buckets + 1);
         assert_eq!(cfg.requests_per_window, d.requests_per_window + 1);
         assert_eq!(cfg.window_secs, d.window_secs + 1);
         assert_eq!(cfg.trusted_proxy_hops, d.trusted_proxy_hops + 1);
+        assert_eq!(cfg.trusted_proxies, [proxy]);
+        assert!(d.trusted_proxies.is_empty(), "off unless asked for");
         assert_eq!(cfg.max_buckets, d.max_buckets + 1);
     }
 }

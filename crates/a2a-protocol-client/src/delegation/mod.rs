@@ -17,8 +17,8 @@
 //!
 //! * the parent asks it to — [`cancel`](Delegation::cancel), or the `cancel`
 //!   future given to [`wait`](Delegation::wait) completing;
-//! * the child's stream is lost before the child settled, since nothing is
-//!   left watching it; or
+//! * the child's stream is lost before the child settled and could not be
+//!   resumed (see [`ResumePolicy`]), since nothing is left watching it; or
 //! * the handle is dropped before the child settled — the parent's own task
 //!   was aborted, or its code returned early.
 //!
@@ -84,12 +84,17 @@ use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 
+mod drop;
+mod journal;
 mod origin;
 mod outcome;
 mod renewal;
+mod resume;
 use origin::Origin;
 pub use outcome::{Delegated, Outcome};
 use renewal::Renewal;
+pub use resume::ResumePolicy;
+use resume::Resumed;
 
 /// How long a cancel waits for the child's id, when it is asked for before
 /// the first event named the child.
@@ -127,6 +132,16 @@ pub struct Delegation {
     /// Where the delegation started: the span and ambient trace the work it
     /// spawns — lease renewals, a cancel on drop — runs in.
     origin: Origin,
+    /// How a lost stream is resumed before the child is given up on.
+    resume_policy: ResumePolicy,
+    /// The position of the last event received, to resume from.
+    last_event_id: Option<String>,
+    /// Reopenings tried since the position last moved.
+    streak: u32,
+    /// The position when the last loss was worked on.
+    resumed_at: Option<String>,
+    /// The delegation's record in a journal, when it keeps one.
+    journal: Option<journal::Journaled>,
 }
 
 impl Delegation {
@@ -168,6 +183,11 @@ impl Delegation {
             budget: None,
             idempotency_key,
             origin: Origin::current(),
+            resume_policy: ResumePolicy::default(),
+            last_event_id: None,
+            streak: 0,
+            resumed_at: None,
+            journal: None,
         })
     }
 
@@ -275,10 +295,26 @@ impl Delegation {
     /// when the stream has ended.
     pub async fn next_event(&mut self) -> Option<ClientResult<StreamResponse>> {
         let ev = self.stream.as_mut()?.next().await;
-        match &ev {
-            Some(Ok(ev)) => self.observe(ev),
-            Some(Err(_)) | None => self.stream = None,
-        }
+        let ended = match &ev {
+            Some(Ok(ev)) => {
+                self.observe(ev);
+                self.remember_position(None);
+                false
+            }
+            Some(Err(e)) => {
+                self.remember_position(Some(e));
+                self.stream = None;
+                true
+            }
+            None => {
+                self.remember_position(None);
+                self.stream = None;
+                true
+            }
+        };
+        // At once when the stream ended: the position is what a resume or a
+        // restarted supervisor needs.
+        self.note_progress(ended).await;
         ev
     }
 
@@ -325,18 +361,30 @@ impl Delegation {
     /// Follows the child until it settles, or until `cancel` completes —
     /// then the child is cancelled and the outcome is what `CancelTask`
     /// reported.
+    ///
+    /// A stream that ends before the child settled is resumed first, from
+    /// the last event id, under the [`ResumePolicy`]; a child found settled
+    /// meanwhile is reported as what it became. Only a child still running
+    /// after the policy is spent is cancelled, with [`Outcome::Lost`].
     pub async fn wait<F: Future<Output = ()>>(mut self, cancel: F) -> Delegated {
         tokio::pin!(cancel);
         loop {
             if let Some(outcome) = self.settled.take() {
-                return self.finish(outcome);
+                return self.finish(outcome).await;
             }
             tokio::select! {
-                ev = self.next_event() => match ev {
-                    Some(Ok(_)) => {}
-                    Some(Err(e)) => return self.lost(Some(e)).await,
-                    None => return self.lost(None).await,
-                },
+                ev = self.next_event() => {
+                    let error = match ev {
+                        Some(Ok(_)) => continue,
+                        Some(Err(e)) => Some(e),
+                        None => None,
+                    };
+                    match self.resume().await {
+                        Resumed::Streaming => {}
+                        Resumed::Settled(outcome) => return self.finish(*outcome).await,
+                        Resumed::GaveUp => return self.lost(error).await,
+                    }
+                }
                 () = &mut cancel => return self.cancel().await,
             }
         }
@@ -355,10 +403,10 @@ impl Delegation {
         })
         .await;
         if let Some(outcome) = self.settled.take() {
-            return self.finish(outcome);
+            return self.finish(outcome).await;
         }
         let Some(id) = self.task_id.clone() else {
-            return self.finish(Outcome::Unreachable);
+            return self.finish(Outcome::Unreachable).await;
         };
         let outcome = match self.client.cancel_task_in(self.tenant.clone(), id).await {
             Ok(task) if task.status.state.is_terminal() => {
@@ -367,13 +415,14 @@ impl Delegation {
             Ok(task) => Outcome::CancelRequested(task.status),
             Err(e) => Outcome::CancelFailed(e),
         };
-        self.finish(outcome)
+        self.finish(outcome).await
     }
 
     /// Stops following the child without cancelling it, and returns its id
     /// if known. From here the caller is responsible for the child — for
-    /// instance a supervisor that records the id durably and reattaches
-    /// after a restart.
+    /// instance a supervisor that records the id and
+    /// [`last_event_id`](Self::last_event_id) durably and
+    /// [`reattach`](Self::reattach)es after a restart.
     #[must_use]
     pub fn detach(mut self) -> Option<String> {
         self.armed = false;
@@ -386,11 +435,12 @@ impl Delegation {
             // request, and that race is not an error.
             let _ = self.client.cancel_task_in(self.tenant.clone(), id).await;
         }
-        self.finish(Outcome::Lost(error))
+        self.finish(Outcome::Lost(error)).await
     }
 
-    fn finish(mut self, outcome: Outcome) -> Delegated {
+    async fn finish(mut self, outcome: Outcome) -> Delegated {
         self.armed = false;
+        self.note_settled(&outcome).await;
         if let Some((grant, last)) = self.budget.take() {
             grant.settle(last.as_ref());
         }
@@ -419,46 +469,5 @@ fn task_id_of(ev: &StreamResponse) -> Option<&str> {
         StreamResponse::Task(t) => Some(&t.id.0),
         StreamResponse::StatusUpdate(u) => Some(&u.task_id.0),
         _ => None,
-    }
-}
-
-impl Drop for Delegation {
-    /// Cancels an unsettled child in the background, on the current Tokio
-    /// runtime. Outside a runtime nothing can be sent, and the drop is only
-    /// logged.
-    fn drop(&mut self) {
-        if !self.armed || self.settled.is_some() {
-            return;
-        }
-        let Ok(rt) = tokio::runtime::Handle::try_current() else {
-            trace_warn!(
-                task_id = self.task_id.as_deref().unwrap_or_default(),
-                "delegation dropped outside a Tokio runtime; its child was not cancelled"
-            );
-            return;
-        };
-        let rest = Self {
-            client: Arc::clone(&self.client),
-            tenant: self.tenant.take(),
-            stream: self.stream.take(),
-            task_id: self.task_id.take(),
-            settled: None,
-            armed: false,
-            id_wait: self.id_wait,
-            renewal: None,
-            budget: None,
-            idempotency_key: self.idempotency_key.take(),
-            origin: self.origin.clone(),
-        };
-        let origin = self.origin.clone();
-        rt.spawn(origin.carry(async move {
-            let done = rest.cancel().await;
-            trace_debug!(
-                task_id = done.task_id.as_deref().unwrap_or_default(),
-                outcome = ?done.outcome,
-                "delegation dropped before its child settled"
-            );
-            let _ = done;
-        }));
     }
 }

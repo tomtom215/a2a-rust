@@ -92,7 +92,7 @@ points: tune `for:` and the ratios to your traffic.
 
 | Alert | Severity | Fires when | What it means |
 |---|---|---|---|
-| `A2AServerErrorRatioHigh` | warning | `a2a:rpc_server_error_ratio:rate5m > 0.05` for 10 m | More than 5% of a job's calls failed, by the RPC conventions' definition (`error_type` set: every JSON-RPC error, an HTTP 5xx, six server-side gRPC codes) — not `errors / requests`. Split by method and binding with `a2a:rpc_server_errors:rate5m` |
+| `A2AServerErrorRatioHigh` | warning | `a2a:rpc_server_error_ratio:rate5m > 0.05` for 10 m, while the job takes more than 0.1 calls a second | More than 5% of a job's calls failed, by the RPC conventions' definition (`error_type` set: every JSON-RPC error, an HTTP 5xx, six server-side gRPC codes), leaving out `cancelled` (a stream the client abandoned) — not `errors / requests`. The traffic floor keeps one failure in two calls an hour from paging. Split by method and binding with `a2a:rpc_server_errors:rate5m`; abandoned streams are `a2a:rpc_server_cancelled:rate5m` |
 | `A2APersistenceErrors` | critical | `rate(a2a_server_persistence_errors_total[5m]) > 0`, by job and operation, for 1 m | Task writes are failing. A streaming client already received these events, so the stored task and what clients saw have diverged; a later `GetTask` returns the wrong answer |
 | `A2ARequestsUnanswered` | warning | `a2a:server_unanswered:rate5m > 0.01` for 15 m | Requests that produced neither a response nor an error: a panicking executor, dropped connections, a process exiting mid-request. The threshold sits above floating-point noise, since the rule is a difference of rates |
 | `A2AQueueDepthGrowing` | warning | `deriv(a2a_server_queue_depth[30m]) > 0` and the depth above 100, for 30 m | Each open stream holds a queue; a depth that never comes down is subscribers that stopped reading without disconnecting |
@@ -152,7 +152,8 @@ because a streaming method's duration is its stream's.
 |---|---|---|
 | `a2a:rpc_server_calls:rate5m` | job, binding, method | Calls per second, from `rpc_server_call_duration_seconds_count` |
 | `a2a:rpc_server_errors:rate5m` | job, binding, method | Failed calls per second (`error_type` set) |
-| `a2a:rpc_server_error_ratio:rate5m` | job | Failed calls over all calls |
+| `a2a:rpc_server_error_ratio:rate5m` | job | Failed calls over all calls (abandoned streams are not failed calls) |
+| `a2a:rpc_server_cancelled:rate5m` | job, system, method | Streams the client abandoned before the agent finished |
 | `a2a:rpc_server_unary_latency:p50_5m` | job, method | p50 of non-streaming calls |
 | `a2a:rpc_server_unary_latency:p95_5m` | job, method | p95 of non-streaming calls |
 | `a2a:rpc_server_unary_latency:p99_5m` | job, method | p99 of non-streaming calls |

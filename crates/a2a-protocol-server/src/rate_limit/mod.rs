@@ -74,8 +74,14 @@
 //!    [`RateLimitConfig::trusted_proxy_hops`] is non-zero. The header is
 //!    client-controlled, so by default (`trusted_proxy_hops == 0`) it is
 //!    ignored entirely — otherwise a caller could evade the limit by forging
-//!    a fresh address on every request.
-//! 3. The connection's peer address, when `trusted_proxy_hops` is zero and
+//!    a fresh address on every request. The hop count alone cannot tell a
+//!    request through the proxies from one sent straight to the server, so
+//!    [`RateLimitConfig::trusted_proxies`] names the proxies' address ranges:
+//!    when it is set, a connection from outside them is not believed and is
+//!    keyed by its own address (step 3). A port in an entry
+//!    (`203.0.113.7:51234`) is dropped.
+//! 3. The connection's peer address, when `trusted_proxy_hops` is zero (or
+//!    `trusted_proxies` is set and the peer is not in it) and
 //!    the binding records one (every built-in listener does: `serve`,
 //!    `Server`, axum with `ConnectInfo` or `PeerAddr`, gRPC, WebSocket).
 //!    An IPv4 address is one budget; an IPv6 address spends its `/64`'s,
@@ -129,12 +135,14 @@ use crate::interceptor::ServerInterceptor;
 mod config;
 pub(crate) mod identity;
 mod shared;
+mod trusted;
 mod unwind_safety;
 mod window;
 pub use config::{DEFAULT_MAX_BUCKETS, RateLimitConfig};
 #[cfg(feature = "postgres")]
 pub use shared::PostgresRateLimitCounter;
 pub use shared::RateLimitCounter;
+pub use trusted::{InvalidTrustedProxy, TrustedProxy};
 
 /// Per-caller rate limit state.
 struct CallerBucket {
@@ -332,7 +340,11 @@ impl ServerInterceptor for RateLimitInterceptor {
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let key = identity::caller_key(ctx, self.config.trusted_proxy_hops);
+            let key = identity::caller_key(
+                ctx,
+                self.config.trusted_proxy_hops,
+                &self.config.trusted_proxies,
+            );
             self.check(&key, self.config.requests_per_window).await?;
             if let Some((tenant, allowance)) = self.tenant_window_allowance() {
                 self.check(&format!("tenant:{tenant}"), allowance).await?;

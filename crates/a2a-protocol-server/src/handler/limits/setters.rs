@@ -165,6 +165,22 @@ impl HandlerLimits {
         self
     }
 
+    /// Sets how many webhook deliveries may be in flight across all tasks;
+    /// see [`push_max_in_flight`](Self::push_max_in_flight).
+    #[must_use]
+    pub const fn with_push_max_in_flight(mut self, max: usize) -> Self {
+        self.push_max_in_flight = max;
+        self
+    }
+
+    /// Sets how many webhook deliveries may be in flight to one destination;
+    /// see [`push_max_in_flight_per_host`](Self::push_max_in_flight_per_host).
+    #[must_use]
+    pub const fn with_push_max_in_flight_per_host(mut self, max: usize) -> Self {
+        self.push_max_in_flight_per_host = max;
+        self
+    }
+
     /// Sets the maximum number of push notification configs per task.
     #[must_use]
     pub const fn with_max_push_configs_per_task(mut self, max: usize) -> Self {

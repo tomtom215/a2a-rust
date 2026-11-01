@@ -106,6 +106,39 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   reverted). Run live through Squid 6 with the CLI on both bindings
   (`TCP_TUNNEL/200` in its access log). Without `tls-rustls` they connect
   directly.
+- **The server's push delivery, JWKS and OIDC discovery, and the tool
+  loop's model client go through the same proxy variables and trust
+  `SSL_CERT_FILE` and `SSL_CERT_DIR`** (audit N-B-1, found 2026-10-31 by
+  reading B-01 and B-02's "fixed" against the server crate: both had been
+  fixed in the client crate only). Behind a proxy or a private CA, webhooks
+  were never delivered, an identity provider could not be discovered and the
+  model could not be called, while telemetry flowed. They share one
+  connector now (`net`, lifted from the OTLP exporter's; the client crate
+  keeps a copy, and `scripts/check_net_copies.py` fails when the copies
+  differ). Idle connections are closed after 50 s (hyper's 90 s sat above a
+  60 s load balancer, audit N-B-3), a TCP connect is bounded at 10 s and kept
+  alive at 30 s (B-30). New: `JwtAuthInterceptor::from_oidc_issuer_with_tls_config`
+  (B-04) and `CardFetchOptions::with_tls_config`, honoured by the card
+  resolver and by `fetch_jwks` (B-03). A failed connect now says why
+  (`UnknownIssuer`, `Connection refused`) instead of `client error
+  (Connect)`. Shown failing before and passing after by
+  `tests/outbound_proxy_and_roots.rs` (an in-process `CONNECT` proxy and a
+  TLS receiver on a private CA, one test because it writes the process
+  environment: before, `push notification failed: client error (Connect)`),
+  `tests/jwks_https_e2e.rs`, `tests/push_sender_https_e2e.rs` and the
+  client's `tests/private_ca.rs`. Not run: through Squid; the in-process
+  proxy answers the same `CONNECT` and forward requests the client's live
+  Squid 6.13 run exercised. Behind a proxy the proxy resolves an `https://`
+  webhook's name, so the SSRF screen does not bind what it dials: the book
+  says to enforce egress in the proxy.
+- **A card URL's login and key no longer reach the log** (client; audit
+  N-C-1, C-11 was half fixed). The INFO lines that announce a card fetch
+  logged the URL whole; they log it as the fetch's span records it (no
+  userinfo, no query). The request itself carries no userinfo either: hyper's
+  pool logged `ada:PASSWORD@host:port` as its key at trace level.
+  `tests/card_fetch_log_redaction.rs` fails on both. The default
+  `rustls` configuration is built once per process, not on every card, JWKS
+  and token fetch (N-B-6).
 - **`TaskStore::health()`** (server; provided method): what readiness asks.
   The SQL stores answer with one statement whose cost does not grow with the
   table (`SELECT pg_is_in_recovery()`, `SELECT 1`), and a PostgreSQL standby
@@ -335,6 +368,111 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **The default `BearerTokenTenantResolver` names a token by a digest, not by
+  the token** (server; audit SEC-11). `BearerTokenTenantResolver::default()`,
+  and `new()`, used the raw bearer token as the tenant id, which stored a live
+  credential in every task row, telemetry attribute and audit record carrying
+  a tenant, readable by anyone with the database, a backup or the trace
+  backend. The tenant is now `tenant_id_for_token(token)`: `sha256:` and the
+  first 16 bytes of the SHA-256 as lowercase hex (39 characters, a stable
+  contract so data can be moved). `new()` is deprecated; neither verifies
+  the token, so neither isolates tenants, and `with_mapper` with a closure that
+  checks it is still the constructor for a deployment. **A running 0.15
+  deployment that used either loses sight of its stored tasks**: they sit
+  under the raw token and are asked for under the digest. Rewrite those rows'
+  tenant, or keep the old tenant with `with_mapper(|t| Some(t.to_owned()))`
+  (upgrade guide). New direct dependency: `sha2` 0.11, pure Rust, already in
+  the graph through `sqlx`. Known-answer tests against Python's `hashlib`
+  (three FIPS 180 vectors, a multi-byte token, a 1000-byte one).
+- **An abandoned stream is no longer counted as a failed call, and
+  `A2AServerErrorRatioHigh` needs traffic** (deploy/observability; audit C-09).
+  A call whose client went away first carries `error_type="cancelled"`, and
+  the recording rules counted every non-empty `error_type`, so impatient
+  clients alone could page the on-call; the alert also had no traffic floor,
+  so one failure in two calls an hour was "50% failed". The error ratios (server
+  and client) now leave `cancelled` out; `a2a:rpc_server_cancelled:rate5m`
+  keeps them visible; the alert fires only while the job takes more than 0.1
+  calls a second (a starting point, like the 5% threshold, not a
+  measurement). `promtool` 3.15.1 (the Prometheus version the compose file
+  pins): `check rules` passes on both files; the unchanged rules pass the
+  existing tests; the two new cases (20% cancelled, and one failure in two
+  calls at 0.03 calls a second) fail against the old rules (the alert fires)
+  and pass against the new. Nothing in CI runs these tests yet.
+- **`OTEL_SDK_DISABLED=true` no longer silences the process's own warnings**
+  (server; audit C-07). `Telemetry::install_subscriber` returned `false` and
+  installed nothing when the variable was set, so a process told to export
+  nothing also lost every `tracing` warning and error, its own and the SDK's
+  (the CLI, the TCK binaries, the examples). The variable turns off the
+  OpenTelemetry SDK; it says nothing about diagnostics. The subscriber is
+  now installed with the layer that prints warnings and errors to standard
+  error and the startup line (`telemetry: disabled by OTEL_SDK_DISABLED`),
+  and no export layer: `layer()` still records nothing, and no console
+  exporter prints. It returns `true`, as it does when it installs one. The
+  unit test that pinned the old behaviour is replaced by
+  `console::a_disabled_sdk_exports_nothing_but_still_prints_warnings`, which
+  runs a child process with the console exporters asked for and the SDK
+  disabled; it fails with the early return put back.
+- **`X-Forwarded-For` can be believed only from the proxies' own address
+  ranges, a port in an entry no longer makes a new key, and the auth-failure
+  throttle keys an IPv6 client by its `/64`** (server; audits B-09 (a), (b),
+  N-B-2). The hop count (`trusted_proxy_hops`) said which entry of the header
+  to read, not whether the connection came through the proxies: a client
+  that reached the server directly could send a header with enough entries
+  and pick its own key, for the rate limiter and for the throttle.
+  `RateLimitConfig::with_trusted_proxies` and
+  `AuthFailureThrottleConfig::with_trusted_proxies` take `TrustedProxy`
+  ranges (`"10.0.0.0/8".parse()`, IPv4 or IPv6, a bare address is a host
+  range, an IPv4-mapped IPv6 peer is its IPv4 form); when any are named, the
+  header is believed only if the connection's peer is in one, and any other
+  connection is keyed by its own address. Empty (the default) keeps the old
+  behaviour, the hop count alone, so nothing changes until a deployment names
+  its proxies. `203.0.113.7:51234` and `[2001:db8::1]:443` in the header now
+  key as `203.0.113.7` and `2001:db8::/64`; before, each connection through a
+  proxy that records the source port minted a bucket, and filled the bounded
+  table. `AuthFailureThrottle` counted the full IPv6 address while the limiter
+  used the `/64`, so a host rotating addresses in its `/64` never reached
+  `max_failures`; both use the `/64` now (an IPv4 client is unchanged),
+  except an address in `100::/64` (RFC 6666, discard-only: never a host),
+  which is kept whole. The SLIMRPC binding stands for each verified peer with
+  such an address, one per identity; folded by `/64` they were one peer, and
+  one peer's failed logins locked out all the others. CI's SLIMRPC job and its
+  coverage job caught that
+  (`server::peer::tests::the_throttle_keys_a_verified_peer_by_its_address`);
+  this repository's local gates did not build the binding.
+  Not done: RFC 7239 `Forwarded` (B-09 (d)). Tests in
+  `rate_limit/keying_tests.rs`, `rate_limit/trusted/tests.rs` and
+  `auth/throttle_tests.rs`.
+- **A token endpoint on plaintext `http://` to another machine is refused
+  before any connection, and OIDC discovery must answer for the issuer it
+  was asked about** (client; audits SEC-08, N-SEC-3). The token request
+  carries the client secret (or, for a token exchange, the user's subject
+  token), and until now only "is TLS compiled in" was checked.
+  `OAuth2ClientCredentials`, `TokenExchange`, the `tokenUrl` an agent card
+  names (`from_agent_card`) and the discovery URL now return
+  `ClientError::InvalidEndpoint` for `http://` to a host other than
+  loopback; the message names the origin, not the path or query.
+  `allow_insecure_token_endpoint()` on the first two turns it off for a
+  network you trust; discovery has no such switch, so a plaintext identity
+  provider is reached with `new(token_url, ..)` and that call. Discovery
+  also compares the document's `issuer` with the issuer asked about
+  (trailing slashes ignored) and refuses a document with none, as OpenID
+  Connect Discovery section 4.3 and RFC 8414 section 3.3 require; before, a
+  document served for another issuer was believed. Tests: the unit tests in
+  `token_provider.rs` and `token_provider/exchange/tests.rs`, including that
+  a refused endpoint is never connected to; hand-disabling the plaintext
+  check fails six of them, hand-disabling the issuer comparison fails one.
+- **`a2a --header` is no longer sent to a host that only the agent card
+  names** (a2a-cli; audit SEC-09). A card is the agent's own word; one
+  naming an interface on another host used to receive the caller's
+  `Authorization` header on every call. With `--header` set and the card's
+  interface on a different host than the URL typed, the command now fails
+  and says so; `--follow-card-origin` restores the old behaviour. `card
+  verify` likewise keeps `--header` from a JWK Set on a host other than the
+  card's (a note on stderr), unless the flag is given. A card read from a
+  file has no host to compare, so a JWK Set URL given with one still gets
+  the header. `tests/e2e/card_origin.rs`; hand-disabling the check in
+  `resolve_target` fails the test for it. Not covered by a test: the
+  `card verify` half (read in `offline.rs`, not run).
 - **A tool-loop run whose model provider is briefly away ends failure class
   `transient`, not `internal`** (server; `tool-loop`): HTTP 429, 502, 503
   or 504 from the provider, no answer within the timeout, or no connection.
@@ -483,6 +621,31 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **The `deploy-agent` example logged a password given in the database URL's
+  query, and two of its Secret recipes omitted `sslmode`** (examples; audits
+  N-AL-1, N-AL-2). The driver accepts `?user=u&password=p`, a form with no
+  `@`, so the redaction found nothing to mask and the URL went to the log in
+  full at INFO (and into the error strings); it now masks a `password`
+  parameter whatever its case, and an `@` inside a query value no longer
+  moves the user info. The README's and the container page's `kubectl create
+  secret` lines now carry `sslmode=verify-full&sslrootcert=...` as the
+  manifest's comment and the example page already did: the driver's default,
+  `prefer` (checked in `sqlx-postgres` 0.9.0's `PgSslMode`), falls back to
+  plaintext and verifies nothing. Five hand edits of `redacted` each fail a
+  test (`a_password_in_the_query_is_not_logged_either`).
+- **`JwtAuthInterceptor` accepted a token whose header lists `crit`, and
+  `a2a` wrote an agent's error text to the terminal as it came** (server,
+  a2a-cli; audits SEC-18b, N-SEC-4). RFC 7515 section 4.1.11 says to reject
+  a token with a critical header the validator does not understand, and
+  this one understands none: it now refuses any token with a `crit` member
+  (`a_token_that_marks_an_extension_critical_is_refused`; fails with the
+  check disabled). The CLI printed an error's text, which can be an agent's
+  JSON-RPC message or an SSE event id, with whatever control characters it
+  held, so a hostile agent could send escape sequences to the caller's
+  terminal or forge a line starting `error:`. Error text on stderr now
+  shows them written out (`\n`, `\u{1b}`; `error::terminal_text`, two tests
+  that fail with the escaping disabled). Stdout is unchanged: it is
+  written through `serde_json`, which escapes them already.
 - **A PostgreSQL store's start needed the schema owner's privileges, and an
   earlier release's start reinstalled its function bodies** (server,
   postgres; audits A10, E-F10). Every start ran `CREATE TABLE IF NOT EXISTS`
@@ -496,6 +659,123 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   role starts a task store its owner made, and writes and reads; a later
   release's body is kept and an earlier one's replaced. Three mutants of
   the guards each fail them. The book's PostgreSQL page gives the grants.
+- **Nothing bounded how many webhook deliveries ran at once, and a store
+  outage or an executor panic told no webhook** (server; audits N-SEC-6,
+  SEC-14, D-04, D-03 in part). N tasks of 100 webhook configs opened up to
+  100 x N outbound connections for a caller who needs no credentials where
+  the agent is anonymous, and any number of them could aim at one third
+  party. `HandlerLimits::push_max_in_flight` (512) and
+  `push_max_in_flight_per_host` (64) now bound deliveries across tasks and per
+  destination (host and port; case, a trailing dot and an address written in
+  decimal or hex count as one), in front of whatever sender the handler was
+  given. A delivery over a bound waits, so every config is still attempted
+  (spec 4.3.3), and is counted once as the error `push_throttled` on method
+  `PushDelivery`. The per-destination permit is taken first, so one slow
+  destination cannot hold the overall permits and stop the rest. Both
+  numbers are choices, not measurements. When a task's webhook list could
+  not be read, both delivery paths returned without a word; they now retry
+  as a task write does (`persistence_operation::PUSH_CONFIG_LIST`), then
+  log and count one `failed` push for the event. The test that was meant to
+  cover this passed no sender and so never reached the line; it is replaced
+  by four that do. An executor that panics now leaves the task `Failed`
+  with a message, and its webhooks are told, on the streaming and the
+  blocking path, once and only when the store accepted the write. Still
+  open (D-03 c, d): the panic's `Failed` is not in the event log, and a
+  streaming client gets no terminal frame for it.
+- **A task the reaper ended kept its lease and had no entry in its log**
+  (server; audits H3 part b, N-E-2). The reaper ends a task whose replica
+  died, but the only code that released a lease was the watcher of the
+  process that ran the turn, which is the process that died: the lease row
+  stayed for good, and a `GetTask` that carried the lease extension went on
+  renewing it. The reaper now releases the lease of each task it ends, in
+  the task's tenant. It also appends the `Failed` status to the task's event
+  log one position after the last, so a client resuming from the log sees
+  the task end and, with the `audit` feature, the append makes the
+  `task.event` record the chain was missing (the audit record is made by the
+  audited store and was not tested separately here). Tested on SQLite and on
+  PostgreSQL 16: the orphan's lease is gone and cannot be renewed, a running
+  task's lease stays, the log holds exactly the ending at position 1, and
+  the tasks left alone have no entry.
+- **A delegation cancelled its child on any blip of the connection, and a
+  restarted supervisor could not pick a child up** (client; audit H4, ADR
+  0030). Any end of the child's stream before the child settled, a reset,
+  a proxy rollout or the five-minute idle timeout, was read as "lost": the
+  delegation sent `CancelTask` and finished with `Outcome::Lost`, and in a
+  tree of delegations the cancel went on down. `Delegation::wait` now
+  resubscribes from the last event id first, under a `ResumePolicy` (default
+  five attempts, 200 ms doubling to 5 s, 30 s in all). When the
+  subscription is refused it reads the task, because a task that settled
+  while the stream was down cannot be subscribed to: a child that finished in
+  the gap is reported as what it became, not as `Lost`. Only a child still
+  running after the policy is spent is cancelled. A reopened stream that dies
+  without its position moving counts as spent, so a server that accepts and
+  drops a subscription is not asked for ever; one that delivered events starts
+  the count again. `with_resume(ResumePolicy::none())` restores the old
+  behaviour, which changes what `Outcome::Lost` means (0.16.0 is unreleased).
+  `Delegation::last_event_id` and `Delegation::reattach(client, tenant,
+  task_id, last_event_id)` let a supervisor that recorded those two follow its
+  child after a restart; a child that settled meanwhile comes back already
+  settled. Resubscribing now honours the delegation's tenant. Tested against
+  this repository's server through a proxy that severs and refuses
+  connections: a cut stream resumed with the child still running, a child that
+  finished during the gap, a link that stays down (bounded), a link that keeps
+  delivering (resumed past the attempt limit), reattach to a running and to a
+  settled child, and to one that does not exist; three hand mutations of the
+  resume logic each fail the test meant to catch them.
+- **A supervisor can record its children so a restart finds them** (types and
+  client; audit H4, ADR 0030). `a2a_protocol_types::delegation_journal` has
+  `DelegationRecord`, the `DelegationJournal` trait (`begin`, `progress`,
+  `settle`, `open`, `purge_settled`) and `InMemoryDelegationJournal`.
+  `Delegation::start_journaled` writes the record (owner, the agent's URL, the
+  tenant, the message's idempotency key) **before** the message is sent, and
+  sends nothing if the journal cannot store it; the child's id and stream
+  position are noted as events arrive (at once when the child is named or
+  the stream is lost, otherwise at most every two seconds), and the record is
+  settled with the outcome however the delegation ends, a drop-time cancel
+  included. After a restart, `journal.open(owner)` lists what is still open,
+  `Delegation::reattach(..).with_journal(..)` picks each child up, and a
+  record that never learned its child's id is re-sent under its recorded
+  idempotency key. A journal write that fails after the start is logged and
+  does not stop the delegation. Tests: seven contract tests of the in-memory
+  journal; six against the real server (the record exists before the child
+  does, a journal that cannot record starts nothing, a restarted supervisor
+  finds and settles an open child, every ending settles its record, progress
+  is throttled); six hand mutations of the new code each fail the test meant to
+  catch them. `a2a_protocol_server::store::PostgresDelegationJournal` (the
+  `postgres` feature; table `a2a_delegations`, created under the crate's
+  schema lock, every statement inside `pg_retry`) keeps the records where a
+  restarted replica of the supervisor can read them. It runs the same
+  contract as the in-memory journal on PostgreSQL 16, plus a direct read of
+  the table for what the trait cannot show (a settled record keeps its first
+  outcome and stops changing); three hand mutations of its SQL (settle may
+  rewrite, progress may clear, purge removes the edge) each fail. **Not
+  built:** a SQLite journal. ADR 0030 listed one; the lease store, its
+  precedent, has none either, and a supervisor that shares records between
+  replicas needs PostgreSQL.
+- **The SSRF host check accepts what it should refuse** (server; audits
+  SEC-12, B-22, D-13, N-SEC-1; each URL below was run through
+  `check_public_url` on 2026-10-31 and accepted). A trailing dot hid an
+  address or a name: `http://169.254.169.254./` (the cloud metadata
+  address), `http://127.0.0.1./` and `http://localhost./` passed, and the
+  `url` crate and the resolver read them as the address and the name
+  without the dot. The address lists were missing `0.0.0.0/8`,
+  `192.0.0.0/24`, `198.18.0.0/15`, `224.0.0.0/4` and `240.0.0.0/4` (with
+  `255.255.255.255`), and, in IPv6, `fec0::/10`, `ff00::/8`,
+  `64:ff9b:1::/48`, Teredo `2001::/32`, `100::/64` and 6to4 `2002::/16`
+  (checked by the IPv4 address inside). Names under `.localhost` and
+  `.home.arpa`, names with no dot (`metadata`, `kubernetes`, a bare service
+  name: resolved through the search domains of whoever looks them up) and
+  names with an empty label are refused. The documentation ranges stay
+  allowed: nothing routes to them and tests everywhere use them as a public
+  host. This is the check push webhooks and `refuse_private_file_urls` make,
+  and the delivery-time check of resolved addresses, which shares the
+  classifier. `src/url_guard/tests.rs` tests every range at its first and
+  last address and one either side. A webhook to a single-label host
+  (`http://receiver/`), which was accepted, is now refused. The only sender
+  setting that still delivers to one is `HttpPushSender::allow_private_urls()`,
+  which turns off every address check; `with_allowed_hosts` narrows where a
+  sender delivers and does not lift the check. A receiver that needs to be
+  reached by a bare name has no narrower setting yet.
 - **A replica's start stalled every write behind any open one** (server,
   postgres; audit A11, measured). `CREATE INDEX IF NOT EXISTS` asks for a
   `SHARE` lock on its table before it finds the index there and skips: on
@@ -753,6 +1033,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Internal
 
+- ADRs 0031 to 0034, proposed, with nothing built: finding agents beyond one
+  link (a static list, unicast DNS-SD, Kubernetes DNS SRV and the Kubernetes
+  API behind one `AgentSource` interface), an opt-in shared `HttpPool`,
+  group delegation for fan-out, and task lineage with a halt by root. Each
+  names the test that would settle it and its open questions. Audit H2, H6,
+  H8, H10 and H12 point at them.
 - OSV GHSA-qwgh-2vcv-g2f7 (`block-buffer` < 0.12.1, a caught panic leaves
   the cursor stored in the block invalid) is waived until 2027-01-29 in the
   `osv-scanner.toml` beside the four lockfiles that lock 0.10.4 (root,

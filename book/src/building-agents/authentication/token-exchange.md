@@ -34,5 +34,10 @@ identity and lists the acting agents in `CallContext::actors`, nearest
 first. With `audit`, every call record names both. The identity provider
 decides what may be delegated, to whom, and with which scopes.
 
+The request carries the user's token and the agent's secret, so
+`TokenExchange` refuses an `http://` endpoint on another machine before
+connecting, as `OAuth2ClientCredentials` does
+([why, and the opt-out](oauth-client-credentials.md#plaintext-endpoints-are-refused)).
+
 For cancelling and supervising the child task the delegated call starts, see
 [Delegating to Another Agent](../../client/delegation.md).

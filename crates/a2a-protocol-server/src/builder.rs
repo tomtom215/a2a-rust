@@ -1504,6 +1504,9 @@ impl RequestHandlerBuilder {
         });
 
         let push_sender = signing_push(self.push_sender, &self.outbound);
+        // Outermost, so the signing wrapper and a custom sender are both bounded.
+        let push_sender = push_sender
+            .map(|sender| crate::push::gate::gated(sender, &self.handler_limits, &self.metrics));
         let in_flight = crate::handler::InFlight::default();
         let push_lanes = crate::handler::PushLanes::new(
             Arc::clone(&push_config_store),

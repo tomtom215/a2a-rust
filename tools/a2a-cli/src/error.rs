@@ -73,11 +73,37 @@ impl CliError {
     }
 }
 
+/// `text` with every control character written out (`\n`, `\u{1b}`), so that
+/// it cannot move the cursor, clear the screen, retitle the terminal or start a
+/// line of its own. An error's text can come from the agent being talked to
+/// (a JSON-RPC error message, an SSE id) or from a file being read, and the
+/// terminal obeys whatever it is sent (audit N-SEC-4: a message of
+/// `ESC[2J` and a newline then `error: ...` forged a line of the CLI's own).
+/// Stdout is not affected: it is written through `serde_json`, which escapes
+/// them. Printable text, non-ASCII included, is left as it is.
+fn plain(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_control() {
+                c.escape_default().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
+}
+
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Only the CLI's own hints carry a newline; everything that came from
+        // elsewhere goes through `plain`.
         match self {
             Self::Client(e @ ClientError::CapabilityNotDeclared { .. }) => {
-                write!(f, "{e}\nhint: pass --no-capability-check to send it anyway")
+                write!(
+                    f,
+                    "{}\nhint: pass --no-capability-check to send it anyway",
+                    plain(&e.to_string())
+                )
             }
             Self::Client(
                 e @ ClientError::IncompleteStream {
@@ -86,17 +112,25 @@ impl fmt::Display for CliError {
                 },
             ) => write!(
                 f,
-                "{e}\nhint: resume with `a2a task subscribe <url> <task-id> --from {id}`"
+                "{}\nhint: resume with `a2a task subscribe <url> <task-id> --from {}`",
+                plain(&e.to_string()),
+                plain(id)
             ),
-            Self::Client(e) => write!(f, "{e}"),
+            Self::Client(e) => f.write_str(&plain(&e.to_string())),
             Self::Discovery { url, source } => write!(
                 f,
-                "could not fetch the agent card from {url}: {source}\n\
-                 hint: pass --binding to skip discovery and use the URL directly"
+                "could not fetch the agent card from {}: {}\n\
+                 hint: pass --binding to skip discovery and use the URL directly",
+                plain(url),
+                plain(&source.to_string())
             ),
-            Self::Json(e) => write!(f, "could not render response as JSON: {e}"),
-            Self::Io(e) => write!(f, "could not write output: {e}"),
-            Self::Failed(why) => f.write_str(why),
+            Self::Json(e) => write!(
+                f,
+                "could not render response as JSON: {}",
+                plain(&e.to_string())
+            ),
+            Self::Io(e) => write!(f, "could not write output: {}", plain(&e.to_string())),
+            Self::Failed(why) => f.write_str(&plain(why)),
         }
     }
 }
@@ -191,5 +225,77 @@ mod tests {
         let text = e.to_string();
         assert!(text.contains("http://127.0.0.1:1"));
         assert!(text.contains("--binding"));
+    }
+}
+
+#[cfg(test)]
+mod terminal_text {
+    use a2a_protocol_types::A2aError;
+
+    use super::*;
+
+    const FORGED: &str = "\u{1b}[2J\u{1b}]0;owned\u{7}\nerror: forged\r";
+
+    fn only_the_cli_s_own_newlines(text: &str) -> bool {
+        // The hints are the one place this type writes a newline itself.
+        text.lines().all(|line| !line.starts_with("error:"))
+            && !text.chars().any(|c| c.is_control() && c != '\n')
+    }
+
+    /// Audit N-SEC-4: what a hostile agent puts in an error message cannot
+    /// reach the terminal as a control sequence or as a line of its own.
+    #[test]
+    fn an_error_message_from_the_agent_cannot_drive_the_terminal() {
+        let text = CliError::Client(ClientError::Protocol(A2aError::internal(FORGED))).to_string();
+        assert!(only_the_cli_s_own_newlines(&text), "{text:?}");
+        assert!(
+            text.contains("\\u{1b}") && text.contains("\\n"),
+            "written out: {text:?}"
+        );
+        assert!(text.contains("forged"), "and still readable");
+    }
+
+    #[test]
+    fn the_stream_position_and_the_rest_are_escaped_too() {
+        let incomplete = CliError::Client(ClientError::IncompleteStream {
+            last_event_id: Some(FORGED.to_owned()),
+            detail: FORGED.to_owned(),
+        })
+        .to_string();
+        let lines: Vec<_> = incomplete.lines().collect();
+        assert_eq!(
+            lines.len(),
+            2,
+            "the message, then the CLI's own hint: {incomplete:?}"
+        );
+        assert!(lines[1].starts_with("hint: resume with"));
+        assert!(
+            !incomplete.chars().any(|c| c.is_control() && c != '\n'),
+            "{incomplete:?}"
+        );
+
+        let failed = CliError::Failed(FORGED.to_owned()).to_string();
+        assert_eq!(failed.lines().count(), 1, "{failed:?}");
+        assert!(!failed.chars().any(char::is_control), "{failed:?}");
+    }
+
+    #[test]
+    fn the_cli_s_own_hints_and_ordinary_text_are_unchanged() {
+        let e = CliError::Client(ClientError::Protocol(A2aError::internal(
+            "it broke: caf\u{e9}",
+        )));
+        assert_eq!(
+            e.to_string(),
+            "protocol error: [-32603] it broke: caf\u{e9}"
+        );
+        let discovery = CliError::Discovery {
+            url: "http://agent.example".into(),
+            source: Box::new(ClientError::Transport("refused".into())),
+        }
+        .to_string();
+        assert!(
+            discovery.ends_with("hint: pass --binding to skip discovery and use the URL directly")
+        );
+        assert_eq!(discovery.lines().count(), 2);
     }
 }

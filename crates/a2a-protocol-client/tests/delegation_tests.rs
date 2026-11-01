@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_protocol_client::delegation::{Delegation, Outcome};
+use a2a_protocol_client::delegation::{Delegation, Outcome, ResumePolicy};
 use a2a_protocol_client::{A2aClient, ClientBuilder, ClientError};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
@@ -176,12 +176,14 @@ async fn an_interrupted_child_is_handed_back_not_cancelled() {
 async fn a_task_stream_that_ends_unsettled_is_lost_and_its_child_cancelled() {
     // The agent starts a task and returns without settling it, so the
     // stream closes with no final event, which the client reports as an
-    // incomplete stream. Nothing watches the child after that, so it is
-    // cancelled.
+    // incomplete stream. With resuming off, nothing watches the child after
+    // that, so it is cancelled (`delegation_resume/` covers the default,
+    // which resumes first).
     let client = worker().await;
     let d = Delegation::start(Arc::clone(&client), job("abandon"))
         .await
-        .expect("start");
+        .expect("start")
+        .with_resume(ResumePolicy::none());
     let done = d.wait(std::future::pending()).await;
     assert!(
         matches!(
@@ -360,7 +362,8 @@ async fn a_lost_stream_cancels_the_child() {
     );
     let d = Delegation::start(Arc::clone(&client), job("sleep"))
         .await
-        .expect("start");
+        .expect("start")
+        .with_resume(ResumePolicy::none());
     let done = tokio::time::timeout(GUARD, d.wait(std::future::pending()))
         .await
         .expect("bounded");

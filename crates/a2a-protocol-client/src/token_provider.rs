@@ -325,6 +325,9 @@ pub struct OAuth2ClientCredentials {
     refresh_leeway: Duration,
     request_timeout: Duration,
     failure_backoff: Duration,
+    /// Whether a plaintext `http://` token endpoint to a remote host is
+    /// allowed; see [`check_endpoint_secure`].
+    allow_insecure: bool,
     client: TokenHttpClient,
     tokens: flight::TokenCache,
 }
@@ -361,6 +364,7 @@ impl OAuth2ClientCredentials {
             refresh_leeway: DEFAULT_REFRESH_LEEWAY,
             request_timeout: DEFAULT_TOKEN_REQUEST_TIMEOUT,
             failure_backoff: DEFAULT_FAILURE_BACKOFF,
+            allow_insecure: false,
             client: build_token_http_client(),
             tokens: flight::TokenCache::default(),
         }
@@ -377,7 +381,8 @@ impl OAuth2ClientCredentials {
     /// # Errors
     ///
     /// Returns [`ClientError::InvalidEndpoint`] when the scheme is missing,
-    /// is not an OAuth 2.0 scheme, or has no client-credentials flow.
+    /// is not an OAuth 2.0 scheme, has no client-credentials flow, or names a
+    /// `tokenUrl` that is plaintext `http://` to a host other than loopback.
     pub fn from_agent_card(
         card: &a2a_protocol_types::agent_card::AgentCard,
         scheme_name: &str,
@@ -406,6 +411,11 @@ impl OAuth2ClientCredentials {
                  (interactive flows need a custom TokenProvider)"
             )));
         };
+        // The card is the peer's word, and the secret goes where it says: a
+        // `tokenUrl` that is plaintext to another machine is refused here
+        // (audit SEC-08). To use one anyway, build the provider with `new`
+        // from the URL you trust and call `allow_insecure_token_endpoint`.
+        check_endpoint_secure(&flow.token_url, "the agent card's tokenUrl", false)?;
         Ok(Self::new(flow.token_url.clone(), client_id, client_secret))
     }
 
@@ -424,6 +434,16 @@ impl OAuth2ClientCredentials {
     ) -> ClientResult<Self> {
         let token_url = discover_token_endpoint(issuer).await?;
         Ok(Self::new(token_url, client_id, client_secret))
+    }
+
+    /// Allows a plaintext `http://` token endpoint on a host other than
+    /// loopback. Off by default: the request carries the client secret, and
+    /// sent in the clear it can be read or replaced by anyone on the path.
+    /// For a network you trust end to end; the better answer is `https://`.
+    #[must_use]
+    pub const fn allow_insecure_token_endpoint(mut self) -> Self {
+        self.allow_insecure = true;
+        self
     }
 
     /// Sets the scopes to request (joined with spaces per RFC 6749 §3.3).
@@ -492,6 +512,7 @@ impl OAuth2ClientCredentials {
     /// Fetches a fresh token from the endpoint, returning it and how long it
     /// may be served from cache.
     async fn refresh(&self) -> ClientResult<(String, Duration)> {
+        check_endpoint_secure(&self.token_url, "token endpoint", self.allow_insecure)?;
         check_endpoint_reachable(
             cfg!(feature = "tls-rustls"),
             &self.token_url,
@@ -653,12 +674,16 @@ pub(crate) async fn discover_token_endpoint_within(
 ) -> ClientResult<String> {
     #[derive(serde::Deserialize)]
     struct Discovery {
+        issuer: Option<String>,
         token_endpoint: Option<String>,
     }
     let url = format!(
         "{}/.well-known/openid-configuration",
         issuer.trim_end_matches('/')
     );
+    // The document names where the client secret will go; read over a
+    // plaintext link to another machine, anyone on the path can change it.
+    check_endpoint_secure(&url, "OIDC discovery URL", false)?;
     check_endpoint_reachable(cfg!(feature = "tls-rustls"), &url, "OIDC discovery")?;
 
     let client = build_token_http_client();
@@ -696,9 +721,26 @@ pub(crate) async fn discover_token_endpoint_within(
     let doc: Discovery = serde_json::from_slice(&body).map_err(|e| {
         ClientError::Transport(format!("OIDC discovery returned invalid JSON: {e}"))
     })?;
+    check_issuer(doc.issuer.as_deref(), issuer)?;
     doc.token_endpoint.ok_or_else(|| {
         ClientError::Transport("OIDC discovery document has no token_endpoint".into())
     })
+}
+
+/// OIDC Discovery 4.3 and RFC 8414 3.3: the document's `issuer` must be the
+/// one it was requested for, or a document served for another issuer is
+/// taken as this one's (audit N-SEC-3). A trailing slash is not a
+/// difference: some providers publish one and some callers omit it.
+fn check_issuer(found: Option<&str>, asked: &str) -> ClientResult<()> {
+    match found {
+        Some(found) if found.trim_end_matches('/') == asked.trim_end_matches('/') => Ok(()),
+        Some(found) => Err(ClientError::Transport(format!(
+            "OIDC discovery document is for issuer {found:?}, not {asked:?}"
+        ))),
+        None => Err(ClientError::Transport(
+            "OIDC discovery document has no issuer to check against".into(),
+        )),
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -733,6 +775,25 @@ fn check_endpoint_reachable(tls: bool, url: &str, what: &str) -> ClientResult<()
         return Err(ClientError::Transport(format!(
             "{what} URL {url} is https:// but this build has no TLS; enable the \
              `tls-rustls` feature (on by default)"
+        )));
+    }
+    Ok(())
+}
+
+/// Refuses a token endpoint that is plaintext `http://` to a host other than
+/// loopback, unless `allow_insecure`: the request carries the client secret
+/// (or, for an exchange, the user's subject token), and sent that way it
+/// crosses the network in the clear and can be read or replaced by anyone on
+/// the path. Until 2026-10-31 the only check was whether TLS was compiled in
+/// (audit SEC-08). The error names the origin, not the path or query, which
+/// may carry a secret.
+fn check_endpoint_secure(url: &str, what: &str, allow_insecure: bool) -> ClientResult<()> {
+    if !allow_insecure && crate::loopback::is_plaintext_to_remote(url) {
+        return Err(ClientError::InvalidEndpoint(format!(
+            "{what} {} is plaintext http:// to a remote host, so a client secret or token \
+             sent to it would cross the network in the clear; use https://, or call \
+             `allow_insecure_token_endpoint()` for a network you trust",
+            crate::loopback::origin(url)
         )));
     }
     Ok(())
@@ -898,6 +959,175 @@ mod tests {
         );
     }
 
+    // -- a token request does not cross the network in the clear --------------
+
+    /// Audit SEC-08: the client secret (or a subject token) goes to the token
+    /// endpoint, so a plaintext `http://` endpoint on another machine is
+    /// refused; loopback and `https://` are not, and the caller can opt out.
+    #[test]
+    fn a_plaintext_token_endpoint_on_another_machine_is_refused() {
+        for url in [
+            "http://auth.example.com/token",
+            "http://198.51.100.1/token",
+            "HTTP://auth.example.com/token",
+            "http://127.0.0.1@evil.example/token",
+            "http://10.0.0.5:8080/token",
+        ] {
+            let err = check_endpoint_secure(url, "token endpoint", false).expect_err(url);
+            assert!(
+                matches!(err, ClientError::InvalidEndpoint(_)),
+                "{url}: {err:?}"
+            );
+            assert!(
+                check_endpoint_secure(url, "token endpoint", true).is_ok(),
+                "the opt-out lets {url} through"
+            );
+        }
+        for url in [
+            "https://auth.example.com/token",
+            "http://127.0.0.1:9000/token",
+            "http://localhost/token",
+            "http://[::1]:8080/token",
+        ] {
+            assert!(
+                check_endpoint_secure(url, "token endpoint", false).is_ok(),
+                "{url}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_refusal_names_the_origin_and_not_the_path_or_the_query() {
+        let err = check_endpoint_secure(
+            "http://auth.example.com/token?client_secret=hunter2",
+            "token endpoint",
+            false,
+        )
+        .expect_err("refused");
+        let text = err.to_string();
+        assert!(text.contains("http://auth.example.com"), "{text}");
+        assert!(
+            !text.contains("hunter2") && !text.contains("/token"),
+            "{text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_provider_aimed_at_a_plaintext_remote_endpoint_sends_nothing() {
+        // 198.51.100.0/24 is documentation space: nothing answers, so a request
+        // would hang until the connect timeout. The refusal is immediate.
+        let provider = OAuth2ClientCredentials::new("http://198.51.100.1/token", "id", "sec");
+        let started = std::time::Instant::now();
+        let err = provider.access_token().await.expect_err("refused");
+        assert!(matches!(err, ClientError::InvalidEndpoint(_)), "{err:?}");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "no connection was tried"
+        );
+    }
+
+    #[test]
+    fn the_opt_out_is_off_by_default_and_the_setter_turns_it_on() {
+        let p = OAuth2ClientCredentials::new("http://x.example/t", "id", "sec");
+        assert!(!p.allow_insecure);
+        assert!(p.allow_insecure_token_endpoint().allow_insecure);
+    }
+
+    #[test]
+    fn a_card_that_names_a_plaintext_remote_token_url_is_refused() {
+        use a2a_protocol_types::security::{ClientCredentialsFlow, OAuthFlows};
+        let flow = |url: &str| {
+            card_with_oauth2(OAuthFlows::ClientCredentials(ClientCredentialsFlow {
+                token_url: url.into(),
+                refresh_url: None,
+                scopes: HashMap::new(),
+            }))
+        };
+        let err = OAuth2ClientCredentials::from_agent_card(
+            &flow("http://idp.example/token"),
+            "oauth",
+            "id",
+            "sec",
+        )
+        .expect_err("a card cannot send the secret in the clear");
+        assert!(matches!(err, ClientError::InvalidEndpoint(_)), "{err:?}");
+        for ok in ["https://idp.example/token", "http://127.0.0.1:9/token"] {
+            OAuth2ClientCredentials::from_agent_card(&flow(ok), "oauth", "id", "sec")
+                .unwrap_or_else(|e| panic!("{ok}: {e}"));
+        }
+    }
+
+    // -- OIDC discovery binds the document to the issuer asked about ---------
+
+    async fn discovery_server(body: &str) -> (std::net::SocketAddr, Arc<AtomicUsize>) {
+        let hits = Arc::new(AtomicUsize::new(0));
+        let addr = spawn_token_server(
+            vec![(200, body.to_owned())],
+            Arc::new(std::sync::Mutex::new(Vec::new())),
+            Arc::clone(&hits),
+        )
+        .await;
+        (addr, hits)
+    }
+
+    /// Audit N-SEC-3 (OIDC Discovery 4.3, RFC 8414 3.3): a document served
+    /// for another issuer is not this issuer's.
+    #[tokio::test]
+    async fn a_discovery_document_for_another_issuer_is_refused() {
+        let (addr, _) = discovery_server(
+            r#"{"issuer":"https://elsewhere.example","token_endpoint":"https://elsewhere.example/t"}"#,
+        )
+        .await;
+        let err = discover_token_endpoint(&format!("http://{addr}"))
+            .await
+            .expect_err("wrong issuer");
+        let text = err.to_string();
+        assert!(
+            text.contains("elsewhere.example") && text.contains("not"),
+            "{text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_discovery_document_without_an_issuer_is_refused() {
+        let (addr, _) = discovery_server(r#"{"token_endpoint":"https://idp.example/t"}"#).await;
+        let err = discover_token_endpoint(&format!("http://{addr}"))
+            .await
+            .expect_err("no issuer to check");
+        assert!(err.to_string().contains("no issuer"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_trailing_slash_on_either_side_is_not_a_different_issuer() {
+        // The document publishes `http://ADDR/`; the caller asks without the slash, and the other way round.
+        let (addr, _) =
+            discovery_server(r#"{"issuer":"http://{ADDR}/","token_endpoint":"https://i/t"}"#).await;
+        assert_eq!(
+            discover_token_endpoint(&format!("http://{addr}"))
+                .await
+                .unwrap(),
+            "https://i/t"
+        );
+        let (addr, _) =
+            discovery_server(r#"{"issuer":"http://{ADDR}","token_endpoint":"https://i/t"}"#).await;
+        assert_eq!(
+            discover_token_endpoint(&format!("http://{addr}/"))
+                .await
+                .unwrap(),
+            "https://i/t"
+        );
+    }
+
+    #[tokio::test]
+    async fn discovery_over_plaintext_to_another_machine_is_refused_without_a_connection() {
+        let started = std::time::Instant::now();
+        let err = discover_token_endpoint("http://198.51.100.1")
+            .await
+            .expect_err("refused");
+        assert!(matches!(err, ClientError::InvalidEndpoint(_)), "{err:?}");
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
     // -- from_agent_card ------------------------------------------------------
 
     fn card_with_oauth2(
@@ -984,6 +1214,12 @@ mod tests {
         use http_body_util::BodyExt;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
+        // `{ADDR}` in a canned body is this server's own address, which the
+        // caller cannot know before the server is bound.
+        let responses: Vec<(u16, String)> = responses
+            .into_iter()
+            .map(|(status, body)| (status, body.replace("{ADDR}", &addr.to_string())))
+            .collect();
         tokio::spawn(async move {
             loop {
                 let Ok((stream, _)) = listener.accept().await else {
@@ -1360,7 +1596,7 @@ mod tests {
         let addr = spawn_token_server(
             vec![(
                 200,
-                r#"{"issuer":"http://i","token_endpoint":"http://i/oauth/token"}"#.to_owned(),
+                r#"{"issuer":"http://{ADDR}","token_endpoint":"http://i/oauth/token"}"#.to_owned(),
             )],
             Arc::clone(&captured),
             Arc::clone(&hits),
@@ -1389,7 +1625,7 @@ mod tests {
         let addr = spawn_token_server(
             vec![(
                 200,
-                r#"{"issuer":"http://i","token_endpoint":"http://i/oauth/token"}"#.to_owned(),
+                r#"{"issuer":"http://{ADDR}","token_endpoint":"http://i/oauth/token"}"#.to_owned(),
             )],
             Arc::clone(&captured),
             Arc::clone(&hits),
@@ -1409,7 +1645,7 @@ mod tests {
         let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
         let hits = Arc::new(AtomicUsize::new(0));
         let addr = spawn_token_server(
-            vec![(200, r#"{"issuer":"http://i"}"#.to_owned())],
+            vec![(200, r#"{"issuer":"http://{ADDR}"}"#.to_owned())],
             Arc::clone(&captured),
             Arc::clone(&hits),
         )

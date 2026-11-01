@@ -203,3 +203,34 @@ fn percent_decode(s: &str) -> String {
     }
     String::from_utf8(out).unwrap()
 }
+
+/// Audit SEC-08: an exchange carries the user's subject token and this
+/// agent's client secret; to a plaintext endpoint on another machine it is
+/// refused before any connection (198.51.100.0/24 is documentation space:
+/// a request would hang until the connect timeout).
+#[tokio::test]
+async fn an_exchange_aimed_at_a_plaintext_remote_endpoint_sends_nothing() {
+    let exchange = TokenExchange::new("http://198.51.100.1/token", "id", "sec");
+    let started = std::time::Instant::now();
+    let err = exchange
+        .exchange(&ExchangeRequest::new("subject-token"))
+        .await
+        .expect_err("refused");
+    assert!(
+        matches!(err, crate::error::ClientError::InvalidEndpoint(_)),
+        "{err:?}"
+    );
+    let text = err.to_string();
+    assert!(
+        !text.contains("subject-token") && !text.contains("sec\""),
+        "{text}"
+    );
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+}
+
+#[test]
+fn the_exchange_opt_out_is_off_by_default() {
+    let exchange = TokenExchange::new("http://x.example/t", "id", "sec");
+    assert!(!exchange.allow_insecure);
+    assert!(exchange.allow_insecure_token_endpoint().allow_insecure);
+}

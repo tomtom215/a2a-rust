@@ -254,6 +254,39 @@ fn a_collector_that_cannot_be_reached_is_reported_on_standard_error() {
     assert!(!err.contains("ExportError"), "{err}");
 }
 
+/// Audit C-07: `OTEL_SDK_DISABLED=true` turns the OpenTelemetry SDK off, not
+/// the process's own warnings. It used to install no subscriber at all, so a
+/// process told to export nothing also printed nothing when it went wrong.
+/// The console exporters are asked for as well, to show the SDK's switch wins
+/// over them: no span reaches standard output, the warning reaches standard
+/// error, and the startup line says why nothing is exported.
+#[test]
+fn a_disabled_sdk_exports_nothing_but_still_prints_warnings() {
+    let mut vars = CONSOLE.to_vec();
+    vars.push(("OTEL_SDK_DISABLED", "true"));
+    let ran = run_child(&vars);
+    assert!(
+        ran.stderr
+            .lines()
+            .any(|l| l.contains("WARN") && l.contains("a warning to be seen")),
+        "{}",
+        ran.stderr
+    );
+    assert!(
+        ran.stderr
+            .contains("telemetry: disabled by OTEL_SDK_DISABLED"),
+        "{}",
+        ran.stderr
+    );
+    assert!(
+        !ran.stdout.contains(" SPAN ")
+            && !ran.stdout.contains(" LOG ")
+            && !ran.stdout.contains(" METRIC "),
+        "nothing is exported: {}",
+        ran.stdout
+    );
+}
+
 #[test]
 fn nothing_configured_says_how_to_turn_telemetry_on() {
     let ran = run_child(&[

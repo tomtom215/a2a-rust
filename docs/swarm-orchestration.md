@@ -61,10 +61,14 @@ certainly happen over hours: a node that disappears.
 ### G2 — A restarting supervisor orphans its subtree (R3)
 
 The pieces exist: SQL stores, the event log, resubscribe from a cursor.
-What is missing is the supervisor writing "I started child X on agent Y"
-to its own durable record *before* awaiting the child, and reading it back
-on restart to reattach with `subscribe_to_task_from`. This belongs with
-G1's handle, which already learns the child id at the right moment.
+Since 2026-10-31 (ADR 0030) the handle resumes a cut stream before it
+cancels the child, and `Delegation::reattach(client, tenant, task_id,
+last_event_id)` follows a child a restarted supervisor recorded. The
+`DelegationJournal` trait and an in-memory journal exist
+(`Delegation::start_journaled` writes the record before the message is sent),
+and so does a PostgreSQL journal in the server crate
+(`PostgresDelegationJournal`, the `postgres` feature). A SQLite journal is not
+built.
 
 ### G3 — Tenant isolation fails open by default (R5)
 

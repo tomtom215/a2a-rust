@@ -66,8 +66,12 @@ A peer is the IP address of the connection (`CallContext::peer_addr`), which
 every binding records when the SDK serves it. The axum router has it only when
 served with `into_make_service_with_connect_info::<SocketAddr>()`. Behind
 reverse proxies, set `with_trusted_proxy_hops` to the number of proxies so the
-client address they append to `x-forwarded-for` is counted instead. A call
-with no known address is not throttled.
+client address they append to `x-forwarded-for` is counted instead, and name
+their address ranges with `with_trusted_proxies` so that a connection from
+anywhere else cannot choose the address that is counted by sending the header
+itself. An IPv6 peer is counted by its `/64`, as the rate limiter keys it: a
+host is routinely given a whole `/64` and could otherwise rotate addresses
+without reaching the limit. A call with no known address is not throttled.
 
 ## What to weigh
 

@@ -28,8 +28,44 @@ tests:
           - exp_labels: {severity: warning, job: bad}
             exp_annotations:
               summary: "bad: 20% of A2A calls failed over 5m"
-              description: "More than 5% of calls to bad failed for 10 minutes, by the RPC conventions' definition of failure (error_type set). Split by rpc_method and rpc_system_name with a2a:rpc_server_errors:rate5m."
+              description: "More than 5% of calls to bad failed for 10 minutes, by the RPC conventions' definition of failure (error_type set, other than a stream the client abandoned), while the job took more than 0.1 calls a second. Split by rpc_method and rpc_system_name with a2a:rpc_server_errors:rate5m."
       - eval_time: 8m
+        alertname: A2AServerErrorRatioHigh
+        exp_alerts: []
+
+  # Audit C-09. A job whose clients abandon 20% of their streams has nothing
+  # failing: the cancelled calls are visible on their own rule and are not in
+  # the error ratio, so the alert stays silent.
+  - interval: 1m
+    input_series:
+      - series: 'rpc_server_call_duration_seconds_count{job="impatient",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage"}'
+        values: '0+8x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="impatient",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage",error_type="cancelled"}'
+        values: '0+2x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2AServerErrorRatioHigh
+        exp_alerts: []
+    promql_expr_test:
+      - expr: count(a2a:rpc_server_cancelled:rate5m > 0)
+        eval_time: 25m
+        exp_samples:
+          - labels: '{}'
+            value: 1
+      - expr: count(a2a:rpc_server_errors:rate5m)
+        eval_time: 25m
+        exp_samples: []
+
+  # Audit C-09. Half of the calls failed, but at 0.03 a second: too little
+  # traffic for a ratio to mean anything, so no page.
+  - interval: 1m
+    input_series:
+      - series: 'rpc_server_call_duration_seconds_count{job="quiet",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/GetTask"}'
+        values: '0+1x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="quiet",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/GetTask",error_type="-32001"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 25m
         alertname: A2AServerErrorRatioHigh
         exp_alerts: []
 

@@ -397,6 +397,9 @@ fn task_with_status_timestamp(timestamp: &str) -> a2a_protocol_types::Task {
 #[tokio::test(flavor = "current_thread")]
 async fn an_answer_the_wire_cannot_carry_fails_its_span() {
     use tracing_subscriber::layer::SubscriberExt as _;
+    // Other tests reach the call span's callsite with no subscriber, and
+    // `tracing` caches that interest process-wide: see `test_tracing`.
+    crate::test_tracing::install();
     let spans = SpanRecords::default();
     let _guard =
         tracing::subscriber::set_default(tracing_subscriber::registry().with(spans.clone()));
