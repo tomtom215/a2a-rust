@@ -1,0 +1,205 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
+# Plan: one pull request, built as commit groups
+
+Triage of 2026-11-01 against `main` at `4a8243c`. **The maintainer chose one large pull request**
+(2026-11-01), which replaces the handoff's earlier "one pull request per theme". Each group below is a
+run of commits in that one pull request, so a reviewer can still read it theme by theme. The pull
+request is opened when the groups the maintainer wants in 0.16.0 pass the local gates below; a pushed
+branch alone starts no CI (the workflows run on `pull_request` and on pushes to `main`).
+
+The items are the 191 that need work: 139 audit rows (`confirmed`, `fixed (part)`, `needs decision`,
+`cannot check`) and the 52 distinct new findings of section N of `../2026-10-29/README.md`.
+`plan_map.py`-style check, run when this file was written: every one of the 190 is in exactly one group
+and none is in two. Rows already `fixed` or `not a defect` (12) need no group.
+
+(51 of those 52 were found by the triage agents and one by the session.)
+
+**Order** is severity first, then what depends on what, then size. Group A to D come first because
+they fix defects in what pull request #185 merged, two of them reproduced live. N (the breaking window)
+is last among the code groups on purpose: it touches the most files, so it goes in after the others
+have settled. It must still land before 0.16.0 is tagged, because afterwards each break costs a
+minor version.
+
+**Bar for every group, before its commits are pushed** (the handoff's, from #184, plus what #185's
+mutants taught): the regression test is written first and seen to fail on the unfixed code;
+`scripts/preflight.sh`; every script gate; `cargo hack clippy ... --each-feature`; the PostgreSQL
+suites; and `cargo mutants --in-diff` on the group's own diff for each crate it touches, with zero
+survivors. Live runs are listed per group and are in addition to, not instead of, those.
+
+| Order | Group | Theme | Items | Decision | Size |
+|---|---|---|---|---|---|
+| 1 | A (wave 1) | Credentials follow the host the caller named | 7 | none | M |
+| 2 | B (wave 1) | Claim liveness: the reaper never ends live work | 9 | none (E-F13 is group B2) | L |
+| 3 | C (wave 1) | A panicking, cancelled or silent executor always leaves the task and its watchers told | 10 | none | L |
+| 4 | D (wave 1) | gRPC deadlines, card selection and trust roots; one TLS identity everywhere | 12 | F7 (pool) for H2's pooling half | L |
+| 5 | G (wave 2) | First run works: deploy-agent, manifest, image, README | 18 | F8 (publish an image) | M |
+| 6 | H (wave 2) | Documentation drift, and the READMEs that contradict the code | 18 | none | S |
+| 7 | E (wave 2) | Proxies, DNS and the network | 12 | F2 (loopback and NO_PROXY) | M |
+| 8 | F (wave 2) | WebSocket: bounded writes and liveness on both ends | 9 | F5 (stream keep-alive shared with H4) | M |
+| 9 | I (wave 3) | OpenTelemetry in the SDK: logs with trace ids, self-metrics, strict-but-spec-correct env parsing | 12 | F3 (warn and fall back) | L |
+| 10 | J (wave 3) | The observability stack: exemplars, alerts that cannot misfire, promtool in CI | 8 | none | M |
+| 11 | K (wave 4) | Push delivery: semantics, pinning and fairness | 11 | none for the additive parts; an outbox is H14 | L |
+| 12 | B2 (wave 4) | Production profile on a shared store; per-replica limits | 2 | F4 | M |
+| 13 | L (wave 4) | Fleet correctness: clocks, caps, audit chain, polling | 14 | E-F18 and E-F25 options in DECISIONS.md | L |
+| 14 | M (wave 5) | Delegation: hand-off on shutdown, journal with lease and budget, one options builder | 8 | F5 | L |
+| 15 | O (wave 5) | Client resilience: retry budget, jitter, in-flight cap | 6 | F7 | M |
+| 16 | R (wave 5) | Swarm control plane (an ADR each; the first four are fixes, not designs) | 15 | F12 | XL |
+| 17 | N (wave 6) | The 0.16.0 breaking window | 15 | F1 | L |
+| 18 | P (wave 6) | Release policy and the changelog | 2 | F6 F11 | S |
+| 19 | Q (wave 6) | Examples that teach the right thing | 3 | none | M |
+
+### A. Credentials follow the host the caller named
+
+- **Items (7):** SEC-08, SEC-09, NEW-f-1, NEW-f-5, NEW-f-6, SEC-18, G/D-05
+- **Decision first:** none
+- **Proof it needs:** e2e test with the two-interface card I ran live (NOPE binding, ftp:// scheme) fails before the fix; token-provider test that a card's `tokenUrl` on an unexpected host is refused; `--header` from env/file; constant-time compare test; mutants on the diff
+- **Breaking:** behaviour (CLI refuses a card that steers a header) · **size:** M
+
+### B. Claim liveness: the reaper never ends live work
+
+- **Items (9):** H3, E-F7, E-F11, NEW-e-1, NEW-h-s0-1, NEW-h-s0-5, NEW-h-s0-6, NEW-h-s0-8, NEW-h-s0-9
+- **Decision first:** none (E-F13 is group B2)
+- **Proof it needs:** fault-injecting store: renewals fail for 2 TTL while the executor runs, the task must not be ended and the executor must stop itself; live: `scripts/live/partition_live.py` with toxiproxy between a replica and PostgreSQL; `EXPLAIN` of the reaper query on the tenant-aware table; `lock_timeout` on startup DDL
+- **Breaking:** behaviour (an owner that cannot renew stops its executor) · **size:** L
+
+### C. A panicking, cancelled or silent executor always leaves the task and its watchers told
+
+- **Items (10):** NEW-d-1, D-03, E-F9, NEW-e-2, E-F8, E-F20, G-21, NEW-g-api-3, D-16, D-23
+- **Decision first:** none
+- **Proof it needs:** deterministic `current_thread` test that an executor panic stores Failed (NEW-d-1 settled by running); stream gets a terminal frame; cross-replica cancel pushes CANCELED and appends to the log; event positions are not reused after takeover (two-process test)
+- **Breaking:** wire (500 to 503 for a store outage during a continuation) · **size:** L
+
+### D. gRPC deadlines, card selection and trust roots; one TLS identity everywhere
+
+- **Items (12):** NEW-g-api-1, G-20, G-04, NEW-g-api-2, B-20, B-19, B-03, B-15, B-18, B-29, B-14, H2
+- **Decision first:** F7 (pool) for H2's pooling half
+- **Proof it needs:** live: a 40 s executor over gRPC returns, not cut at 30 s (fails before); private-CA gRPC via `SSL_CERT_FILE`; token provider against a private-CA IdP with a client certificate; CLI `--cacert/--cert/--key` e2e
+- **Breaking:** additive; `build_grpc` honours `without_tls` and the card (behaviour) · **size:** L
+
+### G. First run works: deploy-agent, manifest, image, README
+
+- **Items (18):** A13, A14, A15, A19, A21, A22, A23, A24, A25, A26, A27, NEW-a-l-1, NEW-a-l-2, NEW-a-l-3, NEW-a-l-4a, NEW-a-l-4b, NEW-a-l-5, NEW-a-l-6
+- **Decision first:** F8 (publish an image)
+- **Proof it needs:** follow the README line by line on a clean machine, live (Docker; kind is not available here); manifest validated in CI (kubeconform); Dockerfile built in CI; deploy-agent purges terminal tasks on a timer with a test; `search_path=a2a,public` regression test
+- **Breaking:** behaviour (deploy-agent retention, env names) · **size:** M
+
+### H. Documentation drift, and the READMEs that contradict the code
+
+- **Items (18):** G/D-02, G/D-03, G/D-04, G/D-06, G/D-07, G/D-08, G/D-09, G/D-10, G/D-11, G/C-03, NEW-g-docs-3, NEW-g-docs-5, NEW-g-docs-6, NEW-g-docs-7, NEW-g-docs-8, NEW-g-api-4, NEW-c-2, NEW-t-1
+- **Decision first:** none
+- **Proof it needs:** each edit is the exact old/new text the triage recorded; `check_book_code.sh` ratchet fixed to see indented fences; doctests; `STABILITY.md` section 1 recomputed
+- **Breaking:** none (the `sign_agent_card` removal is PR-N) · **size:** S
+
+### E. Proxies, DNS and the network
+
+- **Items (12):** NEW-b-2, B-23, NEW-b-1, NEW-b-3, NEW-b-4, NEW-b-5, B-08, B-09, B-12, B-26, B-27, B-28
+- **Decision first:** F2 (loopback and NO_PROXY)
+- **Proof it needs:** the loopback probe I ran (LR-2) becomes a test; NO_PROXY dialect vectors; push behind a proxy-only egress with a resolver that answers only internal names; Squid in Docker for the CONNECT cases
+- **Breaking:** behaviour (loopback exempt by default) · **size:** M
+
+### F. WebSocket: bounded writes and liveness on both ends
+
+- **Items (9):** D-07, D-08, D-09, D-20, NEW-d-2, B-10, B-11, B-25, C-17
+- **Decision first:** F5 (stream keep-alive shared with H4)
+- **Proof it needs:** a peer that stops reading must not pin the read loop or hang a call; half-open detection by ping with a bound; gRPC heartbeat decision
+- **Breaking:** behaviour (defaults for WS/gRPC idle bounds) · **size:** M
+
+### I. OpenTelemetry in the SDK: logs with trace ids, self-metrics, strict-but-spec-correct env parsing
+
+- **Items (12):** C-06, C-08, C-09, C-10, C-12, C-13, C-16, C-22, C-23, NEW-c-3, NEW-c-4, NEW-c-5
+- **Decision first:** F3 (warn and fall back)
+- **Proof it needs:** export tests against the Collector image; log lines carry trace/span ids; `OTEL_*` bad values warn, never exit; span status for abandoned calls per semconv
+- **Breaking:** behaviour (bad env values no longer exit 2) · **size:** L
+
+### J. The observability stack: exemplars, alerts that cannot misfire, promtool in CI
+
+- **Items (8):** C-05, C-14, C-15, C-18, C-19, C-21, NEW-c-1, L11
+- **Decision first:** none
+- **Proof it needs:** `promtool test rules` in CI (Prometheus image); bring up `deploy/observability` and read every dashboard panel as a screenshot; a caller-error alert case that fails on the old rule
+- **Breaking:** none · **size:** M
+
+### K. Push delivery: semantics, pinning and fairness
+
+- **Items (11):** D-05, D-13, D-22, B-13, B-30, SEC-13, SEC-14, SEC-17, NEW-f-2, NEW-f-4, NEW-d-3
+- **Decision first:** none for the additive parts; an outbox is H14
+- **Proof it needs:** `A2A-Delivery-Id` header; https pinned to the validated address (rebinding resolver test); per-caller fairness test with one caller holding the gate
+- **Breaking:** behaviour (https pinning may refuse previously delivered webhooks) · **size:** L
+
+### B2. Production profile on a shared store; per-replica limits
+
+- **Items (2):** E-F12, E-F13
+- **Decision first:** F4
+- **Proof it needs:** Production refuses a process-local halt/lease/push/audit store when the task store hands out claims, and accepts it with the opt-out; two-pod test of the lease renewal that lands on the other pod
+- **Breaking:** behaviour (Production refuses more) · **size:** M
+
+### L. Fleet correctness: clocks, caps, audit chain, polling
+
+- **Items (14):** E-F14, E-F15, E-F16, E-F17, E-F26, E-F18, E-F19, E-F21, E-F22, E-F23, E-F24, E-F25, D-18, D-19
+- **Decision first:** E-F18 and E-F25 options in DECISIONS.md
+- **Proof it needs:** database-clock deadlines; audit append under an advisory lock; poll back-off; each with the two-process probe the triage wrote
+- **Breaking:** none · **size:** L
+
+### M. Delegation: hand-off on shutdown, journal with lease and budget, one options builder
+
+- **Items (8):** H4, H18, D-21, NEW-h-s0-2, NEW-h-s0-3, NEW-h-s0-4, NEW-h-designs-2, NEW-h-designs-5
+- **Decision first:** F5
+- **Proof it needs:** kill -9 a supervisor with a PostgreSQL journal and run the recovery loop (50 children); graceful redeploy detaches; gRPC idle child survives; resume jitter
+- **Breaking:** behaviour (shutdown detaches journaled children) · **size:** L
+
+### O. Client resilience: retry budget, jitter, in-flight cap
+
+- **Items (6):** H6, H12, D-10, D-11, D-12, NEW-h-designs-1
+- **Decision first:** F7
+- **Proof it needs:** jittered Retry-After; per-client budget; in-flight cap; live overload against `deploy-agent`
+- **Breaking:** behaviour (jitter) · **size:** M
+
+### R. Swarm control plane (an ADR each; the first four are fixes, not designs)
+
+- **Items (15):** NEW-h-designs-4, NEW-h-designs-7, H16, NEW-h-designs-3, NEW-h-designs-6, H5, H7, H8, H9, H10, H11, H13, H14, H17, H19
+- **Decision first:** F12
+- **Proof it needs:** halt store tolerates an unknown scope; ready only when sends are admitted; rate-limiter overflow bucket; then one ADR and one PR per design
+- **Breaking:** wire (new extensions, opt-in) · **size:** XL
+
+### N. The 0.16.0 breaking window
+
+- **Items (15):** G-06, G-07, G-08, G-09, G-10, G-12, G-13, G-14, G-15, G-16, G-17, G-18, G-19, G-22, G-23
+- **Decision first:** F1
+- **Proof it needs:** each break listed by hand in `[Unreleased]` Breaking Changes and the 0.15 to 0.16 guide; `sign_agent_card` removed; semver-checks run against the v0.15.0 tag (the last published release; 0.15.1 was never tagged), not the 0.16.0 base
+- **Breaking:** API (that is the point) · **size:** L
+
+### P. Release policy and the changelog
+
+- **Items (2):** G/C-01, G/C-02
+- **Decision first:** F6 F11
+- **Proof it needs:** `check_release_tree.py` refuses a patch with an unlabelled behaviour change; highlights block present
+- **Breaking:** none · **size:** S
+
+### Q. Examples that teach the right thing
+
+- **Items (3):** SEC-15, SEC-16, G-05
+- **Decision first:** none
+- **Proof it needs:** the 15 hand-rolled accept loops use `Server`; the `agent-team` health monitor refuses non-public targets; the mcp-bridge marks remote skill text as untrusted
+- **Breaking:** none · **size:** M
+
+## Beyond the rows
+
+These are not audit rows. They come from the maintainer's brief and from what the triage showed was
+missing.
+
+| Track | What | Where it stands |
+|---|---|---|
+| Live matrix | A permanent, scripted version of the runs: proxy and no proxy, public CA, private CA, self-signed, mTLS, IPv6, Docker, replicas behind a balancer, store outage, disconnect and resume, OTLP to a real Collector, `live-model` against llama.cpp with Qwen3.5 and Gemma 4 | Environment stood up 2026-11-01 (`handoff.md`); two probes run (`live-results.md`); Kubernetes cannot run in this sandbox |
+| Agent Skills | Decision F9 in `DECISIONS.md`. Verified: the standard is now an Agentic AI Foundation project under the Linux Foundation | Proposed for 0.17.0 as its own ADR |
+| Messaging a running agent | Decision F10: an A2A extension delivering a message to a working task's inbox; the spec is silent, so peers without the extension keep today's refusal | Proposed after group B (it rides on the claim) |
+| Fan-out | ADR 0033 (`DelegationGroup`) is written, not built | After group M |
+| A2A v1.0.1 conformance | Official TCK (`--min-graded 88`) after any wire change; ledger re-pointed with `check_spec_ledger.py --fix-lines` | Run before the pull request is opened |
+| EU AI Act, GDPR | `docs/compliance/control-map.md` rows must keep citing a test that proves them; re-run `check_compliance_map.py --check` and the cited tests after the groups that touch audit, logging or retention (G, L, B2) | Not started |
+
+## Before 0.16.0 is tagged
+
+1. Every row in `../2026-10-29/README.md` has a final status; none is `open`, `confirmed (read)` or `needs decision` unless the maintainer deferred it, with the reason in its note.
+2. The pull request's CI is green on every job, and `main` after the merge is green (the `CI` run on `4a8243c` had not finished when this was written).
+3. `RELEASING.md`'s checklist, `STABILITY.md` section 1 recomputed, the `**Cadence exception:**` line, and the 0.15 to 0.16 upgrade guide listing every break.
+4. The live matrix has been run against the merged tree, not the branch.

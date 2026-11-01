@@ -19,30 +19,40 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-- **Branch `claude/amazing-turing-y8pjhv` (2026-10-29), from `main` at
-  `8dc4331`: a pre-release audit, not a release.** The maintainer asked for
-  every remaining gap to be found and fixed before 0.15.1 or later, with live
-  runs against llama.cpp and small Qwen and Gemma models.
-  - **The task list is `docs/audits/2026-10-29/README.md`**: eight
-    read-only reviews (reports A to H beside it) plus findings from live runs
-    (section L), and four low findings from re-reading this branch's own
-    fixes (section M). Its `Status` column is the only record of what was checked;
-    count it rather than trusting a figure here. At this commit, 226 rows:
-    149 `open`, 4 `confirmed (read)`, 59 `fixed`, 4 `fixed (part)`, 7
-    `verified live`, 1 refuted, 2 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
-    including a "Breaking Changes" section.
-  - **Not release-ready.** L5 (no token streaming in the tool loop) was
-    built as the maintainer chose on 2026-10-30: a draft artifact per turn
-    (`ToolLoopExecutor::with_drafts`), the `answer` artifact sent whole at
-    the end as before. 149 rows stay `open`. By the list's own labels: 3 S0
-    (H2, H3, H4), 9 S1 (H5 to H11, H13, H19), 1 high (B-03), 52 medium,
-    5 S2, 5 low to medium, 69 low and 5 info. **This handoff said "every
-    row judged release-relevant is fixed" until 2026-10-30; that was not
-    checked and is withdrawn.** Some open rows are likely stale (H2's
-    private CA and mTLS look covered by `TlsConfig::Custom`, H3's orphaned
-    `working` tasks by the turn-claim reaper), some are real (H4, the S1
-    designs), and none has been re-checked against the code since its
-    report was written.
+- **Branch `claude/pensive-bardeen-c6ofm8` (2026-11-01), from `main` at `4a8243c`
+  (the merge of pull request #185): the 149 open audit rows are triaged; nothing is fixed yet.**
+  The maintainer's brief: find every way the SDK fails a real deployment (local, Docker, Kubernetes,
+  proxy or none, public/private/self-signed CA, mDNS, replicas, outages, disconnects), with live runs
+  against llama.cpp and small Qwen and Gemma models, A2A v1.0.1 conformance, OpenTelemetry, the EU AI
+  Act and GDPR; consider Agent Skills (agentskills.io); support sub-agents, fan-out and messaging a
+  running agent; and ship 0.16.0 only when it is checked, never on assumption.
+  - **The record is `docs/audits/2026-11-01-triage/`**: `README.md` (method, what was and was not
+    checked, corrections), `PLAN.md` (191 items in 19 commit groups, each item in exactly one),
+    `DECISIONS.md` (12 forks and 46 per-row option sets), ten `<slice>.json` with `file:line` evidence,
+    `live-results.md` and `probes/`. `docs/audits/2026-10-29/README.md`'s `Status` column is updated
+    for all 149 rows and has a new section N for what the triage found. Counted with the
+    findings-triage skill's counter on 2026-11-01: 283 rows; confirmed (read) 125, fixed 66, needs
+    decision 46, fixed (part) 25, verified live 7, not a defect 5, duplicate 5, confirmed (live) 2,
+    refuted 1, cannot check 1; **none `open`**. Of the 149: 71 confirmed, 46 need a decision, 21 fixed
+    in part, 7 already fixed, 3 not defects, 1 cannot be checked by reading. The previous figure here
+    (149 `open`, "some likely stale") is withdrawn: 7 were already fixed, and of the 3 not-defects C-20 was
+    a misreading while D-24 and D-25 record areas found sound.
+  - **The three S0 rows are all `fixed (part)`.** H2 (private CA and mTLS) is S1: every binding can
+    trust a private CA, except the token provider and gRPC's use of `SSL_CERT_FILE`; one pool per
+    client remains. H3 (orphaned tasks) is medium: the reaper fixes the default SQL configuration, but a
+    reaper that ends a live task whose owner merely failed to renew is a new risk (NEW-h-s0-1,
+    NEW-e-1; a probe is written, not run). H4 (delegation) is high: resume, `reattach` and a
+    journal exist, but nothing drives recovery, a graceful supervisor redeploy still cancels its
+    children, and gRPC/WebSocket delegations are cancelled when idle.
+  - **Found by running it (this session):** the CLI's `--header` guard (SEC-09, merged in #185) is
+    bypassed when the card's first interface is on the typed host but cannot be built (binding
+    `NOPE`, or `ftp://`) and a later one is on another host: the header goes there (NEW-f-1). And a
+    blanket `HTTP_PROXY` sends loopback traffic to the proxy (NEW-b-2). Both with controls that
+    behave; `live-results.md`. A blocking send over gRPC is cut at 30 s by tonic's channel timeout
+    (NEW-g-api-1; read in tonic's source, not yet run).
+  - **Not release-ready.** `docs/readiness-bar.md` still records no measurement for R1 to R7, C1 to C5
+    and F1 to F5. No Kubernetes, IPv6-on-the-wire, public-CA collector or official-TCK run has been made
+    since #185.
   - **How #184 was verified, the bar for what follows.** Before a push:
     `scripts/preflight.sh --force`; every script gate (the list is in the
     workflow's Static checks job); `cargo hack clippy -p a2a-protocol-types
@@ -59,18 +69,16 @@ only: when something here is done, delete it rather than annotating it.
     survivors by hand (scratchpad script pattern: replace, run the one
     test, restore) and let CI's run be the full one. macOS and Windows
     cannot be run here; CI is their check.
-  - **Pull request [#184](https://github.com/tomtom215/a2a-rust/pull/184)**
-    (2026-10-30). The workspace reads **0.16.0**, bumped there at the
-    maintainer's choice because `cargo-semver-checks` blocks the branch's
-    deliberate breaks under 0.15.x (0.15.1 was prepared, never published:
-    crates.io has 0.15.0). It is a version bump, not a release: no tag,
-    `CITATION.cff` and `ROADMAP.md` still name 0.15.1, and the
-    `0.15 → 0.16` upgrade guide is
-    `book/src/reference/upgrading/0.15-to-0.16.md`. Before tagging 0.16.0:
-    RELEASING.md's checklist, and STABILITY.md's cadence, since 0.15.0 was
-    a breaking release in October 2026 (a second one that month needs a
-    `**Cadence exception:**`). The SLIMRPC binding's requirements read
-    `0.16`; its own version (0.7.0) moves at its own release (RELEASING.md,
+  - **Pull requests [#184](https://github.com/tomtom215/a2a-rust/pull/184) and
+    [#185](https://github.com/tomtom215/a2a-rust/pull/185) are merged** (`a0e6673`, `4a8243c`). The
+    workspace reads **0.16.0**, bumped at the maintainer's choice because `cargo-semver-checks` blocks
+    the branch's deliberate breaks under 0.15.x. It is a version bump, not a release: no tag.
+    **0.15.1 was never tagged or published** (checked 2026-11-01: crates.io, the GitHub latest release
+    and the remote tags all end at 0.15.0), yet `CITATION.cff` still says 0.15.1, released 2026-10-26
+    (NEW-t-1). The `0.15 → 0.16` upgrade guide is `book/src/reference/upgrading/0.15-to-0.16.md`. Before
+    tagging 0.16.0: RELEASING.md's checklist, and STABILITY.md's cadence, since 0.15.0 was a breaking
+    release in October 2026 (a second one that month needs a `**Cadence exception:**`). The SLIMRPC
+    binding's requirements read `0.16`; its own version (0.7.0) moves at its own release (RELEASING.md,
     "releases separately").
   - **mDNS discovery is built, not released:** `crates/a2a-protocol-discovery`
     (ADR 0029, proposed) is `publish = false`. Publishing it needs its
@@ -92,22 +100,37 @@ only: when something here is done, delete it rather than annotating it.
   - **Not yet run live:** the client dashboard with a
     long-lived client (L11: short-lived CLI processes never export); the
     `deploy-agent` Dockerfile's build stages (its runtime stage ran, L18).
-  - **First, next session (plan agreed with the maintainer 2026-10-30),
-    once #184 is green and merged:**
-    1. **Triage, no code.** Re-check every `open` row against the code on
-       `main`: read it, or run it where it is a behaviour. Mark each
-       `fixed` (with the commit), `confirmed (read)` or `verified live`
-       (still real), `not a defect`, or `needs decision` (a design the
-       maintainer chooses, as L5 was). Start with the S0, S1 and high rows
-       above, then the rest by severity. Correct the count here.
-    2. **Fix in themed pull requests**, each held to the bar above before
-       its first push: docs and READMEs (report G's 33 rows, mostly
-       cheap), then client, then stores, then the remaining SEC rows.
-    3. **The H-report designs** (retry budget and circuit breaker,
-       admission queue and fairness, task lineage and tree-scoped halt,
-       per-tenant metrics, polyglot swarm controls) each need an ADR and
-       the maintainer's choice before they are built; set out the options
-       for each, as was done for L5, rather than building one.
+  - **First, next (2026-11-01).** The maintainer chose **one large pull request**, built as the
+    19 commit groups of `docs/audits/2026-11-01-triage/PLAN.md`; open it only when the groups meant for
+    0.16.0 pass the bar above (a pushed branch starts no CI; the workflows run on `pull_request`).
+    1. Groups A to D of `PLAN.md`, in that order. Each regression test first, seen to fail on the
+       unfixed code. A and the NEW-d-1 test of C are reproducible now: `probes/` holds the two live runs.
+    2. Put the twelve forks of `docs/audits/2026-11-01-triage/DECISIONS.md` to the maintainer; none of
+       groups A to D waits on one.
+    3. Run the baseline suites on `4a8243c` in this environment (they were not run: only the 36 script
+       gates, each exit 0, and a dev build of `deploy-agent`, `a2a`, `live-model` and `hello-agent`).
+    4. `main`'s own `CI` run on `4a8243c` had not finished when it was last read (13 other push
+       workflows were `success`); read it before building on `main`.
+  - **Environment for live runs, as stood up 2026-11-01** (4 vCPU, 15 GB, about 22 GB of disk free after
+    the build; the Docker daemon, PostgreSQL and the services below are *not* running at session start):
+    `dockerd >/tmp/dockerd.log 2>&1 &` (the CLI is installed, the daemon is not); `pg_ctlcluster 16 main
+    start` then `su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'postgres'\""`, giving
+    `postgres://postgres:postgres@localhost:5432/postgres` (PostgreSQL 16.15). llama.cpp: `docker pull
+    ghcr.io/ggml-org/llama.cpp:server` works (build 12030, commit `a91eab67d`); models come from Hugging
+    Face, which is reachable: `unsloth/Qwen3.5-2B-GGUF` `Qwen3.5-2B-Q4_K_M.gguf` (SHA-256 `aaf42c8b…9223`,
+    the file of the 2026-10-28 run) and `unsloth/gemma-4-E2B-it-GGUF` `gemma-4-E2B-it-Q4_0.gguf`
+    (`31d3a3c6…0132`, **not** the 2026-10-28 Gemma file `8e30dff3…6a52`, so Gemma results are not
+    byte-comparable with that run). Serve with `docker run -d --name llama -p 127.0.0.1:8080:8080 -v
+    /home/user/models:/models:ro ghcr.io/ggml-org/llama.cpp:server -m /models/<file> --host 0.0.0.0
+    --port 8080 --jinja -c 16384 -np 2 -t 4`; a smoke prompt answered. `scripts/install_cargo_mutants.sh`
+    (about 5 minutes) installs the patched `cargo-mutants` 27.1.0 and `cargo-nextest` 0.9.146. Not
+    installed and not run: `cargo-hack`, `cargo-deny`, `cargo-semver-checks`, `mdbook`, `kind`,
+    `kubectl`, `promtool`, the Collector, Squid, HAProxy, toxiproxy (pull images where a run needs
+    them). Build with CI's flags (`RUSTFLAGS=-D warnings CARGO_PROFILE_DEV_DEBUG=0`) so `preflight.sh`
+    reuses the artifacts. `pkill -f <text>` kills your own shell when the text is in its command line;
+    use `pkill -x <name>`. Git here is configured as `Claude <noreply@anthropic.com>`, which `dco.yml`
+    rejects; commit with `git -c user.name='Tom F.' -c user.email=tomf@tomtomtech.net commit -s`, as
+    the merged commits are.
 - **Branch `claude/intelligent-bohr-9qraxk` (2026-10-28), on `main` at
   `568fc6c1` (pull request #182, the 0.15.1 preparation, merged; no tag).**
   The maintainer judged 0.15.0 not ready in practice and asked for everything
@@ -291,8 +314,8 @@ only: when something here is done, delete it rather than annotating it.
   the book with stale claims (`tools/a2a-cli` exit codes and `--header` on
   `card`, `tck/README.md` on BIND-EQUIV-004, `packaging/README.md` on the
   signing key).
-- **Working branch:** `claude/amazing-turing-y8pjhv`, from `main` at
-  `8dc4331`. `git log origin/main..` lists what it holds that `main` lacks.
+- **Working branch:** `claude/pensive-bardeen-c6ofm8`, from `main` at `4a8243c`. `git log origin/main..`
+  lists what it holds that `main` lacks.
 - **Merged in #179** (branch `claude/zealous-fermat-f4kg9z`, 2026-10-23 to
   2026-10-24; merged 2026-10-24 13:23 UTC as `2781bb69`). The PR head
   `6707f4d` had 104 check runs, 98 success and 6 skipped by their own

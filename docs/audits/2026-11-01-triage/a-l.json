@@ -1,0 +1,302 @@
+{
+ "slice": "a-l",
+ "baseline": "4a8243c66df5ae07a54a69168ab419ac609b06e9",
+ "rows": [
+  {
+   "id": "A13",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "README.md:261-267 - the front page still shows exactly `cargo run -p deploy-agent`, `docker build -f examples/deploy-agent/Dockerfile -t deploy-agent .`, `kubectl apply -f examples/deploy-agent/deployment.yaml`, with no Secret step and no image step (git blame: lines 261-269 unchanged since ^f37e0aa 2026-10-23)",
+    "examples/deploy-agent/deployment.yaml:106-110 - DATABASE_URL from secretKeyRef deploy-agent-db/url, not optional; no command in README.md creates it -> pods sit in CreateContainerConfigError",
+    "examples/deploy-agent/deployment.yaml:72 - `image: deploy-agent:latest`, no imagePullPolicy anywhere in the file -> Kubernetes defaults to Always for :latest and pulls docker.io/library/deploy-agent:latest",
+    ".github/workflows/release.yml - no container job at all: jobs publish crates, a GitHub release, and CLI archives (cli-binaries, :685-742, gated on vars.PUBLISH_CLI_BINARIES); no docker login/build-push/ghcr anywhere in release.yml",
+    ".github/workflows/itk-nightly.yml:89-95 and acts.yml:63-69 - the only build-push-action uses build `itk_service:latest` with `load: true`, never push, and never the deploy-agent Dockerfile",
+    "Mitigations since the audit (commit 57f034e, 2026-10-29): deployment.yaml:6-9 header says 'Before applying, create the database Secret and set the image'; :70-71 comment on the image; examples/deploy-agent/README.md:93-112 and book/src/deployment/containers.md:86-114 and book/src/examples/deploy-agent.md:177-189 list the 'three edits' and say `kubectl apply` as shipped fails twice. None of this is on the front page."
+   ],
+   "test": "none - no CI job builds the Dockerfile or validates the manifest (searched .github/workflows for deploy-agent Dockerfile builds, kubeconform/kubeval/kube-linter: none)",
+   "summary": "Walking README.md:263-267 line by line still fails twice: the Secret `deploy-agent-db` is never created (CreateContainerConfigError), then `deploy-agent:latest` with the default Always pull policy is pulled from Docker Hub, where nothing publishes it (release.yml pushes no image). The deploy-agent README, the book and the manifest's own header now warn, but the funnel entry still presents the three commands as runnable.",
+   "remaining": "Front-page README: add the Secret command and the image edit, or replace the three lines with a pointer to examples/deploy-agent/README.md#kubernetes. Manifest: consider `imagePullPolicy: IfNotPresent` and a non-latest tag (e.g. `deploy-agent:dev`, matched by the docker build -t) so kind/minikube/Docker Desktop work after `kind load`. Also README.md:271 still says 'a `0.0.0.0` bind' (main.rs:280-284 binds `[::]` first).",
+   "theme": "deploy-docs",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "Optional, to prove the fix: kind cluster + Docker + crates.io egress. `kind create cluster; docker build -f examples/deploy-agent/Dockerfile -t deploy-agent .; kubectl apply -f examples/deploy-agent/deployment.yaml; kubectl get pods -w` -> expect CreateContainerConfigError (secret \"deploy-agent-db\" not found); create the secret -> expect ErrImagePull/ImagePullBackOff. After the fix, the README's literal sequence must reach Running/Ready (with a reachable PostgreSQL)."
+  },
+  {
+   "id": "A14",
+   "verdict": "needs_decision",
+   "severity_now": "low (was medium: startup now logs the redacted database URL, and a table collision fails closed inside one transaction)",
+   "evidence": [
+    "examples/deploy-agent/src/main.rs:113 - still `var(\"DATABASE_URL\")`, the variable sqlx-cli, Diesel, Rails and Django users already export",
+    "examples/deploy-agent/src/main.rs:240 - now logs `connecting to PostgreSQL` with the redacted URL at INFO (A18 fix, 57f034e/2a01462), so the switch from memory to a foreign DB is no longer silent",
+    "crates/a2a-protocol-server/src/store/postgres_store/mod.rs:192-216 - unprefixed `tasks`, plus `idempotency_keys`, `task_events` (event_log.rs:28-35, FK to tasks(id)) and four `idx_tasks_*` indexes; push/postgres_config_store.rs:114 `push_configs`; pg_migration.rs:199 `schema_versions`. Newer tables are prefixed (`a2a_task_claims`, `a2a_delegations`), so naming is now inconsistent",
+    "rg 'search_path|with_schema|table_prefix' over crates/, book/src, examples/: no schema option and no documentation of a dedicated schema",
+    "crates/a2a-protocol-server/src/store/pg_schema/mod.rs:86-99 - `apply` runs every statement in one transaction and rolls back on the first error; :131-139 `table_if_missing` skips CREATE when `to_regclass('tasks')` finds any relation on the search_path; :67-71 ADD_APPLIED_SEQ_TO_TASKS then ALTERs that `tasks`. So against an app's own `tasks` (e.g. id serial) the FK in task_events or the context_id index fails and everything rolls back: fails closed at startup with `cannot open the task store at <redacted url>: ...` (read only, not run)"
+   ],
+   "test": "none for the collision; none for a dedicated schema",
+   "summary": "deploy-agent still reads the generic `DATABASE_URL`, and the PostgreSQL stores still create generic table names in whatever schema the connection's search_path names, with no schema/prefix option or documentation. The damage is smaller than reported: the startup log now names the database, and a clash with an existing `tasks` table is refused in one rolled-back transaction rather than silently adopted (read, not run).",
+   "remaining": "Pick a naming policy (see options). Independently, the search_path inconsistency in pg_schema (NEW-a-l-2) must be fixed before 'use a dedicated schema' can be recommended.",
+   "theme": "pg-schema",
+   "effort": "S (docs + env alias) / L (schema or prefix option across every SQL string)",
+   "breaking": "behaviour (example env var rename) or storage (table rename) depending on option",
+   "probe": "To settle the collision outcome: PostgreSQL 16/17; `CREATE TABLE tasks (id serial primary key, title text)`; run deploy-agent with DATABASE_URL at that DB; expect exit 1 with a column/FK error and `\\d tasks` unchanged (no applied_seq). For the schema option: `CREATE SCHEMA a2a`, URL `...?options=-c%20search_path%3Da2a`, start twice, confirm every A2A object is in `a2a` and none in `public`; repeat with `search_path=a2a,public` and a `public.tasks` present (expected to misbehave today, NEW-a-l-2).",
+   "options": "(1) Docs + example only: document a dedicated schema via `options=-c search_path=a2a` (single schema on the path), and have deploy-agent read `A2A_DATABASE_URL`, falling back to `DATABASE_URL` with a WARN naming which it used. XS-S, no SDK change; relies on fixing NEW-a-l-2. (2) Add `with_schema(name)` (or a table prefix) to the four PostgreSQL stores and the migration runner: every SQL constant becomes schema-qualified; M-L, additive API, large test surface. (3) Rename tables to `a2a_*` with a migration: removes the clash for good but is a storage-breaking change for every existing deployment and the upgrade guard functions. Recommendation: (1) now, with NEW-a-l-2 fixed and a live test of the search_path recipe; (2) only if users ask for multiple A2A deployments in one database."
+  },
+  {
+   "id": "A15",
+   "verdict": "partly_fixed",
+   "severity_now": "low (remaining part: info/low)",
+   "evidence": [
+    "commit a579fee (2026-10-30) - PostgreSQL stores take a pool size: crates/a2a-protocol-server/src/store/postgres_store/mod.rs:115-118 `new_with_pool_size`; push/postgres_config_store.rs:73 the same; store/mod.rs:43 DEFAULT_POOL_SIZE = 10",
+    "examples/deploy-agent/src/main.rs:115,151-161 - `DATABASE_POOL_SIZE` read and validated (0 and non-numbers refused); :105 PUSH_POOL_SIZE = 2; :250-266 task pool = config.pool_size, push pool = 2; :243-249 logs the per-replica total and the max_connections arithmetic",
+    "examples/deploy-agent/README.md:53 documents DATABASE_POOL_SIZE and the replicas x (size + 2) budget",
+    "crates/a2a-protocol-server/src/handler/introspection.rs:102-111 - `readiness` still asks only `task_store_health`; push/config_store.rs:19-60 `PushConfigStore` has no health method, so the push pool is invisible to /ready"
+   ],
+   "test": "examples/deploy-agent/src/tests.rs:179 `invalid_configuration_is_rejected` asserts default pool_size 10, `4` -> 4, and `0`/`-1`/`ten` refused naming DATABASE_POOL_SIZE: fails if the env parsing is reverted (read, not run). crates/a2a-protocol-server/src/store/postgres_store/mod.rs:283 and push/postgres_config_store.rs:258 `the_pool_is_the_size_asked_for` assert `get_max_connections()` equals 3 for 3, 1 for 0, 10 by default: fails if the size were ignored (#[ignore], live PostgreSQL; run in CI by scripts/run_postgres_suites.py, which finds lib modules reading A2A_TEST_POSTGRES_URL; read, not run). Gap: nothing tests that deploy-agent's handler() passes config.pool_size to the store (handler() is only tested with database_url None).",
+   "summary": "Pool size is now settable (DATABASE_POOL_SIZE, `new_with_pool_size`) and the push pool is a fixed 2, so a replica opens size+2 rather than 20. Readiness still checks only the task store's pool.",
+   "remaining": "Readiness ignores the push-config pool (introspection.rs:102-111); PUSH_POOL_SIZE is a constant, not configurable; the two stores still open two pools rather than sharing one. No test ties DATABASE_POOL_SIZE to the pool actually built.",
+   "theme": "pg-pools",
+   "effort": "S",
+   "breaking": "none (a defaulted `health` on PushConfigStore is additive)",
+   "probe": "none"
+  },
+  {
+   "id": "A19",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "examples/deploy-agent/Dockerfile:1-61 - no HEALTHCHECK instruction; the runtime stage (debian:bookworm-slim) installs only ca-certificates, so there is no curl/wget, and the binary has no health-check mode (main.rs has no argv handling)",
+    "examples/deploy-agent/Dockerfile:41-43 - `apt-get install -y --no-install-recommends ca-certificates` unversioned after `apt-get update`, so the layer depends on the day's Debian index even though the base is digest-pinned",
+    "examples/deploy-agent/Dockerfile:33 and book/src/deployment/containers.md:43-45 - 'Debian slim rather than distroless or scratch: the binary links glibc'. True for scratch, not for gcr.io/distroless/cc-debian12, which ships glibc and libgcc; the binary needs no OpenSSL (rustls, sqlx tls-rustls-ring-webpki: crates/a2a-protocol-server/Cargo.toml:56)",
+    "examples/deploy-agent/Dockerfile:30 `COPY . .` - .dockerignore (A12 fix, 57f034e) now drops .git, .github, book/book, book/static, but docs/, book/src, README.md, scripts/, itk/ etc. still invalidate the final build layer; README.md:64-67 records 221 s for a source-only rebuild (fat LTO, codegen-units=1 from Cargo.toml:105-110)"
+   ],
+   "test": "none (no CI job builds this Dockerfile)",
+   "summary": "All four details still hold: no HEALTHCHECK and nothing in the image to run one, an unpinned apt package, a distroless rationale that is wrong for distroless/cc, and a final layer invalidated by any non-ignored file change.",
+   "remaining": "Either correct the rationale (keep slim for a shell/debuggability, which L18 ran live) or move to distroless/cc-debian12:nonroot by digest; pin or drop the apt step; add a `--health` mode plus HEALTHCHECK for Docker/compose users (Kubernetes ignores HEALTHCHECK); optionally narrow the last COPY to Cargo.*, crates/, examples/deploy-agent/.",
+   "theme": "deploy-image",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "Only to prove a distroless switch: build with gcr.io/distroless/cc-debian12:nonroot, then repeat L18 (two replicas on PostgreSQL, --read-only --cap-drop ALL, /health and /ready, docker stop drain). Reading settles the defect itself."
+  },
+  {
+   "id": "A21",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "tools/a2a-cli/src/connect.rs:148 - after discovery `endpoint` is the card interface's URL, not the URL typed",
+    "tools/a2a-cli/src/connect.rs:152-157 - since 779ff31 (SEC-09) the CLI refuses, naming the card's endpoint, only when --header is given and the host differs; without --header the switch is still silent",
+    "tools/a2a-cli/src/error.rs:119 - every post-discovery client error prints as its bare text; the `--binding` hint exists only for `Discovery` (card-fetch) errors, :120-126",
+    "crates/a2a-protocol-client/src/transport/jsonrpc.rs:269-272 - connect failures become `ClientError::HttpClient(chain(&e))`; hyper-util 0.1.21 `ConnectError` Display is only its fixed message (`dns error`, `tcp connect error`, src/client/legacy/connect/http.rs:712-716) and the client Error prints `client error (Connect)` (client.rs:1670-1673): the resulting line names no host at all",
+    "tools/a2a-cli/src/cli.rs:17-20 and tools/a2a-cli/README.md:58 - the behaviour is documented in --help (since 9001af8, before the audit), so it is not undocumented, only invisible at run time"
+   ],
+   "test": "none for a transport error after discovery; error.rs:220 `discovery_failure_names_the_url_and_the_way_out` covers only the card-fetch path",
+   "summary": "`a2a send http://localhost:8080 hi` through `kubectl port-forward` still fetches the card and dials the advertised in-cluster URL; the failure prints e.g. `HTTP client error: client error (Connect): dns error: ...` with neither host nor hint (read, not run). Only the --header case is now refused with a message naming the card's URL.",
+   "remaining": "On a transport error after discovery, add a hint: 'the card at <url> advertises <endpoint> (<binding>); pass --binding <b> to use <url> directly'. Optionally print the chosen endpoint at DEBUG/--verbose.",
+   "theme": "cli-ux",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "To prove the fix: run deploy-agent with AGENT_URL=http://unreachable.invalid:8080, then `a2a send http://localhost:8080 hi`; today stderr shows a connect/dns error without either URL; after the fix it names both and suggests --binding rest."
+  },
+  {
+   "id": "A22",
+   "verdict": "needs_decision",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "Listen address: deploy-agent PORT (main.rs:111), scripts/live/replica PORT, benches harness PORT; echo/genai/rig/mcp/multi-lang-team A2A_BIND_ADDR (echo main.rs:103, genai main.rs:298, rig main.rs:357, mcp main.rs:334, multi-lang-team main.rs:406); tck/sut SUT_HOST (main.rs:529); hello-agent hard-coded 127.0.0.1:3000 (main.rs:88)",
+    "Extra listeners: echo A2A_GRPC_BIND_ADDR / A2A_WS_BIND_ADDR (main.rs:309-310) vs genai A2A_GRPC_ADDR / A2A_WS_ADDR (main.rs:418,425) vs tck/sut SUT_GRPC_HOST / SUT_WS_HOST",
+    "Advertised URL: deploy-agent AGENT_URL (own public URL); tck/sut SUT_ADVERTISE_URL; the A2A_BIND_ADDR examples derive it from the bind address (no variable); mcp-bridge A2A_AGENT_URL means the REMOTE agent to bridge to (mcp-bridge main.rs:83) - same stem, opposite meaning to deploy-agent's AGENT_URL",
+    "Database: deploy-agent and scripts/live/replica DATABASE_URL; resilient-agent (scaling.rs:54) and incident-response A2A_TEST_POSTGRES_URL; benches SQLITE_URL",
+    "Model endpoint: OPENAI_BASE_URL (rig, mcp), LIVE_BASE_URL, TOOL_LOOP_BASE_URL, SWARM_LLM_URL, LLM_URL (benches); model: GENAI_MODEL, RIG_MODEL, INCIDENT_MODEL, LIVE_MODEL, TOOL_LOOP_MODEL; thinking/max-tokens: GENAI_*, RIG_*, MCP_*, INCIDENT_*, LIVE_*, TOOL_LOOP_*",
+    "CLI a2a: flags only (--timeout, --send-timeout, --header, --tenant, --binding ...), reads no env var of its own beyond OTEL_*/proxy/SSL_CERT_*",
+    "book/src/reference/configuration.md:321-328 - the one env table lists RUST_LOG, OTEL_* (+ proxy vars 'for the export'), LANGFUSE_*, PROTOC; it omits SSL_CERT_FILE/SSL_CERT_DIR (read by client tls.rs and server net/roots.rs) and that HTTP(S)_PROXY/NO_PROXY now also govern client transports and server push/JWKS/OIDC (client proxy.rs, server net/proxy.rs), and lists no example variables"
+   ],
+   "test": "none",
+   "summary": "Still four spellings for 'where to listen' (PORT, A2A_BIND_ADDR, SUT_HOST, hard-coded), two for extra listeners even within the A2A_ prefix, two meanings for *AGENT_URL, and two database variables; nothing documents them in one place, and the book's env table is missing SDK-level variables added since.",
+   "remaining": "A naming decision (options) plus a single reference table. The bind-address-on-card behaviour of the A2A_BIND_ADDR examples is tracked as NEW-a-l-5.",
+   "theme": "config-naming",
+   "effort": "XS (table) / M (rename with aliases; ITK, go_sdk_interop.sh, scripts/adversarial and itk/Dockerfile.rust-agent set A2A_BIND_ADDR)",
+   "breaking": "behaviour, for scripts setting the old example variable names, if renamed without aliases",
+   "probe": "none",
+   "options": "(1) Document only: one table in book/src/reference/configuration.md with every SDK variable (add SSL_CERT_FILE/DIR and the proxy scope) and a per-example section. XS, no break. (2) Converge examples on PORT/A2A_BIND_ADDR + A2A_PUBLIC_URL + DATABASE_URL-or-A2A_DATABASE_URL, keeping old names as aliases that log a deprecation line; rename mcp-bridge's A2A_AGENT_URL to A2A_REMOTE_URL. M, touches ITK/TCK scripts. (3) Leave examples as is and say in each README which variables it reads. Recommendation: (1) now; (2) folded into the A14 decision on the database variable, keeping PORT for deploy-agent since platforms inject it."
+  },
+  {
+   "id": "A23",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "book/src/deployment/containers.md:20-23 - 'Copy the two `deploy-agent` files into your own project and adapt them' (the two files are Dockerfile and deployment.yaml per the table at :13-16)",
+    "examples/deploy-agent/Dockerfile:9-10,17,29,31,50 - 'Build from the repository root'; the workspace copied whole; `cargo chef cook --release --locked -p deploy-agent`; `cargo build --release --locked -p deploy-agent`; COPY of /src/target/release/deploy-agent. In a standalone project: a renamed package breaks `-p deploy-agent` and the COPY path, and an uncommitted Cargo.lock fails `--locked`",
+    ".dockerignore (repo root) is not one of 'the two files': a project copying only the Dockerfile loses the A12 protection, and `COPY . .` (Dockerfile:24,30) again puts .env, *.pem, *.key and .git into the build stages",
+    "examples/deploy-agent/Cargo.toml:10-12,16-17,29 - edition/rust-version/license and tokio/tracing inherited from the workspace (copied out: cargo refuses to parse the manifest outside a workspace); :15 `a2a-protocol-sdk = { path = \"../../crates/a2a-protocol-sdk\" ... }`",
+    "main.rs:292 `ServeConfig::with_drain_delay` (added 57f034e, 2026-10-29), :160/:250/:256 DEFAULT_POOL_SIZE/new_with_pool_size (a579fee, 2026-10-30): both after 0.15.1 (CHANGELOG.md:1083, 2026-10-26); origin has no v0.16.0 tag and CHANGELOG has no 0.16.0 section, so the copied crate does not compile against any published SDK today",
+    "Cargo.toml:100-110 - the release profile (lto, codegen-units=1, strip) is lost on copy; it now unwinds (A4 fixed), so the audit's panic=abort sub-point no longer applies. No rust-toolchain file in the repo; Dockerfile:18 pins rust:1.94, matching rust-version 1.94"
+   ],
+   "test": "none (no job builds deploy-agent outside the workspace)",
+   "summary": "Copying the two files the book names still needs unlisted edits (package/binary name in four Dockerfile lines, a committed Cargo.lock for --locked, and a .dockerignore the copy does not carry); copying the crate itself fails on workspace inheritance and a path dependency, and on main it also needs APIs no published SDK has yet.",
+   "remaining": "List the copy-out edits next to 'Copy the two files' (including the .dockerignore), or ship a standalone template (cargo-generate or templates/agent) with crates.io dependencies and its own .dockerignore and profile, built by a CI job outside the workspace; state the minimum SDK version the template needs.",
+   "theme": "deploy-template",
+   "effort": "S (docs) / M (template + CI job)",
+   "breaking": "none",
+   "probe": "To prove the fix (needs cargo and crates.io, not allowed in this triage): copy examples/deploy-agent plus the Dockerfile and a .dockerignore to an empty directory, replace workspace keys and the path dependency with crates.io versions, `cargo generate-lockfile && cargo build --locked`, then `docker build .` from that directory."
+  },
+  {
+   "id": "A24",
+   "verdict": "needs_decision",
+   "severity_now": "info (unchanged)",
+   "evidence": [
+    "[[bin]] targets in the workspace: tools/a2a-cli `a2a` (a client), examples/mcp-agent `mcp-a2a-agent`, itk `itk-current-agent`, fuzz targets; no generic server binary",
+    "book/src/deployment/containers.md:20-22,157 - 'no Helm charts, no Kustomize overlays and no published container images'",
+    ".github/workflows/release.yml:679-742 - the only binary artifact is the CLI, behind vars.PUBLISH_CLI_BINARIES ('a new kind of public artifact is theirs to decide on'); no image job",
+    "examples/tool-loop-agent (TOOL_LOOP_BASE_URL/MODEL/API_KEY) is the closest env-configured model-backed agent, but it is a demo that binds 127.0.0.1:0"
+   ],
+   "test": "n/a",
+   "summary": "Still true: every deployment means writing and building a Rust crate; there is no published image or env-configured server binary.",
+   "remaining": "A product-scope decision.",
+   "theme": "packaging",
+   "effort": "M (publish deploy-agent image) / L (gateway binary)",
+   "breaking": "none",
+   "probe": "none",
+   "options": "(1) Keep the scope and say so on the README front page next to the deploy commands (XS). (2) Publish the deploy-agent image to GHCR from release.yml with provenance, behind a repository variable like PUBLISH_CLI_BINARIES; this also gives A13 a real `image:` to point at (M; adds a public artifact with CVE upkeep - see NEW-a-l-4b). (3) Build an `a2a-gateway`-style binary: OpenAI-compatible model behind ToolLoopExecutor, configured by env, published as image (L; new supported surface). Recommendation: (1) now; (2) when the maintainer is ready to own an image, since it fixes A13 at the root."
+  },
+  {
+   "id": "A25",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "examples/deploy-agent/deployment.yaml:11,167,180 - the manifest is a Deployment, a Service and (new since the audit) a PodDisruptionBudget; no Ingress, NetworkPolicy, ServiceMonitor/PodMonitor or scrape annotations (rg networkpolicy|servicemonitor|podmonitor|kind: Ingress|prometheus.io/scrape over the repo: no hits outside docs/audits)",
+    "examples/deploy-agent/Cargo.toml:15 - SDK features [\"postgres\"] plus defaults (tls-rustls, tracing, otel, otlp, webhook per crates/a2a-protocol-sdk/Cargo.toml default); no otel-prometheus",
+    "crates/a2a-protocol-server/src/otel/telemetry/selection.rs:70-90 - without otel-prometheus, OTEL_METRICS_EXPORTER=prometheus is refused, and deploy-agent's telemetry() exits 2 with 'Prometheus export is not compiled in' (main.rs:371-383): loud, not silent",
+    "crates/a2a-protocol-server/src/otel/telemetry/prometheus.rs:15-19 - even when enabled, /metrics is a separate unauthenticated listener on OTEL_EXPORTER_PROMETHEUS_HOST (localhost by default) and port 9464, which the manifest neither sets nor exposes as a containerPort",
+    "examples/deploy-agent/README.md:181-200 and book/src/deployment/containers.md:142-157 - 'not covered' lists TLS, authentication, the database, telemetry backends and packaging; NetworkPolicy and a Prometheus scrape path are not mentioned, while the agent is unauthenticated (README.md:188-190)"
+   ],
+   "test": "none",
+   "summary": "Unchanged: the manifest ships no Ingress/TLS, NetworkPolicy or scrape object, and a Prometheus-Operator cluster has no metrics path without a Collector because deploy-agent does not enable otel-prometheus (asking for it exits 2 with a clear message).",
+   "remaining": "Add commented examples (default-deny NetworkPolicy allowing the ingress namespace; Ingress with TLS; ServiceMonitor plus the otel-prometheus feature, OTEL_EXPORTER_PROMETHEUS_HOST=0.0.0.0 and a metrics containerPort) or list NetworkPolicy and Prometheus scraping under 'What this does not cover'.",
+   "theme": "deploy-manifest",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "none (optional: kube-linter or kubeconform on the manifest after adding objects)"
+  },
+  {
+   "id": "A26",
+   "verdict": "confirmed",
+   "severity_now": "low (the mechanism is confirmed by reading; the OOM consequence is still conjecture)",
+   "evidence": [
+    "examples/deploy-agent/deployment.yaml:154-159 - requests cpu 100m / memory 64Mi, limits memory 256Mi, no CPU limit; no TOKIO_WORKER_THREADS or allocator variable in env (:76-123)",
+    "tokio 1.54.1 src/loom/std/mod.rs:88-99 - worker count is TOKIO_WORKER_THREADS or std::thread::available_parallelism(); std reads a cgroup CPU quota only when one is set, so with no CPU limit it is the node's (affinity) CPU count",
+    "tikv-jemalloc-sys 0.7.1 (jemalloc 5.3.1) jemalloc/src/jemalloc.c:737-769 - malloc_ncpus() uses sched_getaffinity / sysconf(_SC_NPROCESSORS_ONLN), never cgroup quotas: arenas follow node cores even WITH a CPU limit, so the audit's 'or a CPU limit' does not fix the jemalloc half",
+    "examples/deploy-agent/Cargo.toml:25-26, main.rs:298-300 - jemalloc is the global allocator; README.md:176-179 documents only _RJEM_MALLOC_CONF=stats_print:true; rg TOKIO_WORKER_THREADS|MALLOC_CONF|narenas in examples/deploy-agent and book/src/deployment: no sizing guidance"
+   ],
+   "test": "none",
+   "summary": "On a many-core node the pod runs one tokio worker per node CPU and jemalloc sizes its arenas from the node's CPUs (and would even under a CPU limit), against a 256 Mi memory limit; whether that OOMs under bursty load is unmeasured.",
+   "remaining": "Set TOKIO_WORKER_THREADS (or a CPU limit) and _RJEM_MALLOC_CONF (narenas, background_thread, dirty_decay_ms) in the manifest, or document them next to resources; measure first.",
+   "theme": "deploy-manifest",
+   "effort": "XS (manifest/doc) after a probe",
+   "breaking": "none",
+   "probe": "Many-core host (>=32 CPUs) with Docker: run the image with `--memory 256m` and no `--cpus`, `_RJEM_MALLOC_CONF=stats_print:true`, drive bursty load (e.g. 500 concurrent SendStreamingMessage for 5 min), record peak RSS from `docker stats` and narenas from the exit stats; repeat with TOKIO_WORKER_THREADS=2 _RJEM_MALLOC_CONF=narenas:4,background_thread:true. Decides whether the default needs changing or just a note."
+  },
+  {
+   "id": "A27",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "examples/deploy-agent/src/main.rs:224-227 - `AgentCard::new(\"deploy-agent\", env!(\"CARGO_PKG_VERSION\"), ...)`",
+    "examples/deploy-agent/Cargo.toml:6 - `version = \"0.0.0\"` (every examples/*/Cargo.toml is 0.0.0); the same pattern in genai main.rs:212, rig main.rs:258, mcp main.rs:231, incident-response serving.rs:41",
+    "rg AGENT_VERSION|git describe|vergen: nothing; Telemetry sets no service.version either (only from OTEL_RESOURCE_ATTRIBUTES)"
+   ],
+   "test": "none",
+   "summary": "Every deployed deploy-agent advertises version 0.0.0, so the card cannot tell rollouts apart.",
+   "remaining": "Read AGENT_VERSION at startup (fall back to CARGO_PKG_VERSION), set it in the manifest from the image tag, and use it for service.version too; or a build arg baked in with option_env!.",
+   "theme": "deploy-template",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "L11",
+   "verdict": "needs_decision",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "deploy/observability/grafana/dashboards/a2a-client.json - all 4 panels are per-series rates: two read recording rules, 'Failures by kind' is rate(rpc_client_call_duration_seconds_count[5m]) directly; the $job variable is label_values(rpc_client_call_duration_seconds_count, job), so a CLI's job IS offered in the dropdown while every panel stays empty",
+    "deploy/observability/prometheus/rules/a2a-recording.yml:70-78 - a2a:rpc_client_calls:rate5m, a2a:rpc_client_error_ratio:rate5m and a2a:rpc_client_unary_latency:p95_5m are sum by (job, ...) (rate(...[5m])): rate is taken per series before the sum, so one-sample series contribute nothing",
+    "crates/a2a-protocol-server/src/otel/telemetry/builder/resource.rs:42-47 - a fresh UUID service.instance.id per process unless the environment names one; Prometheus's OTLP receiver (prometheus.yml otlp block, compose --web.enable-otlp-receiver) maps it to `instance`, so each run is a new series",
+    "crates/a2a-protocol-server/src/otel/telemetry/builder/assemble.rs:18-22 - metric export every 60 s by default; tools/a2a-cli/src/main.rs:86,108-124 - the CLI builds Telemetry and flushes on drop, so a run under 60 s exports exactly one point",
+    "crates/a2a-protocol-client/src/call_metric.rs:3-12 - a streaming call is recorded when its stream is dropped, so even a long `a2a stream`/`task subscribe` produces its first and only point at exit",
+    "Docs: book/src/deployment/observability/dashboards.md:79-85 and deploy/observability/README.md:171-177 state the one-sample caveat, but under the GenAI dashboard; walkthrough.md:80-84 tells CLI users their client series 'are thin', which understates 'no panel data'. No commit after 369e580 touched the client dashboard for this (git log -- deploy/observability: 43e142b is C-09)"
+   ],
+   "test": "none (check_dashboards.py checks queries return data against a live stack, not this case)",
+   "summary": "A long-lived client process appears on all four client panels once it has exported twice inside the 5 m window (about 2 minutes after its first call). A short-lived CLI or batch job exports one point per process under its own random instance, so it shows in the job dropdown but on no panel, and each run adds a new set of histogram series (13 buckets + inf + sum + count per method/peer/error).",
+   "remaining": "Choose between docs, panel and Collector fixes (options); separately, per-run series churn from CI/batch clients is unbounded cardinality over time.",
+   "theme": "otel-dashboards",
+   "effort": "XS (docs) / S (panel) / M (Collector pipeline + live check)",
+   "breaking": "none",
+   "probe": "Observability stack (deploy/observability compose) + hello-agent or deploy-agent: run `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 a2a send <url> hi` 50 times; in Prometheus `count by (instance) (rpc_client_call_duration_seconds_count{job=\"a2a\"})` -> 50 series with 1 sample each, client dashboard panels empty; then run a client that loops for 3 minutes -> panels populated. Re-run after the chosen fix. A stable OTEL_RESOURCE_ATTRIBUTES=service.instance.id=cli is NOT a fix to test blindly: each run restarts the counter at its own start, so a series reading 1,1,1 has rate 0 unless Prometheus ingests start times.",
+   "options": "(1) Docs: say under the client dashboard (not only GenAI) that one-shot processes never appear and to use Tempo traces for them; fix walkthrough.md's 'thin'. XS. (2) Add a client-dashboard panel that works for one-sample series, e.g. calls in range by short-lived processes: sum by (job, server_address) (last_over_time(rpc_client_call_duration_seconds_count[$__range]) and on (job, instance) count_over_time(rpc_client_call_duration_seconds_count[$__range]) == 1). S, no pipeline change, verify live. (3) Collector pipeline for client jobs: drop service.instance.id (transform), cumulativetodelta, then deltatocumulative to fold runs into one long-lived series per job; M, needs a live check and adds Collector state. Recommendation: (1) + (2) now; (3) only if batch clients are a stated target."
+  }
+ ],
+ "new_findings": [
+  {
+   "id": "NEW-a-l-1",
+   "severity": "low (medium for a long-running deployment)",
+   "where": "examples/deploy-agent/src/main.rs:236-276 (no purge_expired anywhere in the example); crates/a2a-protocol-server/src/store/task_store/config.rs:264-265",
+   "finding": "deploy-agent never purges terminal tasks. With DATABASE_URL set, retention silently changes from the in-memory default (10,000 tasks, 1 h TTL) to forever: `tasks`, `task_events` and `idempotency_keys` grow without bound. The audit raised this under A2, which was closed for its readiness half only; the README's 'What this does not cover' and containers.md say nothing about retention.",
+   "scenario": "Two replicas on PostgreSQL serving steady traffic for months: tables and indexes grow until list() and the claim/fence queries slow and the disk fills; nothing in the example or its docs tells the operator to schedule `purge_expired`.",
+   "read_only": true,
+   "theme": "deploy-template"
+  },
+  {
+   "id": "NEW-a-l-2",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/store/pg_schema/mod.rs:131-139 (table_if_missing) and :192-202 (index_if_missing) vs :67-71 (ADD_APPLIED_SEQ_TO_TASKS) and :158-180 (function_if_older, current_schema() at :171,:175)",
+   "finding": "The startup guards added in 413ce9a disagree about which schema they look in: the table and index guards use `to_regclass('name')`, which resolves through the whole search_path, while the applied_seq check and the function guard use current_schema(). With search_path = 'a2a, public' and an unrelated public.tasks, `a2a.tasks` is never created, the ALTER, the task_events foreign key and the idx_tasks_* indexes all resolve to public.tasks, and the store either fails at start or attaches itself to the other application's table.",
+   "scenario": "An operator follows the natural 'own schema' recipe (`options=-c search_path=a2a,public`) in a database that already has a `tasks` table in public; the A2A store does not get its own table. Blocks recommending a dedicated schema for A14.",
+   "read_only": true,
+   "theme": "pg-schema"
+  },
+  {
+   "id": "NEW-a-l-3",
+   "severity": "low",
+   "where": "examples/deploy-agent/deployment.yaml:100-110, 160-164; examples/deploy-agent/README.md:105-109; book/src/deployment/containers.md:87-95",
+   "finding": "Every Secret recipe uses `sslmode=verify-full&sslrootcert=/path/ca.pem` and says 'mount it there', but the manifest has no volumes/volumeMounts and a read-only root filesystem, and shows no ConfigMap/Secret mount for the CA. With sqlx's tls-rustls-ring-webpki, omitting sslrootcert falls back to the bundled Mozilla roots, which do not contain RDS's or Cloud SQL's server CAs.",
+   "scenario": "A user on RDS creates the Secret as shown and applies the manifest: the pod exits at startup (file not found, or an unknown-issuer TLS error without sslrootcert) and the startup probe never passes; the fix (a volume plus mount) is not shown anywhere in the example.",
+   "read_only": true,
+   "theme": "deploy-manifest"
+  },
+  {
+   "id": "NEW-a-l-4a",
+   "severity": "low",
+   "where": ".github/workflows/*.yml (no job builds examples/deploy-agent/Dockerfile or lints deployment.yaml); docs/audits/2026-10-29/README.md L18 note",
+   "finding": "No CI job builds the deploy-agent image or validates the manifest (no docker build of this Dockerfile, no kubeconform/kube-linter/PSS check). L18 records that the Dockerfile's build stages (cargo-chef install, cook, build) have never been run live either.",
+   "scenario": "A workspace change that breaks `cargo chef prepare/cook -p deploy-agent` (a new member needing a file .dockerignore drops, a path dependency outside the copied tree, a toolchain bump past rust:1.94) or a manifest typo ships unnoticed; the first person to find it is a newcomer following the README.",
+   "read_only": true,
+   "theme": "deploy-ci"
+  },
+  {
+   "id": "NEW-a-l-4b",
+   "severity": "low",
+   "where": ".github/dependabot.yml:20-50 (ecosystems: cargo x2, github-actions; no docker); examples/deploy-agent/Dockerfile:18,39",
+   "finding": "The Dockerfile pins rust:1.94-bookworm and debian:bookworm-slim by digest, and nothing refreshes those digests (no Dependabot docker ecosystem, pin-freshness.yml covers SDK pins only). The runtime layer gets no `apt-get upgrade`, so the shipped image carries whatever Debian packages (glibc, etc.) the pinned digest had.",
+   "scenario": "A glibc or other base-image CVE is fixed upstream; images built from main keep the vulnerable layer indefinitely, and a scanner in the user's registry flags every build.",
+   "read_only": true,
+   "theme": "deploy-ci"
+  },
+  {
+   "id": "NEW-a-l-5",
+   "severity": "low",
+   "where": "examples/genai-agent/src/main.rs:298-301; examples/rig-agent/src/main.rs:357-360; examples/mcp-agent/src/main.rs:334-345; examples/multi-lang-team/src/main.rs:406-416; examples/echo-agent/src/main.rs:308; itk/Dockerfile.rust-agent:9",
+   "finding": "Every A2A_BIND_ADDR example builds its card URL from the bind address (`http://{addr}`), the exact trap deploy-agent exists to prevent. genai-agent's own comment calls its server-only mode 'a real deployment' used 'as a deployment template'. With A2A_BIND_ADDR=0.0.0.0:8080 the card advertises http://0.0.0.0:8080; the ITK image sets exactly that (A2A_BIND_ADDR=0.0.0.0:9104).",
+   "scenario": "A user runs genai-agent in a container with A2A_BIND_ADDR=0.0.0.0:8080; a2a-cli or any SDK client discovers the card and dials 0.0.0.0:8080, which on Linux is its own loopback, and fails with a connect error naming no host (see A21).",
+   "read_only": true,
+   "theme": "config-naming"
+  },
+  {
+   "id": "NEW-a-l-6",
+   "severity": "info",
+   "where": "README.md:270-271 vs examples/deploy-agent/src/main.rs:278-286",
+   "finding": "The front-page description still says deploy-agent has 'a `0.0.0.0` bind'; since B-16 it binds `[::]` and falls back to 0.0.0.0.",
+   "scenario": "Doc drift only; an IPv6-only cluster reader concludes the example will not work there.",
+   "read_only": true,
+   "theme": "deploy-docs"
+  }
+ ]
+}

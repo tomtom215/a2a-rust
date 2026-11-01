@@ -1,0 +1,357 @@
+{
+ "slice": "g-docs",
+ "baseline": "4a8243c66df5ae07a54a69168ab419ac609b06e9",
+ "rows": [
+  {
+   "id": "G/D-01",
+   "verdict": "already_fixed",
+   "severity_now": "info (was M); a residual low gap is NEW-g-docs-1",
+   "evidence": [
+    "commit 57f034e (2026-10-29, 'fix: pre-release audit, first pass') - added the https refusal and rewrote all three doc lines (git log -S'build` refuses an `https://` endpoint')",
+    "crates/a2a-protocol-client/src/builder/mod.rs:516-517 - rustdoc now: 'Disables TLS: plain HTTP only, and [`build`](Self::build) refuses an `https://` endpoint.'",
+    "crates/a2a-protocol-client/src/builder/transport_factory.rs:303-317 - http_client(): `if matches!(config.tls, TlsConfig::Disabled) && https { return Err(ClientError::InvalidEndpoint(\"{endpoint} is https:// and TLS is disabled (ClientBuilder::without_tls)\")) }`; both JSON-RPC and HTTP+JSON go through it (:271-294), and card fallback re-checks per interface (:147)",
+    "book/src/client/builder/reference.md:30 - '| `without_tls()` | TLS on with the `tls-rustls` feature | Plain HTTP only; `build` refuses an `https://` endpoint |'",
+    "book/src/reference/configuration.md:205 - same wording; matches the code for build()",
+    "crates/a2a-protocol-client/src/config.rs:43-45 - TlsConfig::Disabled doc: 'Plain HTTP only: an `https://` endpoint is refused when the client is built'"
+   ],
+   "test": "crates/a2a-protocol-client/tests/private_ca.rs:113 without_tls_refuses_an_https_endpoint - asserts build() of https://agent.example.com with without_tls() is Err(InvalidEndpoint) naming 'without_tls', and http:// still builds. Would fail if the check at transport_factory.rs:313 were reverted (expect_err would panic). File is #![cfg(feature = \"tls-rustls\")], which is in the client's default features (Cargo.toml:29). Read, not run.",
+   "summary": "The method now does what its rustdoc and both book rows say for `build()`: TLS off, and an https:// endpoint is refused at build time.",
+   "remaining": "",
+   "theme": "docs-client-tls",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "G/D-02",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged); the crates.io page of the server crate and the root README both say it",
+   "evidence": [
+    "crates/a2a-protocol-server/README.md:61-63 - '`serve` is the shortest path, not the production one: it serves every connection with hyper's defaults, with no connection cap, no idle timeout, and no way to stop short of dropping its future.'",
+    "crates/a2a-protocol-server/README.md:128 - '| `serve()` | Shortest path: no limits, no shutdown |'",
+    "README.md:63 (root) - '`serve()` / `serve_with_addr()` start a listener in one call, with no limits and no shutdown. `Server::bind()` adds what a deployment needs on top: a shutdown signal, header-read and idle timeouts, ...' (same stale claim, not cited by the report)",
+    "crates/a2a-protocol-server/src/serve/mod.rs:182-193 - serve() is `Server::bind(addr).await?` then `serve_with_shutdown(dispatcher, std::future::pending())`; :253-261 serve_with_addr likewise",
+    "crates/a2a-protocol-server/src/serve/graceful/mod.rs:190,220 - Server::bind sets `config: ServeConfig::default()`",
+    "crates/a2a-protocol-server/src/serve/graceful/config.rs:168-183 - default: header_read_timeout Some(30 s, :32), idle_timeout Some(75 s, :44), max_connections None, host_check true",
+    "crates/a2a-protocol-server/src/serve/mod.rs:124-134 - serve's own rustdoc already says the timeouts are on; book/src/getting-started/first-agent.md:133-134 says '30-second header-read timeout, a 75-second idle timeout, no connection ceiling'",
+    "README blame: lines 61-67 unchanged since 69163de (2026-10-22); serve moved onto Server 2026-10-18 per its rustdoc"
+   ],
+   "test": "none (documentation); serve's defaults are pinned by crates/a2a-protocol-server/src/serve/graceful/tests.rs:88-96 (defaults asserted on the struct), read not run",
+   "summary": "Two READMEs (server crate README, which is its crates.io page, and the root README) still say `serve` has hyper's defaults / no limits / no idle timeout; the code runs it on `Server` with a 30 s header-read and 75 s idle timeout and the loopback Host check.",
+   "remaining": "Server README :61-63 should read: '`serve` is the shortest path, not the production one: it runs a `Server` under `ServeConfig::default()` (30 s header-read timeout, 75 s idle timeout, loopback `Host` check, no connection cap) and has no way to stop short of dropping its future.' Server README :128 -> '| `serve()` | Shortest path: default timeouts, no connection cap, no shutdown |'. Root README :63 -> '`serve()` / `serve_with_addr()` start a listener in one call with `ServeConfig::default()` (header-read and idle timeouts on, no connection cap) and no shutdown. `Server::bind()` adds a shutdown signal, an optional `max_connections` ceiling, TLS ... '",
+   "theme": "docs-readme",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "G/D-03",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/serve/graceful/config.rs:260-265 - 'This type is `#[non_exhaustive]` — a header-read timeout and an idle timeout are the obvious next fields — so it is built with setters rather than a struct literal, and gaining one of those is not a breaking change.'",
+    "crates/a2a-protocol-server/src/serve/graceful/config.rs:111 `pub header_read_timeout: Option<Duration>` and :121 `pub idle_timeout: Option<Duration>` - both fields exist in the same struct, with setters at :301 and :312"
+   ],
+   "test": "none (documentation)",
+   "summary": "The `with_max_connections` rustdoc still predicts two fields that the struct already has.",
+   "remaining": "config.rs:260-265 should read: 'Caps the connections served at once. `0` is refused when the server starts (`ServeReport::refused`). This type is `#[non_exhaustive]`, so it is built with setters rather than a struct literal, and a new field is not a breaking change.' (the 0 refusal is graceful/mod.rs:291-292).",
+   "theme": "docs-rustdoc",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "G/D-04",
+   "verdict": "confirmed",
+   "severity_now": "low (was M): only the maintainer's packaging plan reads it; nothing published depends on it",
+   "evidence": [
+    "packaging/README.md:20-22 - 'No release can produce these binaries yet. `release.yml` refuses any `v*` tag not signed by a key committed under `.github/release-signers/`, and none is committed (see that directory's README).'",
+    "packaging/README.md:26 - step 1 '**Commit a release-signing key** to `.github/release-signers/`.'",
+    ".github/release-signers/allowed_signers:4 - 'tomf@tomtomtech.net namespaces=\"git\" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIpEjwPmNqli6aIWV...'",
+    ".github/release-signers/README.md - 'One key is configured: the maintainer's SSH key ... `v0.15.0` (2026-10-25) is the first release to pass it.' (added by 7e32313, 2026-10-25)",
+    "CHANGELOG.md:1083 and :1375 - [0.15.1] 2026-10-26 and [0.15.0] 2026-10-25 were released",
+    ".github/workflows/release.yml:685-696 - `cli-binaries` job, gated by `vars.PUBLISH_CLI_BINARIES == 'true'`, four targets as the README lists (the rest of the README is accurate)",
+    "packaging/README.md last touched 2ee2bae (2026-10-15), before the key was committed"
+   ],
+   "test": "none (documentation)",
+   "summary": "packaging/README.md still says no signing key is committed and lists committing one as step 1; a key is committed and two releases passed the gate.",
+   "remaining": "packaging/README.md:20-22 should read: 'The binaries are off until the repository variable `PUBLISH_CLI_BINARIES` is `true`. Release tags are signed with the maintainer's key in `.github/release-signers/` (v0.15.0 was the first release to pass that gate).' Step 1 should be removed or marked done ('1. ~~Commit a release-signing key~~ Done 2026-10-25.'), and the numbering adjusted.",
+   "theme": "docs-readme",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "G/D-05",
+   "verdict": "partly_fixed",
+   "severity_now": "low (was M)",
+   "evidence": [
+    "commit 57f034e (2026-10-29) - README documents both report items (git log -S on both phrases)",
+    "tools/a2a-cli/README.md:87 - exit 2 now includes '...; or an `OTEL_*` setting the telemetry cannot use, reported in one `error:` line.' matches tools/a2a-cli/src/main.rs:113-120 (`std::process::exit(2)`)",
+    "tools/a2a-cli/README.md:61 - '`--header K=V` | Extra header on every request; repeatable, one value per name (a repeated name keeps the last).' matches connect.rs:81-86 (HashMap keyed by the name as typed)",
+    "STILL WRONG: tools/a2a-cli/src/main.rs:23-29 crate rustdoc exit table: '| 2 | Usage error (bad flag, missing argument, unparseable value) |' - omits the OTEL_* path",
+    "STILL WRONG: tools/a2a-cli/src/error.rs:8-10 'Usage errors never reach this type: `clap` reports them and exits 2 before `main` runs a command. Everything here is therefore exit 1' - true of CliError but says nothing of the other exit-2 path, which runs BEFORE clap (main.rs:86 `let _telemetry = telemetry();` precedes main.rs:89 `Cli::parse()`), so `a2a --help` with a bad OTEL_* variable exits 2 with the OTEL error instead of printing help",
+    "STILL WRONG: 'one value per name' holds only for the same spelling: connect.rs:81-86 keys a case-sensitive HashMap, and crates/a2a-protocol-client/src/transport/jsonrpc.rs:218-220 `builder.header(k, v)` appends, so `--header X-A=1 --header x-a=2` sends two values of one header, in HashMap order",
+    "STILL WRONG: `a2a card <URL>` ignores --header and --timeout: main.rs:61 `None => commands::card(card.url...)` passes no GlobalOpts; commands.rs:48-55 calls `resolve_agent_card(url)` / `fetch_card_from_url(url)` with no CardFetchOptions. README:61 says 'Extra header on every request' and README:368-373 says 'connect.rs passes `--header` and `--timeout` through it' (true for send/stream/task discovery, not for `card`). The handoff (docs/handoff.md:291) names this ('`--header` on `card`')",
+    "tools/a2a-cli/src/cli.rs:75-78 - `--help` text: 'Repeatable.' with no last-wins caveat"
+   ],
+   "test": "tools/a2a-cli/tests/e2e/main.rs:299 usage_errors_exit_two_and_touch_no_network covers clap's exit 2 only; no test drives the OTEL_* exit-2 path or a header on `a2a card`. Read, not run.",
+   "summary": "The README's exit-code table and `--header` row now match the code; the CLI's own rustdoc does not, the header rule is case-sensitive, and `a2a card <URL>` sends no `--header` and ignores `--timeout`.",
+   "remaining": "(1) main.rs:29 -> '| 2 | Usage error (bad flag, missing argument, unparseable value), or an `OTEL_*` setting Telemetry cannot use |'; error.rs:8-10 add 'The other exit 2, an unusable `OTEL_*` setting, happens in `main` before arguments are parsed.' (2) README:61 -> '... one value per name as typed (a repeated name keeps the last; names differing only in case are sent as two values) ...', or change header_map to a case-insensitive, appending map. (3) `a2a card`: either pass `GlobalOpts` and use `resolve_agent_card_with_options` with headers+timeout (code fix), or document under the `a2a card` row 'sends no `--header`; the 30 s fetch budget, not `--timeout`'. (4) cli.rs:76 help: 'Repeatable; a repeated name keeps the last.'",
+   "theme": "cli-docs",
+   "effort": "S",
+   "breaking": "none (a code fix to `a2a card` would start sending headers it now drops; behaviour, not API)",
+   "probe": "none to settle (read). To show (3): run any agent behind a bearer check (e.g. tck/sut with SUT_PROFILE=secured) and `a2a card http://127.0.0.1:9899 --header Authorization='Bearer tck-bind-equiv-004-token'`; observation: whether the card endpoint is reached with the header (only matters if the well-known path is authenticated, which tck/sut's is not, so a request-logging proxy is the cleaner observation)."
+  },
+  {
+   "id": "G/D-06",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "book/src/deployment/production/graceful-shutdown.md:94-96 - 'The gRPC and WebSocket dispatchers have their own `serve_with_shutdown(listener, signal)`, which runs the same three steps and returns the same `ServeReport`'",
+    "crates/a2a-protocol-server/src/dispatch/grpc/shutdown.rs:117-121 - `pub async fn serve_with_shutdown(self, listener: tokio::net::TcpListener, shutdown: ...) -> io::Result<ServeReport>`; its '# Errors' (:112-116): 'A TLS configuration tonic rejects, or the error the server stopped with'",
+    "crates/a2a-protocol-server/src/dispatch/websocket/shutdown.rs:46-50 - WebSocket returns plain `ServeReport` and takes `self: Arc<Self>`",
+    "grpc/shutdown.rs:91-95 - gRPC sends GOAWAY at step 1, which the book page does state (:98-101)"
+   ],
+   "test": "none (documentation)",
+   "summary": "The book says both dispatchers return `ServeReport`; gRPC returns `io::Result<ServeReport>`.",
+   "remaining": "graceful-shutdown.md:94-96 should read: '...`serve_with_shutdown(listener, signal)`, which runs the same three steps: WebSocket returns a `ServeReport`, gRPC an `io::Result<ServeReport>` (a TLS configuration tonic rejects, or the error the server stopped with); WebSocket's is called on an `Arc<WebSocketDispatcher>`.'",
+   "theme": "docs-book",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "G/D-07",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged), wider than reported: six hidden cards on four dispatcher pages",
+   "evidence": [
+    "book/src/building-agents/dispatchers/axum.md:23 and :49 - hidden `AgentCard::new(\"my-agent\", \"1.0.0\", AgentInterface::jsonrpc(\"http://localhost:3000\"))` for an `A2aRouter`, which serves HTTP+JSON (page :6)",
+    "book/src/building-agents/dispatchers/rest.md:15 - same JSON-RPC-only card for `RestDispatcher` (:26-29)",
+    "book/src/building-agents/dispatchers/grpc.md:21 and :78 - same JSON-RPC-only card for `GrpcDispatcher`",
+    "book/src/building-agents/dispatchers/websocket.md:71 - same JSON-RPC-only card for `WebSocketDispatcher`",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:16 - rustdoc counterpart correctly uses `AgentInterface::rest`",
+    "crates/a2a-protocol-types/src/agent_card/builders.rs:76,91,110 - `jsonrpc`, `grpc`, `rest` constructors all exist",
+    "crates/a2a-protocol-server/src/serve/mod.rs:107-117 - `Server` warns (and under `ServeConfig::production()` refuses, graceful/config.rs:208) when the card does not declare the binding a Dispatcher serves; RestDispatcher declares HTTP+JSON"
+   ],
+   "test": "none (the pages compile as no_run/rust doctests via book-tests; nothing checks that a hidden card matches the dispatcher)",
+   "summary": "The hidden card on the Axum, REST, gRPC and WebSocket dispatcher pages advertises only JSON-RPC while the page serves another binding; a reader who expands and copies it publishes a card that misroutes clients (and a RestDispatcher behind `ServeConfig::production()` refuses to start).",
+   "remaining": "axum.md:23,49 and rest.md:15 -> `AgentInterface::rest(\"http://localhost:3000\")`; grpc.md:21,78 -> `AgentInterface::grpc(\"http://localhost:50051\")` (the page serves on 0.0.0.0:50051, grpc.md:41); websocket.md:71 -> `AgentInterface::new(\"ws://localhost:3000\", a2a_protocol_types::WEBSOCKET_BINDING_URI)`, as the same page's first block already does (websocket.md:26; types/src/lib.rs:91).",
+   "theme": "docs-book",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "G/D-08",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/lib.rs:13-15 - '1. Implement [`AgentExecutor`] ... 2. Build a [`RequestHandler`] via [`RequestHandlerBuilder`]. 3. Wire [`JsonRpcDispatcher`] or [`RestDispatcher`] into your hyper server.'",
+    "crates/a2a-protocol-server/src/lib.rs:232 - the crate root re-exports `ServeConfig, ServeReport, Server, serve, serve_with_addr, shutdown_signal`, which step 3 does not mention",
+    "crates/a2a-protocol-server/src/lib.rs:19 - 'its ten `on_*` methods': RequestHandler has eleven (handler/push_config_page.rs:37 adds `on_list_push_configs_page`)"
+   ],
+   "test": "none (documentation)",
+   "summary": "The server crate's rustdoc quick start still tells users to wire a dispatcher into their own hyper server instead of `Server`/`serve`.",
+   "remaining": "lib.rs:15 should read: '3. Serve a [`JsonRpcDispatcher`] or [`RestDispatcher`] with [`Server::bind`](serve::Server::bind) and `serve_with_shutdown(dispatcher, shutdown_signal())` (or [`serve`] for a demo).' lib.rs:19 'ten' -> 'eleven' or list `on_list_push_configs_page`.",
+   "theme": "docs-rustdoc",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "G/D-09",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-client/src/retry.rs:150-151 - 'Retryable errors include: - HTTP connection/transport errors'",
+    "crates/a2a-protocol-client/src/retry.rs:164-168 - `Self::Http(_) | Self::HttpClient(_) | Self::Timeout(_) | ... => true`; :176 `| Self::Transport(_)` in the `=> false` arm (:175-186)",
+    "crates/a2a-protocol-client/src/error/mod.rs:33-34 - variant doc 'A transport configuration or connection error.' `Transport(String)` - also misleading: connection failures now map to HttpClient (transport/websocket.rs:1056-1059, :1080 'a connection that could not be made is retryable ... Both were a non-retryable `Transport`')"
+   ],
+   "test": "crates/a2a-protocol-client/src/error/tests.rs:50 timeout_is_retryable_transport_is_not pins the code (Transport not retryable); the doc is what is wrong. Read, not run.",
+   "summary": "The rustdoc lists 'HTTP connection/transport errors' as retryable while `ClientError::Transport` is explicitly not; the variant's own doc still calls it a connection error.",
+   "remaining": "retry.rs:151 -> '- Connection failures and dropped connections (`Http`, `HttpClient`); not `Transport`, which reports a configuration or a permanent transport fault'. error/mod.rs:33 -> 'A transport configuration error, or a transport failure that retrying cannot fix (not retryable; a connection that could not be made is `HttpClient`).'",
+   "theme": "docs-rustdoc",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "G/D-10",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged); measurements changed since the report",
+   "evidence": [
+    "README.md:244-245 - 'The whole SDK in one screen — the code above its tests is one screen long, the SDK plus `tokio` for the runtime, no SDK feature flags.'",
+    "examples/hello-agent/README.md:6-7 - 'The smallest complete A2A agent: **one screen of code** above its tests, one SDK dependency plus `tokio`, one file.'; examples/hello-agent/Cargo.toml description 'one file, no feature flags'",
+    "examples/hello-agent/src/main.rs:1-106 - measured (python, read-only): 106 lines above `#[cfg(test)]` (:107), 52 non-blank non-comment; main() :60-105 is 46 lines, 32 code, of which 11 code lines (:66-78) are Telemetry setup and an exit(2) path",
+    "examples/hello-agent/README.md:41-80 'What it demonstrates' / 'Three things carry the weight' shows the executor and card only; Telemetry, Server::bind, serve_with_shutdown, shutdown_signal and the `report.refused` check (:94-103) are not mentioned",
+    "main.rs:80 `let url = \"http://127.0.0.1:3000\";` and :88 `Server::bind(\"127.0.0.1:3000\")` - the address is written twice",
+    "crates/a2a-protocol-sdk/Cargo.toml default = [\"tls-rustls\", \"tracing\", \"otel\", \"otlp\", \"webhook\"] - the example compiles only because `otlp` is a default (Telemetry is `#[cfg(feature = \"otlp\")]` in the prelude, sdk/src/lib.rs:126-127); with `default-features = false` it does not compile"
+   ],
+   "test": "none (framing)",
+   "summary": "The example is ~106 lines (52 of code) above its tests, a third of main() is telemetry the README does not mention, and it relies on the SDK's default `otlp` feature, so 'one screen' and 'no feature flags' are overstated.",
+   "remaining": "Either reword README.md:244-245 and examples/hello-agent/README.md:6-7 to 'about 50 lines of code above its tests, on the SDK's default features' and add Telemetry/Server/shutdown_signal to 'What it demonstrates', or shrink the example (one `Telemetry::from_env()`-style call; derive the bind address from `url`).",
+   "theme": "docs-examples",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "G/D-11",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-sdk/src/lib.rs:62-79 - the prelude rustdoc list",
+    "crates/a2a-protocol-sdk/src/lib.rs:87-131 - the prelude: 63 names (counted by script). Exported but missing from the rustdoc list (22): AgentCapabilities, AgentSkill, TaskArtifactUpdateEvent, TaskStatusUpdateEvent, ClientResult, BearerAuthInterceptor, OAuth2ClientCredentials, RetryPolicy, StaticTokenProvider, TokenProvider, ApiKeyAuthInterceptor, BearerTokenAuthInterceptor, Dispatcher, RateLimitConfig, RateLimitInterceptor, Server, ServerResult, serve, serve_with_addr, shutdown_signal, Telemetry, A2aRouter. Nothing listed is missing from the exports.",
+    "crates/a2a-protocol-sdk/README.md:52-58 'Prelude Contents' - names 23; 40 exports are not listed (e.g. AgentInterface, AgentSkill, Server, serve, shutdown_signal, Telemetry, agent_executor, RequestContext)",
+    "crates/a2a-protocol-server/src/lib.rs:232 exports ServeConfig/ServeReport; neither is in the prelude, so the production path needs `a2a_protocol_sdk::server::serve::ServeConfig` (examples/deploy-agent/src/main.rs:49); CombinedDispatcher (server lib.rs:204) likewise"
+   ],
+   "test": "none (documentation)",
+   "summary": "Both the prelude rustdoc and the SDK README's 'Prelude Contents' list a subset of what the prelude exports, and `ServeConfig` is not in the prelude although `Server` is.",
+   "remaining": "Regenerate lib.rs:67-79 and README.md:54-58 from the `pub use` lines (or replace both with 'see the `prelude` module's re-exports'); decide whether `ServeConfig`, `ServeReport` and `CombinedDispatcher` join the prelude (additive, not breaking unless a glob-import name clash).",
+   "theme": "docs-rustdoc",
+   "effort": "XS",
+   "breaking": "none (adding to the prelude can clash with a user's glob-imported name; low risk)",
+   "probe": "none"
+  },
+  {
+   "id": "G/C-01",
+   "verdict": "needs_decision",
+   "severity_now": "medium (unchanged; the file grew)",
+   "evidence": [
+    "CHANGELOG.md - measured now: 805,661 bytes, 12,496 lines (report: 754,592 / 11,763)",
+    "CHANGELOG.md:11-1082 [Unreleased] - 73,728 bytes, 10,964 words, 109 top-level bullets (~100 words each), subsections Added (:26), Breaking Changes (:306), Behaviour Changes (:369), Fixed (:622), Internal (:1034). Up from 22.6 KB / 38 bullets in the report; a Breaking Changes section now exists",
+    "CHANGELOG.md:13-24 - preamble still cites 'llama.cpp `llama-server` b11913 ... Grafana 13.2.4'; :271-272 and :605 carry measurements ('334 ± 31 pairs/s', '390 ± 13 against 443 ± 13')",
+    "CHANGELOG.md:1083-1374 [0.15.1] 20,235 bytes; :1375-5682 [0.15.0] 289,866 bytes, 40,317 words",
+    "no 'Highlights' / 'Action required' block in any release section (rg -i 'highlights|action required' CHANGELOG.md: none)",
+    "scripts/check_file_lengths.sh SCOPE=('*.rs' '*.sh' '*.py') - nothing bounds Markdown; largest book pages: reference/benchmarks.md 39,164 B / 803 lines, reference/api-reference.md 37,916 B / 614 lines, configuration.md 32,068 B (find -printf, read-only)",
+    "book/src/reference/upgrading.md (21,636 B, 321 lines) plus upgrading/0.15-to-0.16.md (8,808 B) exist; book-tests/tests/upgrading_guide.rs enforces a section per breaking boundary"
+   ],
+   "test": "none",
+   "summary": "The CHANGELOG is 806 KB and growing; [Unreleased] alone is 74 KB with ~100-word bullets, internal notes and lab measurements, and no release has a one-screen summary.",
+   "remaining": "A format decision for the maintainer (see options).",
+   "theme": "changelog",
+   "effort": "M",
+   "breaking": "none",
+   "probe": "none",
+   "options": "(a) Add a '### Highlights / Action required' block of <=15 lines at the top of every release section (starting with 0.16.0), enforced by a check like check_release_tree.py (section exists, under N words); keep the detail below. Cheap, keeps one file; does not shrink it. (b) Move '### Internal' and measurement prose out of CHANGELOG.md into docs/changelog-internal/<version>.md and link it; user-facing file shrinks ~10-20%. Needs the release-notes extraction (release.yml:560-600) and check_release_tree.py to ignore the moved text. (c) Keep CHANGELOG.md to one paragraph per change and let the book's upgrading pages carry the migrations. Largest rewrite. Recommendation: (a) now for 0.16.0, plus (b) for Internal; also extend the release.yml oversize fallback to keep '### Behaviour Changes' (NEW-g-docs-7)."
+  },
+  {
+   "id": "G/C-02",
+   "verdict": "needs_decision",
+   "severity_now": "medium (unchanged); 0.15.1 is published, the open question is the policy and its gate",
+   "evidence": [
+    "CHANGELOG.md:1201-1233 [0.15.1] '### Behaviour Changes': 'Code that calls it and then installs its own with `.init()` now panics (the slot is taken) where it did not before' (:1210-1212) and 'A pod that sets `HTTP_PROXY` ... now sends the export to the proxy, which cannot reach the collector, unless `NO_PROXY` lists it' (:1225-1233)",
+    "book/src/reference/upgrading.md:41-60 'Patch releases with something to do' - documents both for 0.15.1 with the migration (install yours first or use Telemetry::layer(); NO_PROXY entries)",
+    "STABILITY.md:63-66 - 'a **minor** release may contain breaking changes and a **patch** release may not'; :68-82 defines breaking as cargo-semver-checks findings or wire/rejection changes, with a spec-correction exception. A runtime behaviour change that makes working code panic is not classified either way",
+    "STABILITY.md:15-26 (§1) not updated since 384e635 (2026-10-25): still 'The crates are at `0.15.0` (2026-10-25), the newest release' - 0.15.1 and its behaviour changes are not mentioned",
+    "Gate 1: .github/workflows/ci.yml:986-1000 cargo-semver-checks on all four published crates, all features, every PR - API-level only, cannot see the install_subscriber change",
+    "Gate 2: .github/workflows/release.yml:145-146 -> scripts/check_release_tree.py:189-207 check_cadence - fails a patch tag only if its CHANGELOG section contains the literal '\\n### Breaking Changes' (:185); a '### Behaviour Changes' section in a patch passes. RELEASING.md:282 describes the same",
+    ".github/workflows/release.yml:589-595 - when a section exceeds 120,000 chars the GitHub release body keeps only Known Limitations|Breaking Changes|Deprecated|Security, so Behaviour Changes are dropped from the notes adopters see"
+   ],
+   "test": "none for behaviour changes; check_release_tree.py has a `history` mode (docstring :38-41) but no test that a patch with 'Behaviour Changes' is flagged, because it is not",
+   "summary": "Nothing stops a breaking behaviour change in a patch: semver-checks sees only API, and the release gate keys on the words '### Breaking Changes', which 0.15.1 avoided by filing its two changes under 'Behaviour Changes'. The docs are honest about 0.15.1 after the fact; STABILITY.md is silent on it.",
+   "remaining": "Policy and gate decision (options). Independently: STABILITY.md §1 should be brought to 0.15.1/0.16.0 (NEW-g-docs-4).",
+   "theme": "release-policy",
+   "effort": "S",
+   "breaking": "none (process); option (a) would make some future patch releases minors instead",
+   "probe": "none",
+   "options": "(a) Amend STABILITY.md §2: 'A change that makes code which compiled and ran against the previous release fail, panic or send data elsewhere at runtime is breaking, whatever the API diff says', and extend check_cadence to refuse a patch whose section has '### Behaviour Changes' unless each entry carries a 'Spec correction:' or 'Security:' tag. Strict; turns releases like 0.15.1 into 0.16.0. (b) Allow behaviour changes in a patch but require an '**Action required:**' line per entry and make the release-notes fallback keep '### Behaviour Changes'; gate checks the line exists. Keeps cadence, makes the cost visible. (c) Status quo plus a STABILITY.md note that patches may change runtime behaviour under 'Behaviour Changes'. Honest but weakens the SemVer promise. Recommendation: (a) for anything that panics or reroutes traffic, with (b)'s release-notes fix regardless."
+  },
+  {
+   "id": "G/C-03",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged); one ratchet hole found",
+   "evidence": [
+    "book-tests/src/lib.rs - 212 include_str! entries: README.md plus 211 of 212 book/src/**/*.md (SUMMARY.md excluded by design, scripts/check_book_code.sh NOT_REGISTERED)",
+    "book fence counts now (script, read-only): 168 ```rust, 143 ```rust,no_run, 5 ```rust,ignore (slimrpc.md:98,113,137,183 and deployment/audit.md:361)",
+    "deployment/audit.md:361 is an indented `rust,ignore` (inside a list item, added 44ddf59 2026-10-29); scripts/check_book_code.sh counts only `^```rust[^\\n]*\\bignore\\b` at column 0 and tracks fences with `ln.startswith(\"```\")`, so this block is compiled by nothing and absent from .book-ignore-baseline ('# total: 4')",
+    "crates/*/src - 14 `rust,ignore` rustdoc blocks: server rate_limit/mod.rs:38, dispatch/axum_adapter.rs:52, request_context.rs:268, conformance/mod.rs:20, conformance/halt/mod.rs:12, executor_helpers.rs:77,85,194,246,286,359; client trace_propagation.rs:17, streaming/event_stream.rs:25,240. 51 rustdoc no_run blocks (compiled)",
+    "Compiled READMEs: root README (book-tests) and the four published crates' (types/src/lib.rs:43, client/src/lib.rs:113, server/src/lib.rs:106, sdk/src/lib.rs:41)",
+    "Not compiled: examples/hello-agent/README.md (2 ```rust blocks, fragments of main.rs), examples/genai-agent/README.md:130 (pseudo-code body, would not compile), crates/README.md:39 (one `use` line), bindings/a2a-protocol-slimrpc/README.md:233,252,278,483,537 (5 rust,no_run; no include_str in bindings/a2a-protocol-slimrpc/src; CI ci.yml:1194-1210 runs `cargo test` and `cargo run --example in_process` only) - the report missed the slimrpc README",
+    ".book-ignore-baseline:22 claims the slimrpc snippets are 'kept in step with the crate's own README and its test suite, which do compile' - the README does not compile; book-tests/src/lib.rs:64 says 'all three of its Rust blocks are `ignore`d' - there are four"
+   ],
+   "test": "scripts/check_book_code.sh is the gate; it would not catch an indented ignore block (read, not run)",
+   "summary": "Book coverage is near-total, but 14 rustdoc examples (EventEmitter's among them), the slimrpc README's five blocks and three example-README blocks are compiled by nothing, and the book's ignore ratchet misses indented fences.",
+   "remaining": "Fix check_book_code.sh to match `^\\s*```` for both the ignore count and the untagged check, then baseline or un-ignore audit.md:361; include bindings/a2a-protocol-slimrpc/README.md as a doctest in that crate's lib.rs; burn down the 14 rustdoc ignores (most need only hidden preamble lines); correct the two stale comments.",
+   "theme": "doctest-coverage",
+   "effort": "M",
+   "breaking": "none",
+   "probe": "none"
+  }
+ ],
+ "new_findings": [
+  {
+   "id": "NEW-g-docs-1",
+   "severity": "low",
+   "where": "crates/a2a-protocol-client/src/builder/transport_factory.rs:180-250 (build_grpc never reads config.tls); crates/a2a-protocol-client/src/builder/mod.rs:516-517",
+   "finding": "`without_tls()` is documented as 'plain HTTP only', but only `build()` honours it. `build_grpc()` ignores `config.tls`: an `https://` endpoint gets TLS from transport/grpc.rs:353-370 (apply_tls), and a bare host:port gets TLS under the default `HttpsExceptLoopback` (builder/mod.rs:444).",
+   "scenario": "A user who calls `.without_tls()` to forbid TLS (e.g. a mesh that encrypts, with a policy of no client TLS) and then `build_grpc()` against a card's `host:port` gRPC address dials TLS anyway.",
+   "read_only": true,
+   "theme": "docs-client-tls"
+  },
+  {
+   "id": "NEW-g-docs-2",
+   "severity": "low",
+   "where": "tools/a2a-cli/src/main.rs:61; tools/a2a-cli/src/commands.rs:48-55",
+   "finding": "`a2a card <URL>` passes no GlobalOpts: it fetches with `resolve_agent_card(url)` / `fetch_card_from_url(url)`, so `--header`, `--timeout` and `--tenant` are silently ignored, while README:61 says '--header ... Extra header on every request' and the flags are 'Accepted before or after the subcommand'. `card verify` (offline.rs:56-63,85) and discovery for send/stream/task (connect.rs:129-132) do pass them.",
+   "scenario": "An agent whose well-known card sits behind an authenticating gateway: `a2a card https://agent --header Authorization=Bearer ...` gets 401 and the user cannot tell the header was dropped; `--timeout 5` still waits the library's 30 s.",
+   "read_only": true,
+   "theme": "cli-docs"
+  },
+  {
+   "id": "NEW-g-docs-3",
+   "severity": "low",
+   "where": "tck/README.md:122-125",
+   "finding": "Says '`BIND-EQUIV-004` is graded **structurally only** ... Proving each binding *enforces* those schemes identically needs a target configured to require credentials.' The kit has that half (tck/src/equivalence.rs:769+ 'BIND-EQUIV-004, enforcement half', README:62 `--auth-token`) and CI runs it against a secured SUT (.github/workflows/tck.yml:197-218, `SUT_PROFILE=secured` ... `--equivalence --auth-token tck-bind-equiv-004-token`). Should read: 'graded in two runs: the unsecured run checks it structurally (security is declared once, at card level); the secured run (`--auth-token`, tck.yml's secured SUT) checks every binding refuses without the token and with a wrong one, and serves with it.'",
+   "scenario": "A reviewer reading the TCK README concludes enforcement is untested and discounts the BIND-EQUIV-004 grade.",
+   "read_only": true,
+   "theme": "docs-readme"
+  },
+  {
+   "id": "NEW-g-docs-4",
+   "severity": "low",
+   "where": "STABILITY.md:15-26; crates/a2a-protocol-types/src/signing.rs:414-415,424; CHANGELOG.md:4991",
+   "finding": "STABILITY.md §1 says 'The crates are at `0.15.0` (2026-10-25), the newest release' although 0.15.1 shipped 2026-10-26 and every crate's Cargo.toml is now 0.16.0. It, the rustdoc and the 0.15.0 CHANGELOG say deprecated `sign_agent_card` 'is removed in 0.16.0', yet signing.rs:424 still defines it in the 0.16.0 tree and the [Unreleased] Breaking Changes list does not remove it.",
+   "scenario": "0.16.0 is tagged as-is: the published docs promise a removal that did not happen (harmless to callers, false on its face), or someone removes it at the last minute without a Breaking Changes entry, which check_release_tree.py would not notice.",
+   "read_only": true,
+   "theme": "release-policy"
+  },
+  {
+   "id": "NEW-g-docs-5",
+   "severity": "low",
+   "where": "scripts/check_book_code.sh (the `re.findall(r\"^```rust[^\\n]*\\bignore\\b\", text, re.M)` count and `ln.startswith(\"```\")` fence tracking); book/src/deployment/audit.md:361",
+   "finding": "The shrink-only ratchet on ignored book blocks matches only fences at column 0. An indented fence (inside a list item, which rustdoc still treats as a code block) escapes both the ignore count and the untagged-block check. audit.md:361 is such a `rust,ignore` block, added 2026-10-29 (44ddf59), compiled by nothing and not in .book-ignore-baseline.",
+   "scenario": "Any new snippet that does not compile can be hidden from the ratchet by indenting it under a bullet; the 'every other Rust block in the book is compiled' claim (.book-ignore-baseline header) is already false.",
+   "read_only": true,
+   "theme": "doctest-coverage"
+  },
+  {
+   "id": "NEW-g-docs-6",
+   "severity": "low",
+   "where": "tools/a2a-cli/README.md:68-70",
+   "finding": "'TLS verification is the library's, against its bundled roots, with no way to turn it off here.' Since 57f034e the library's default (crates/a2a-protocol-client/src/tls.rs:100, :217-225) also trusts `SSL_CERT_FILE` / `SSL_CERT_DIR` for JSON-RPC, HTTP+JSON and WebSocket; gRPC uses tonic's webpki roots only (client Cargo.toml:72), so it does not.",
+   "scenario": "An operator with a private CA does not learn from the CLI README that `SSL_CERT_FILE=/path/ca.pem a2a send https://internal-agent ...` works over the HTTP bindings, and does not learn that `--binding grpc` will still fail.",
+   "read_only": true,
+   "theme": "cli-docs"
+  },
+  {
+   "id": "NEW-g-docs-7",
+   "severity": "low",
+   "where": ".github/workflows/release.yml:589-595",
+   "finding": "When a release section exceeds 120,000 characters the GitHub release body keeps only '### (Known Limitations|Breaking Changes|Deprecated|Security)' and drops the preamble and '### Behaviour Changes' - the section where 0.15.1 put its two upgrade-relevant changes.",
+   "scenario": "A large release (0.15.0 was 289 KB; [Unreleased] is already 74 KB) carries a runtime behaviour change; adopters reading the GitHub release page never see it.",
+   "read_only": true,
+   "theme": "changelog"
+  },
+  {
+   "id": "NEW-g-docs-8",
+   "severity": "info",
+   "where": "README.md:162; book/src/building-agents/dispatchers/axum.md:14 (and other book dependency snippets)",
+   "finding": "Dependency snippets on main say `a2a-protocol-sdk = \"0.16\"` / `version = \"0.16\"` since 476fe03 (2026-10-30), but 0.16.0 is not released (CITATION.cff:17 still 0.15.1, CHANGELOG has only [Unreleased] above [0.15.1]).",
+   "scenario": "Someone copying the Quick Start from the GitHub README on main gets 'failed to select a version for the requirement `a2a-protocol-sdk = \"^0.16\"`' until 0.16.0 is published. The book site root is the latest release's book (docs.yml header), so only the GitHub view is affected.",
+   "read_only": true,
+   "theme": "docs-readme"
+  }
+ ]
+}
