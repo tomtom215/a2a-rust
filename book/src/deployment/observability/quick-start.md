@@ -104,9 +104,10 @@ Build with the `otel-prometheus` feature (off by default, and `deploy-agent` is
 built without it), set `OTEL_METRICS_EXPORTER=prometheus`, and set
 `OTEL_EXPORTER_PROMETHEUS_HOST=0.0.0.0` so a scraper in another pod can
 connect: the default is `localhost`, port 9464. It is plain HTTP with no
-authentication. Without the feature the value is an error naming it, and the
-process does not start. [Prometheus](./prometheus.md) compares this with the
-other ways in.
+authentication. Without the feature the value is noted at `WARN` and dropped
+(the process starts, with metrics going where they go by default), so read the
+startup output. [Prometheus](./prometheus.md) compares this with the other ways
+in.
 
 ## Stopping
 

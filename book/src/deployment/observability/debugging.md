@@ -138,12 +138,19 @@ errors from everywhere, plus the startup line; `RUST_LOG=my_agent=debug,warn`
 that lost exports and how many, so a process that exits with an error from
 `shutdown` lost telemetry even if no warning was seen.
 
-## A value the process refuses
+## A value the process ignores, and one it refuses
 
-The process refuses to start, naming a variable, when it is a value the
-exporter cannot act on: `zstd` compression, an OTLP/HTTP endpoint with no
-scheme, `prometheus` where the `otel-prometheus` feature is not built, an
-exporter name it does not know, an unreadable certificate file. A value it
-cannot act on is `TelemetryError::Config`, with the variable, its value and
-the reason
+A value of an `OTEL_*` variable that is only wrong does not stop the process, as
+the OpenTelemetry specification asks: an exporter name it does not know
+(`zipkin`), `prometheus` where the `otel-prometheus` feature is not built, a
+protocol or compression it does not have (`zstd`), a timeout or a Prometheus
+port that is not a number. Each is a line in `Telemetry::notices`, printed at
+`WARN` by `install_subscriber`, naming the variable, the value and what was
+used instead, so a typo shows as one warning at startup and an export that
+differs from the one you meant. Until 2026-11-01 these stopped the process.
+
+It still refuses to start, naming the variable, when it cannot do without the
+value: an OTLP/HTTP endpoint with no scheme, an unreadable certificate or key
+file, a client certificate without its key. That is `TelemetryError::Config`,
+with the variable, its value and the reason
 ([Configuring `Telemetry`](./telemetry.md#flushing-and-shutting-down)).

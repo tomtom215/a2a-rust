@@ -134,7 +134,7 @@ says which one wins.
 | `without_startup_summary()` | Leaves the startup line out of what `install_subscriber` logs; warnings still print | Logged |
 | `with_langfuse(Langfuse)` | Traces to Langfuse ([Langfuse](../langfuse.md#what-the-preset-sets)) | Off |
 | `install_globally(bool)` | Whether the providers and the W3C propagators become the process-global ones | On |
-| `build()` | Builds the exporters; fails on a value it cannot act on | — |
+| `build()` | Builds the exporters; fails on a value it cannot do without (an endpoint with no scheme, an unreadable certificate file); a wrong exporter name, protocol, compression, timeout or port is a line in `notices()` instead | — |
 
 ## Without global providers
 
@@ -215,7 +215,7 @@ other ([Quick start](./quick-start.md#stopping) has the measured times).
 
 | Variant | When |
 |---|---|
-| `Config { variable, value, reason }` | A variable, or a value given in code, this crate cannot act on |
+| `Config { variable, value, reason }` | A variable, or a value given in code, this crate cannot do without: an endpoint with no scheme, an unreadable certificate or key file, a client certificate without its key |
 | `Exporter { signal, source }` | `opentelemetry-otlp` refused to build an exporter |
 | `Tls(String)` | The TLS configuration could not be built |
 | `Runtime(io::Error)` | The export thread could not be started |

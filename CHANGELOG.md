@@ -423,6 +423,32 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **A wrong `OTEL_*` value is noted, not fatal** (server; audit C-08;
+  maintainer's decision of 2026-11-01). The OpenTelemetry specification has an
+  SDK warn and ignore a value it cannot use. `Telemetry` refused to build, and
+  every binary exited with status 2, over an exporter name it does not have
+  (`zipkin`, `jaeger`), `prometheus` without the `otel-prometheus` feature, a
+  protocol or compression it lacks (`zstd`, `http/json` without `otlp-json`), a
+  timeout or Prometheus port that is not a number; a fleet that sets one
+  `OTEL_*` preset for every SDK it runs lost every agent to a name only one SDK
+  lacked. Each now becomes a line in `Telemetry::notices` (printed at `WARN` by
+  `install_subscriber`) naming the variable, the value and what was used
+  instead (so is `OTEL_SDK_DISABLED=1`, which does not disable, audit NEW-c-5): a dropped exporter name leaves the others, and with none left the
+  variable counts as unset; protocol falls back to `http/protobuf`, compression
+  to none, the timeout to 10 s, the Prometheus port to 9464. Protocol names are
+  matched without regard to case. Still an error naming the variable: an
+  OTLP/HTTP endpoint with no scheme or that is not a URL, a certificate or key
+  file that cannot be read or is not PEM, a client certificate without its
+  key, a header name that is not one, a Prometheus address that cannot be
+  listened on. The cost is stated in the notice and the book: a typo starts a
+  process that exports differently from what was meant, visible as one `WARN`
+  line. `TelemetryBuilder::build`'s `# Errors` section and the book's
+  observability pages (`environment.md`, `debugging.md`, `telemetry.md`,
+  `prometheus.md`, `quick-start.md`) say so. Tests: the parsers' own
+  (`selection`, `compression`, `config`, `prometheus`), and
+  `tests.rs::every_unusable_value_is_noted_with_what_was_used_instead` and
+  `what_cannot_be_done_without_still_fails_the_build` through `build()`.
+
 - **`Profile::Production` refuses a halt, lease, push-config or audit store
   that keeps its state in one process, over a task store several processes
   share** (server; audit E-F13; maintainer's decision of 2026-11-01; amends

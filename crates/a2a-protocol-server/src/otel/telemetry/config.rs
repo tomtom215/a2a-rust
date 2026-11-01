@@ -15,6 +15,7 @@
 //! process environment is `unsafe` in edition 2024, and this crate forbids
 //! `unsafe`.
 
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use super::TelemetryError;
@@ -22,6 +23,38 @@ use super::TelemetryError;
 // Where variables come from (the process environment, or a test's table) and
 // how the process environment is read; shared with the outbound clients.
 pub(super) use crate::net::proxy::{Env, process_env};
+
+/// What the environment said that this crate did not act on, one line each,
+/// and what it did instead.
+///
+/// The OpenTelemetry specification has an SDK warn and ignore a value it
+/// cannot use, and a fleet shares one `OTEL_*` preset among SDKs that do not
+/// all know the same exporters, so a process that refused to start over a
+/// name it does not know (`zipkin`) took the whole fleet down for it (audit
+/// C-08, maintainer's decision of 2026-11-01). `Telemetry` has no subscriber
+/// yet when it parses, so the lines wait here for
+/// [`Telemetry::notices`](super::Telemetry::notices) and
+/// `install_subscriber`, which prints them at WARN. A line is kept once however
+/// many signals read the variable.
+#[derive(Debug, Default)]
+pub(super) struct Notes(Mutex<Vec<String>>);
+
+impl Notes {
+    /// `variable` was set to `value`, which `why` says this crate cannot use;
+    /// `instead` is what it did.
+    pub(super) fn ignored(&self, variable: &str, value: &str, why: &str, instead: &str) {
+        let line = format!("{variable}={value:?} {why}; {instead}");
+        let mut lines = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if !lines.contains(&line) {
+            lines.push(line);
+        }
+    }
+
+    /// The lines so far, leaving none.
+    pub(super) fn take(&self) -> Vec<String> {
+        std::mem::take(&mut *self.0.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+}
 
 /// One of the three signals.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -140,29 +173,54 @@ pub(super) fn sdk_disabled(env: &Env) -> bool {
     env("OTEL_SDK_DISABLED").is_some_and(|v| v.trim().eq_ignore_ascii_case("true"))
 }
 
+/// A note when `OTEL_SDK_DISABLED` is set to something that is not `true` or
+/// `false`: `1` and `yes` do not disable the SDK, and said nothing about it
+/// (audit NEW-c-5). The specification reads only `true` (any case).
+pub(super) fn note_misread_sdk_disabled(env: &Env, notes: &Notes) {
+    const VAR: &str = "OTEL_SDK_DISABLED";
+    if let Some(value) = env(VAR)
+        && !["true", "false"]
+            .iter()
+            .any(|ok| value.trim().eq_ignore_ascii_case(ok))
+    {
+        notes.ignored(
+            VAR,
+            &value,
+            "is not `true` or `false`, and only `true` disables the SDK",
+            "the SDK is not disabled",
+        );
+    }
+}
+
 /// The transport for `signal`: `explicit` when given, else
-/// `OTEL_EXPORTER_OTLP_{SIGNAL}_PROTOCOL` or `OTEL_EXPORTER_OTLP_PROTOCOL`,
-/// else HTTP/protobuf, the specification's default.
+/// `OTEL_EXPORTER_OTLP_{SIGNAL}_PROTOCOL` or `OTEL_EXPORTER_OTLP_PROTOCOL`
+/// (matched without regard to case), else HTTP/protobuf, the specification's
+/// default. A value that is none of the three is noted and HTTP/protobuf used.
 pub(super) fn protocol(
     env: &Env,
     signal: Signal,
     explicit: Option<OtlpProtocol>,
-) -> Result<OtlpProtocol, TelemetryError> {
+    notes: &Notes,
+) -> OtlpProtocol {
     if let Some(p) = explicit {
-        return Ok(p);
+        return p;
     }
     let Some((var, value)) = signal.otlp_var(env, "PROTOCOL") else {
-        return Ok(OtlpProtocol::HttpProtobuf);
+        return OtlpProtocol::HttpProtobuf;
     };
-    match value.trim() {
-        "grpc" => Ok(OtlpProtocol::Grpc),
-        "http/protobuf" => Ok(OtlpProtocol::HttpProtobuf),
-        "http/json" => http_json(&var, &value),
-        _ => Err(TelemetryError::config(
-            &var,
-            &value,
-            "expected `grpc`, `http/protobuf` or `http/json`",
-        )),
+    match value.trim().to_ascii_lowercase().as_str() {
+        "grpc" => OtlpProtocol::Grpc,
+        "http/protobuf" => OtlpProtocol::HttpProtobuf,
+        "http/json" => http_json(notes, &var, &value),
+        _ => {
+            notes.ignored(
+                &var,
+                &value,
+                "is not `grpc`, `http/protobuf` or `http/json`",
+                "`http/protobuf` is used",
+            );
+            OtlpProtocol::HttpProtobuf
+        }
     }
 }
 
@@ -173,38 +231,44 @@ pub(super) fn protocol(
 /// `--all-features` the `not(otlp-json)` arm is compiled out, so deleting it
 /// builds and passes every test, and the mutation gate reported it as a
 /// survivor no test could reach.
-#[cfg_attr(
-    feature = "otlp-json",
-    allow(clippy::unnecessary_wraps, clippy::missing_const_for_fn)
-)]
-fn http_json(var: &str, value: &str) -> Result<OtlpProtocol, TelemetryError> {
+#[cfg_attr(feature = "otlp-json", allow(clippy::missing_const_for_fn))]
+fn http_json(notes: &Notes, var: &str, value: &str) -> OtlpProtocol {
     #[cfg(feature = "otlp-json")]
     {
-        let _ = (var, value);
-        Ok(OtlpProtocol::HttpJson)
+        let _ = (notes, var, value);
+        OtlpProtocol::HttpJson
     }
     #[cfg(not(feature = "otlp-json"))]
     {
-        Err(TelemetryError::config(
+        notes.ignored(
             var,
             value,
-            "OTLP/HTTP with JSON bodies is not compiled in: enable the `otlp-json` feature, \
-             or use `http/protobuf`",
-        ))
+            "needs the `otlp-json` feature, which is not compiled in",
+            "`http/protobuf` is used",
+        );
+        OtlpProtocol::HttpProtobuf
     }
 }
 
 /// The export timeout for `signal`, in milliseconds per the specification;
-/// 10 s when unset.
-pub(super) fn timeout(env: &Env, signal: Signal) -> Result<Duration, TelemetryError> {
-    match signal.otlp_var(env, "TIMEOUT") {
-        None => Ok(Duration::from_secs(10)),
-        Some((var, value)) => value
-            .trim()
-            .parse::<u64>()
-            .map(Duration::from_millis)
-            .map_err(|_| TelemetryError::config(&var, &value, "expected milliseconds")),
-    }
+/// 10 s when unset, and when the value is not a number of milliseconds (noted).
+pub(super) fn timeout(env: &Env, signal: Signal, notes: &Notes) -> Duration {
+    const DEFAULT: Duration = Duration::from_secs(10);
+    let Some((var, value)) = signal.otlp_var(env, "TIMEOUT") else {
+        return DEFAULT;
+    };
+    value.trim().parse::<u64>().map_or_else(
+        |_| {
+            notes.ignored(
+                &var,
+                &value,
+                "is not a number of milliseconds",
+                "10000 is used",
+            );
+            DEFAULT
+        },
+        Duration::from_millis,
+    )
 }
 
 /// The PEM file of extra CA certificates to trust for `signal`, if any:
@@ -265,171 +329,5 @@ pub(super) fn resource_attribute_from_env(env: &Env, key: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashMap;
-
-    fn env(pairs: &[(&str, &str)]) -> Box<Env> {
-        let map: HashMap<String, String> = pairs
-            .iter()
-            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-            .collect();
-        Box::new(move |k| map.get(k).cloned().filter(|v| !v.trim().is_empty()))
-    }
-
-    #[test]
-    fn sdk_disabled_reads_only_true() {
-        assert!(sdk_disabled(&*env(&[("OTEL_SDK_DISABLED", "TRUE")])));
-        assert!(!sdk_disabled(&*env(&[("OTEL_SDK_DISABLED", "false")])));
-        assert!(!sdk_disabled(&*env(&[("OTEL_SDK_DISABLED", "1")])));
-        assert!(!sdk_disabled(&*env(&[])));
-    }
-
-    #[test]
-    fn protocol_prefers_explicit_then_signal_then_general_then_http() {
-        let e = env(&[
-            ("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"),
-            ("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "http/protobuf"),
-        ]);
-        assert_eq!(
-            protocol(&*e, Signal::Traces, None).unwrap(),
-            OtlpProtocol::HttpProtobuf
-        );
-        assert_eq!(
-            protocol(&*e, Signal::Metrics, None).unwrap(),
-            OtlpProtocol::Grpc
-        );
-        assert_eq!(
-            protocol(&*e, Signal::Metrics, Some(OtlpProtocol::HttpProtobuf)).unwrap(),
-            OtlpProtocol::HttpProtobuf
-        );
-        assert_eq!(
-            protocol(&*env(&[]), Signal::Logs, None).unwrap(),
-            OtlpProtocol::HttpProtobuf
-        );
-    }
-
-    #[cfg(not(feature = "otlp-json"))]
-    #[test]
-    fn protocol_refuses_json_without_the_feature_naming_both() {
-        let e = env(&[("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")]);
-        let msg = protocol(&*e, Signal::Traces, None).unwrap_err().to_string();
-        assert!(
-            msg.contains("OTEL_EXPORTER_OTLP_PROTOCOL")
-                && msg.contains("http/json")
-                && msg.contains("otlp-json"),
-            "{msg}"
-        );
-    }
-
-    #[cfg(feature = "otlp-json")]
-    #[test]
-    fn protocol_reads_json_with_the_feature() {
-        let e = env(&[("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")]);
-        assert_eq!(
-            protocol(&*e, Signal::Logs, None).unwrap(),
-            OtlpProtocol::HttpJson
-        );
-        assert!(OtlpProtocol::HttpJson.is_http());
-    }
-
-    #[test]
-    fn protocol_refuses_garbage_naming_the_variable() {
-        assert!(!OtlpProtocol::Grpc.is_http() && OtlpProtocol::HttpProtobuf.is_http());
-        let e = env(&[("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "udp")]);
-        let msg = protocol(&*e, Signal::Logs, None).unwrap_err().to_string();
-        assert!(msg.contains("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"), "{msg}");
-    }
-
-    #[test]
-    fn timeout_is_milliseconds_with_a_ten_second_default() {
-        assert_eq!(
-            timeout(&*env(&[]), Signal::Traces).unwrap(),
-            Duration::from_secs(10)
-        );
-        let e = env(&[
-            ("OTEL_EXPORTER_OTLP_TIMEOUT", "2500"),
-            ("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "100"),
-        ]);
-        assert_eq!(
-            timeout(&*e, Signal::Traces).unwrap(),
-            Duration::from_millis(2500)
-        );
-        assert_eq!(
-            timeout(&*e, Signal::Logs).unwrap(),
-            Duration::from_millis(100)
-        );
-        assert!(
-            timeout(
-                &*env(&[("OTEL_EXPORTER_OTLP_TIMEOUT", "5s")]),
-                Signal::Traces
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn service_name_counts_from_either_variable_and_not_from_others() {
-        assert!(service_name_from_env(&*env(&[("OTEL_SERVICE_NAME", "a")])));
-        assert!(service_name_from_env(&*env(&[(
-            "OTEL_RESOURCE_ATTRIBUTES",
-            "deployment.environment.name=prod, service.name=b"
-        )])));
-        assert!(!service_name_from_env(&*env(&[(
-            "OTEL_RESOURCE_ATTRIBUTES",
-            "service.namespace=x"
-        )])));
-        assert!(!service_name_from_env(&*env(&[])));
-    }
-
-    #[test]
-    fn a_client_identity_takes_both_files_each_falling_back_on_its_own() {
-        assert!(
-            client_identity_files(&*env(&[]), Signal::Traces)
-                .unwrap()
-                .is_none()
-        );
-        let e = env(&[
-            ("OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE", "/c.pem"),
-            ("OTEL_EXPORTER_OTLP_CLIENT_KEY", "/k.pem"),
-            ("OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY", "/tk.pem"),
-        ]);
-        let [cert, key] = client_identity_files(&*e, Signal::Traces).unwrap().unwrap();
-        assert_eq!(cert.1, "/c.pem");
-        assert_eq!(
-            key,
-            (
-                "OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY".to_owned(),
-                "/tk.pem".to_owned()
-            )
-        );
-        let [_, key] = client_identity_files(&*e, Signal::Logs).unwrap().unwrap();
-        assert_eq!(key.1, "/k.pem");
-    }
-
-    #[test]
-    fn half_a_client_identity_is_refused_naming_the_variable_set() {
-        let e = env(&[("OTEL_EXPORTER_OTLP_METRICS_CLIENT_CERTIFICATE", "/c.pem")]);
-        let msg = client_identity_files(&*e, Signal::Metrics)
-            .unwrap_err()
-            .to_string();
-        assert!(
-            msg.contains("OTEL_EXPORTER_OTLP_METRICS_CLIENT_CERTIFICATE") && msg.contains("KEY"),
-            "{msg}"
-        );
-        let e = env(&[("OTEL_EXPORTER_OTLP_CLIENT_KEY", "/k.pem")]);
-        let msg = client_identity_files(&*e, Signal::Logs)
-            .unwrap_err()
-            .to_string();
-        assert!(
-            msg.contains("OTEL_EXPORTER_OTLP_CLIENT_KEY") && msg.contains("CERTIFICATE"),
-            "{msg}"
-        );
-    }
-
-    #[test]
-    fn an_empty_value_is_unset() {
-        let e = env(&[("OTEL_SERVICE_NAME", "")]);
-        assert!(!service_name_from_env(&*e));
-    }
-}
+#[path = "config_tests.rs"]
+mod tests;

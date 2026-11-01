@@ -48,15 +48,26 @@ impl TelemetryBuilder {
     ///
     /// # Errors
     ///
-    /// [`TelemetryError`] for a variable with a value this crate cannot act
-    /// on — named, with the value, except for headers — an exporter that
-    /// cannot be built, a CA file that cannot be read, or an export thread
-    /// that cannot be started. Nothing is installed on error.
+    /// [`TelemetryError`] for a value this crate cannot act on and cannot do
+    /// without — an OTLP/HTTP endpoint with no scheme or that is not a URL, a
+    /// certificate or key file that cannot be read, a client certificate
+    /// without its key, a header name that is not one — named, with the value,
+    /// except for headers; an exporter that cannot be built, a Prometheus
+    /// address that cannot be listened on, or an export thread that cannot be
+    /// started. Nothing is installed on error.
+    ///
+    /// A value of an `OTEL_*` variable that is only wrong (an exporter name
+    /// this SDK does not have, an unknown protocol or compression, a timeout or
+    /// Prometheus port that is not a number) is not an error: the
+    /// specification has an SDK warn and ignore it, so it is noted in
+    /// [`Telemetry::notices`] with what was used instead, and the build goes
+    /// on.
     pub fn build(self) -> Result<Telemetry, TelemetryError> {
+        config::note_misread_sdk_disabled(&*self.env, &self.notes);
         let chosen = [
-            self.selection(Signal::Traces)?,
-            self.selection(Signal::Metrics)?,
-            self.selection(Signal::Logs)?,
+            self.selection(Signal::Traces),
+            self.selection(Signal::Metrics),
+            self.selection(Signal::Logs),
         ];
         let mut telemetry = Telemetry {
             tracer: None,
@@ -105,6 +116,8 @@ impl TelemetryBuilder {
         ]));
         let propagators = Propagators::from_env(&*self.env);
         telemetry.notices.extend(propagators.notice());
+        // Last, so every signal's variables have been read.
+        telemetry.notices.extend(self.notes.take());
         if self.install_globally {
             if let Some(tracer) = &telemetry.tracer {
                 opentelemetry::global::set_tracer_provider(tracer.clone());
@@ -167,7 +180,7 @@ impl TelemetryBuilder {
         if chosen.prometheus
             && let Some(runtime) = runtime
         {
-            let started = super::super::prometheus::start(&*self.env, runtime)?;
+            let started = super::super::prometheus::start(&*self.env, runtime, &self.notes)?;
             builder = builder.with_reader(started.reader);
             parts.push(format!("prometheus http://{}/metrics", started.addr));
             telemetry.prometheus = Some(started.addr);
