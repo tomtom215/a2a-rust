@@ -1,0 +1,16 @@
+# Hand-written accept loops that remain in examples/, each a stub the example
+# needs to answer in a fixed or hostile way, not an agent. An agent is served by
+# `Server` (see scripts/check_example_servers.py). One line per file:
+#
+#     <path> <count>  # why this is not an agent server
+
+examples/agent-team/src/infrastructure.rs 1                      # a webhook receiver that records what the agents push, so the demo can show a delivery arrived
+examples/echo-agent/src/main.rs 1                                # a webhook sink answering "ok", so a push config points at something that answers
+examples/genai-agent/src/surface.rs 1                            # the same webhook sink
+examples/rig-agent/src/surface.rs 1                              # the same webhook sink
+examples/multi-lang-team/src/surface.rs 1                        # the same webhook sink
+examples/incident-response/src/serving.rs 1                      # the same webhook sink
+examples/incident-response/src/hardening/jwt.rs 1                # serves a fixed JWKS document, standing in for an identity provider
+examples/incident-response/src/hardening/push_tls.rs 1           # a TLS webhook sink under a private CA, to show push delivery trusting it
+examples/incident-response/src/hardening/resilience.rs 1         # a forwarding proxy that fails the first requests on purpose, to show the client retrying
+examples/resilient-agent/src/support/injectors.rs 2              # fault injectors (a proxy that drops or delays on purpose): the point is that they misbehave

@@ -122,13 +122,15 @@ async fn main() {
 
     // ── Agent 3: Health Monitor (JSON-RPC) ───────────────────────────────
     let health_handler = Arc::new(
-        RequestHandlerBuilder::new(HealthMonitorExecutor)
-            .with_agent_card(health_monitor_card(&health_url))
-            .with_interceptor(AuditInterceptor::new("HealthMonitor"))
-            .with_push_sender(HttpPushSender::new().allow_private_urls())
-            .with_additional_metrics(Arc::clone(&health_metrics))
-            .build()
-            .expect("build health monitor handler"),
+        RequestHandlerBuilder::new(HealthMonitorExecutor::new(
+            [&analyzer_url, &build_url, &health_url, &coordinator_url].map(String::clone),
+        ))
+        .with_agent_card(health_monitor_card(&health_url))
+        .with_interceptor(AuditInterceptor::new("HealthMonitor"))
+        .with_push_sender(HttpPushSender::new().allow_private_urls())
+        .with_additional_metrics(Arc::clone(&health_metrics))
+        .build()
+        .expect("build health monitor handler"),
     );
     serve_jsonrpc(health_listener, Arc::clone(&health_handler));
     println!("Agent [HealthMonitor] JSON-RPC on {health_url}");

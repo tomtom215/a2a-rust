@@ -33,27 +33,9 @@ pub async fn bind_listener() -> (tokio::net::TcpListener, SocketAddr) {
 pub fn serve_jsonrpc(listener: tokio::net::TcpListener, handler: Arc<RequestHandler>) {
     let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
     tokio::spawn(async move {
-        loop {
-            // A transient accept error must not end the loop: one refused
-            // connection would silently drop a whole transport out of the
-            // coverage matrix and read as a missing call.
-            let Ok((stream, _)) = listener.accept().await else {
-                continue;
-            };
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let dispatcher = Arc::clone(&dispatcher);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&dispatcher);
-                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-            });
-        }
+        let _ = a2a_protocol_server::serve::Server::from_listener(listener)
+            .serve_with_shutdown(dispatcher, std::future::pending())
+            .await;
     });
 }
 
@@ -61,24 +43,9 @@ pub fn serve_jsonrpc(listener: tokio::net::TcpListener, handler: Arc<RequestHand
 pub fn serve_rest(listener: tokio::net::TcpListener, handler: Arc<RequestHandler>) {
     let dispatcher = Arc::new(RestDispatcher::new(handler));
     tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                continue;
-            };
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let dispatcher = Arc::clone(&dispatcher);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&dispatcher);
-                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-            });
-        }
+        let _ = a2a_protocol_server::serve::Server::from_listener(listener)
+            .serve_with_shutdown(dispatcher, std::future::pending())
+            .await;
     });
 }
 

@@ -131,40 +131,13 @@ pub(crate) async fn start_agent(
             .build()?,
     );
 
-    // JSON-RPC and REST on one socket, routed by request shape.
-    let jsonrpc = Arc::new(JsonRpcDispatcher::new(Arc::clone(&handler)));
-    let rest = Arc::new(a2a_protocol_server::dispatch::RestDispatcher::new(
-        Arc::clone(&handler),
-    ));
+    // JSON-RPC and REST on one socket: `CombinedDispatcher` routes by request
+    // shape, and `Server` accepts, caps and drains the connections.
+    let dispatcher = a2a_protocol_server::dispatch::CombinedDispatcher::new(Arc::clone(&handler));
     tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                continue;
-            };
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let jsonrpc = Arc::clone(&jsonrpc);
-            let rest = Arc::clone(&rest);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req: hyper::Request<_>| {
-                    let jsonrpc = Arc::clone(&jsonrpc);
-                    let rest = Arc::clone(&rest);
-                    async move {
-                        let is_jsonrpc = req.method() == hyper::Method::POST
-                            && (req.uri().path() == "/" || req.uri().path().is_empty());
-                        if is_jsonrpc {
-                            Ok::<_, std::convert::Infallible>(jsonrpc.dispatch(req).await)
-                        } else {
-                            Ok::<_, std::convert::Infallible>(rest.dispatch(req).await)
-                        }
-                    }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-            });
-        }
+        let _ = a2a_protocol_server::serve::Server::from_listener(listener)
+            .serve_with_shutdown(dispatcher, std::future::pending())
+            .await;
     });
 
     {
@@ -336,24 +309,9 @@ pub(crate) async fn start_restricted_agent() -> Result<String, Box<dyn std::erro
     );
     let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
     tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                continue;
-            };
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let d = Arc::clone(&dispatcher);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&d);
-                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-            });
-        }
+        let _ = a2a_protocol_server::serve::Server::from_listener(listener)
+            .serve_with_shutdown(dispatcher, std::future::pending())
+            .await;
     });
     Ok(url)
 }

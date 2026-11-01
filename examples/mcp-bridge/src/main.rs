@@ -47,6 +47,7 @@ use rmcp::ServiceExt;
 
 mod bridge;
 mod mapping;
+mod trust;
 
 /// The SDK's telemetry from the standard `OTEL_*` environment, set up as in
 /// `examples/hello-agent`: with an OTLP endpoint configured for a signal
@@ -82,6 +83,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nth(1)
         .or_else(|| std::env::var("A2A_AGENT_URL").ok())
         .ok_or("usage: a2a-mcp-bridge <A2A agent base URL>  (or set A2A_AGENT_URL)")?;
+
+    // The card this fetches is written by the agent and read by your model, so
+    // it is not fetched in the clear from another machine (audit SEC-16).
+    trust::check_agent_url(
+        &url,
+        std::env::var(trust::ALLOW_PLAINTEXT).as_deref() == Ok("1"),
+    )?;
 
     // Discovery before serving. An MCP server that came up and published an
     // empty tool list because the agent was briefly down is indistinguishable,

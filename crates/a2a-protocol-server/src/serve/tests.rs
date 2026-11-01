@@ -222,3 +222,92 @@ async fn serve_binds_and_answers_requests() {
 
     server.abort();
 }
+
+// ── Arc<D> is a Dispatcher ───────────────────────────────────────────────────
+
+/// A dispatcher that has a binding and a handler, to see them forwarded.
+struct Declaring(Arc<crate::RequestHandler>);
+
+struct NoopAgent;
+crate::agent_executor!(NoopAgent, |_ctx, _queue| async { Ok(()) });
+
+impl Dispatcher for Declaring {
+    fn dispatch(
+        &self,
+        req: hyper::Request<Incoming>,
+    ) -> Pin<Box<dyn Future<Output = DispatchResponse> + Send + '_>> {
+        MockDispatcher.dispatch(req)
+    }
+
+    fn request_handler(&self) -> Option<&Arc<crate::RequestHandler>> {
+        Some(&self.0)
+    }
+
+    fn protocol_binding(&self) -> Option<&'static str> {
+        Some("JSONRPC")
+    }
+}
+
+/// A shared dispatcher forwards the two provided methods too. A wrapper that
+/// kept their defaults would hand `Server` no handler, and its shutdown would
+/// stop cancelling in-flight work before it drains the sockets.
+#[test]
+fn a_shared_dispatcher_forwards_its_binding_and_its_handler() {
+    let handler = Arc::new(
+        crate::RequestHandlerBuilder::new(NoopAgent)
+            .without_agent_card()
+            .build()
+            .expect("a handler"),
+    );
+    let shared: Arc<Declaring> = Arc::new(Declaring(Arc::clone(&handler)));
+
+    assert_eq!(Dispatcher::protocol_binding(&shared), Some("JSONRPC"));
+    let forwarded = Dispatcher::request_handler(&shared).expect("the handler is forwarded");
+    assert!(Arc::ptr_eq(forwarded, &handler));
+
+    // And the defaults still hold for one that declares neither.
+    let plain = Arc::new(MockDispatcher);
+    assert_eq!(Dispatcher::protocol_binding(&plain), None);
+    assert!(Dispatcher::request_handler(&plain).is_none());
+}
+
+/// A listener served with a shared dispatcher answers, and returns when the
+/// shutdown future completes.
+#[tokio::test]
+async fn a_shared_dispatcher_is_served_and_stops_on_shutdown() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let server = tokio::spawn(Server::from_listener(listener).serve_with_shutdown(
+        Arc::new(MockDispatcher),
+        async {
+            let _ = stopped.await;
+        },
+    ));
+
+    let client = Client::builder(TokioExecutor::new()).build_http::<Empty<Bytes>>();
+    let mut answered = None;
+    for _ in 0..50 {
+        if let Ok(resp) = client
+            .get(format!("http://{addr}/").parse().expect("uri"))
+            .await
+        {
+            answered = Some(resp);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let resp = answered.expect("the shared dispatcher answers");
+    let body = resp.into_body().collect().await.expect("body").to_bytes();
+    assert_eq!(&body[..], b"ok");
+
+    stop.send(()).expect("server still running");
+    let report = tokio::time::timeout(std::time::Duration::from_secs(10), server)
+        .await
+        .expect("shutdown completes")
+        .expect("server task");
+    assert!(report.refused.is_none(), "{:?}", report.refused);
+    assert!(report.accepted >= 1);
+}

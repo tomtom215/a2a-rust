@@ -128,9 +128,17 @@ fn a_published_tool_carries_the_agents_own_description() {
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0].name, "report");
     let description = tools[0].description.as_deref().unwrap_or_default();
-    assert!(description.starts_with("does report"), "{description}");
-    // Plus the one thing the skill cannot know about itself.
-    assert!(description.contains("remote agent"), "{description}");
+    // The agent's words, quoted and attributed to it (audit SEC-16) ...
+    assert!(
+        description
+            .starts_with("Remote agent 'Test Agent' describes this skill as: \"does report\""),
+        "{description}"
+    );
+    // ... plus the one thing the skill cannot know about itself.
+    assert!(
+        description.contains("one call is one agent task"),
+        "{description}"
+    );
     assert_eq!(tools[0].input_schema.get("type"), Some(&json!("object")));
     assert_eq!(
         tools[0].input_schema.get("required"),
@@ -279,24 +287,9 @@ async fn start_agent(skills: Vec<AgentSkill>) -> String {
     );
     let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
     tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                continue;
-            };
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let dispatcher = Arc::clone(&dispatcher);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&dispatcher);
-                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-            });
-        }
+        let _ = a2a_protocol_server::serve::Server::from_listener(listener)
+            .serve_with_shutdown(dispatcher, std::future::pending())
+            .await;
     });
     url
 }

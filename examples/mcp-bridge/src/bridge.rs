@@ -60,6 +60,7 @@ use rmcp::model::{
     ServerConfig, Tool, UpdateTaskParams,
 };
 use rmcp::service::RequestContext;
+
 use rmcp::task_manager::{TaskContext, TaskExit, TaskManager, TaskOptions};
 use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
 
@@ -311,11 +312,7 @@ impl ServerHandler for A2aBridge {
             format!("a2a-mcp-bridge ({})", self.card.name),
             env!("CARGO_PKG_VERSION"),
         );
-        info.instructions = Some(format!(
-            "Tools on this server are skills of the remote A2A agent '{}': {}. \
-             Each call sends one message and returns when the agent's task settles.",
-            self.card.name, self.card.description
-        ));
+        info.instructions = Some(mapping::instructions(&self.card));
         info
     }
 

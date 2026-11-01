@@ -248,24 +248,9 @@ fn make_agent_card(url: &str, model: &str, tools: &[&str]) -> AgentCard {
 /// Serves the JSON-RPC dispatcher on an already-bound listener.
 fn serve(listener: tokio::net::TcpListener, dispatcher: Arc<JsonRpcDispatcher>) {
     tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                continue;
-            };
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let dispatcher = Arc::clone(&dispatcher);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&dispatcher);
-                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-            });
-        }
+        let _ = a2a_protocol_server::serve::Server::from_listener(listener)
+            .serve_with_shutdown(dispatcher, std::future::pending())
+            .await;
     });
 }
 

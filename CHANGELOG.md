@@ -35,6 +35,13 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`Arc<D>` is a `Dispatcher` when `D` is** (server; audit G-05): code that
+  keeps an `Arc<JsonRpcDispatcher>` to hand clones to other tasks can give it
+  to `Server::serve_with_shutdown` as it is. It forwards `request_handler` and
+  `protocol_binding` as well as `dispatch`; a wrapper that kept their defaults
+  would lose the shutdown that cancels in-flight work before it drains the
+  sockets.
+
 - **`A2A-Delivery-Id` on every webhook request** (server; audit D-05;
   `push::webhook::{DELIVERY_ID_HEADER, delivery_id}`): one UUID per event per
   webhook, the same on every attempt of it, so a receiver that handled the
@@ -1215,6 +1222,25 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   a lost export names the proxy. `without_proxy()` restores the old behaviour.
 
 ### Fixed
+
+- **The examples serve agents with `Server`, not a hand-written accept loop**
+  (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
+  calls a defect: no connection cap, no drain, and a `continue` that spins a
+  core on a persistent accept error. They now use
+  `Server::from_listener(..).serve_with_shutdown(..)` (`CombinedDispatcher` for
+  JSON-RPC and REST on one port in `incident-response`), `hello-agent`'s test
+  binds once and keeps the listener instead of binding, reading the port,
+  dropping it and binding again, and `scripts/check_example_servers.py`, run in
+  CI, fails on a new loop; the ten stubs that remain (webhook sinks, a JWKS
+  document, fault injectors) are listed with a reason. `agent-team`'s health
+  monitor probes only its roster (it fetched, and listed the tasks of, any URL
+  a caller put in the message, and said whether each answered), and a request
+  is capped at 16 URLs. `mcp-bridge` quotes the remote agent's skill text as the
+  remote agent's, cuts it, strips control, bidirectional and zero-width
+  characters, and refuses an `http://` agent on another machine unless
+  `A2A_MCP_BRIDGE_ALLOW_PLAINTEXT=1`; its README says the card is untrusted
+  input to the model. Tests: `serve/tests.rs`, `executors/health_monitor.rs`,
+  `mcp-bridge/src/trust_tests.rs` and `tests.rs`.
 
 - **A build without `tls-rustls` dials with the same TCP settings as one with
   it** (server; audit B-30). Push delivery and JWKS fetches there used the
