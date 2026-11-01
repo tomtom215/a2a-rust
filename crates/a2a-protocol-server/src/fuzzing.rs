@@ -97,7 +97,7 @@ pub fn extensions_header(value: &str) -> Vec<String> {
 pub fn caller_key_from_forwarded_for(xff: &str, trusted_proxy_hops: usize) -> String {
     let headers = HashMap::from([("x-forwarded-for".to_owned(), xff.to_owned())]);
     let ctx = crate::call_context::CallContext::new("fuzz").with_http_headers(headers);
-    crate::rate_limit::identity::caller_key(&ctx, trusted_proxy_hops)
+    crate::rate_limit::identity::caller_key(&ctx, trusted_proxy_hops, &[])
 }
 
 #[cfg(test)]

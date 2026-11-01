@@ -15,6 +15,9 @@
 
 mod support_tls;
 
+use a2a_protocol_client::discovery::{CardFetchOptions, resolve_agent_card_with_options};
+#[cfg(feature = "signing")]
+use a2a_protocol_client::jwks::fetch_jwks;
 use a2a_protocol_client::{ClientBuilder, ClientError, tls};
 use support_tls::{ping, pki, serve_tls};
 
@@ -118,4 +121,58 @@ fn without_tls_refuses_an_https_endpoint() {
         .without_tls()
         .build()
         .expect("plain HTTP is still allowed");
+}
+
+/// The card resolver takes a TLS configuration of its own (audit B-03). Until
+/// 2026-10-31 it had none: only `SSL_CERT_FILE` reached it, so an agent behind
+/// a private CA could be called but not discovered in code. The test server
+/// has no card, so it answers 404: reaching that answer shows the handshake
+/// was accepted.
+#[tokio::test]
+async fn the_card_fetch_takes_the_tls_configuration() {
+    let pki = pki();
+    let port = serve_tls(&pki, false).await;
+    let base = format!("https://localhost:{port}");
+    let tls = tls::tls_config_from_pem(Some(pki.ca_pem.as_bytes()), None).unwrap();
+
+    let refused = resolve_agent_card_with_options(&base, &CardFetchOptions::default())
+        .await
+        .expect_err("an unknown CA must be refused")
+        .to_string();
+    assert!(refused.contains("UnknownIssuer"), "default: {refused}");
+    let reached =
+        resolve_agent_card_with_options(&base, &CardFetchOptions::default().with_tls_config(tls))
+            .await
+            .expect_err("the server has no card")
+            .to_string();
+    assert!(
+        !reached.contains("UnknownIssuer") && reached.contains("404"),
+        "configured: {reached}"
+    );
+}
+
+/// The same for the JWK Set fetch, which the keys of a signed card come from.
+#[cfg(feature = "signing")]
+#[tokio::test]
+async fn the_key_set_fetch_takes_the_tls_configuration() {
+    let pki = pki();
+    let port = serve_tls(&pki, false).await;
+    let jwks = format!("https://localhost:{port}/jwks");
+    let tls = tls::tls_config_from_pem(Some(pki.ca_pem.as_bytes()), None).unwrap();
+
+    let refused = fetch_jwks(&jwks, &CardFetchOptions::default())
+        .await
+        .expect_err("an unknown CA must be refused")
+        .to_string();
+    assert!(refused.contains("UnknownIssuer"), "default: {refused}");
+    let reached = fetch_jwks(&jwks, &CardFetchOptions::default().with_tls_config(tls))
+        .await
+        .expect_err("the server has no key set")
+        .to_string();
+    // The handshake was accepted and the server answered with an HTTP status
+    // (a 400 here: it wants an `A2A-Version` header on a route it serves).
+    assert!(
+        !reached.contains("UnknownIssuer") && reached.contains("unexpected HTTP status"),
+        "configured: {reached}"
+    );
 }

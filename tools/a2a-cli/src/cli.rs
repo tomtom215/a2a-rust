@@ -97,6 +97,14 @@ pub struct GlobalOpts {
     /// skips the card.
     #[arg(long, global = true)]
     pub no_capability_check: bool,
+
+    /// Send `--header` values to the host the agent card names, even when it
+    /// is not the host you typed. By default they go only to the host in the
+    /// URL you gave: a card is the agent's own word, and a card that names
+    /// another host would otherwise receive your credentials. Also lets
+    /// `card verify` send them to a JWK Set on another host than the card.
+    #[arg(long, global = true)]
+    pub follow_card_origin: bool,
 }
 
 /// The four bindings the client library speaks.

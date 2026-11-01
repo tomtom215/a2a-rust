@@ -23,8 +23,11 @@ use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use bytes::Bytes;
 use http_body_util::Full;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::Client;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::connect::HttpConnector;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::rt::TokioExecutor;
 
 use super::pinning::{host_header_from_url, pin_target, rewrite_uri_with_pinned_addr};
@@ -36,38 +39,15 @@ use super::pinning::{host_header_from_url, pin_target, rewrite_uri_with_pinned_a
 #[cfg(not(feature = "tls-rustls"))]
 pub(crate) type PushHttpClient = Client<HttpConnector, Full<Bytes>>;
 #[cfg(feature = "tls-rustls")]
-pub(crate) type PushHttpClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;
-
-/// Builds the rustls `ClientConfig` used for HTTPS push delivery: TLS 1.2+ with
-/// `ring` selected explicitly (avoiding the multi-provider "could not determine
-/// process-level `CryptoProvider`" panic) and Mozilla's webpki roots.
-#[cfg(feature = "tls-rustls")]
-fn push_tls_config() -> rustls::ClientConfig {
-    let mut roots = rustls::RootCertStore::empty();
-    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
-        rustls::crypto::ring::default_provider(),
-    ))
-    .with_safe_default_protocol_versions()
-    .expect("ring provider supports the rustls default protocol versions")
-    .with_root_certificates(roots)
-    .with_no_client_auth()
-}
+pub(crate) type PushHttpClient = crate::net::client::HttpsClient;
 
 /// Builds an HTTPS-capable (`https_or_http`) push client from a rustls config.
+///
+/// It goes through the proxy `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and
+/// `NO_PROXY` name, and keeps idle connections 50 s (`net::client`).
 #[cfg(feature = "tls-rustls")]
-pub(crate) fn build_push_https_client(tls_config: rustls::ClientConfig) -> PushHttpClient {
-    let mut http = HttpConnector::new();
-    // Let the HttpsConnector wrapper handle TLS for https:// targets while
-    // still permitting plaintext http:// via `https_or_http()`.
-    http.enforce_http(false);
-    http.set_nodelay(true);
-    let https = hyper_rustls::HttpsConnectorBuilder::new()
-        .with_tls_config(tls_config)
-        .https_or_http()
-        .enable_all_versions()
-        .wrap_connector(http);
-    Client::builder(TokioExecutor::new()).build(https)
+pub(crate) fn build_push_https_client(tls_config: &rustls::ClientConfig) -> PushHttpClient {
+    crate::net::client::HttpsClient::new(tls_config)
 }
 
 /// Builds the push-delivery hyper client for the active feature set, using the
@@ -79,7 +59,7 @@ pub(crate) fn build_push_http_client() -> PushHttpClient {
     }
     #[cfg(feature = "tls-rustls")]
     {
-        build_push_https_client(push_tls_config())
+        build_push_https_client(&crate::net::roots::default_tls_config())
     }
 }
 
@@ -318,9 +298,12 @@ impl HttpPushSender {
     /// Requires the `tls-rustls` feature.
     #[cfg(feature = "tls-rustls")]
     #[must_use]
+    // By value, as it has always been taken: the client it builds clones what
+    // it needs, and a public signature changed to a reference is a break.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn with_tls_config(tls_config: rustls::ClientConfig) -> Self {
         Self {
-            client: build_push_https_client(tls_config),
+            client: build_push_https_client(&tls_config),
             request_timeout: DEFAULT_PUSH_REQUEST_TIMEOUT,
             retry_policy: PushRetryPolicy::default(),
             dns_timeout: DEFAULT_DNS_LOOKUP_TIMEOUT,
@@ -739,7 +722,10 @@ impl PushSender for HttpPushSender {
                         trace_warn!(target = %target, attempt, status = %status, "push delivery failed");
                     }
                     Ok(Err(e)) => {
-                        last_err = format!("push notification failed: {e}");
+                        last_err = format!(
+                            "push notification failed: {}",
+                            crate::causes::with_causes(&e)
+                        );
                         trace_warn!(target = %target, attempt, error = %e, "push delivery error");
                     }
                     Err(_) => {

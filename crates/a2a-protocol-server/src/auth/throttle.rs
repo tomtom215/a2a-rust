@@ -37,7 +37,9 @@
 //!   shared key would let any caller lock every other one out.
 //!
 //! The key is the IP address alone, without the port, with an IPv4-mapped
-//! IPv6 address taken as its IPv4 form. Everyone behind one address (a NAT,
+//! IPv6 address taken as its IPv4 form and an IPv6 address as its `/64` (a
+//! host is routinely given a whole `/64`; the rate limiter keys it the same
+//! way). Everyone behind one address (a NAT,
 //! or a proxy whose hop is not trusted) therefore shares one count: a peer
 //! that keeps failing locks the others there out until the window ends.
 //!
@@ -65,6 +67,7 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use crate::call_context::CallContext;
 use crate::error::{ServerError, ServerResult};
 use crate::interceptor::{CallOutcome, ServerInterceptor};
+use crate::rate_limit::TrustedProxy;
 
 /// Configuration for an [`AuthFailureThrottle`].
 #[derive(Debug, Clone)]
@@ -78,6 +81,12 @@ pub struct AuthFailureThrottleConfig {
     /// Number of trusted reverse-proxy hops in front of this server; `0`
     /// (the default) ignores `x-forwarded-for`, which the client controls.
     pub trusted_proxy_hops: usize,
+    /// The address ranges the trusted proxies connect from. Empty (the
+    /// default) believes `x-forwarded-for` on the hop count alone; with
+    /// ranges named, only a connection from one of them is believed, and any
+    /// other is counted by its own address. See
+    /// [`RateLimitConfig::trusted_proxies`](crate::RateLimitConfig::trusted_proxies).
+    pub trusted_proxies: Vec<TrustedProxy>,
     /// Maximum number of peers tracked at once. Must be non-zero.
     pub max_peers: usize,
 }
@@ -88,6 +97,7 @@ impl Default for AuthFailureThrottleConfig {
             max_failures: 10,
             window_secs: 300,
             trusted_proxy_hops: 0,
+            trusted_proxies: Vec::new(),
             max_peers: crate::rate_limit::DEFAULT_MAX_BUCKETS,
         }
     }
@@ -112,6 +122,14 @@ impl AuthFailureThrottleConfig {
     #[must_use]
     pub const fn with_trusted_proxy_hops(mut self, hops: usize) -> Self {
         self.trusted_proxy_hops = hops;
+        self
+    }
+
+    /// Sets the address ranges the trusted proxies connect from. See
+    /// [`trusted_proxies`](Self::trusted_proxies).
+    #[must_use]
+    pub fn with_trusted_proxies(mut self, proxies: impl IntoIterator<Item = TrustedProxy>) -> Self {
+        self.trusted_proxies = proxies.into_iter().collect();
         self
     }
 
@@ -187,13 +205,21 @@ impl AuthFailureThrottle {
     }
 
     /// The peer a call is counted against, if it can be told apart.
+    ///
+    /// An IPv6 client is counted by its `/64`, as the rate limiter keys it: a
+    /// host is routinely given a whole `/64` and could otherwise rotate
+    /// addresses without ever reaching the limit (audit N-B-2).
     fn peer_key(&self, ctx: &CallContext) -> Option<String> {
-        crate::rate_limit::identity::forwarded_client(ctx, self.config.trusted_proxy_hops).or_else(
-            || {
-                ctx.peer_addr()
-                    .map(|addr| addr.ip().to_canonical().to_string())
-            },
+        crate::rate_limit::identity::forwarded_client(
+            ctx,
+            self.config.trusted_proxy_hops,
+            &self.config.trusted_proxies,
         )
+        .or_else(|| {
+            ctx.peer_addr()
+                .map(|addr| addr.ip().to_canonical().to_string())
+        })
+        .map(|client| crate::rate_limit::identity::network_of(&client))
     }
 
     const fn window_of(&self, now_secs: u64) -> u64 {

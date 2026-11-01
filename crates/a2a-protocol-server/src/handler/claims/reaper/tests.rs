@@ -24,8 +24,9 @@ use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 use crate::push::{InMemoryPushConfigStore, PushConfigStore, PushSender};
-use crate::store::TaskStore;
+use crate::store::lease::now_unix_ms;
 use crate::store::tenant::TenantContext;
+use crate::store::{InMemoryLeaseStore, LeaseStore, TaskStore};
 
 /// Records what it was asked to deliver.
 #[derive(Default)]
@@ -138,6 +139,16 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
     })
     .await;
     let sender = Arc::new(Recorder::default());
+    // Both the orphan and the running task hold a lease, granted in this
+    // partition's tenant as a send would.
+    let leases = Arc::new(InMemoryLeaseStore::new());
+    let tenant = TenantContext::scope(scope.to_owned(), async { TenantContext::current() }).await;
+    for id in [&orphan, &running] {
+        leases
+            .grant(&tenant, id, 60_000, now_unix_ms() + 60_000)
+            .await
+            .unwrap();
+    }
     let claims = Arc::new(super::super::TurnClaims::new(
         claims_store,
         Some("reaper".into()),
@@ -149,6 +160,7 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
         task_store: Arc::clone(&store),
         push_config_store: pushes,
         push_sender: Some(Arc::clone(&sender) as Arc<dyn PushSender>),
+        leases: Some(Arc::clone(&leases) as Arc<dyn LeaseStore>),
         limits: crate::handler::limits::HandlerLimits::default(),
         metrics: Arc::new(crate::metrics::NoopMetrics),
     };
@@ -174,6 +186,36 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
         }
     })
     .await;
+    // N-E-2: the ending is in the log, once, at the first position, and the
+    // tasks left alone have no entry.
+    TenantContext::scope(scope.to_owned(), async {
+        let logged = store
+            .read_events(&TaskId::new(&*orphan), 0, 10)
+            .await
+            .unwrap();
+        assert_eq!(logged.len(), 1, "{logged:?}");
+        assert_eq!(logged[0].seq, 1);
+        assert!(matches!(
+            &logged[0].event,
+            StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Failed
+        ));
+        for other in [&running, &fresh, &parked] {
+            let none = store
+                .read_events(&TaskId::new(&**other), 0, 10)
+                .await
+                .unwrap();
+            assert_eq!(none.len(), 0, "{other}: {none:?}");
+        }
+    })
+    .await;
+    // H3 (b): the ended task's lease row is gone, so a renewal finds none; a
+    // task still running keeps its own.
+    assert_eq!(leases.deadline(&tenant, &orphan).await.unwrap(), None);
+    assert!(
+        !leases.renew(&tenant, &orphan, now_unix_ms()).await.unwrap(),
+        "nothing left to renew for an ended task"
+    );
+    assert!(leases.deadline(&tenant, &running).await.unwrap().is_some());
     let sent = sender.0.lock().unwrap().clone();
     let told = sent.iter().filter(|(_, e)| matches!(e, StreamResponse::StatusUpdate(e) if e.task_id.0 == orphan && e.status.state == TaskState::Failed)).count();
     assert_eq!(told, 1, "the orphan's webhook was told once: {sent:?}");

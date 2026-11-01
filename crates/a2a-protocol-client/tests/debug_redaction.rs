@@ -114,9 +114,29 @@ fn card_fetch_options_print_header_names_only() {
     } else {
         ""
     };
+    // Whether a TLS configuration was given, never what is in it.
+    let tls = if cfg!(feature = "tls-rustls") {
+        ", tls_config: false"
+    } else {
+        ""
+    };
     assert_eq!(
         shown,
-        format!("CardFetchOptions {{ header_names: {SORTED_NAMES}, timeout: 5s{keys} }}")
+        format!("CardFetchOptions {{ header_names: {SORTED_NAMES}, timeout: 5s{keys}{tls} }}")
+    );
+}
+
+/// A TLS configuration may hold a client certificate's private key; the
+/// options say only that one is set.
+#[cfg(feature = "tls-rustls")]
+#[test]
+fn card_fetch_options_say_a_tls_configuration_is_set_and_nothing_of_it() {
+    let tls = a2a_protocol_client::tls::default_tls_config();
+    let shown = format!("{:?}", CardFetchOptions::default().with_tls_config(tls));
+    assert!(shown.ends_with("tls_config: true }"), "{shown}");
+    assert!(
+        !shown.contains("ClientConfig") && !shown.contains("RootCertStore"),
+        "{shown}"
     );
 }
 

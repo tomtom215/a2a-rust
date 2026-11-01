@@ -40,8 +40,8 @@ use hyper::body::Bytes;
 
 use super::{
     DEFAULT_TOKEN_REQUEST_TIMEOUT, MAX_TOKEN_RESPONSE_SIZE, TokenEndpointAuthStyle,
-    TokenHttpClient, build_token_http_client, check_endpoint_reachable, encode_form,
-    form_urlencode, token_error,
+    TokenHttpClient, build_token_http_client, check_endpoint_reachable, check_endpoint_secure,
+    encode_form, form_urlencode, token_error,
 };
 use crate::error::{ClientError, ClientResult};
 
@@ -233,6 +233,7 @@ pub struct TokenExchange {
     client_secret: zeroize::Zeroizing<String>,
     auth_style: TokenEndpointAuthStyle,
     request_timeout: Duration,
+    allow_insecure: bool,
     client: TokenHttpClient,
 }
 
@@ -261,8 +262,19 @@ impl TokenExchange {
             client_secret: zeroize::Zeroizing::new(client_secret.into()),
             auth_style: TokenEndpointAuthStyle::Basic,
             request_timeout: DEFAULT_TOKEN_REQUEST_TIMEOUT,
+            allow_insecure: false,
             client: build_token_http_client(),
         }
+    }
+
+    /// Allows a plaintext `http://` token endpoint on a host other than
+    /// loopback. Off by default: an exchange carries the user's subject token
+    /// and this agent's client secret, and sent in the clear both can be read
+    /// by anyone on the path.
+    #[must_use]
+    pub const fn allow_insecure_token_endpoint(mut self) -> Self {
+        self.allow_insecure = true;
+        self
     }
 
     /// Sets how the client credentials are presented (default
@@ -290,6 +302,7 @@ impl TokenExchange {
     /// tokens), a timeout, a transport failure, or a response without the
     /// members §2.2.1 requires.
     pub async fn exchange(&self, request: &ExchangeRequest) -> ClientResult<ExchangedToken> {
+        check_endpoint_secure(&self.token_url, "token endpoint", self.allow_insecure)?;
         check_endpoint_reachable(
             cfg!(feature = "tls-rustls"),
             &self.token_url,

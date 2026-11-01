@@ -22,62 +22,9 @@ use crate::push::{InMemoryPushConfigStore, PushConfigStore};
 use super::*;
 
 mod budget;
+mod config_list;
 #[cfg(feature = "tracing")]
 mod log_redaction;
-
-/// A push config store that always returns errors.
-struct AlwaysErrPushConfigStore;
-
-impl PushConfigStore for AlwaysErrPushConfigStore {
-    fn set<'a>(
-        &'a self,
-        _cfg: TaskPushNotificationConfig,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = a2a_protocol_types::error::A2aResult<TaskPushNotificationConfig>>
-                + Send
-                + 'a,
-        >,
-    > {
-        Box::pin(async { Err(A2aError::internal("always err")) })
-    }
-    fn get<'a>(
-        &'a self,
-        _task_id: &'a str,
-        _id: &'a str,
-    ) -> Pin<
-        Box<
-            dyn Future<
-                    Output = a2a_protocol_types::error::A2aResult<
-                        Option<TaskPushNotificationConfig>,
-                    >,
-                > + Send
-                + 'a,
-        >,
-    > {
-        Box::pin(async { Err(A2aError::internal("always err")) })
-    }
-    fn list<'a>(
-        &'a self,
-        _task_id: &'a str,
-    ) -> Pin<
-        Box<
-            dyn Future<
-                    Output = a2a_protocol_types::error::A2aResult<Vec<TaskPushNotificationConfig>>,
-                > + Send
-                + 'a,
-        >,
-    > {
-        Box::pin(async { Err(A2aError::internal("always err")) })
-    }
-    fn delete<'a>(
-        &'a self,
-        _task_id: &'a str,
-        _id: &'a str,
-    ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>> {
-        Box::pin(async { Err(A2aError::internal("always err")) })
-    }
-}
 
 fn make_status_event(task_id: &str, state: TaskState) -> StreamResponse {
     StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
@@ -95,23 +42,6 @@ fn default_limits() -> HandlerLimits {
 #[tokio::test]
 async fn deliver_push_bg_with_no_sender_is_noop() {
     let store = InMemoryPushConfigStore::new();
-    let task_id = TaskId::new("t1");
-    let event = make_status_event("t1", TaskState::Working);
-
-    deliver_push_bg(
-        &task_id,
-        &event,
-        &store,
-        None,
-        &default_limits(),
-        &crate::metrics::NoopMetrics,
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn deliver_push_bg_with_failing_store_returns_silently() {
-    let store = AlwaysErrPushConfigStore;
     let task_id = TaskId::new("t1");
     let event = make_status_event("t1", TaskState::Working);
 

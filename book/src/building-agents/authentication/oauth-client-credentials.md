@@ -62,6 +62,20 @@ let provider = OAuth2ClientCredentials::from_oidc_issuer(
 # }
 ```
 
+## Plaintext endpoints are refused
+
+The token request carries the client secret. A token endpoint, a `tokenUrl`
+from an agent card, or an issuer for discovery that is `http://` to a host
+other than loopback is refused with `ClientError::InvalidEndpoint` before any
+connection is made; the error names the origin and not the path or query.
+For an endpoint on a network you trust end to end, build the provider with
+`OAuth2ClientCredentials::new` and call `allow_insecure_token_endpoint()`
+(`TokenExchange` has the same method). Discovery has no such switch: take
+the `token_endpoint` from the issuer's document yourself and pass it to
+`new`. Discovery also requires the document's `issuer` to equal the issuer
+you asked about (a trailing slash does not matter) and refuses a document
+that names none, so a document served for another issuer is not believed.
+
 ## When the token endpoint fails
 
 When the token endpoint fails, every caller waiting on that refresh gets the

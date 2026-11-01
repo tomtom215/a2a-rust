@@ -8,6 +8,8 @@
 pub mod applied;
 pub mod claim;
 pub(crate) mod database;
+#[cfg(feature = "postgres")]
+mod delegation_journal;
 #[cfg(feature = "encryption")]
 pub mod encrypted;
 pub mod halt;
@@ -120,6 +122,8 @@ pub use sqlite_store::SqliteTaskStore;
 #[cfg(feature = "sqlite")]
 pub use tenant_sqlite_store::TenantAwareSqliteTaskStore;
 
+#[cfg(feature = "postgres")]
+pub use delegation_journal::PostgresDelegationJournal;
 #[cfg(feature = "postgres")]
 pub use halt::PostgresHaltStore;
 #[cfg(feature = "postgres")]

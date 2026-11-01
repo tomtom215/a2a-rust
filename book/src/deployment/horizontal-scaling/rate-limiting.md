@@ -66,7 +66,13 @@ that ordering — it just quietly stops being per-caller.
 Without any of this an unidentified caller is keyed by its client address:
 with `trusted_proxy_hops` set, the `trusted_proxy_hops`-th entry from the
 right of `X-Forwarded-For`; with it zero, the connection's peer address (an
-IPv6 client by its `/64`). Only when neither is available — a forwarded chain
+IPv6 client by its `/64`). A client that reaches the server without going
+through the proxy can send that header itself, so name the proxies' address
+ranges as well: `with_trusted_proxies(["10.0.0.0/8".parse()?])` believes the
+header only when the connection's peer is in one of them, and keys any other
+connection by its own address (before this, the hop count alone was believed,
+and an entry with a port, `203.0.113.7:51234`, made a new key for each
+connection; the port is now dropped). Only when neither is available — a forwarded chain
 shorter than `trusted_proxy_hops`, or a transport that records no peer — does
 it fall back to a shared `anon` bucket, which keeps the limit but makes those
 callers spend one budget. Keying by the peer address is new in 0.15; before,

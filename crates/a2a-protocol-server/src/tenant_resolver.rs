@@ -72,6 +72,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use sha2::{Digest as _, Sha256};
+
 use crate::call_context::CallContext;
 
 // ── Trait ────────────────────────────────────────────────────────────────────
@@ -161,14 +163,60 @@ impl TenantResolver for HeaderTenantResolver {
 /// Type alias for the optional mapping function applied to the bearer token.
 type TokenMapper = Arc<dyn Fn(&str) -> Option<String> + Send + Sync + 'static>;
 
+/// The tenant id [`BearerTokenTenantResolver`] derives from a bearer token it
+/// has not verified: `sha256:` and the first 16 bytes of the token's SHA-256
+/// digest as lowercase hex (39 characters).
+///
+/// A tenant id is stored (every task row carries it), exported (telemetry
+/// attributes), and chained into the audit log, so a resolver that used the
+/// token itself put a live credential in each of those (audit SEC-11). The
+/// digest does not: SHA-256 cannot be run backwards, and 128 bits of it are
+/// plenty to keep two tokens apart. It is a name for the token, not a check of
+/// it; see [`BearerTokenTenantResolver`].
+///
+/// The format is part of the contract, so that a deployment that moves data
+/// from the raw-token tenant of earlier releases can compute the new id of each
+/// token it holds.
+///
+/// # Example
+///
+/// ```rust
+/// use a2a_protocol_server::tenant_resolver::tenant_id_for_token;
+///
+/// assert_eq!(
+///     tenant_id_for_token("abc"),
+///     "sha256:ba7816bf8f01cfea414140de5dae2223"
+/// );
+/// ```
+#[must_use]
+pub fn tenant_id_for_token(token: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let digest = Sha256::digest(token.as_bytes());
+    let mut id = String::with_capacity("sha256:".len() + 32);
+    id.push_str("sha256:");
+    for byte in &digest[..16] {
+        id.push(char::from(HEX[usize::from(byte >> 4)]));
+        id.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    id
+}
+
 /// Extracts a tenant ID from the `Authorization: Bearer <token>` header.
 ///
-/// # Use [`with_mapper`](Self::with_mapper); [`new`](Self::new) is for tests
+/// # Use [`with_mapper`](Self::with_mapper); the default is for tests
 ///
-/// [`new`](Self::new) uses the **raw, unverified** bearer token as the tenant
-/// identifier. No signature is checked and no expiry is honoured, so the tenant
-/// is a string the caller chose — which is the same as having no tenancy, and
-/// worse, because it looks like having some.
+/// [`Default`] (and the deprecated [`new`](Self::new)) derive the tenant from
+/// the **unverified** bearer token with [`tenant_id_for_token`]. No signature is
+/// checked and no expiry is honoured, so the tenant is a string the caller
+/// chose — which is the same as having no tenancy, and worse, because it looks
+/// like having some. Until 2026-10-31 the tenant was the raw token, which also
+/// stored the credential in the task store, telemetry and the audit chain
+/// (audit SEC-11); it is now a digest of it.
+///
+/// **Moving from 0.15:** data stored under a raw-token tenant is not found under
+/// the digest. Rewrite the tenant of those rows to what [`tenant_id_for_token`]
+/// returns for each token, or keep the old behaviour, credential in storage
+/// included, with `with_mapper(|token| Some(token.to_owned()))`.
 ///
 /// [`with_mapper`](Self::with_mapper) is the constructor for a deployment: give
 /// it a closure that verifies the token (checks the signature, checks expiry)
@@ -180,8 +228,8 @@ type TokenMapper = Arc<dyn Fn(&str) -> Option<String> + Send + Sync + 'static>;
 /// ```rust
 /// use a2a_protocol_server::tenant_resolver::BearerTokenTenantResolver;
 ///
-/// // Use the raw token as tenant ID:
-/// let resolver = BearerTokenTenantResolver::new();
+/// // Use a digest of the (unverified) token as tenant ID:
+/// let resolver = BearerTokenTenantResolver::default();
 ///
 /// // With a custom mapping:
 /// let resolver = BearerTokenTenantResolver::with_mapper(|token| {
@@ -189,6 +237,7 @@ type TokenMapper = Arc<dyn Fn(&str) -> Option<String> + Send + Sync + 'static>;
 ///     Some(format!("tenant-for-{token}"))
 /// });
 /// ```
+#[derive(Default)]
 pub struct BearerTokenTenantResolver {
     mapper: Option<TokenMapper>,
 }
@@ -202,9 +251,16 @@ impl std::fmt::Debug for BearerTokenTenantResolver {
 }
 
 impl BearerTokenTenantResolver {
-    /// Creates a resolver that uses the raw bearer token as the tenant ID.
+    /// Creates a resolver that uses a digest of the unverified bearer token as
+    /// the tenant ID ([`tenant_id_for_token`]). Equal to [`Default`].
+    #[deprecated(
+        since = "0.16.0",
+        note = "the tenant is whatever the caller sent, verified by nothing; use `with_mapper` \
+                with a closure that checks the token and returns its tenant claim (`default()` \
+                is the same resolver, for tests)"
+    )]
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { mapper: None }
     }
 
@@ -221,12 +277,6 @@ impl BearerTokenTenantResolver {
         Self {
             mapper: Some(Arc::new(mapper)),
         }
-    }
-}
-
-impl Default for BearerTokenTenantResolver {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -247,7 +297,7 @@ impl TenantResolver for BearerTokenTenantResolver {
 
             self.mapper
                 .as_ref()
-                .map_or_else(|| Some(token.to_owned()), |mapper| mapper(token))
+                .map_or_else(|| Some(tenant_id_for_token(token)), |mapper| mapper(token))
         })
     }
 }
@@ -326,167 +376,5 @@ impl TenantResolver for PathSegmentTenantResolver {
     }
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn make_ctx() -> CallContext {
-        CallContext::new("message/send")
-    }
-
-    // -- HeaderTenantResolver -------------------------------------------------
-
-    #[tokio::test]
-    async fn header_resolver_default_header() {
-        let resolver = HeaderTenantResolver::default();
-        let ctx = make_ctx().with_http_header("x-tenant-id", "acme");
-        assert_eq!(resolver.resolve(&ctx).await, Some("acme".into()));
-    }
-
-    #[tokio::test]
-    async fn header_resolver_custom_header() {
-        let resolver = HeaderTenantResolver::new("X-Org-Id");
-        let ctx = make_ctx().with_http_header("x-org-id", "org-42");
-        assert_eq!(resolver.resolve(&ctx).await, Some("org-42".into()));
-    }
-
-    #[tokio::test]
-    async fn header_resolver_missing_header() {
-        let resolver = HeaderTenantResolver::default();
-        let ctx = make_ctx();
-        assert_eq!(resolver.resolve(&ctx).await, None);
-    }
-
-    // -- BearerTokenTenantResolver --------------------------------------------
-
-    #[tokio::test]
-    async fn bearer_resolver_raw_token() {
-        let resolver = BearerTokenTenantResolver::new();
-        let ctx = make_ctx().with_http_header("authorization", "Bearer tok_abc123");
-        assert_eq!(resolver.resolve(&ctx).await, Some("tok_abc123".into()));
-    }
-
-    #[tokio::test]
-    async fn bearer_resolver_with_mapper() {
-        let resolver = BearerTokenTenantResolver::with_mapper(|token| {
-            token.strip_prefix("tok_").map(str::to_uppercase)
-        });
-        let ctx = make_ctx().with_http_header("authorization", "Bearer tok_abc");
-        assert_eq!(resolver.resolve(&ctx).await, Some("ABC".into()));
-    }
-
-    #[tokio::test]
-    async fn bearer_resolver_mapper_returns_none() {
-        let resolver = BearerTokenTenantResolver::with_mapper(|_| None);
-        let ctx = make_ctx().with_http_header("authorization", "Bearer tok");
-        assert_eq!(resolver.resolve(&ctx).await, None);
-    }
-
-    #[tokio::test]
-    async fn bearer_resolver_missing_header() {
-        let resolver = BearerTokenTenantResolver::new();
-        let ctx = make_ctx();
-        assert_eq!(resolver.resolve(&ctx).await, None);
-    }
-
-    #[tokio::test]
-    async fn bearer_resolver_non_bearer_auth() {
-        let resolver = BearerTokenTenantResolver::new();
-        let ctx = make_ctx().with_http_header("authorization", "Basic abc123");
-        assert_eq!(resolver.resolve(&ctx).await, None);
-    }
-
-    #[tokio::test]
-    async fn bearer_resolver_empty_token() {
-        let resolver = BearerTokenTenantResolver::new();
-        let ctx = make_ctx().with_http_header("authorization", "Bearer ");
-        assert_eq!(resolver.resolve(&ctx).await, None);
-    }
-
-    // -- PathSegmentTenantResolver --------------------------------------------
-
-    #[tokio::test]
-    async fn path_resolver_extracts_segment() {
-        let resolver = PathSegmentTenantResolver::new(1);
-        let ctx = make_ctx().with_http_header(":path", "/tenants/acme/tasks");
-        assert_eq!(resolver.resolve(&ctx).await, Some("acme".into()));
-    }
-
-    #[tokio::test]
-    async fn path_resolver_first_segment() {
-        let resolver = PathSegmentTenantResolver::new(0);
-        let ctx = make_ctx().with_http_header(":path", "/v1/agents");
-        assert_eq!(resolver.resolve(&ctx).await, Some("v1".into()));
-    }
-
-    #[tokio::test]
-    async fn path_resolver_out_of_bounds() {
-        let resolver = PathSegmentTenantResolver::new(10);
-        let ctx = make_ctx().with_http_header(":path", "/a/b");
-        assert_eq!(resolver.resolve(&ctx).await, None);
-    }
-
-    #[tokio::test]
-    async fn path_resolver_prefers_pseudo_header() {
-        let resolver = PathSegmentTenantResolver::new(0);
-        let ctx = make_ctx()
-            .with_http_header(":path", "/h2-tenant/foo")
-            .with_http_header("path", "/fallback/bar");
-        assert_eq!(resolver.resolve(&ctx).await, Some("h2-tenant".into()));
-    }
-
-    #[tokio::test]
-    async fn path_resolver_missing_path() {
-        let resolver = PathSegmentTenantResolver::new(0);
-        let ctx = make_ctx();
-        assert_eq!(resolver.resolve(&ctx).await, None);
-    }
-
-    /// Covers lines 172-174 (`BearerTokenTenantResolver` Default impl).
-    #[tokio::test]
-    async fn bearer_resolver_default_same_as_new() {
-        let resolver = BearerTokenTenantResolver::default();
-        let ctx = make_ctx().with_http_header("authorization", "Bearer test-token");
-        assert_eq!(
-            resolver.resolve(&ctx).await,
-            Some("test-token".into()),
-            "default() should behave the same as new()"
-        );
-    }
-
-    /// Covers line 241 (`extract_from_path` with empty segment after filter).
-    #[tokio::test]
-    async fn path_resolver_uses_fallback_path_header() {
-        let resolver = PathSegmentTenantResolver::new(0);
-        // Only "path" header (no ":path") to test the fallback
-        let ctx = make_ctx().with_http_header("path", "/tenant-from-path/tasks");
-        assert_eq!(
-            resolver.resolve(&ctx).await,
-            None,
-            "a client-settable `path` header must not select the tenant"
-        );
-    }
-
-    /// Covers lowercase bearer prefix variant (line 186).
-    #[tokio::test]
-    async fn bearer_resolver_lowercase_bearer() {
-        let resolver = BearerTokenTenantResolver::new();
-        let ctx = make_ctx().with_http_header("authorization", "bearer lowercase_tok");
-        assert_eq!(resolver.resolve(&ctx).await, Some("lowercase_tok".into()));
-    }
-
-    #[test]
-    fn bearer_resolver_debug_shows_has_mapper() {
-        let resolver = BearerTokenTenantResolver::new();
-        let debug = format!("{resolver:?}");
-        assert!(debug.contains("BearerTokenTenantResolver"));
-        assert!(debug.contains("has_mapper"));
-        assert!(debug.contains("false"));
-
-        let resolver_with = BearerTokenTenantResolver::with_mapper(|t| Some(t.to_string()));
-        let debug = format!("{resolver_with:?}");
-        assert!(debug.contains("true"));
-    }
-}
+mod tests;

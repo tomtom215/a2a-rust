@@ -88,7 +88,7 @@ fn bench_tenant_resolver(c: &mut Criterion) {
 
     // BearerTokenTenantResolver: extract Authorization header
     group.bench_function("bearer_resolver", |b| {
-        let resolver = BearerTokenTenantResolver::new();
+        let resolver = BearerTokenTenantResolver::default();
         let ctx = make_ctx(vec![(
             "authorization",
             "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.tenant-12345",

@@ -46,6 +46,8 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 | `push_delivery_timeout` | `Duration` | 30s | Per-webhook delivery timeout, retries included (the sender's own request timeout is 10s) |
 | `push_delivery_budget` | `Duration` | 30s | Time one event's deliveries are budgeted across all configs. Every config is attempted; the budget sets how many deliveries of an event run at once (`ceil(configs / (budget / push_delivery_timeout))`) |
 | `push_queue_capacity` | `usize` | 1024 | Deliveries that may wait behind the one under way for one task. A full lane drops the oldest that does not end a turn (`dropped`); a terminal or interrupted status is never dropped. Zero is read as one |
+| `push_max_in_flight` | `usize` | 512 | Webhook deliveries in flight at once across every task. A delivery over the bound waits, so every config is still attempted; the wait counts against `push_delivery_timeout`, and each delivery that waited is counted once as the error `push_throttled` on method `PushDelivery`. Covers any sender behind the handler, a custom one included. Zero is read as one. A choice, not a measurement |
+| `push_max_in_flight_per_host` | `usize` | 64 | Deliveries in flight at once to one destination (host and port). Bounds how many requests a third party sees from this agent when a caller registers many webhooks at its address; not a rate limit. Raise it for one receiver that takes every agent's callbacks. Zero is read as one |
 | `executor_drain_timeout` | `Duration` | 5s | Bound on the blocking path's wait for the queue to close after the executor finished; also how long a continuation waits for a parked (`input-required`/`auth-required`) turn to finish: its executor to return and its events to be stored |
 | `max_artifacts_per_task` | `usize` | 1,000 | Maximum artifacts per task (prevents O(n²) serialization) |
 | `max_context_locks` | `usize` | 10,000 | Max per-context locks before cleanup |
@@ -131,6 +133,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `requests_per_window` | `u64` | 100 | Max requests per caller per window |
 | `window_secs` | `u64` | 60 | Window duration in seconds |
 | `trusted_proxy_hops` | `usize` | 0 | How many `X-Forwarded-For` hops to trust (0 = ignore XFF entirely) |
+| `trusted_proxies` | `Vec<TrustedProxy>` | `[]` | Address ranges the proxies connect from; when set, XFF is believed only from a peer in one (no effect while `trusted_proxy_hops` is 0) |
 | `max_buckets` | `usize` | 10,000 | Hard bound on tracked caller buckets (fail-closed when full) |
 
 ### ServeConfig

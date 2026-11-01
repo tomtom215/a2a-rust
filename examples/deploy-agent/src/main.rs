@@ -169,16 +169,48 @@ impl Config {
     }
 }
 
-/// `url` without its password, for a log line.
+/// `url` without its password, for a log line: the one in the user info
+/// (`user:password@host`) and the one in the query (`?user=u&password=p`,
+/// which the driver also accepts and which has no `@` to find).
 fn redacted(url: &str) -> String {
-    match (url.find("://"), url.rfind('@')) {
-        (Some(scheme), Some(at)) if at > scheme => {
-            let userinfo = &url[scheme + 3..at];
-            let user = userinfo.split(':').next().unwrap_or("");
-            format!("{}{user}:***{}", &url[..scheme + 3], &url[at..])
+    let Some(scheme) = url.find("://") else {
+        return url.to_owned();
+    };
+    let authority = scheme + 3;
+    // The user info is in the authority, which ends at the path, the query or
+    // the fragment: an `@` in a query value is not one.
+    let authority_end = url[authority..]
+        .find(['/', '?', '#'])
+        .map_or(url.len(), |i| authority + i);
+    let mut out = String::with_capacity(url.len());
+    match url[authority..authority_end].rfind('@') {
+        Some(at) => {
+            let at = authority + at;
+            let user = url[authority..at].split(':').next().unwrap_or("");
+            out.push_str(&url[..authority]);
+            out.push_str(user);
+            out.push_str(":***");
+            out.push_str(&url[at..authority_end]);
         }
-        _ => url.to_owned(),
+        None => out.push_str(&url[..authority_end]),
     }
+    let rest = &url[authority_end..];
+    match rest.split_once('?') {
+        Some((path, query)) => {
+            out.push_str(path);
+            out.push('?');
+            let masked: Vec<String> = query
+                .split('&')
+                .map(|pair| match pair.split_once('=') {
+                    Some((key, _)) if key.eq_ignore_ascii_case("password") => format!("{key}=***"),
+                    _ => pair.to_owned(),
+                })
+                .collect();
+            out.push_str(&masked.join("&"));
+        }
+        None => out.push_str(rest),
+    }
+    out
 }
 
 // ── Wiring ──────────────────────────────────────────────────────────────────

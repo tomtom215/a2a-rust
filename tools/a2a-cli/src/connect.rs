@@ -85,6 +85,32 @@ pub(crate) fn header_map(opts: &GlobalOpts) -> HashMap<String, String> {
         .collect()
 }
 
+/// The host of `url`, lower-case: of an `http(s)://` or `ws(s)://` URL, or of a
+/// bare `host:port` address (a gRPC target). `None` when none can be read.
+fn host_of(url: &str) -> Option<String> {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    // Anything before the last `@` is userinfo, not the host:
+    // `http://127.0.0.1@evil.example/` is `evil.example`.
+    let authority = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    let host = match authority.strip_prefix('[') {
+        // `[::1]:8080`
+        Some(bracketed) => bracketed.split_once(']')?.0,
+        None => authority.split(':').next().unwrap_or_default(),
+    };
+    let readable = !host.is_empty() && !host.chars().any(|c| c.is_whitespace() || c.is_control());
+    readable.then(|| host.to_ascii_lowercase())
+}
+
+/// Whether two URLs name the same host (the port and the scheme may differ: an
+/// agent often serves gRPC and HTTP on one machine). A host that cannot be read
+/// from either counts as different.
+pub(crate) fn same_host(a: &str, b: &str) -> bool {
+    matches!((host_of(a), host_of(b)), (Some(x), Some(y)) if x == y)
+}
+
 /// Resolves the target: discovery when `--binding` is absent, the URL as
 /// given otherwise.
 ///
@@ -120,6 +146,15 @@ async fn resolve_target(url: &str, opts: &GlobalOpts) -> Result<Target, CliError
         )))
     })?;
     let (endpoint, binding) = (iface.url.clone(), iface.protocol_binding.clone());
+    // `--header` is the caller's credential for the host they typed. The card
+    // is the agent's word, and an interface on another host would receive
+    // it on every call (audit SEC-09).
+    if !opts.headers.is_empty() && !opts.follow_card_origin && !same_host(url, &endpoint) {
+        return Err(CliError::Failed(format!(
+            "the agent card at {url} names the interface {endpoint}, a different host, and \
+             --header would send your credentials there; pass --follow-card-origin if that is intended"
+        )));
+    }
     Ok(Target {
         endpoint,
         binding,
@@ -186,6 +221,32 @@ pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<A2aClient, CliError
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit SEC-09: `--header` goes to the host the user typed. The port and
+    /// the scheme may differ (an agent serves gRPC and HTTP from one machine);
+    /// the host, compared without case, may not.
+    #[test]
+    fn same_host_compares_the_host_and_nothing_else() {
+        for (a, b) in [
+            ("http://agent.example:8080", "https://agent.example/rpc"),
+            ("https://Agent.Example", "agent.example:50051"),
+            ("http://127.0.0.1:1", "http://127.0.0.1:2"),
+            ("http://[::1]:8080", "http://[::1]:9090"),
+        ] {
+            assert!(same_host(a, b), "{a} and {b}");
+        }
+        for (a, b) in [
+            ("http://agent.example", "http://other.example"),
+            ("http://localhost:8080", "http://127.0.0.1:8080"),
+            ("http://agent.example", "http://agent.example.evil.example"),
+            ("http://127.0.0.1@evil.example/", "http://127.0.0.1/"),
+            ("http://agent.example", "/just/a/path"),
+            ("not a url", "not a url"),
+        ] {
+            assert!(!same_host(a, b), "{a} and {b}");
+        }
+    }
+
     use crate::cli::Binding;
     use a2a_protocol_types::{AgentCard, AgentInterface};
 
@@ -229,6 +290,7 @@ mod tests {
             tenant: None,
             grpc_plaintext: false,
             no_capability_check: false,
+            follow_card_origin: false,
         };
         // No server is listening on port 1; discovery would fail, so a
         // successful resolve proves it was skipped.

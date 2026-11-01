@@ -40,7 +40,7 @@
 
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{Task, TaskId, TaskStatus};
 use tokio_util::sync::CancellationToken;
 
 use crate::store::TerminalStateConflict;
@@ -101,7 +101,7 @@ impl<'a> Processor<'a> {
         if self.superseded.is_some() || self.last_task.status.state.is_terminal() {
             return;
         }
-        self.last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
+        let failed = super::super::panic_failure(&mut self.last_task);
         let task = &self.last_task;
         let saved = super::super::persisting(
             self.deps.limits.store_write_retry,
@@ -127,6 +127,14 @@ impl<'a> Processor<'a> {
                 crate::metrics::persistence_operation::FAILED_STATE,
                 e.metric_label(),
             );
+            return;
+        }
+        // Saved: the webhooks hear what the store now holds. Not before, and
+        // not when the save failed, or they would be told of a state the
+        // task is not in (audit D-03).
+        if !self.pushed_terminal {
+            self.deps.push.push(self.task_id, &failed);
+            self.pushed_terminal = true;
         }
     }
 

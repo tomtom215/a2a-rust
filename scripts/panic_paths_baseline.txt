@@ -6,7 +6,7 @@
 0 1 0 0  crates/a2a-protocol-client/src/tls.rs
 0 1 0 0  crates/a2a-protocol-client/src/trace_propagation.rs
 1 1 0 0  crates/a2a-protocol-server/build.rs
-0 2 0 0  crates/a2a-protocol-server/src/auth/jwt.rs
-0 1 0 0  crates/a2a-protocol-server/src/push/sender.rs
+0 1 0 0  crates/a2a-protocol-server/src/auth/jwt.rs
+0 1 0 0  crates/a2a-protocol-server/src/net/roots.rs
 0 2 0 0  crates/a2a-protocol-server/src/rpc_span/call.rs
 1 1 0 0  crates/a2a-protocol-types/build.rs

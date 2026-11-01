@@ -93,7 +93,9 @@ off because its `OTEL_*_EXPORTER` is `none`, or because
 `with_export_where_configured()` found no endpoint for it
 ([Environment variables](./environment.md#choosing-which-signals-are-built)).
 Under `OTEL_SDK_DISABLED=true` the line is `telemetry: disabled by
-OTEL_SDK_DISABLED`, and `install_subscriber` installs nothing.
+OTEL_SDK_DISABLED`; nothing is exported, but warnings and errors still reach
+standard error (until 2026-10-31 `install_subscriber` installed nothing, and a
+process told to export nothing also lost every warning).
 
 A program that wants no startup line (a command-line tool, say) builds with
 `TelemetryBuilder::without_startup_summary()`: warnings and errors still print.

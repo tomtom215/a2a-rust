@@ -40,8 +40,8 @@ use super::TurnClaims;
 use crate::handler::limits::HandlerLimits;
 use crate::metrics::Metrics;
 use crate::push::{PushConfigStore, PushSender};
-use crate::store::TaskStore;
 use crate::store::tenant::TenantContext;
+use crate::store::{LeaseStore, TaskStore};
 
 /// The tasks one look ends at most; the next look takes the rest.
 const BATCH: usize = 32;
@@ -58,6 +58,9 @@ pub struct Reaper {
     pub task_store: Arc<dyn TaskStore>,
     pub push_config_store: Arc<dyn PushConfigStore>,
     pub push_sender: Option<Arc<dyn PushSender>>,
+    /// The handler's lease store, when it grants leases: a task ended here
+    /// had a lease its dead replica's watcher would have released.
+    pub leases: Option<Arc<dyn LeaseStore>>,
     pub limits: HandlerLimits,
     pub metrics: Arc<dyn Metrics>,
 }
@@ -157,12 +160,14 @@ impl Reaper {
             task_id,
             "ended a task its replica left running: failed, failure class transient"
         );
+        self.release_lease(task_id).await;
         let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
             task_id: id.clone(),
             context_id: task.context_id.clone(),
             status,
             metadata: None,
         });
+        self.log(&id, &event).await;
         crate::handler::event_processing::deliver_push_bg(
             &id,
             &event,
@@ -173,6 +178,50 @@ impl Reaper {
         )
         .await;
         true
+    }
+}
+
+impl Reaper {
+    /// Appends the ending to the task's event log, one position after the
+    /// last the dead replica wrote.
+    ///
+    /// Until 2026-10-31 a task the reaper ended had a stored `Failed` status
+    /// and nothing in its log: a client resuming from the log never saw it
+    /// end, and with the audit feature the chain had no `task.event` for it,
+    /// because that record is made by the append (audit N-E-2).
+    async fn log(&self, id: &TaskId, event: &StreamResponse) {
+        if !self.task_store.supports_event_log() {
+            return;
+        }
+        let appended = crate::handler::event_processing::persisting(
+            self.limits.store_write_retry,
+            &*self.metrics,
+            crate::metrics::persistence_operation::EVENT_APPEND,
+            || async {
+                let seq = self.task_store.last_event_seq(id).await?.saturating_add(1);
+                self.task_store.append_event(id, seq, event).await
+            },
+        )
+        .await;
+        if let Err(e) = appended {
+            trace_warn!(task_id = %id, error = %e, "the ending of an abandoned task is not in its event log");
+            self.metrics.on_persistence_error(
+                crate::metrics::persistence_operation::EVENT_APPEND,
+                e.metric_label(),
+            );
+        }
+    }
+
+    /// Deletes the ended task's lease row. The only other caller of
+    /// [`LeaseStore::release`] is the watcher task of the process that ran
+    /// the turn (`handler::lease`), which is the process that died: without
+    /// this the row stayed for good, and a `GetTask` carrying the lease
+    /// extension went on renewing it (audit H3, part b).
+    async fn release_lease(&self, task_id: &str) {
+        let Some(leases) = &self.leases else { return };
+        if let Err(_e) = leases.release(&TenantContext::current(), task_id).await {
+            trace_warn!(task_id, error = %_e, "the ended task's lease was not released");
+        }
     }
 }
 

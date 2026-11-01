@@ -50,6 +50,9 @@ pub fn card_sign(card: &Path, key: &Path, alg: SignAlg, kid: &str) -> Result<(),
 
 /// `a2a card verify`: `{"verified": true, ...}`, or exit 1.
 pub async fn card_verify(opts: &GlobalOpts, card: &str, jwks: &str) -> Result<(), CliError> {
+    // `card` is shadowed by the parsed card below; the argument is needed again
+    // for the host comparison.
+    let card_arg = card;
     let options = CardFetchOptions::default()
         .with_headers(header_map(opts))
         .with_timeout(Duration::from_secs(opts.timeout));
@@ -63,7 +66,25 @@ pub async fn card_verify(opts: &GlobalOpts, card: &str, jwks: &str) -> Result<()
         read_json(Path::new(card), "an agent card")?
     };
     let keys: Jwks = if jwks.starts_with("http://") || jwks.starts_with("https://") {
-        fetch_jwks(jwks, &options).await?
+        // `--header` is for the card's host. A JWK Set on another host does
+        // not get it unless asked for (audit SEC-09 b). A card read from a
+        // file has no host, and the one URL typed is the JWK Set's: there the
+        // header is plainly for it.
+        let card_is_url = card_arg.starts_with("http://") || card_arg.starts_with("https://");
+        let jwks_options = if opts.headers.is_empty()
+            || opts.follow_card_origin
+            || !card_is_url
+            || crate::connect::same_host(card_arg, jwks)
+        {
+            options
+        } else {
+            eprintln!(
+                "note: --header is not sent to the JWK Set's host; \
+                 pass --follow-card-origin to send it"
+            );
+            CardFetchOptions::default().with_timeout(Duration::from_secs(opts.timeout))
+        };
+        fetch_jwks(jwks, &jwks_options).await?
     } else {
         read_json(Path::new(jwks), "a JWK Set")?
     };

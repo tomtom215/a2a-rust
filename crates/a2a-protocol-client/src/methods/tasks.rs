@@ -232,11 +232,23 @@ impl A2aClient {
         id: String,
         last_event_id: Option<String>,
     ) -> ClientResult<EventStream> {
+        self.subscribe_in(None, id, last_event_id).await
+    }
+
+    /// [`subscribe_to_task`](Self::subscribe_to_task) in `tenant`, or in the
+    /// client's default tenant when `None`, from `last_event_id` when given:
+    /// a delegation follows its child in the tenant the child was sent to.
+    pub(crate) async fn subscribe_in(
+        &self,
+        tenant: Option<String>,
+        id: String,
+        last_event_id: Option<String>,
+    ) -> ClientResult<EventStream> {
         const METHOD: &str = "SubscribeToTask";
         self.require_declared(crate::declared::Capability::Streaming, METHOD)?;
 
         let params = TaskIdParams {
-            tenant: self.tenant_or_default(None),
+            tenant: self.tenant_or_default(tenant),
             id,
         };
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;

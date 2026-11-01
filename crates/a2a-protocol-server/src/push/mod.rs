@@ -8,6 +8,7 @@
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 pub mod cipher;
 pub mod config_store;
+pub(crate) mod gate;
 mod pinning;
 pub mod sender;
 pub mod tenant_config_store;
