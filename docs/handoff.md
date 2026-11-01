@@ -42,11 +42,13 @@ only: when something here is done, delete it rather than annotating it.
     `server::peer::tests::the_throttle_keys_a_verified_peer_by_its_address`;
     cause N-B-2, fixed in `f9e7ffb`; everything else passed, including every
     mutation shard and the macOS and Windows legs; commented on the pull
-    request. **First thing next session: read CI on `94d92c7`** (every check
-    run; a download of a failed job's log URL, since the API's tail is only
-    the PostgreSQL teardown; the mutation shards' logs for survivors), then
-    carry on with the packages not started. A check-in was scheduled for
-    2026-11-01 00:57Z.
+    request. **CI on `94d92c7`** (read 2026-11-01 01:08Z): 105 check runs, all success or
+    skipped, none failed, including the two that failed on `d19ecfc`, every
+    mutation shard and the macOS and Windows legs; GitHub reports the pull
+    request mergeable. **First thing next session:** carry on with the packages
+    not started (the list under "Still open in the packages touched", and
+    `PLAN.md`); the two questions under "Waiting on the maintainer" (`ring`;
+    ADR 0032 against H-D7) block nothing yet.
   - **What was run on that head** (the pull request comment
     <https://github.com/tomtom215/a2a-rust/pull/185#issuecomment-6550654053>
     is the record): 37 script gates and the DCO check; `clippy` on the
@@ -62,9 +64,9 @@ only: when something here is done, delete it rather than annotating it.
     `live-model` 11 of 11 against Qwen3.5-2B; `cargo mutants` on the
     delegation code (types 9 caught, client 37, `resume.rs` 21; none missed)
     and 25 hand mutations of the security checks and the journal's SQL, each
-    failing its test. **Not run on this head:** macOS and Windows (CI passed
-    them on `d19ecfc`), `cargo-deny`, `cargo-semver-checks`, the fuzz targets,
-    `live-model`, a live Squid or private-CA run, and
+    failing its test. **Not run locally on this head:** macOS, Windows,
+    `cargo-deny`, `cargo-semver-checks` and the fuzz targets (CI ran all of them
+    on this head and passed), `live-model`, a live Squid or private-CA run, and
     `scripts/run_postgres_suites.py` itself.
   - **Still open in the packages touched:** the SQLite journal; B-09 (d); SEC-13/17
     (an https webhook is resolved twice); B-13; D-22; N-D-2/E-3; D-05; D-03 c
