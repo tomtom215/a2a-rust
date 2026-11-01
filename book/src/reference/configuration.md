@@ -256,7 +256,7 @@ and the `with_*` setters.
 |---------|---------|-------------|
 | `signing` | Off | Forwards `a2a-protocol-types/signing`; the server itself neither signs nor verifies the card it serves |
 | `tracing` | **On** | Structured logging via `tracing` crate; `default-features = false` compiles it out |
-| `tls-rustls` | Off | HTTPS delivery for the bundled push-notification sender, `Server::with_tls` / `with_tls_pem` (HTTPS on its own listener), and `auth::MutualTlsAuthInterceptor` |
+| `tls-rustls` | **On** | HTTPS delivery for the bundled push-notification sender, JWKS/OIDC fetches and the model client, `Server::with_tls` / `with_tls_pem` (HTTPS on its own listener), and `auth::MutualTlsAuthInterceptor`; on by default since 0.16.0 |
 | `sqlite` | Off | SQLite-backed task and push config stores via `sqlx` |
 | `postgres` | Off | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |

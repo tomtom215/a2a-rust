@@ -29,7 +29,7 @@ use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::{ListTasksParams, MessageSendParams};
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::responses::{SendMessageResponse, TaskListResponse};
-use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::executor::AgentExecutor;
@@ -56,7 +56,7 @@ impl AgentExecutor for StatusExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -64,7 +64,7 @@ impl AgentExecutor for StatusExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))
@@ -87,7 +87,7 @@ impl AgentExecutor for ArtifactExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -95,7 +95,7 @@ impl AgentExecutor for ArtifactExecutor {
             queue
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     artifact: Artifact::new("art-1", vec![Part::text("artifact content")]),
                     append: None,
                     last_chunk: Some(true),
@@ -105,7 +105,7 @@ impl AgentExecutor for ArtifactExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))
@@ -127,7 +127,7 @@ impl AgentExecutor for TaskEventExecutor {
         Box::pin(async move {
             let replacement = Task {
                 id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
+                context_id: ctx.context_id.clone(),
                 status: TaskStatus::new(TaskState::Completed),
                 history: None,
                 artifacts: Some(vec![Artifact::new(
@@ -168,7 +168,7 @@ impl AgentExecutor for MessageEventExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -187,7 +187,7 @@ impl AgentExecutor for MessageEventExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))

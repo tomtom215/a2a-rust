@@ -21,7 +21,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::WebSocketDispatcher;
@@ -47,7 +47,7 @@ impl AgentExecutor for SimpleExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -55,7 +55,7 @@ impl AgentExecutor for SimpleExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))
@@ -266,7 +266,7 @@ impl AgentExecutor for ChattyExecutor {
             let status = |state| {
                 StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(state),
                     metadata: None,
                 })

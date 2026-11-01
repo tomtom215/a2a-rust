@@ -24,10 +24,10 @@ anything else:
 |---|---|
 | `a2a-protocol-sdk` | `tls-rustls`, `tracing`, `otel`, `otlp`, `webhook` |
 | `a2a-protocol-client` | `tls-rustls`, `tracing`, `otel`, `webhook` |
-| `a2a-protocol-server` | `tracing`, `otel` |
+| `a2a-protocol-server` | `tracing`, `otel`, `tls-rustls` (since 0.16.0) |
 
-So a reader who depends on the umbrella `a2a-protocol-sdk` already has TLS, and
-one who depends on `a2a-protocol-server` directly does not. Any feature that
+So a reader who depends on any of them has TLS (a direct dependency on
+`a2a-protocol-server` did not before 0.16.0). Any feature that
 the table above does not list for your crate is off until you ask for it:
 
 | You want | Feature |
@@ -36,7 +36,7 @@ the table above does not list for your crate is off until you ask for it:
 | Traces, metrics and logs over OTLP (`Telemetry`) | `otlp` (default in the SDK; `otel`, its instrumentation, is default everywhere) |
 | SQLite / PostgreSQL task stores | `sqlite`, `postgres` |
 | WebSocket, gRPC, Axum | `websocket`, `grpc`, `axum` |
-| HTTPS on the server's own listener | `tls-rustls` |
+| HTTPS on the server's own listener | `tls-rustls` (default; re-add it if you set `default-features = false`) |
 | gRPC over TLS | `grpc-tls` |
 | JWT bearer auth | `auth-jwt` |
 | Card signing types | `signing` |

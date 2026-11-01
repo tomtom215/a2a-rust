@@ -37,7 +37,7 @@ use http_body_util::{BodyExt, Full};
 use a2a_protocol_types::error::{A2aResult, ErrorCode};
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::method::Method;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
@@ -59,7 +59,7 @@ impl AgentExecutor for EchoExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::with_timestamp(TaskState::Completed),
                     metadata: None,
                 }))

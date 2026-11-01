@@ -45,7 +45,7 @@ use a2a_protocol_types::params::{
 };
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 const TENANT: &str = "acme";
 const TEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -67,7 +67,7 @@ impl AgentExecutor for CompletingExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))

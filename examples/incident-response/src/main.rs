@@ -76,7 +76,7 @@ use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
 use a2a_protocol_types::params::MessageSendParams;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use crate::serving::{start_logs_agent, start_runbook_agent, start_triage_agent};
 
@@ -151,7 +151,7 @@ async fn progress(queue: &dyn EventQueueWriter, ctx: &RequestContext, note: &str
     queue
         .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
             task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
+            context_id: ctx.context_id.clone(),
             status: TaskStatus {
                 state: TaskState::Working,
                 message: Some(agent_message(note)),
@@ -171,7 +171,7 @@ async fn emit_artifact(
     queue
         .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
             task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
+            context_id: ctx.context_id.clone(),
             artifact: Artifact::new(name, vec![Part::text(text)]),
             append: None,
             last_chunk: Some(true),
@@ -184,7 +184,7 @@ async fn complete(queue: &dyn EventQueueWriter, ctx: &RequestContext) -> A2aResu
     queue
         .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
             task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
+            context_id: ctx.context_id.clone(),
             status: TaskStatus::new(TaskState::Completed),
             metadata: None,
         }))

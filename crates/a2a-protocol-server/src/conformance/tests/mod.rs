@@ -16,7 +16,7 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent};
 use a2a_protocol_types::message::Part;
-use a2a_protocol_types::task::{ContextId, TaskState};
+use a2a_protocol_types::task::TaskState;
 
 use super::{CheckResult, Outcome, Report, check, check_with_context};
 use crate::executor::AgentExecutor;
@@ -180,7 +180,7 @@ executor!(NamelessArtifact, |ctx, queue| {
     queue
         .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
             task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
+            context_id: ctx.context_id.clone(),
             artifact,
             append: None,
             last_chunk: Some(true),

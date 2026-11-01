@@ -163,7 +163,7 @@ pub trait AgentExecutor: Send + Sync + 'static {
 pub(crate) async fn write_canceled(ctx: &RequestContext, queue: &dyn EventQueueWriter) {
     let event = a2a_protocol_types::events::TaskStatusUpdateEvent {
         task_id: ctx.task_id.clone(),
-        context_id: a2a_protocol_types::task::ContextId::new(ctx.context_id.clone()),
+        context_id: ctx.context_id.clone(),
         status: a2a_protocol_types::task::TaskStatus::with_timestamp(
             a2a_protocol_types::task::TaskState::Canceled,
         ),

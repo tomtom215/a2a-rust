@@ -29,7 +29,7 @@ impl AgentExecutor for MyExecutor {
             // Signal start
             queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
+                context_id: ctx.context_id.clone(),
                 status: TaskStatus::new(TaskState::Working),
                 metadata: None,
             })).await?;
@@ -39,7 +39,7 @@ impl AgentExecutor for MyExecutor {
                 queue.write(StreamResponse::ArtifactUpdate(
                     TaskArtifactUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
+                        context_id: ctx.context_id.clone(),
                         artifact: Artifact::new("output", vec![Part::text(chunk)]),
                         append: Some(i > 0),
                         last_chunk: Some(i == results.len() - 1),
@@ -51,7 +51,7 @@ impl AgentExecutor for MyExecutor {
             // Signal completion
             queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
+                context_id: ctx.context_id.clone(),
                 status: TaskStatus::new(TaskState::Completed),
                 metadata: None,
             })).await?;

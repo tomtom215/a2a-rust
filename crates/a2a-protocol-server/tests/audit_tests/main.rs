@@ -51,7 +51,7 @@ impl AgentExecutor for EchoExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -60,7 +60,7 @@ impl AgentExecutor for EchoExecutor {
             queue
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     artifact: Artifact::new("art-1", vec![Part::text("echo response")]),
                     append: None,
                     last_chunk: None,
@@ -71,7 +71,7 @@ impl AgentExecutor for EchoExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))
@@ -108,7 +108,7 @@ impl AgentExecutor for SlowExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))

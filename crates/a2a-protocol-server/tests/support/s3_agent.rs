@@ -75,14 +75,14 @@ impl AgentExecutor for Scripted {
             let command = ctx.message.text().unwrap_or_default().to_owned();
             self.0.runs.lock().expect("runs").push(Run {
                 task_id: ctx.task_id.0.clone(),
-                context_id: ctx.context_id.clone(),
+                context_id: ctx.context_id.to_string(),
                 command: command.clone(),
             });
             let emit = EventEmitter::new(ctx, queue);
             let agent_message = |text: &str| {
                 let mut m = Message::agent_text(format!("{}-reply", ctx.message.id.0), text);
                 m.task_id = Some(ctx.task_id.clone());
-                m.context_id = Some(ContextId::new(ctx.context_id.clone()));
+                m.context_id = Some(ctx.context_id.clone());
                 StreamResponse::Message(m)
             };
             match command.as_str() {
@@ -110,7 +110,7 @@ impl AgentExecutor for Scripted {
                 "remember" => {
                     let n = {
                         let mut turns = self.0.turns.lock().expect("turns");
-                        let n = turns.entry(ctx.context_id.clone()).or_default();
+                        let n = turns.entry(ctx.context_id.to_string()).or_default();
                         *n += 1;
                         *n
                     };

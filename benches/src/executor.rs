@@ -14,7 +14,7 @@ use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::push::PushSender;
@@ -45,7 +45,7 @@ impl AgentExecutor for EchoExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -55,7 +55,7 @@ impl AgentExecutor for EchoExecutor {
             queue
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     artifact: Artifact::new("echo", vec![Part::text("Echo: benchmark")]),
                     append: None,
                     last_chunk: Some(true),
@@ -67,7 +67,7 @@ impl AgentExecutor for EchoExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))
@@ -100,7 +100,7 @@ impl AgentExecutor for NoopExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -108,7 +108,7 @@ impl AgentExecutor for NoopExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))
@@ -142,7 +142,7 @@ impl AgentExecutor for MultiEventExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -153,7 +153,7 @@ impl AgentExecutor for MultiEventExecutor {
                 queue
                     .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
+                        context_id: ctx.context_id.clone(),
                         artifact: Artifact::new(
                             format!("chunk-{i}"),
                             vec![Part::text(format!("Streaming chunk {i}"))],
@@ -169,7 +169,7 @@ impl AgentExecutor for MultiEventExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))
@@ -211,7 +211,7 @@ impl AgentExecutor for AppendingExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -222,7 +222,7 @@ impl AgentExecutor for AppendingExecutor {
                 queue
                     .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
+                        context_id: ctx.context_id.clone(),
                         artifact: Artifact::new(
                             "streamed-response",
                             vec![Part::text(format!("Streaming chunk {i}"))],
@@ -237,7 +237,7 @@ impl AgentExecutor for AppendingExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))
@@ -265,7 +265,7 @@ impl AgentExecutor for FailingExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Failed),
                     metadata: None,
                 }))

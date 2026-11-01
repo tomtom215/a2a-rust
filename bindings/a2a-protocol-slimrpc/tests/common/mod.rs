@@ -32,7 +32,7 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::Part;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 use slim_auth::auth_provider::{AuthProvider, AuthVerifier};
 use slim_auth::shared_secret::SharedSecret;
 use slim_config::component::id::{ID, Kind};
@@ -67,7 +67,7 @@ impl AgentExecutor for SigningExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -75,7 +75,7 @@ impl AgentExecutor for SigningExecutor {
             queue
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     artifact: Artifact::new(
                         "echo",
                         vec![Part::text(format!("answered by {}", self.signature))],
@@ -88,7 +88,7 @@ impl AgentExecutor for SigningExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))

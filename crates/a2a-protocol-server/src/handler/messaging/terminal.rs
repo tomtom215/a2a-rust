@@ -31,7 +31,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::failure::FailureClass;
 use a2a_protocol_types::message::Message;
 
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use a2a_protocol_types::budget::BudgetHandle;
 
@@ -324,7 +324,7 @@ impl TerminalTracking {
         };
         let update = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
             task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
+            context_id: ctx.context_id.clone(),
             status: TaskStatus {
                 state: waited,
                 message: Some(message),
@@ -336,7 +336,7 @@ impl TerminalTracking {
         // the state alone, or records the reply twice.
         let seen = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
             task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
+            context_id: ctx.context_id.clone(),
             status: TaskStatus::new(waited),
             metadata: None,
         });

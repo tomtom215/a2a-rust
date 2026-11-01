@@ -35,7 +35,7 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole};
 use a2a_protocol_types::params::MessageSendParams;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
@@ -95,7 +95,7 @@ impl AgentExecutor for ChainHopExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -145,7 +145,7 @@ impl AgentExecutor for ChainHopExecutor {
                     queue
                         .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                             task_id: ctx.task_id.clone(),
-                            context_id: ContextId::new(ctx.context_id.clone()),
+                            context_id: ctx.context_id.clone(),
                             status: TaskStatus::new(TaskState::Completed),
                             metadata: None,
                         }))
@@ -156,7 +156,7 @@ impl AgentExecutor for ChainHopExecutor {
                     queue
                         .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                             task_id: ctx.task_id.clone(),
-                            context_id: ContextId::new(ctx.context_id.clone()),
+                            context_id: ctx.context_id.clone(),
                             status: TaskStatus::new(TaskState::Failed),
                             metadata: None,
                         }))
@@ -193,7 +193,7 @@ impl AgentExecutor for ChainLeafExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -201,7 +201,7 @@ impl AgentExecutor for ChainLeafExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))

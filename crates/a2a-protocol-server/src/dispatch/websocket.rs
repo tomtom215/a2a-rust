@@ -1467,7 +1467,7 @@ mod tests {
     use crate::RequestHandlerBuilder;
     use crate::agent_executor;
     use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
-    use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+    use a2a_protocol_types::task::{TaskState, TaskStatus};
     use futures_util::{SinkExt, StreamExt};
 
     struct EchoExec;
@@ -1475,7 +1475,7 @@ mod tests {
         queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
+                context_id: ctx.context_id.clone(),
                 status: TaskStatus::new(TaskState::Working),
                 metadata: None,
             }))
@@ -1483,7 +1483,7 @@ mod tests {
         queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
+                context_id: ctx.context_id.clone(),
                 status: TaskStatus::new(TaskState::Completed),
                 metadata: None,
             }))
@@ -1728,7 +1728,7 @@ mod tests {
                 let status = |state: TaskState| {
                     StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
+                        context_id: ctx.context_id.clone(),
                         status: TaskStatus::new(state),
                         metadata: None,
                     })
@@ -2834,7 +2834,7 @@ mod tests {
                 queue
                     .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
+                        context_id: ctx.context_id.clone(),
                         status: TaskStatus::new(TaskState::Working),
                         metadata: None,
                     }))

@@ -31,7 +31,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskSt
 use a2a_protocol_types::message::{Message, MessageRole, Part};
 use a2a_protocol_types::params::{MessageSendParams, TaskIdParams, TaskQueryParams};
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
+use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
 
 /// Generous: only a hang outlasts it.
 const DEADLINE: Duration = Duration::from_secs(10);
@@ -55,7 +55,7 @@ impl AgentExecutor for Scripted {
         queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let context_id = ContextId::new(ctx.context_id.clone());
+            let context_id = ctx.context_id.clone();
             for step in self.0 {
                 let event = match *step {
                     Step::Status(state) => StreamResponse::StatusUpdate(TaskStatusUpdateEvent {

@@ -25,7 +25,7 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_protocol_types::task::{ContextId, TaskState};
+use a2a_protocol_types::task::TaskState;
 
 use crate::ItkExecutor;
 
@@ -88,7 +88,7 @@ fn agent_message(ctx: &RequestContext, text: &str) -> Message {
         role: MessageRole::Agent,
         parts: vec![Part::text(text)],
         task_id: Some(ctx.task_id.clone()),
-        context_id: Some(ContextId::new(ctx.context_id.clone())),
+        context_id: Some(ctx.context_id.clone()),
         reference_task_ids: None,
         extensions: None,
         metadata: None,
@@ -117,7 +117,7 @@ async fn artifact(
     queue
         .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
             task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
+            context_id: ctx.context_id.clone(),
             artifact: Artifact::new(id, vec![part]),
             append: Some(append),
             last_chunk: Some(last_chunk),

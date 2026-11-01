@@ -56,16 +56,24 @@ pub struct AgentInterface {
 ///
 /// Prefer [`AgentCard::new`] and the twelve `with_*` methods beside it over a
 /// struct literal: `new` takes the three things the type cannot invent — a
-/// name, a version, an interface — and defaults the rest, so a card built
-/// that way is valid by construction.
+/// name, a version, an interface — and defaults the rest. The card is not
+/// publishable yet: [`AgentCard::validate`], which the server's builder runs,
+/// also needs a description and one skill with a tag, which
+/// [`with_description`](AgentCard::with_description) and
+/// [`with_skill`](AgentCard::with_skill) add. `new` declares streaming
+/// (`capabilities.streaming` is `Some(true)`, since 0.16.0), because every
+/// binding this SDK serves streams; [`with_capabilities`](AgentCard::with_capabilities)
+/// replaces the capabilities.
 ///
 /// ```rust
 /// use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
 ///
 /// let card = AgentCard::new("triage", "1.0.0", AgentInterface::jsonrpc("http://localhost:8080"))
 ///     .with_description("Routes incidents to the right runbook")
-///     .with_skill(AgentSkill::new("triage", "Triage", "Classifies an incident"));
+///     .with_skill(AgentSkill::new("triage", "Triage", "Classifies an incident").with_tags(["triage"]));
 /// assert_eq!(card.skills.len(), 1);
+/// assert!(card.validate().is_ok());
+/// assert_eq!(card.capabilities.streaming, Some(true));
 /// ```
 ///
 /// The builders live in `agent_card/builders.rs`. Three examples written in a

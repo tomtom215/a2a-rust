@@ -63,13 +63,13 @@ impl a2a_protocol_server::AgentExecutor for Chatty {
     > {
         Box::pin(async move {
             use a2a_protocol_types::events::TaskStatusUpdateEvent;
-            use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+            use a2a_protocol_types::task::{TaskState, TaskStatus};
             for _ in 0..CHATTY_EVENTS {
                 queue
                     .write(a2a_protocol_types::StreamResponse::StatusUpdate(
                         TaskStatusUpdateEvent {
                             task_id: ctx.task_id.clone(),
-                            context_id: ContextId::new(ctx.context_id.clone()),
+                            context_id: ctx.context_id.clone(),
                             status: TaskStatus::new(TaskState::Working),
                             metadata: None,
                         },
@@ -80,7 +80,7 @@ impl a2a_protocol_server::AgentExecutor for Chatty {
                 .write(a2a_protocol_types::StreamResponse::StatusUpdate(
                     TaskStatusUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
+                        context_id: ctx.context_id.clone(),
                         status: TaskStatus::with_timestamp(TaskState::Completed),
                         metadata: None,
                     },

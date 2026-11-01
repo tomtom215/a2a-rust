@@ -33,7 +33,7 @@ use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
+use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
@@ -57,7 +57,7 @@ impl AgentExecutor for SimpleExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -65,7 +65,7 @@ impl AgentExecutor for SimpleExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))

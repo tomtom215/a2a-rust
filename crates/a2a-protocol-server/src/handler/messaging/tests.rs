@@ -652,7 +652,7 @@ agent_executor!(CompletingExecutor, |ctx, queue| async {
     for state in [TaskState::Working, TaskState::Completed] {
         let ev = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
             task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
+            context_id: ctx.context_id.clone(),
             status: TaskStatus::with_timestamp(state),
             metadata: None,
         });
@@ -2579,7 +2579,7 @@ agent_executor!(ReplyingExecutor, |_ctx, queue| async {
         .write(a2a_protocol_types::events::StreamResponse::StatusUpdate(
             a2a_protocol_types::events::TaskStatusUpdateEvent {
                 task_id: _ctx.task_id.clone(),
-                context_id: ContextId::new(_ctx.context_id.clone()),
+                context_id: _ctx.context_id.clone(),
                 status: a2a_protocol_types::task::TaskStatus::with_timestamp(
                     a2a_protocol_types::task::TaskState::InputRequired,
                 ),
@@ -2798,7 +2798,7 @@ impl crate::executor::AgentExecutor for LingeringExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::with_timestamp(state),
                     metadata: None,
                 }))
@@ -3287,7 +3287,7 @@ impl crate::executor::AgentExecutor for SlowCompletingExecutor {
             let status = |state| {
                 StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::with_timestamp(state),
                     metadata: None,
                 })

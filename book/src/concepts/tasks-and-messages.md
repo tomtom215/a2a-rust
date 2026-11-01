@@ -321,7 +321,7 @@ Artifacts can be delivered incrementally during streaming:
 // First chunk
 queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
     task_id: ctx.task_id.clone(),
-    context_id: ContextId::new(ctx.context_id.clone()),
+    context_id: ctx.context_id.clone(),
     artifact: Artifact::new("doc", vec![Part::text("First paragraph...")]),
     append: None,
     last_chunk: Some(false),  // More chunks coming
@@ -331,7 +331,7 @@ queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
 // Final chunk — parts are appended, metadata is merged key by key
 queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
     task_id: ctx.task_id.clone(),
-    context_id: ContextId::new(ctx.context_id.clone()),
+    context_id: ctx.context_id.clone(),
     artifact: Artifact::new("doc", vec![Part::text("Last paragraph.")]),
     append: Some(true),       // Append parts to existing artifact by ID
     last_chunk: Some(true),   // This is the last chunk

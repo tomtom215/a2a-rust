@@ -24,9 +24,12 @@
 //! [`AgentCard::new`] takes exactly what the type cannot invent — a name, a
 //! version, and one interface, which are the three things
 //! [`AgentCard::validate`] requires — and every other field is set by a
-//! chained `with_*`, matching [`AgentCapabilities`]'s existing style. A card
-//! built this way is valid by construction, so `build()` has nothing to fail
-//! at and there is no `Result` to unwrap.
+//! chained `with_*`, matching [`AgentCapabilities`]'s existing style. It is
+//! not publishable until a description and a skill with a tag are added
+//! ([`AgentCard::validate`] says which is missing), so a `Result` is only
+//! returned where the server's builder checks it. `new` declares streaming
+//! (audit G-07, 0.16.0): every binding this SDK serves streams, and a card
+//! that did not say so left the flagship example unable to.
 
 use super::{AgentCapabilities, AgentCard, AgentInterface, AgentProvider, AgentSkill};
 use crate::extensions::AgentCardSignature;
@@ -248,7 +251,12 @@ impl AgentCard {
     /// `a2a.proto`, or without a skill, each with at least one tag (spec
     /// §5.7). Add them with [`with_description`](Self::with_description) and
     /// [`with_skill`](Self::with_skill). Every optional field starts `None`,
-    /// and capabilities start unset ([`AgentCapabilities::none`]);
+    /// and capabilities declare streaming and nothing else
+    /// (`capabilities.streaming == Some(true)`, since 0.16.0: until then they
+    /// started unset, so the card of a server that streams said it did not and
+    /// a client that honours the card refused to stream);
+    /// [`with_capabilities`](Self::with_capabilities) replaces them, and
+    /// [`AgentCapabilities::none`] is the card that declares nothing.
     /// [`with_input_modes`](Self::with_input_modes) and
     /// [`with_output_modes`](Self::with_output_modes) replace the default
     /// modes.
@@ -267,6 +275,7 @@ impl AgentCard {
     /// let card = card.with_description("Echoes what it is sent");
     /// assert!(card.validate().is_ok());
     /// assert_eq!(card.default_input_modes, ["text/plain"]);
+    /// assert_eq!(card.capabilities.streaming, Some(true));
     /// ```
     #[must_use]
     pub fn new(
@@ -283,7 +292,7 @@ impl AgentCard {
             default_input_modes: vec!["text/plain".to_owned()],
             default_output_modes: vec!["text/plain".to_owned()],
             skills: Vec::new(),
-            capabilities: AgentCapabilities::none(),
+            capabilities: AgentCapabilities::none().with_streaming(true),
             provider: None,
             icon_url: None,
             documentation_url: None,

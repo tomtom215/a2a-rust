@@ -98,7 +98,7 @@ pub(crate) async fn record_run_started(
     );
     r.chain.clone_from(&chain);
     r.task_id = Some(ctx.task_id.0.clone());
-    r.context_id = Some(ctx.context_id.clone());
+    r.context_id = Some(ctx.context_id.to_string());
     r.message_id = Some(ctx.message.id.0.clone());
     if let Ok(d) = digest_of(&ctx.message) {
         r.digests.insert("message".to_owned(), d);

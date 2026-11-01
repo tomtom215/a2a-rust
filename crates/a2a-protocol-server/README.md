@@ -137,7 +137,7 @@ println!("{report:?}");
 |---------|---------|---------|
 | `signing` | No | Forwards `a2a-protocol-types/signing`; this crate itself neither signs nor verifies the card it serves |
 | `tracing` | Yes | Structured logging via the `tracing` crate; `default-features = false` compiles it out |
-| `tls-rustls` | No | HTTPS for the bundled push-notification sender, and TLS on `Server`'s own listener (`Server::with_tls`, `with_tls_pem`) |
+| `tls-rustls` | Yes | HTTPS for the bundled push-notification sender, JWKS and OIDC fetches and the model client, and TLS on `Server`'s own listener (`Server::with_tls`, `with_tls_pem`); on by default since 0.16.0, `default-features = false` opts out |
 | `sqlite` | No | SQLite-backed task and push-config stores |
 | `postgres` | No | PostgreSQL-backed task and push-config stores |
 | `websocket` | No | WebSocket transport |

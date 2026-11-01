@@ -18,7 +18,7 @@ use a2a_protocol_types::error::A2aError;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::failure::{FailureClass, error_class, set_class};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskId, TaskState, TaskStatus};
 use tokio::sync::OwnedSemaphorePermit;
 use tokio::task::JoinHandle;
 
@@ -298,10 +298,10 @@ impl RequestHandler {
         // message when it is created. The call's own span learns the task
         // and context here too, the first point both are known.
         #[cfg(feature = "tracing")]
-        crate::rpc_span::record_task(&ctx.task_id.0, Some(&ctx.context_id));
+        crate::rpc_span::record_task(&ctx.task_id.0, Some(ctx.context_id.as_ref()));
         let span = crate::rpc_span::ExecutorSpan::open(
             &ctx.task_id.0,
-            &ctx.context_id,
+            ctx.context_id.as_ref(),
             self.agent_card.as_ref(),
             self.span_settings,
             &ctx.message,
@@ -420,7 +420,7 @@ pub(super) async fn write_failure_event(
     trace_error!(task_id = %ctx.task_id, error = %error, "executor failed");
     let fail_event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
         task_id: ctx.task_id.clone(),
-        context_id: ContextId::new(ctx.context_id.clone()),
+        context_id: ctx.context_id.clone(),
         status: failure_status(ctx, error, class),
         metadata: Some(serde_json::json!({ "error": error.to_string() })),
     });
@@ -446,7 +446,7 @@ pub(super) fn failure_status(
         role: MessageRole::Agent,
         parts: vec![Part::text(error.to_string())],
         task_id: Some(ctx.task_id.clone()),
-        context_id: Some(ContextId::new(ctx.context_id.clone())),
+        context_id: Some(ctx.context_id.clone()),
         reference_task_ids: None,
         extensions: None,
         metadata: None,

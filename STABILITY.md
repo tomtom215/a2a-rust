@@ -22,8 +22,9 @@ supported Rust version included (§5), rather than spread them over several.
 It also restarts §7's count again: `0.13.0`, `0.14.0` and `0.15.0` each
 break, so no release yet counts toward the two consecutive unbroken minors
 `1.0` needs. None waives §3's deprecation window: `sign_agent_card`, which
-can omit the `kid` spec §8.4.2 requires, is deprecated, refuses `None` as a
-specification correction (§2), and is removed in `0.16.0`.
+could omit the `kid` spec §8.4.2 requires, was deprecated in `0.15.0` (refusing
+`None` as a specification correction, §2) and is removed in `0.16.0`, one minor
+later.
 
 What follows is the account written at `0.13` (2026-09-20), kept as it was.
 Between `0.7.0` (2026-07-24) and `0.11.0`

@@ -133,7 +133,7 @@ mod direct_message_response {
         queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
+                context_id: ctx.context_id.clone(),
                 status: TaskStatus::with_timestamp(TaskState::Completed),
                 metadata: None,
             }))
@@ -236,7 +236,7 @@ mod direct_message_response {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::with_timestamp(TaskState::Completed),
                     metadata: None,
                 }))

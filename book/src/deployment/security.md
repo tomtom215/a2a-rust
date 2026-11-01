@@ -56,8 +56,8 @@ until 2026-10-18 the HTTP dispatchers did not see it. See
 a fine choice when it already manages your certificates.
 
 The client and the push sender speak TLS via `tls-rustls`, which is on by
-default in `a2a-protocol-sdk` and `a2a-protocol-client` and off in a direct
-dependency on `a2a-protocol-server`.
+default in `a2a-protocol-sdk`, `a2a-protocol-client` and, since 0.16.0,
+`a2a-protocol-server`.
 
 ## Outbound requests are the dangerous ones
 

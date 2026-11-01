@@ -37,7 +37,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskSt
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 use slim_auth::auth_provider::{AuthProvider, AuthVerifier};
 use slim_auth::shared_secret::SharedSecret;
 use slim_config::component::id::{ID, Kind};
@@ -61,7 +61,7 @@ impl AgentExecutor for Echo {
             let status = |state| {
                 StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(state),
                     metadata: None,
                 })
@@ -70,7 +70,7 @@ impl AgentExecutor for Echo {
             queue
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     artifact: Artifact::new("echo", vec![Part::text(format!("echo: {heard}"))]),
                     append: None,
                     last_chunk: Some(true),

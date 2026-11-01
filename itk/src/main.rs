@@ -371,9 +371,7 @@ impl ItkExecutor {
             role: MessageRole::Agent,
             parts: vec![Part::text(t)],
             task_id: Some(ctx.task_id.clone()),
-            context_id: Some(a2a_protocol_types::task::ContextId::new(
-                ctx.context_id.clone(),
-            )),
+            context_id: Some(ctx.context_id.clone()),
             reference_task_ids: None,
             extensions: None,
             metadata: None,
@@ -382,7 +380,7 @@ impl ItkExecutor {
         status.message = message;
         StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
             task_id: ctx.task_id.clone(),
-            context_id: a2a_protocol_types::task::ContextId::new(ctx.context_id.clone()),
+            context_id: ctx.context_id.clone(),
             status,
             metadata: None,
         })

@@ -66,7 +66,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskSt
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 /// Worker agent configuration.
 struct Worker {
@@ -211,7 +211,7 @@ impl AgentExecutor for CoordinatorExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -257,7 +257,7 @@ impl AgentExecutor for CoordinatorExecutor {
             queue
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     artifact: Artifact::new("cross-lang-result", vec![Part::text(&combined)]),
                     append: None,
                     last_chunk: Some(true),
@@ -269,7 +269,7 @@ impl AgentExecutor for CoordinatorExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))

@@ -29,7 +29,7 @@ use a2a_protocol_types::provenance::{ContentSigner, provenance_of, sign_content,
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::signing::Jwks;
-use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
+use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -71,7 +71,7 @@ impl AgentExecutor for Agent {
                 status.message = note;
                 StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status,
                     metadata: None,
                 })
@@ -106,7 +106,7 @@ impl AgentExecutor for Agent {
             queue
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     artifact: self.forwarded.clone(),
                     append: None,
                     last_chunk: Some(true),

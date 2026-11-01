@@ -438,8 +438,56 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   and `Server::with_config` are no longer `const fn`, and `TlsConfig` and
   `ClientConfig` are no longer `UnwindSafe` or `RefUnwindSafe` (the variant
   holds an `Arc<rustls::ClientConfig>`), as `cargo-semver-checks` reports.
+- **`RequestContext.context_id` is a `ContextId`, not a `String`** (server;
+  audit G-18; maintainer's decision of 2026-11-01). The task's id beside it
+  was a `TaskId` and the types crate's policy is a newtype per identifier, so
+  an executor passed one around as a string and the other as a newtype, and
+  wrote `ContextId::new(ctx.context_id.clone())` forty-odd times in this
+  repository. Reads change: `ctx.context_id.clone()` is now what the events
+  take; `ctx.context_id.as_ref()` is the `&str`, `.to_string()` the `String`;
+  `format!("{}", ctx.context_id)` works as before. `RequestContext::new` takes
+  `impl Into<ContextId>`, so a `String` or `&str` still works, and a bare
+  `.into()` of a literal no longer infers. No deprecation window: a public
+  field's type has none, and `cargo-semver-checks` has no lint for it, so it
+  is listed here by hand.
+- **`AgentCard::new` declares streaming** (types; audit G-07; maintainer's
+  decision of 2026-11-01). A card built with `new` had no capabilities set, so
+  the card of a server that streams said it did not, and a client that honours
+  the card refused to stream; the flagship example could not. `new` now sets
+  `capabilities.streaming = Some(true)`. Cards built with `new` start
+  advertising it on the wire (their ETag changes); a card that must declare
+  nothing replaces the capabilities with
+  `.with_capabilities(AgentCapabilities::none())`. The rustdoc that called a
+  card from `new` "valid by construction" was wrong (it needs a description
+  and a skill with a tag, which `validate` names) and is corrected.
+- **`tls-rustls` is a default feature of `a2a-protocol-server`** (server;
+  audit G-06; maintainer's decision of 2026-11-01). Without it the crate
+  could not reach any `https://` webhook, JWKS or OIDC issuer, or model
+  endpoint, the spec's normal case, and a reader who depended on it alone was
+  told nothing at build time. A default-feature change is a minor-version
+  change under `STABILITY.md` §2, and `cargo-semver-checks` has no lint for an
+  added default. It adds rustls, ring, webpki-roots, hyper-rustls and
+  tokio-rustls to a server-only build (they are in every SDK build already);
+  `default-features = false` opts out.
+- **`sign_agent_card` is removed** (types; deprecated in 0.15.0, one minor
+  ago, as `STABILITY.md` §3 requires). Its key id was an `Option`, so it could
+  write a card signature with no `kid` that spec §8.4.2 requires; 0.15.0 made
+  it refuse `None`. Use `sign_card_es256(card, pkcs8, key_id)`, whose key id
+  is a `&str`. The test that pinned the deprecation went with it.
 
 ### Behaviour Changes
+
+- **`deploy-agent` deletes finished tasks from PostgreSQL after a week**
+  (example; audit NEW-a-l-1). With `DATABASE_URL` set the SDK's stores keep
+  everything for ever, so a deployment that changed one variable changed its
+  retention from the in-memory store's hour to ever, and `tasks`,
+  `task_events` and `idempotency_keys` grew without bound. The agent now
+  sweeps its own database hourly from every replica, in bounded batches: a
+  completed, failed, canceled or rejected task is deleted `TASK_RETENTION_HOURS`
+  (168) after its last update, with the idempotency keys that outlived it; a
+  task still working or waiting for input is never deleted. `0` keeps
+  everything and says so at startup. `tests.rs::the_sweep_deletes_finished_tasks_and_keeps_running_ones`
+  runs it against a PostgreSQL (ignored without `A2A_TEST_POSTGRES_URL`).
 
 - **A wrong `OTEL_*` value is noted, not fatal** (server; audit C-08;
   maintainer's decision of 2026-11-01). The OpenTelemetry specification has an
@@ -477,18 +525,6 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   was never sent by the one running the task, and each replica kept an audit
   chain of its own, with nothing to say so. `build()` now names the store, what
   it costs, and the store to use. A deployment that routes every request for a
-- **`deploy-agent` deletes finished tasks from PostgreSQL after a week**
-  (example; audit NEW-a-l-1). With `DATABASE_URL` set the SDK's stores keep
-  everything for ever, so a deployment that changed one variable changed its
-  retention from the in-memory store's hour to ever, and `tasks`,
-  `task_events` and `idempotency_keys` grew without bound. The agent now
-  sweeps its own database hourly from every replica, in bounded batches: a
-  completed, failed, canceled or rejected task is deleted `TASK_RETENTION_HOURS`
-  (168) after its last update, with the idempotency keys that outlived it; a
-  task still working or waiting for input is never deleted. `0` keeps
-  everything and says so at startup. `tests.rs::the_sweep_deletes_finished_tasks_and_keeps_running_ones`
-  runs it against a PostgreSQL (ignored without `A2A_TEST_POSTGRES_URL`).
-
   task to one replica, or runs one replica at a time, calls
   `allow_process_local_stores()`. Nothing changes without the profile, or
   with a task store that is not shared, or for a store this crate cannot see
@@ -1409,6 +1445,21 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Internal
 
+- **The `deploy-agent` image build was run end to end** (audit L18, NEW-a-l-4a).
+  Built from this tree on a 4-vCPU machine in about 7 minutes cold, started
+  with no database, and asked: `GET /health` and `/ready` answered 200, the
+  process ran as uid 10001, the agent card's `version` was the `AGENT_VERSION`
+  build argument, `message:send` returned `Hello, Ada!`, and `SIGTERM` ended it
+  with exit status 0 well inside 30 s. The run also found that the build
+  cannot reach crates.io behind a TLS-inspecting proxy (`cargo install
+  cargo-chef` failed with "SSL certificate problem: self-signed certificate in
+  certificate chain"), which is this sandbox's own network; the Dockerfile now
+  takes that CA as an optional BuildKit secret (`--secret id=cacert,src=...`)
+  and the same build passed with it. Not done: a CI job that builds the image
+  on a pull request and validates the manifest (`kubeconform`), a `HEALTHCHECK`
+  (audit A19), and a run on a cluster (Kubernetes is not available in the
+  sandbox).
+
 - **The book's ignore ratchet sees indented fences** (`scripts/check_book_code.sh`;
   audit NEW-g-docs-5). It matched fences at column 0 only, so a snippet that did
   not compile could be hidden from it by indenting it under a list item; one
@@ -1445,21 +1496,6 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   pools no longer ping before each statement; a PostgreSQL module on a pool
   of its own is listed with the reason. It found the migration runner's
   version read and `BEGIN` outside both, now inside `retry`.
-- **The `deploy-agent` image build was run end to end** (audit L18, NEW-a-l-4a).
-  Built from this tree on a 4-vCPU machine in about 7 minutes cold, started
-  with no database, and asked: `GET /health` and `/ready` answered 200, the
-  process ran as uid 10001, the agent card's `version` was the `AGENT_VERSION`
-  build argument, `message:send` returned `Hello, Ada!`, and `SIGTERM` ended it
-  with exit status 0 well inside 30 s. The run also found that the build
-  cannot reach crates.io behind a TLS-inspecting proxy (`cargo install
-  cargo-chef` failed with "SSL certificate problem: self-signed certificate in
-  certificate chain"), which is this sandbox's own network; the Dockerfile now
-  takes that CA as an optional BuildKit secret (`--secret id=cacert,src=...`)
-  and the same build passed with it. Not done: a CI job that builds the image
-  on a pull request and validates the manifest (`kubeconform`), a `HEALTHCHECK`
-  (audit A19), and a run on a cluster (Kubernetes is not available in the
-  sandbox).
-
 - `otel_pipeline_default_endpoint` asserted that the final flush failed
   against the default endpoint, so it failed wherever a collector listened on
   `localhost:4317`; it now runs in a child whose `OTEL_EXPORTER_OTLP_ENDPOINT`

@@ -21,7 +21,7 @@ fn make_request_context() -> RequestContext {
         extensions: None,
         metadata: None,
     };
-    RequestContext::new(message, TaskId::new("test-task"), "test-ctx".into())
+    RequestContext::new(message, TaskId::new("test-task"), "test-ctx")
 }
 
 /// Dummy writer for testing `EventEmitter` without needing a real queue.

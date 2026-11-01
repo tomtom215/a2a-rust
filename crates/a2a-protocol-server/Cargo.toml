@@ -25,7 +25,14 @@ categories             = ["network-programming", "web-programming"]
 ## OpenTelemetry API, so a process that installs a provider gets this crate's
 ## spans and metrics without enabling anything here (decided 2026-10-14).
 ## Exporting them is `otlp`. Opt out with `default-features = false`.
-default = ["tracing", "otel"]
+##
+## `tls-rustls` is on by default too (0.16.0, audit G-06): without it this
+## crate could not reach any `https://` webhook, JWKS or OIDC issuer, or model
+## endpoint, which is the spec's normal case, and nothing said so at build time
+## to a reader who depended on this crate alone. It costs rustls, ring,
+## webpki-roots, hyper-rustls and tokio-rustls in a server-only build; they are
+## already in every SDK build. `default-features = false` opts out.
+default = ["tracing", "otel", "tls-rustls"]
 ## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization).
 ##
 ## Also `RequestHandlerBuilder::with_content_signer`, which signs every agent

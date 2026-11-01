@@ -8,7 +8,7 @@
 //! The doc examples on each method already pin its own effect. What is left
 //! for here is what no single method's example can show: that a card built
 //! only from constructors serialises to the same wire bytes as the equivalent
-//! struct literal, that `new` is valid by construction, and that the two
+//! struct literal, that `new` needs a description and a skill before it validates, and that the two
 //! append-versus-replace conventions are the ones documented.
 
 use super::*;
@@ -126,11 +126,13 @@ fn the_literal_it_replaces() -> AgentCard {
 
 /// Everything `new` does not take starts empty or `None`, except the mode
 /// lists, which start as `["text/plain"]` (spec §5.7: required arrays are
-/// non-empty). Stated as a test because a future field defaulting to
-/// something else would be a silent wire change for every caller that never
-/// mentions it.
+/// non-empty), and streaming, which `new` declares (0.16.0, audit G-07,
+/// maintainer's decision of 2026-11-01: every binding this SDK serves streams,
+/// and a card that left it unset made the flagship example unable to). Stated
+/// as a test because a future field defaulting to something else would be a
+/// silent wire change for every caller that never mentions it.
 #[test]
-fn new_leaves_every_optional_field_unset() {
+fn new_declares_streaming_and_leaves_every_other_optional_field_unset() {
     let card = AgentCard::new("a", "1.0.0", AgentInterface::jsonrpc("http://x"));
     assert!(card.url.is_none());
     assert_eq!(card.description, "");
@@ -143,7 +145,7 @@ fn new_leaves_every_optional_field_unset() {
     assert!(card.security_schemes.is_none());
     assert!(card.security_requirements.is_none());
     assert!(card.signatures.is_none());
-    assert_eq!(card.capabilities.streaming, None);
+    assert_eq!(card.capabilities.streaming, Some(true));
     assert_eq!(card.capabilities.push_notifications, None);
     assert_eq!(card.capabilities.extended_agent_card, None);
     assert!(card.capabilities.extensions.is_none());

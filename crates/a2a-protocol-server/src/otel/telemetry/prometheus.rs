@@ -358,7 +358,7 @@ mod tests {
             0
         );
         assert_eq!(port(&env(&[]), &notes), 9464);
-        assert!(notes.take().is_empty());
+        assert_eq!(notes.take(), Vec::<String>::new());
     }
 
     /// `otlp,prometheus` is both: the export runtime serves the scrape and

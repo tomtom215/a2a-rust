@@ -40,7 +40,7 @@ impl AgentExecutor for GatedExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))
@@ -231,7 +231,7 @@ impl AgentExecutor for PushingExecutor {
                 queue
                     .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
+                        context_id: ctx.context_id.clone(),
                         artifact: Artifact::new(
                             format!("art-{i}"),
                             vec![Part::text(format!("chunk {i}"))],
@@ -245,7 +245,7 @@ impl AgentExecutor for PushingExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))

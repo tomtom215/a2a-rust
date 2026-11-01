@@ -112,7 +112,7 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Part, PartContent};
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use rig_core::client::CompletionClient;
 use rig_core::completion::CompletionModel;
@@ -165,7 +165,7 @@ where
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -200,7 +200,7 @@ where
             queue
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     artifact: Artifact::new("rig-response", vec![Part::text(&answer.text)]),
                     append: None,
                     last_chunk: Some(true),
@@ -224,7 +224,7 @@ where
                 queue
                     .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
+                        context_id: ctx.context_id.clone(),
                         artifact: Artifact::new(
                             "tool-trace",
                             vec![Part::text(answer.trace.join("\n"))],
@@ -240,7 +240,7 @@ where
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))

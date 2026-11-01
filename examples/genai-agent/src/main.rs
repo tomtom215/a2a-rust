@@ -59,7 +59,7 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Part, PartContent};
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 /// An A2A `AgentExecutor` that wraps a genai LLM client.
 /// Message-text prefix that makes the executor pause mid-task.
@@ -121,7 +121,7 @@ impl AgentExecutor for GenaiAgentExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -180,7 +180,7 @@ impl AgentExecutor for GenaiAgentExecutor {
             queue
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     artifact: Artifact::new("llm-response", vec![Part::text(response_text)]),
                     append: None,
                     last_chunk: Some(true),
@@ -192,7 +192,7 @@ impl AgentExecutor for GenaiAgentExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))

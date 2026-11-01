@@ -102,6 +102,8 @@ pub(crate) enum CallerIsolation {
     EveryCaller,
 }
 
+mod shared_stores;
+
 /// What the builder was told about the agent card.
 enum CardSetting {
     /// Nothing: `build()` refuses (spec §8.1).
@@ -159,6 +161,7 @@ struct AuthWaivers {
 ///   Set your own with [`with_executor_timeout`](Self::with_executor_timeout),
 ///   or opt out with
 ///   [`without_executor_timeout`](Self::without_executor_timeout).
+#[allow(clippy::struct_excessive_bools)] // independent switches, each set by its own method
 pub struct RequestHandlerBuilder {
     executor: Arc<dyn AgentExecutor>,
     task_store: Option<Arc<dyn TaskStore>>,
@@ -1674,85 +1677,6 @@ impl RequestHandlerBuilder {
                 "the production profile needs a content signer, which needs the \
                  `signing` feature: enable it and call with_content_signer (ADR 0027)"
             });
-        }
-        Ok(())
-    }
-}
-
-impl RequestHandlerBuilder {
-    /// On a task store several processes share, the production profile
-    /// refuses a store of the other kinds that only this process can see,
-    /// unless [`allow_process_local_stores`](Self::allow_process_local_stores)
-    /// was called (audit E-F13, ADR 0025).
-    fn check_stores_are_shared(&self) -> ServerResult<()> {
-        let shared = self
-            .task_store
-            .as_ref()
-            .is_some_and(|store| store.turn_claims().is_some());
-        if !shared || self.allow_process_local_stores {
-            return Ok(());
-        }
-        let refuse = |store: &str, effect: &str, fix: &str| {
-            Err(crate::error::ServerError::Config(format!(
-                "the production profile found {store}, which keeps its state in this process, \
-                 over a task store that several processes share: {effect}. {fix}, or call \
-                 allow_process_local_stores() if one process serves every request for a task"
-            )))
-        };
-        if self
-            .halt_store
-            .as_ref()
-            .is_some_and(|s| s.is_process_local())
-        {
-            return refuse(
-                "the halt store",
-                "a halt given to one replica does not reach the tasks another one runs, and a \
-                 restart forgets it",
-                "Use PostgresHaltStore (feature `postgres`) or SqliteHaltStore (feature `sqlite`)",
-            );
-        }
-        if self
-            .lease_store
-            .as_ref()
-            .is_some_and(|s| s.is_process_local())
-        {
-            return refuse(
-                "the lease store",
-                "a task delegated to this agent is leased only on the replica that accepted it, \
-                 and its deadline is lost with that replica",
-                "Use PostgresLeaseStore (feature `postgres`)",
-            );
-        }
-        let card_pushes = matches!(
-            &self.agent_card,
-            CardSetting::Card(card) if card.capabilities.push_notifications == Some(true)
-        );
-        if card_pushes
-            && self
-                .push_config_store
-                .as_ref()
-                .is_some_and(|s| s.is_process_local())
-        {
-            return refuse(
-                "the push-config store",
-                "a webhook registered through one replica is never sent by the replica that runs \
-                 the task, and none survives a restart",
-                "Use the push-config store that matches the task store (PostgresPushConfigStore, \
-                 SqlitePushConfigStore, or their TenantAware forms)",
-            );
-        }
-        #[cfg(feature = "audit")]
-        if self
-            .audit
-            .as_ref()
-            .is_some_and(|log| log.store().is_process_local())
-        {
-            return refuse(
-                "the audit store",
-                "each replica would keep a hash chain of its own, and no one of them is the \
-                 record of what the agent did",
-                "Use PostgresAuditStore or SqliteAuditStore",
-            );
         }
         Ok(())
     }

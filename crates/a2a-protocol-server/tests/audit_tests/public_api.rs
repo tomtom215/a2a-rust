@@ -417,7 +417,7 @@ async fn event_queue_manager_destroy_all_clears() {
 #[test]
 fn request_context_with_stored_task() {
     let msg = make_message("test");
-    let ctx = RequestContext::new(msg, TaskId::new("task-1"), "ctx-1".into());
+    let ctx = RequestContext::new(msg, TaskId::new("task-1"), "ctx-1");
     assert!(
         ctx.stored_task.is_none(),
         "stored_task should initially be None"
@@ -447,7 +447,7 @@ fn request_context_with_stored_task() {
 #[test]
 fn request_context_with_metadata() {
     let msg = make_message("test");
-    let ctx = RequestContext::new(msg, TaskId::new("task-1"), "ctx-1".into());
+    let ctx = RequestContext::new(msg, TaskId::new("task-1"), "ctx-1");
     assert!(ctx.metadata.is_none(), "metadata should initially be None");
 
     let meta = serde_json::json!({"key": "value"});

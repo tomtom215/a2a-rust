@@ -34,7 +34,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskSt
 use a2a_protocol_types::jsonrpc::JsonRpcRequest;
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::MessageSendParams;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 /// The message id of the request the stalled peer sends.
 const FLOOD_MESSAGE_ID: &str = "msg-flood";
@@ -66,7 +66,7 @@ impl AgentExecutor for FloodExecutor {
                     queue
                         .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                             task_id: ctx.task_id.clone(),
-                            context_id: ContextId::new(ctx.context_id.clone()),
+                            context_id: ctx.context_id.clone(),
                             artifact: a2a_protocol_types::artifact::Artifact::new(
                                 "flood",
                                 vec![Part::text(text.clone())],
@@ -86,7 +86,7 @@ impl AgentExecutor for FloodExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))

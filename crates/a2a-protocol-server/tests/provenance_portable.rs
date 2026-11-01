@@ -20,7 +20,7 @@ use a2a_protocol_types::message::{Message, Part};
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::provenance::ContentSigner;
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, TaskState};
+use a2a_protocol_types::task::TaskState;
 
 fn signer(kid: &str) -> ContentSigner {
     let pkcs8 = ring::signature::Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new())
@@ -43,7 +43,7 @@ async fn malformed_provenance_is_refused_when_written() {
                 let refused = queue
                     .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
+                        context_id: ctx.context_id.clone(),
                         artifact,
                         append: None,
                         last_chunk: None,
@@ -100,7 +100,7 @@ async fn a_signature_survives_the_grpc_conversion() {
                 queue
                     .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
+                        context_id: ctx.context_id.clone(),
                         artifact,
                         append: None,
                         last_chunk: Some(true),

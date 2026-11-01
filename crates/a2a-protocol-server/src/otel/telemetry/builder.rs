@@ -404,10 +404,9 @@ impl TelemetryBuilder {
         let client_identity = self.client_identity_for(signal)?;
         let timeout = config::timeout(env, signal, &self.notes);
         let proxy = Arc::new(proxy::matcher(env, &self.proxy));
-        let compression = match self.compression {
-            Some(c) => Some(c),
-            None => compression::from_env(env, signal, &self.notes),
-        };
+        let compression = self
+            .compression
+            .map_or_else(|| compression::from_env(env, signal, &self.notes), Some);
         if let (Signal::Traces, Some(lf)) = (signal, &self.langfuse) {
             let endpoint = lf.traces_endpoint();
             return Ok(Target {

@@ -42,7 +42,7 @@ use a2a_protocol_server::serve::{
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 /// Long enough that a drain which waits on the open stream is unmistakable,
 /// short enough that the unfixed code fails in seconds rather than minutes.
@@ -65,7 +65,7 @@ impl AgentExecutor for Delegator {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -274,7 +274,7 @@ impl AgentExecutor for Stubborn {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -341,7 +341,7 @@ impl AgentExecutor for Quick {
             let status = |state| {
                 StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(state),
                     metadata: None,
                 })

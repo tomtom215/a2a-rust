@@ -77,9 +77,7 @@ impl a2a_protocol_server::executor::AgentExecutor for ChannelExec {
                 .write(a2a_protocol_types::events::StreamResponse::StatusUpdate(
                     a2a_protocol_types::events::TaskStatusUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: a2a_protocol_types::task::ContextId::new(
-                            ctx.context_id.clone(),
-                        ),
+                        context_id: ctx.context_id.clone(),
                         status: a2a_protocol_types::task::TaskStatus::with_timestamp(
                             a2a_protocol_types::task::TaskState::InputRequired,
                         ),

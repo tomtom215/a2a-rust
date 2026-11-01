@@ -44,7 +44,7 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::executor::AgentExecutor;
@@ -74,7 +74,7 @@ impl TckSutExecutor {
         queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
+                context_id: ctx.context_id.clone(),
                 status: TaskStatus::new(state),
                 metadata: None,
             }))
@@ -90,7 +90,7 @@ impl TckSutExecutor {
         queue
             .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                 task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
+                context_id: ctx.context_id.clone(),
                 artifact: Artifact::new("tck-artifact", parts),
                 append: None,
                 last_chunk: Some(true),
@@ -109,7 +109,7 @@ impl TckSutExecutor {
         queue
             .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                 task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
+                context_id: ctx.context_id.clone(),
                 artifact: Artifact::new("tck-artifact", vec![Part::text(text)]),
                 append: Some(true),
                 last_chunk: Some(last),

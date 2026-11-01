@@ -64,7 +64,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskSt
 use a2a_protocol_types::failure::{FailureClass, set_class};
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::message::Part;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use crate::request_context::RequestContext;
 use crate::streaming::EventQueueWriter;
@@ -249,7 +249,7 @@ impl<'a> EventEmitter<'a> {
         self.queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: self.ctx.task_id.clone(),
-                context_id: ContextId::new(self.ctx.context_id.clone()),
+                context_id: self.ctx.context_id.clone(),
                 status: TaskStatus::new(state),
                 metadata: None,
             }))
@@ -287,7 +287,7 @@ impl<'a> EventEmitter<'a> {
             vec![Part::text(reason.into())],
         );
         note.task_id = Some(self.ctx.task_id.clone());
-        note.context_id = Some(ContextId::new(self.ctx.context_id.clone()));
+        note.context_id = Some(self.ctx.context_id.clone());
         set_class(&mut note, class);
 
         let mut status = TaskStatus::new(TaskState::Failed);
@@ -296,7 +296,7 @@ impl<'a> EventEmitter<'a> {
         self.queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: self.ctx.task_id.clone(),
-                context_id: ContextId::new(self.ctx.context_id.clone()),
+                context_id: self.ctx.context_id.clone(),
                 status,
                 metadata: None,
             }))
@@ -341,7 +341,7 @@ impl<'a> EventEmitter<'a> {
             vec![Part::text(question.into())],
         );
         note.task_id = Some(self.ctx.task_id.clone());
-        note.context_id = Some(ContextId::new(self.ctx.context_id.clone()));
+        note.context_id = Some(self.ctx.context_id.clone());
         request.attach(&mut note);
 
         let mut status = TaskStatus::new(TaskState::InputRequired);
@@ -349,7 +349,7 @@ impl<'a> EventEmitter<'a> {
         self.queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: self.ctx.task_id.clone(),
-                context_id: ContextId::new(self.ctx.context_id.clone()),
+                context_id: self.ctx.context_id.clone(),
                 status,
                 metadata: None,
             }))
@@ -372,7 +372,7 @@ impl<'a> EventEmitter<'a> {
         self.queue
             .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                 task_id: self.ctx.task_id.clone(),
-                context_id: ContextId::new(self.ctx.context_id.clone()),
+                context_id: self.ctx.context_id.clone(),
                 artifact: Artifact::new(id, parts),
                 append,
                 last_chunk,
@@ -442,13 +442,13 @@ impl<'a> EventEmitter<'a> {
     async fn status_with_note(&self, state: TaskState, parts: Vec<Part>) -> A2aResult<()> {
         let mut note = Message::agent(uuid::Uuid::new_v4().to_string(), parts);
         note.task_id = Some(self.ctx.task_id.clone());
-        note.context_id = Some(ContextId::new(self.ctx.context_id.clone()));
+        note.context_id = Some(self.ctx.context_id.clone());
         let mut status = TaskStatus::new(state);
         status.message = Some(note);
         self.queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: self.ctx.task_id.clone(),
-                context_id: ContextId::new(self.ctx.context_id.clone()),
+                context_id: self.ctx.context_id.clone(),
                 status,
                 metadata: None,
             }))

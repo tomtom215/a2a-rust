@@ -35,7 +35,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::params::{MessageSendParams, TaskIdParams};
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
+use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
 
 /// Generous: only a hang outlasts it.
 const DEADLINE: Duration = Duration::from_secs(10);
@@ -59,7 +59,7 @@ impl AgentExecutor for AsksThenAnswers {
             let status = |state| {
                 StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(state),
                     metadata: None,
                 })

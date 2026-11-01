@@ -116,12 +116,14 @@ gRPC and WebSocket dispatchers serve on their own listeners, which
 Always use HTTPS in production. The **client** (and, through
 `a2a-protocol-sdk`, the server's push sender) ship TLS out of the box via the
 default `tls-rustls` feature — `https://` agents and webhooks work with no
-extra setup. A direct dependency on `a2a-protocol-server` needs
-`features = ["tls-rustls"]`.
+extra setup. So does a direct dependency on `a2a-protocol-server` since 0.16.0
+(before it, the feature was off there and `https://` webhooks, JWKS and model
+endpoints could not be reached until you added `features = ["tls-rustls"]`);
+`default-features = false` opts out.
 
 The **server** terminates TLS itself on `serve::Server` (spec §14:
 "Implementations SHOULD support HTTPS"), with the same `tls-rustls` feature,
-which `a2a-protocol-sdk` enables by default. Give it a certificate chain and
+which `a2a-protocol-sdk` and `a2a-protocol-server` enable by default. Give it a certificate chain and
 key in PEM, or a `rustls::ServerConfig` you built (client certificates,
 another crypto provider) with `with_tls`:
 

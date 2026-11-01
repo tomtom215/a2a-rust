@@ -37,7 +37,7 @@ impl AgentExecutor for CompletingExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::with_timestamp(TaskState::Working),
                     metadata: None,
                 }))
@@ -45,7 +45,7 @@ impl AgentExecutor for CompletingExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::with_timestamp(TaskState::Completed),
                     metadata: None,
                 }))
@@ -67,7 +67,7 @@ impl AgentExecutor for ArtifactExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::with_timestamp(TaskState::Working),
                     metadata: None,
                 }))
@@ -75,7 +75,7 @@ impl AgentExecutor for ArtifactExecutor {
             queue
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     artifact: a2a_protocol_types::Artifact {
                         id: a2a_protocol_types::ArtifactId::new("art-1"),
                         name: Some("output.txt".into()),
@@ -92,7 +92,7 @@ impl AgentExecutor for ArtifactExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::with_timestamp(TaskState::Completed),
                     metadata: None,
                 }))
@@ -472,7 +472,7 @@ async fn shutdown_cancels_in_flight_tasks() {
                 queue
                     .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
+                        context_id: ctx.context_id.clone(),
                         status: TaskStatus::with_timestamp(TaskState::Working),
                         metadata: None,
                     }))

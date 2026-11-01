@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn a_good_value_leaves_no_notice() {
         let e = env(&[("OTEL_TRACES_EXPORTER", "otlp,console")]);
-        assert!(read(&*e, Signal::Traces, false).1.is_empty());
+        assert_eq!(read(&*e, Signal::Traces, false).1, Vec::<String>::new());
     }
 
     #[test]

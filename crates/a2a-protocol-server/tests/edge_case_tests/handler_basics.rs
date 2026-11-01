@@ -70,7 +70,7 @@ async fn cancel_task_signals_cancellation_token() {
                 queue
                     .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
+                        context_id: ctx.context_id.clone(),
                         status: TaskStatus::with_timestamp(TaskState::Working),
                         metadata: None,
                     }))

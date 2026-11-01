@@ -27,7 +27,7 @@ impl AgentExecutor for WorkThenErrorExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                    context_id: ctx.context_id.clone(),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -94,7 +94,7 @@ async fn streaming_mode_work_then_error_marks_failed_in_store() {
                 queue
                     .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                         task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
+                        context_id: ctx.context_id.clone(),
                         status: TaskStatus::new(TaskState::Working),
                         metadata: None,
                     }))
