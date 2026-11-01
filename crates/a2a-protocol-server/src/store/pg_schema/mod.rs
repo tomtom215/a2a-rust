@@ -43,7 +43,18 @@ pub const SCHEMA_LOCK_KEY: i64 = i64::from_be_bytes(*b"a2a_schm");
 /// which ends with it): waiting for the lock and creating the schema can take
 /// longer than a timeout set for the application's own statements, and a
 /// database set to 100 ms stopped every replica from starting (`57014`).
-/// `lock_timeout` is left as the operator set it.
+///
+/// Once it holds the lock it bounds how long the statements that follow may
+/// wait for a lock on a table: ten seconds, unless the operator set a
+/// `lock_timeout` of their own, which is kept. A statement that has work to do
+/// (adding a column, a trigger or an index to `tasks`, as the first replica of
+/// a release that changes the schema does) takes a lock that queues behind any
+/// open transaction on the table, and while it queues every later reader and
+/// writer queues behind it: with the default of no limit one long transaction
+/// stalled the whole fleet's writes (audit E-F11). Now the start fails with
+/// `55P03` after ten seconds, the supervisor restarts it, and the table is
+/// free in between. The wait for this lock itself is not bounded: the replica
+/// that holds it is applying statements that are.
 ///
 /// # Errors
 ///
@@ -56,8 +67,15 @@ pub async fn lock(tx: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error>
         .bind(SCHEMA_LOCK_KEY)
         .execute(&mut **tx)
         .await?;
+    sqlx::query(BOUND_DDL_LOCK_WAITS).execute(&mut **tx).await?;
     Ok(())
 }
+
+/// Sets `lock_timeout` to ten seconds for the rest of the transaction when it
+/// is zero (no limit), and leaves any other value as the operator set it.
+const BOUND_DDL_LOCK_WAITS: &str = "SELECT set_config('lock_timeout', \
+    CASE WHEN current_setting('lock_timeout') IN ('0', '0ms', '0s') \
+    THEN '10s' ELSE current_setting('lock_timeout') END, true)";
 
 /// Adds `applied_seq` to `tasks` when it is missing. Not `ADD COLUMN IF NOT
 /// EXISTS`, which takes an `ACCESS EXCLUSIVE` lock on the table even when the

@@ -14,16 +14,36 @@ fn claims() -> TurnClaims {
 }
 
 fn hold(claims: &TurnClaims, token: &str) -> CancellationToken {
+    hold_fresh(claims, token, Instant::now()).0
+}
+
+/// A claim last proven fresh at `fresh_at`, with the turn its executor runs.
+fn hold_fresh(
+    claims: &TurnClaims,
+    token: &str,
+    fresh_at: Instant,
+) -> (CancellationToken, Arc<ExecutorTurn>) {
     let cancel = CancellationToken::new();
+    let turn = Arc::new(ExecutorTurn::default());
     claims.held().insert(
         token.to_owned(),
         Held {
             task_id: TaskId::new(format!("task-{token}")),
             cancel: Some(cancel.clone()),
+            turn: Some(Arc::clone(&turn)),
+            fresh_at,
+            lapsed: false,
         },
     );
-    cancel
+    (cancel, turn)
 }
+
+/// [`super::act_on`] for a renewal sent just now.
+fn act_on(claims: &TurnClaims, sent: &[String], report: &[HeldClaim]) {
+    super::act_on(claims, sent, report, Instant::now());
+}
+
+const SECOND: Duration = Duration::from_secs(1);
 
 #[test]
 fn a_cancel_asked_for_elsewhere_fires_the_executors_token() {
@@ -298,4 +318,129 @@ async fn a_send_waiting_on_another_replica_backs_off() {
         (5..=12).contains(&attempts),
         "{attempts} attempts in one second"
     );
+}
+
+// -- a claim that cannot be proven stops its turn (audit E-F7, NEW-e-1) -------
+
+/// The margin is the point: the holder stops at four fifths of the time to
+/// live, so it has stopped before any other replica can take the claim over at
+/// the whole of it.
+#[test]
+fn a_replica_gives_up_a_claim_before_anyone_can_take_it() {
+    assert_eq!(
+        lapse_after(Duration::from_secs(15)),
+        Duration::from_secs(12)
+    );
+    assert_eq!(lapse_after(MIN_TURN_CLAIM_TTL), Duration::from_millis(2400));
+    for ttl in [
+        MIN_TURN_CLAIM_TTL,
+        DEFAULT_TURN_CLAIM_TTL,
+        Duration::from_secs(120),
+    ] {
+        assert!(lapse_after(ttl) + ttl / 5 <= ttl, "{ttl:?}");
+    }
+}
+
+#[test]
+fn a_claim_unproven_for_four_fifths_of_its_ttl_stops_its_turn_once() {
+    let claims = claims();
+    let t0 = Instant::now();
+    let (cancel, turn) = hold_fresh(&claims, "a", t0);
+    let (fresh_cancel, fresh_turn) = hold_fresh(&claims, "b", t0 + 10 * SECOND);
+
+    assert_eq!(claims.lapse_overdue(t0 + Duration::from_millis(11_900)), 0);
+    assert!(!cancel.is_cancelled() && !turn.is_lapsed());
+
+    assert_eq!(
+        claims.lapse_overdue(t0 + 12 * SECOND),
+        1,
+        "only the stale one"
+    );
+    assert!(cancel.is_cancelled(), "the executor is stopped");
+    assert!(
+        turn.is_lapsed(),
+        "and told why, so it ends transient, not canceled"
+    );
+    assert!(!fresh_cancel.is_cancelled() && !fresh_turn.is_lapsed());
+
+    assert_eq!(claims.lapse_overdue(t0 + 13 * SECOND), 0, "stopped once");
+    assert!(
+        claims.held().contains_key("a"),
+        "still renewed, so the turn can wind down under it"
+    );
+}
+
+#[test]
+fn a_renewal_the_store_answered_makes_the_claim_fresh_again() {
+    let claims = claims();
+    let t0 = Instant::now();
+    let (cancel, _turn) = hold_fresh(&claims, "a", t0);
+    // A renewal sent 10 s in, answered by the store.
+    super::act_on(
+        &claims,
+        &["a".to_owned()],
+        &[HeldClaim {
+            token: "a".to_owned(),
+            cancel_requested: false,
+        }],
+        t0 + 10 * SECOND,
+    );
+    assert_eq!(
+        claims.lapse_overdue(t0 + 21 * SECOND),
+        0,
+        "11 s since the proof"
+    );
+    assert!(!cancel.is_cancelled());
+    assert_eq!(
+        claims.lapse_overdue(t0 + 22 * SECOND),
+        1,
+        "12 s since the proof"
+    );
+    assert!(cancel.is_cancelled());
+}
+
+/// A renewal sent before an older proof does not move it back.
+#[test]
+fn an_older_proof_never_replaces_a_newer_one() {
+    let claims = claims();
+    let t0 = Instant::now();
+    hold_fresh(&claims, "a", t0 + 10 * SECOND);
+    super::act_on(
+        &claims,
+        &["a".to_owned()],
+        &[HeldClaim {
+            token: "a".to_owned(),
+            cancel_requested: false,
+        }],
+        t0,
+    );
+    assert_eq!(claims.held()["a"].fresh_at, t0 + 10 * SECOND);
+}
+
+/// A claim taken while its executor has no token yet cannot be cancelled when
+/// it lapses; the executor is stopped the moment it gets one.
+#[test]
+fn a_lapse_before_the_executor_has_a_token_stops_it_when_it_gets_one() {
+    let claims = Arc::new(claims());
+    let t0 = Instant::now();
+    claims.held().insert(
+        "a".to_owned(),
+        Held {
+            task_id: TaskId::new("task-a"),
+            cancel: None,
+            turn: None,
+            fresh_at: t0,
+            lapsed: false,
+        },
+    );
+    assert_eq!(claims.lapse_overdue(t0 + 13 * SECOND), 1);
+
+    let (cancel, turn) = (CancellationToken::new(), Arc::new(ExecutorTurn::default()));
+    TurnClaim {
+        claims: Arc::clone(&claims),
+        token: "a".to_owned(),
+    }
+    .attach(&cancel, &turn);
+    assert!(cancel.is_cancelled(), "stopped on arrival");
+    assert!(turn.is_lapsed());
 }

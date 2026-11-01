@@ -284,6 +284,51 @@ async fn tenant_aware_postgres_fences_a_token_to_its_own_task() {
     a_cancel_marks_only_a_held_claim(&store).await;
 }
 
+/// Audit E-F7: a renewal does not wait behind the replica's own traffic for a
+/// connection. With the main pool's only connection held, as a burst of
+/// requests holds it, a renewal is still answered at once from the pool kept
+/// for renewals; on the main pool it timed out.
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
+async fn postgres_renews_while_the_task_pool_is_exhausted() {
+    let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+    let main = crate::store::PostgresTaskStore::pool_options()
+        .max_connections(1)
+        .acquire_timeout(Duration::from_millis(500))
+        .connect(&url)
+        .await
+        .unwrap();
+    let claims = super::postgres::PostgresTurnClaims::from_pool(main.clone())
+        .await
+        .unwrap();
+    let token = uuid::Uuid::new_v4().to_string();
+    let owner = format!("owner-{token}");
+    assert!(
+        claims
+            .claim("", &token, &owner, &token, TTL)
+            .await
+            .expect("a claim, on the main pool"),
+    );
+
+    let _only_connection = main.acquire().await.unwrap();
+    assert!(
+        main.acquire().await.is_err(),
+        "the main pool is exhausted: the premise of the test"
+    );
+    let report = claims
+        .renew(&owner, std::slice::from_ref(&token), TTL)
+        .await
+        .expect("answered from the pool kept for renewals");
+    assert_eq!(report.len(), 1, "{report:?}");
+    assert_eq!(report[0].token, token);
+    // The sweep shares that pool and is not starved either.
+    claims
+        .sweep(Duration::from_secs(3600))
+        .await
+        .expect("swept");
+}
+
 /// Only `'claimed'` grants the turn, and only `'legacy'` says an earlier
 /// release's turn holds it, which this replica logs while it waits.
 #[cfg(feature = "postgres")]

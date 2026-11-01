@@ -230,7 +230,7 @@ impl RequestHandler {
                 .await;
             let claim = claim.map(std::sync::Arc::new);
             if let Some(claim) = &claim {
-                claim.attach(&ctx.cancellation_token);
+                claim.attach(&ctx.cancellation_token, &turn);
             }
             guard_ref.registered(&turn);
             // A halt that landed after the check above may have walked the

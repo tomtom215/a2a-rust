@@ -48,8 +48,9 @@ const BATCH: usize = 32;
 
 /// What a task the reaper ends says, in its status message.
 pub const REASON: &str = "the replica running this task stopped before it finished \
-    (its turn claim expired with the task still running); the task did not complete, and \
-    sending it again may succeed";
+    (its turn claim expired with the task still running); the task did not complete. To try \
+    again, send it as a new request (a new message id and idempotency key): a retry with \
+    the same key is answered with this task";
 
 /// What the reaper needs from its handler, held apart from it so the loop
 /// does not keep the handler alive.
@@ -97,6 +98,18 @@ impl Reaper {
         };
         let mut ended = 0;
         for (scope, task_id) in found {
+            // A task this replica itself holds a claim on is not abandoned
+            // here, whatever the table says. After a database outage longer
+            // than the time to live every claim has expired and every quiet
+            // turn's row is older than one, so the owner's own reaper would
+            // race its own renewals and end a turn that is still running
+            // (audit NEW-e-1). If the claim has really lapsed, the turn stops
+            // itself and ends transient (`lapse_overdue`); once it ends the
+            // claim is released and the next look finds the task if nothing
+            // else has.
+            if claims.holds_task(&task_id) {
+                continue;
+            }
             if self.end(&claims, &scope, &task_id).await {
                 ended += 1;
             }
@@ -225,5 +238,7 @@ impl Reaper {
     }
 }
 
+#[cfg(test)]
+mod start_tests;
 #[cfg(test)]
 mod tests;

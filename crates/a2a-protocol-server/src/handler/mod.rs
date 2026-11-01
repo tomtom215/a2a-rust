@@ -243,6 +243,12 @@ pub(crate) struct ExecutorTurn {
     /// task's token is cancelled, so an executor that returns on the token
     /// sees it, and its task is ended `Canceled` as on shutdown.
     pub(crate) halted: std::sync::atomic::AtomicBool,
+    /// This replica could not keep the turn's claim (`handler::claims`): its
+    /// renewals went unanswered for most of the claim's time to live, so
+    /// another replica may take the task over. Set before the task's token is
+    /// cancelled, so an executor that returns on the token sees it, and its
+    /// task is ended `Failed`, failure class `transient`, never `Canceled`.
+    pub(crate) lapsed: std::sync::atomic::AtomicBool,
 }
 
 impl ExecutorTurn {
@@ -260,6 +266,17 @@ impl ExecutorTurn {
     /// Whether a halt stopped this turn.
     pub(crate) fn is_halted(&self) -> bool {
         self.halted.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Marks the turn's claim lapsed; the caller cancels its token next.
+    pub(crate) fn lapse(&self) {
+        self.lapsed
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    /// Whether this replica gave up the turn's claim.
+    pub(crate) fn is_lapsed(&self) -> bool {
+        self.lapsed.load(std::sync::atomic::Ordering::Acquire)
     }
 }
 

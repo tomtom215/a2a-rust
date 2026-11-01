@@ -1481,7 +1481,19 @@ impl RequestHandlerBuilder {
 
         // Read before `task_store` moves into the handler.
         let turn_claims = match self.turn_claims {
-            TurnClaimsChoice::Off => None,
+            TurnClaimsChoice::Off => {
+                // Nothing then ends a task whose replica dies mid-turn: it
+                // stays `working` until a send for it arrives (audit H3).
+                if task_store.database().is_some() {
+                    trace_warn!(
+                        "turn claims are off over a store that names a database: a task whose \
+                         replica dies mid-turn will stay `working`, and nothing reaps it; \
+                         without_turn_claims is for a store only one replica uses, and even \
+                         then a restart leaves its running tasks unfinished"
+                    );
+                }
+                None
+            }
             // A store with claims of its own fences each write against them,
             // in its own database: claims kept anywhere else never satisfy
             // that fence, and every turn's first write would be refused.
@@ -1515,7 +1527,7 @@ impl RequestHandlerBuilder {
             Arc::clone(&self.metrics),
             in_flight.background().clone(),
         );
-        Ok(RequestHandler {
+        let handler = RequestHandler {
             executor: self.executor,
             task_store,
             push_config_store,
@@ -1589,7 +1601,17 @@ impl RequestHandlerBuilder {
             #[cfg(feature = "audit")]
             audit: self.audit,
             draining: std::sync::atomic::AtomicBool::new(false),
-        })
+        };
+        // Started now when a runtime is running, which is the usual case (a
+        // handler is built in `#[tokio::main]`): until 2026-11-01 it started
+        // at the first request, so a replica that was alive and idle, the
+        // survivor of a dead peer, ended nothing until someone called it
+        // (audit NEW-h-s0-5). Built outside a runtime it still starts from the
+        // first request, where one is certain.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            handler.start_reaper();
+        }
+        Ok(handler)
     }
 }
 

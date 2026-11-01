@@ -68,10 +68,40 @@ const RENEW_SQL: &str = "UPDATE a2a_task_claims
     WHERE owner = $1 AND token = ANY($3)
     RETURNING token, cancel_requested";
 
+/// Connections kept for renewals and the sweep: one statement a second per
+/// replica needs no more.
+const RENEWAL_POOL_SIZE: u32 = 2;
+
+/// How long a renewal waits for one of them. Far under a claim's time to
+/// live, so a pool that cannot answer fails the attempt and the next one
+/// comes soon after, instead of waiting out sqlx's 30 s default.
+const RENEWAL_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// A pool of its own for renewals, over the same database as `main`.
+///
+/// Renewals went through the task store's pool, with every other statement of
+/// the replica. Under load (hundreds of idle subscribers polling, a burst of
+/// sends) a renewal waited behind them for a connection, up to sqlx's 30 s,
+/// against a 15 s time to live: a healthy replica missed its renewals, and its
+/// claims lapsed for want of a connection (audit E-F7). Lazy, so it opens
+/// nothing until the first renewal and costs a replica with no running turn
+/// nothing. `None` outside a runtime, where the main pool is used.
+fn renewal_pool(main: &PgPool) -> Option<PgPool> {
+    tokio::runtime::Handle::try_current().ok()?;
+    Some(
+        crate::store::pg_retry::pool_options()
+            .max_connections(RENEWAL_POOL_SIZE)
+            .acquire_timeout(RENEWAL_ACQUIRE_TIMEOUT)
+            .connect_lazy_with((*main.connect_options()).clone()),
+    )
+}
+
 /// Turn claims in a PostgreSQL table, `a2a_task_claims`.
 #[derive(Debug, Clone)]
 pub struct PostgresTurnClaims {
     pool: PgPool,
+    /// Renewals and the sweep run here, not on `pool` ([`renewal_pool`]).
+    renewals: Option<PgPool>,
     /// The task table beside it, when a task store made it.
     tasks: Option<super::ClaimedTasks>,
     /// Where a statement run again after a lost connection is reported: the
@@ -102,6 +132,7 @@ impl PostgresTurnClaims {
         .await
         .map_err(|e| A2aError::internal(format!("turn claims migrate: {e}")))?;
         Ok(Self {
+            renewals: renewal_pool(&pool),
             pool,
             tasks: None,
             metrics: crate::metrics::MetricsHandle::default(),
@@ -110,16 +141,22 @@ impl PostgresTurnClaims {
 
     /// Over a pool whose schema the caller has already applied, beside the
     /// task table `tasks`.
-    pub(crate) const fn over(
+    pub(crate) fn over(
         pool: PgPool,
         metrics: crate::metrics::MetricsHandle,
         tasks: super::ClaimedTasks,
     ) -> Self {
         Self {
+            renewals: renewal_pool(&pool),
             pool,
             tasks: Some(tasks),
             metrics,
         }
+    }
+
+    /// Where renewals and the sweep run.
+    fn renewal_pool(&self) -> &PgPool {
+        self.renewals.as_ref().unwrap_or(&self.pool)
     }
 }
 
@@ -218,7 +255,7 @@ impl TurnClaimStore for PostgresTurnClaims {
                     .bind(owner)
                     .bind(millis(ttl))
                     .bind(tokens)
-                    .fetch_all(&self.pool)
+                    .fetch_all(self.renewal_pool())
             })
             .await
             .map_err(|e| failed("renew", &e))?;
@@ -257,7 +294,7 @@ impl TurnClaimStore for PostgresTurnClaims {
                  WHERE expires_at < now() - $1 * interval '1 millisecond'",
                 )
                 .bind(millis(older_than))
-                .execute(&self.pool)
+                .execute(self.renewal_pool())
             })
             .await
             .map_err(|e| failed("sweep", &e))?;

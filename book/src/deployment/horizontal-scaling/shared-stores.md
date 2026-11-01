@@ -55,8 +55,11 @@ same database should avoid it.
 
 Each store opened from a URL opens a pool of its own, of 10 connections
 (`DEFAULT_POOL_SIZE`) unless given another size with `new_with_pool_size(url,
-size)`; a halt store's listener holds one more, and the audit and shared
-rate-limit stores have pools of their own too. Every replica opens all of
+size)`; a halt store's listener holds one more, the audit and shared
+rate-limit stores have pools of their own too, and each SQL task store keeps a
+pool of two for turn-claim renewals (opened at the first renewal, so a replica
+that runs no turn never opens it), so that a replica busy with requests does
+not starve its own claims of a connection (audit E-F7). Every replica opens all of
 them, so what a replica can use is the sum of its pools, and what the
 database must allow is that sum times the replicas, plus one more replica's
 worth while a rolling update surges a pod. PostgreSQL's default

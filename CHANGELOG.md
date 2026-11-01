@@ -390,6 +390,32 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **A replica that cannot renew a turn's claim stops the turn** (server;
+  audit E-F7, NEW-e-1, NEW-h-s0-1). A replica cut off from its database learned
+  nothing: renewals failed and were logged, the executor ran on, and another
+  replica's reaper ended the task `failed` while the work went on, so a caller
+  that resent it had it done twice. A claim not proven for four fifths of its
+  time to live (12 s of 15) now stops its turn: the executor's token fires and
+  the task ends `failed`, failure class `transient`, never `canceled`. Raise
+  `with_turn_claim_timing`'s time to live to ride out longer outages. A blip
+  shorter than the margin stops nothing. `tests/claim_lapse.rs` runs both; with
+  the watchdog disabled by hand the first fails. Not yet repeated through
+  toxiproxy (`book/src/deployment/horizontal-scaling/turn-claims.md` says so).
+- **A handler's reaper starts when it is built, not at its first request**
+  (server; audit NEW-h-s0-5), when a runtime is running: an idle survivor of a
+  dead peer used to end nothing until someone called it. A handler built
+  outside a runtime still starts it at its first request.
+- **The messages of a task a replica ended say how to try again** (server;
+  audit NEW-h-s0-9): a retry that reuses the first send's idempotency key is
+  answered with the failed task, so "sending it again may succeed" sent callers
+  round in a circle. They now say to send it as a new request (a new message id
+  and idempotency key). Shutdown's, the reaper's and the new lapsed-claim one.
+- **Schema work waits ten seconds at most for a table lock** (server,
+  PostgreSQL; audit E-F11), unless the operator set a `lock_timeout`, which is
+  kept. The first replica of a release that adds a column, trigger or index took
+  a lock that queued behind any open transaction on the table and, while it
+  queued, stalled every later reader and writer. It now fails with `55P03` after
+  ten seconds and is restarted; the table is free in between.
 - **`a2a`: header names compare without case, and `a2a card` sends the
   headers** (a2a-cli; audit G/D-05). `--header X-A=1 --header x-a=2` sent both
   values of one header; it now sends `x-a: 2`. `a2a card <URL>` ignored
@@ -519,6 +545,20 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   (`docs/audits/2026-11-01-triage/live-results.md`); the two new tests in
   `tests/e2e/card_origin.rs` fail without it, and the headerless fallback and
   the flag's opt-in are pinned beside them.
+- **Claim renewals no longer wait behind the replica's own traffic**
+  (server, PostgreSQL; audit E-F7): renewals and the sweep use a pool of two
+  connections of their own, opened at the first renewal. On the task store's
+  pool a renewal could wait up to sqlx's 30 s for a connection against a 15 s
+  time to live. `postgres_renews_while_the_task_pool_is_exhausted` reproduced
+  the timeout on the main pool and passes on the new one. Each replica may open
+  two more connections (`shared-stores.md` counts them).
+- **A replica's own reaper no longer races its own renewals** (server; audit
+  NEW-e-1): it skips the tasks the handler holds a claim on. After a database
+  outage longer than the time to live every claim had expired and every quiet
+  turn's row was old, so it could end a turn that was still running.
+- **A handler built with turn claims off over a store that names a database
+  logs a warning** (server; audit H3): nothing then ends a task whose replica
+  dies mid-turn.
 - **API keys, bearer tokens and push tokens are compared with `subtle`**
   (server and client; audit SEC-18). Two hand-written XOR loops did the work but
   nothing stopped an optimiser from ending them at the first difference; the

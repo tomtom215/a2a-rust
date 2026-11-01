@@ -126,13 +126,43 @@ each reaching PostgreSQL through its own toxiproxy link, default timing:
   its 5 s wait; when the link came back the turn went on writing (its
   artifact grew from 5 parts to 23 in the next 9 s, none lost), and a cancel
   sent to the other replica stopped its executor 0.71 s later.
-- Cut it for 20 s, past the time to live: the other replica ran a
-  continuation 16.1 s after the cut, to `completed`; the cut-off replica's
-  executor, still running, had every write refused once its link was back (the
-  artifact stayed at the 4 parts it had at the takeover), and was stopped on
-  its first renewal, about 2.5 s after the link returned.
+- Cut it for 20 s, past the time to live (measured before the change described
+  below): the other replica ran a continuation 16.1 s after the cut, to
+  `completed`; the cut-off replica's executor, still running, had every write
+  refused once its link was back (the artifact stayed at the 4 parts it had at
+  the takeover), and was stopped on its first renewal, about 2.5 s after the
+  link returned. So it ran for the whole cut, unfenced and unable to write.
 - Restart PostgreSQL mid-turn: the turn went on writing once the database was
   back (5 parts before, 15 five seconds after it was ready).
+
+### A replica that cannot renew stops its turns
+
+A replica cut off from the store cannot tell that it lost its claim: its
+renewals fail, nothing is reported, and the second bullet above is what that
+used to cost. Since 2026-11-01 a holder stops acting on a claim it can no
+longer prove it holds, and before anyone else can take it over. Each claim
+records when the replica last had proof (the moment before it was taken, or
+before the renewal the store last answered). A watchdog, which does not wait
+for the renewal call (that can hang on a starved pool), stops every turn whose
+proof is older than four fifths of the time to live: 12 s of the default 15 s.
+The turn's executor is cancelled and the task ends `failed`, failure class
+`transient`, never `canceled`, as at shutdown; its message says to send it
+again as a new request, because a retry that reuses the first send's
+idempotency key is answered with the failed task. The other replica's reaper
+or next send then takes the task over at 15 s, with nothing of the first
+executor still running. A blip shorter than the margin stops nothing.
+
+Three things go with it. Renewals use a pool of their own (two connections), so
+traffic cannot starve them. A replica's own reaper skips the tasks it holds, so
+after a database outage it does not end a turn it is still running. And the
+reaper starts when the handler is built, not at its first request, so an idle
+survivor of a dead peer still ends the peer's orphans.
+
+Verified in process, with a claim store whose renewals can be made to fail
+(`tests/claim_lapse.rs`: a cut ends the turn transient, a 0.9 s blip stops
+nothing), and against PostgreSQL for the pool (`postgres_renews_while_the_task_pool_is_exhausted`).
+The live partition run above has not been repeated through toxiproxy since the
+change, so the timings in this page are the 2026-10-28 ones, not these.
 
 ## Cancelling a task that runs elsewhere
 

@@ -28,6 +28,8 @@ use crate::store::lease::now_unix_ms;
 use crate::store::tenant::TenantContext;
 use crate::store::{InMemoryLeaseStore, LeaseStore, TaskStore};
 
+use super::super::Held;
+
 /// Records what it was asked to deliver.
 #[derive(Default)]
 struct Recorder(Mutex<Vec<(String, StreamResponse)>>);
@@ -47,7 +49,7 @@ impl PushSender for Recorder {
     }
 }
 
-fn task(id: &str, state: TaskState) -> Task {
+pub(super) fn task(id: &str, state: TaskState) -> Task {
     Task {
         id: TaskId::new(id),
         context_id: ContextId::new("ctx"),
@@ -67,8 +69,13 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
     let claims_store = store.turn_claims().expect("SQL stores claim turns");
     let ttl = Duration::from_secs(3);
     let run = |id: &str| format!("{id}-{}", uuid::Uuid::new_v4());
-    let (orphan, running, fresh, parked) =
-        (run("orphan"), run("running"), run("fresh"), run("parked"));
+    let (orphan, running, fresh, parked, mine) = (
+        run("orphan"),
+        run("running"),
+        run("fresh"),
+        run("parked"),
+        run("mine"),
+    );
 
     TenantContext::scope(scope.to_owned(), async {
         // Killed mid-turn: working, its claim expired long ago.
@@ -106,6 +113,17 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
             .await
             .unwrap();
         age(parked.clone()).await;
+        // Ours: this handler holds a claim on it in memory, while the table
+        // says the claim expired, as after a database outage longer than
+        // the time to live (audit NEW-e-1).
+        store.save(&task(&mine, TaskState::Working)).await.unwrap();
+        age(mine.clone()).await;
+        assert!(
+            claims_store
+                .claim(scope, &mine, "reaper", &run("t"), Duration::from_millis(1))
+                .await
+                .unwrap()
+        );
     })
     .await;
     tokio::time::sleep(Duration::from_millis(20)).await;
@@ -155,6 +173,16 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
         ttl,
         Duration::from_secs(1),
     ));
+    claims.held().insert(
+        "mine".to_owned(),
+        Held {
+            task_id: TaskId::new(&*mine),
+            cancel: None,
+            turn: None,
+            fresh_at: tokio::time::Instant::now(),
+            lapsed: false,
+        },
+    );
     let reaper = super::Reaper {
         claims: Arc::downgrade(&claims),
         task_store: Arc::clone(&store),
@@ -186,6 +214,31 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
         }
     })
     .await;
+    // NEW-e-1: a task this handler holds is not abandoned, whatever the table
+    // says; once it lets go of it, the next look ends it.
+    let state_of = |id: &str| {
+        let (store, scope, id) = (Arc::clone(&store), scope.to_owned(), id.to_owned());
+        async move {
+            TenantContext::scope(scope, async move {
+                store
+                    .get(&TaskId::new(id))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .status
+                    .state
+            })
+            .await
+        }
+    };
+    assert_eq!(
+        state_of(&mine).await,
+        TaskState::Working,
+        "held here: left alone"
+    );
+    claims.held().remove("mine");
+    reaper.look().await;
+    assert_eq!(state_of(&mine).await, TaskState::Failed, "released: ended");
     // N-E-2: the ending is in the log, once, at the first position, and the
     // tasks left alone have no entry.
     TenantContext::scope(scope.to_owned(), async {
@@ -228,14 +281,25 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
     assert_eq!(reaper.look().await, None, "the loop stops with its handler");
 }
 
+/// Removes a database `sqlite_url` named and the `-wal` and `-shm` files the
+/// pool leaves beside it, which `remove_file` on the database alone does not.
 #[cfg(feature = "sqlite")]
-fn sqlite_url() -> (String, std::path::PathBuf) {
+pub(super) fn remove_sqlite(path: &std::path::Path) {
+    for suffix in ["", "-wal", "-shm"] {
+        let mut name = path.as_os_str().to_owned();
+        name.push(suffix);
+        let _ = std::fs::remove_file(std::path::PathBuf::from(name));
+    }
+}
+
+#[cfg(feature = "sqlite")]
+pub(super) fn sqlite_url() -> (String, std::path::PathBuf) {
     let path = std::env::temp_dir().join(format!("a2a-reaper-{}.db", uuid::Uuid::new_v4()));
     (format!("sqlite:{}?mode=rwc", path.display()), path)
 }
 
 #[cfg(feature = "sqlite")]
-fn sqlite_age(pool: sqlx::SqlitePool, table: &'static str) -> Age {
+pub(super) fn sqlite_age(pool: sqlx::SqlitePool, table: &'static str) -> Age {
     Box::new(move |id| {
         let pool = pool.clone();
         Box::pin(async move {
@@ -258,7 +322,7 @@ async fn sqlite_the_reaper_ends_only_what_nobody_runs() {
     let store = Arc::new(crate::store::SqliteTaskStore::new(&url).await.unwrap());
     let pool = sqlx::SqlitePool::connect(&url).await.unwrap();
     the_reaper_ends_only_what_nobody_runs(store, "", sqlite_age(pool, "tasks")).await;
-    let _ = std::fs::remove_file(&path);
+    remove_sqlite(&path);
 }
 
 #[cfg(feature = "sqlite")]
@@ -272,7 +336,7 @@ async fn tenant_aware_sqlite_the_reaper_ends_only_what_nobody_runs() {
     );
     let pool = sqlx::SqlitePool::connect(&url).await.unwrap();
     the_reaper_ends_only_what_nobody_runs(store, "acme", sqlite_age(pool, "tenant_tasks")).await;
-    let _ = std::fs::remove_file(&path);
+    remove_sqlite(&path);
 }
 
 #[cfg(feature = "postgres")]
@@ -321,70 +385,6 @@ async fn tenant_aware_postgres_the_reaper_ends_only_what_nobody_runs() {
 }
 
 #[cfg(feature = "sqlite")]
-struct Idle;
+pub(super) struct Idle;
 #[cfg(feature = "sqlite")]
 crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
-
-/// A handler starts its reaper from its first request: a task a dead
-/// replica left running is ended by the handler's own reaper, with nothing
-/// calling `look` by hand.
-#[cfg(feature = "sqlite")]
-#[tokio::test]
-async fn a_request_starts_the_handlers_reaper() {
-    let (url, path) = sqlite_url();
-    let store = Arc::new(crate::store::SqliteTaskStore::new(&url).await.unwrap());
-    let pool = sqlx::SqlitePool::connect(&url).await.unwrap();
-    let orphan = format!("orphan-{}", uuid::Uuid::new_v4());
-    store
-        .save(&task(&orphan, TaskState::Working))
-        .await
-        .unwrap();
-    sqlite_age(pool, "tasks")(orphan.clone()).await;
-    assert!(
-        store
-            .turn_claims()
-            .expect("SQL stores claim turns")
-            .claim("", &orphan, "dead", "t", Duration::from_millis(1))
-            .await
-            .unwrap()
-    );
-
-    let ttl = crate::handler::MIN_TURN_CLAIM_TTL;
-    let handler = crate::builder::RequestHandlerBuilder::new(Idle)
-        .with_task_store_arc(Arc::clone(&store) as Arc<dyn TaskStore>)
-        .with_turn_claim_timing(ttl, ttl / 3)
-        .without_agent_card()
-        .build()
-        .unwrap();
-    let _ = handler
-        .on_get_task(
-            a2a_protocol_types::params::TaskQueryParams {
-                tenant: None,
-                id: "anything".into(),
-                history_length: None,
-            },
-            None,
-        )
-        .await;
-
-    let deadline = tokio::time::Instant::now() + ttl * 3;
-    loop {
-        let state = store
-            .get(&TaskId::new(&*orphan))
-            .await
-            .unwrap()
-            .unwrap()
-            .status
-            .state;
-        if state == TaskState::Failed {
-            break;
-        }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "the orphan is still {state:?}: no reaper ran"
-        );
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    drop(handler);
-    let _ = std::fs::remove_file(&path);
-}

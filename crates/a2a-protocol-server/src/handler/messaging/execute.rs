@@ -318,7 +318,7 @@ impl RequestHandler {
                 run_executor(executor.as_ref(), &ctx, &writer, timeout, expose_internal)
             })
             .await;
-            let stop = Stop::of(turn.is_halted(), shutdown.is_cancelled());
+            let stop = Stop::of(turn.is_halted(), shutdown.is_cancelled(), turn.is_lapsed());
             run.finish(run_outcome(
                 &result,
                 stop != Stop::No || ctx.cancellation_token.is_cancelled(),
