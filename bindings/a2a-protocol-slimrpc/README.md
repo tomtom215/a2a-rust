@@ -8,7 +8,7 @@ the [SLIMRPC custom protocol binding][spec] for the `a2a-protocol` SDK.
 
 [spec]: https://github.com/a2aproject/experimental-cpb-slimrpc
 
-```
+```text
 protocolBinding: https://a2a-protocol.org/bindings/experimental-slimrpc/v1
 address:         slim://[node-host[:port]/]domain/namespace/service
 service:         lf.a2a.v1.A2AService
@@ -219,7 +219,7 @@ Where SLIMRPC differs is error *identity*. gRPC attaches `google.rpc.ErrorInfo`
 to `status.details`; SLIMRPC has no details protobuf, so the spec puts the A2A
 error type name in the message:
 
-```
+```text
 TaskNotFoundError: task-123 not found
 ```
 
@@ -230,10 +230,14 @@ codes. This matters: `FailedPrecondition` alone cannot tell
 
 ## Client
 
+Every Rust block in this README is compiled as a doctest of the crate; they
+need a live SLIM fabric to run, so they are compiled but not run.
+
 ```rust,no_run
 use a2a_protocol_slimrpc::{SlimName, SlimRpcTransport};
 use a2a_protocol_client::ClientBuilder;
 
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
 let agent = SlimName::parse("slim://org/demo/echo_agent")?;
 let transport = SlimRpcTransport::builder(agent)
     .with_shared_secret("caller", std::env::var("SLIM_SECRET")?)?
@@ -242,6 +246,9 @@ let transport = SlimRpcTransport::builder(agent)
 let client = ClientBuilder::new("slim://org/demo/echo_agent")
     .with_custom_transport(transport)
     .build()?;
+# let _ = client;
+# Ok(())
+# }
 ```
 
 Retries, interceptors, auth and the typed method surface all work exactly as
@@ -252,6 +259,13 @@ they do over JSON-RPC — only the wire underneath changes.
 ```rust,no_run
 use a2a_protocol_slimrpc::{SlimName, SlimRpcServer};
 
+# use std::sync::Arc;
+# use a2a_protocol_slimrpc::RequestHandler;
+# use a2a_protocol_types::agent_card::AgentCard;
+# async fn example(
+#     handler: Arc<RequestHandler>,
+#     mut card: AgentCard,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 let name = SlimName::parse("slim://org/demo/echo_agent")?;
 let server = SlimRpcServer::builder(handler, name)
     .with_shared_secret("echo_agent", std::env::var("SLIM_SECRET")?)?
@@ -261,6 +275,8 @@ let server = SlimRpcServer::builder(handler, name)
 card.supported_interfaces.push(server.agent_interface());
 
 server.serve().await?;
+# Ok(())
+# }
 ```
 
 `SlimRpcServer::from_app` and `SlimRpcTransport::from_app` take a SLIM app the
@@ -276,8 +292,18 @@ Only `SendMessage` and `SendStreamingMessage` may be broadcast; task management
 stays point-to-point, because a task id is meaningful to exactly one agent.
 
 ```rust,no_run
+use std::time::Duration;
 use a2a_protocol_slimrpc::{SlimName, SlimRpcMulticast};
 
+# async fn example(
+#     app: std::sync::Arc<
+#         slim_service::app::App<
+#             slim_auth::auth_provider::AuthProvider,
+#             slim_auth::auth_provider::AuthVerifier,
+#         >,
+#     >,
+#     params: a2a_protocol_types::params::MessageSendParams,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 let group = SlimRpcMulticast::from_app(app, vec![
     SlimName::parse("slim://org/demo/triage")?,
     SlimName::parse("slim://org/demo/classify")?,
@@ -287,6 +313,8 @@ let group = SlimRpcMulticast::from_app(app, vec![
 let outcome = group.send_message(params, None).await?;
 for (agent, response) in outcome.succeeded() { /* … */ }
 for (agent, why) in outcome.failed() { /* … */ }
+# Ok(())
+# }
 ```
 
 `MulticastOutcome` carries **exactly one outcome per invited agent**, always.
@@ -481,6 +509,16 @@ shared secret. Enumerating them in the binding would mean growing a method every
 time SLIM gained one, and silently lagging behind until someone noticed.
 
 ```rust,no_run
+use a2a_protocol_slimrpc::SlimRpcServer;
+use slim_auth::auth_provider::{AuthProvider, AuthVerifier};
+use slim_auth::spire::SpireIdentityManager;
+
+# use std::sync::Arc;
+# use a2a_protocol_slimrpc::{RequestHandler, SlimName};
+# async fn example(
+#     handler: Arc<RequestHandler>,
+#     name: SlimName,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 // SPIFFE: one manager, cloned. `SpireIdentityManager` is a unified
 // provider + verifier and generates an MLS signature key at build time, so two
 // separately-built managers carry two different keys and their handshake never
@@ -498,6 +536,9 @@ let server = SlimRpcServer::builder(handler, name)
         AuthVerifier::spire(spiffe),
     )
     .build()?;
+# let _ = server;
+# Ok(())
+# }
 ```
 
 `with_shared_secret` is the convenience for the simplest case. There is no
@@ -535,14 +576,28 @@ that identity as on any other. `server::peer::caller_id` builds it, for an
 approver allowlist or a caller-key migration map.
 
 ```rust,no_run
-use a2a_protocol_slimrpc::SlimPeerAuthInterceptor;
+use a2a_protocol_server::{AuthFailureThrottle, RateLimitInterceptor};
+use a2a_protocol_slimrpc::{RequestHandlerBuilder, SlimPeerAuthInterceptor};
 
+# use a2a_protocol_server::{AuthFailureThrottleConfig, rate_limit::RateLimitConfig};
+# use a2a_protocol_slimrpc::AgentExecutor;
+# use a2a_protocol_types::agent_card::AgentCard;
+# fn example(
+#     executor: impl AgentExecutor,
+#     card: AgentCard,
+#     throttle_config: AuthFailureThrottleConfig,
+#     rate_config: RateLimitConfig,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 // Interceptors run in the order they are added.
 let handler = RequestHandlerBuilder::new(executor)
+    .with_agent_card(card)
     .with_interceptor(AuthFailureThrottle::new(throttle_config)?) // before the authenticators
     .with_interceptor(SlimPeerAuthInterceptor::new())
     .with_interceptor(RateLimitInterceptor::new(rate_config)?) // after it, to see the identity
     .build()?;
+# let _ = handler;
+# Ok(())
+# }
 ```
 
 - `SlimPeerAuthInterceptor::new()` names each verified caller and refuses
@@ -596,7 +651,7 @@ rather than the security control working.
 
 `slim-node` is a standalone SLIM node — it routes and runs nothing itself.
 
-```
+```text
 slim-node --listen 127.0.0.1:46357
 slim-node --listen 0.0.0.0:46357 --tls-cert node.pem --tls-key node.key
 ```
@@ -618,11 +673,11 @@ an ordinary `A2aClient` built on `SlimRpcTransport` through
 streaming message, prints what comes back, shuts both ends down and exits 0.
 No node, no network, no credential beyond a shared secret.
 
-```
+```text
 cargo run --example in_process
 ```
 
-```
+```text
 agent  slim://org/demo/echo_agent serving 11 methods
 client slim://org/demo/caller dialling slim://org/demo/echo_agent
 
@@ -644,7 +699,7 @@ cannot rot while the tests stay green.
 
 ## Tests
 
-```
+```text
 cargo test -- --test-threads=1                      # unit, integration and doc tests
 SPIRE_BIN_DIR=... cargo test -- --ignored           # + the SPIRE-gated tests
 ```

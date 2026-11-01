@@ -148,7 +148,8 @@ impl ClientError {
     /// Returns `true` if this error is transient and the request should be retried.
     ///
     /// Retryable errors include:
-    /// - HTTP connection/transport errors
+    /// - Connection failures and dropped connections (`Http`, `HttpClient`); not
+    ///   `Transport`, which reports a configuration or a permanent transport fault
     /// - Timeouts
     /// - Server errors (HTTP 502, 503, 504, 429)
     /// - The client's own in-flight cap (`TooManyPendingRequests`), which

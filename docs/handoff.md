@@ -20,7 +20,38 @@ only: when something here is done, delete it rather than annotating it.
 ## Now
 
 - **Branch `claude/pensive-bardeen-c6ofm8` (2026-11-01), from `main` at `4a8243c`
-  (the merge of pull request #185): the 149 open audit rows are triaged; nothing is fixed yet.**
+  (the merge of pull request #185): the 149 open audit rows are triaged, and groups A to D of the
+  fix plan are committed (below). One pull request, opened only when the groups the maintainer wants
+  pass the bar; none is open.**
+  - **Fix work, in `git log 4a8243c..`.** Five local commits, none pushed beyond the triage:
+    A `a3a5dde` + `78fcd2c` (credentials follow the host the caller named: SEC-08, SEC-09, SEC-18,
+    NEW-f-1, NEW-f-5, NEW-f-6, G/D-05); B (a turn's claim is watched, and a replica that cannot renew it
+    stops the turn: E-F7, NEW-e-1, NEW-h-s0-1/5/9, E-F11, H3); C (a task's ending always reaches its
+    webhooks, its log and its caller: NEW-d-1, D-03 a to c, E-F9, NEW-e-2, E-F20, D-16, D-23, G-21,
+    NEW-g-api-3); D (gRPC honours its send timeout, its card and the process's roots; one TLS identity
+    reaches every path: NEW-g-api-1, G-20, G-04, NEW-g-api-2, B-20, B-03, B-15, B-18 part, B-19). Every
+    commit is `Tom F.`, signed off, no other trailer (DCO). Each has a regression test that failed before
+    its fix (the commit messages say how each was shown), and hand reversions of the fix that each fail a
+    test. **Group H (documentation drift) is edited and not committed**; a subagent was making the 13
+    `ignore`d rustdoc blocks compile (G/C-03) when this was written.
+  - **Verified so far, and what was not.** The per-feature clippy matrix
+    (`cargo hack clippy -p a2a-protocol-types -p a2a-protocol-client -p a2a-protocol-server -p
+    a2a-protocol-sdk --all-targets --each-feature -- -D warnings`, 59 invocations) passed on A, B and C
+    together (HEAD `f094a8a` before the history was rewritten); it caught two real defects on the way
+    (a lint in a test, and a test that did not compile without `tracing`). It has **not** been run on D.
+    `cargo mutants --in-diff` was started on A to D for the client and server crates (the command is in
+    `.github/workflows/mutants.yml`, `--jobs 3`, diff from `4a8243c`); the first results showed two
+    survivors in D's code (`env_roots_pem`), killed by a new client-crate test
+    (`tests/grpc_env_roots_tests.rs`, in the working tree, to be folded into D) because `cargo mutants -p
+    X` runs only X's tests. **Read the final results before pushing.** PostgreSQL suites, `nextest` for
+    the whole workspace and the toxiproxy partition run for group B were not run after the changes.
+    Script gates: 36 of 36 on the last commit. The CLI is not in the matrix; clippy for it
+    (`cargo clippy -p a2a-cli --all-targets --all-features`) found a lint in group A's test, now fixed.
+  - **Not built, waiting on the maintainer:** `DECISIONS.md` F1 to F15 (F13 to F15 are new: event
+    positions after a takeover, a stream whose executor panics, certificate reload). Groups G (image,
+    F8), E (loopback proxies, F2), I (OTel env, F3), B2 (F4), M (F5), O (F7), P (F6), N (F1) and R
+    (F12) each wait on a fork or are very large; K, L, J, Q and F have parts that need none.
+    Nothing in A to D forecloses any of them.
   The maintainer's brief: find every way the SDK fails a real deployment (local, Docker, Kubernetes,
   proxy or none, public/private/self-signed CA, mDNS, replicas, outages, disconnects), with live runs
   against llama.cpp and small Qwen and Gemma models, A2A v1.0.1 conformance, OpenTelemetry, the EU AI
@@ -44,12 +75,14 @@ only: when something here is done, delete it rather than annotating it.
     NEW-e-1; a probe is written, not run). H4 (delegation) is high: resume, `reattach` and a
     journal exist, but nothing drives recovery, a graceful supervisor redeploy still cancels its
     children, and gRPC/WebSocket delegations are cancelled when idle.
-  - **Found by running it (this session):** the CLI's `--header` guard (SEC-09, merged in #185) is
+  - **Found by running it (this session):** the CLI's `--header` guard (SEC-09, merged in #185) was
     bypassed when the card's first interface is on the typed host but cannot be built (binding
-    `NOPE`, or `ftp://`) and a later one is on another host: the header goes there (NEW-f-1). And a
-    blanket `HTTP_PROXY` sends loopback traffic to the proxy (NEW-b-2). Both with controls that
-    behave; `live-results.md`. A blocking send over gRPC is cut at 30 s by tonic's channel timeout
-    (NEW-g-api-1; read in tonic's source, not yet run).
+    `NOPE`, or `ftp://`) and a later one is on another host (NEW-f-1; fixed in A). A blanket
+    `HTTP_PROXY` sends loopback traffic to the proxy (NEW-b-2; not fixed, F2). `live-results.md`.
+    A blocking send over gRPC was cut at the request timeout by tonic's channel timeout
+    (NEW-g-api-1): reproduced and fixed in D at a small scale (a 3 s turn, a 1 s request timeout), not
+    with a 40 s executor. A blocking send to a task another replica had cancelled was answered
+    `working` (found while fixing E-F9; fixed in C).
   - **Not release-ready.** `docs/readiness-bar.md` still records no measurement for R1 to R7, C1 to C5
     and F1 to F5. No Kubernetes, IPv6-on-the-wire, public-CA collector or official-TCK run has been made
     since #185.
@@ -900,6 +933,39 @@ read `cargo deny check advisories` after the update, not before.
 
 Kept under this heading because `release.yml` and `packaging/README.md` cite
 it.
+
+- **2026-11-01, answers to `docs/audits/2026-11-01-triage/DECISIONS.md`** (all built or recorded as
+  below; the forks are described there):
+  - **F1, 0.16.0 breaks: all five.** `#[non_exhaustive]` on the generated wire structs (G-10),
+    `tls-rustls` as a default feature of the server crate (G-06), `RequestContext.context_id` becomes
+    `ContextId` (G-18), `AgentCard::new` defaults `streaming` to true (G-07), and `sign_agent_card` is
+    removed (NEW-g-api-4). Each under Breaking Changes with a migration; a `**Cadence exception:**` line
+    (0.15.0 was also breaking, in October).
+  - **F2, loopback and proxies: exempt loopback by default**, `A2A_PROXY_LOOPBACK=1` to opt back in, and
+    Go's `NO_PROXY` dialect (B-23).
+  - **F3, bad `OTEL_*` values: warn and fall back**; only an unusable endpoint URL still fails.
+  - **F4, Production profile: refuse** a process-local halt, lease, push-config or audit store when the
+    task store hands out claims, with an explicit opt-out (amends ADR 0025).
+  - **F5, delegation on shutdown: detach and resume.** With a journal attached, shutdown detaches; the
+    resume streak resets on any event; stream keep-alive for gRPC and WebSocket; a journaled
+    delegation can be leased and budgeted.
+  - **F7, one HTTP pool: build ADR 0032's opt-in `HttpPool` now** (not the "document the `Arc` pattern"
+    position the triage recommended).
+  - **F8, container image: publish a signed image to GHCR from `release.yml`** with provenance (written
+    here, cannot be exercised here), beside fixing the README and manifest.
+  - **F9, Agent Skills: an ADR now, a feature-gated module in 0.17.0**, no script execution.
+  - **F10, steering a running agent: an ADR and the extension URI now, the build after the audit PR.**
+  - **F12, swarm designs: only the four fixes** (H16, NEW-h-designs-1, -4, -7) in this PR; each design is
+    its own ADR and later PR.
+  - **F11, changelog: a highlights block (at most 15 lines) checked by `check_release_tree.py`, and
+    `### Internal` moved out to `docs/changelog-internal/`**, as its own commit at the end.
+  - **F6, patch behaviour policy: no work.** The maintainer's answer: "we are planning to release
+    v0.16.0, v0.15.1 was never released." Read as: the `[0.15.1]` changelog section (dated 2026-10-26,
+    never tagged) is not a release and its entries belong to 0.16.0's notes; no patch gate is built.
+    That folding is not done yet (group P); say so to the maintainer if it was not what they meant.
+  - **F13 to F15 were not asked;** the positions in `DECISIONS.md` stand until told otherwise (F13
+    accept and document the window, F14 a bounded wait in the stream reader, F15 certificate reload
+    after 0.16.0 and deprecate `tls_config_with_extra_roots` now).
 
 - **2026-10-28:** replicas must work without session affinity, and the
   release is not ready until they do and the observability stack works out of

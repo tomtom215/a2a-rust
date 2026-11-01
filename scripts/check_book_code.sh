@@ -80,13 +80,16 @@ actual = {}
 untagged = []
 for p in sorted(BOOK.rglob("*.md")):
     text = p.read_text(encoding="utf-8")
-    n = len(re.findall(r"^```rust[^\n]*\bignore\b", text, re.M))
+    # Indented fences count: a fence inside a list item is still a code block
+    # to rustdoc, and one at column 0 only was the way a snippet that does not
+    # compile could be hidden from this ratchet (audit NEW-g-docs-5).
+    n = len(re.findall(r"^[ \t]*```rust[^\n]*\bignore\b", text, re.M))
     if n:
         actual[str(p)] = n
     # An opening fence with no info string is compiled as Rust by rustdoc.
     inside = False
     for i, ln in enumerate(text.split("\n"), start=1):
-        if ln.startswith("```"):
+        if ln.lstrip().startswith("```"):
             if not inside:
                 inside = True
                 if ln.strip() == "```":

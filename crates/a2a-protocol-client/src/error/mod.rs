@@ -30,7 +30,9 @@ pub enum ClientError {
     /// A protocol-level A2A error returned by the server.
     Protocol(A2aError),
 
-    /// A transport configuration or connection error.
+    /// A transport configuration error, or a transport failure that retrying
+    /// cannot fix (not retryable; a connection that could not be made is
+    /// `HttpClient`).
     Transport(String),
 
     /// The client cannot be built as configured: what `ClientBuilder`

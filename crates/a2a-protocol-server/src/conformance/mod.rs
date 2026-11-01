@@ -17,7 +17,13 @@
 //! any agent whatever it does, and deliberately says nothing about whether
 //! the agent is any good at its job.
 //!
-//! ```rust,ignore
+//! ```rust
+//! # use std::sync::Arc;
+//! # // rustdoc drops a `#[test]` fn without type-checking it, so make `#[tokio::test]` build it.
+//! # mod tokio { pub use ::tokio::*; pub use ::tokio::main as test; }
+//! # struct MyExecutor;
+//! # a2a_protocol_server::agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
+//!
 //! #[tokio::test]
 //! async fn my_executor_is_conformant() {
 //!     let report = a2a_protocol_server::conformance::check(Arc::new(MyExecutor)).await;

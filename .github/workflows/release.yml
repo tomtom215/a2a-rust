@@ -580,8 +580,12 @@ jobs:
           # 0.15.0 section is about 289,000: `gh release create` would fail
           # here, before the publish job, with the tag already pushed. A
           # section over the limit is released as the parts an adopter reads
-          # before upgrading, with a link to the whole section at the tag.
-          # CHANGELOG.md itself is not shortened.
+          # before upgrading (the opening paragraph, and the Known Limitations,
+          # Breaking Changes, Behaviour Changes, Deprecated and Security
+          # sections), with a link to the whole section at the tag.
+          # CHANGELOG.md itself is not shortened. Behaviour Changes is kept
+          # because a runtime change that needs no code change is the one an
+          # adopter who reads only the release page would otherwise miss.
           LIMIT=120000
           if [[ "$(wc -m < release_notes.md)" -gt "$LIMIT" ]]; then
             echo "::warning::The $VERSION section is $(wc -m < release_notes.md) characters, over the $LIMIT a GitHub release body can carry; releasing its upgrade-critical sections and a link."
@@ -590,8 +594,8 @@ jobs:
               echo "These are the sections to read before upgrading. The full notes for this release are in [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/v${VERSION}/CHANGELOG.md) at this tag."
               echo ""
               awk '
-                /^### / { keep = ($0 ~ /^### (Known Limitations|Breaking Changes|Deprecated|Security)$/) }
-                keep    { print }
+                /^### / { seen = 1; keep = ($0 ~ /^### (Known Limitations|Breaking Changes|Behaviour Changes|Deprecated|Security)$/) }
+                !seen || keep { print }
               ' release_notes.full.md
             } > release_notes.md
             if [[ "$(wc -m < release_notes.md)" -gt "$LIMIT" ]]; then

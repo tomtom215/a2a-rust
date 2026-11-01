@@ -12,12 +12,13 @@
 //!
 //! 1. Implement [`AgentExecutor`] with your agent logic.
 //! 2. Build a [`RequestHandler`] via [`RequestHandlerBuilder`].
-//! 3. Wire [`JsonRpcDispatcher`] or [`RestDispatcher`] into your hyper server.
+//! 3. Serve a [`JsonRpcDispatcher`] or [`RestDispatcher`] with [`Server::bind`](serve::Server::bind)
+//!    and `serve_with_shutdown(dispatcher, shutdown_signal())` (or [`serve()`] for a demo).
 //!
 //! # Embedding in an existing server
 //!
 //! Step 3 is optional. [`RequestHandler`] is the protocol layer and takes no
-//! HTTP types: its ten `on_*` methods accept parsed params plus a plain
+//! HTTP types: its `on_*` methods accept parsed params plus a plain
 //! `HashMap<String, String>` of headers, which is all the interceptor chain
 //! reads. Anything that already owns its routing and server lifecycle — an
 //! agent framework, an existing Axum or Actix application, a tower service, a

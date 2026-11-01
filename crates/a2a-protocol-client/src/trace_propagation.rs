@@ -14,7 +14,21 @@
 //!
 //! # From inside an executor
 //!
-//! ```rust,ignore
+//! ```rust,no_run
+//! # use a2a_protocol_client::{A2aClient, ClientResult, CurrentTrace};
+//! # use a2a_protocol_server::RequestContext;
+//! # use a2a_protocol_types::{MessageSendParams, SendMessageResponse};
+//! # async fn delegate(
+//! #     client: &A2aClient,
+//! #     params: MessageSendParams,
+//! # ) -> ClientResult<SendMessageResponse> {
+//! #     client.send_message(params).await
+//! # }
+//! # async fn call_peer(
+//! #     ctx: &RequestContext,
+//! #     client: A2aClient,
+//! #     params: MessageSendParams,
+//! # ) -> ClientResult<SendMessageResponse> {
 //! // `ctx` is the `RequestContext` the server handed the executor. Its
 //! // trace context already names *this* hop's span, so sending it verbatim
 //! // makes the callee a child of this agent.
@@ -22,6 +36,7 @@
 //!     return delegate(&client, params).await; // caller was not tracing
 //! };
 //! CurrentTrace::scope(trace, delegate(&client, params)).await
+//! # }
 //! ```
 //!
 //! # Starting one

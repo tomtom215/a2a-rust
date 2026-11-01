@@ -51,11 +51,13 @@ let _client = ClientBuilder::new("http://localhost:3000").build()?;
 
 ## Prelude Contents
 
-- **Wire types**: `Task`, `TaskState`, `Message`, `Part`, `AgentCard`, `StreamResponse`
+- **Wire types**: `Task`, `TaskState`, `Message`, `Part`, `AgentCard`, `AgentInterface`, `StreamResponse`, and the params and responses
 - **ID types**: `TaskId`, `ContextId`, `MessageId`, `ArtifactId`
-- **Client**: `A2aClient`, `ClientBuilder`, `EventStream`, `RetryPolicy`
-- **Server**: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`, `EventEmitter`, `JsonRpcDispatcher`, `RestDispatcher`
+- **Client**: `A2aClient`, `ClientBuilder`, `EventStream`, `RetryPolicy`, the token providers
+- **Server**: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`, `EventEmitter`, `JsonRpcDispatcher`, `RestDispatcher`, `Server`, `serve`, `shutdown_signal`, the auth and rate-limit interceptors
 - **Errors**: `A2aError`, `ClientError`, `ServerError`
+
+A summary: the `pub use` lines of `prelude` in `src/lib.rs` are the complete list.
 
 ## Features
 

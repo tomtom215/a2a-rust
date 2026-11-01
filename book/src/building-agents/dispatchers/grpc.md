@@ -18,7 +18,7 @@ a2a-protocol-server = { version = "0.16", features = ["grpc"] }
 ```rust,no_run
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {
 #     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::grpc("http://localhost:50051"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true))
@@ -75,7 +75,7 @@ silent were all accepted, and the oldest was still alive twelve seconds later.
 ```rust,no_run
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {
 #     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::grpc("http://localhost:50051"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true))
@@ -137,7 +137,7 @@ For advanced scenarios, use `into_service()` to get a tonic service:
 ```rust,no_run
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {
 #     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::grpc("http://localhost:50051"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true))

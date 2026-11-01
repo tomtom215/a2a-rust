@@ -20,32 +20,38 @@
 //! # Example
 //!
 //! ```rust
-//! use std::sync::Arc;
 //! use a2a_protocol_server::rate_limit::{RateLimitInterceptor, RateLimitConfig};
 //!
-//! let limiter = Arc::new(
-//!     RateLimitInterceptor::new(
-//!         RateLimitConfig::default()
-//!             .with_requests_per_window(100)
-//!             .with_window_secs(60),
-//!     )
-//!     .expect("valid rate limit config"),
-//! );
+//! let limiter = RateLimitInterceptor::new(
+//!     RateLimitConfig::default()
+//!         .with_requests_per_window(100)
+//!         .with_window_secs(60),
+//! )
+//! .expect("valid rate limit config");
 //! ```
 //!
 //! Then add it to the handler builder:
 //!
-//! ```rust,ignore
+//! ```rust,no_run
 //! # fn card() -> a2a_protocol_types::agent_card::AgentCard {
 //! #     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
 //! #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 //! #         .with_description("An example agent")
 //! #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 //! # }
+//! # use a2a_protocol_server::rate_limit::{RateLimitConfig, RateLimitInterceptor};
+//! # use a2a_protocol_server::RequestHandlerBuilder;
+//! # struct MyExecutor;
+//! # a2a_protocol_server::agent_executor!(MyExecutor, |_ctx, _q| async { Ok(()) });
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # let executor = MyExecutor;
+//! # let limiter = RateLimitInterceptor::new(RateLimitConfig::default())?;
 //! let handler = RequestHandlerBuilder::new(executor)
 //!     .with_agent_card(card())
 //!     .with_interceptor(limiter)
 //!     .build()?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Caller identity

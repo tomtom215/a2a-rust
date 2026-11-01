@@ -92,8 +92,10 @@ With Axum (or anything else that owns the sockets), call
 `with_graceful_shutdown`, so it runs before Axum starts draining, and
 `handler.shutdown()` after
 `serve` returns. The gRPC and WebSocket dispatchers have their own
-`serve_with_shutdown(listener, signal)`, which runs the same three steps and
-returns the same `ServeReport`; set the three durations with
+`serve_with_shutdown(listener, signal)`, which runs the same three steps. The
+WebSocket one (called on an `Arc<WebSocketDispatcher>`) returns a `ServeReport`;
+the gRPC one an `io::Result<ServeReport>`, whose error is a TLS configuration
+tonic rejects or the error the server stopped with. Set the three durations with
 `with_completion_grace`, `with_task_grace` and `with_drain_timeout` on the
 dispatcher. Two differences follow from the transports. gRPC connections are
 sent `GOAWAY` when accepting stops, so they take no new calls during the

@@ -49,11 +49,22 @@
 //! The returned router can be merged with other Axum routes, middleware, and
 //! layers:
 //!
-//! ```rust,ignore
+//! ```rust
+//! # use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
+//! # use a2a_protocol_server::RequestHandler;
+//! # use axum::{extract::Request, middleware, middleware::Next, response::Response, routing::get};
+//! # use std::sync::Arc;
+//! # async fn custom_handler() -> &'static str { "ok" }
+//! # async fn log_requests(req: Request, next: Next) -> Response { next.run(req).await }
+//! # fn compose(handler: Arc<RequestHandler>) -> axum::Router {
+//! // Any `tower` layer goes where `log_requests` is, such as
+//! // `tower_http::cors::CorsLayer::permissive()` from the `tower-http` crate.
 //! let app = axum::Router::new()
 //!     .merge(A2aRouter::new(handler).into_router())
-//!     .layer(tower_http::cors::CorsLayer::permissive())
+//!     .layer(middleware::from_fn(log_requests))
 //!     .route("/custom", get(custom_handler));
+//! # app
+//! # }
 //! ```
 //!
 //! # Multi-tenancy: use a resolver, not the URL prefix

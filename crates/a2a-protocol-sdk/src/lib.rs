@@ -66,17 +66,28 @@ pub mod server {
 ///
 /// - **Wire types**: `Task`, `TaskState`, `TaskStatus`, `Message`, `Part`,
 ///   `PartContent`, `FileContent`, `MessageRole`, `Artifact`, `StreamResponse`,
-///   `AgentCard`, `AgentInterface`
+///   `AgentCard`, `AgentCapabilities`, `AgentInterface`, `AgentSkill`, and the
+///   task events
 /// - **ID newtypes**: `TaskId`, `ContextId`, `MessageId`, `ArtifactId`
-/// - **Params**: `MessageSendParams`, `TaskQueryParams`, `ListTasksParams`
-/// - **Responses**: `SendMessageResponse`, `TaskListResponse`
-/// - **Client**: `A2aClient`, `ClientBuilder`, `EventStream`, `resolve_agent_card`
+/// - **Params and responses**: `MessageSendParams`, `TaskQueryParams`,
+///   `ListTasksParams`, `SendMessageResponse`, `TaskListResponse`
+/// - **Client**: `A2aClient`, `ClientBuilder`, `EventStream`, `RetryPolicy`,
+///   `resolve_agent_card`, and the token providers and bearer interceptor
+///   (`TokenProvider`, `StaticTokenProvider`, `OAuth2ClientCredentials`,
+///   `BearerAuthInterceptor`)
 /// - **Webhooks** (feature `webhook`, on by default): `WebhookReceiver`,
 ///   `WebhookOutcome`, for receiving push notifications
 /// - **Server**: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`,
-///   `RequestContext`, `EventQueueWriter`, `JsonRpcDispatcher`, `RestDispatcher`
+///   `RequestContext`, `EventQueueWriter`, `JsonRpcDispatcher`, `RestDispatcher`,
+///   `Dispatcher`, `Server`, `serve`, `serve_with_addr`, `shutdown_signal`, and
+///   the auth and rate-limit interceptors
 /// - **Executor ergonomics**: `agent_executor!`, `boxed_future`, `EventEmitter`
-/// - **Errors**: `A2aError`, `A2aResult`, `ClientError`, `ServerError`
+/// - **Errors**: `A2aError`, `A2aResult`, `ClientError`, `ClientResult`,
+///   `ServerError`, `ServerResult`
+/// - **Telemetry** (feature `otlp`): `Telemetry`; **Axum** (feature `axum`):
+///   `A2aRouter`
+///
+/// This is a summary: the `pub use` lines of the module are the complete list.
 ///
 /// # Reading the caller's text
 ///

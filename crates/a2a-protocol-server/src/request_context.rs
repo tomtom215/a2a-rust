@@ -263,15 +263,15 @@ impl RequestContext {
     /// `traceparent`.
     ///
     /// Propagate it verbatim on any outbound A2A call and the delegation
-    /// chain becomes one trace rather than several unrelated span trees:
+    /// chain becomes one trace rather than several unrelated span trees (the
+    /// client's `CurrentTrace::scope(tc.clone(), call)` carries it; by hand):
     ///
-    /// ```rust,ignore
-    /// if let Some(tc) = ctx.trace_context() {
-    ///     CurrentTrace::scope(tc.clone(), async {
-    ///         client.send_message(params).await
-    ///     })
-    ///     .await?;
-    /// }
+    /// ```rust
+    /// # use a2a_protocol_server::RequestContext;
+    /// # fn outbound_traceparent(ctx: &RequestContext) -> Option<String> {
+    /// let tc = ctx.trace_context()?;
+    /// Some(tc.traceparent()) // the `traceparent` header value for the callee
+    /// # }
     /// ```
     ///
     /// `None` means the caller was not tracing. It never means the SDK

@@ -83,6 +83,45 @@ What the spec says (v1.0.1, §3.4 and §7.6): follow-up messages are defined for
 ### F12. The swarm designs (H5 to H19)
 Each needs an ADR; none is built (ADRs 0031 to 0034 are written, not implemented). Small additive pieces that can ship without the decision are listed per row. **My position on order:** H16 (rate-limiter overflow bucket), NEW-h-designs-1 (jitter on overload retries), NEW-h-designs-4 (a halt store that tolerates an unknown scope, before ADR 0034 adds one) and NEW-h-designs-7 (ready while refusing everything) are fixes, not designs, and go first. Then H6, H10, H18/ADR 0033, H11, H7; H5, H9, H13, H14, H17, H19 each as its own ADR.
 
+### F13. Event positions after a takeover (E-F8) — added during the fix work, 2026-11-01
+Positions are broadcast to live subscribers before the processor logs them, and a takeover numbers the next
+turn from the log's end, so a subscriber that saw the old owner's last positions (or resumes with
+`Last-Event-ID` at one) skips the new turn's first events as already delivered. The lease watchdog
+(group B) removes the partition case: the old owner stops at four fifths of the claim's life and writes a
+terminal event through its own queue before anyone can take over (a subscriber on it gets that event from the
+queue; `claim_lapse.rs` checks the stored end, not a subscriber's frame). What remains is an owner killed (SIGKILL,
+OOM) with broadcast-but-unlogged events, a window bounded by the persistence backlog. The reaper and the
+close-out now number from the later of the log's end and the stored position; a continuation already did.
+- Options: (a) the claim row carries the owner's broadcast high-water mark, renewed with the claim, and a
+  takeover numbers past it (schema change in two stores); (b) a takeover jumps to the next multiple of 2^20
+  (no schema change; ids jump, still increasing; the replay reports the hole, which is honest but visible to
+  every client after every takeover); (c) accept the window and document it.
+- **My position: (c) now, (b) if a client shows it.** Both (a) and (b) change what a client sees, and the
+  window needs a kill during a store stall. Not built.
+
+### F14. A stream whose executor panics ends without a terminal frame (D-03 d)
+The panic now stores `Failed`, pushes it and logs it, but a `SendStreamingMessage` stream is fed from the
+executor's queue, which the unwind closes without a terminal event, so the stream just ends. The client has
+to `GetTask`.
+- Options: (a) the stream reader, on a closed queue with no terminal and no interrupted state seen, waits
+  (bounded, a few seconds) for the stored task to become terminal and emits that as the last frame; needs the
+  reader to track "interrupted" (a stream legitimately ends there); (b) the turn's cleanup broadcasts a
+  `Failed` event on the queue's broadcast side as it unwinds (synchronous; needs a position, so it touches
+  F13's numbering); (c) leave it: EOF without a terminal is already how a client learns to resubscribe.
+- **My position: (a).** It is contained in the reader and uses the store as the source of truth. Not built.
+
+### F15. Certificate reload (B-14) and the rest of B-18
+Neither the HTTP server nor the WebSocket nor the built-in gRPC TLS can rotate a certificate without a
+restart, short of a hand-written `ResolvesServerCert`. cert-manager style rotation is the normal Kubernetes
+case. The rest of B-18: `tls_config_with_extra_roots` still skips a bad CA with a warning (the strict
+constructor exists), and the server crate has no PEM client-config helper.
+- Options: (a) a `ReloadingCertResolver` (watch the PEM files, or SIGHUP) usable by `Server::with_tls` and
+  `WebSocketDispatcher::with_tls`, and gRPC served through `serve_with_incoming` over tokio-rustls with the
+  same resolver (additive, M, needs a file-watch decision: poll or `notify`); (b) document restart-on-rotate
+  and the hand-written resolver; (c) deprecate `tls_config_with_extra_roots` in 0.16.0 so nobody new uses it.
+- **My position: (a) after 0.16.0 unless you want it in; (c) now.** Not built.
+
+
 ---
 
 # Per-row options

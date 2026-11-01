@@ -99,7 +99,7 @@ every panel.
 
 To see the recording rules behind the panels, open Prometheus on
 `http://localhost:9090` and query `a2a:rpc_server_calls:rate5m`; **Alerts**
-lists the eight alerts. `A2AServerErrorRatioHigh` fired on this traffic when
+lists the nine alerts. `A2AServerErrorRatioHigh` fired on this traffic when
 the stack was checked: 11% of calls were the deliberate task-not-found, over
 its 5% threshold for ten minutes.
 

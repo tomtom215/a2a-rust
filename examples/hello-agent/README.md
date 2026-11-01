@@ -3,8 +3,9 @@
 
 # hello-agent
 
-The smallest complete A2A agent: **one screen of code** above its tests, one
-SDK dependency plus `tokio`, one file.
+The smallest complete A2A agent: about 50 lines of code above its tests (that
+includes the telemetry set-up, the server and the shutdown signal), one SDK
+dependency on its default features plus `tokio`, one file.
 
 ```sh
 cargo run -p hello-agent

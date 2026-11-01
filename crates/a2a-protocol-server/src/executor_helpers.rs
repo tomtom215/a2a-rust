@@ -74,18 +74,38 @@ use crate::streaming::EventQueueWriter;
 /// This is the minimal helper for reducing [`AgentExecutor`](crate::AgentExecutor)
 /// boilerplate. Instead of:
 ///
-/// ```rust,ignore
-/// fn execute<'a>(...) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-///     Box::pin(async move { ... })
+/// ```rust
+/// # use std::{future::Future, pin::Pin};
+/// # use a2a_protocol_server::{AgentExecutor, RequestContext, streaming::EventQueueWriter};
+/// # use a2a_protocol_types::error::A2aResult;
+/// # struct MyAgent;
+/// # impl AgentExecutor for MyAgent {
+/// fn execute<'a>(
+///     &'a self,
+///     ctx: &'a RequestContext,
+///     queue: &'a dyn EventQueueWriter,
+/// ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+///     Box::pin(async move { /* ... */ Ok(()) })
 /// }
+/// # }
 /// ```
 ///
 /// You can write:
 ///
-/// ```rust,ignore
-/// fn execute<'a>(...) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-///     boxed_future(async move { ... })
+/// ```rust
+/// # use std::{future::Future, pin::Pin};
+/// # use a2a_protocol_server::{AgentExecutor, RequestContext, boxed_future, streaming::EventQueueWriter};
+/// # use a2a_protocol_types::error::A2aResult;
+/// # struct MyAgent;
+/// # impl AgentExecutor for MyAgent {
+/// fn execute<'a>(
+///     &'a self,
+///     ctx: &'a RequestContext,
+///     queue: &'a dyn EventQueueWriter,
+/// ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+///     boxed_future(async move { /* ... */ Ok(()) })
 /// }
+/// # }
 /// ```
 pub fn boxed_future<'a, T>(
     fut: impl Future<Output = T> + Send + 'a,
@@ -191,15 +211,20 @@ macro_rules! agent_executor {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust
 /// use a2a_protocol_server::executor_helpers::EventEmitter;
 /// use a2a_protocol_types::task::TaskState;
 /// use a2a_protocol_types::message::Part;
+/// # use a2a_protocol_server::{RequestContext, streaming::EventQueueWriter};
+/// # use a2a_protocol_types::error::A2aResult;
+/// # async fn run(ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
 ///
 /// let emit = EventEmitter::new(ctx, queue);
 /// emit.status(TaskState::Working).await?;
 /// emit.artifact("result", vec![Part::text("hello")], None, Some(true)).await?;
 /// emit.status(TaskState::Completed).await?;
+/// # Ok(())
+/// # }
 /// ```
 pub struct EventEmitter<'a> {
     /// The request context for this execution.
@@ -243,9 +268,14 @@ impl<'a> EventEmitter<'a> {
     /// safety rule, is the only thing that can say so; this is one way, and
     /// the one that lets it keep writing its own status text.
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// # use a2a_protocol_server::EventEmitter;
+    /// # use a2a_protocol_types::{error::A2aResult, failure::FailureClass};
+    /// # async fn run(emit: &EventEmitter<'_>) -> A2aResult<()> {
     /// // Retry me: the model was rate limited, not wrong.
     /// emit.fail(FailureClass::Transient, "upstream model returned 429").await?;
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// # Errors
@@ -283,13 +313,18 @@ impl<'a> EventEmitter<'a> {
     /// arrives as the next run of the task, at
     /// [`RequestContext::approval`](crate::RequestContext::approval).
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// # use a2a_protocol_server::EventEmitter;
+    /// # use a2a_protocol_types::{approval::ApprovalRequest, error::A2aResult};
+    /// # async fn run(emit: &EventEmitter<'_>) -> A2aResult<()> {
     /// let action = serde_json::json!({ "tool": "refund", "order": 1182, "amount": "40.00" });
     /// let digest = a2a_protocol_types::approval::action_digest(&action)?;
     /// emit.request_approval(
     ///     ApprovalRequest::new(uuid::Uuid::new_v4().to_string(), "Refund EUR 40 to order 1182", digest),
     ///     "May I issue this refund?",
     /// ).await?;
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// # Errors
@@ -356,8 +391,13 @@ impl<'a> EventEmitter<'a> {
     /// calling this, and the task continues when the client sends its next
     /// message once it has them.
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// # use a2a_protocol_server::EventEmitter;
+    /// # use a2a_protocol_types::error::A2aResult;
+    /// # async fn run(emit: &EventEmitter<'_>) -> A2aResult<()> {
     /// emit.auth_required("Sign in to the calendar service at https://cal.example/connect").await?;
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// # Errors

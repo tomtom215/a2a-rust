@@ -60,7 +60,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | **State validation** | `TaskState::can_transition_to()` enforces valid state machine transitions |
 | **Rate limiting** | Built-in `RateLimitInterceptor` with fixed-window per-caller limiting |
 | **Graceful shutdown** | Ends work instead of orphaning it, and reports what it could not end. `Server::serve_with_shutdown()` stops accepting, lets in-flight tasks finish for up to `completion_grace`, cancels the rest and gives their executors `task_grace` to write a terminal event, then drains connections; its `ServeReport` counts the tasks that ignored cancellation and the connections abandoned at the deadline. The gRPC and WebSocket dispatchers' `serve_with_shutdown()` do the same, and behind Axum `RequestHandler::finish_in_flight()` runs the task phases on its own. `RequestHandler::shutdown()` then runs the executor's cleanup hook; its `ShutdownReport` counts any live stream it cut |
-| **Server startup** | `serve()` / `serve_with_addr()` start a listener in one call, with no limits and no shutdown. `Server::bind()` adds what a deployment needs on top: a shutdown signal, header-read and idle timeouts, an optional `max_connections` ceiling (`ServeConfig::with_max_connections`; unbounded by default), TLS on its own listener (`with_tls`, `tls-rustls`), and traced connection errors |
+| **Server startup** | `serve()` / `serve_with_addr()` start a listener in one call under `ServeConfig::default()` (header-read and idle timeouts on, no connection cap) and with no shutdown. `Server::bind()` adds what a deployment needs on top: a shutdown signal, header-read and idle timeouts, an optional `max_connections` ceiling (`ServeConfig::with_max_connections`; unbounded by default), TLS on its own listener (`with_tls`, `tls-rustls`), and traced connection errors |
 
 ### Client
 
@@ -241,9 +241,9 @@ Quick Start once did.
 
 ### Hello Agent (smallest complete agent)
 
-The whole SDK in one screen — the code above its tests is one screen long, the
-SDK plus `tokio` for the runtime, no SDK feature flags. It greets whoever sends
-it a message:
+The smallest complete agent: about 50 lines of code above its tests (counting
+its telemetry set-up, its server and its shutdown), on the SDK's default
+features plus `tokio` for the runtime. It greets whoever sends it a message:
 
 ```bash
 cargo run -p hello-agent

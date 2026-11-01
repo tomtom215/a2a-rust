@@ -790,6 +790,30 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **Documentation that disagreed with the code** (audits G/D-02, G/D-03, G/D-04,
+  G/D-06 to G/D-11, NEW-g-docs-3, NEW-g-docs-6, NEW-c-2, NEW-t-1). `serve`'s
+  READMEs said it had no limits (it runs under `ServeConfig::default()`: a 30 s
+  header-read and a 75 s idle timeout); the `with_max_connections` rustdoc
+  predicted fields the type already has; `packaging/README.md` said no release
+  key was committed; the shutdown page said both dispatchers return the same
+  report; the Axum, REST, gRPC and WebSocket pages' hidden cards advertised
+  JSON-RPC, so a reader who copied one published a card that misrouted clients;
+  the server crate's quick start told users to wire a dispatcher into their own
+  hyper server; `ClientError::Transport` was listed as retryable and it is not;
+  `hello-agent` was "one screen" and "no flags" (about 50 lines of code, on the
+  SDK's default features); the prelude lists were subsets; the TCK README said
+  `BIND-EQUIV-004` was graded structurally only, though it grades enforcement
+  against a target that requires credentials; the CLI README said TLS used
+  "bundled roots"; `logs.md` said every span is exported (it is every span at or
+  above `with_span_level`) and the walkthrough counted eight alerts (nine);
+  `CITATION.cff` and `ROADMAP.md` named a `0.15.1` that was never published
+  (`0.15.0` is the newest release).
+- **A release too long for GitHub's release body dropped its Behaviour
+  Changes** (release workflow; audit NEW-g-docs-7). The shortened notes kept
+  four headings and not the opening paragraph or `### Behaviour Changes`, the
+  section that tells an adopter a runtime change needs no code change. They keep
+  both now. On this section (90,898 characters) the shortened notes are 31,094.
+
 - **A blocking `SendMessage` over gRPC was cut at the request timeout** (client;
   audits NEW-g-api-1, D-01, G-20). The send's own deadline was sent in
   `grpc-timeout`, but the channel was also built with
@@ -1273,6 +1297,22 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   on `shutdown_signal()`, which drops their `Telemetry`.
 
 ### Internal
+
+- **The book's ignore ratchet sees indented fences** (`scripts/check_book_code.sh`;
+  audit NEW-g-docs-5). It matched fences at column 0 only, so a snippet that did
+  not compile could be hidden from it by indenting it under a list item; one
+  was (`audit.md`'s erasure example), and it now compiles.
+- **Thirteen `ignore`d rustdoc blocks and the SLIMRPC README's five now compile**
+  (audit G/C-03). Nothing checked them, and one was stale enough to have never
+  compiled (`event_stream.rs`'s example used `ev.state` and `ev.r#final`, which
+  do not exist). Two examples were wrong about the API and are corrected: the
+  rate limiter's was handed to the builder as an `Arc` (there is no
+  `ServerInterceptor` for `Arc<T>`, and `RateLimitInterceptor` is not `Clone`,
+  so one limiter cannot be shared between handlers), and the Axum router's used
+  `tower-http`, which the crate does not depend on. The two conformance-kit
+  examples are `#[tokio::test]` functions, which rustdoc drops without
+  type-checking; a hidden `mod tokio` shim makes it build them (a changed method
+  name in each fails its doctest). The SLIMRPC README is a doctest of its crate.
 
 - ADRs 0031 to 0034, proposed, with nothing built: finding agents beyond one
   link (a static list, unicast DNS-SD, Kubernetes DNS SRV and the Kubernetes

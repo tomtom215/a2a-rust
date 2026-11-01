@@ -22,13 +22,16 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
+//! ```rust,no_run
+//! # use a2a_protocol_client::{A2aClient, ClientError};
+//! # use a2a_protocol_types::{MessageSendParams, StreamResponse};
+//! # async fn example(client: A2aClient, params: MessageSendParams) -> Result<(), ClientError> {
 //! let mut stream = client.stream_message(params).await?;
 //! while let Some(event) = stream.next().await {
 //!     match event? {
 //!         StreamResponse::StatusUpdate(ev) => {
-//!             println!("State: {:?}", ev.state);
-//!             if ev.r#final { break; }
+//!             println!("State: {:?}", ev.status.state);
+//!             if ev.status.state.is_terminal() { break; }
 //!         }
 //!         StreamResponse::ArtifactUpdate(ev) => {
 //!             println!("Artifact: {:?}", ev.artifact);
@@ -36,6 +39,8 @@
 //!         _ => {}
 //!     }
 //! }
+//! # Ok(())
+//! # }
 //! ```
 
 use a2a_protocol_types::{JsonRpcResponse, StreamResponse};
@@ -237,7 +242,16 @@ impl EventStream {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// # use a2a_protocol_client::{ClientResult, EventStream};
+    /// # use a2a_protocol_types::StreamResponse;
+    /// # struct Frame;
+    /// # struct MyTransportStream;
+    /// # impl MyTransportStream {
+    /// #     async fn next(&mut self) -> Option<ClientResult<Frame>> { None }
+    /// # }
+    /// # fn into_stream_response(_: Frame) -> StreamResponse { unimplemented!() }
+    /// # fn open(mut my_transport_stream: MyTransportStream) -> ClientResult<EventStream> {
     /// let (tx, rx) = tokio::sync::mpsc::channel(64);
     /// tokio::spawn(async move {
     ///     while let Some(frame) = my_transport_stream.next().await {
@@ -247,6 +261,7 @@ impl EventStream {
     ///     }
     /// });
     /// Ok(EventStream::from_event_channel(rx))
+    /// # }
     /// ```
     #[must_use]
     pub fn from_event_channel(mut rx: mpsc::Receiver<ClientResult<StreamResponse>>) -> Self {
