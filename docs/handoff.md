@@ -130,7 +130,16 @@ only: when something here is done, delete it rather than annotating it.
     reuses the artifacts. `pkill -f <text>` kills your own shell when the text is in its command line;
     use `pkill -x <name>`. Git here is configured as `Claude <noreply@anthropic.com>`, which `dco.yml`
     rejects; commit with `git -c user.name='Tom F.' -c user.email=tomf@tomtomtech.net commit -s`, as
-    the merged commits are.
+    the merged commits are. The maintainer confirmed on 2026-11-01 that he signs off every commit as
+    Tom F. with no other trailer, so that DCO passes.
+  - **Toolchain: run `rustup update stable` first.** This image shipped Rust 1.97.0; CI's
+    `toolchain: stable` was 1.99.1 (2026-10-15). Clippy 1.97 failed `doc_markdown` and
+    `duration_suboptimal_units` on files nobody had touched, which looks like a defect in `main` and
+    is not; under 1.99.1 clippy is clean on the crates checked. Clear `target/` after the update.
+  - **Dependencies (maintainer, 2026-11-01):** the repository does not ban new dependencies. Avoid one
+    where pure Rust can do the job to production grade; do not reinvent a vetted solution to avoid
+    one, above all for anything security-sensitive. `CONTRIBUTING.md` (Dependency Policy) and ADR
+    0002 (amendment) say so; the first use is `subtle` for constant-time comparison.
 - **Branch `claude/intelligent-bohr-9qraxk` (2026-10-28), on `main` at
   `568fc6c1` (pull request #182, the 0.15.1 preparation, merged; no tag).**
   The maintainer judged 0.15.0 not ready in practice and asked for everything

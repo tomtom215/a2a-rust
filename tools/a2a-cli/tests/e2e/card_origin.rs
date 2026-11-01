@@ -10,11 +10,11 @@
 
 use super::*;
 
-type Seen = Arc<std::sync::Mutex<Vec<String>>>;
+pub(super) type Seen = Arc<std::sync::Mutex<Vec<String>>>;
 
 /// A server that answers every request `200` with `body` and records each
 /// request's `authorization` header (`""` when absent).
-async fn serve_fixed(body: Vec<u8>, seen: Seen) -> SocketAddr {
+pub(super) async fn serve_fixed(body: Vec<u8>, seen: Seen) -> SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
@@ -23,7 +23,7 @@ async fn serve_fixed(body: Vec<u8>, seen: Seen) -> SocketAddr {
 
 /// [`serve_fixed`] on a listener the caller already holds, for a card that has
 /// to name its own server's port.
-fn serve_on(listener: tokio::net::TcpListener, body: Vec<u8>, seen: Seen) -> SocketAddr {
+pub(super) fn serve_on(listener: tokio::net::TcpListener, body: Vec<u8>, seen: Seen) -> SocketAddr {
     let addr = listener.local_addr().expect("addr");
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
@@ -31,12 +31,15 @@ fn serve_on(listener: tokio::net::TcpListener, body: Vec<u8>, seen: Seen) -> Soc
             tokio::spawn(async move {
                 let io = hyper_util::rt::TokioIo::new(stream);
                 let service = hyper::service::service_fn(move |req: hyper::Request<_>| {
+                    // Every value, in order, joined: a header sent twice must
+                    // show as two values, not as the first of them.
                     let auth = req
                         .headers()
-                        .get("authorization")
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or_default()
-                        .to_owned();
+                        .get_all("authorization")
+                        .iter()
+                        .filter_map(|v| v.to_str().ok())
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     seen.lock().unwrap().push(auth);
                     let body = body.clone();
                     async move {
@@ -61,7 +64,7 @@ fn serve_on(listener: tokio::net::TcpListener, body: Vec<u8>, seen: Seen) -> Soc
 
 /// The pair: returns the URL to type (server A, by the name `localhost`) and
 /// what server B has been sent.
-async fn card_that_names_another_host() -> (String, Seen) {
+pub(super) async fn card_that_names_another_host() -> (String, Seen) {
     let (seen_b, seen_a): (Seen, Seen) = (Arc::default(), Arc::default());
     let error = br#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"no"}}"#.to_vec();
     let b = serve_fixed(error, Arc::clone(&seen_b)).await;
@@ -130,110 +133,28 @@ async fn without_a_header_the_card_is_followed_as_before() {
     assert!(!seen_b.lock().unwrap().is_empty(), "the call reached B");
 }
 
-// -- a first interface that cannot be built (audit NEW-f-1) -------------------
-//
-// The check above looks at the interface `from_card` chose. `build()` moves
-// on to the card's later interfaces when the chosen one cannot be built, so a
-// card whose first interface is on the typed host but unusable, and whose
-// second is elsewhere, used to carry `--header` to the second.
-
-/// The URL to type (server A, by the name `localhost`) and what server B has
-/// been sent. A's card lists `first(A's port)` and then B, which is another
-/// host by name (`127.0.0.1`).
-async fn card_whose_first_interface_cannot_be_built(
-    first: impl FnOnce(u16) -> AgentInterface,
-) -> (String, Seen) {
-    let (seen_b, seen_a): (Seen, Seen) = (Arc::default(), Arc::default());
-    let error = br#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"no"}}"#.to_vec();
-    let b = serve_fixed(error, Arc::clone(&seen_b)).await;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind");
-    let a_port = listener.local_addr().expect("addr").port();
-    let mut card = card_for(b);
-    card.supported_interfaces = vec![
-        first(a_port),
-        AgentInterface::jsonrpc(format!("http://127.0.0.1:{}", b.port())),
-    ];
-    let card = serde_json::to_vec(&card).expect("card json");
-    serve_on(listener, card, seen_a);
-    (format!("http://localhost:{a_port}"), seen_b)
+/// [`a2a`] with environment variables set for the child.
+pub(super) async fn a2a_env(args: &[&str], env: &[(&str, &str)]) -> Output {
+    let args: Vec<String> = args.iter().map(|s| (*s).to_owned()).collect();
+    let env: Vec<(String, String)> = env
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect();
+    tokio::task::spawn_blocking(move || {
+        Command::new(env!("CARGO_BIN_EXE_a2a"))
+            .args(&args)
+            .envs(env)
+            .output()
+            .expect("spawn a2a")
+    })
+    .await
+    .expect("join")
 }
 
-/// A binding the client does not implement, on the typed host.
-fn unknown_binding(port: u16) -> AgentInterface {
-    AgentInterface::new(format!("http://localhost:{port}/"), "NOPE")
-}
-
-/// A scheme the HTTP transports refuse, on the typed host.
-fn unusable_scheme(port: u16) -> AgentInterface {
-    AgentInterface::new(format!("ftp://localhost:{port}/"), "JSONRPC")
-}
-
-async fn assert_the_header_stays_home(first: impl FnOnce(u16) -> AgentInterface) {
-    let (url, seen_b) = card_whose_first_interface_cannot_be_built(first).await;
-    let out = a2a(&[
-        "--header",
-        "Authorization=Bearer s3cret",
-        "send",
-        &url,
-        "hi",
-    ])
-    .await;
-    assert_eq!(code(&out), 1, "stdout: {}", stdout(&out));
-    assert!(
-        seen_b.lock().unwrap().is_empty(),
-        "the credential reached another host through the card's fallback: {:?}",
-        seen_b.lock().unwrap()
-    );
-    assert!(
-        stderr(&out).contains("--follow-card-origin"),
-        "the refusal names the way to opt in: {}",
-        stderr(&out)
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_header_does_not_follow_the_fallback_past_an_unknown_binding() {
-    assert_the_header_stays_home(unknown_binding).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_header_does_not_follow_the_fallback_past_an_unusable_scheme() {
-    assert_the_header_stays_home(unusable_scheme).await;
-}
-
-/// Pinning is for credentials only: with no `--header` the card's later
-/// interfaces are still tried, as they always were.
-#[tokio::test(flavor = "multi_thread")]
-async fn without_a_header_the_fallback_still_reaches_the_next_interface() {
-    let (url, seen_b) = card_whose_first_interface_cannot_be_built(unknown_binding).await;
-    let out = a2a(&["send", &url, "hi"]).await;
-    assert_eq!(code(&out), 1, "B answers with an error: {}", stdout(&out));
-    assert!(!seen_b.lock().unwrap().is_empty(), "the call reached B");
-}
-
-/// `--follow-card-origin` is the opt-in: the caller said the card may steer
-/// the credential, so the fallback is allowed too.
-#[tokio::test(flavor = "multi_thread")]
-async fn the_flag_also_allows_the_fallback() {
-    let (url, seen_b) = card_whose_first_interface_cannot_be_built(unknown_binding).await;
-    let out = a2a(&[
-        "--header",
-        "Authorization=Bearer s3cret",
-        "--follow-card-origin",
-        "send",
-        &url,
-        "hi",
-    ])
-    .await;
-    assert_eq!(code(&out), 1, "B answers with an error: {}", stdout(&out));
-    assert!(
-        seen_b.lock().unwrap().iter().any(|a| a == "Bearer s3cret"),
-        "{:?}",
-        seen_b.lock().unwrap()
-    );
-}
+/// A JSON-RPC error answer, which makes `send` fail after the request was
+/// recorded.
+pub(super) const A_JSON_RPC_ERROR: &[u8] =
+    br#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"no"}}"#;
 
 // -- `card verify`: the JWK Set is fetched from a URL of its own --------------
 

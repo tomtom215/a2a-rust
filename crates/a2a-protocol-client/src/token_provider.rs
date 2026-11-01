@@ -103,6 +103,7 @@ const DEFAULT_FAILURE_BACKOFF: Duration = Duration::from_secs(1);
 
 mod exchange;
 mod flight;
+mod trusted_hosts;
 
 pub use exchange::{
     ACCESS_TOKEN_TYPE, ExchangeRequest, ExchangedToken, JWT_TOKEN_TYPE, TOKEN_EXCHANGE_GRANT,
@@ -378,6 +379,19 @@ impl OAuth2ClientCredentials {
     /// the scopes the agent *offers* (with descriptions); which of them to
     /// request is your decision.
     ///
+    /// # Security
+    ///
+    /// The card is the peer's own word, and **the client secret is sent to
+    /// whatever `https://` host its `tokenUrl` names**. A card fetched over a
+    /// network you do not control, or from an agent you do not fully trust,
+    /// can name an endpoint of its choosing and receive `client_id:client_secret`
+    /// on the first token request (audit SEC-08). Use
+    /// [`from_agent_card_trusting`](Self::from_agent_card_trusting) and name
+    /// the host your identity provider runs on, or build the provider with
+    /// [`new`](Self::new) from a URL you configured yourself. Plain
+    /// `from_agent_card` is for a card you verified, for example one read
+    /// through `ClientBuilder::from_signed_card` (feature `signing`).
+    ///
     /// # Errors
     ///
     /// Returns [`ClientError::InvalidEndpoint`] when the scheme is missing,
@@ -389,34 +403,13 @@ impl OAuth2ClientCredentials {
         client_id: impl Into<String>,
         client_secret: impl Into<String>,
     ) -> ClientResult<Self> {
-        use a2a_protocol_types::security::{OAuthFlows, SecurityScheme};
-
-        let scheme = card
-            .security_schemes
-            .as_ref()
-            .and_then(|schemes| schemes.get(scheme_name))
-            .ok_or_else(|| {
-                ClientError::InvalidEndpoint(format!(
-                    "agent card has no security scheme named {scheme_name:?}"
-                ))
-            })?;
-        let SecurityScheme::OAuth2(oauth2) = scheme else {
-            return Err(ClientError::InvalidEndpoint(format!(
-                "security scheme {scheme_name:?} is not an OAuth 2.0 scheme"
-            )));
-        };
-        let OAuthFlows::ClientCredentials(flow) = &oauth2.flows else {
-            return Err(ClientError::InvalidEndpoint(format!(
-                "security scheme {scheme_name:?} has no client-credentials flow \
-                 (interactive flows need a custom TokenProvider)"
-            )));
-        };
+        let token_url = card_token_url(card, scheme_name)?;
         // The card is the peer's word, and the secret goes where it says: a
         // `tokenUrl` that is plaintext to another machine is refused here
         // (audit SEC-08). To use one anyway, build the provider with `new`
         // from the URL you trust and call `allow_insecure_token_endpoint`.
-        check_endpoint_secure(&flow.token_url, "the agent card's tokenUrl", false)?;
-        Ok(Self::new(flow.token_url.clone(), client_id, client_secret))
+        check_endpoint_secure(&token_url, "the agent card's tokenUrl", false)?;
+        Ok(Self::new(token_url, client_id, client_secret))
     }
 
     /// Discovers the token endpoint from an OIDC issuer
@@ -780,6 +773,37 @@ fn check_endpoint_reachable(tls: bool, url: &str, what: &str) -> ClientResult<()
     Ok(())
 }
 
+/// The `tokenUrl` of the card's OAuth 2.0 client-credentials flow named
+/// `scheme_name`: what both card constructors read before they judge it.
+fn card_token_url(
+    card: &a2a_protocol_types::agent_card::AgentCard,
+    scheme_name: &str,
+) -> ClientResult<String> {
+    use a2a_protocol_types::security::{OAuthFlows, SecurityScheme};
+
+    let scheme = card
+        .security_schemes
+        .as_ref()
+        .and_then(|schemes| schemes.get(scheme_name))
+        .ok_or_else(|| {
+            ClientError::InvalidEndpoint(format!(
+                "agent card has no security scheme named {scheme_name:?}"
+            ))
+        })?;
+    let SecurityScheme::OAuth2(oauth2) = scheme else {
+        return Err(ClientError::InvalidEndpoint(format!(
+            "security scheme {scheme_name:?} is not an OAuth 2.0 scheme"
+        )));
+    };
+    let OAuthFlows::ClientCredentials(flow) = &oauth2.flows else {
+        return Err(ClientError::InvalidEndpoint(format!(
+            "security scheme {scheme_name:?} has no client-credentials flow \
+             (interactive flows need a custom TokenProvider)"
+        )));
+    };
+    Ok(flow.token_url.clone())
+}
+
 /// Refuses a token endpoint that is plaintext `http://` to a host other than
 /// loopback, unless `allow_insecure`: the request carries the client secret
 /// (or, for an exchange, the user's subject token), and sent that way it
@@ -1130,7 +1154,7 @@ mod tests {
 
     // -- from_agent_card ------------------------------------------------------
 
-    fn card_with_oauth2(
+    pub(super) fn card_with_oauth2(
         flows: a2a_protocol_types::security::OAuthFlows,
     ) -> a2a_protocol_types::agent_card::AgentCard {
         use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard};

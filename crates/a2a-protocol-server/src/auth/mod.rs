@@ -99,16 +99,16 @@ pub(crate) fn auth_rejected(challenge: &str) -> A2aError {
 /// considered secret — but for equal-length inputs the comparison examines
 /// every byte regardless of where the first difference is, so a network
 /// attacker cannot recover a secret byte-by-byte from response timing.
+///
+/// This is [`subtle`]'s `ct_eq`, which keeps the compiler from turning the
+/// comparison into an early exit. A loop of our own did the same work, but
+/// nothing stopped an optimiser from stopping at the first difference
+/// (audit SEC-18); for a primitive like this the audited crate is the better
+/// engineering than a better-commented copy.
 #[must_use]
 pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
+    use subtle::ConstantTimeEq as _;
+    a.ct_eq(b).into()
 }
 
 /// A credential the server accepts, and the identity it belongs to.

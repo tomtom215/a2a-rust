@@ -13,8 +13,9 @@
 
 use std::io::Write;
 
-use a2a_protocol_client::discovery::fetch_card_from_url;
-use a2a_protocol_client::resolve_agent_card;
+use a2a_protocol_client::discovery::{
+    CardFetchOptions, fetch_card_from_url_with_options, resolve_agent_card_with_options,
+};
 use a2a_protocol_types::params::SendMessageConfiguration;
 use a2a_protocol_types::{
     ContextId, ListTasksParams, Message, MessageId, MessageRole, MessageSendParams, Part,
@@ -23,13 +24,14 @@ use a2a_protocol_types::{
 use serde::Serialize;
 
 use crate::cli::{GlobalOpts, ListArgs, SendArgs};
-use crate::connect::connect;
+use crate::connect::{connect, header_map};
 use crate::error::CliError;
 
 /// Writes `value` to stdout as pretty-printed JSON with a trailing newline.
 pub(crate) fn print_pretty<T: Serialize>(value: &T) -> Result<(), CliError> {
+    let json = crate::terminal::json_safe(&serde_json::to_string_pretty(value)?);
     let mut out = std::io::stdout().lock();
-    serde_json::to_writer_pretty(&mut out, value)?;
+    out.write_all(json.as_bytes())?;
     out.write_all(b"\n")?;
     Ok(())
 }
@@ -37,19 +39,26 @@ pub(crate) fn print_pretty<T: Serialize>(value: &T) -> Result<(), CliError> {
 /// Writes `value` to stdout as one JSON line and flushes, so a reader on the
 /// other end of a pipe sees each event as it arrives rather than at exit.
 fn print_line<T: Serialize>(value: &T) -> Result<(), CliError> {
+    let json = crate::terminal::json_safe(&serde_json::to_string(value)?);
     let mut out = std::io::stdout().lock();
-    serde_json::to_writer(&mut out, value)?;
+    out.write_all(json.as_bytes())?;
     out.write_all(b"\n")?;
     out.flush()?;
     Ok(())
 }
 
 /// `a2a card <url>`
-pub async fn card(url: &str) -> Result<(), CliError> {
+///
+/// Sends `--header` to the URL given, which is the host the caller named, and
+/// is bounded by `--timeout`, as discovery is for every other command.
+pub async fn card(opts: &GlobalOpts, url: &str) -> Result<(), CliError> {
+    let options = CardFetchOptions::default()
+        .with_headers(header_map(opts))
+        .with_timeout(std::time::Duration::from_secs(opts.timeout));
     let card = if url.ends_with("agent-card.json") {
-        fetch_card_from_url(url).await?
+        fetch_card_from_url_with_options(url, &options).await?
     } else {
-        resolve_agent_card(url).await?
+        resolve_agent_card_with_options(url, &options).await?
     };
     print_pretty(&card)
 }

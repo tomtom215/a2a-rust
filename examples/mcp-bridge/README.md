@@ -22,7 +22,7 @@ call a remote agent — it needs a command in its server list.
 
 ```jsonc
 // in any MCP client's server configuration
-{ "command": "a2a-mcp-bridge", "args": ["http://agent.internal:8080"] }
+{ "command": "a2a-mcp-bridge", "args": ["https://agent.internal:8443"] }
 ```
 
 One bridge process fronts one agent, because that is how MCP clients are

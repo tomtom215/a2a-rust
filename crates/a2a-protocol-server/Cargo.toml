@@ -180,6 +180,11 @@ base64         = "0.23"
 # that the credential is not stored as a tenant id (audit SEC-11). Pure Rust;
 # already in the graph through sqlx.
 sha2           = "0.11"
+# The constant-time comparison of an API key, bearer token or push token (audit
+# SEC-18): the vetted crate rustls and RustCrypto use, rather than a loop of our
+# own that a compiler may legally turn into an early exit. `no_std`, no
+# dependencies; already in the graph through rustls, no new crate.
+subtle         = { version = ">=2.5, <3", default-features = false }
 # Wipes the HS256 secret when the validator holding it is dropped. Already in
 # the graph through rustls; no new crate.
 zeroize        = { version = ">=1.8, <2", optional = true, default-features = false, features = ["alloc"] }

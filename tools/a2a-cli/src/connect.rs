@@ -77,11 +77,13 @@ struct Target {
     builder: ClientBuilder,
 }
 
-/// The `--header` values as a map.
+/// The `--header` values as a map. HTTP header names do not depend on case, so
+/// neither does the map: a name given twice, in any case, is sent once, with
+/// the last value (`X-A=1 x-a=2` sends `x-a: 2`, not both).
 pub(crate) fn header_map(opts: &GlobalOpts) -> HashMap<String, String> {
     opts.headers
         .iter()
-        .map(|h| (h.name.clone(), h.value.clone()))
+        .map(|h| (h.name.to_ascii_lowercase(), h.value.clone()))
         .collect()
 }
 
@@ -316,6 +318,7 @@ mod tests {
             timeout: 30,
             send_timeout: 600,
             headers: vec![],
+            headers_env: vec![],
             tenant: None,
             grpc_plaintext: false,
             no_capability_check: false,
@@ -329,6 +332,20 @@ mod tests {
             .expect("no discovery");
         assert_eq!(t.endpoint, "http://127.0.0.1:1");
         assert_eq!(t.binding, "HTTP+JSON");
+    }
+
+    #[test]
+    fn header_map_ignores_case_and_keeps_the_last_value() {
+        use clap::Parser as _;
+        let cli = crate::cli::Cli::try_parse_from([
+            "a2a", "card", "http://x", "--header", "X-A=1", "--header", "x-a=2", "--header",
+            "Other=z",
+        ])
+        .expect("parses");
+        let map = header_map(&cli.global);
+        assert_eq!(map.len(), 2, "{map:?}");
+        assert_eq!(map["x-a"], "2");
+        assert_eq!(map["other"], "z");
     }
 
     #[test]

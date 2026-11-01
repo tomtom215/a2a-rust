@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:11416 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:11456 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -1780,7 +1780,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:20 AuthRejectionKind",
     "crates/a2a-protocol-types/src/error.rs:402 A2aError::insufficient_scope",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:371 JwtValidator::require_scope",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:376 JwtValidator::require_scope",
     "crates/a2a-protocol-server/src/error/mod.rs:197 ServerError::http_status",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status"
    ],
@@ -1805,7 +1805,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:56 AuthRejection::insufficient_scope",
     "crates/a2a-protocol-types/src/error.rs:402 A2aError::insufficient_scope",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:500 JwtValidator::validate"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:522 JwtValidator::validate"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:123 insufficient_scope_names_the_scopes_in_its_challenge",
@@ -4900,7 +4900,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/tls.rs:100 default_tls_config",
-    "crates/a2a-protocol-client/Cargo.toml:113 \"rustls         = { version = \">=0.23.46, <0.24\", optional = true\""
+    "crates/a2a-protocol-client/Cargo.toml:118 \"rustls         = { version = \">=0.23.46, <0.24\", optional = true\""
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/tls_versions.rs:73 the_client_negotiates_tls13_with_forward_secret_aead_suites"
@@ -5017,7 +5017,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/interceptor/mod.rs:150 ServerInterceptor::authenticates",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:371 JwtValidator::require_scope",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:376 JwtValidator::require_scope",
     "crates/a2a-protocol-server/src/call_context.rs:113 CallContext"
    ],
    "test_evidence": [
@@ -7980,7 +7980,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/webhook/receiver.rs:227 WebhookReceiver::receive",
-    "crates/a2a-protocol-client/src/webhook/token.rs:100 authorization_matches"
+    "crates/a2a-protocol-client/src/webhook/token.rs:96 authorization_matches"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/webhook_receiver.rs:144 wrong_authorization_is_401",
@@ -8527,7 +8527,7 @@
     "crates/a2a-protocol-server/src/tls.rs:83 config_from_pem",
     "crates/a2a-protocol-server/src/net/roots.rs:43 config_with_roots",
     "crates/a2a-protocol-client/Cargo.toml:42 \"tls-rustls\"",
-    "crates/a2a-protocol-client/Cargo.toml:113 \"rustls\""
+    "crates/a2a-protocol-client/Cargo.toml:118 \"rustls\""
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/tls_protocol_versions.rs:184 the_https_listener_refuses_tls_below_1_2",
@@ -8572,7 +8572,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/tls.rs:100 default_tls_config",
     "crates/a2a-protocol-server/src/net/roots.rs:43 config_with_roots",
-    "crates/a2a-protocol-client/Cargo.toml:113 \"rustls         = { version = \">=0.23.46, <0.24\", optional = true\""
+    "crates/a2a-protocol-client/Cargo.toml:118 \"rustls         = { version = \">=0.23.46, <0.24\", optional = true\""
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/tls_versions.rs:73 the_client_negotiates_tls13_with_forward_secret_aead_suites"
@@ -8662,7 +8662,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/auth/mod.rs:103 constant_time_eq",
+    "crates/a2a-protocol-server/src/auth/mod.rs:109 constant_time_eq",
     "crates/a2a-protocol-server/src/auth/mod.rs:263 ApiKeyAuthInterceptor::fmt",
     "crates/a2a-protocol-server/src/auth/mod.rs:381 BearerTokenAuthInterceptor::fmt",
     "crates/a2a-protocol-server/src/auth/credentials.rs:107 CredentialSet::fmt"
@@ -8671,7 +8671,7 @@
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:106 debug_names_no_accepted_credential",
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:135 accepting_and_refusing_logs_no_credential",
     "crates/a2a-protocol-server/tests/credential_rotation.rs:110 an_api_key_is_rotated_and_revoked_while_serving",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1786 debug_impls_render_type_and_redact_secrets"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1832 debug_impls_render_type_and_redact_secrets"
    ],
    "notes": "Constant-time comparison, Debug shows counts not keys, identity labels separate from credentials, push secrets redacted. Exception: SQL push-config stores keep credentials plaintext at rest (see 3131). Client: until 2026-10-14 (audit register R17) the derived Debug of ClientRequest, ClientResponse, CardFetchOptions and WebSocketTransportConfig printed header values (the Authorization an auth interceptor adds) and push-config params and results verbatim; they print header names and JSON keys now, never values.",
    "auditor": "F",
@@ -8690,7 +8690,7 @@
     "crates/a2a-protocol-server/src/auth/credentials.rs:44 CredentialSet::add",
     "crates/a2a-protocol-server/src/auth/mod.rs:257 ApiKeyAuthInterceptor::credentials",
     "crates/a2a-protocol-server/src/auth/mod.rs:375 BearerTokenAuthInterceptor::credentials",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1040 RemoteJwks::get"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1086 RemoteJwks::get"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/credential_rotation.rs:95 a_bearer_token_is_rotated_and_revoked_while_serving",
@@ -8738,7 +8738,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/credentials.rs:58 CredentialSet::revoke",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1040 RemoteJwks::get"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1086 RemoteJwks::get"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/credential_rotation.rs:95 a_bearer_token_is_rotated_and_revoked_while_serving",
@@ -10733,7 +10733,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/token_provider.rs:139 TokenProvider"
+    "crates/a2a-protocol-client/src/token_provider.rs:140 TokenProvider"
    ],
    "test_evidence": [],
    "notes": "Client SDK implements only client-credentials/static tokens (no authorization-code flow, no PKCE code); applications plug a TokenProvider. Re-examined 2026-10-18, kept: the SDK runs no authorization-code flow (client credentials and static tokens only); an application that does plugs in a TokenProvider and owns PKCE. Corrected 2026-10-20 (ledger audit): besides client credentials and static tokens the SDK has RFC 8693 token exchange (token_provider/exchange.rs TokenExchange); it has no authorization-code flow and no PKCE code (none in the client crate or the bindings; the types crate models AuthorizationCodeFlow and pkce_required as card data, security.rs and proto/convert/card.rs, and runs no flow), so the classification holds.",

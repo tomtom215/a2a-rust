@@ -118,3 +118,20 @@ server core is implemented directly on `hyper` and exposes a transport-agnostic
 `A2aRouter` for idiomatic Axum integration. This is additive — the raw hyper
 `serve()` API and `Dispatcher` trait remain the primary path. The `axum` dep is
 only pulled in when the feature is enabled.
+
+---
+
+## Amendment, 2026-11-01: avoid a dependency when pure Rust can do the job properly
+
+The maintainer clarified that this ADR's minimal-footprint stance is not an absolute ban on new
+dependencies. The aim is to avoid a dependency where the job can be done in pure Rust to
+production grade, not to reinvent a vetted solution to avoid one. A small, plain job stays
+in-tree. A security-sensitive or intricate one (constant-time comparison, cryptography, a
+standards-defined parser) uses the audited crate: writing it again is the riskier choice.
+
+The first use is `subtle` for the constant-time comparison of API keys, bearer tokens and push
+tokens (audit SEC-18). It replaces two hand-written XOR loops that nothing stopped an optimiser
+from turning into an early exit. It is `no_std`, has no dependencies, is BSD-3-Clause, and was
+already in the graph through `rustls` (2.6.1); the server depends on it directly, and the client
+only through its `webhook` feature. `CONTRIBUTING.md`'s Dependency Policy says the same.
+

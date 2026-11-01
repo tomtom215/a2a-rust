@@ -231,10 +231,12 @@ pub fn tenant_id_for_token(token: &str) -> String {
 /// // Use a digest of the (unverified) token as tenant ID:
 /// let resolver = BearerTokenTenantResolver::default();
 ///
-/// // With a custom mapping:
+/// // With a custom mapping. The tenant lands in storage, telemetry and the
+/// // audit chain, so it is a claim the token carries, never the token:
 /// let resolver = BearerTokenTenantResolver::with_mapper(|token| {
-///     // e.g. decode JWT, look up tenant in cache, etc.
-///     Some(format!("tenant-for-{token}"))
+///     // e.g. verify a JWT's signature and expiry, then read its tenant
+///     // claim; `None` rejects the token. This stand-in knows one token.
+///     (token == "s3cret-for-acme").then(|| "acme".to_owned())
 /// });
 /// ```
 #[derive(Default)]

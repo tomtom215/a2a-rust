@@ -26,7 +26,7 @@
 //! |---|---|
 //! | 0 | Success |
 //! | 1 | Protocol or transport error (message on stderr; a JSON error object too when the agent returned one) |
-//! | 2 | Usage error (bad flag, missing argument, unparseable value) |
+//! | 2 | Usage error (bad flag, missing argument, unparseable value, an unset `--header-env` variable), or an `OTEL_*` setting the telemetry cannot use (reported before the arguments are parsed) |
 
 #![forbid(unsafe_code)]
 #![warn(clippy::all, clippy::pedantic)]
@@ -36,6 +36,7 @@ mod commands;
 mod connect;
 mod error;
 mod offline;
+mod terminal;
 
 use std::process::ExitCode;
 
@@ -59,7 +60,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             Some(CardCommand::Verify { card, jwks }) => {
                 offline::card_verify(global, &card, &jwks).await
             }
-            None => commands::card(card.url.as_deref().unwrap_or_default()).await,
+            None => commands::card(global, card.url.as_deref().unwrap_or_default()).await,
         },
         Command::Audit(AuditCommand::Verify {
             records,
@@ -86,7 +87,8 @@ async fn main() -> ExitCode {
     let _telemetry = telemetry();
     // `clap` exits 2 on a usage error and 0 after `--help`/`--version`
     // itself, so by the time this returns the arguments are valid.
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+    cli.global.merge_header_env();
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {

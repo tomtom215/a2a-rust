@@ -73,10 +73,23 @@ pub struct GlobalOpts {
     pub send_timeout: u64,
 
     /// Extra HTTP header sent with every request, e.g. `--header
-    /// "Authorization=Bearer TOKEN"`. Repeatable. Over gRPC these become
-    /// request metadata; over WebSocket they are sent on the upgrade request.
+    /// "Authorization=Bearer TOKEN"`. Repeatable; a repeated name, in any
+    /// case, keeps the last. Over gRPC these become request metadata; over
+    /// WebSocket they are sent on the upgrade request. A value given here is
+    /// visible to other users of the machine in the process list: for a
+    /// credential, use `--header-env`.
     #[arg(long = "header", global = true, value_name = "K=V", value_parser = parse_header)]
     pub headers: Vec<Header>,
+
+    /// Like `--header`, but the value is read from the environment variable
+    /// named after the `=`, e.g. `--header-env Authorization=A2A_AUTH` with
+    /// `A2A_AUTH='Bearer TOKEN'` exported. The value is the whole header
+    /// value, so it includes any `Bearer ` prefix. It never appears in the
+    /// process list. An unset or empty variable is a usage error. Wins over a
+    /// `--header` of the same name; the same host rules apply as for
+    /// `--header` (see `--follow-card-origin`).
+    #[arg(long = "header-env", global = true, value_name = "K=VAR", value_parser = parse_header_env)]
+    pub headers_env: Vec<Header>,
 
     /// Tenant identifier for multi-tenant agents. Overrides the tenant the
     /// agent card advertises for the chosen interface.
@@ -157,6 +170,46 @@ fn parse_header(raw: &str) -> Result<Header, String> {
         name: name.to_owned(),
         value: value.to_owned(),
     })
+}
+
+/// Parses `K=VAR` and reads `VAR` from the environment. Rejects a missing `=`,
+/// an empty name or variable name, and a variable that is unset, empty or not
+/// UTF-8. The error names the variable and never its value.
+fn parse_header_env(raw: &str) -> Result<Header, String> {
+    let Some((name, var)) = raw.split_once('=') else {
+        return Err(format!("expected K=VAR, got `{raw}`"));
+    };
+    let (name, var) = (name.trim(), var.trim());
+    if name.is_empty() || var.is_empty() {
+        return Err(format!(
+            "header name and variable name must not be empty in `{raw}`"
+        ));
+    }
+    match std::env::var(var) {
+        Ok(value) if !value.is_empty() => Ok(Header {
+            name: name.to_owned(),
+            value,
+        }),
+        Ok(_) => Err(format!(
+            "the environment variable {var} is empty, so there is no value for the {name} header"
+        )),
+        Err(std::env::VarError::NotPresent) => Err(format!(
+            "the environment variable {var} is not set, so there is no value for the {name} header"
+        )),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err(format!("the environment variable {var} is not valid UTF-8"))
+        }
+    }
+}
+
+impl GlobalOpts {
+    /// Moves the `--header-env` headers into `headers`, after the `--header`
+    /// ones, so that everything downstream (the host guard, discovery, the
+    /// client) reads one list and a header from the environment wins over a
+    /// `--header` of the same name.
+    pub fn merge_header_env(&mut self) {
+        self.headers.append(&mut self.headers_env);
+    }
 }
 
 /// The commands.
@@ -383,6 +436,53 @@ mod tests {
         assert_eq!(cli.global.binding, Some(Binding::Rest));
         assert_eq!(cli.global.timeout, 5);
         assert_eq!(cli.global.headers.len(), 1);
+    }
+
+    #[test]
+    fn a_bad_header_env_is_rejected_with_the_reason() {
+        for (arg, needle) in [
+            ("Authorization", "expected K=VAR"),
+            ("=VAR", "must not be empty"),
+            ("Authorization=", "must not be empty"),
+            (
+                "Authorization=A2A_TEST_NO_SUCH_VARIABLE",
+                "A2A_TEST_NO_SUCH_VARIABLE is not set",
+            ),
+        ] {
+            let err = parse_header_env(arg).expect_err(arg);
+            assert!(err.contains(needle), "{arg}: {err}");
+        }
+    }
+
+    #[test]
+    fn header_env_reads_the_variable_and_merges_after_the_flags() {
+        // `PATH` is set in every environment `cargo test` runs in; the crate
+        // forbids `unsafe`, so a test cannot set a variable of its own (the
+        // end-to-end tests set the child's).
+        let h = parse_header_env("X-Path=PATH").expect("PATH is set");
+        assert_eq!(h.name, "X-Path");
+        assert_eq!(Ok(h.value), std::env::var("PATH"));
+
+        let mut cli = Cli::try_parse_from([
+            "a2a",
+            "card",
+            "http://x",
+            "--header-env",
+            "X-Path=PATH",
+            "--header",
+            "A=b",
+        ])
+        .expect("parses");
+        assert_eq!(cli.global.headers.len(), 1);
+        assert_eq!(cli.global.headers_env.len(), 1);
+        cli.global.merge_header_env();
+        assert_eq!(cli.global.headers_env.len(), 0);
+        let names: Vec<_> = cli.global.headers.iter().map(|h| h.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["A", "X-Path"],
+            "the environment comes last, so it wins"
+        );
     }
 
     #[test]

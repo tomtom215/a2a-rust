@@ -25,6 +25,23 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`OAuth2ClientCredentials::from_agent_card_trusting`** (client; audit
+  SEC-08): `from_agent_card` plus the hosts you trust, refusing a card whose
+  `tokenUrl` is on any other. `from_agent_card` sends the client secret to
+  whatever `https://` host the card names, which is safe only for a card you
+  verified; its rustdoc and the book now say so. Hosts compare exactly (case,
+  one trailing dot, the port and the path do not matter); `auth.example.com`
+  does not admit `auth.example.com.evil.example` or
+  `https://auth.example.com@evil.example/`, and an empty list refuses every
+  card.
+- **`JwtValidator::with_required_typ`** (server; `auth-jwt`; audit SEC-18):
+  refuse a token whose `typ` header is not the one named (`at+jwt`,
+  RFC 9068), so an ID token cannot be presented as an access token
+  (RFC 8725 section 3.11). Compared as a media type. Off by default, as many
+  issuers still sign access tokens with `typ: JWT`.
+- **`a2a --header-env K=VAR`** (a2a-cli; audit SEC-09): the header value comes
+  from an environment variable, so a credential is not in the process list. An
+  unset or empty variable is a usage error that names it.
 - **`ClientBuilder::without_interface_fallback`** (client; audit SEC-09,
   NEW-f-1): use only the interface `from_card` chose, and make `build()` fail
   instead of moving to the card's next interface. For a caller who attaches a
@@ -373,6 +390,18 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **`a2a`: header names compare without case, and `a2a card` sends the
+  headers** (a2a-cli; audit G/D-05). `--header X-A=1 --header x-a=2` sent both
+  values of one header; it now sends `x-a: 2`. `a2a card <URL>` ignored
+  `--header` and `--timeout` (a card behind authentication was unreachable, and
+  a stalled one waited 30 s); it now carries the first and obeys the second.
+- **`a2a`: characters that reorder or hide text are written out** (a2a-cli;
+  audit NEW-f-5). A bidirectional override or isolate, a line or paragraph
+  separator, a zero-width space, a word joiner or a byte-order mark in an agent's
+  reply now prints as a `\u` escape on stdout and stderr, as control characters
+  did; so do DEL and the C1 controls on stdout, which `serde_json` leaves raw.
+  The value a script reads is the same. Emoji joiners and the plain
+  left-to-right and right-to-left marks are left alone.
 - **The default `BearerTokenTenantResolver` names a token by a digest, not by
   the token** (server; audit SEC-11). `BearerTokenTenantResolver::default()`,
   and `new()`, used the raw bearer token as the tenant id, which stored a live
@@ -490,6 +519,17 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   (`docs/audits/2026-11-01-triage/live-results.md`); the two new tests in
   `tests/e2e/card_origin.rs` fail without it, and the headerless fallback and
   the flag's opt-in are pinned beside them.
+- **API keys, bearer tokens and push tokens are compared with `subtle`**
+  (server and client; audit SEC-18). Two hand-written XOR loops did the work but
+  nothing stopped an optimiser from ending them at the first difference; the
+  audited crate the project's TLS stack already uses does the comparison now.
+  `subtle` (BSD-3-Clause, `no_std`, no dependencies) was in the lockfile through
+  `rustls` already; the client takes it only with its `webhook` feature.
+  `CONTRIBUTING.md` and ADR 0002 now say that a dependency is to be avoided when
+  pure Rust can do the job to production grade, not when a vetted crate would.
+- **The `BearerTokenTenantResolver::with_mapper` example no longer puts the raw
+  token in the tenant** (audit NEW-f-6), the thing the default was changed to
+  stop; the `mcp-bridge` README example uses `https://`.
 - **The `delegation_journal` module doc no longer says a SQLite journal
   exists** (types; audit NEW-h-s0-4). The only durable journal is
   `PostgresDelegationJournal`.

@@ -198,6 +198,34 @@ async fn send_discovers_the_card_and_prints_the_completed_task() {
     assert_eq!(task["artifacts"][0]["parts"][0]["text"], "Echo: hello");
 }
 
+/// Audit NEW-f-5: what an agent sends back reaches stdout as JSON escapes, so
+/// a bidirectional override, a C1 control or DEL cannot reach a terminal raw
+/// (`serde_json` alone escapes only the characters below U+0020). The value a
+/// script reads is the same.
+#[tokio::test(flavor = "multi_thread")]
+async fn hostile_text_in_a_reply_is_written_out_on_stdout() {
+    let url = start_agent().await;
+    let text = "x\u{202e}y\u{85}z\u{7f}";
+    let out = a2a(&["send", &url, text]).await;
+    assert_eq!(code(&out), 0, "stderr: {}", stderr(&out));
+    let raw = stdout(&out);
+    for c in ['\u{202e}', '\u{85}', '\u{7f}'] {
+        assert!(
+            !raw.contains(c),
+            "U+{:04X} reached stdout raw: {raw:?}",
+            u32::from(c)
+        );
+    }
+    for written in ["\\u202e", "\\u0085", "\\u007f"] {
+        assert!(raw.contains(written), "{written} in {raw}");
+    }
+    assert_eq!(
+        json(&out)["task"]["artifacts"][0]["parts"][0]["text"],
+        format!("Echo: {text}"),
+        "the same value"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn send_honours_an_explicit_binding_and_context_id() {
     let url = start_agent().await;
@@ -278,6 +306,8 @@ async fn task_cancel_stops_a_running_task() {
 }
 
 mod card_origin;
+mod header_sources;
+mod interface_fallback;
 mod subscribe;
 
 #[tokio::test(flavor = "multi_thread")]

@@ -35,7 +35,29 @@ let client = ClientBuilder::new("https://agent.example.com")
 ## From the agent card
 
 An agent that advertises an OAuth2 client-credentials
-scheme carries its token endpoint:
+scheme carries its token endpoint. **The card is the agent's own word, and the
+client secret goes to whatever host its `tokenUrl` names.** A card fetched over
+a network you do not control, or from an agent you do not fully trust, can name
+an endpoint of its choosing and receive `client-id:client-secret` on the first
+token request. Name the host your identity provider runs on:
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# fn f(card: AgentCard) -> Result<(), Box<dyn std::error::Error>> {
+let provider = OAuth2ClientCredentials::from_agent_card_trusting(
+    &card, "my-oauth-scheme", "client-id", "client-secret",
+    &["login.example.com"],
+)?;
+# Ok(())
+# }
+```
+
+The host must match exactly (case, a trailing dot, the port and the path do not
+matter): `login.example.com` does not admit `login.example.com.evil.example`,
+`evil-login.example.com` or `https://login.example.com@evil.example/`, and an
+empty list refuses every card. `from_agent_card` is the same without the list,
+for a card you have verified yourself (a signed card read with
+`ClientBuilder::from_signed_card`, for example):
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
