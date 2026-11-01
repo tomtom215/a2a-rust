@@ -38,6 +38,8 @@ mod transport_factory;
 mod grpc_selection_tests;
 #[cfg(test)]
 mod selection_tests;
+#[cfg(test)]
+mod tenant_order_tests;
 
 #[cfg(feature = "signing")]
 mod signed;
@@ -94,6 +96,14 @@ pub struct ClientBuilder {
     /// [`ClientBuilder::with_protocol_binding`]: a binding the caller named
     /// is a decision, not a preference to substitute for.
     pub(super) fallback_interfaces: Vec<AgentInterface>,
+    /// Whether the caller named a tenant with [`with_tenant`](Self::with_tenant).
+    ///
+    /// A tenant from the card belongs to the interface it came with and moves
+    /// when the interface does; one the caller set is theirs, whichever order
+    /// they called the builder in (audit G-19: `with_tenant` before
+    /// `with_protocol_binding`, `build_grpc` or a fallback replaced it, or
+    /// cleared it).
+    pub(super) tenant_set: bool,
     /// How a bare `host:port` gRPC address is dialled by [`build_grpc`].
     ///
     /// Lives on the builder rather than on [`ClientConfig`] because it is a
@@ -146,6 +156,7 @@ impl ClientBuilder {
             grpc_tls_config: None,
             card_interfaces: Vec::new(),
             fallback_interfaces: Vec::new(),
+            tenant_set: false,
             agent: None,
             declared: None,
             extensions: Vec::new(),
@@ -261,6 +272,7 @@ impl ClientBuilder {
             grpc_tls_config: None,
             card_interfaces: card.supported_interfaces.clone(),
             fallback_interfaces: candidates.collect(),
+            tenant_set: false,
             agent: Some(crate::call_span::agent_identity(card)),
             declared: Some(crate::declared::DeclaredCapabilities::of(
                 &card.capabilities,
@@ -421,8 +433,9 @@ impl ClientBuilder {
     /// left as the caller set it. There is nothing to resolve against, and the
     /// caller is assumed to know their own URL.
     ///
-    /// Ordering: this re-resolves the tenant from the card, so call
-    /// [`ClientBuilder::with_tenant`] *after* this to override it.
+    /// A tenant the caller set with [`ClientBuilder::with_tenant`] is kept
+    /// whichever call comes first; without one, the tenant moves with the
+    /// interface (audit G-19).
     #[must_use]
     pub fn with_protocol_binding(mut self, binding: impl Into<String>) -> Self {
         let binding = binding.into();
@@ -433,7 +446,9 @@ impl ClientBuilder {
             .map(|i| (i.url.clone(), i.tenant.clone()));
         if let Some((url, tenant)) = resolved {
             self.endpoint = url;
-            self.config.tenant = tenant;
+            if !self.tenant_set {
+                self.config.tenant = tenant;
+            }
         }
         self.preferred_binding = Some(binding);
         self.fallback_interfaces.clear();
@@ -517,6 +532,7 @@ impl ClientBuilder {
     #[must_use]
     pub fn with_tenant(mut self, tenant: impl Into<String>) -> Self {
         self.config.tenant = Some(tenant.into());
+        self.tenant_set = true;
         self
     }
 

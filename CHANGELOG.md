@@ -1091,6 +1091,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A tenant the caller set is kept in whichever order the builder is called**
+  (client; audit G-19). `with_tenant` before `with_protocol_binding`,
+  `build_grpc` or a fall back to the card's next interface replaced the
+  caller's tenant with the card's, or cleared it. A tenant that came from the
+  card still moves with its interface. Each path has a test that fails on the
+  old logic (`builder/tenant_order_tests.rs`).
 - **The WebSocket client dialled with tokio's sequential connect and set no
   keepalive** (client; audit B-12). A destination with several addresses cost
   the whole timeout for each one a network drops before the next was tried
@@ -1825,7 +1831,6 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   0.3.4 (its own range is `>=0.3.0, <0.5`; both versions were already locked).
   The binding builds, passes `clippy --all-targets -D warnings`, and its tests
   pass (133, 10 ignored: the SPIFFE suites need SPIRE).
-
 
 
 

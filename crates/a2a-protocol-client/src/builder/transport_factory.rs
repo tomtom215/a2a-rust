@@ -137,9 +137,7 @@ impl ClientBuilder {
         let mut failures = vec![format!("{binding} at {}: {first}", self.endpoint)];
         // A tenant the caller set with `with_tenant` is theirs to keep; one
         // that came from the failed interface belongs to that interface.
-        let tenant_from_card = self
-            .chosen_interface()
-            .is_some_and(|i| i.tenant == self.config.tenant);
+        let tenant_from_card = !self.tenant_set;
         for iface in std::mem::take(&mut self.fallback_interfaces) {
             match http_transport(&self.config, &iface.protocol_binding, &iface.url) {
                 Ok(t) => {
@@ -214,7 +212,9 @@ impl ClientBuilder {
             )));
         };
         self.endpoint = grpc.url.clone();
-        self.config.tenant = grpc.tenant.clone();
+        if !self.tenant_set {
+            self.config.tenant = grpc.tenant.clone();
+        }
         self.preferred_binding = Some(BINDING_GRPC.into());
         self.fallback_interfaces.clear();
         Ok(())
