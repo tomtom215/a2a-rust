@@ -19,15 +19,15 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-- **Branch `claude/jolly-wozniak-zc1vbe` (2026-10-31), from `main` at
-  `a0e6673` (pull request #184 merged): the 149 open audit rows are triaged
-  here, and the fixes are on pull request #185 (branch
-  `claude/jolly-wozniak-zc1vbe-outbound-network`), which is the one pull
-  request for all of them (the maintainer asked to combine; `PLAN.md`
-  has the fourteen work packages). Nothing here is release-ready.** The
+- **Branch `claude/jolly-wozniak-zc1vbe` (2026-11-01), with `main` at `4a8243c`
+  merged in: the 149 open audit rows were triaged here, and the fixes in pull
+  request #185 (branch `claude/jolly-wozniak-zc1vbe-outbound-network`, head
+  `94d92c7`) were merged on 2026-11-01 as `4a8243c`, a merge commit over
+  `a0e6673` (pull request #184 merged). `PLAN.md` has the sixteen work
+  packages; most are not built. Nothing here is release-ready.** The
   maintainer asked for every gap found, fixed and tested live (llama.cpp
   with Qwen and Gemma) before 0.16.0 is published.
-  - **State of #185, head `94d92c7`** (pushed 2026-10-31 about 23:35Z, 28
+  - **What #185 carried** (merged 2026-11-01 as `4a8243c`; head `94d92c7`, 28
     commits over `a0e6673`). Built, gated locally and pushed: package 1 (the
     server's outbound network); package 2 in part (the SSRF classifier, the
     push-delivery bounds, D-04, part of D-03); package 3 except B-09 (d)
@@ -44,11 +44,17 @@ only: when something here is done, delete it rather than annotating it.
     mutation shard and the macOS and Windows legs; commented on the pull
     request. **CI on `94d92c7`** (read 2026-11-01 01:08Z): 105 check runs, all success or
     skipped, none failed, including the two that failed on `d19ecfc`, every
-    mutation shard and the macOS and Windows legs; GitHub reports the pull
-    request mergeable. **First thing next session:** carry on with the packages
-    not started (the list under "Still open in the packages touched", and
-    `PLAN.md`); the two questions under "Waiting on the maintainer" (`ring`;
-    ADR 0032 against H-D7) block nothing yet.
+    mutation shard and the macOS and Windows legs; the maintainer then merged
+    it. **First thing next session, in order:** (1) mark the audit rows #185
+    fixed as `fixed` in `docs/audits/2026-10-29/README.md`, with commit SHAs
+    (the pull request body promised this after the merge; most commit
+    subjects from `git log a0e6673..94d92c7` name their rows), and recount
+    with `table_counts.py`; (2) branch from `main` for the packages not
+    started (the list under "Still open in the packages touched", and
+    `PLAN.md`) and open a new pull request, since #185 is merged; the
+    maintainer chose one combined pull request to save CI cycles, so confirm
+    that for the rest; (3) the two questions under "Waiting on the
+    maintainer" (`ring`; ADR 0032 against H-D7), which block nothing yet.
   - **What was run on that head** (the pull request comment
     <https://github.com/tomtom215/a2a-rust/pull/185#issuecomment-6550654053>
     is the record): 37 script gates and the DCO check; `clippy` on the
@@ -80,7 +86,7 @@ only: when something here is done, delete it rather than annotating it.
     rejects exactly that identity.
   - **Four design records for a later session, at the maintainer's request
     (2026-10-31). Nothing in them is built.** They are
-    `docs/adr/0031` to `0034` on pull request 185, each marked proposed and
+    `docs/adr/0031` to `0034` (on `main` since #185), each marked proposed and
     each ending with the test that would settle it and its open questions;
     the work is packages 11, 15 and 16 in `PLAN.md`. **0031** finds agents
     beyond one link: an `AgentSource` interface with a static list, unicast
