@@ -99,6 +99,11 @@ async fn run(signing_key_pkcs8: &[u8]) -> Result<(), Box<dyn std::error::Error>>
 
 Use `PostgresHaltStore` and `PostgresLeaseStore` (feature `postgres`) when
 more than one replica serves the agent: both are shared through the database.
+With a task store that several replicas share (the SQL stores), `build()`
+refuses an in-memory halt, lease, push-config (when the card declares push) or
+audit store, naming the store and the one to use. A deployment that routes
+every request for a task to one replica calls `allow_process_local_stores()`
+(ADR 0025, amended 2026-11-01).
 `SqliteHaltStore` keeps a halt across a restart of one process, but a SQLite
 file is not shared between pods, and there is no SQLite lease store. In 0.15
 several replicas are supported only when every turn of a task is routed to one

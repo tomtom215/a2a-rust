@@ -132,6 +132,18 @@ pub trait HaltStore: Send + Sync + 'static {
         scope: &'a HaltScope,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>>;
 
+    /// Whether this store keeps its state in this process alone.
+    ///
+    /// The default is `false`: a store this crate cannot see into (yours, over
+    /// Redis, say) is taken to be shared. The in-memory ones answer `true`.
+    /// [`Profile::Production`](crate::profile::Profile::Production) reads it:
+    /// on a task store that is shared between processes, a store that only this
+    /// process can see makes the fleet behave as if it had no store
+    /// (audit E-F13).
+    fn is_process_local(&self) -> bool {
+        false
+    }
+
     /// A subscription to this store's pushed signals, or `None` (the
     /// default) for a store that cannot push; the handler then polls only.
     fn signals(&self) -> Option<tokio::sync::broadcast::Receiver<HaltSignal>> {
@@ -195,6 +207,10 @@ impl InMemoryHaltStore {
 }
 
 impl HaltStore for InMemoryHaltStore {
+    fn is_process_local(&self) -> bool {
+        true
+    }
+
     fn load(&self) -> Pin<Box<dyn Future<Output = A2aResult<Vec<StoredHalt>>> + Send + '_>> {
         let halts = self
             .halts

@@ -40,8 +40,10 @@ neither sees the other's settings.
 
   The handler cannot tell whether its executor delegates or is delegated
   to, so the halt and lease stores are required unconditionally. Any store
-  satisfies the check, in-memory ones included: which store fits is the
-  deployment's call, and a single-process deployment may want in-memory.
+  satisfied the check when this was written, in-memory ones included: which
+  store fits is the deployment's call, and a single-process deployment may
+  want in-memory. Over a task store several processes share, that no longer
+  holds; see the amendment below.
 - **Profiles combine.** The builder kept one profile until now; it keeps a
   list, so `Profile::Auditable` and `Profile::Production` together require
   both sets. The `profile` module is no longer behind the `audit` feature;
@@ -93,3 +95,48 @@ Alternatives not taken:
   or serving JSON-RPC under a card declaring only HTTP+JSON, accepts
   nothing and reports why. With the checks stubbed out, 9 of the 18 tests
   fail; the other 9 assert what still serves or builds.
+
+---
+
+## Amendment, 2026-11-01: a shared task store with process-local stores (audit E-F13)
+
+**Decision (maintainer, 2026-11-01).** `Profile::Production` refuses a halt
+store, lease store, push-config store or audit log whose state lives in one
+process when the task store is shared between processes, with an explicit
+opt-out.
+
+**Why.** The 2026-10-29 audit ran replicas behind a balancer with the SQL task
+store and the in-memory halt, lease and push-config stores, which the profile
+accepted: a halt given to one replica did not reach the tasks the others ran,
+a delegated task was leased only on the replica that accepted it, a webhook
+registered through one replica was never sent by the one that ran the task,
+and every replica kept an audit chain of its own. Each of these is silent: no
+call fails. The profile exists to refuse what is silent and unsafe, and its
+own check was blind to this.
+
+**How.**
+- *Shared* is read from the task store: it hands out turn claims
+  (`TaskStore::turn_claims`), as the SQL stores do. The same signal already
+  refuses an unset push-config store on such a task store.
+- Each of the four store traits has `is_process_local()`, default `false`. The
+  in-memory stores answer `true`. A store this crate cannot see into is taken
+  to be shared, because the other default would refuse every custom store.
+- `build()` names the store, what it costs and the store to use.
+  Push-config stores are checked only when the card declares
+  `pushNotifications`, since otherwise nothing reads them. The halt, lease
+  and audit stores are checked whenever set.
+- `RequestHandlerBuilder::allow_process_local_stores()` accepts them, for a
+  deployment that routes every request for a task to one replica or runs one
+  replica at a time. It does nothing without the profile and nothing when the
+  task store is not shared.
+
+**Alternatives not taken.** A warning (what the profile exists to replace); a
+refusal with no opt-out (a single-writer deployment over a shared database is
+legitimate); a per-store opt-out (four calls to remember for one decision).
+
+**Consequences.** A 0.15 deployment on a SQL task store with the production
+profile and in-memory halt or lease stores stops building until it switches
+stores or opts out. Tests that fail without it: `profile::shared_store_tests`
+(refusal for each store, the opt-out, the unshared case, the card-dependent
+push rule). Not covered: whether a custom store's `is_process_local` answer is
+true; the trait documents it.

@@ -25,6 +25,13 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`is_process_local()` on `HaltStore`, `LeaseStore`, `PushConfigStore` and
+  `AuditStore`, and `RequestHandlerBuilder::allow_process_local_stores()`**
+  (server; audit E-F13). The method defaults to `false`; the in-memory stores
+  answer `true`, which is what the production profile reads. A custom store
+  that only this process can see should override it. The opt-out is described
+  under *Behaviour Changes*. `profile::shared_store_tests` cover the refusals,
+  the opt-out, and the cases that stay accepted.
 - **`with_tls_config` on `OAuth2ClientCredentials` and `TokenExchange`, and
   `discover_token_endpoint_with_tls_config`** (client; `tls-rustls`; audits
   B-03, H2). The token provider, the RFC 8693 exchange and OIDC discovery took
@@ -416,6 +423,22 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **`Profile::Production` refuses a halt, lease, push-config or audit store
+  that keeps its state in one process, over a task store several processes
+  share** (server; audit E-F13; maintainer's decision of 2026-11-01; amends
+  ADR 0025). A task store that hands out turn claims (the SQL stores) is the
+  sign that more than one replica serves the same tasks. Over one, a halt
+  given to a replica did not reach the tasks another ran, a delegated task was
+  leased only where it was accepted, a webhook registered through one replica
+  was never sent by the one running the task, and each replica kept an audit
+  chain of its own, with nothing to say so. `build()` now names the store, what
+  it costs, and the store to use. A deployment that routes every request for a
+  task to one replica, or runs one replica at a time, calls
+  `allow_process_local_stores()`. Nothing changes without the profile, or
+  with a task store that is not shared, or for a store this crate cannot see
+  into (it is taken to be shared). The push-config store is checked only when
+  the card declares `pushNotifications`. The halt, lease and audit stores are
+  checked whenever they are set.
 - **Loopback is never sent to a proxy** (client and server; audits NEW-b-2,
   B-23, B-27; maintainer's decision of 2026-11-01). With `HTTP_PROXY` set and
   `NO_PROXY` unset, a request for `http://127.0.0.1:3000/` went to the proxy as

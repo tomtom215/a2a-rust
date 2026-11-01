@@ -145,6 +145,10 @@ impl TenantAwareInMemoryPushConfigStore {
 
 #[allow(clippy::manual_async_fn)]
 impl PushConfigStore for TenantAwareInMemoryPushConfigStore {
+    fn is_process_local(&self) -> bool {
+        true
+    }
+
     fn isolates_tenants(&self) -> bool {
         true
     }

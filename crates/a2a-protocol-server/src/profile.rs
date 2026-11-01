@@ -66,6 +66,15 @@ pub enum Profile {
     ///   intermediary can alter it unseen (ADR 0027). Without the feature
     ///   the profile cannot be met, and `build()` says to enable it.
     ///
+    /// Over a task store several processes share (one that hands out turn
+    /// claims, as the SQL stores do), `build()` also refuses a halt, lease,
+    /// push-config (when the card declares push notifications) or audit store
+    /// that keeps its state in this process, naming the store to use: a halt
+    /// given to one replica would not reach the tasks another runs.
+    /// [`allow_process_local_stores`](crate::RequestHandlerBuilder::allow_process_local_stores)
+    /// accepts them for a deployment that routes every request for a task to
+    /// one replica (ADR 0025, amended 2026-11-01).
+    ///
     /// The listener has its own half,
     /// [`ServeConfig::production`](crate::serve::ServeConfig::production),
     /// which refuses plaintext beyond loopback and a binding the agent card
@@ -294,3 +303,7 @@ mod tests {
         assert!(format!("{:?}", h.approval_gate).contains("carol"));
     }
 }
+
+#[cfg(test)]
+#[path = "profile_shared_tests.rs"]
+mod shared_store_tests;

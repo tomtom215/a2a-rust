@@ -17,6 +17,18 @@ use tokio::sync::RwLock;
 ///
 /// Object-safe; used as `Box<dyn PushConfigStore>`.
 pub trait PushConfigStore: Send + Sync + 'static {
+    /// Whether this store keeps its state in this process alone.
+    ///
+    /// The default is `false`: a store this crate cannot see into (yours, over
+    /// Redis, say) is taken to be shared. The in-memory ones answer `true`.
+    /// [`Profile::Production`](crate::profile::Profile::Production) reads it:
+    /// on a task store that is shared between processes, a store that only this
+    /// process can see makes the fleet behave as if it had no store
+    /// (audit E-F13).
+    fn is_process_local(&self) -> bool {
+        false
+    }
+
     /// Stores (creates or updates) a push notification config.
     ///
     /// # Errors
@@ -152,6 +164,10 @@ impl InMemoryPushConfigStore {
 
 #[allow(clippy::manual_async_fn)]
 impl PushConfigStore for InMemoryPushConfigStore {
+    fn is_process_local(&self) -> bool {
+        true
+    }
+
     fn set<'a>(
         &'a self,
         mut config: TaskPushNotificationConfig,

@@ -193,6 +193,7 @@ pub struct RequestHandlerBuilder {
     lease_store: Option<Arc<dyn crate::store::LeaseStore>>,
     max_lease_ttl: std::time::Duration,
     turn_claims: TurnClaimsChoice,
+    allow_process_local_stores: bool,
     turn_claim_ttl: std::time::Duration,
     turn_claim_renewal: std::time::Duration,
     replica_name: Option<String>,
@@ -268,6 +269,7 @@ impl RequestHandlerBuilder {
             lease_store: None,
             max_lease_ttl: crate::handler::DEFAULT_MAX_LEASE_TTL,
             turn_claims: TurnClaimsChoice::FromStore,
+            allow_process_local_stores: false,
             turn_claim_ttl: crate::handler::DEFAULT_TURN_CLAIM_TTL,
             turn_claim_renewal: crate::handler::DEFAULT_TURN_CLAIM_RENEWAL,
             replica_name: None,
@@ -479,6 +481,29 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub fn with_lease_store(mut self, store: impl crate::store::LeaseStore) -> Self {
         self.lease_store = Some(Arc::new(store));
+        self
+    }
+
+    /// Lets [`Profile::Production`](crate::profile::Profile::Production)
+    /// accept halt, lease, push-config and audit stores that keep their state
+    /// in this process, on a task store that several processes share.
+    ///
+    /// Without it `build()` refuses that combination (audit E-F13, ADR 0025):
+    /// a halt given to one replica would not reach the tasks another runs, a
+    /// task delegated to one would be leased only there, a webhook registered
+    /// through one would never be sent by the replica that runs the task, and
+    /// each replica would keep an audit chain of its own. The task store
+    /// being shared is read from it: it hands out turn claims
+    /// (`TaskStore::turn_claims`), as the SQL stores do.
+    ///
+    /// Call this when the process-local store is the right one: a deployment
+    /// that runs on one replica at a time over a shared database, or that
+    /// routes every request for a task to one replica. It has no effect
+    /// without the production profile, and none when the task store is not
+    /// shared.
+    #[must_use]
+    pub const fn allow_process_local_stores(mut self) -> Self {
+        self.allow_process_local_stores = true;
         self
     }
 
@@ -1639,6 +1664,7 @@ impl RequestHandlerBuilder {
                  delegated it has stopped",
             );
         }
+        self.check_stores_are_shared()?;
         if !self.outbound.signs() {
             return refuse(if cfg!(feature = "signing") {
                 "the production profile needs a content signer (with_content_signer): \
@@ -1648,6 +1674,85 @@ impl RequestHandlerBuilder {
                 "the production profile needs a content signer, which needs the \
                  `signing` feature: enable it and call with_content_signer (ADR 0027)"
             });
+        }
+        Ok(())
+    }
+}
+
+impl RequestHandlerBuilder {
+    /// On a task store several processes share, the production profile
+    /// refuses a store of the other kinds that only this process can see,
+    /// unless [`allow_process_local_stores`](Self::allow_process_local_stores)
+    /// was called (audit E-F13, ADR 0025).
+    fn check_stores_are_shared(&self) -> ServerResult<()> {
+        let shared = self
+            .task_store
+            .as_ref()
+            .is_some_and(|store| store.turn_claims().is_some());
+        if !shared || self.allow_process_local_stores {
+            return Ok(());
+        }
+        let refuse = |store: &str, effect: &str, fix: &str| {
+            Err(crate::error::ServerError::Config(format!(
+                "the production profile found {store}, which keeps its state in this process, \
+                 over a task store that several processes share: {effect}. {fix}, or call \
+                 allow_process_local_stores() if one process serves every request for a task"
+            )))
+        };
+        if self
+            .halt_store
+            .as_ref()
+            .is_some_and(|s| s.is_process_local())
+        {
+            return refuse(
+                "the halt store",
+                "a halt given to one replica does not reach the tasks another one runs, and a \
+                 restart forgets it",
+                "Use PostgresHaltStore (feature `postgres`) or SqliteHaltStore (feature `sqlite`)",
+            );
+        }
+        if self
+            .lease_store
+            .as_ref()
+            .is_some_and(|s| s.is_process_local())
+        {
+            return refuse(
+                "the lease store",
+                "a task delegated to this agent is leased only on the replica that accepted it, \
+                 and its deadline is lost with that replica",
+                "Use PostgresLeaseStore (feature `postgres`)",
+            );
+        }
+        let card_pushes = matches!(
+            &self.agent_card,
+            CardSetting::Card(card) if card.capabilities.push_notifications == Some(true)
+        );
+        if card_pushes
+            && self
+                .push_config_store
+                .as_ref()
+                .is_some_and(|s| s.is_process_local())
+        {
+            return refuse(
+                "the push-config store",
+                "a webhook registered through one replica is never sent by the replica that runs \
+                 the task, and none survives a restart",
+                "Use the push-config store that matches the task store (PostgresPushConfigStore, \
+                 SqlitePushConfigStore, or their TenantAware forms)",
+            );
+        }
+        #[cfg(feature = "audit")]
+        if self
+            .audit
+            .as_ref()
+            .is_some_and(|log| log.store().is_process_local())
+        {
+            return refuse(
+                "the audit store",
+                "each replica would keep a hash chain of its own, and no one of them is the \
+                 record of what the agent did",
+                "Use PostgresAuditStore or SqliteAuditStore",
+            );
         }
         Ok(())
     }
@@ -1733,6 +1838,10 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("lease_store", &self.lease_store.is_some())
             .field("max_lease_ttl", &self.max_lease_ttl)
             .field("turn_claims", &self.turn_claims)
+            .field(
+                "allow_process_local_stores",
+                &self.allow_process_local_stores,
+            )
             .field("turn_claim_ttl", &self.turn_claim_ttl)
             .field("turn_claim_renewal", &self.turn_claim_renewal)
             .field("replica_name", &self.replica_name);
