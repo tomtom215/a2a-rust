@@ -43,34 +43,48 @@ only: when something here is done, delete it rather than annotating it.
       - `4ec89f3` fix(client): a tenant the caller set is kept in whichever order the builder is called (audit G-19)
       - `a8bf45e` fix: Retry-After is spread, the rate limiter overflows to one bucket, an unread halt store is retryable and not ready, an unknown halt row halts every
       - `e2712ec` fix(client,server): a WebSocket peer that stopped reading is dropped, one that went silent is found out, a failed handshake says whether to retry (aud
+      - `43e5d94` docs(handoff): the branch's commits, what is verified and what is not, two lessons from the WebSocket keepalive and the mutant runner
+      - `2b83f88` fix(server): an https webhook is connected to the address that was checked, a host's other addresses are tried, DNS lookups cannot fill the blocking p
+      - `b9c1304` feat!(types): thirteen protocol structs are #[non_exhaustive], built with new and with_* (audit G-10; fork F1)
     Each fix has a regression test that failed before it (the commit messages say how each was
     shown, and which hand-applied mutants each test kills).
-  - **Verified, and what was not.** `cargo nextest run -p a2a-protocol-types -p a2a-protocol-client
-    -p a2a-protocol-server --all-features --profile ci` and the three crates' doctests pass on the
-    tip (the last commit message gives the counts); 36 of 36 script gates; `cargo fmt --check`.
-    The per-feature clippy matrix (`cargo hack clippy ... --each-feature -- -D warnings`) passed 59
-    of 59 on groups A to C, and 21 of 21 on the server crate alone at the tree with B2 and I; it
-    has **not** been run on D, E, G, N or the batch after, nor for the CLI. `cargo mutants --in-diff`:
-    the client crate on A to E ran 70 mutants (48 caught, 21 unviable, 1 missed, killed afterwards by
-    extra `NO_PROXY` negatives, shown by hand); the **server crate's run was stopped at 20 of 168**
-    for CPU and disk and **must be run on the final tip** (`.github/workflows/mutants.yml` has the
-    command). Not run at all: the PostgreSQL suites, the sdk crate's tests, the toxiproxy
-    partition run for group B, Kubernetes, the official TCK, `cargo-semver-checks` against
-    v0.15.0 (needed for the breaking list), and a live pass of the Squid, private-CA and model
-    probes after the fixes. Live: the `deploy-agent` image was built from this tree and run (it
-    found that the build fails behind a TLS-inspecting proxy; fixed with a BuildKit secret), and the
-    retention sweep ran against the local PostgreSQL.
+  - **Verified, and what was not.** On the G-10 commit (`b9c1304`) and so on the tip before the
+    handoff commit: `cargo nextest run -p a2a-protocol-types -p a2a-protocol-client -p a2a-protocol-server
+    -p a2a-protocol-sdk --all-features --profile ci` 6053 passed, 177 skipped; the other 24 workspace
+    members 304 passed; doctests types 54, client 31, server 75, sdk 2, book 316; `cargo clippy
+    --workspace --all-targets --all-features -- -D warnings` clean; 36 of 36 script gates; `cargo fmt
+    --check`. The per-feature clippy matrix (`cargo hack clippy ... --each-feature -- -D warnings`) passed
+    59 of 59 on groups A to C, and 21 of 21 on the server crate alone at the tree with B2 and I; it has
+    **not** been run since, and clippy was run on four feature sets of the server crate (all, none,
+    `tls-rustls`, `otlp`) at the K commit only. `cargo mutants --in-diff`: the client crate on A to E ran
+    70 mutants (48 caught, 21 unviable, 1 missed, killed afterwards by extra `NO_PROXY` negatives, shown
+    by hand); the **server crate's run was stopped at 20 of 168** for CPU and disk and **must be run on
+    the final tip** (`.github/workflows/mutants.yml` has the command; the G-10 diff makes it large, since
+    ~330 files changed). Hand-applied mutants: 14 in B2, 2 in I, 12 in F (after its keepalive was
+    rewritten), 19 in K, 16 in G-10's builders; `cargo mutants` cannot build 23 of the builders' 24
+    mutants (the types have no `Default`). Not run at all: the PostgreSQL suites, the toxiproxy partition
+    run for group B, Kubernetes, the official TCK, `cargo-semver-checks` against v0.15.0 (not installed
+    here; needed for the breaking list), the fuzz targets (compiled only), and a live pass of the Squid,
+    private-CA and model probes after the fixes. Live: the `deploy-agent` image was built from this tree
+    and run (it found that the build fails behind a TLS-inspecting proxy; fixed with a BuildKit secret),
+    and the retention sweep ran against the local PostgreSQL. Each intermediate commit was not built
+    on its own; only the tips were.
   - **Not built (open), by the plan's group** (`docs/audits/2026-11-01-triage/PLAN.md`):
-    `#[non_exhaustive]` on about 40 wire structs (G-10, decided option A, XL: about 2,400 literal
-    sites outside the types crate; start with the 13 protocol objects if it must be cut), G-12,
-    G-16, G-09/G-14/G-15 (undecided), the rest of I (C-06, C-09, C-10, C-12, C-13, C-16, C-22,
-    C-23, NEW-c-3/-4), all of J, K (push: https pinning D-13/SEC-13, D-22, B-13, NEW-d-3,
-    NEW-f-2, D-05's delivery id), L, M (delegation hand-off on shutdown, F5), O and the HttpPool
-    (F7, ADR 0032), the swarm designs beyond the four fixes, Q, most of G (A14, A15, A19, A21-A23,
-    A25, A26, NEW-a-l-2, -4a, -5), B-10/B-11/D-20 (gRPC and idle defaults), D-03(d), E-F8 (F13),
-    B-14 cert reload (F15), NEW-b-1/-5 (F16). Nothing built forecloses any of them.
-    **Unasked forks F13 to F16 in `DECISIONS.md` still wait on the maintainer.**
-  The maintainer's brief: find every way the SDK fails a real deployment (local, Docker, Kubernetes,
+    **J (observability stack) is blocked**: its proof is `promtool test rules` and a live stack, and the
+    auto-mode classifier refused to run a `promtool` I had downloaded (the 111 MB
+    `prometheus-3.15.1.linux-amd64.tar.gz`, no checksum check; deleted, never run). Needs the maintainer to
+    allow `promtool` (or the pinned `prom/prometheus:v3.15.1` image). No workflow runs
+    `deploy/observability/prometheus/tests/a2a-alerts.test.yml` today. **G-10 option A remainder**: the
+    other 26 wire structs (params, responses, security) are still exhaustive, about 600 literal sites, same
+    codemod (`STABILITY.md` section 4 says so). G-12, G-16, G-09/G-14/G-15 (undecided), the rest of I
+    (C-06, C-09, C-10, C-12, C-13, C-16, C-22, C-23, NEW-c-3/-4), K's NEW-d-3 (per-address bound),
+    NEW-f-2 (fairness between callers: the sender is not told who registered a config), SEC-14's
+    per-caller quota, per-destination rate and verification handshake, D-05's dead-webhook policy and
+    outbox, L (fleet correctness), M (delegation hand-off on shutdown, F5), O and the HttpPool (F7,
+    ADR 0032), the swarm designs beyond the four fixes, Q, most of G (A14, A15, A19, A21-A23, A25, A26,
+    NEW-a-l-2, -4a, -5), B-10/B-11/D-20 (gRPC and idle defaults), D-03(d), E-F8 (F13), B-14 cert reload
+    (F15), NEW-b-1/-5 and the proxy boundary for https pinning (F16). Nothing built forecloses any of them.
+    The maintainer's brief: find every way the SDK fails a real deployment (local, Docker, Kubernetes,
   proxy or none, public/private/self-signed CA, mDNS, replicas, outages, disconnects), with live runs
   against llama.cpp and small Qwen and Gemma models, A2A v1.0.1 conformance, OpenTelemetry, the EU AI
   Act and GDPR; consider Agent Skills (agentskills.io); support sub-agents, fan-out and messaging a
@@ -1221,6 +1235,15 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **A sandbox run that fails oddly may be a full disk.** `cancel_keeps_concurrent_writes sqlite`
+  failed once in a full run while `df` read 100%, and passed 3 of 3 alone and in the next full run. The
+  target directory is about 8 GB and each side manifest (`fuzz/`, `itk/`, `bindings/`) adds 300-700 MB;
+  `cargo clean -p a2a-protocol-server -p a2a-protocol-sdk`, `rm -rf target/nextest` and removing the side
+  `target/` directories gets it back. Check `df` before blaming a test.
+- **A codemod over hundreds of sites needs a fixpoint, a path allowlist and a comment rule.**
+  Nested literals are not reached by one pass; `pb::Message` (prost) and a different SDK's harness matched
+  the type names and had to be kept out; comments inside a literal vanish unless carried to the new call.
+  Run it to zero conversions, then let the compiler list what is left. See the G-10 commit message.
 - **A liveness check that compares a clock with the interval is decided by
   timer jitter** (found 2026-11-01 by a test that failed 22 of 40 runs on an
   idle machine). The WebSocket client's first keepalive asked "has the idle
