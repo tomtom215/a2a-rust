@@ -274,13 +274,14 @@ This triggers the release workflow (`.github/workflows/release.yml`) which:
 preparation, and shipped nineteen changes — one breaking — that the tagged
 `CHANGELOG.md` still listed under `[Unreleased]` and the release notes never
 mentioned (`docs/adopter-audit-2026-09-22.md`, N7). Four checks in
-`release.yml`, all in `scripts/check_release_tree.py`, now refuse that:
+`release.yml`, all in `scripts/check_release_tree.py`, now refuse that (and a fifth, from 0.16.0, refuses release notes with no summary):
 
 | Step | Refuses |
 |---|---|
 | `Nothing is left under [Unreleased] in the tagged tree` | any entry under `## [Unreleased]`; the placeholder `Nothing yet.` is allowed |
 | `The tag is the release-preparation commit` | any file packaged into the four crates (their directories, and the root `Cargo.toml` they inherit from) that differs between the tag and the last commit that edited the release's own `## [X.Y.Z]` section — apart from the crates' version strings and pins |
 | `Breaking releases keep the STABILITY.md cadence` | a `### Breaking Changes` section in a patch release, or in a second release in the same calendar month as another breaking one, unless that release's section declares `**Cadence exception:** <reason>` (STABILITY.md §3) |
+| `The release notes open with a Highlights block` | from 0.16.0, a `## [X.Y.Z]` section with no `### Highlights` block, an empty one, or one over 15 non-blank lines: what a reader must know before upgrading, at a glance (audit G/C-01; `python3 scripts/check_release_tree.py self-test` proves the rule) |
 | `Packaged crates were built from the tagged commit` (package job) | a `.crate` whose `.cargo_vcs_info.json` names another commit, or a dirty tree |
 
 What that asks of the process: **write the release notes last.** Anything that
@@ -291,10 +292,10 @@ point: whoever changes shipped code after the notes were written has to open
 the notes, which is exactly the step 0.13.0 skipped. Bumping versions and pins
 after the notes is allowed, since 0.12.1 was prepared in that order.
 
-Before tagging, run all three tree checks on the commit you intend to tag:
+Before tagging, run the four tree checks on the commit you intend to tag:
 
 ```bash
-for c in unreleased prep cadence; do
+for c in unreleased prep cadence highlights; do
   python3 scripts/check_release_tree.py "$c" vX.Y.Z HEAD || echo "FAILED: $c"
 done
 ```

@@ -23,6 +23,16 @@ Qwen3.5-2B and Gemma 4 E2B) and a real observability stack (OpenTelemetry
 Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 13.2.4), 2026-10-28.
 
+
+### Highlights
+
+- **Action required if you build against the SDK (ten breaking items, each with its migration in `book/src/reference/upgrading/0.15-to-0.16.md`):** `RequestContext.context_id` is a `ContextId`; `AgentCard::new` declares streaming; `a2a-protocol-server` enables `tls-rustls` by default; `sign_agent_card` is removed; configuration errors are `ServerError::Config`/`ClientError::Config`; internal error text is withheld from callers; `JwtValidator` checks `iss` and `aud`; the WebSocket listener refuses browsers unless allowed; `ServeReport` is `#[must_use]`; `tls::HttpsClient` is a struct.
+- **Action required if you deploy it:** loopback is never sent to a proxy (`A2A_PROXY_LOOPBACK=1` restores it); `Profile::Production` refuses an in-memory halt, lease, push-config or audit store over a shared task store (`allow_process_local_stores()` opts out); a wrong `OTEL_*` value is noted instead of stopping the process; an exporter named `zipkin` no longer takes a fleet down.
+- **Several replicas on one PostgreSQL database need no session affinity:** each turn claims its task, a cancel reaches the executor on another replica within about a second, a dead replica's tasks are handed over, and a replica that stalls past its claim writes nothing more.
+- **A task's ending always reaches its webhooks, its log and its caller;** an executor that panics leaves the task `failed`; a blocking send over gRPC is no longer cut at the request timeout; credentials go only to the host the caller named; a private CA and mutual TLS reach every binding, the token provider included.
+- **Shipping:** a signed `deploy-agent` image on GHCR with build provenance, a card that reports its version, and retention of finished tasks; OpenTelemetry export through proxies with gzip, console and Prometheus exporters, resource detection and lost-export warnings; WebSocket connections that detect a dead peer.
+- **Not in this release:** `#[non_exhaustive]` on the wire structs (decided, not yet built), the swarm designs beyond the four fixes, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
+
 ### Added
 
 - **A signed `deploy-agent` container image, published to GHCR by the release
@@ -375,6 +385,111 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   build the book with the deployed mdBook and check every internal link,
   `#anchor` and image, which nothing did (`docs.yml` built it only after
   merge). `benchmarks.yml` runs it before its bot push.
+
+- **OTLP export works from more setups, and says what it is doing.** Each item
+  was found by running the repository's `hello-agent` against a stand-in
+  collector (2026-10-26) and was silent or refused before.
+  - **Proxies**: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`, in
+    either case, as curl reads them. An `https://` collector is reached
+    through a `CONNECT` tunnel with TLS inside it (its certificate is still
+    checked); a plain `http://` one over OTLP/HTTP as a forward-proxy request
+    with `Proxy-Authorization` from the proxy URL's login; OTLP/gRPC is
+    tunnelled for both. Only `http://` proxies are spoken: any other kind is
+    ignored with one warning and the export goes direct. New
+    `TelemetryBuilder::with_proxy` (does not consult `NO_PROXY`) and
+    `without_proxy`. Before, a collector only the proxy could resolve received
+    nothing and the process printed nothing.
+  - **Compression**: `OTEL_EXPORTER_OTLP_COMPRESSION=gzip` (and per signal) on
+    both transports, `none` accepted, `zstd` and anything else an error naming
+    the variable. The first traces export of `hello-agent` went from 6,031 to
+    1,607 bytes and the first metrics export from 2,484 to 1,080 (body bytes
+    on the wire, one run each, 2026-10-26). New `TelemetryBuilder::with_compression`
+    and `OtlpCompression`. Before, the value was ignored: `opentelemetry-otlp`
+    warns when it was not built for a compression, and `Telemetry` had no
+    subscriber when it built the exporters.
+  - **A console exporter**: `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER` and
+    `OTEL_LOGS_EXPORTER` take a comma list of `otlp`, `console` (and the
+    deprecated `logging`) and `none`; `console` was refused. One line per span,
+    metric data point and log record on standard output, no collector and, for a
+    console-only process, no export thread.
+  - **A Prometheus endpoint**: with the new, off-by-default `otel-prometheus`
+    feature (server and SDK crates), `OTEL_METRICS_EXPORTER=prometheus` serves
+    `/metrics` on `OTEL_EXPORTER_PROMETHEUS_HOST` (`localhost`) and `_PORT`
+    (9464) for a Prometheus that scrapes, under the names the book's Prometheus
+    table gives. Plain HTTP, unauthenticated. Adds `opentelemetry-prometheus` and
+    `prometheus` to the lockfile. `Telemetry::prometheus_addr` reports where.
+  - **Resource attributes** `host.name`, `host.arch`, `os.type`, `process.pid`
+    and `process.executable.name`, each only when `OTEL_RESOURCE_ATTRIBUTES` does
+    not name it; `TelemetryBuilder::without_resource_detection` omits them.
+    `host.name` is `HOSTNAME`, `COMPUTERNAME` or the kernel's hostname file
+    (this crate forbids `unsafe`, which `gethostname(2)` needs), so a macOS
+    process that does not export `HOSTNAME` has none.
+  - **`OTEL_PROPAGATORS`**: `tracecontext`, `baggage` and `none` are honoured; a
+    name this SDK does not have (`b3`, `jaeger`, …) is reported by
+    `Telemetry::notices` and a warning, not an error.
+  - **`Telemetry::describe`** (where each signal goes, with any login in a URL
+    removed) and **`Telemetry::notices`**.
+  - OTLP/HTTP endpoints with no scheme are refused with what to write; the
+    message was "invalid format".
+  - **Why an export failed.** `opentelemetry-otlp` 0.33.1 reports every
+    OTLP/HTTP transport failure as `HTTP export failed: network error`, so a
+    refused connection, an unknown CA, a gRPC-only collector and a missing proxy
+    read the same. The loss warning now appends the transport's own error
+    (`cause: client error (Connect): invalid peer certificate: UnknownIssuer`)
+    and, only where the failure itself names the fix, a `Hint`: an unknown
+    issuer (`OTEL_EXPORTER_OTLP_CERTIFICATE`; the exporter trusts Mozilla's
+    roots, never the operating system's), a certificate for another name or an
+    expired one, a `401` or `403` (the headers), a `404` over OTLP/HTTP (the
+    paths), and a failure with no HTTP status to port 4317 over HTTP or 4318
+    over gRPC (the other transport's usual port). A bare refused connection
+    gets none.
+  - **A base endpoint that already ends in `/v1/traces`** (or `/v1/metrics`,
+    `/v1/logs`) posts to a doubled path and a `404`; a startup notice now says
+    what it would post to and what to give instead.
+  - **`OTEL_RESOURCE_ATTRIBUTES` is percent-decoded**, as the specification
+    requires for `,` and `=` in a value (`prod%2Cwest` is `prod,west`);
+    `opentelemetry_sdk` 0.33.1 kept it literal. An entry that is not valid
+    percent-encoding is kept as written and reported at startup.
+  - **`TelemetryBuilder::without_startup_summary`** keeps `install_subscriber`'s
+    startup line off while warnings and errors still print. The `a2a` CLI uses
+    it, so a one-shot command prints nothing extra.
+  Book: [Observability](book/src/deployment/observability.md), "Seeing it with
+  no collector", "When something is wrong", "Proxies, compression and private
+  CAs", "Prometheus: scrape instead of push" and "What the resource says", and a
+  [troubleshooting](book/src/deployment/troubleshooting.md) entry.
+- **`shutdown_signal()`**, a future that resolves on `SIGTERM` or `SIGINT`
+  (Ctrl-C elsewhere than Unix), for `Server::serve_with_shutdown`. A server
+  that waits on `tokio::signal::ctrl_c()` alone is ended by the `SIGTERM` a
+  container runtime sends, without returning from `main`, so no `Telemetry`
+  guard is dropped: measured on `hello-agent`, the collector received no spans
+  and no metrics. With it the server drains, `main` returns and the guard
+  flushes. The flush after `SIGTERM` took 0.1 s to a collector that answers,
+  1.8 s to a port that refuses and 15.0 s to one that accepts and never
+  answers (each provider waits up to 5 s; `OTEL_EXPORTER_OTLP_TIMEOUT=2000`
+  made that 4.1 s; one run each), so a pod's `terminationGracePeriodSeconds`
+  has to include it. Exported from the server crate and the SDK prelude.
+- **A Compliance part in the book** (`book/src/compliance/`): a
+  [Compliance Overview](book/src/compliance/overview.md) with an obligation to
+  page table, the 88-provision control map summarised by framework and the
+  protections that are off until switched on; a
+  [GDPR](book/src/compliance/gdpr.md) page (where personal data sits, article
+  by article what the SDK carries and leaves, erasure and what it does not
+  reach); and a
+  [Cyber Resilience Act](book/src/compliance/cyber-resilience-act.md) page (what
+  the project publishes, Annex I property by property, the advisory missing from
+  RustSec). The EU AI Act chapter (retitled "EU AI Act: Is Your Agent
+  High-Risk?"), Audit Trail, Human Oversight and Provenance and Signatures move
+  into the part; their URLs are unchanged. Every claim is taken from a row of
+  `docs/compliance/controls.toml`, and none says the SDK is compliant with
+  anything.
+- **Book pages for the five examples that had none** (`book/src/examples/`):
+  [Resilient Agent](book/src/examples/resilient-agent.md),
+  [Tool-Loop Agent](book/src/examples/tool-loop-agent.md),
+  [Live Model](book/src/examples/live-model.md),
+  [Langfuse Agent](book/src/examples/langfuse-agent.md) and
+  [Swarm](book/src/examples/swarm.md). Each is in the table of contents, the
+  overview table and the doctest harness; the overview no longer says five
+  examples have no page.
 
 ### Breaking Changes
 
@@ -922,6 +1037,38 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   with one line and exit status 2**, instead of a panic with a backtrace and
   `SIGABRT` (status 134) in the release profile.
 
+- **`Telemetry::install_subscriber` always installs a subscriber** (except under
+  `OTEL_SDK_DISABLED=true`). It installed nothing when no trace or log provider
+  was built, "so a process run without a collector keeps no subscriber at all",
+  which left such a process showing nothing: not its own warnings, not how to
+  turn export on. The subscriber now has a layer that prints warnings and errors
+  to standard error (`RUST_LOG` in `target=level` form decides what; default
+  `warn`) and logs `Telemetry::describe()` once. It still never replaces a
+  global subscriber already set. Code that calls it and then installs its own
+  with `.init()` now panics (the slot is taken) where it did not before:
+  install yours first, or use `Telemetry::layer()` in it. `tests/telemetry_install_subscriber.rs`
+  asserted the old contract and now asserts this one.
+- **A lost export is reported.** After the exporter's retries, a `warn` names the
+  signal and the destination, at most once every 30 s with a count of the ones
+  held back, on a target `Telemetry` never exports. The SDK's own per-batch
+  `ExportError` event is left out of the printed output (the warning supersedes
+  it). Before, a collector that was not there produced no output in nine seconds.
+- **"no live event subscribers; event persisted only" is `debug`, not `warn`.**
+  The code's own comment says it is not an error: it is the ordinary path of
+  every blocking call. It was three warnings a request, unseen until a
+  subscriber printed warnings.
+- **Exports carry five more resource attributes** (above); an export to a party
+  that should not learn them uses `without_resource_detection`.
+- **The proxy variables are read for the export.** `HTTP_PROXY`, `HTTPS_PROXY`,
+  `ALL_PROXY` and `NO_PROXY` (upper or lower case; upper wins when both are set,
+  unlike curl) were ignored by the exporter and now decide where it connects. A
+  pod that sets `HTTP_PROXY` for its other traffic and exports to an in-cluster
+  collector now sends the export to the proxy, which cannot reach the collector,
+  unless `NO_PROXY` lists it: `.cluster.local` or `.svc.cluster.local` for a
+  `*.svc.cluster.local` name (`.svc` alone does not match, and a CIDR matches
+  only a destination written as an IP). The startup line says `via proxy`, and
+  a lost export names the proxy. `without_proxy()` restores the old behaviour.
+
 ### Fixed
 
 - **The WebSocket client dialled with tokio's sequential connect and set no
@@ -1443,6 +1590,34 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   not flush telemetry on `SIGTERM`**: each ran until killed. They now return
   on `shutdown_signal()`, which drops their `Telemetry`.
 
+- **`hello-agent`, `genai-agent`, `rig-agent`, `mcp-agent`, `multi-lang-team`,
+  `incident-response` and the SLIMRPC `slim_node` waited on Ctrl-C alone**, so a
+  `SIGTERM` ended them without a flush (and `slim_node` without
+  `service.shutdown()`). They wait on `shutdown_signal()` now. Compiled, not
+  run: they need a model or a second process.
+- **`langfuse-agent` exited 1 when run with no environment**: it built every
+  signal to `localhost:4318` and its final `shutdown()?` reported the three
+  lost exports. It now exports only where an endpoint is named (the Langfuse
+  preset names one for traces). With an unreachable endpoint configured it still
+  fails, and says so.
+- **`describe()` printed `console every 0 s`** for a metric interval under one
+  second; it prints `500 ms` now.
+- **Documentation that was wrong or out of date**, each checked against the
+  code or by running it: the server and SDK READMEs' default features and the
+  feature a `Telemetry` needs; `examples/README.md` and the book's overview on
+  which binaries print a startup line and build nothing without an endpoint;
+  the Collector example's `otlp` exporter comment (Langfuse takes OTLP/HTTP
+  only); the `otel` module docs and the pipeline docs (it exports metrics
+  only, gRPC only); the exported description of `a2a.server.push_deliveries`
+  (four outcomes); `observability.md`'s claims about warnings, `OTEL_SDK_DISABLED`,
+  which `OTEL_*` variables win over code, the self-targets filtered from the
+  layer, test coverage, panel descriptions, the alerts and the console sample
+  (now one run); the production guide's shutdown snippets (`ctrl_c()` only);
+  `README.md`'s "zero cost when disabled" and "each panel checked"; the deploy-agent
+  Dockerfile's claim that the agent reads the image's CA certificates (the SDK
+  trusts its bundled Mozilla roots only) and its manifest's grace period,
+  now 45 s to include the telemetry flush.
+
 ### Internal
 
 - **The `deploy-agent` image build was run end to end** (audit L18, NEW-a-l-4a).
@@ -1522,190 +1697,6 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   fails.
 - **A turn-claim test raced the previous turn's claim release** and failed
   when the release had not run yet; it retries as a replica does.
-
-## [0.15.1] - 2026-10-26
-
-Telemetry export works in more deployments and says what it is doing: proxies,
-gzip, a console exporter and a Prometheus endpoint; a warning when an export
-is lost, with the transport's cause and, where the failure names the fix, a
-hint; and `shutdown_signal()`, so a pod stopped by `SIGTERM` flushes. A diff of
-the public items against `v0.15.0` finds only additions: `shutdown_signal`,
-`OtlpCompression`, five `TelemetryBuilder` methods, three `Telemetry` methods
-and the off-by-default `otel-prometheus` feature. Two behaviours change, under
-*Behaviour Changes*; the proxy one affects any pod that sets `HTTP_PROXY`.
-
-### Added
-
-- **OTLP export works from more setups, and says what it is doing.** Each item
-  was found by running the repository's `hello-agent` against a stand-in
-  collector (2026-10-26) and was silent or refused before.
-  - **Proxies**: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`, in
-    either case, as curl reads them. An `https://` collector is reached
-    through a `CONNECT` tunnel with TLS inside it (its certificate is still
-    checked); a plain `http://` one over OTLP/HTTP as a forward-proxy request
-    with `Proxy-Authorization` from the proxy URL's login; OTLP/gRPC is
-    tunnelled for both. Only `http://` proxies are spoken: any other kind is
-    ignored with one warning and the export goes direct. New
-    `TelemetryBuilder::with_proxy` (does not consult `NO_PROXY`) and
-    `without_proxy`. Before, a collector only the proxy could resolve received
-    nothing and the process printed nothing.
-  - **Compression**: `OTEL_EXPORTER_OTLP_COMPRESSION=gzip` (and per signal) on
-    both transports, `none` accepted, `zstd` and anything else an error naming
-    the variable. The first traces export of `hello-agent` went from 6,031 to
-    1,607 bytes and the first metrics export from 2,484 to 1,080 (body bytes
-    on the wire, one run each, 2026-10-26). New `TelemetryBuilder::with_compression`
-    and `OtlpCompression`. Before, the value was ignored: `opentelemetry-otlp`
-    warns when it was not built for a compression, and `Telemetry` had no
-    subscriber when it built the exporters.
-  - **A console exporter**: `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER` and
-    `OTEL_LOGS_EXPORTER` take a comma list of `otlp`, `console` (and the
-    deprecated `logging`) and `none`; `console` was refused. One line per span,
-    metric data point and log record on standard output, no collector and, for a
-    console-only process, no export thread.
-  - **A Prometheus endpoint**: with the new, off-by-default `otel-prometheus`
-    feature (server and SDK crates), `OTEL_METRICS_EXPORTER=prometheus` serves
-    `/metrics` on `OTEL_EXPORTER_PROMETHEUS_HOST` (`localhost`) and `_PORT`
-    (9464) for a Prometheus that scrapes, under the names the book's Prometheus
-    table gives. Plain HTTP, unauthenticated. Adds `opentelemetry-prometheus` and
-    `prometheus` to the lockfile. `Telemetry::prometheus_addr` reports where.
-  - **Resource attributes** `host.name`, `host.arch`, `os.type`, `process.pid`
-    and `process.executable.name`, each only when `OTEL_RESOURCE_ATTRIBUTES` does
-    not name it; `TelemetryBuilder::without_resource_detection` omits them.
-    `host.name` is `HOSTNAME`, `COMPUTERNAME` or the kernel's hostname file
-    (this crate forbids `unsafe`, which `gethostname(2)` needs), so a macOS
-    process that does not export `HOSTNAME` has none.
-  - **`OTEL_PROPAGATORS`**: `tracecontext`, `baggage` and `none` are honoured; a
-    name this SDK does not have (`b3`, `jaeger`, …) is reported by
-    `Telemetry::notices` and a warning, not an error.
-  - **`Telemetry::describe`** (where each signal goes, with any login in a URL
-    removed) and **`Telemetry::notices`**.
-  - OTLP/HTTP endpoints with no scheme are refused with what to write; the
-    message was "invalid format".
-  - **Why an export failed.** `opentelemetry-otlp` 0.33.1 reports every
-    OTLP/HTTP transport failure as `HTTP export failed: network error`, so a
-    refused connection, an unknown CA, a gRPC-only collector and a missing proxy
-    read the same. The loss warning now appends the transport's own error
-    (`cause: client error (Connect): invalid peer certificate: UnknownIssuer`)
-    and, only where the failure itself names the fix, a `Hint`: an unknown
-    issuer (`OTEL_EXPORTER_OTLP_CERTIFICATE`; the exporter trusts Mozilla's
-    roots, never the operating system's), a certificate for another name or an
-    expired one, a `401` or `403` (the headers), a `404` over OTLP/HTTP (the
-    paths), and a failure with no HTTP status to port 4317 over HTTP or 4318
-    over gRPC (the other transport's usual port). A bare refused connection
-    gets none.
-  - **A base endpoint that already ends in `/v1/traces`** (or `/v1/metrics`,
-    `/v1/logs`) posts to a doubled path and a `404`; a startup notice now says
-    what it would post to and what to give instead.
-  - **`OTEL_RESOURCE_ATTRIBUTES` is percent-decoded**, as the specification
-    requires for `,` and `=` in a value (`prod%2Cwest` is `prod,west`);
-    `opentelemetry_sdk` 0.33.1 kept it literal. An entry that is not valid
-    percent-encoding is kept as written and reported at startup.
-  - **`TelemetryBuilder::without_startup_summary`** keeps `install_subscriber`'s
-    startup line off while warnings and errors still print. The `a2a` CLI uses
-    it, so a one-shot command prints nothing extra.
-  Book: [Observability](book/src/deployment/observability.md), "Seeing it with
-  no collector", "When something is wrong", "Proxies, compression and private
-  CAs", "Prometheus: scrape instead of push" and "What the resource says", and a
-  [troubleshooting](book/src/deployment/troubleshooting.md) entry.
-- **`shutdown_signal()`**, a future that resolves on `SIGTERM` or `SIGINT`
-  (Ctrl-C elsewhere than Unix), for `Server::serve_with_shutdown`. A server
-  that waits on `tokio::signal::ctrl_c()` alone is ended by the `SIGTERM` a
-  container runtime sends, without returning from `main`, so no `Telemetry`
-  guard is dropped: measured on `hello-agent`, the collector received no spans
-  and no metrics. With it the server drains, `main` returns and the guard
-  flushes. The flush after `SIGTERM` took 0.1 s to a collector that answers,
-  1.8 s to a port that refuses and 15.0 s to one that accepts and never
-  answers (each provider waits up to 5 s; `OTEL_EXPORTER_OTLP_TIMEOUT=2000`
-  made that 4.1 s; one run each), so a pod's `terminationGracePeriodSeconds`
-  has to include it. Exported from the server crate and the SDK prelude.
-- **A Compliance part in the book** (`book/src/compliance/`): a
-  [Compliance Overview](book/src/compliance/overview.md) with an obligation to
-  page table, the 88-provision control map summarised by framework and the
-  protections that are off until switched on; a
-  [GDPR](book/src/compliance/gdpr.md) page (where personal data sits, article
-  by article what the SDK carries and leaves, erasure and what it does not
-  reach); and a
-  [Cyber Resilience Act](book/src/compliance/cyber-resilience-act.md) page (what
-  the project publishes, Annex I property by property, the advisory missing from
-  RustSec). The EU AI Act chapter (retitled "EU AI Act: Is Your Agent
-  High-Risk?"), Audit Trail, Human Oversight and Provenance and Signatures move
-  into the part; their URLs are unchanged. Every claim is taken from a row of
-  `docs/compliance/controls.toml`, and none says the SDK is compliant with
-  anything.
-- **Book pages for the five examples that had none** (`book/src/examples/`):
-  [Resilient Agent](book/src/examples/resilient-agent.md),
-  [Tool-Loop Agent](book/src/examples/tool-loop-agent.md),
-  [Live Model](book/src/examples/live-model.md),
-  [Langfuse Agent](book/src/examples/langfuse-agent.md) and
-  [Swarm](book/src/examples/swarm.md). Each is in the table of contents, the
-  overview table and the doctest harness; the overview no longer says five
-  examples have no page.
-
-### Behaviour Changes
-
-- **`Telemetry::install_subscriber` always installs a subscriber** (except under
-  `OTEL_SDK_DISABLED=true`). It installed nothing when no trace or log provider
-  was built, "so a process run without a collector keeps no subscriber at all",
-  which left such a process showing nothing: not its own warnings, not how to
-  turn export on. The subscriber now has a layer that prints warnings and errors
-  to standard error (`RUST_LOG` in `target=level` form decides what; default
-  `warn`) and logs `Telemetry::describe()` once. It still never replaces a
-  global subscriber already set. Code that calls it and then installs its own
-  with `.init()` now panics (the slot is taken) where it did not before:
-  install yours first, or use `Telemetry::layer()` in it. `tests/telemetry_install_subscriber.rs`
-  asserted the old contract and now asserts this one.
-- **A lost export is reported.** After the exporter's retries, a `warn` names the
-  signal and the destination, at most once every 30 s with a count of the ones
-  held back, on a target `Telemetry` never exports. The SDK's own per-batch
-  `ExportError` event is left out of the printed output (the warning supersedes
-  it). Before, a collector that was not there produced no output in nine seconds.
-- **"no live event subscribers; event persisted only" is `debug`, not `warn`.**
-  The code's own comment says it is not an error: it is the ordinary path of
-  every blocking call. It was three warnings a request, unseen until a
-  subscriber printed warnings.
-- **Exports carry five more resource attributes** (above); an export to a party
-  that should not learn them uses `without_resource_detection`.
-- **The proxy variables are read for the export.** `HTTP_PROXY`, `HTTPS_PROXY`,
-  `ALL_PROXY` and `NO_PROXY` (upper or lower case; upper wins when both are set,
-  unlike curl) were ignored by the exporter and now decide where it connects. A
-  pod that sets `HTTP_PROXY` for its other traffic and exports to an in-cluster
-  collector now sends the export to the proxy, which cannot reach the collector,
-  unless `NO_PROXY` lists it: `.cluster.local` or `.svc.cluster.local` for a
-  `*.svc.cluster.local` name (`.svc` alone does not match, and a CIDR matches
-  only a destination written as an IP). The startup line says `via proxy`, and
-  a lost export names the proxy. `without_proxy()` restores the old behaviour.
-
-### Fixed
-
-- **`hello-agent`, `genai-agent`, `rig-agent`, `mcp-agent`, `multi-lang-team`,
-  `incident-response` and the SLIMRPC `slim_node` waited on Ctrl-C alone**, so a
-  `SIGTERM` ended them without a flush (and `slim_node` without
-  `service.shutdown()`). They wait on `shutdown_signal()` now. Compiled, not
-  run: they need a model or a second process.
-- **`langfuse-agent` exited 1 when run with no environment**: it built every
-  signal to `localhost:4318` and its final `shutdown()?` reported the three
-  lost exports. It now exports only where an endpoint is named (the Langfuse
-  preset names one for traces). With an unreachable endpoint configured it still
-  fails, and says so.
-- **`describe()` printed `console every 0 s`** for a metric interval under one
-  second; it prints `500 ms` now.
-- **Documentation that was wrong or out of date**, each checked against the
-  code or by running it: the server and SDK READMEs' default features and the
-  feature a `Telemetry` needs; `examples/README.md` and the book's overview on
-  which binaries print a startup line and build nothing without an endpoint;
-  the Collector example's `otlp` exporter comment (Langfuse takes OTLP/HTTP
-  only); the `otel` module docs and the pipeline docs (it exports metrics
-  only, gRPC only); the exported description of `a2a.server.push_deliveries`
-  (four outcomes); `observability.md`'s claims about warnings, `OTEL_SDK_DISABLED`,
-  which `OTEL_*` variables win over code, the self-targets filtered from the
-  layer, test coverage, panel descriptions, the alerts and the console sample
-  (now one run); the production guide's shutdown snippets (`ctrl_c()` only);
-  `README.md`'s "zero cost when disabled" and "each panel checked"; the deploy-agent
-  Dockerfile's claim that the agent reads the image's CA certificates (the SDK
-  trusts its bundled Mozilla roots only) and its manifest's grace period,
-  now 45 s to include the telemetry flush.
-
-### Internal
 
 - **ADR 0028 (Proposed), and the experiment behind it in
   `docs/adr/0028-wasm-spike/`: the server on Cloudflare Workers.** The real
@@ -1814,6 +1805,18 @@ and the off-by-default `otel-prometheus` feature. Two behaviours change, under
   0.3.4 (its own range is `>=0.3.0, <0.5`; both versions were already locked).
   The binding builds, passes `clippy --all-targets -D warnings`, and its tests
   pass (133, 10 ignored: the SPIFFE suites need SPIRE).
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## [0.15.0] - 2026-10-25
 

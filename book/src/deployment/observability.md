@@ -151,12 +151,12 @@ deployment. The renames and changed defaults that need action are in the
   `invoke_agent` span's duration showed the run. Units are UCUM
   (`{request}`, where they were bare words such as `request`); the Prometheus
   names did not change, because the exporter translates neither form.
-* **0.15.1.** New, and absent from 0.15.0: proxy support, gzip compression,
+* **0.16.0.** New, and absent from 0.15.0: proxy support, gzip compression,
   the `console` and `prometheus` exporters, resource detection,
   `OTEL_PROPAGATORS`, `Telemetry::describe` and `notices`, the printed startup
   line and lost-export warnings (with the transport's cause, and a hint where
   the failure names the fix), the percent-decoding of
-  `OTEL_RESOURCE_ATTRIBUTES`, and `shutdown_signal`. Before 0.15.1 a lost
+  `OTEL_RESOURCE_ATTRIBUTES`, and `shutdown_signal`. Before 0.16.0 a lost
   export was silent (with `hello-agent` pointed at a port nothing listened on,
   nine seconds produced no output at all), `OTEL_EXPORTER_OTLP_COMPRESSION` was
   ignored without a word, an OTLP/HTTP endpoint without a scheme failed as

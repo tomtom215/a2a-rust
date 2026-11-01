@@ -146,6 +146,13 @@ jobs:
       - name: Breaking releases keep the STABILITY.md cadence
         run: python3 scripts/check_release_tree.py cadence "$GITHUB_REF_NAME" "$GITHUB_SHA"
 
+      # From 0.16.0 a release's notes open with a block of at most 15 lines a
+      # reader takes in at a glance (audit G/C-01; the CHANGELOG was 806 KB).
+      - name: The release notes open with a Highlights block
+        run: |
+          python3 scripts/check_release_tree.py self-test
+          python3 scripts/check_release_tree.py highlights "$GITHUB_REF_NAME" "$GITHUB_SHA"
+
       - name: Extract version metadata
         id: meta
         shell: bash

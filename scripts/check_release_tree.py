@@ -10,7 +10,7 @@ later tree, so they shipped nineteen changes — one of them breaking — that
 the tagged `CHANGELOG.md` still listed under `[Unreleased]`, and that the
 GitHub release notes, extracted from the 0.13.0 section, did not mention.
 Every gate `release.yml` ran was green, because none of them asked the
-question. This script asks it four ways, one subcommand each:
+question. This script asks it five ways, one subcommand each:
 
   unreleased  The tagged tree's `## [Unreleased]` section is empty, or holds
               only the placeholder `Nothing yet.` that release preparation
@@ -31,6 +31,14 @@ question. This script asks it four ways, one subcommand each:
               "Breaking" is what the CHANGELOG says — a `### Breaking Changes`
               heading in the release's section — which is also where the
               release notes come from.
+
+  highlights  From 0.16.0, the release's `## [X.Y.Z]` section opens its notes
+              with a `### Highlights` block of at most 15 non-blank lines: what
+              a reader must know before upgrading, at a glance, where the
+              section itself runs to thousands of lines (the CHANGELOG was 806
+              KB when this was added, `[Unreleased]` alone 74 KB, and no release
+              had a one-screen summary; audit G/C-01). `self-test` proves the
+              rule on text of its own.
 
   vcs         Every packaged `.crate` records, in `.cargo_vcs_info.json`, that
               it was built from the tagged commit, from a clean tree. That is
@@ -67,6 +75,11 @@ PUBLISHED = (
 PACKAGED = (*PUBLISHED, "Cargo.toml")
 
 PLACEHOLDER = "Nothing yet."
+# The summary a release's notes open with, and where the rule starts: earlier
+# releases were written before it and are not held to it.
+HIGHLIGHTS = re.compile(r"(?ms)^### Highlights[^\n]*\n(?P<body>.*?)(?=^### |\Z)")
+HIGHLIGHTS_MAX_LINES = 15
+HIGHLIGHTS_FROM = (0, 16, 0)
 # `**Cadence exception:** <reason>` in a release's CHANGELOG section. The
 # reason must say something: twenty characters is enough for "critical fix
 # for ..." and too many for a bare "yes" or "n/a".
@@ -232,6 +245,63 @@ def check_cadence(repo: Path, tag: str, rev: str) -> list[str]:
     return problems
 
 
+def highlights_problems(body: str, version: str) -> list[str]:
+    """What is wrong with the `### Highlights` block of a release's section."""
+    numeric = tuple(int(x) for x in version.split("-")[0].split("."))
+    if numeric < HIGHLIGHTS_FROM:
+        return []
+    found = HIGHLIGHTS.search(body)
+    if found is None:
+        return [
+            f"## [{version}] has no '### Highlights' block. A release's notes open with "
+            f"one of at most {HIGHLIGHTS_MAX_LINES} lines: what a reader must know "
+            "before upgrading, with the migrations that need action first."
+        ]
+    lines = [ln for ln in found.group("body").splitlines() if ln.strip()]
+    if not lines:
+        return [f"## [{version}]'s '### Highlights' block is empty."]
+    if len(lines) > HIGHLIGHTS_MAX_LINES:
+        return [
+            f"## [{version}]'s '### Highlights' block has {len(lines)} non-blank lines; "
+            f"the limit is {HIGHLIGHTS_MAX_LINES}. It is what a reader takes in at a "
+            "glance: move the detail into the sections below it."
+        ]
+    return []
+
+
+def check_highlights(repo: Path, tag: str, rev: str) -> list[str]:
+    version = version_of(tag)
+    text = show(repo, rev, "CHANGELOG.md")
+    if text is None:
+        raise Usage(f"CHANGELOG.md is not in {rev}")
+    body = section(text, version)
+    if body is None:
+        raise Usage(f"no ## [{version}] section in the tagged CHANGELOG.md")
+    return highlights_problems(body, version)
+
+
+def self_test() -> int:
+    block = lambda n: "### Highlights\n" + "".join(f"- line {i}\n" for i in range(n))
+    cases = [
+        ("missing", "## [0.16.0] - 2026-11-02\n\n### Added\n- x\n", "0.16.0", 1),
+        ("empty", "## [0.16.0] - 2026-11-02\n\n### Highlights\n\n### Added\n- x\n", "0.16.0", 1),
+        ("fifteen", f"## [0.16.0] - d\n\n{block(15)}\n### Added\n- x\n", "0.16.0", 0),
+        ("sixteen", f"## [0.16.0] - d\n\n{block(16)}\n### Added\n- x\n", "0.16.0", 1),
+        ("last section", f"## [0.16.0] - d\n\n{block(3)}", "0.16.0", 0),
+        ("named further", "## [0.17.0] - d\n\n### Highlights / Action required\n- a\n", "0.17.0", 0),
+        ("older release is exempt", "## [0.15.0] - d\n\n### Added\n- x\n", "0.15.0", 0),
+        ("a pre-release is held to it", "## [0.16.0-rc.1] - d\n\n### Added\n- x\n", "0.16.0-rc.1", 1),
+    ]
+    failed = 0
+    for name, body, version, want in cases:
+        got = len(highlights_problems(body, version))
+        if got != want:
+            print(f"self-test: {name}: {got} problem(s), wanted {want}")
+            failed += 1
+    print(f"check_release_tree self-test: {len(cases) - failed} of {len(cases)} cases hold")
+    return 1 if failed else 0
+
+
 def check_vcs(rev: str, crates: list[Path]) -> list[str]:
     if not crates:
         raise Usage("no .crate files given")
@@ -274,10 +344,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--repo", type=Path, default=Path.cwd())
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("unreleased", "prep", "cadence"):
+    for name in ("unreleased", "prep", "cadence", "highlights"):
         s = sub.add_parser(name)
         s.add_argument("tag")
         s.add_argument("rev")
+    sub.add_parser("self-test", help="prove the highlights rule on text of its own")
     v = sub.add_parser("vcs")
     v.add_argument("rev")
     v.add_argument("crates", nargs="*", type=Path)
@@ -286,11 +357,18 @@ def main() -> int:
     try:
         if a.cmd == "history":
             return history(a.repo)
+        if a.cmd == "self-test":
+            return self_test()
         if a.cmd == "vcs":
             problems = check_vcs(a.rev, a.crates)
         else:
             rev = git(a.repo, "rev-parse", f"{a.rev}^{{commit}}").strip()
-            fn = {"unreleased": check_unreleased, "prep": check_prep, "cadence": check_cadence}[a.cmd]
+            fn = {
+                "unreleased": check_unreleased,
+                "prep": check_prep,
+                "cadence": check_cadence,
+                "highlights": check_highlights,
+            }[a.cmd]
             problems = fn(a.repo, rev) if a.cmd == "unreleased" else fn(a.repo, a.tag, rev)
     except Usage as e:
         print(f"::error::check_release_tree {a.cmd}: {e}")

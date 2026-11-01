@@ -99,7 +99,7 @@ loopback.
 
 A pod that sets `HTTP_PROXY` for its other traffic sends its export through
 the proxy too unless `NO_PROXY` exempts the collector; check that when
-upgrading from a release before 0.15.1, which read none of these variables
+upgrading from a release before 0.16.0, which read none of these variables
 ([upgrade guide](../../reference/upgrading.md)).
 
 ## Compression

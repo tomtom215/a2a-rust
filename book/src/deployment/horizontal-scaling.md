@@ -72,7 +72,7 @@ keeps tasks correct, and an upgrade from 0.15 does not need it either
 ## Upgrading a fleet to this release
 
 Replace replicas one at a time, in any order, with no session affinity: a
-Kubernetes `RollingUpdate` as it comes. Replicas on 0.15.1 or earlier take no
+Kubernetes `RollingUpdate` as it comes. Replicas on 0.15 or earlier take no
 claims and fence no writes, so on PostgreSQL the database keeps them and the
 new replicas off each other's turns (`store::claim::upgrade`):
 
