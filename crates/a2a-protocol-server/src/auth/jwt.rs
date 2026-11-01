@@ -1214,8 +1214,10 @@ fn build_jwks_client() -> JwksHttpClient {
     #[cfg(not(feature = "tls-rustls"))]
     {
         let mut connector = HttpConnector::new();
-        connector.set_connect_timeout(Some(Duration::from_secs(10)));
-        Client::builder(TokioExecutor::new()).build(connector)
+        crate::tcp::tune(&mut connector);
+        Client::builder(TokioExecutor::new())
+            .pool_idle_timeout(crate::tcp::POOL_IDLE_TIMEOUT)
+            .build(connector)
     }
     #[cfg(feature = "tls-rustls")]
     {

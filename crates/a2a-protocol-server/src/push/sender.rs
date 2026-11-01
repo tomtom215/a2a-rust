@@ -21,7 +21,9 @@ use std::pin::Pin;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
+#[cfg(not(feature = "tls-rustls"))]
 use bytes::Bytes;
+#[cfg(not(feature = "tls-rustls"))]
 use http_body_util::Full;
 #[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::Client;
@@ -30,7 +32,10 @@ use hyper_util::client::legacy::connect::HttpConnector;
 #[cfg(not(feature = "tls-rustls"))]
 use hyper_util::rt::TokioExecutor;
 
-use super::pinning::{host_header_from_url, pin_target, rewrite_uri_with_pinned_addr};
+#[cfg(feature = "tls-rustls")]
+use super::pinning::host_from_url;
+use super::pinning::{host_header_from_url, pick_addr, pin_target, rewrite_uri_with_pinned_addr};
+use super::request::{Attempt, Prepared, judge};
 
 /// The hyper client type backing [`HttpPushSender`].
 ///
@@ -55,7 +60,12 @@ pub(crate) fn build_push_https_client(tls_config: &rustls::ClientConfig) -> Push
 pub(crate) fn build_push_http_client() -> PushHttpClient {
     #[cfg(not(feature = "tls-rustls"))]
     {
-        Client::builder(TokioExecutor::new()).build_http()
+        // The settings the `tls-rustls` client has (audit B-30).
+        let mut tcp = HttpConnector::new();
+        crate::tcp::tune(&mut tcp);
+        Client::builder(TokioExecutor::new())
+            .pool_idle_timeout(crate::tcp::POOL_IDLE_TIMEOUT)
+            .build(tcp)
     }
     #[cfg(feature = "tls-rustls")]
     {
@@ -66,6 +76,24 @@ pub(crate) fn build_push_http_client() -> PushHttpClient {
 /// Trait for delivering push notifications to client webhooks.
 ///
 /// Object-safe; used as `Box<dyn PushSender>`.
+///
+/// # A sender that connects to `url` guards it itself
+///
+/// The handler screens a URL when a config is created, by its form and
+/// without a DNS lookup. Everything at delivery time is the sender's. One that
+/// POSTs to `url` should:
+///
+/// - resolve it with [`resolve_public_addrs`](crate::url_guard::resolve_public_addrs)
+///   and connect to the addresses it returns, not to the name: a client that
+///   looks the name up again at connect, as most do, reopens DNS rebinding;
+/// - not follow redirects, since a `3xx` to an internal address is the same
+///   attack by another route (a `reqwest` client follows up to ten by
+///   default);
+/// - send `A2A-Delivery-Id` ([`webhook::DELIVERY_ID_HEADER`](super::webhook::DELIVERY_ID_HEADER)),
+///   the same on its own retries, so a receiver can tell them from a second
+///   event.
+///
+/// [`HttpPushSender`] does all three (audit SEC-17).
 pub trait PushSender: Send + Sync + 'static {
     /// Sends a streaming event to the client's webhook URL.
     ///
@@ -226,14 +254,22 @@ impl PushRetryPolicy {
 /// # HTTPS and DNS-rebinding
 ///
 /// The SSRF pre-flight (`validate_webhook_url_with_dns`) always runs, rejecting
-/// webhooks that resolve to private/loopback/link-local addresses. For `http://`
-/// targets the validated IP is additionally *pinned* (the request dials the
-/// literal IP with the original `Host` header) to close the DNS-rebinding TOCTOU
-/// window. For `https://` targets the IP is **not** pinned — the connection must
-/// present the original hostname for SNI and certificate verification — and the
-/// rebinding window is instead closed by TLS itself: an attacker who flips DNS to
-/// a private address after validation cannot present a certificate valid for the
-/// original hostname, so the handshake fails.
+/// webhooks that resolve to private/loopback/link-local addresses, and the
+/// delivery then connects only to the addresses it checked, to close the
+/// DNS-rebinding window between the check and the connect. For `http://` the
+/// request dials a validated literal IP with the original `Host` header. For
+/// `https://` the connection has to ask for the host name (SNI and the
+/// certificate are checked against it), so the client's resolver is told that
+/// the name is those addresses for the length of the delivery; the certificate
+/// is still verified against the name. Until 0.16.0 `https://` was not pinned
+/// and relied on TLS alone, which stops a rebound server from impersonating
+/// the host but not a TCP connection and a `ClientHello` to an internal
+/// address (audit D-13, SEC-13).
+///
+/// A host with several addresses is tried in turn, one per attempt for
+/// `http://` and by the connector in the resolver's order for `https://`
+/// (audit B-13). Behind a proxy the proxy resolves the name, so there is no
+/// pin; see `docs/audits/2026-11-01-triage/DECISIONS.md`, F16.
 ///
 /// # Security
 ///
@@ -411,7 +447,7 @@ async fn validate_webhook_url_with_resolver<F, Fut>(
     url: &str,
     dns_timeout: std::time::Duration,
     resolve: F,
-) -> A2aResult<Option<SocketAddr>>
+) -> A2aResult<Option<Vec<SocketAddr>>>
 where
     F: FnOnce(String) -> Fut,
     Fut: std::future::Future<Output = std::io::Result<Vec<SocketAddr>>>,
@@ -429,12 +465,12 @@ use std::net::Ipv4Addr;
 pub(crate) async fn validate_webhook_url_with_dns(
     url: &str,
     dns_timeout: std::time::Duration,
-) -> A2aResult<Option<SocketAddr>> {
+) -> A2aResult<Option<Vec<SocketAddr>>> {
     crate::url_guard::resolve(url, "webhook URL", dns_timeout).await
 }
 
 /// Validates that a header value contains no CR/LF characters.
-fn validate_header_value(value: &str, name: &str) -> A2aResult<()> {
+pub(super) fn validate_header_value(value: &str, name: &str) -> A2aResult<()> {
     if value.contains('\r') || value.contains('\n') {
         return Err(A2aError::invalid_params(format!(
             "{name} contains invalid characters (CR/LF)"
@@ -458,7 +494,9 @@ fn validate_header_value(value: &str, name: &str) -> A2aResult<()> {
 /// credentials the config specifies, so a webhook is never sent a request
 /// without them. Creating such a config is refused already; this catches
 /// one that reached the store some other way.
-fn authorization_header(config: &TaskPushNotificationConfig) -> A2aResult<Option<String>> {
+pub(super) fn authorization_header(
+    config: &TaskPushNotificationConfig,
+) -> A2aResult<Option<String>> {
     let Some(auth) = config.authentication.as_ref() else {
         return Ok(None);
     };
@@ -580,184 +618,115 @@ impl PushSender for HttpPushSender {
 
             // SSRF protection: reject private/loopback addresses (with DNS resolution).
             //
-            // `pinned_addr` is the specific IP that validation checked.
-            let pinned_addr = if self.allow_private_urls {
+            // `validated` is every address the host resolved to, all of them
+            // checked; `None` for an IP literal or when validation is off.
+            let validated = if self.allow_private_urls {
                 None
             } else {
                 validate_webhook_url_with_dns(url, self.dns_timeout).await?
             };
 
-            // Pin the validated IP for `http://` only: rewrite the URI to the
-            // literal IP and restore the original hostname via an explicit
-            // `Host:` header, closing the DNS-rebinding TOCTOU window. For
-            // `https://` the IP is deliberately NOT pinned — the connection must
-            // present the original hostname for SNI/certificate verification, and
-            // TLS validation itself defeats a rebind to a private address (no
-            // valid cert for the hostname → handshake fails).
-            let (pinned_uri, pinned_host_header) = match pin_target(is_https, pinned_addr) {
-                Some(addr) => (
-                    Some(rewrite_uri_with_pinned_addr(url, addr)?),
-                    Some(host_header_from_url(url)?),
-                ),
-                None => (None, None),
-            };
-
-            // Header injection protection: validate credentials.
-            if let Some(ref auth) = config.authentication {
-                if let Some(ref credentials) = auth.credentials {
-                    validate_header_value(credentials, "authentication credentials")?;
-                }
-                validate_header_value(&auth.scheme, "authentication scheme")?;
-            }
-            if let Some(ref token) = config.token {
-                validate_header_value(token, "notification token")?;
-            }
-            // Spec §13.2: agents MUST include the credentials
-            // `config.authentication` specifies. One this sender cannot send
-            // refuses the delivery; until 2026-10-23 it delivered without
-            // any `Authorization` header.
-            let authorization = authorization_header(config)?;
-
-            let body_bytes: Bytes = serde_json::to_vec(event)
-                .map(Bytes::from)
-                .map_err(|e| A2aError::internal(format!("push serialization: {e}")))?;
-
-            let mut last_err = String::new();
-
-            // At least one attempt even if the public field was set to 0
-            // directly (§4.3.3).
-            let attempts = self.retry_policy.max_attempts.max(1);
-            for attempt in 0..attempts {
-                // §4.3.3 fixes the webhook request's Content-Type as
-                // `application/a2a+json`, and unlike §9's JSON-RPC binding —
-                // which specifies `application/json` — this one is the A2A
-                // media type. It read `application/json` until 2026-08-30,
-                // from the same stale vendored specification that put six
-                // §5.4 error mappings wrong.
-                //
-                // Named through the constant rather than spelled again: the
-                // REST dispatcher already accepts this media type by the same
-                // name, and a webhook receiver written against §4.3.3 matches
-                // on it.
-                let mut builder = hyper::Request::builder()
-                    .method(hyper::Method::POST)
-                    .header("content-type", a2a_protocol_types::A2A_CONTENT_TYPE);
-
-                if let Some(uri) = pinned_uri.as_ref() {
-                    builder = builder.uri(uri.clone());
-                    if let Some(host) = pinned_host_header.as_deref() {
-                        builder = builder.header("host", host);
-                    }
-                } else {
-                    builder = builder.uri(url);
-                }
-
-                if let Some(value) = authorization.as_deref() {
-                    builder = builder.header("authorization", value);
-                }
-
-                // Set the notification token header if present — under both
-                // spellings, the same value in each.
-                //
-                // The specification names no token header: §4.3.3's request
-                // example carries only `Authorization` and `Content-Type`. The
-                // reference SDKs disagree. a2a-sdk (Python) 1.1.5 sends
-                // `headers = {'X-A2A-Notification-Token': push_info.token}`
-                // (`base_push_notification_sender.py`); a2a-go v2.5.0 sends
-                // `http.CanonicalHeaderKey("A2A-Notification-Token")`
-                // (`a2asrv/push/sender.go`). This comment used to say the X-
-                // name is what "official-SDK webhook receivers look for",
-                // which is true of Python and false of Go: a Go webhook read
-                // no token from this sender. 0.8 had dropped the unprefixed
-                // name as this SDK's own invention; it is a2a-go's, so it is
-                // back. Sending both costs one header line, and a receiver
-                // reading either finds the token (`webhook::notification_token`
-                // reads both).
-                if let Some(ref token) = config.token {
-                    builder = builder
-                        .header(super::webhook::NOTIFICATION_TOKEN_HEADER, token.as_str())
-                        .header(
-                            super::webhook::NOTIFICATION_TOKEN_HEADER_UNPREFIXED,
-                            token.as_str(),
-                        );
-                }
-
-                let mut req = builder
-                    .body(Full::new(body_bytes.clone()))
-                    .map_err(|e| A2aError::internal(format!("push request build: {e}")))?;
-
-                // Each attempt in its HTTP `CLIENT` span, carrying that span
-                // as the receiver's `traceparent` (`rpc_span::webhook`).
-                let span = crate::rpc_span::WebhookSpan::open(url, attempt);
-                span.inject(req.headers_mut());
-                let request_result = span
-                    .run(tokio::time::timeout(
-                        self.request_timeout,
-                        self.client.request(req),
-                    ))
-                    .await;
-
-                match request_result {
-                    Ok(Ok(resp)) if resp.status().is_success() => {
-                        trace_debug!(target = %target, "push notification delivered");
-                        return Ok(());
-                    }
-                    Ok(Ok(resp)) => {
-                        let status = resp.status();
-                        // A non-retryable client error (400/401/403/404/…) will
-                        // fail identically on every attempt — retrying it only
-                        // hammers the webhook and delays the failure signal.
-                        // Retry is reserved for transient statuses: 408
-                        // (request timeout), 429 (rate limited), and 5xx.
-                        let retryable = status.is_server_error()
-                            || status == hyper::StatusCode::REQUEST_TIMEOUT
-                            || status == hyper::StatusCode::TOO_MANY_REQUESTS;
-                        if !retryable {
-                            trace_warn!(target = %target, attempt, status = %status, "push delivery rejected; not retrying");
-                            return Err(A2aError::internal(format!(
-                                "push notification got non-retryable HTTP {status}"
-                            )));
-                        }
-                        last_err = format!("push notification got HTTP {status}");
-                        trace_warn!(target = %target, attempt, status = %status, "push delivery failed");
-                    }
-                    Ok(Err(e)) => {
-                        last_err = format!(
-                            "push notification failed: {}",
-                            crate::causes::with_causes(&e)
-                        );
-                        trace_warn!(target = %target, attempt, error = %e, "push delivery error");
-                    }
-                    Err(_) => {
-                        last_err = format!(
-                            "push notification timed out after {}s",
-                            self.request_timeout.as_secs()
-                        );
-                        trace_warn!(target = %target, attempt, "push delivery timed out");
-                    }
-                }
-
-                // Retry with backoff (except on last attempt).
-                // `attempts`, not the field: a field set to 0 directly
-                // underflowed here (release audit F19).
-                if attempt + 1 < attempts {
-                    let delay = self
-                        .retry_policy
-                        .backoff
-                        .get(attempt)
-                        .or_else(|| self.retry_policy.backoff.last());
-                    if let Some(delay) = delay {
-                        tokio::time::sleep(*delay).await;
-                    }
-                }
-            }
-
-            Err(A2aError::internal(last_err))
+            self.deliver(url, event, config, validated).await
         })
     }
 }
 
+impl HttpPushSender {
+    /// Delivers `event` to `url`, with `validated` the addresses its host was
+    /// checked to resolve to (`None` for an IP literal, or when validation is
+    /// off). Split from [`send`](PushSender::send) so the pinning can be
+    /// tested without a public address to connect to.
+    pub(crate) async fn deliver(
+        &self,
+        url: &str,
+        event: &StreamResponse,
+        config: &TaskPushNotificationConfig,
+        validated: Option<Vec<SocketAddr>>,
+    ) -> A2aResult<()> {
+        let target = super::webhook::origin_for_log(url);
+        let _ = &target;
+        let is_https = is_https_url(url);
+
+        // `https://`: the connection has to ask for the host name (SNI and
+        // the certificate are checked against it), so the URL stays as it
+        // is and the client's resolver is told the name is these addresses
+        // for as long as this delivery runs (audit D-13, SEC-13). Until
+        // 0.16.0 it was not pinned, and a rebinding resolver got a TCP
+        // connection and a `ClientHello` at an internal address. Held across
+        // the attempts, so a retry cannot resolve differently either.
+        #[cfg(feature = "tls-rustls")]
+        let _https_pin = match (is_https, validated.as_ref()) {
+            (true, Some(addrs)) => Some(self.client.pin(&host_from_url(url)?, addrs.clone())),
+            _ => None,
+        };
+
+        // `http://`: rewrite the URI to a validated literal IP and restore
+        // the original hostname through an explicit `Host:` header. Which
+        // address is chosen per attempt below, so an address that is down
+        // is followed by the next one (audit B-13).
+        let pinned_host_header = match (is_https, validated.as_ref()) {
+            (false, Some(_)) => Some(host_header_from_url(url)?),
+            _ => None,
+        };
+
+        let prepared = Prepared::new(config, event)?;
+
+        let mut last_err = String::new();
+
+        // At least one attempt even if the public field was set to 0
+        // directly (§4.3.3).
+        let attempts = self.retry_policy.max_attempts.max(1);
+        for attempt in 0..attempts {
+            let pinned_addr = validated
+                .as_deref()
+                .and_then(|addrs| pick_addr(addrs, attempt));
+            let rewritten = match pin_target(is_https, pinned_addr) {
+                Some(addr) => Some(rewrite_uri_with_pinned_addr(url, addr)?),
+                None => None,
+            };
+            let mut req = prepared.request(url, rewritten, pinned_host_header.as_deref())?;
+
+            // Each attempt in its HTTP `CLIENT` span, carrying that span
+            // as the receiver's `traceparent` (`rpc_span::webhook`).
+            let span = crate::rpc_span::WebhookSpan::open(url, attempt);
+            span.inject(req.headers_mut());
+            let request_result = span
+                .run(tokio::time::timeout(
+                    self.request_timeout,
+                    self.client.request(req),
+                ))
+                .await;
+
+            match judge(&target, attempt, self.request_timeout, request_result) {
+                Attempt::Delivered => return Ok(()),
+                Attempt::Rejected(why) => return Err(A2aError::internal(why)),
+                Attempt::Retry(why) => last_err = why,
+            }
+
+            // Retry with backoff (except on last attempt).
+            // `attempts`, not the field: a field set to 0 directly
+            // underflowed here (release audit F19).
+            if attempt + 1 < attempts {
+                let delay = self
+                    .retry_policy
+                    .backoff
+                    .get(attempt)
+                    .or_else(|| self.retry_policy.backoff.last());
+                if let Some(delay) = delay {
+                    tokio::time::sleep(*delay).await;
+                }
+            }
+        }
+
+        Err(A2aError::internal(last_err))
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[path = "sender_pin_tests.rs"]
+mod pin_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1250,7 +1219,9 @@ mod tests {
 
     /// The production validator at the default DNS bound, for the tests below
     /// that are about what is rejected rather than how long resolution may take.
-    async fn validate_webhook_url_with_dns_default(url: &str) -> A2aResult<Option<SocketAddr>> {
+    async fn validate_webhook_url_with_dns_default(
+        url: &str,
+    ) -> A2aResult<Option<Vec<SocketAddr>>> {
         validate_webhook_url_with_dns(url, DEFAULT_DNS_LOOKUP_TIMEOUT).await
     }
 
@@ -1308,7 +1279,7 @@ mod tests {
         )
         .await
         .expect("a public answer is accepted");
-        assert_eq!(pinned, Some("203.0.113.9:80".parse().unwrap()));
+        assert_eq!(pinned, Some(vec!["203.0.113.9:80".parse().unwrap()]));
     }
 
     // ── validate_webhook_url_with_dns ────────────────────────────────────

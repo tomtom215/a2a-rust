@@ -90,8 +90,9 @@ something stops it. The bundled `HttpPushSender` does:
 If you replace the sender, you inherit all of that as your responsibility. The
 validation is public in `a2a_protocol_server::url_guard`: `check_public_url`
 applies the address checks above to a URL, and `resolve_public_url` also
-resolves its host and refuses it if any address is private. Use them rather
-than reimplementing the list above.
+resolves its host and refuses it if any address is private
+(`resolve_public_addrs` returns every address, for a caller that fails over
+from one to the next). Use them rather than reimplementing the list above.
 
 The same applies to file references in messages (spec §14: they "MUST be
 validated to prevent SSRF"). The SDK never fetches a `Part`'s URL, so this

@@ -12,6 +12,9 @@
 //!
 //! - [`proxy`]: the rules (`HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`,
 //!   `NO_PROXY`) and the connector that tunnels or forwards by them;
+//! - [`resolver`]: name resolution, with a way to fix a host to the addresses
+//!   that were checked for the length of a delivery (DNS-rebinding defence for
+//!   `https://` webhooks);
 //! - [`roots`]: what is trusted (Mozilla's roots plus `SSL_CERT_FILE` and
 //!   `SSL_CERT_DIR`) and the `rustls` configuration built from it;
 //! - [`client`]: the pooled client, tuned for the load balancers in front of
@@ -22,5 +25,6 @@
 #[cfg(feature = "tls-rustls")]
 pub mod client;
 pub mod proxy;
+pub mod resolver;
 #[cfg(feature = "tls-rustls")]
 pub mod roots;

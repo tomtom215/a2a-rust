@@ -10,8 +10,9 @@ What `HttpPushSender` does with each event: which URLs it will deliver to, how i
 The built-in `HttpPushSender` includes:
 
 - **HTTPS delivery** — With the `tls-rustls` feature (enabled by default via the `a2a-protocol-sdk` crate) it delivers to both `http://` and `https://` webhooks. In a build with the feature disabled it is plaintext-HTTP only and fails fast on an `https://` target with a clear error.
-- **SSRF protection** — Resolves the host at delivery and rejects a URL that is, or resolves to, a private, loopback, link-local, CGNAT, multicast, reserved or benchmarking address (among them `0.0.0.0/8`, `192.0.0.0/24`, `198.18.0.0/15` and everything from `224.0.0.0` up; in IPv6 also site-local, multicast, Teredo, discard-only and local-use NAT64 ranges, and an IPv4 address inside a mapped, NAT64 or 6to4 one; the documentation ranges stay allowed), a numeric IPv4 spelling such as `0x7f.1`, or an internal name (`localhost`, `*.localhost`, `*.local`, `*.internal`, `*.home.arpa`, a name with no dot such as `metadata`, or one with an empty label); a trailing dot changes none of it (`url_guard::resolve_public_url`, public for your own senders). Resolving before validating prevents DNS rebinding attacks where a hostname initially resolves to a public IP but later resolves to a private IP. A config is also screened when it is created, without a DNS lookup, so a hostname that resolves privately is stored but never delivered to. For `http://` the validated IP is pinned at connect time; for `https://` the rebinding window is closed by TLS certificate verification instead (so the original hostname is preserved for SNI). `with_allowed_hosts([..])` restricts webhooks to listed hosts (checked at creation and at delivery); `allow_private_urls()` turns the screen off for tests.
+- **SSRF protection** — Resolves the host at delivery and rejects a URL that is, or resolves to, a private, loopback, link-local, CGNAT, multicast, reserved or benchmarking address (among them `0.0.0.0/8`, `192.0.0.0/24`, `198.18.0.0/15` and everything from `224.0.0.0` up; in IPv6 also site-local, multicast, Teredo, discard-only and local-use NAT64 ranges, and an IPv4 address inside a mapped, NAT64 or 6to4 one; the documentation ranges stay allowed), a numeric IPv4 spelling such as `0x7f.1`, or an internal name (`localhost`, `*.localhost`, `*.local`, `*.internal`, `*.home.arpa`, a name with no dot such as `metadata`, or one with an empty label); a trailing dot changes none of it (`url_guard::resolve_public_addrs`, public for your own senders). Resolving before validating prevents DNS rebinding attacks where a hostname initially resolves to a public IP but later resolves to a private IP, and the delivery then connects only to the addresses it checked, never to a second lookup of the name: an `http://` request dials one of them with the original `Host` header, and for `https://` the client's resolver is told, for the length of the delivery, that the name is those addresses, so the connection still asks for the name and the certificate is verified against it. Until 0.16.0 `https://` was not pinned and relied on TLS alone, which stops a rebound server from impersonating the host but not a TCP connection and a `ClientHello` to an internal address. A host with several addresses (an `A` and an `AAAA` record, or several `A` records) is tried in turn: the connector goes on to the next for `https://`, and each attempt takes the next for `http://`. Behind a proxy there is no pin, since the proxy resolves the name (see below). A config is also screened when it is created, without a DNS lookup, so a hostname that resolves privately is stored but never delivered to. At most 32 lookups hold a thread of the blocking pool at once, counting those whose caller has timed out, so a domain whose name server answers slowly cannot fill it; one past that waits for a slot inside the 5 s lookup bound. `with_allowed_hosts([..])` restricts webhooks to listed hosts (checked at creation and at delivery); `allow_private_urls()` turns the screen off for tests.
 - **Bounded concurrency** — At most `HandlerLimits::push_max_in_flight` deliveries (512) run at once across all tasks, and at most `push_max_in_flight_per_host` (64) to one destination, so a caller who registers webhooks at a third party's address cannot make this agent open a connection per config per task. A delivery over a bound waits rather than being dropped, so every webhook is still attempted; the wait counts against `push_delivery_timeout`, and each delivery that waited is counted once as the error `push_throttled` on method `PushDelivery`. The bounds sit in front of whatever sender the handler was given, a custom one included. These numbers are choices, not measurements: raise the per-host bound for a single receiver that takes every agent's callbacks.
+- **A delivery id** — Every request carries `A2A-Delivery-Id`, one UUID per event per webhook, the same on every attempt of it. A receiver that sees an id twice knows the sender is retrying (the first attempt may have been handled and its answer lost). `push::webhook::delivery_id(&headers)` reads it. It is not kept across a restart and not shared between the paths that can send one event, so it deduplicates retries, not every duplicate; `WebhookReceiver` in the client crate deduplicates by body and is unchanged.
 - **Header injection prevention** — Validates credentials contain no `\r` or `\n`
 - **HTTPS only, if you ask** — `HttpPushSender::new().https_only()` refuses an `http://` webhook (spec §13.2: webhook URLs SHOULD use HTTPS). A push config with one is refused at creation with `InvalidParams`, and a delivery to one is refused before connecting. Off by default.
 
@@ -30,10 +31,10 @@ said only `client error (Connect)`; the log now names the cause.
 
 **The proxy resolves the name, so make it enforce egress.** The SSRF screen
 above resolves the webhook's host in this process and refuses a private
-answer, and for `http://` pins the checked address into the request. Through
-a proxy an `https://` webhook is a `CONNECT host:port`, and it is the proxy
-that resolves `host`: the screen checked one answer, the proxy may dial
-another. Deny private, loopback and link-local ranges (and the cloud metadata
+answer, and pins the checked addresses for a direct connection. Through
+a proxy the pin does not apply: an `https://` webhook is a `CONNECT host:port`
+and an `http://` one a forward request, and it is the proxy that resolves
+`host`: the screen checked one answer, the proxy may dial another. Deny private, loopback and link-local ranges (and the cloud metadata
 address) in the proxy's own policy, and use `NO_PROXY` for the hosts that must
 be reached directly.
 
@@ -59,6 +60,15 @@ response body is not read. A whole delivery, retries included, is bounded by
 needs up to 38 s at the defaults, so the third attempt can be cut short (the
 `timeout_truncated` outcome of `a2a.server.push_deliveries`). A failed delivery
 is counted (and logged, with the `tracing` feature) and does not fail the task.
+
+**Delivery is at most that many tries, held in memory.** Nothing is written
+down: an event still being retried when the process stops, or dropped from a
+full lane (below), is not delivered later, by this replica or another, and a
+webhook the agent has given up on is tried again for the next event. A
+`404` or `410` is final for that event, and the config is kept and tried for
+the next one. A receiver that must not miss an event reads the task (`GetTask`,
+or `ListTasks` for what it missed) after a gap; the push is a prompt to look,
+not a log.
 
 ## Order, and a webhook slower than the agent
 
@@ -103,6 +113,6 @@ its outcome:
 ## Security considerations
 
 - **Always use HTTPS** for webhook URLs in production
-- The built-in `HttpPushSender` rejects private IP addresses to prevent SSRF attacks
+- The built-in `HttpPushSender` rejects private IP addresses to prevent SSRF attacks. The screen knows the Internet's split between public and private addresses, not your network's: a cluster or VPC that uses addresses outside the private ranges (a public block used inside, or the documentation ranges, which are allowed), or reaches internal services by short names through search domains (`kubernetes.default`, `redis.prod`), is not seen as internal. In such a network name the hosts that may be webhook targets with `with_allowed_hosts`.
 - Webhook credentials are validated for header injection characters
 - Consider rate limiting webhook delivery to prevent abuse

@@ -158,6 +158,8 @@ mod net;
 pub mod tool_loop;
 pub mod url_guard;
 
+mod tcp;
+
 #[cfg(feature = "conformance")]
 pub mod conformance;
 

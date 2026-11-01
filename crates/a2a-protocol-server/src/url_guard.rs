@@ -20,13 +20,16 @@
 //! (including IPv4 smuggled in IPv6, and the numeric forms `inet_aton`
 //! accepts), nor `localhost`, `*.local` or `*.internal`.
 //! [`resolve_public_url`] also resolves a host name and checks every
-//! address it resolves to, and returns one to connect to: connecting to
-//! that address, not the name, is what stops a rebinding resolver from
+//! address it resolves to, and returns one to connect to
+//! ([`resolve_public_addrs`] returns all of them): connecting to those
+//! addresses, not the name, is what stops a rebinding resolver from
 //! answering differently the second time.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
+
+mod lookup;
 
 /// Refuses `url` unless it points outside the server's own network.
 ///
@@ -47,7 +50,8 @@ pub fn check_public_url(url: &str) -> A2aResult<()> {
 /// The host is resolved within `dns_timeout`, and refused if any address it
 /// resolves to is private. Returns the
 /// first address to connect to, or `None` when the host is already a
-/// literal address.
+/// literal address. A host with several addresses has more than one to
+/// connect to; [`resolve_public_addrs`] returns them all.
 ///
 /// # Errors
 ///
@@ -57,6 +61,28 @@ pub async fn resolve_public_url(
     url: &str,
     dns_timeout: std::time::Duration,
 ) -> A2aResult<Option<SocketAddr>> {
+    Ok(resolve_public_addrs(url, dns_timeout)
+        .await?
+        .and_then(|all| all.into_iter().next()))
+}
+
+/// [`resolve_public_url`], returning every address the host resolved to.
+///
+/// All of them are checked, and they come in the order the resolver gave
+/// them, without repeats. A caller that fails over from one to the next (a
+/// host with an `A` and an `AAAA` record, or several `A` records, one of them
+/// down) has them to try; `None` when the host is already a literal address.
+///
+/// Until 0.16.0 only the first was returned, and a delivery pinned to it
+/// failed on every attempt when that one address was down (audit B-13).
+///
+/// # Errors
+///
+/// As [`resolve_public_url`].
+pub async fn resolve_public_addrs(
+    url: &str,
+    dns_timeout: std::time::Duration,
+) -> A2aResult<Option<Vec<SocketAddr>>> {
     resolve(url, "URL", dns_timeout).await
 }
 
@@ -355,11 +381,8 @@ pub(crate) async fn resolve(
     url: &str,
     what: &str,
     dns_timeout: std::time::Duration,
-) -> A2aResult<Option<SocketAddr>> {
-    resolve_with(url, what, dns_timeout, |addr| async move {
-        tokio::net::lookup_host(addr).await.map(Iterator::collect)
-    })
-    .await
+) -> A2aResult<Option<Vec<SocketAddr>>> {
+    resolve_with(url, what, dns_timeout, lookup::lookup_host).await
 }
 
 /// [`resolve`] with the resolver as a parameter, so the
@@ -371,7 +394,7 @@ pub(crate) async fn resolve_with<F, Fut>(
     what: &str,
     dns_timeout: std::time::Duration,
     resolve: F,
-) -> A2aResult<Option<SocketAddr>>
+) -> A2aResult<Option<Vec<SocketAddr>>>
 where
     F: FnOnce(String) -> Fut,
     Fut: std::future::Future<Output = std::io::Result<Vec<SocketAddr>>>,
@@ -414,7 +437,9 @@ where
             ))
         })?;
 
-    let mut pinned: Option<SocketAddr> = None;
+    // Every address is checked, not only the one that will be used first: a
+    // name with one private answer among its public ones is refused whole.
+    let mut checked: Vec<SocketAddr> = Vec::new();
     for socket_addr in resolved {
         let ip = socket_addr.ip();
         if is_private_ip(ip) {
@@ -422,18 +447,17 @@ where
                 "{what} hostname {host_bare} resolves to private/loopback address: {ip}"
             )));
         }
-        if pinned.is_none() {
-            pinned = Some(socket_addr);
+        if !checked.contains(&socket_addr) {
+            checked.push(socket_addr);
         }
     }
 
-    pinned
-        .ok_or_else(|| {
-            A2aError::invalid_params(format!(
-                "{what} hostname {host_bare} did not resolve to any addresses"
-            ))
-        })
-        .map(Some)
+    if checked.is_empty() {
+        return Err(A2aError::invalid_params(format!(
+            "{what} hostname {host_bare} did not resolve to any addresses"
+        )));
+    }
+    Ok(Some(checked))
 }
 
 #[cfg(test)]

@@ -41,11 +41,13 @@ use std::task::{Context, Poll};
 
 use hyper::rt::{Read, ReadBufCursor, Write};
 use hyper_util::client::legacy::connect::proxy::Tunnel;
-use hyper_util::client::legacy::connect::{Connected, Connection, HttpConnector};
+use hyper_util::client::legacy::connect::{Connected, Connection};
 use hyper_util::client::proxy::matcher::{Intercept, Matcher};
 use hyper_util::rt::TokioIo;
 use pin_project_lite::pin_project;
 use tokio::net::TcpStream;
+
+use super::resolver::{Tcp, system_tcp};
 
 /// Where variables come from: the process environment, or a test's table.
 pub type Env = dyn Fn(&str) -> Option<String> + Send + Sync;
@@ -264,8 +266,8 @@ impl Write for Conn {
 #[derive(Clone)]
 pub struct ProxyConnector {
     tls: rustls::ClientConfig,
-    direct: hyper_rustls::HttpsConnector<HttpConnector>,
-    tcp: HttpConnector,
+    direct: hyper_rustls::HttpsConnector<Tcp>,
+    tcp: Tcp,
     rules: Arc<Matcher>,
     said_unsupported: Arc<AtomicBool>,
 }
@@ -273,17 +275,13 @@ pub struct ProxyConnector {
 impl ProxyConnector {
     #[cfg_attr(not(feature = "otlp"), allow(dead_code))]
     pub fn new(tls: &rustls::ClientConfig, rules: Arc<Matcher>) -> Self {
-        Self::with_tcp(tls, rules, HttpConnector::new())
+        Self::with_tcp(tls, rules, system_tcp())
     }
 
     /// As [`new`](Self::new), dialling TCP with `tcp`, already tuned (connect
     /// timeout, keepalive, `TCP_NODELAY`). The connector is told to accept
     /// `https://` destinations, which the TLS layer above it handles.
-    pub fn with_tcp(
-        tls: &rustls::ClientConfig,
-        rules: Arc<Matcher>,
-        mut tcp: HttpConnector,
-    ) -> Self {
+    pub fn with_tcp(tls: &rustls::ClientConfig, rules: Arc<Matcher>, mut tcp: Tcp) -> Self {
         tcp.enforce_http(false);
         let direct = hyper_rustls::HttpsConnectorBuilder::new()
             .with_tls_config(tls.clone())
@@ -301,10 +299,7 @@ impl ProxyConnector {
     }
 
     /// TLS to the collector over a `CONNECT` tunnel through `proxy`.
-    fn tunnelled_tls(
-        &self,
-        proxy: &Intercept,
-    ) -> hyper_rustls::HttpsConnector<Tunnel<HttpConnector>> {
+    fn tunnelled_tls(&self, proxy: &Intercept) -> hyper_rustls::HttpsConnector<Tunnel<Tcp>> {
         hyper_rustls::HttpsConnectorBuilder::new()
             .with_tls_config(self.tls.clone())
             .https_only()
@@ -316,7 +311,7 @@ impl ProxyConnector {
 
 /// A `CONNECT` tunnel through `proxy`, authenticated when its URL carried a
 /// user.
-pub fn tunnel(proxy: &Intercept, tcp: HttpConnector) -> Tunnel<HttpConnector> {
+pub fn tunnel(proxy: &Intercept, tcp: Tcp) -> Tunnel<Tcp> {
     let tunnel = Tunnel::new(proxy.uri().clone(), tcp);
     match proxy.basic_auth() {
         Some(auth) => tunnel.with_auth(auth.clone()),

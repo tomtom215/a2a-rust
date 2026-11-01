@@ -224,8 +224,7 @@ impl Target {
     /// certificate is still checked; a plaintext `http://` collector is
     /// tunnelled too, since HTTP/2 cannot be forwarded as a plain request.
     fn grpc_channel(&self, endpoint: &str) -> Result<tonic::transport::Channel, TelemetryError> {
-        use hyper_util::client::legacy::connect::HttpConnector;
-        let mut tcp = HttpConnector::new();
+        let mut tcp = crate::net::resolver::system_tcp();
         tcp.enforce_http(false);
         let tunnel = endpoint
             .parse::<http::Uri>()

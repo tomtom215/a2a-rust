@@ -35,6 +35,44 @@ pub const NOTIFICATION_TOKEN_HEADER: &str = "x-a2a-notification-token";
 /// The `A2A-Notification-Token` spelling, which a2a-go sends and reads.
 pub const NOTIFICATION_TOKEN_HEADER_UNPREFIXED: &str = "a2a-notification-token";
 
+/// The `A2A-Delivery-Id` header: one id for one event sent to one webhook,
+/// the same on every attempt of it.
+///
+/// A receiver that has handled an id and sees it again knows the sender is
+/// retrying (the first attempt may have been processed and its answer lost)
+/// and can answer without handling the event twice. The id is not kept
+/// across a restart of the sender and is not shared between the paths that
+/// can send the same event, so it deduplicates retries, not every duplicate;
+/// delivery is at most `max_attempts` tries held in memory, and an event
+/// still being retried when the process stops is lost.
+pub const DELIVERY_ID_HEADER: &str = "a2a-delivery-id";
+
+/// Reads the delivery id from a webhook request's headers
+/// ([`DELIVERY_ID_HEADER`]).
+///
+/// `None` when the header is absent, is not visible ASCII, or appears more
+/// than once with different values.
+///
+/// ```
+/// use a2a_protocol_server::push::webhook::delivery_id;
+///
+/// let mut headers = hyper::HeaderMap::new();
+/// headers.insert("A2A-Delivery-Id", "0b7e".parse().unwrap());
+/// assert_eq!(delivery_id(&headers), Some("0b7e"));
+/// ```
+#[must_use]
+pub fn delivery_id(headers: &hyper::HeaderMap) -> Option<&str> {
+    let mut found: Option<&str> = None;
+    for value in headers.get_all(DELIVERY_ID_HEADER) {
+        let value = value.to_str().ok()?;
+        match found {
+            Some(seen) if seen != value => return None,
+            _ => found = Some(value),
+        }
+    }
+    found
+}
+
 /// Reads the push notification token from a webhook request's headers,
 /// under either spelling.
 ///

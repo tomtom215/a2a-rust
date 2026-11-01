@@ -359,7 +359,7 @@ are rustdoc's job.
 | `tenant_config` | Per-tenant resource limits for multi-tenant A2A servers |
 | `tenant_resolver` | Tenant resolution for multi-tenant A2A servers |
 | `tool_loop` | Tool calling inside a task: the model/tool loop, its executor, and a chat-completions client (`tool-loop` feature, ADR 0022) |
-| `url_guard` | SSRF checks for URLs an agent fetches: `check_public_url`, `resolve_public_url` |
+| `url_guard` | SSRF checks for URLs an agent fetches: `check_public_url`, `resolve_public_url`, `resolve_public_addrs` |
 
 ### Constants
 

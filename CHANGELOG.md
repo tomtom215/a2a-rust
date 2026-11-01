@@ -35,6 +35,20 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`A2A-Delivery-Id` on every webhook request** (server; audit D-05;
+  `push::webhook::{DELIVERY_ID_HEADER, delivery_id}`): one UUID per event per
+  webhook, the same on every attempt of it, so a receiver that handled the
+  first attempt and lost its answer can tell the retry from a second event. It
+  is not kept across a restart and not shared between the paths that can send
+  one event, so it deduplicates retries only; `WebhookReceiver` still
+  deduplicates by body. The book now says what delivery is: at most the
+  configured attempts, held in memory, not retried after a restart or a full
+  lane. Not done: a durable outbox, and stopping delivery to a config that
+  answers `410` (both behind decisions the maintainer has not made).
+- **`url_guard::resolve_public_addrs`** (server; audit B-13): every address a
+  webhook host resolved to, all checked, in the resolver's order without
+  repeats. `resolve_public_url` still returns the first.
+
 - **`Debug` for `EventEmitter`, `A2aRouter` and `WebSocketDispatcher`** (server;
   audit G-23): the first names the task and context and not the message, the
   others their settings and no secrets.
@@ -612,6 +626,25 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **An `https://` webhook is connected to the address that was checked**
+  (server; audit D-13, SEC-13; direct connections only). The delivery
+  resolved the host, refused a private answer, and then let the client resolve
+  it again; a name that answered differently the second time (DNS rebinding)
+  got a TCP connection and a TLS `ClientHello` at an internal address, a
+  blind port scan, with TLS stopping only the exchange that followed. The
+  client's resolver is now told, for the length of the delivery, that the name
+  is the checked addresses (`net::resolver`), so the connection still asks for
+  the name and the certificate is verified against it. `http://` was already
+  pinned by rewriting the URL. Through a proxy there is still no pin, since the
+  proxy resolves the name: what a proxy may reach is its own policy, and what
+  this process should check on its behalf is an open question (triage F16).
+  Tested end to end against a local TLS server with a name that resolves
+  nowhere (`push/sender_pin_tests.rs`): delivered with the pin, refused
+  without it, refused when the certificate is for another name, the pin gone
+  when the delivery ends. A host with several addresses is now tried in turn
+  (the connector for `https://`, one per attempt for `http://`), where it used
+  to be tried at its first address only (audit B-13).
+
 - **A WebSocket connection whose peer stopped reading is closed, and one whose
   peer went silent is found out** (server and client; audits D-07, D-08,
   NEW-d-2). Server: a write to a peer with a full receive window waited for it
@@ -1153,6 +1186,26 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   a lost export names the proxy. `without_proxy()` restores the old behaviour.
 
 ### Fixed
+
+- **A build without `tls-rustls` dials with the same TCP settings as one with
+  it** (server; audit B-30). Push delivery and JWKS fetches there used the
+  operating system's defaults: no bound on a connect to an address that drops
+  packets (the SYN retry schedule, minutes) and no keepalive on a pooled
+  connection. `tcp::tune` sets `TCP_NODELAY`, a 10 s connect bound and a 30 s
+  keepalive, and the pool lets go of an idle connection after 50 s, for every
+  outbound client; `tcp/tests.rs` and `net/client/tests.rs` read the options
+  off a connection the tuned connector opened. The connect bound itself is
+  not tested (it needs an address that drops packets).
+
+- **Push DNS lookups can no longer fill the blocking pool** (server; audit
+  D-22). `getaddrinfo` cannot be cancelled, so a lookup that outlived its
+  5 s bound kept its blocking-pool thread until the resolver answered, and a
+  caller who could register webhooks under a domain with a slow name server
+  held one thread per registration. At most 32 lookups hold a thread at once,
+  the slot is returned when the thread returns, not when the caller stops
+  waiting, and a lookup past the limit waits inside its own bound
+  (`url_guard/lookup.rs`; the bound is exercised with a lookup that blocks
+  until released, abandoned by its caller's timeout).
 
 - **A tenant the caller set is kept in whichever order the builder is called**
   (client; audit G-19). `with_tenant` before `with_protocol_binding`,
