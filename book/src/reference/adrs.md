@@ -46,6 +46,8 @@ number links to its file.
 | [0032](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0032-http-pool.md) | A shared `HttpPool` is opt-in, fixed at construction (one TLS identity and proxy route), and owns per-origin state for an in-flight cap, circuit breaker, retry budget and ejection; client-side load balancing is recorded as a decision for the maintainer | Proposed; not built |
 | [0033](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0033-group-delegation.md) | Fan-out is a `DelegationGroup`: a required in-flight cap, one join rule (`All`, `FirstOk`, `Quorum`, `FailFast`), budget shares taken at start so a loop cannot starve later children, and one cancel | Proposed; not built |
 | [0034](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0034-task-lineage.md) | Task lineage is an extension (`root`, `depth`; the root defaults to the originating context), and an operator halts a job with `HaltScope::Root`; a claim used to scope a halt, never to authorize | Proposed; not built |
+| [0035](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0035-agent-skills.md) | Agent Skills are adopted in the tool loop, as a feature-gated module (0.17.0): lenient discovery, a catalog in the prompt, an `activate_skill` tool whose name is an enum, path-confined resource reads, and no script execution | Proposed; not built |
+| [0036](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0036-steering-a-running-task.md) | A message to a running task is an extension (`.../extensions/steering/v1`) delivered through a bounded per-task inbox, across replicas through the claim holder; peers without it keep today's refusal | Proposed; not built |
 
 ## The first eight in brief
 
