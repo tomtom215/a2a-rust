@@ -110,7 +110,7 @@ pub mod prelude {
     // ── Client ───────────────────────────────────────────────────────────
     pub use a2a_protocol_client::{
         A2aClient, BearerAuthInterceptor, ClientBuilder, ClientError, ClientResult, EventStream,
-        OAuth2ClientCredentials, RetryPolicy, StaticTokenProvider, TokenProvider,
+        OAuth2ClientCredentials, RetryPolicy, StaticTokenProvider, TokenProvider, new_message_id,
         resolve_agent_card,
     };
 

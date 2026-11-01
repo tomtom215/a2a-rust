@@ -116,3 +116,62 @@ async fn macro_cancel_form_compiles_and_runs() {
     executor.execute(&ctx, &writer).await.unwrap();
     executor.cancel(&ctx, &writer).await.unwrap();
 }
+
+/// An agent with state, written with the receiver form of `agent_executor!`:
+/// its body reads `this.greeting` (audit G-08). The two-parameter form
+/// cannot, and an agent holding a model client had to write the whole
+/// `Pin<Box<dyn Future>>` signature.
+struct Greeter {
+    greeting: &'static str,
+    seen: std::sync::Mutex<Vec<String>>,
+}
+
+crate::agent_executor!(
+    Greeter,
+    execute: |this, ctx, queue| async {
+        let _ = queue;
+        this.seen
+            .lock()
+            .unwrap()
+            .push(format!("{} {}", this.greeting, ctx.task_id));
+        Ok(())
+    },
+    cancel: |this, ctx, queue| async {
+        let _ = queue;
+        this.seen
+            .lock()
+            .unwrap()
+            .push(format!("cancel {} {}", this.greeting, ctx.task_id));
+        Ok(())
+    }
+);
+
+/// The one-body receiver form, for an agent whose cancellation is the default.
+struct Counter(std::sync::atomic::AtomicUsize);
+
+crate::agent_executor!(Counter, |this, ctx, queue| async {
+    let _ = (ctx, queue);
+    this.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
+});
+
+#[tokio::test]
+async fn the_receiver_form_gives_the_body_the_agents_fields() {
+    use crate::executor::AgentExecutor;
+    let ctx = make_request_context();
+    let agent = Greeter {
+        greeting: "hello",
+        seen: std::sync::Mutex::default(),
+    };
+    agent.execute(&ctx, &DummyWriter).await.unwrap();
+    agent.cancel(&ctx, &DummyWriter).await.unwrap();
+    assert_eq!(
+        *agent.seen.lock().unwrap(),
+        ["hello test-task", "cancel hello test-task"]
+    );
+
+    let counter = Counter(std::sync::atomic::AtomicUsize::new(0));
+    counter.execute(&ctx, &DummyWriter).await.unwrap();
+    counter.execute(&ctx, &DummyWriter).await.unwrap();
+    assert_eq!(counter.0.load(std::sync::atomic::Ordering::SeqCst), 2);
+}

@@ -1070,6 +1070,16 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// [`build`](Self::build), in the `Arc` every dispatcher takes (audit
+    /// G-17: every snippet wrapped `Arc::new(builder.build()?)`).
+    ///
+    /// # Errors
+    ///
+    /// As [`build`](Self::build).
+    pub fn build_arc(self) -> ServerResult<Arc<RequestHandler>> {
+        self.build().map(Arc::new)
+    }
+
     /// Builds the [`RequestHandler`].
     ///
     /// # Errors
@@ -1951,6 +1961,20 @@ mod tests {
             .with_push_sender(crate::push::HttpPushSender::new())
             .build()
             .expect("push declared, sender wired");
+    }
+
+    /// `build_arc` is `build` in an `Arc`, and refuses what `build` refuses.
+    #[test]
+    fn build_arc_wraps_build_and_refuses_what_it_refuses() {
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
+            .build_arc()
+            .expect("builds");
+        assert_eq!(Arc::strong_count(&handler), 1);
+        let err = RequestHandlerBuilder::new(TestExecutor)
+            .build_arc()
+            .expect_err("no card and no opt-out");
+        assert!(err.to_string().contains("spec §8.1"), "{err}");
     }
 
     #[test]

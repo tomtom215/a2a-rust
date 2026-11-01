@@ -127,6 +127,7 @@ mod declared;
 mod extensions;
 mod legacy_card;
 mod loopback;
+mod message_id;
 mod plaintext;
 #[cfg(feature = "tls-rustls")]
 mod proxy;
@@ -174,6 +175,7 @@ pub use credential_preflight::CredentialPreflight;
 pub use discovery::resolve_agent_card;
 pub use error::{ClientError, ClientResult};
 pub use interceptor::{CallInterceptor, ClientRequest, ClientResponse, InterceptorChain};
+pub use message_id::new_message_id;
 pub use retry::RetryPolicy;
 pub use streaming::EventStream;
 pub use token_provider::{

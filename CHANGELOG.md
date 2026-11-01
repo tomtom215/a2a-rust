@@ -35,6 +35,26 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`Debug` for `EventEmitter`, `A2aRouter` and `WebSocketDispatcher`** (server;
+  audit G-23): the first names the task and context and not the message, the
+  others their settings and no secrets.
+- **`SendMessageResponse::{as_task, into_task, as_message, into_message,
+  text}`** (types; audit G-22): every caller of a blocking send matched the
+  two variants by hand. `text` is a message's text or a task's first artifact
+  text.
+- **`RequestHandlerBuilder::build_arc`** (server; audit G-17): `build` in the
+  `Arc` every dispatcher takes, where every snippet wrote
+  `Arc::new(builder.build()?)`.
+- **`agent_executor!` takes the receiver** (server; audit G-08):
+  `agent_executor!(Ty, |this, ctx, queue| async { this.model … })`, and the
+  same in the `execute:`/`cancel:` form, so an agent with state (a model
+  client, its configuration) no longer falls back to the full
+  `Pin<Box<dyn Future>>` signature. The two-parameter form is unchanged (an
+  invocation of three identifiers cannot match it); a `compile_fail` doctest
+  records that `self` is still not available there.
+- **`a2a_protocol_client::new_message_id()`**, also in the SDK prelude (client;
+  audit G-13): a fresh UUID v4 `MessageId`; the docs hard-coded `"m1"` or told
+  the reader to add `uuid`.
 - **A signed `deploy-agent` container image, published to GHCR by the release
   workflow** (audit A13, A27, NEW-a-l-4b; maintainer's decision of 2026-11-01).
   The job `deploy-agent-image` builds `examples/deploy-agent/Dockerfile` from the
@@ -1805,11 +1825,6 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   0.3.4 (its own range is `>=0.3.0, <0.5`; both versions were already locked).
   The binding builds, passes `clippy --all-targets -D warnings`, and its tests
   pass (133, 10 ignored: the SPIFFE suites need SPIRE).
-
-
-
-
-
 
 
 

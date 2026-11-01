@@ -264,6 +264,7 @@ are rustdoc's job.
 
 | Function | Description |
 |----------|-------------|
+| `new_message_id()` | A fresh UUID v4 `MessageId` for a message about to be sent (in the SDK prelude too) |
 | `resolve_agent_card(base_url)` | `async` — fetches the `AgentCard` from the standard well-known path; no headers, 30 s budget |
 | `resolve_agent_card_with_options(base_url, &options)` | `async` — the same with the headers and budget in a `CardFetchOptions` (`discovery` module; `fetch_card_from_url_with_options` for an absolute URL) |
 

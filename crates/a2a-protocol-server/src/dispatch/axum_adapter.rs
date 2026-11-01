@@ -141,6 +141,14 @@ pub struct A2aRouter {
     config: super::DispatchConfig,
 }
 
+impl std::fmt::Debug for A2aRouter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("A2aRouter")
+            .field("config", &self.config)
+            .finish_non_exhaustive()
+    }
+}
+
 impl A2aRouter {
     /// Creates a new [`A2aRouter`] wrapping the given handler.
     #[must_use]

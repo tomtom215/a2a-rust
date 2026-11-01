@@ -113,94 +113,8 @@ pub fn boxed_future<'a, T>(
     Box::pin(fut)
 }
 
-/// Generates an [`AgentExecutor`](crate::AgentExecutor) implementation from a
-/// closure-like syntax.
-///
-/// # Basic usage (execute only)
-///
-/// ```rust
-/// use a2a_protocol_server::agent_executor;
-///
-/// struct MyAgent;
-///
-/// agent_executor!(MyAgent, |ctx, queue| async {
-///     // ctx: &RequestContext, queue: &dyn EventQueueWriter
-///     Ok(())
-/// });
-/// ```
-///
-/// # With cancel handler
-///
-/// ```rust
-/// use a2a_protocol_server::agent_executor;
-///
-/// struct CancelableAgent;
-///
-/// agent_executor!(CancelableAgent,
-///     execute: |ctx, queue| async { Ok(()) },
-///     cancel: |ctx, queue| async { Ok(()) }
-/// );
-/// ```
-#[macro_export]
-macro_rules! agent_executor {
-    // Simple form: just execute
-    ($ty:ty, |$ctx:ident, $queue:ident| async $body:block) => {
-        impl $crate::executor::AgentExecutor for $ty {
-            fn execute<'a>(
-                &'a self,
-                $ctx: &'a $crate::request_context::RequestContext,
-                $queue: &'a dyn $crate::streaming::EventQueueWriter,
-            ) -> ::std::pin::Pin<
-                ::std::boxed::Box<
-                    dyn ::std::future::Future<
-                            Output = $crate::__types::error::A2aResult<()>,
-                        > + ::std::marker::Send
-                        + 'a,
-                >,
-            > {
-                ::std::boxed::Box::pin(async move $body)
-            }
-        }
-    };
-
-    // Full form: execute + cancel
-    ($ty:ty,
-        execute: |$ctx:ident, $queue:ident| async $exec_body:block,
-        cancel: |$cctx:ident, $cqueue:ident| async $cancel_body:block
-    ) => {
-        impl $crate::executor::AgentExecutor for $ty {
-            fn execute<'a>(
-                &'a self,
-                $ctx: &'a $crate::request_context::RequestContext,
-                $queue: &'a dyn $crate::streaming::EventQueueWriter,
-            ) -> ::std::pin::Pin<
-                ::std::boxed::Box<
-                    dyn ::std::future::Future<
-                            Output = $crate::__types::error::A2aResult<()>,
-                        > + ::std::marker::Send
-                        + 'a,
-                >,
-            > {
-                ::std::boxed::Box::pin(async move $exec_body)
-            }
-
-            fn cancel<'a>(
-                &'a self,
-                $cctx: &'a $crate::request_context::RequestContext,
-                $cqueue: &'a dyn $crate::streaming::EventQueueWriter,
-            ) -> ::std::pin::Pin<
-                ::std::boxed::Box<
-                    dyn ::std::future::Future<
-                            Output = $crate::__types::error::A2aResult<()>,
-                        > + ::std::marker::Send
-                        + 'a,
-                >,
-            > {
-                ::std::boxed::Box::pin(async move $cancel_body)
-            }
-        }
-    };
-}
+#[macro_use]
+mod agent_executor_macro;
 
 // ── EventEmitter ─────────────────────────────────────────────────────────────
 
@@ -231,6 +145,17 @@ pub struct EventEmitter<'a> {
     pub ctx: &'a RequestContext,
     /// The event queue writer for this execution.
     pub queue: &'a dyn EventQueueWriter,
+}
+
+/// Names the task and context, not the message: a `Debug` line in a log must
+/// not carry what the caller said (audit G-23).
+impl std::fmt::Debug for EventEmitter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EventEmitter")
+            .field("task_id", &self.ctx.task_id)
+            .field("context_id", &self.ctx.context_id)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a> EventEmitter<'a> {
