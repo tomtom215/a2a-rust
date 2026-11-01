@@ -7,13 +7,13 @@
 //! real variable.
 //!
 //! The loader (`net::roots::read_env_roots`) reads the variable once per
-//! process and says at DEBUG which file held no certificate, so an operator
-//! whose bundle is empty or mis-pointed can find out why a private CA is not
-//! trusted. A DEBUG line is not something the crate's unit tests can capture
-//! (their one global subscriber keeps WARN only), and the mutation gate
-//! found the two decisions behind it unpinned: whether a file added nothing,
-//! and whether an empty entry in the list is skipped. A test binary of its
-//! own, with a global subscriber installed before the variable is read.
+//! process and warns which file named by `SSL_CERT_FILE` held no certificate,
+//! so an operator whose bundle is empty or mis-pointed can find out why a
+//! private CA is not trusted (it was a DEBUG line until 2026-11-01, which a
+//! normal log level never showed; audit B-18). The mutation gate found the two
+//! decisions behind it unpinned: whether a file added nothing, and whether an
+//! empty entry in the list is skipped. A test binary of its own, with a global
+//! subscriber installed before the variable is read.
 //!
 //! One test, because it writes the process environment.
 
@@ -76,12 +76,12 @@ fn a_file_without_a_certificate_is_named_and_an_empty_entry_is_skipped() {
     let events = EVENTS.lock().unwrap().clone();
     let empties: Vec<_> = events
         .iter()
-        .filter(|e| e.contains("no PEM certificate in file"))
+        .filter(|e| e.contains("holds no PEM certificate"))
         .collect();
     assert_eq!(empties.len(), 1, "one file held no certificate: {events:?}");
     assert!(
-        empties[0].starts_with("DEBUG") && empties[0].contains("empty.pem"),
-        "and it is the empty one, at DEBUG: {empties:?}"
+        empties[0].starts_with("WARN") && empties[0].contains("empty.pem"),
+        "and it is the empty one, at WARN: {empties:?}"
     );
     assert!(
         !events.iter().any(|e| e.contains("cannot read")),

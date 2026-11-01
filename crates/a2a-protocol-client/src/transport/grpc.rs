@@ -72,6 +72,64 @@ use proto::a2a_service_client::A2aServiceClient;
 
 // ── GrpcTransportConfig ─────────────────────────────────────────────────────
 
+/// The gRPC client's TLS configuration when the caller gives none: tonic's
+/// bundled roots plus those `SSL_CERT_FILE` and `SSL_CERT_DIR` name, the roots
+/// the HTTP bindings, the card fetch and the JWKS fetch trust.
+///
+/// `ca_certificate` adds to the enabled roots, it does not replace them
+/// (tonic 0.14 `service/tls.rs` builds one store from all of them). The
+/// environment's roots are read only with the `tls-rustls` feature, which is
+/// what reads them for every other path.
+#[cfg(feature = "grpc-tls")]
+fn default_client_tls() -> ClientTlsConfig {
+    #[allow(unused_mut)]
+    let mut tls = ClientTlsConfig::new().with_enabled_roots();
+    #[cfg(feature = "tls-rustls")]
+    for pem in crate::tls::env_roots_pem() {
+        tls = tls.ca_certificate(Certificate::from_pem(pem));
+    }
+    tls
+}
+
+/// A gRPC TLS configuration from PEM, keeping the default roots.
+///
+/// The roots a client trusts by default, plus every certificate in
+/// `extra_roots_pem`, and the client certificate chain and private key in
+/// `client_identity_pem` (mutual TLS).
+///
+/// The gRPC counterpart of [`tls::tls_config_from_pem`](crate::tls::tls_config_from_pem),
+/// which validates the same bytes: use that first to refuse a PEM that does not
+/// parse. A configuration given to
+/// [`ClientBuilder::with_grpc_tls_config`](crate::ClientBuilder::with_grpc_tls_config)
+/// or [`GrpcTransportConfig::with_tls_config`] is exact, so one built here keeps
+/// the default roots by starting from them.
+#[cfg(feature = "grpc-tls")]
+#[must_use]
+pub fn tls_config_from_pem(
+    extra_roots_pem: Option<&[u8]>,
+    client_identity_pem: Option<(&[u8], &[u8])>,
+) -> ClientTlsConfig {
+    let mut tls = default_client_tls();
+    if let Some(pem) = extra_roots_pem {
+        tls = tls.ca_certificate(Certificate::from_pem(pem));
+    }
+    if let Some((chain, key)) = client_identity_pem {
+        tls = tls.identity(Identity::from_pem(chain, key));
+    }
+    tls
+}
+
+/// How much later than the client's own timer the deadline sent to the server
+/// (`grpc-timeout`) expires.
+///
+/// Both are the same setting. Were they equal, tonic's would sometimes fire
+/// first, and that surfaces as `Cancelled: Timeout expired`, a
+/// `Protocol(Internal)` error that reads as the peer's and names no setting;
+/// the client's own timer produces [`ClientError::Timeout`] saying which
+/// setting to raise. The server still learns a deadline, for work nobody is
+/// waiting on any more (audit NEW-g-api-1).
+const DEADLINE_GRACE: Duration = Duration::from_millis(500);
+
 /// Configuration for the gRPC transport.
 ///
 /// # Example
@@ -301,7 +359,13 @@ impl GrpcTransport {
         let endpoint = tonic::transport::Channel::from_shared(endpoint_str.clone())
             .map_err(|e| ClientError::InvalidEndpoint(format!("invalid gRPC endpoint: {e}")))?
             .connect_timeout(config.connect_timeout)
-            .timeout(config.timeout)
+            // No `Endpoint::timeout`: tonic applies the shorter of it and a
+            // request's own `grpc-timeout`, so a channel-wide request timeout
+            // capped a blocking send at 30 s whatever deadline it sent (audit
+            // NEW-g-api-1). Every call is bounded without it: unary calls by
+            // the request's `grpc-timeout` and `execute_unary`'s own timeout,
+            // streams by `stream_open_bound`.
+            //
             // The same TCP keepalive the HTTP transports dial with — see
             // `connector::TCP_KEEPALIVE_TIME`. TCP-level, so unlike HTTP/2
             // PINGs it cannot trip a server's ping-abuse policy (grpc-go
@@ -360,10 +424,14 @@ impl GrpcTransport {
         }
         #[cfg(feature = "grpc-tls")]
         {
-            let tls = config
-                .tls_config
-                .clone()
-                .unwrap_or_else(|| tonic::transport::ClientTlsConfig::new().with_enabled_roots());
+            // A configuration the caller gave is theirs and exact. Without one,
+            // tonic's bundled roots plus those `SSL_CERT_FILE` and
+            // `SSL_CERT_DIR` name, as the HTTP bindings, the card fetch and the
+            // JWKS fetch trust: a private CA installed for the process reached
+            // every path but this one (audit B-20). `ca_certificate` adds to
+            // the enabled roots; it does not replace them (tonic 0.14
+            // `service/tls.rs` builds one store from all of them).
+            let tls = config.tls_config.clone().unwrap_or_else(default_client_tls);
             endpoint.tls_config(tls).map_err(|e| {
                 ClientError::Transport(format!("gRPC TLS configuration rejected: {e}"))
             })
@@ -449,7 +517,7 @@ impl GrpcTransport {
     ) -> ClientResult<tonic::Request<T>> {
         let mut req = tonic::Request::new(message);
         if with_deadline {
-            req.set_timeout(self.inner.config.timeout);
+            req.set_timeout(self.inner.config.timeout + DEADLINE_GRACE);
         }
         Self::add_metadata(&mut req, extra_headers)?;
         Ok(req)
@@ -648,11 +716,7 @@ impl GrpcTransport {
         .await
         .map_err(|_| {
             trace_error!(method, "gRPC request timed out");
-            if waits {
-                super::timed_out(true, budget)
-            } else {
-                ClientError::Timeout("gRPC request timed out".into())
-            }
+            super::timed_out(waits, budget)
         })?
     }
 
@@ -679,7 +743,7 @@ impl GrpcTransport {
                 // 30 s every other call has: a blocking send is answered when
                 // the turn ends (`DEFAULT_SEND_TIMEOUT`).
                 if waits {
-                    req.set_timeout(self.inner.config.send_timeout);
+                    req.set_timeout(self.inner.config.send_timeout + DEADLINE_GRACE);
                 }
                 let resp = client
                     .send_message(req)

@@ -418,6 +418,7 @@ impl WebSocketDispatcher {
         self: Arc<Self>,
         addr: impl tokio::net::ToSocketAddrs,
     ) -> std::io::Result<()> {
+        super::connection_limit::refuse_zero(self.max_connections)?;
         let listener = TcpListener::bind(addr).await?;
 
         trace_info!(
@@ -441,6 +442,7 @@ impl WebSocketDispatcher {
         self: Arc<Self>,
         addr: impl tokio::net::ToSocketAddrs,
     ) -> std::io::Result<SocketAddr> {
+        super::connection_limit::refuse_zero(self.max_connections)?;
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
 
@@ -469,8 +471,7 @@ impl WebSocketDispatcher {
         // backlog rather than as unbounded spawned tasks. `MAX_PERMITS` when no
         // ceiling was asked for keeps one code path instead of two.
         let limiter = Arc::new(tokio::sync::Semaphore::new(
-            self.max_connections
-                .unwrap_or(tokio::sync::Semaphore::MAX_PERMITS),
+            super::connection_limit::permits(self.max_connections),
         ));
         loop {
             // `stop` is watched while waiting for a permit too: at the ceiling

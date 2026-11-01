@@ -39,7 +39,11 @@ use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
-use rustls::ClientConfig;
+/// The TLS client configuration every setter in this crate takes
+/// ([`ClientBuilder::with_tls_config`](crate::ClientBuilder::with_tls_config)
+/// and the others), re-exported so a caller needs no `rustls` dependency of its
+/// own to hold one.
+pub use rustls::ClientConfig;
 use rustls::crypto::CryptoProvider;
 
 /// The HTTPS-capable HTTP client the transports, card discovery, JWKS and
@@ -214,6 +218,29 @@ fn root_cert_store() -> rustls::RootCertStore {
     store
 }
 
+/// The certificates `SSL_CERT_FILE` and `SSL_CERT_DIR` name, as PEM, for a TLS
+/// stack that takes its roots in that form (tonic's `Certificate::from_pem`).
+/// The same certificates [`default_tls_config`] adds to Mozilla's.
+#[cfg(feature = "grpc-tls")]
+pub(crate) fn env_roots_pem() -> Vec<Vec<u8>> {
+    use base64::Engine as _;
+
+    env_roots()
+        .iter()
+        .map(|der| {
+            let body = base64::engine::general_purpose::STANDARD.encode(der.as_ref());
+            // RFC 7468: 64 characters a line.
+            let mut pem = String::from("-----BEGIN CERTIFICATE-----\n");
+            for line in body.as_bytes().chunks(64) {
+                pem.push_str(&String::from_utf8_lossy(line));
+                pem.push('\n');
+            }
+            pem.push_str("-----END CERTIFICATE-----\n");
+            pem.into_bytes()
+        })
+        .collect()
+}
+
 /// The certificates `SSL_CERT_FILE` and `SSL_CERT_DIR` name, read once per
 /// process.
 fn env_roots() -> &'static [rustls_pki_types::CertificateDer<'static>] {
@@ -236,9 +263,14 @@ fn read_env_roots(
     use rustls_pki_types::CertificateDer;
     use rustls_pki_types::pem::PemObject;
 
-    let mut paths: Vec<std::path::PathBuf> = files
+    // Files named outright, and files found in directories: a file named
+    // outright that holds no certificate is a mistake (a wrong path, a bundle
+    // in another format) and is warned of, while a directory of hashed links
+    // holds non-PEM files as a matter of course.
+    let named: Vec<std::path::PathBuf> = files
         .map(|f| std::env::split_paths(f).collect())
         .unwrap_or_default();
+    let mut found_in_dirs: Vec<std::path::PathBuf> = Vec::new();
     for dir in dirs
         .map(|d| std::env::split_paths(d).collect::<Vec<_>>())
         .unwrap_or_default()
@@ -251,7 +283,7 @@ fn read_env_roots(
                     .filter(|p| p.is_file())
                     .collect();
                 found.sort();
-                paths.extend(found);
+                found_in_dirs.extend(found);
             }
             Err(_e) => {
                 trace_warn!(dir = %dir.display(), error = %_e, "SSL_CERT_DIR: cannot read; skipped");
@@ -259,19 +291,29 @@ fn read_env_roots(
         }
     }
     let mut certs = Vec::new();
-    for path in paths.iter().filter(|p| !p.as_os_str().is_empty()) {
+    let paths = named
+        .iter()
+        .map(|p| (p, true))
+        .chain(found_in_dirs.iter().map(|p| (p, false)));
+    for (path, named_outright) in paths.filter(|(p, _)| !p.as_os_str().is_empty()) {
         match std::fs::read(path) {
             Ok(pem) => {
                 let before = certs.len();
-                // A directory of hashed links holds non-PEM files too; only
-                // what parses is kept.
+                // Only what parses is kept.
                 certs.extend(CertificateDer::pem_slice_iter(&pem).filter_map(Result::ok));
                 if certs.len() == before {
-                    trace_debug!(file = %path.display(), "SSL_CERT_*: no PEM certificate in file");
+                    if named_outright {
+                        trace_warn!(
+                            file = %path.display(),
+                            "SSL_CERT_FILE: the file holds no PEM certificate; it adds no trusted root"
+                        );
+                    } else {
+                        trace_debug!(file = %path.display(), "SSL_CERT_DIR: no PEM certificate in file");
+                    }
                 }
             }
             Err(_e) => {
-                trace_warn!(file = %path.display(), error = %_e, "SSL_CERT_FILE: cannot read; skipped");
+                trace_warn!(file = %path.display(), error = %_e, "SSL_CERT_*: cannot read; skipped");
             }
         }
     }
@@ -341,13 +383,16 @@ mod tests {
         let _client = build_https_client_with_config(config);
     }
 
-    /// A file named by `SSL_CERT_FILE` that holds a certificate adds it;
-    /// one that holds none adds nothing and is logged as such, once.
+    /// A file named by `SSL_CERT_FILE` that holds a certificate adds it; one
+    /// that holds none adds nothing and is warned of, once (audit B-18). A
+    /// file found in `SSL_CERT_DIR` that holds none is the usual state of a
+    /// directory of hashed links, and is only a debug record.
     #[cfg(feature = "tracing")]
     #[test]
-    fn a_cert_file_without_a_certificate_is_logged() {
+    fn a_cert_file_without_a_certificate_is_warned_of() {
         let dir = std::env::temp_dir().join(format!("a2a-env-roots-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let certs = dir.join("certs");
+        std::fs::create_dir_all(&certs).unwrap();
         let empty = dir.join("empty.pem");
         std::fs::write(&empty, "not a certificate\n").unwrap();
         let key = rcgen::KeyPair::generate().unwrap();
@@ -357,16 +402,30 @@ mod tests {
             .unwrap();
         let full = dir.join("full.pem");
         std::fs::write(&full, cert.pem()).unwrap();
+        std::fs::write(certs.join("not-pem.0"), "\u{0}\u{1}binary").unwrap();
 
         let mut found = Vec::new();
-        let for_empty = crate::test_tracing::debugs_in(|| {
+        let warned_for_empty = crate::test_tracing::warnings_in(|| {
             found = read_env_roots(Some(empty.as_os_str()), None);
         });
-        assert_eq!((found.len(), for_empty), (0, 1));
-        let for_full = crate::test_tracing::debugs_in(|| {
+        assert_eq!((found.len(), warned_for_empty), (0, 1));
+        let warned_for_full = crate::test_tracing::warnings_in(|| {
             found = read_env_roots(Some(full.as_os_str()), None);
         });
-        assert_eq!((found.len(), for_full), (1, 0));
+        assert_eq!((found.len(), warned_for_full), (1, 0));
+
+        let warned_for_dir = crate::test_tracing::warnings_in(|| {
+            found = read_env_roots(None, Some(certs.as_os_str()));
+        });
+        assert_eq!(
+            (found.len(), warned_for_dir),
+            (0, 0),
+            "a directory of non-PEM files"
+        );
+        let debugs_for_dir = crate::test_tracing::debugs_in(|| {
+            found = read_env_roots(None, Some(certs.as_os_str()));
+        });
+        assert_eq!(debugs_for_dir, 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

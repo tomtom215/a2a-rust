@@ -309,6 +309,7 @@ mod card_origin;
 mod header_sources;
 mod interface_fallback;
 mod subscribe;
+mod tls_flags;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn task_list_shows_tasks_this_agent_has_seen() {

@@ -25,6 +25,32 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`with_tls_config` on `OAuth2ClientCredentials` and `TokenExchange`, and
+  `discover_token_endpoint_with_tls_config`** (client; `tls-rustls`; audits
+  B-03, H2). The token provider, the RFC 8693 exchange and OIDC discovery took
+  no TLS configuration, though every other outbound path did, so an identity
+  provider behind a private CA worked only through `SSL_CERT_FILE` and one
+  that requires mutual TLS (a service mesh, SPIFFE) not at all. A
+  configuration given is exact; `tls::tls_config_from_pem` builds one that
+  keeps the defaults. `token_provider_tls.rs`: a private CA and a required
+  client certificate, for each of the three.
+- **`transport::grpc::tls_config_from_pem` and a `tls::ClientConfig`
+  re-export** (client; `grpc-tls`; audits B-15, H2): the gRPC counterpart of
+  `tls::tls_config_from_pem`, starting from the default roots, adding the PEM
+  roots and a client certificate. Before it the only gRPC TLS setting was
+  tonic's own type built by hand, whose roots replace the defaults.
+  `grpc_pem_config.rs` against a server that requires a client certificate.
+- **`a2a --cacert FILE`, `--client-cert FILE`, `--client-key FILE`** (a2a-cli;
+  audit B-15). The tool had no way to trust a private CA or present a client
+  certificate except `SSL_CERT_FILE`, which covers the first only and which
+  gRPC ignored. `--cacert` is repeatable and adds to the default roots; the
+  certificate and key go together. They reach every binding, the card fetch and
+  the JWK Set fetch. Files are read when the flags are parsed: one that is
+  missing, holds no certificate, or a key that is not the certificate's, is a
+  usage error (exit 2) before anything is sent. There is still no flag that
+  turns verification off; a self-signed agent is reached by passing its
+  certificate. (`--key` is `card sign`'s, so the client key is `--client-key`.)
+  `tls_flags.rs` runs the binary against a TLS agent on a CA made for the test.
 - **`OAuth2ClientCredentials::from_agent_card_trusting`** (client; audit
   SEC-08): `from_agent_card` plus the hosts you trust, refusing a card whose
   `tokenUrl` is on any other. `from_agent_card` sends the client secret to
@@ -390,6 +416,34 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **The gRPC client trusts `SSL_CERT_FILE` and `SSL_CERT_DIR`** (client;
+  `grpc-tls`; audits B-20, H2). In a container whose private CA came from
+  `SSL_CERT_FILE`, JSON-RPC over TLS worked and gRPC failed with an unknown
+  issuer: the HTTP bindings, the card fetch and the JWK Set fetch read the
+  variables and the gRPC client built its TLS from tonic's bundled roots alone.
+  It now adds them, as the others do. A configuration given to
+  `with_grpc_tls_config` stays exact and is not given the environment's
+  roots. `grpc_env_roots.rs` (fails before, passes after, and checks the
+  second sentence).
+- **`build_grpc` on a builder from a card dials the card's gRPC interface**
+  (client; audit G-04). It dialled whichever interface `from_card` chose, so a
+  card listing JSON-RPC before gRPC had gRPC spoken to the JSON-RPC port with
+  that interface's tenant. A card with no gRPC interface for this SDK's
+  protocol major is refused with `ClientError::Config`, naming what it offers.
+  A zero `connection_timeout` is refused, as `build()` refuses it.
+  `grpc_card_selection.rs` (fails before without the selector).
+- **`max_connections` on `GrpcDispatcher` and `WebSocketDispatcher` means what
+  it does on `Server`** (server; audit NEW-g-api-2). `usize::MAX` panicked
+  (`Semaphore::new` above its maximum) and `0` started a server that accepted
+  nothing and said nothing. The first is clamped; the second is refused: the
+  `serve*` methods return `InvalidInput` and the graceful ones a `ServeReport`
+  with `refused` set, as `Server`'s does. On gRPC, reverting the clamp and
+  reverting the refusal each fail a test; the WebSocket twins are tested the
+  same way but were not reverted by hand.
+- **A timeout that is not a blocking send names the setting** (client; audit
+  G-20). It read `request timed out`; it now says how long the call was given
+  and that `ClientBuilder::with_timeout` (or, for a stream,
+  `with_stream_connect_timeout`) raises it.
 - **A continuation refused because the store was briefly unavailable is
   answered 503 with `Retry-After`, not 500** (server; audit D-16). Admitting a
   continuation reads the task's event log position first; a store that
@@ -736,6 +790,25 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A blocking `SendMessage` over gRPC was cut at the request timeout** (client;
+  audits NEW-g-api-1, D-01, G-20). The send's own deadline was sent in
+  `grpc-timeout`, but the channel was also built with
+  `Endpoint::timeout(request_timeout)` and tonic applies the shorter of the two:
+  a turn longer than 30 s failed with `Protocol(Internal) "cancelled by the
+  peer"`, which is not retryable, while the task went on. The channel has no
+  timeout of its own now (every call is bounded by its `grpc-timeout` and the
+  client's own timer), and the deadline sent is the setting plus 500 ms so the
+  client's timer fires first, with an error that names the setting.
+  `grpc_blocking_send.rs`: a 3 s turn under a 1 s request timeout failed with
+  "Timeout expired" before and completes after; a 1 s send timeout still
+  bounds it at about 1 s.
+- **`SSL_CERT_FILE` naming a file with no certificate was invisible** (client;
+  audit B-18, part). Logged at debug, so a wrong path or a bundle in another
+  format added no root and said nothing; it is now a warning. A file found in
+  `SSL_CERT_DIR` with none, the usual state of a directory of hashed links,
+  stays at debug. Not done: deprecating `tls_config_with_extra_roots` (which
+  skips a bad CA with a warning) and a PEM client-config helper in the server
+  crate.
 - **An executor that panicked could leave its task `working` for good** (server;
   audit NEW-d-1, D-03). A panic's unwind closes the task's event queue from
   the turn's cleanup, a moment before the executor's own task ends. The task

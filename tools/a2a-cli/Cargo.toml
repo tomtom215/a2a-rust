@@ -52,3 +52,10 @@ tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net",
 hyper      = { workspace = true }
 hyper-util = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
+# `tests/e2e/tls_flags.rs`: an agent over TLS with a private CA of its own, for
+# `--cacert`, `--cert` and `--key`. The same `rcgen`, `rustls` and
+# `rustls-pki-types` versions the client crate's own TLS tests use.
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["otlp", "tls-rustls"] }
+rcgen = "0.14"
+rustls = { version = ">=0.23.46, <0.24", default-features = false, features = ["std", "tls12", "ring"] }
+rustls-pki-types = { version = ">=1.7, <2" }

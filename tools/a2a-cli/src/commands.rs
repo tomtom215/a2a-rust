@@ -14,7 +14,7 @@
 use std::io::Write;
 
 use a2a_protocol_client::discovery::{
-    CardFetchOptions, fetch_card_from_url_with_options, resolve_agent_card_with_options,
+    fetch_card_from_url_with_options, resolve_agent_card_with_options,
 };
 use a2a_protocol_types::params::SendMessageConfiguration;
 use a2a_protocol_types::{
@@ -24,7 +24,7 @@ use a2a_protocol_types::{
 use serde::Serialize;
 
 use crate::cli::{GlobalOpts, ListArgs, SendArgs};
-use crate::connect::{connect, header_map};
+use crate::connect::connect;
 use crate::error::CliError;
 
 /// Writes `value` to stdout as pretty-printed JSON with a trailing newline.
@@ -52,9 +52,7 @@ fn print_line<T: Serialize>(value: &T) -> Result<(), CliError> {
 /// Sends `--header` to the URL given, which is the host the caller named, and
 /// is bounded by `--timeout`, as discovery is for every other command.
 pub async fn card(opts: &GlobalOpts, url: &str) -> Result<(), CliError> {
-    let options = CardFetchOptions::default()
-        .with_headers(header_map(opts))
-        .with_timeout(std::time::Duration::from_secs(opts.timeout));
+    let options = crate::connect::fetch_options(opts, true);
     let card = if url.ends_with("agent-card.json") {
         fetch_card_from_url_with_options(url, &options).await?
     } else {

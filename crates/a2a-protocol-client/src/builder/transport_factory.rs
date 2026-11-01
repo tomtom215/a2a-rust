@@ -167,13 +167,71 @@ impl ClientBuilder {
         )))
     }
 
+    /// Points a builder that came from an agent card at the card's gRPC
+    /// interface (audit G-04).
+    ///
+    /// [`from_card`](Self::from_card) configures the card's first interface,
+    /// and a card that lists JSON-RPC before gRPC made `build_grpc` speak
+    /// gRPC to the JSON-RPC port, with the JSON-RPC interface's tenant. A card
+    /// gives each binding its own address, so the binding `build_grpc` builds
+    /// and the address are a pair, as for
+    /// [`with_protocol_binding`](Self::with_protocol_binding): the first
+    /// compatible gRPC interface is used, and the builder is left on it.
+    ///
+    /// Nothing changes for a builder that did not come from a card, one that
+    /// already chose its gRPC interface, or one with a custom transport.
+    ///
+    /// # Errors
+    ///
+    /// [`ClientError::Config`] when the card offers no gRPC interface for this
+    /// SDK's protocol major; it says what the card does offer.
+    #[cfg(feature = "grpc")]
+    pub(super) fn select_grpc_interface(&mut self) -> ClientResult<()> {
+        use super::selection::{canonical_binding, is_compatible};
+        use crate::config::BINDING_GRPC;
+
+        let chose_grpc = self
+            .preferred_binding
+            .as_deref()
+            .is_some_and(|b| b.eq_ignore_ascii_case(BINDING_GRPC));
+        if self.card_interfaces.is_empty() || self.transport_override.is_some() || chose_grpc {
+            return Ok(());
+        }
+        let Some(grpc) = self.card_interfaces.iter().find(|i| {
+            is_compatible(&i.protocol_version)
+                && canonical_binding(&i.protocol_binding) == Some(BINDING_GRPC)
+        }) else {
+            let offered: Vec<String> = self
+                .card_interfaces
+                .iter()
+                .map(|i| format!("{} {} at {}", i.protocol_binding, i.protocol_version, i.url))
+                .collect();
+            return Err(ClientError::Config(format!(
+                "build_grpc needs a gRPC interface for A2A protocol major {}, and the agent \
+                 card offers none; it offers: {}",
+                super::SUPPORTED_PROTOCOL_MAJOR,
+                offered.join(", ")
+            )));
+        };
+        self.endpoint = grpc.url.clone();
+        self.config.tenant = grpc.tenant.clone();
+        self.preferred_binding = Some(BINDING_GRPC.into());
+        self.fallback_interfaces.clear();
+        Ok(())
+    }
+
     /// Validates configuration and constructs a gRPC-backed [`A2aClient`].
     ///
     /// Unlike [`build`](Self::build), this method is async because gRPC
     /// transport requires establishing a connection.
     ///
+    /// A builder from an agent card dials the card's gRPC interface, not
+    /// whichever interface [`from_card`](Self::from_card) chose first.
+    ///
     /// # Errors
     ///
+    /// - [`ClientError::Config`] if a timeout is zero, or the card offers no
+    ///   gRPC interface.
     /// - [`ClientError::InvalidEndpoint`] if the endpoint URL is malformed.
     /// - [`ClientError::Transport`] if the gRPC connection fails.
     #[cfg(feature = "grpc")]
@@ -185,6 +243,12 @@ impl ClientBuilder {
                 "request_timeout and send_timeout must be non-zero".into(),
             ));
         }
+        if self.config.connection_timeout.is_zero() {
+            return Err(ClientError::Config(
+                "connection_timeout must be non-zero".into(),
+            ));
+        }
+        self.select_grpc_interface()?;
         // Validated here for the same reason `build()` validates it: this path
         // now uses it. Until 2026-08-19 it did not — `build()` rejected a zero
         // `stream_connect_timeout` and this one silently accepted it, because

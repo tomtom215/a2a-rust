@@ -80,6 +80,20 @@ struct Target {
 /// The `--header` values as a map. HTTP header names do not depend on case, so
 /// neither does the map: a name given twice, in any case, is sent once, with
 /// the last value (`X-A=1 x-a=2` sends `x-a: 2`, not both).
+/// The card fetch's options: `--header`, `--timeout` and, when given,
+/// `--cacert` / `--client-cert` / `--client-key`. Without `--header`, for a fetch that is
+/// not to carry the caller's credential.
+pub(crate) fn fetch_options(opts: &GlobalOpts, with_headers: bool) -> CardFetchOptions {
+    let mut options = CardFetchOptions::default().with_timeout(Duration::from_secs(opts.timeout));
+    if with_headers {
+        options = options.with_headers(header_map(opts));
+    }
+    match &opts.tls_flags.built {
+        Some(tls) => options.with_tls_config(tls.client.clone()),
+        None => options,
+    }
+}
+
 pub(crate) fn header_map(opts: &GlobalOpts) -> HashMap<String, String> {
     opts.headers
         .iter()
@@ -128,9 +142,7 @@ async fn resolve_target(url: &str, opts: &GlobalOpts) -> Result<Target, CliError
         });
     }
 
-    let options = CardFetchOptions::default()
-        .with_headers(header_map(opts))
-        .with_timeout(Duration::from_secs(opts.timeout));
+    let options = fetch_options(opts, true);
     let card = resolve_agent_card_with_options(url, &options)
         .await
         .map_err(|source| CliError::Discovery {
@@ -222,6 +234,11 @@ pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<A2aClient, CliError
     if opts.grpc_plaintext {
         builder = builder.with_grpc_bare_address_scheme(GrpcBareAddressScheme::Http);
     }
+    if let Some(tls) = &opts.tls_flags.built {
+        builder = builder
+            .with_tls_config(tls.client.clone())
+            .with_grpc_tls_config(tls.grpc.clone());
+    }
     if opts.no_capability_check {
         builder = builder.without_capability_checks();
     }
@@ -232,11 +249,14 @@ pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<A2aClient, CliError
         // The builder has no WebSocket arm; the transport is constructed
         // here and handed over. Headers ride the upgrade request — the
         // transport's own documentation says per-request ones are dropped.
-        let config = WebSocketTransportConfig::default()
+        let mut config = WebSocketTransportConfig::default()
             .with_request_timeout(timeout)
             .with_send_timeout(send_timeout)
             .with_connect_timeout(timeout.min(DEFAULT_CONNECT_TIMEOUT))
             .with_extra_headers(headers);
+        if let Some(tls) = &opts.tls_flags.built {
+            config = config.with_tls_config(tls.client.clone());
+        }
         let transport = WebSocketTransport::connect_with_config(endpoint, config).await?;
         builder.with_custom_transport(transport).build()?
     } else if pins_the_interface(opts) {
@@ -322,6 +342,7 @@ mod tests {
             tenant: None,
             grpc_plaintext: false,
             no_capability_check: false,
+            tls_flags: crate::tls_opts::TlsFlags::default(),
             follow_card_origin: false,
         };
         // No server is listening on port 1; discovery would fail, so a

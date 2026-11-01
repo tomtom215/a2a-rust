@@ -267,6 +267,18 @@ impl TokenExchange {
         }
     }
 
+    /// Connects to the token endpoint with `tls`: an identity provider behind
+    /// a private CA, or one that asks for a client certificate. A
+    /// configuration given here is exact; without it the roots are Mozilla's
+    /// plus those `SSL_CERT_FILE` and `SSL_CERT_DIR` name, and no client
+    /// certificate is presented (audit B-03).
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn with_tls_config(mut self, tls: rustls::ClientConfig) -> Self {
+        self.client = super::token_http_client_with(tls);
+        self
+    }
+
     /// Allows a plaintext `http://` token endpoint on a host other than
     /// loopback. Off by default: an exchange carries the user's subject token
     /// and this agent's client secret, and sent in the clear both can be read

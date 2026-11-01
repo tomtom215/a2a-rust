@@ -84,6 +84,34 @@ let provider = OAuth2ClientCredentials::from_oidc_issuer(
 # }
 ```
 
+## An identity provider behind a private CA, or one that wants a certificate
+
+The token request trusts Mozilla's roots and the certificates `SSL_CERT_FILE`
+and `SSL_CERT_DIR` name, and presents no client certificate. For a private CA
+set in code, or an identity provider that requires mutual TLS (a service mesh,
+SPIFFE), give the provider a TLS configuration: `with_tls_config` on
+`OAuth2ClientCredentials` and on `TokenExchange`, and
+`discover_token_endpoint_with_tls_config` for the discovery request. A
+configuration you give is exact, and `tls::tls_config_from_pem` builds one
+from PEM that keeps the default roots, adds yours, and presents your
+certificate and key:
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_client::tls;
+# async fn f(ca: Vec<u8>, cert: Vec<u8>, key: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
+let tls = tls::tls_config_from_pem(Some(&ca), Some((&cert, &key)))?;
+let provider = OAuth2ClientCredentials::new(
+    "https://idp.internal/oauth/token", "client-id", "client-secret",
+)
+.with_tls_config(tls);
+# Ok(())
+# }
+```
+
+Until 2026-11-01 the provider took no TLS configuration at all, though every
+other outbound path of the client did.
+
 ## Plaintext endpoints are refused
 
 The token request carries the client secret. A token endpoint, a `tokenUrl`

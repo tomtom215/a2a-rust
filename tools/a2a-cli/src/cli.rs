@@ -11,6 +11,8 @@
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+use crate::tls_opts::TlsFlags;
+
 /// How `--binding` is explained, once, so the help text and the README cannot
 /// drift apart in what they promise.
 pub const BINDING_HELP: &str = "Protocol binding to speak to <URL> with. \
@@ -110,6 +112,10 @@ pub struct GlobalOpts {
     /// skips the card.
     #[arg(long, global = true)]
     pub no_capability_check: bool,
+
+    /// `--cacert`, `--client-cert` and `--client-key`.
+    #[command(flatten)]
+    pub tls_flags: TlsFlags,
 
     /// Send `--header` values to the host the agent card names, even when it
     /// is not the host you typed. By default they go only to the host in the

@@ -35,6 +35,8 @@ mod selection;
 mod transport_factory;
 
 #[cfg(test)]
+mod grpc_selection_tests;
+#[cfg(test)]
 mod selection_tests;
 
 #[cfg(feature = "signing")]

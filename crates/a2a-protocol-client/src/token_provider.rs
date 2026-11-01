@@ -439,6 +439,23 @@ impl OAuth2ClientCredentials {
         self
     }
 
+    /// Connects to the token endpoint with `tls`: an identity provider behind
+    /// a private CA, or one that asks for a client certificate (mutual TLS, as
+    /// a service mesh or SPIFFE does).
+    ///
+    /// Without this the roots are Mozilla's plus those `SSL_CERT_FILE` and
+    /// `SSL_CERT_DIR` name, and no client certificate is presented. A
+    /// configuration given here is exact. Build one with
+    /// [`tls::tls_config_from_pem`](crate::tls::tls_config_from_pem). Until
+    /// this setter existed the provider took no TLS configuration at all, and
+    /// every other outbound path of this crate did (audit B-03).
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn with_tls_config(mut self, tls: rustls::ClientConfig) -> Self {
+        self.client = token_http_client_with(tls);
+        self
+    }
+
     /// Sets the scopes to request (joined with spaces per RFC 6749 §3.3).
     #[must_use]
     pub fn with_scopes<I, S>(mut self, scopes: I) -> Self
@@ -656,12 +673,42 @@ pub async fn discover_token_endpoint(issuer: &str) -> ClientResult<String> {
     discover_token_endpoint_within(issuer, DEFAULT_TOKEN_REQUEST_TIMEOUT).await
 }
 
+/// [`discover_token_endpoint`] over `tls`: for an issuer behind a private CA,
+/// or one that asks for a client certificate. Built with
+/// [`tls::tls_config_from_pem`](crate::tls::tls_config_from_pem); a
+/// configuration given here is exact (audit B-03).
+///
+/// # Errors
+///
+/// As [`discover_token_endpoint`].
+#[cfg(feature = "tls-rustls")]
+pub async fn discover_token_endpoint_with_tls_config(
+    issuer: &str,
+    tls: rustls::ClientConfig,
+) -> ClientResult<String> {
+    discover_using(
+        &token_http_client_with(tls),
+        issuer,
+        DEFAULT_TOKEN_REQUEST_TIMEOUT,
+    )
+    .await
+}
+
 /// [`discover_token_endpoint`] with the whole request — headers and body —
 /// bounded by `budget`. Until 2026-09-10 the body read took a fresh
 /// [`DEFAULT_TOKEN_REQUEST_TIMEOUT`] after the headers had spent one, so
 /// discovery could take twice the documented timeout; the server's JWKS fetch
 /// had the same defect and the same fix (`JWKS_FETCH_BUDGET`).
 pub(crate) async fn discover_token_endpoint_within(
+    issuer: &str,
+    budget: Duration,
+) -> ClientResult<String> {
+    discover_using(&build_token_http_client(), issuer, budget).await
+}
+
+/// Discovery over `client`, whole request bounded by `budget`.
+async fn discover_using(
+    client: &TokenHttpClient,
     issuer: &str,
     budget: Duration,
 ) -> ClientResult<String> {
@@ -679,7 +726,6 @@ pub(crate) async fn discover_token_endpoint_within(
     check_endpoint_secure(&url, "OIDC discovery URL", false)?;
     check_endpoint_reachable(cfg!(feature = "tls-rustls"), &url, "OIDC discovery")?;
 
-    let client = build_token_http_client();
     let req = hyper::Request::builder()
         .method(hyper::Method::GET)
         .uri(&url)
@@ -738,20 +784,27 @@ fn check_issuer(found: Option<&str>, asked: &str) -> ClientResult<()> {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// How long a connection to a token endpoint may take to open.
+const TOKEN_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The token endpoint's client with `tls` as its TLS configuration: exactly
+/// its roots, and its client certificate if it has one.
+#[cfg(feature = "tls-rustls")]
+fn token_http_client_with(tls: rustls::ClientConfig) -> TokenHttpClient {
+    crate::tls::build_https_client_with_connect_timeout(tls, TOKEN_CONNECT_TIMEOUT)
+}
+
 fn build_token_http_client() -> TokenHttpClient {
     #[cfg(not(feature = "tls-rustls"))]
     {
         let mut connector = HttpConnector::new();
-        connector.set_connect_timeout(Some(Duration::from_secs(10)));
+        connector.set_connect_timeout(Some(TOKEN_CONNECT_TIMEOUT));
         connector.set_nodelay(true);
         Client::builder(TokioExecutor::new()).build(connector)
     }
     #[cfg(feature = "tls-rustls")]
     {
-        crate::tls::build_https_client_with_connect_timeout(
-            crate::tls::default_tls_config(),
-            Duration::from_secs(10),
-        )
+        token_http_client_with(crate::tls::default_tls_config())
     }
 }
 

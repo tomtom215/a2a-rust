@@ -18,6 +18,7 @@
 //! | `connect` | Building a client: discovery, binding selection, headers, timeouts |
 //! | `commands` | One function per command; JSON output |
 //! | `offline` | Commands that need no agent: `card sign`, `card verify`, `audit verify` |
+//! | `tls_opts` | `--cacert`, `--client-cert` and `--client-key` as the TLS configuration each transport takes |
 //! | `error` | The error type, how it prints, and the exit code it maps to |
 //!
 //! # Exit codes
@@ -26,7 +27,7 @@
 //! |---|---|
 //! | 0 | Success |
 //! | 1 | Protocol or transport error (message on stderr; a JSON error object too when the agent returned one) |
-//! | 2 | Usage error (bad flag, missing argument, unparseable value, an unset `--header-env` variable), or an `OTEL_*` setting the telemetry cannot use (reported before the arguments are parsed) |
+//! | 2 | Usage error (bad flag, missing argument, unparseable value, an unset `--header-env` variable, a `--cacert`, `--client-cert` or `--client-key` file that is unreadable or holds no usable certificate), or an `OTEL_*` setting the telemetry cannot use (reported before the arguments are parsed) |
 
 #![forbid(unsafe_code)]
 #![warn(clippy::all, clippy::pedantic)]
@@ -37,6 +38,7 @@ mod connect;
 mod error;
 mod offline;
 mod terminal;
+mod tls_opts;
 
 use std::process::ExitCode;
 
@@ -89,6 +91,13 @@ async fn main() -> ExitCode {
     // itself, so by the time this returns the arguments are valid.
     let mut cli = Cli::parse();
     cli.global.merge_header_env();
+    match cli.global.tls_flags.build() {
+        Ok(tls) => cli.global.tls_flags.built = tls,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return ExitCode::from(2);
+        }
+    }
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {

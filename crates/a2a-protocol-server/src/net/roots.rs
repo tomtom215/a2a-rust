@@ -103,9 +103,14 @@ pub fn read_env_roots(
     use rustls_pki_types::CertificateDer;
     use rustls_pki_types::pem::PemObject;
 
-    let mut paths: Vec<std::path::PathBuf> = files
+    // Files named outright, and files found in directories: a file named
+    // outright that holds no certificate is a mistake (a wrong path, a bundle
+    // in another format) and is warned of, while a directory of hashed links
+    // holds non-PEM files as a matter of course.
+    let named: Vec<std::path::PathBuf> = files
         .map(|f| std::env::split_paths(f).collect())
         .unwrap_or_default();
+    let mut found_in_dirs: Vec<std::path::PathBuf> = Vec::new();
     for dir in dirs
         .map(|d| std::env::split_paths(d).collect::<Vec<_>>())
         .unwrap_or_default()
@@ -118,7 +123,7 @@ pub fn read_env_roots(
                     .filter(|p| p.is_file())
                     .collect();
                 found.sort();
-                paths.extend(found);
+                found_in_dirs.extend(found);
             }
             Err(_e) => {
                 trace_warn!(dir = %dir.display(), error = %_e, "SSL_CERT_DIR: cannot read; skipped");
@@ -126,19 +131,29 @@ pub fn read_env_roots(
         }
     }
     let mut certs = Vec::new();
-    for path in paths.iter().filter(|p| !p.as_os_str().is_empty()) {
+    let paths = named
+        .iter()
+        .map(|p| (p, true))
+        .chain(found_in_dirs.iter().map(|p| (p, false)));
+    for (path, named_outright) in paths.filter(|(p, _)| !p.as_os_str().is_empty()) {
         match std::fs::read(path) {
             Ok(pem) => {
                 let before = certs.len();
-                // A directory of hashed links holds non-PEM files too; only
-                // what parses is kept.
+                // Only what parses is kept.
                 certs.extend(CertificateDer::pem_slice_iter(&pem).filter_map(Result::ok));
                 if certs.len() == before {
-                    trace_debug!(file = %path.display(), "SSL_CERT_*: no PEM certificate in file");
+                    if named_outright {
+                        trace_warn!(
+                            file = %path.display(),
+                            "SSL_CERT_FILE: the file holds no PEM certificate; it adds no trusted root"
+                        );
+                    } else {
+                        trace_debug!(file = %path.display(), "SSL_CERT_DIR: no PEM certificate in file");
+                    }
                 }
             }
             Err(_e) => {
-                trace_warn!(file = %path.display(), error = %_e, "SSL_CERT_FILE: cannot read; skipped");
+                trace_warn!(file = %path.display(), error = %_e, "SSL_CERT_*: cannot read; skipped");
             }
         }
     }

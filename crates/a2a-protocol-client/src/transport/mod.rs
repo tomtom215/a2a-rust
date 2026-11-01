@@ -95,7 +95,10 @@ pub(crate) fn timed_out(waits_for_turn: bool, waited: std::time::Duration) -> cr
             waited.as_secs()
         ))
     } else {
-        crate::ClientError::Timeout("request timed out".into())
+        crate::ClientError::Timeout(format!(
+            "request was not answered within {waited:?}: raise ClientBuilder::with_timeout \
+             (the per-request timeout), or for a stream with_stream_connect_timeout"
+        ))
     }
 }
 
