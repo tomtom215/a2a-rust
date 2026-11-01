@@ -678,10 +678,16 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
                     std::io::Error::other(format!("through the proxy: {e}")),
                 )),
                 None => {
-                    tokio_tungstenite::connect_async_tls_with_config(
+                    // Dialled as the HTTP transports dial: Happy Eyeballs, a
+                    // bounded connect, keepalive (audit B-12). The upgrade, and
+                    // the TLS for `wss://`, run on the stream.
+                    let stream = super::connector::dial(&dst, config.connect_timeout)
+                        .await
+                        .map_err(tokio_tungstenite::tungstenite::Error::Io)?;
+                    tokio_tungstenite::client_async_tls_with_config(
                         ws_request,
+                        stream,
                         Some(ws_config),
-                        true,
                         Some(connector),
                     )
                     .await

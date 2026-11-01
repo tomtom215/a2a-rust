@@ -51,10 +51,89 @@ pub fn http_connector(connection_timeout: Duration) -> HttpConnector {
     connector
 }
 
+/// A TCP stream to `dst`'s host and port through [`http_connector`]: the same
+/// bounded connect, Happy Eyeballs fallback between address families, no Nagle
+/// delay and keepalive the HTTP transports have.
+///
+/// For a destination whose own client does the TLS or the upgrade (the
+/// WebSocket transport): `ws`/`wss` are dialled as the `http`/`https` URI with
+/// the same host and port (audit B-12). The WebSocket client used tokio's
+/// sequential connect, which waits out each unreachable address in turn (an
+/// IPv6 address a network drops makes every `localhost`-style or dual-stack
+/// name cost the whole timeout before IPv4 is tried) and set no keepalive, so a
+/// peer that vanished left a connection that looked open for hours.
+///
+/// # Errors
+///
+/// The connect error, or the timeout.
+#[cfg(all(feature = "websocket", feature = "tls-rustls"))]
+pub async fn dial(
+    dst: &hyper::Uri,
+    connection_timeout: Duration,
+) -> std::io::Result<tokio::net::TcpStream> {
+    let mut connector = http_connector(connection_timeout);
+    // The scheme is `https` for a `wss://` destination, which the connector
+    // refuses unless told it is not to check.
+    connector.enforce_http(false);
+    let io = tower_service::Service::call(&mut connector, crate::proxy::http_equivalent(dst))
+        .await
+        .map_err(std::io::Error::other)?;
+    Ok(io.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tower_service::Service;
+
+    /// `dial` reaches a `ws://` and a `wss://` destination (as the host and
+    /// port of the equivalent `http`/`https` URI) with the options the HTTP
+    /// transports' sockets carry.
+    #[cfg(all(feature = "websocket", feature = "tls-rustls"))]
+    #[tokio::test]
+    async fn dial_connects_a_websocket_destination_with_keepalive_and_nodelay() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let accept = tokio::spawn(async move {
+            // Two connections: one per scheme.
+            let first = listener.accept().await;
+            let second = listener.accept().await;
+            (first, second)
+        });
+        for scheme in ["ws", "wss"] {
+            let uri: hyper::Uri = format!("{scheme}://127.0.0.1:{port}/a2a").parse().unwrap();
+            let tcp = dial(&uri, Duration::from_secs(5)).await.expect(scheme);
+            assert!(
+                socket2::SockRef::from(&tcp)
+                    .keepalive()
+                    .expect("SO_KEEPALIVE"),
+                "{scheme}: keepalive is on"
+            );
+            assert!(
+                tcp.nodelay().expect("TCP_NODELAY"),
+                "{scheme}: nodelay is on"
+            );
+        }
+        drop(accept.await);
+    }
+
+    /// A destination nothing listens on fails in the connect, quickly, and
+    /// says so: not a hang.
+    #[cfg(all(feature = "websocket", feature = "tls-rustls"))]
+    #[tokio::test]
+    async fn dial_to_a_closed_port_is_an_error() {
+        let closed = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap().port()
+        };
+        let uri: hyper::Uri = format!("ws://127.0.0.1:{closed}/").parse().unwrap();
+        let err = dial(&uri, Duration::from_secs(5))
+            .await
+            .expect_err("closed");
+        assert!(err.to_string().contains("connect"), "{err}");
+    }
 
     /// The options are really on the socket. `HttpConnector` exposes no
     /// getters, so dial a loopback listener through it and read them back

@@ -1352,7 +1352,7 @@ fn trustworthy_url(url: &str) -> bool {
                 || host.to_ascii_lowercase().ends_with(".localhost")
                 || host
                     .parse::<std::net::IpAddr>()
-                    .is_ok_and(|ip| ip.is_loopback())
+                    .is_ok_and(|ip| ip.to_canonical().is_loopback())
         }),
         _ => false,
     }
@@ -1715,6 +1715,7 @@ mod tests {
             "https://idp.example.com/jwks",
             "http://127.0.0.1:8080/jwks",
             "http://[::1]/jwks",
+            "http://[::ffff:127.0.0.1]/jwks",
             "http://localhost/jwks",
             "http://idp.localhost/jwks",
         ] {
@@ -1722,6 +1723,7 @@ mod tests {
         }
         for bad in [
             "http://203.0.113.1/jwks",
+            "http://[::ffff:10.0.0.1]/jwks",
             "http://idp.example.com/jwks",
             "http://localhost.evil.example/jwks",
             "ftp://idp.example.com/jwks",

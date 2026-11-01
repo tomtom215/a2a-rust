@@ -416,6 +416,25 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **Loopback is never sent to a proxy** (client and server; audits NEW-b-2,
+  B-23, B-27; maintainer's decision of 2026-11-01). With `HTTP_PROXY` set and
+  `NO_PROXY` unset, a request for `http://127.0.0.1:3000/` went to the proxy as
+  a forward-proxy request, with no error that mentioned one, and a credential
+  the SDK allows over plaintext because the peer is this machine (a loopback
+  token endpoint's client secret, a local agent's bearer token) went with it.
+  `localhost`, `127.0.0.0/8`, `::1` and the IPv4-mapped `::ffff:127.0.0.1` now
+  go direct on every outbound path, as in Go's `net/http`.
+  `A2A_PROXY_LOOPBACK=1` (`true`, `yes`, `on`) sends them through the proxy
+  again; a proxy named in code still carries loopback. `NO_PROXY` entries are
+  read as Go reads them (`*.example.com` is `.example.com`, which the matcher
+  alone read as a literal name), and an entry with a port, which the matcher
+  cannot honour and which exempted nothing, is ignored with one warning.
+  `loopback_not_proxied.rs` reproduces it end to end (the call died at a
+  socket that accepted and dropped it; it fails against the old behaviour);
+  the matcher's behaviour is tested in both crates (three hand reversions of
+  the client's copy each fail a test; the server's copy is the same code,
+  held identical by `check_net_copies.py`), and six existing integration tests that dial loopback servers through
+  loopback proxies now set the opt-in.
 - **The gRPC client trusts `SSL_CERT_FILE` and `SSL_CERT_DIR`** (client;
   `grpc-tls`; audits B-20, H2). In a container whose private CA came from
   `SSL_CERT_FILE`, JSON-RPC over TLS worked and gRPC failed with an unknown
@@ -790,6 +809,19 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **The WebSocket client dialled with tokio's sequential connect and set no
+  keepalive** (client; audit B-12). A destination with several addresses cost
+  the whole timeout for each one a network drops before the next was tried
+  (an IPv6 address on a network without IPv6), and a peer that vanished left a
+  connection that looked open for hours. A direct `ws://` or `wss://` is now
+  dialled through the connector the HTTP transports use: bounded connect,
+  Happy Eyeballs, no Nagle delay, TCP keepalive. The socket options are read
+  back from a dialled stream in a test.
+- **`::ffff:127.0.0.1` was not loopback** (client and server; audit B-27): the
+  IPv4-mapped form a dual-stack socket reports for a local peer is compared
+  canonically now, in the client's plaintext-webhook check and the server's
+  JWKS and issuer URL check. Not done in B-27: bracketed
+  `OTEL_EXPORTER_PROMETHEUS_HOST`.
 - **Documentation that disagreed with the code** (audits G/D-02, G/D-03, G/D-04,
   G/D-06 to G/D-11, NEW-g-docs-3, NEW-g-docs-6, NEW-c-2, NEW-t-1). `serve`'s
   READMEs said it had no limits (it runs under `ServeConfig::default()`: a 30 s

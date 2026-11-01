@@ -445,6 +445,9 @@ fn no_proxy_exempts_ipv6_addresses_bare_bracketed_or_as_ranges() {
     ] {
         assert!(!proxied(no, dst), "NO_PROXY={no:?} must exempt {dst}");
     }
-    assert!(proxied("other", "http://[::1]:4318"));
+    // Loopback is exempt whatever `NO_PROXY` says (audit NEW-b-2); other
+    // addresses are proxied unless an entry covers them.
+    assert!(!proxied("other", "http://[::1]:4318"));
+    assert!(proxied("other", "http://[2001:db8::1]:4318"));
     assert!(proxied("fd00::/8", "http://[fe80::1]:4318"));
 }

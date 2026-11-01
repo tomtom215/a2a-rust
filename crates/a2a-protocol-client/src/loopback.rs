@@ -20,8 +20,11 @@ pub fn is_loopback_host(host: &str) -> bool {
         .strip_prefix('[')
         .and_then(|h| h.strip_suffix(']'))
         .unwrap_or(host);
+    // Canonical, so the IPv4-mapped `::ffff:127.0.0.1`, which a dual-stack
+    // socket reports for a local peer, is the loopback address it is
+    // (audit B-27).
     bare.parse::<std::net::IpAddr>()
-        .is_ok_and(|ip| ip.is_loopback())
+        .is_ok_and(|ip| ip.to_canonical().is_loopback())
 }
 
 /// Whether `url` is `http://` to a host other than loopback: a webhook URL
@@ -86,10 +89,20 @@ mod tests {
             "127.9.9.9",
             "::1",
             "[::1]",
+            "::ffff:127.0.0.1",
+            "[::ffff:127.9.9.9]",
         ] {
             assert!(is_loopback_host(host), "{host} is loopback");
         }
-        for host in ["10.0.0.1", "example.com", "localhost.evil", "[::2]", ""] {
+        for host in [
+            "10.0.0.1",
+            "example.com",
+            "localhost.evil",
+            "[::2]",
+            "::ffff:10.0.0.1",
+            "[::ffff:128.0.0.1]",
+            "",
+        ] {
             assert!(!is_loopback_host(host), "{host} is not loopback");
         }
     }

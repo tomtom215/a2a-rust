@@ -122,6 +122,20 @@ constructor exists), and the server crate has no PEM client-config helper.
 - **My position: (a) after 0.16.0 unless you want it in; (c) now.** Not built.
 
 
+### F16. The webhook SSRF boundary behind a proxy, and `*.localhost` (NEW-b-1, SEC-13, NEW-b-5) — added 2026-11-01
+Not asked. Three questions with one root: what this process can know when something else resolves names.
+- **NEW-b-1 / SEC-13.** The push SSRF check resolves the webhook host in this process before delivering. In a
+  network where only the proxy resolves external names that fails every webhook, and the only way past it,
+  `allow_private_urls`, turns the whole check off. Options: (a) when a proxy carries the delivery, skip the
+  local lookup but keep every static check (scheme, userinfo, a literal private address, a private-looking
+  name), and say in the book that the proxy's policy is then the boundary; (b) leave it, document
+  `allow_private_urls`; (c) resolve through the proxy's own DNS (no such API).
+- **NEW-b-5.** The server trusts `*.localhost` names for plaintext JWKS, and a test pins it; DNS can resolve
+  such a name off-host. Options: drop the suffix (breaking for compose setups that use `idp.localhost` over
+  `http://`), or keep it and document.
+- **My position:** (a) for the first, drop the suffix for the second, both as behaviour changes. Not built.
+
+
 ---
 
 # Per-row options

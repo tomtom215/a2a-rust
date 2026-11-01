@@ -81,7 +81,21 @@ With `HTTP_PROXY` pointing at nothing, a collector at
 
 A CIDR entry matches a collector addressed by IP and never one addressed by
 name, even a name that resolves into the range. An IPv6 address may be
-written bare or in brackets (`::1`, `[::1]`, `fd00::/8`).
+written bare or in brackets (`::1`, `[::1]`, `fd00::/8`). The entries are read
+as Go's `net/http` reads them, so `*.example.com` exempts the subdomains of
+`example.com` as `.example.com` does. An entry with a port (`host:8080`) is
+not supported: it is ignored with one warning and exempts nothing.
+
+**Loopback is never sent to a proxy** (`localhost`, `127.0.0.0/8`, `::1`, and
+the IPv4-mapped `::ffff:127.0.0.1`), whatever `NO_PROXY` says, as Go's
+`net/http` does. Until 2026-11-01 it was: with `HTTP_PROXY` set and `NO_PROXY`
+unset, a request for `http://127.0.0.1:3000/` went to the proxy as a
+forward-proxy request, and a credential the SDK allows over plaintext because
+the peer is this machine (a loopback token endpoint's client secret, a local
+agent's bearer token) went with it. To send loopback through the proxy anyway,
+as a test of the proxy does, set `A2A_PROXY_LOOPBACK` to `1`, `true`, `yes` or
+`on`. A proxy named in code (`with_proxy(url)`) is explicit and still carries
+loopback.
 
 A pod that sets `HTTP_PROXY` for its other traffic sends its export through
 the proxy too unless `NO_PROXY` exempts the collector; check that when

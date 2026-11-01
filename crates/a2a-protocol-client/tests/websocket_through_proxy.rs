@@ -124,6 +124,9 @@ fn ws_and_wss_go_through_the_proxy_the_environment_names() {
         }
         std::env::set_var("HTTP_PROXY", &proxy_url);
         std::env::set_var("HTTPS_PROXY", &proxy_url);
+        // Loopback servers are what these tests dial; loopback goes direct by default
+        // (audit NEW-b-2), so ask for the proxy, as an operator who wants one would.
+        std::env::set_var("A2A_PROXY_LOOPBACK", "1");
     }
     tokio::runtime::Builder::new_current_thread()
         .enable_all()

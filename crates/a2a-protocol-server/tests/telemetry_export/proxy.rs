@@ -280,21 +280,33 @@ fn http_proxy_in_the_environment_carries_the_export() {
 fn no_proxy_in_the_environment_keeps_the_export_direct() {
     let proxy = ForwardProxy::start();
 
-    // Without `NO_PROXY`, loopback goes through the proxy …
+    // Loopback goes straight by default, whatever `HTTP_PROXY` says (audit
+    // NEW-b-2): the proxy's log stays empty …
+    let by_default = Collector::http();
+    run_child(&[
+        ("OTEL_EXPORTER_OTLP_ENDPOINT", &by_default.http_base()),
+        ("HTTP_PROXY", &proxy.url()),
+    ]);
+    assert_all_three_arrived(&by_default);
+    assert!(proxy.seen().is_empty(), "{:?}", proxy.seen());
+
+    // … unless the environment asks for it to go through the proxy …
     let through = Collector::http();
     run_child(&[
         ("OTEL_EXPORTER_OTLP_ENDPOINT", &through.http_base()),
         ("HTTP_PROXY", &proxy.url()),
+        ("A2A_PROXY_LOOPBACK", "1"),
     ]);
     assert_all_three_arrived(&through);
     let carried = proxy.seen().len();
     assert!(carried > 0);
 
-    // … and with it, straight, leaving the proxy's log as it was.
+    // … and `NO_PROXY` still sends it straight, leaving the proxy's log as it was.
     let direct = Collector::http();
     run_child(&[
         ("OTEL_EXPORTER_OTLP_ENDPOINT", &direct.http_base()),
         ("HTTP_PROXY", &proxy.url()),
+        ("A2A_PROXY_LOOPBACK", "1"),
         ("NO_PROXY", "127.0.0.1"),
     ]);
     assert_all_three_arrived(&direct);

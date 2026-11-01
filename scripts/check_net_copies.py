@@ -40,6 +40,9 @@ PAIRS = [
         "crates/a2a-protocol-server/src/net/proxy.rs",
         [
             "unbracketed",
+            "truthy",
+            "no_proxy_rules",
+            "names_a_port",
             "intercept",
             "unsupported",
             "tunnel",
