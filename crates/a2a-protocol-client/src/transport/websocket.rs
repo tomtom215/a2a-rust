@@ -211,6 +211,20 @@ pub struct WebSocketTransportConfig {
     /// How long a blocking `SendMessage` waits for the agent's turn.
     /// Default: [`DEFAULT_SEND_TIMEOUT`](super::DEFAULT_SEND_TIMEOUT).
     pub send_timeout: Duration,
+    /// How often an idle connection is pinged, and so how soon a connection
+    /// the network dropped without telling anyone is found out: a peer that
+    /// sends nothing (the pong included) through two intervals in a row is
+    /// taken to be gone, between two and three intervals after its last frame.
+    /// Every pending call then fails at once as a dropped connection does, and
+    /// the next call reconnects. `None` sends no pings. Default: 15 seconds.
+    ///
+    /// Without it a half-open connection (a NAT or load balancer that forgot
+    /// the flow, a peer that lost power) was never detected: no ping, and a
+    /// call's timeout did not mark the connection dead, so every call timed
+    /// out on the same socket until the kernel gave up, about fifteen minutes
+    /// later (audit D-08). Any frame from the peer counts as life; a busy
+    /// connection sends no pings.
+    pub ping_interval: Option<Duration>,
     /// Extra HTTP headers for the WebSocket upgrade request (e.g. an
     /// `Authorization` header produced by an
     /// [`AuthInterceptor`](crate::AuthInterceptor)).
@@ -285,6 +299,7 @@ impl std::fmt::Debug for WebSocketTransportConfig {
         let mut f = f.debug_struct("WebSocketTransportConfig");
         f.field("request_timeout", &self.request_timeout)
             .field("send_timeout", &self.send_timeout)
+            .field("ping_interval", &self.ping_interval)
             .field(
                 "extra_header_names",
                 &crate::redact::names(self.extra_headers.keys()),
@@ -304,6 +319,7 @@ impl Default for WebSocketTransportConfig {
         Self {
             request_timeout: Duration::from_secs(30),
             send_timeout: super::DEFAULT_SEND_TIMEOUT,
+            ping_interval: Some(DEFAULT_PING_INTERVAL),
             connect_timeout: Duration::from_secs(10),
             extra_headers: HashMap::new(),
             extensions: Vec::new(),
@@ -314,6 +330,9 @@ impl Default for WebSocketTransportConfig {
         }
     }
 }
+
+/// Default for [`WebSocketTransportConfig::ping_interval`].
+pub const DEFAULT_PING_INTERVAL: Duration = Duration::from_secs(15);
 
 /// Default for [`WebSocketTransportConfig::max_pending_requests`].
 ///
@@ -328,6 +347,21 @@ impl WebSocketTransportConfig {
     #[must_use]
     pub const fn with_max_pending_requests(mut self, max: usize) -> Self {
         self.max_pending_requests = max;
+        self
+    }
+
+    /// Sets [`ping_interval`](Self::ping_interval).
+    #[must_use]
+    pub const fn with_ping_interval(mut self, every: Duration) -> Self {
+        self.ping_interval = Some(every);
+        self
+    }
+
+    /// Sends no pings: a half-open connection is then found only when a write
+    /// to it fails or its peer closes it. See [`ping_interval`](Self::ping_interval).
+    #[must_use]
+    pub const fn without_ping(mut self) -> Self {
+        self.ping_interval = None;
         self
     }
 
@@ -700,7 +734,7 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
         let (ws_stream, _resp) = tokio::time::timeout(config.connect_timeout, connect)
             .await
             .map_err(|_| {
-                ClientError::Transport(format!(
+                ClientError::Timeout(format!(
                     "WebSocket connect to {endpoint} did not complete within {:?}",
                     config.connect_timeout
                 ))
@@ -715,6 +749,9 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
 
         // Channel for write commands from transport methods to the writer task.
         let (write_tx, mut write_rx) = mpsc::channel::<WriteCommand>(64);
+        let liveness = Arc::new(Liveness::new());
+        let write_timeout = config.request_timeout;
+        let ping_interval = config.ping_interval;
 
         // Background writer task: receives write commands and sends frames to
         // the WebSocket. Registration is the caller's job (see
@@ -722,14 +759,56 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
         // command reaches this loop.
         let pending_for_writer = Arc::clone(&pending);
         let closed_for_writer = Arc::clone(&closed);
+        let liveness_for_writer = Arc::clone(&liveness);
         let writer_handle = tokio::spawn(async move {
             let mut ws_writer = ws_writer;
-            while let Some(cmd) = write_rx.recv().await {
-                if ws_writer
-                    .send(WsMessage::Text(cmd.text.into()))
-                    .await
-                    .is_err()
-                {
+            let mut keepalive = ping_interval.map(|every| {
+                let mut tick = tokio::time::interval_at(tokio::time::Instant::now() + every, every);
+                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                tick
+            });
+            let mut beats = Keepalive::default();
+            loop {
+                let cmd = tokio::select! {
+                    cmd = write_rx.recv() => cmd,
+                    () = next_keepalive(&mut keepalive) => {
+                        match beats.beat(liveness_for_writer.take_heard()) {
+                            Beat::Alive => {}
+                            Beat::Dead => {
+                                trace_warn!(
+                                    interval = ?ping_interval.unwrap_or_default(),
+                                    "WebSocket peer sent nothing, pongs included, through two ping intervals; closing the connection"
+                                );
+                                fail_all_pending(&pending_for_writer, &closed_for_writer, None);
+                                break;
+                            }
+                            Beat::Ping => {
+                                // timeout-nesting: one write by the writer task, bounded alone; the frame write below bounds another write, and the two are not phases of one call (a call is bounded as a whole by its own deadline, queueing and reply together, in `execute_request`)
+                                let pinged = tokio::time::timeout(
+                                    write_timeout,
+                                    ws_writer.send(WsMessage::Ping(Vec::new().into())),
+                                )
+                                .await;
+                                if !matches!(pinged, Ok(Ok(()))) {
+                                    fail_all_pending(&pending_for_writer, &closed_for_writer, None);
+                                    break;
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                };
+                let Some(cmd) = cmd else { break };
+                // Bounded: a peer that stopped reading fills the socket's send
+                // buffer, and an unbounded write then waited for it for ever
+                // while the 64-slot channel behind it filled (audit NEW-d-2).
+                // timeout-nesting: one frame's write by the writer task, bounded alone; see the ping above
+                let sent = tokio::time::timeout(
+                    write_timeout,
+                    ws_writer.send(WsMessage::Text(cmd.text.into())),
+                )
+                .await;
+                if !matches!(sent, Ok(Ok(()))) {
                     // The connection is dead: fail every pending request —
                     // including the one just registered — instead of leaving
                     // them to wait out their full timeouts.
@@ -743,6 +822,7 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
         // them to the correct pending request based on the JSON-RPC ID.
         let pending_for_reader = Arc::clone(&pending);
         let closed_for_reader = Arc::clone(&closed);
+        let liveness_for_reader = Arc::clone(&liveness);
         let reader_handle = tokio::spawn(async move {
             let mut ws_reader = ws_reader;
             // Server closed, stream ended, or protocol/transport error — in
@@ -750,7 +830,12 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
             // fail them all now (a Close frame previously left them hanging
             // until their timeouts).
             let refused = loop {
-                match ws_reader.next().await {
+                let frame = ws_reader.next().await;
+                // Any frame is life, a pong included.
+                if matches!(frame, Some(Ok(_))) {
+                    liveness_for_reader.touch();
+                }
+                match frame {
                     Some(Ok(WsMessage::Text(text))) => {
                         route_frame(&pending_for_reader, text.as_str());
                     }
@@ -777,6 +862,20 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
     }
 }
 
+/// The JSON-RPC request for `method` as the frame to send, and the id its
+/// answer will carry.
+fn encode_request(method: &str, params: serde_json::Value) -> ClientResult<(String, String)> {
+    let rpc_req = build_rpc_request(method, params);
+    let request_id = rpc_req
+        .id
+        .as_value()
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_owned();
+    let body = serde_json::to_string(&rpc_req).map_err(ClientError::Serialization)?;
+    Ok((body, request_id))
+}
+
 impl WebSocketTransport {
     /// Sends a JSON-RPC request and reads a single response.
     async fn execute_request(
@@ -790,14 +889,7 @@ impl WebSocketTransport {
         trace_debug!(method, endpoint = %self.endpoint, "sending WebSocket JSON-RPC request");
 
         let waits = super::waits_for_turn(method, &params);
-        let rpc_req = build_rpc_request(method, params);
-        let request_id = rpc_req
-            .id
-            .as_value()
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let body = serde_json::to_string(&rpc_req).map_err(ClientError::Serialization)?;
+        let (body, request_id) = encode_request(method, params)?;
 
         let (tx, rx) = oneshot::channel();
 
@@ -808,22 +900,29 @@ impl WebSocketTransport {
         let _entry = PendingGuard::register(
             &inner.pending,
             inner.max_pending_requests,
-            request_id.clone(),
+            request_id,
             PendingRequest::Unary(tx),
         )?;
-
-        inner
-            .write_tx
-            .send(WriteCommand { text: body })
-            .await
-            .map_err(|_| ClientError::Transport("WebSocket writer task closed".into()))?;
 
         let budget = if waits {
             inner.send_timeout
         } else {
             inner.request_timeout
         };
-        let response_text = match tokio::time::timeout(budget, rx).await {
+        // One deadline for queueing the frame and waiting for the answer. The
+        // queue was entered with no bound at all (audit NEW-d-2): with the
+        // writer stuck behind a peer that stopped reading, the 64th call
+        // waited for a slot for ever.
+        let deadline = tokio::time::Instant::now() + budget;
+        enqueue(
+            &inner.write_tx,
+            WriteCommand { text: body },
+            deadline,
+            waits,
+            budget,
+        )
+        .await?;
+        let response_text = match tokio::time::timeout_at(deadline, rx).await {
             Ok(received) => received
                 .map_err(|_| ClientError::Transport("WebSocket reader task closed".into()))??,
             Err(_elapsed) if waits => return Err(super::timed_out(true, budget)),
@@ -891,11 +990,16 @@ impl WebSocketTransport {
             PendingRequest::Streaming(tx),
         )?;
 
-        inner
-            .write_tx
-            .send(WriteCommand { text: body })
-            .await
-            .map_err(|_| ClientError::Transport("WebSocket writer task closed".into()))?;
+        let budget = inner.request_timeout;
+        let deadline = tokio::time::Instant::now() + budget;
+        enqueue(
+            &inner.write_tx,
+            WriteCommand { text: body },
+            deadline,
+            false,
+            budget,
+        )
+        .await?;
 
         // Bound establishment: unlike the HTTP streaming paths, the WebSocket
         // transport otherwise returns a stream with no timeout at all, so a
@@ -984,10 +1088,10 @@ fn warn_dropped_per_request_headers(
     let trace_dropped = extra_headers
         .keys()
         .any(|k| TRACE_HEADERS.iter().any(|t| k.eq_ignore_ascii_case(t)));
-    let other_dropped = extra_headers
-        .keys()
-        .filter(|k| !TRACE_HEADERS.iter().any(|t| k.eq_ignore_ascii_case(t)))
-        .count();
+    // `A2A-Extensions` is delivered at connect (the config's `extensions`), so
+    // it is not dropped, and the advice the warning gives does not apply to it
+    // (audit C-17).
+    let other_dropped = dropped_headers(extra_headers);
 
     if other_dropped > 0 {
         trace_warn!(
@@ -1086,9 +1190,17 @@ fn connect_error(e: tokio_tungstenite::tungstenite::Error) -> ClientError {
         Error::Http(resp) => ClientError::UnexpectedStatus {
             status: resp.status().as_u16(),
             body: String::from_utf8_lossy(resp.body().as_deref().unwrap_or_default()).into_owned(),
-            retry_after: None,
+            // A 503 that says when to come back is obeyed, as on the HTTP
+            // bindings (audit D-09).
+            retry_after: crate::error::parse_retry_after(resp.headers()),
         },
         Error::Io(io) => ClientError::HttpClient(format!("WebSocket connect failed: {io}")),
+        // The peer went away mid-handshake: the connection could not be made,
+        // as an `Io` error says, and is as retryable.
+        Error::Protocol(
+            tokio_tungstenite::tungstenite::error::ProtocolError::HandshakeIncomplete
+            | tokio_tungstenite::tungstenite::error::ProtocolError::ResetWithoutClosingHandshake,
+        ) => ClientError::HttpClient(format!("WebSocket connect failed: {e}")),
         Error::Url(tokio_tungstenite::tungstenite::error::UrlError::TlsFeatureNotEnabled) => {
             ClientError::Transport(
                 "WebSocket connect failed: wss:// needs this crate's `tls-rustls` feature".into(),
@@ -1096,6 +1208,115 @@ fn connect_error(e: tokio_tungstenite::tungstenite::Error) -> ClientError {
         }
         other => ClientError::Transport(format!("WebSocket connect failed: {other}")),
     }
+}
+
+// ── Liveness and bounded queueing ────────────────────────────────────────────
+
+/// Whether the peer has sent anything since the keepalive last looked: set by
+/// the reader task on every frame, taken by the writer's keepalive at each
+/// tick. A flag, not a timestamp: a clock compared with the interval is
+/// decided by milliseconds of timer jitter, and an earlier version of this
+/// closed live connections that way (right after a pong the idle time was
+/// 99 ms against a 100 ms interval, so that tick sent no ping, and the next
+/// saw 200 ms of silence).
+struct Liveness {
+    heard: AtomicBool,
+}
+
+impl Liveness {
+    const fn new() -> Self {
+        Self {
+            heard: AtomicBool::new(false),
+        }
+    }
+
+    fn touch(&self) {
+        self.heard.store(true, Ordering::Relaxed);
+    }
+
+    fn take_heard(&self) -> bool {
+        self.heard.swap(false, Ordering::Relaxed)
+    }
+}
+
+/// What the keepalive does at a tick.
+#[derive(Debug, PartialEq, Eq)]
+enum Beat {
+    /// Something arrived since the last tick: the peer is there, and nothing
+    /// is sent.
+    Alive,
+    /// A quiet interval: ask whether anyone is there.
+    Ping,
+    /// A second quiet interval in a row, the ping of the first included: the
+    /// peer is gone.
+    Dead,
+}
+
+/// Counts consecutive quiet ticks. A live peer answers a ping inside one
+/// interval, so it is never given two in a row; one that sends nothing is
+/// found out at the second tick, between two and three intervals after its
+/// last frame.
+#[derive(Default)]
+struct Keepalive {
+    quiet: u8,
+}
+
+impl Keepalive {
+    const fn beat(&mut self, heard: bool) -> Beat {
+        if heard {
+            self.quiet = 0;
+            return Beat::Alive;
+        }
+        self.quiet = self.quiet.saturating_add(1);
+        if self.quiet >= 2 {
+            Beat::Dead
+        } else {
+            Beat::Ping
+        }
+    }
+}
+
+/// Waits for the keepalive's next tick; never, when pings are off.
+async fn next_keepalive(keepalive: &mut Option<tokio::time::Interval>) {
+    match keepalive {
+        Some(tick) => {
+            tick.tick().await;
+        }
+        None => std::future::pending().await,
+    }
+}
+
+/// Queues `command` for the writer task, giving up at `deadline`.
+///
+/// `waits` and `budget` name the timeout in the error, as a call that waits
+/// for the agent's turn and one that does not report it differently.
+async fn enqueue(
+    queue: &mpsc::Sender<WriteCommand>,
+    command: WriteCommand,
+    deadline: tokio::time::Instant,
+    waits: bool,
+    budget: Duration,
+) -> ClientResult<()> {
+    match tokio::time::timeout_at(deadline, queue.send(command)).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(_)) => Err(ClientError::Transport("WebSocket writer task closed".into())),
+        Err(_elapsed) if waits => Err(super::timed_out(true, budget)),
+        Err(_elapsed) => Err(ClientError::Timeout(
+            "WebSocket request could not be queued: the connection is not accepting frames,              a peer that stopped reading"
+                .into(),
+        )),
+    }
+}
+
+/// How many of the per-request `extra_headers` this binding drops with a
+/// warning: the ones that are neither W3C trace context (reported once, in its
+/// own words) nor `A2A-Extensions`, which is delivered at connect.
+fn dropped_headers(extra_headers: &HashMap<String, String>) -> usize {
+    extra_headers
+        .keys()
+        .filter(|k| !TRACE_HEADERS.iter().any(|t| k.eq_ignore_ascii_case(t)))
+        .filter(|k| !k.eq_ignore_ascii_case(crate::extensions::HEADER))
+        .count()
 }
 
 // ── Frame routing ────────────────────────────────────────────────────────────
@@ -1329,6 +1550,10 @@ const _: () = {
     }
     assert_auto_traits::<WebSocketTransport>();
 };
+
+#[cfg(test)]
+#[path = "websocket_liveness_tests.rs"]
+mod liveness_tests;
 
 #[cfg(test)]
 mod tests {

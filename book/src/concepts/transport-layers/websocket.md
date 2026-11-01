@@ -79,7 +79,8 @@ reach it. Its equivalents are these:
 | Knob | Default | Bounds |
 |------|---------|--------|
 | `connect_timeout` | 10s | the whole handshake — a server that accepts TCP and never upgrades |
-| `request_timeout` | 30s | waiting for one response on an established connection |
+| `request_timeout` | 30s | waiting for one response on an established connection, and for queueing the request and writing each frame: a peer that stopped reading ends the call (and the connection) at this bound, where the 64th call used to wait for a slot for ever |
+| `ping_interval` | 15s (`without_ping()` turns it off) | how often an idle connection is pinged; a peer that sends nothing, pongs included, through two intervals in a row (so two to three intervals after its last frame) is taken to be gone, every pending call fails at once as a dropped connection does (retryable), and the next call reconnects. Without it a connection the network dropped silently (a NAT or balancer that forgot the flow) timed out every call on the same socket until the kernel gave up, about 15 minutes |
 | `max_message_size` | 32 MiB | an incoming frame, at the protocol level |
 | `max_pending_requests` | 64 | requests awaiting a response on one connection; the next is refused with `ClientError::TooManyPendingRequests` (retryable) rather than queued |
 | `with_tls_config` | Mozilla's roots, verified with `ring` | the certificate a `wss://` endpoint must present; `tls::tls_config_with_extra_roots` adds a private CA. Needs the `tls-rustls` feature (on by default); until 0.15 no `wss://` endpoint could be reached |

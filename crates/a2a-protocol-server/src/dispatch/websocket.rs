@@ -90,6 +90,14 @@ const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// elapses the connection keeps its `max_connections` slot (N30).
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 
+/// How long one frame may take to be written before the connection is closed.
+///
+/// After this the peer is taken to have stopped reading (audit D-07). A peer
+/// that stops reading fills the socket's send buffer; a write then waits for
+/// the peer for ever, holding the connection's sink, and so did every request
+/// task and the read loop itself that wanted it next.
+pub const DEFAULT_WS_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Requests one connection may have in progress at once (audit M9). A
 /// shutdown waits for all of them by taking every permit back.
 const MAX_REQUESTS_PER_CONNECTION: u32 = 64;
@@ -145,6 +153,7 @@ pub struct WebSocketDispatcher {
     require_version_header: bool,
     max_connections: Option<usize>,
     idle_timeout: Option<Duration>,
+    write_timeout: Duration,
     completion_grace: Duration,
     task_grace: Duration,
     drain_timeout: Duration,
@@ -152,6 +161,18 @@ pub struct WebSocketDispatcher {
     agent_card_max_age: u32,
     #[cfg(feature = "tls-rustls")]
     tls: Option<crate::tls::Tls>,
+}
+
+impl std::fmt::Debug for WebSocketDispatcher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WebSocketDispatcher")
+            .field("handshake_timeout", &self.handshake_timeout)
+            .field("idle_timeout", &self.idle_timeout)
+            .field("write_timeout", &self.write_timeout)
+            .field("max_connections", &self.max_connections)
+            .field("require_version_header", &self.require_version_header)
+            .finish_non_exhaustive()
+    }
 }
 
 /// What the accept loop shares with the connections it spawns, so a shutdown
@@ -176,6 +197,7 @@ impl WebSocketDispatcher {
             require_version_header: true,
             max_connections: None,
             idle_timeout: None,
+            write_timeout: DEFAULT_WS_WRITE_TIMEOUT,
             completion_grace: crate::serve::DEFAULT_COMPLETION_GRACE,
             task_grace: crate::serve::DEFAULT_TASK_GRACE,
             drain_timeout: crate::serve::DEFAULT_DRAIN_TIMEOUT,
@@ -367,6 +389,22 @@ impl WebSocketDispatcher {
     #[must_use]
     pub const fn with_idle_timeout(mut self, timeout: Duration) -> Self {
         self.idle_timeout = Some(timeout);
+        self
+    }
+
+    /// How long one frame may take to be written before the connection is
+    /// closed as having a peer that stopped reading (default
+    /// [`DEFAULT_WS_WRITE_TIMEOUT`], 30 s; audit D-07).
+    ///
+    /// A write to a peer whose receive window is full waits for the peer, and
+    /// until 2026-11-01 nothing bounded the wait: the connection's sink stayed
+    /// held, the read loop stalled behind it on its next reply, and neither
+    /// the idle bound nor a shutdown was ever evaluated again. At the bound the
+    /// connection is closed, its running requests are cancelled, and its slot
+    /// is returned. Keep it above the slowest legitimate consumer of one frame.
+    #[must_use]
+    pub const fn with_write_timeout(mut self, timeout: Duration) -> Self {
+        self.write_timeout = timeout;
         self
     }
 
@@ -624,10 +662,7 @@ impl WebSocketDispatcher {
         let headers = Arc::new(upgrade_headers.unwrap_or_default());
 
         let (writer, reader) = ws_stream.split();
-        let writer: WsSink = Arc::new(Connection {
-            sink: tokio::sync::Mutex::new(writer),
-            activity: ActivityClock::new(),
-        });
+        let writer: WsSink = Arc::new(Connection::new(writer, self.write_timeout));
 
         self.read_loop(reader, &writer, &headers, closing).await;
 
@@ -691,6 +726,7 @@ impl WebSocketDispatcher {
                     let _ = semaphore.acquire_many(MAX_REQUESTS_PER_CONNECTION).await;
                     return;
                 }
+                () = writer.dead.cancelled() => break,
                 next = Self::next_frame(&mut reader, writer, self.idle_timeout) => next,
             };
             let Some(msg) = next else { break };
@@ -988,6 +1024,54 @@ impl std::fmt::Display for WsError {
 struct Connection {
     sink: tokio::sync::Mutex<SplitSink<WebSocketStream<WsIo>, WsMessage>>,
     activity: ActivityClock,
+    /// How long one frame may take to be written; see
+    /// [`DEFAULT_WS_WRITE_TIMEOUT`].
+    write_timeout: Duration,
+    /// Cancelled when a write timed out: the peer is not reading, so the
+    /// connection is over and the read loop ends instead of waiting behind it.
+    dead: tokio_util::sync::CancellationToken,
+}
+
+impl Connection {
+    fn new(sink: SplitSink<WebSocketStream<WsIo>, WsMessage>, write_timeout: Duration) -> Self {
+        Self {
+            sink: tokio::sync::Mutex::new(sink),
+            activity: ActivityClock::new(),
+            write_timeout,
+            dead: tokio_util::sync::CancellationToken::new(),
+        }
+    }
+
+    /// Writes one frame, waiting no longer than the write timeout for the sink
+    /// and the peer together. `false` when it was not written: the peer is
+    /// gone, or was too slow, in which case the connection is marked dead
+    /// and every later write fails at once. The lock is released when the wait
+    /// is abandoned, so one stuck write does not hold the others behind it.
+    async fn send(&self, frame: WsMessage) -> bool {
+        if self.dead.is_cancelled() {
+            return false;
+        }
+        let written = tokio::time::timeout(self.write_timeout, async {
+            let mut sink = self.sink.lock().await;
+            sink.send(frame).await
+        })
+        .await;
+        match written {
+            Ok(Ok(())) => {
+                self.activity.touch();
+                true
+            }
+            Ok(Err(_)) => false,
+            Err(_elapsed) => {
+                trace_warn!(
+                    timeout = ?self.write_timeout,
+                    "WebSocket peer stopped reading; closing the connection"
+                );
+                self.dead.cancel();
+                false
+            }
+        }
+    }
 }
 
 type WsSink = Arc<Connection>;
@@ -1333,10 +1417,7 @@ async fn dispatch_simple<'a, F>(
 /// Sends a JSON-serializable value as a WebSocket text frame.
 async fn send_json<T: serde::Serialize + Sync>(writer: &WsSink, value: &T) {
     let json = serde_json::to_string(value).unwrap_or_default();
-    let mut w = writer.sink.lock().await;
-    let _ = w.send(WsMessage::Text(json.into())).await;
-    drop(w);
-    writer.activity.touch();
+    let _ = writer.send(WsMessage::Text(json.into())).await;
 }
 
 /// Sends a server error as a JSON-RPC error response.
@@ -1405,6 +1486,10 @@ fn busy_response(text: &str) -> JsonRpcErrorResponse {
         ),
     )
 }
+
+#[cfg(test)]
+#[path = "websocket_write_tests.rs"]
+mod write_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1827,10 +1912,7 @@ mod tests {
             .expect("server handshake");
         let mut client_ws = client.await.expect("join client");
         let (sink, mut reader) = server_ws.split();
-        let conn: WsSink = Arc::new(Connection {
-            sink: tokio::sync::Mutex::new(sink),
-            activity: ActivityClock::new(),
-        });
+        let conn: WsSink = Arc::new(Connection::new(sink, DEFAULT_WS_WRITE_TIMEOUT));
 
         // Held from before the half-budget (1 s) until 1.3 s, as a stream
         // write in flight would hold it; released with 700 ms to spare. The

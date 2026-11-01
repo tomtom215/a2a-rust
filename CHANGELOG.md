@@ -612,6 +612,35 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **A WebSocket connection whose peer stopped reading is closed, and one whose
+  peer went silent is found out** (server and client; audits D-07, D-08,
+  NEW-d-2). Server: a write to a peer with a full receive window waited for it
+  for ever while holding the connection's sink, so the read loop stalled behind
+  its next reply and neither the idle bound nor a shutdown was evaluated again;
+  every frame now has a write timeout (`WebSocketDispatcher::with_write_timeout`,
+  30 s), after which the connection is marked dead, its read loop ends and its
+  requests are cancelled. Client: no ping, and a call's timeout did not mark the
+  connection dead, so a half-open connection (a NAT or balancer that forgot the
+  flow) timed out every call on one socket until the kernel gave up, about 15
+  minutes later; the transport now pings an idle connection every 15 s
+  (`WebSocketTransportConfig::with_ping_interval`, `without_ping`), treats
+  two silent intervals in a row, pongs included, as a dropped connection (every pending
+  call fails at once, retryably, and the next call reconnects), bounds each
+  frame's write by the request timeout, and bounds queueing a call behind a
+  stuck writer by the call's own deadline (the 64th call waited for ever). Any
+  frame from the peer counts as life, so a busy connection sends no pings. The
+  new tests are in `dispatch/websocket_write_tests.rs` and
+  `transport/websocket_liveness_tests.rs`; twelve hand-applied mutants each fail
+  one of them. The first version of the keepalive compared the time since the
+  last frame with the interval and closed a live connection about every other
+  time the timer ran (22 of 40 runs of the control test failed on an idle
+  machine); it now counts quiet ticks, and the same test passes 40 of 40 idle
+  and 40 of 40 under CPU load.
+- **A failed WebSocket handshake says whether to try again** (client; audit
+  D-09). The connect deadline is a `Timeout`, a `503` with `Retry-After` keeps
+  it, and a peer that went away mid-handshake is `HttpClient`, retryable like an
+  I/O failure; each was a non-retryable `Transport`. The per-call warning no
+  longer fires for `A2A-Extensions`, which is delivered at connect (audit C-17).
 - **A server-directed `Retry-After` is spread, not followed to the letter**
   (client; audit NEW-h-designs-1). A server that refuses for overload asks
   every refused caller for the same second, and the client waited exactly that
@@ -1865,8 +1894,6 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   0.3.4 (its own range is `>=0.3.0, <0.5`; both versions were already locked).
   The binding builds, passes `clippy --all-targets -D warnings`, and its tests
   pass (133, 10 ignored: the SPIFFE suites need SPIRE).
-
-
 
 ## [0.15.0] - 2026-10-25
 
