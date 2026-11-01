@@ -67,9 +67,15 @@ spec:
               app: deploy-agent
       containers:
         - name: agent
-          # Set this to the image you pushed: `deploy-agent:latest` is pulled
-          # from Docker Hub by default and does not exist there (README).
-          image: deploy-agent:latest
+          # The image the release workflow publishes, signed and with build
+          # provenance (README, "Verify the image"); it exists from 0.16.0 on.
+          # For a build of your own, push it to a registry the cluster can
+          # reach and set this to it, or on kind run
+          # `kind load docker-image deploy-agent:dev` and use that name here:
+          # IfNotPresent is what lets a loaded image be used, where the
+          # `:latest` default would pull from Docker Hub, which has none.
+          image: ghcr.io/tomtom215/a2a-rust/deploy-agent:0.16.0
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
               name: http
@@ -108,6 +114,13 @@ spec:
                 secretKeyRef:
                   name: deploy-agent-db
                   key: url
+            # How long a finished task is kept in PostgreSQL. The agent sweeps
+            # its own database hourly: without PostgreSQL the in-memory store
+            # keeps an hour, and the SDK's PostgreSQL stores keep everything for
+            # ever unless something deletes. 168 (a week) is the default; 0 keeps
+            # everything, and then a purge of your own is yours to schedule.
+            # - name: TASK_RETENTION_HOURS
+            #   value: "168"
             # Telemetry: nothing is exported until a collector is named.
             # Uncomment to send traces, metrics and logs to one in the
             # cluster (OTLP/HTTP is port 4318; 4317 is gRPC and also needs
@@ -151,6 +164,17 @@ spec:
             # Above the 2 s the readiness check gives the database before it
             # answers 503 timeout.
             timeoutSeconds: 3
+          # A CA for PostgreSQL that is not a public one (an internal CA, or
+          # the provider's own) is a file the pod must be able to read: the
+          # database connection trusts Mozilla's roots plus the file
+          # `sslrootcert` names (the server crate's `postgres` feature), and a
+          # database's own CA is usually not among those roots. Create the
+          # ConfigMap from the CA (`kubectl create configmap db-ca
+          # --from-file=ca.pem`), uncomment this and the `volumes:` entry
+          # below, and put `sslrootcert=/etc/db-ca/ca.pem` in the Secret's URL.
+          # A mounted volume is not part of the read-only root filesystem.
+          # volumeMounts:
+          #   - {name: db-ca, mountPath: /etc/db-ca, readOnly: true}
           resources:
             requests:
               cpu: 100m
@@ -162,6 +186,9 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+      # volumes:
+      #   - name: db-ca
+      #     configMap: {name: db-ca}
 ---
 apiVersion: v1
 kind: Service

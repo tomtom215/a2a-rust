@@ -25,6 +25,24 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **A signed `deploy-agent` container image, published to GHCR by the release
+  workflow** (audit A13, A27, NEW-a-l-4b; maintainer's decision of 2026-11-01).
+  The job `deploy-agent-image` builds `examples/deploy-agent/Dockerfile` from the
+  tagged tree, pushes `ghcr.io/tomtom215/a2a-rust/deploy-agent:<version>` (that
+  tag only; there is no `latest`), puts BuildKit's SBOM and maximum provenance
+  in the image index, stores a Sigstore-signed SLSA build-provenance
+  attestation beside it, and verifies that attestation with `gh attestation
+  verify` before it finishes. On by default; the repository variable
+  `PUBLISH_DEPLOY_AGENT_IMAGE=false` skips it. `deployment.yaml` now names that
+  image at the workspace version with `imagePullPolicy: IfNotPresent` (it named
+  `deploy-agent:latest`, which Kubernetes pulled from Docker Hub, where nothing
+  was published, so `kubectl apply` as shipped failed); `check_doc_versions.py`
+  fails a manifest that names another version. `AGENT_VERSION` (set from the
+  release tag by the image build) is the version on the agent card, which
+  reported the example crate's `0.0.0` for every rollout. Dependabot's docker
+  ecosystem refreshes the Dockerfile's two base-image digests weekly. Not
+  verified by a run: the job itself (it needs a pushed tag); the Dockerfile
+  and the manifest are checked as stated under *Internal*.
 - **`is_process_local()` on `HaltStore`, `LeaseStore`, `PushConfigStore` and
   `AuditStore`, and `RequestHandlerBuilder::allow_process_local_stores()`**
   (server; audit E-F13). The method defaults to `false`; the in-memory stores
@@ -459,6 +477,18 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   was never sent by the one running the task, and each replica kept an audit
   chain of its own, with nothing to say so. `build()` now names the store, what
   it costs, and the store to use. A deployment that routes every request for a
+- **`deploy-agent` deletes finished tasks from PostgreSQL after a week**
+  (example; audit NEW-a-l-1). With `DATABASE_URL` set the SDK's stores keep
+  everything for ever, so a deployment that changed one variable changed its
+  retention from the in-memory store's hour to ever, and `tasks`,
+  `task_events` and `idempotency_keys` grew without bound. The agent now
+  sweeps its own database hourly from every replica, in bounded batches: a
+  completed, failed, canceled or rejected task is deleted `TASK_RETENTION_HOURS`
+  (168) after its last update, with the idempotency keys that outlived it; a
+  task still working or waiting for input is never deleted. `0` keeps
+  everything and says so at startup. `tests.rs::the_sweep_deletes_finished_tasks_and_keeps_running_ones`
+  runs it against a PostgreSQL (ignored without `A2A_TEST_POSTGRES_URL`).
+
   task to one replica, or runs one replica at a time, calls
   `allow_process_local_stores()`. Nothing changes without the profile, or
   with a task store that is not shared, or for a store this crate cannot see
@@ -1415,6 +1445,21 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   pools no longer ping before each statement; a PostgreSQL module on a pool
   of its own is listed with the reason. It found the migration runner's
   version read and `BEGIN` outside both, now inside `retry`.
+- **The `deploy-agent` image build was run end to end** (audit L18, NEW-a-l-4a).
+  Built from this tree on a 4-vCPU machine in about 7 minutes cold, started
+  with no database, and asked: `GET /health` and `/ready` answered 200, the
+  process ran as uid 10001, the agent card's `version` was the `AGENT_VERSION`
+  build argument, `message:send` returned `Hello, Ada!`, and `SIGTERM` ended it
+  with exit status 0 well inside 30 s. The run also found that the build
+  cannot reach crates.io behind a TLS-inspecting proxy (`cargo install
+  cargo-chef` failed with "SSL certificate problem: self-signed certificate in
+  certificate chain"), which is this sandbox's own network; the Dockerfile now
+  takes that CA as an optional BuildKit secret (`--secret id=cacert,src=...`)
+  and the same build passed with it. Not done: a CI job that builds the image
+  on a pull request and validates the manifest (`kubeconform`), a `HEALTHCHECK`
+  (audit A19), and a run on a cluster (Kubernetes is not available in the
+  sandbox).
+
 - `otel_pipeline_default_endpoint` asserted that the final flush failed
   against the default endpoint, so it failed wherever a collector listened on
   `localhost:4317`; it now runs in a child whose `OTEL_EXPORTER_OTLP_ENDPOINT`

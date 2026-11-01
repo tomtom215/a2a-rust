@@ -52,6 +52,8 @@ both.
 | `PORT` | `8080` | Rejected at startup unless a port from 1 to 65535 |
 | `AGENT_URL` | `http://localhost:$PORT` | The **externally reachable** `http://` or `https://` URL; goes on the agent card |
 | `DATABASE_URL` | unset: tasks in memory | A PostgreSQL URL. Tasks and push configs go there, which is what lets several replicas serve the agent; unset, run one replica. Add `?sslmode=verify-full&sslrootcert=/path/ca.pem` (or `require`) for TLS to the database |
+| `TASK_RETENTION_HOURS` | `168` | With `DATABASE_URL`: finished tasks older than this are deleted hourly by every replica, in bounded batches; `0` keeps everything (then schedule your own `purge_expired`). Until 2026-11-01 nothing deleted and a database-backed deployment grew without bound |
+| `AGENT_VERSION` | the crate's version | The `version` on the agent card; the published image sets it to the release |
 | `DRAIN_DELAY_SECONDS` | `0` | After `SIGTERM`, how long `/ready` answers 503 while the server goes on serving, so load balancers stop routing to it before it stops accepting. The manifest sets 5 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset: nothing exported | A collector's OTLP/HTTP URL, such as `http://localhost:4318`; traces, metrics and logs all go there |
 

@@ -12,7 +12,8 @@
 #   ci + security -> package, publish-dry-run
 #   package + conformance -> attest-conformance
 #   validate + package + publish-dry-run + attest-conformance -> github-release
-#   validate + github-release -> publish (crates-io env), cli-binaries
+#   validate + github-release -> publish (crates-io env), cli-binaries,
+#                                deploy-agent-image (GHCR, signed)
 
 name: Release
 
@@ -742,6 +743,85 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: gh release upload "$TAG" dist/a2a-*.${{ matrix.archive }} dist/a2a-*.sha256 --clobber
+
+# ── Job 6c: The deploy-agent container image, signed (GHCR) ───────────────────
+# `examples/deploy-agent` is what the README sends a first-time user to run,
+# and `kubectl apply -f deployment.yaml` pulled `deploy-agent:latest` from
+# Docker Hub, where nothing was published (audit A13). The maintainer decided
+# on 2026-11-01 to publish it: built from the tagged tree with the Dockerfile
+# the repository carries, pushed to GHCR under the release version only (no
+# moving `latest`), with BuildKit's SBOM and maximum provenance in the image
+# index, and with a Sigstore-signed SLSA build-provenance attestation stored
+# beside it in the registry, which the last step verifies with `gh`. On by
+# default; set the repository variable PUBLISH_DEPLOY_AGENT_IMAGE to `false`
+# to skip it. It runs after the release exists, as the CLI binaries do, so a
+# failure here leaves the crates unaffected.
+  deploy-agent-image:
+    name: deploy-agent image (GHCR)
+    needs: [validate, github-release]
+    if: vars.PUBLISH_DEPLOY_AGENT_IMAGE != 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write      # push to ghcr.io/<owner>/<repo>/deploy-agent
+      id-token: write      # OIDC token for the signed attestation
+      attestations: write
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Name the image
+        id: image
+        shell: bash
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/deploy-agent" >> "$GITHUB_OUTPUT"
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      # The build context is the whole checkout: the example depends on the
+      # SDK crates by path. Cold, like the other release artifacts.
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: examples/deploy-agent/Dockerfile
+          push: true
+          tags: ${{ steps.image.outputs.name }}:${{ env.VERSION }}
+          build-args: AGENT_VERSION=${{ env.VERSION }}
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.title=deploy-agent
+      - name: Attest build provenance (SLSA), stored beside the image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      # The attestation just made is the one a user is told to check, so check
+      # it here: a signature that cannot be verified is not published as one.
+      - name: Verify the attestation as a user would
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          gh attestation verify "oci://${IMAGE}@${DIGEST}" --repo "$GITHUB_REPOSITORY"
+          {
+            echo "### deploy-agent image"
+            echo ""
+            echo "\`${IMAGE}:${VERSION}\` — \`${DIGEST}\`"
+            echo ""
+            echo "Verify: \`gh attestation verify oci://${IMAGE}@${DIGEST} --repo ${GITHUB_REPOSITORY}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
 # ── Job 7: Publish to crates.io (protected environment, requires approval) ────
   publish:

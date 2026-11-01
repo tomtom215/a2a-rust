@@ -41,9 +41,20 @@ Deliberately historical snippets — a migration guide's before/after pair —
 are named in `scripts/doc_versions_allowlist.txt` with a reason. An allowlist
 entry that matches nothing fails the gate, so the file cannot rot either.
 
+The deploy-agent manifest
+-------------------------
+`examples/deploy-agent/deployment.yaml` names the container image the release
+workflow publishes, `ghcr.io/<owner>/<repo>/deploy-agent:<version>`, by the
+workspace's exact version (the image is tagged with the release version only;
+there is no `latest`). A manifest that names another version is a first run
+that cannot pull its image (audit A13), so this gate requires the tag in the
+manifest to be the workspace version, and requires exactly one such image.
+
 Exit codes: 0 every snippet names the current line or is allowlisted with a
-reason, and every entry matches a snippet; 1 a snippet is stale or an entry is
-stale; 2 not run from the repository root, or the allowlist is malformed.
+reason, every entry matches a snippet, and the manifest names this release's
+image; 1 a snippet is stale, an entry is stale or the manifest's image is not
+this release's; 2 not run from the repository root, or the allowlist is
+malformed.
 """
 
 from __future__ import annotations
@@ -57,6 +68,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ALLOWLIST = ROOT / "scripts" / "doc_versions_allowlist.txt"
 SOURCE_OF_TRUTH = ROOT / "crates" / "a2a-protocol-types" / "Cargo.toml"
+MANIFEST = ROOT / "examples" / "deploy-agent" / "deployment.yaml"
+MANIFEST_IMAGE = re.compile(r"image:\s*ghcr\.io/[\w./-]+/deploy-agent:(\S+)")
 
 # Records of what past versions said, not instructions to a reader.
 EXCLUDED = (
@@ -77,12 +90,31 @@ INLINE_VERSION = re.compile(r'version\s*=\s*"(\d+\.\d+(?:\.\d+)?)"')
 DOC_COMMENT = re.compile(r"^\s*//[!/]")
 
 
+def full_version() -> str:
+    """The workspace version, from the types crate's own manifest."""
+    data = tomllib.loads(SOURCE_OF_TRUTH.read_text(encoding="utf-8"))
+    return data["package"]["version"]
+
+
 def current_line() -> str:
     """MAJOR.MINOR of the workspace, from the types crate's own manifest."""
-    data = tomllib.loads(SOURCE_OF_TRUTH.read_text(encoding="utf-8"))
-    version = data["package"]["version"]
-    major, minor, *_ = version.split(".")
+    major, minor, *_ = full_version().split(".")
     return f"{major}.{minor}"
+
+
+def manifest_problem() -> str | None:
+    """Why the deploy-agent manifest does not name this release's image."""
+    if not MANIFEST.exists():
+        return f"{MANIFEST.relative_to(ROOT)} does not exist"
+    tags = MANIFEST_IMAGE.findall(MANIFEST.read_text(encoding="utf-8"))
+    version = full_version()
+    if tags != [version]:
+        return (
+            f"{MANIFEST.relative_to(ROOT)} names the image tag(s) {tags or 'none'}; "
+            f"it must name exactly one, ghcr.io/.../deploy-agent:{version}, the "
+            "image the release workflow publishes for this version"
+        )
+    return None
 
 
 def tracked() -> list[str]:
@@ -191,10 +223,16 @@ def main() -> int:
             )
         return 1
 
+    problem = manifest_problem()
+    if problem:
+        print(f"check_doc_versions: {problem}")
+        return 1
+
     print(
         f"check_doc_versions: {len(found)} dependency snippet(s) across "
         f"{len({s[0] for s in found})} file(s) name the current {line} line; "
-        f"{len(entries)} allowlisted as historical"
+        f"{len(entries)} allowlisted as historical; the deploy-agent manifest "
+        f"names image {full_version()}"
     )
     return 0
 

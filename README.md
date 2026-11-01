@@ -263,12 +263,16 @@ prelude shows up there too; the Quick Start program itself is compiled by
 ```sh
 cargo run -p deploy-agent
 docker build -f examples/deploy-agent/Dockerfile -t deploy-agent .
+# Kubernetes: create the database Secret, then apply the manifest, which names
+# the published, signed image (from 0.16.0). Steps: examples/deploy-agent/README.md#kubernetes
+kubectl create secret generic deploy-agent-db --from-literal=url='postgres://USER:PASSWORD@HOST:5432/DB?sslmode=verify-full&sslrootcert=/path/ca.pem'
 kubectl apply -f examples/deploy-agent/deployment.yaml
 ```
 
 `hello-agent` is the smallest agent that answers A2A; this is the smallest one
 you can ship. Environment configuration, `/health` and `/ready`, `SIGTERM`
-draining, a `0.0.0.0` bind, a two-stage container and a Kubernetes manifest
+draining, a dual-stack bind (`[::]`, or `0.0.0.0` where the host has no IPv6),
+hourly retention of finished tasks, a two-stage container and a Kubernetes manifest
 whose probes point at those endpoints. Its sharpest test asserts the agent card
 advertises the **public** URL and never leaks the bind address — the deployment
 bug whose only symptom is clients failing to call back. See

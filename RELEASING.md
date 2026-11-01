@@ -266,6 +266,7 @@ This triggers the release workflow (`.github/workflows/release.yml`) which:
 5. **Runs a publish dry run** to verify packages are publishable
 6. **Creates a GitHub Release** with notes extracted from CHANGELOG.md and attached `.crate` artifacts. GitHub refuses a release body over 125,000 characters, so a section longer than 120,000 is released as its Known Limitations, Breaking Changes, Deprecated and Security sections plus a link to the whole section at the tag (0.15.0's section is about 289,000)
 7. **Publishes to crates.io** in dependency order with index propagation delays (requires `crates-io` environment approval; authenticates with Trusted Publishing, falling back to the environment secret)
+8. **Publishes the `deploy-agent` image** to `ghcr.io/tomtom215/a2a-rust/deploy-agent:<version>` once the GitHub release exists (job `deploy-agent-image`; set the repository variable `PUBLISH_DEPLOY_AGENT_IMAGE` to `false` to skip it). Built from the tagged tree with `examples/deploy-agent/Dockerfile`, tagged with the version only (no `latest`), with BuildKit's SBOM and maximum provenance in the image index and a Sigstore-signed build-provenance attestation stored beside it; the job verifies that attestation with `gh attestation verify` before it finishes. `examples/deploy-agent/deployment.yaml` names this image at the workspace version, so a release bumps that line with the version (`scripts/check_doc_versions.py` is the gate)
 
 ### The tag must be the release-preparation commit
 
@@ -308,6 +309,7 @@ fixable; it is the measurement of how often the gap was used.
 
 - Verify all 4 crates appear on [crates.io](https://crates.io)
 - Verify docs build on [docs.rs](https://docs.rs)
+- Verify the image: `gh attestation verify oci://ghcr.io/tomtom215/a2a-rust/deploy-agent:<version> --repo tomtom215/a2a-rust`. The first time, set the package's visibility to public in the repository's Packages settings (a new GHCR package is private until then), or `kubectl apply` cannot pull it
 - Verify the site moved to the release: the Release workflow's success starts
   *Deploy Documentation* (`workflow_run`), after which
   [a2a-rust.com](https://a2a-rust.com) is the new release's book, its version
