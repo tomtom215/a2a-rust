@@ -134,7 +134,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `window_secs` | `u64` | 60 | Window duration in seconds |
 | `trusted_proxy_hops` | `usize` | 0 | How many `X-Forwarded-For` hops to trust (0 = ignore XFF entirely) |
 | `trusted_proxies` | `Vec<TrustedProxy>` | `[]` | Address ranges the proxies connect from; when set, XFF is believed only from a peer in one (no effect while `trusted_proxy_hops` is 0) |
-| `max_buckets` | `usize` | 10,000 | Hard bound on tracked caller buckets (fail-closed when full) |
+| `max_buckets` | `usize` | 10,000 | Bound on tracked caller buckets. When full of live buckets, callers without one share a single `overflow` bucket holding one caller's limit (`RateLimitInterceptor::overflowed()` counts its requests); they used to be refused outright, which locked every new caller out while `max_buckets` callers stayed active |
 
 ### ServeConfig
 
@@ -161,7 +161,7 @@ take the same three through their own `with_completion_grace`,
 |------|----------|
 | `CorsConfig::new(origin)` | `allow_methods` `GET, POST, PUT, DELETE, OPTIONS`; `allow_headers` `content-type, authorization, a2a-version, a2a-extensions, last-event-id, x-a2a-notification-token`; `max_age_secs` 86400 |
 | `TenantStoreConfig` | `max_tenants` 1,000 partitions (each caller's partition counts when tasks are isolated by caller); `max_total_tasks` none |
-| `WebSocketDispatcher` | handshake timeout 10s (`with_handshake_timeout`); idle timeout off (`with_idle_timeout`; `DEFAULT_WS_IDLE_TIMEOUT` is 75s); `with_max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
+| `WebSocketDispatcher` | handshake timeout 10s (`with_handshake_timeout`); write timeout 30s (`with_write_timeout`: a peer that stops reading is dropped at it, and the connection with it); idle timeout off (`with_idle_timeout`; `DEFAULT_WS_IDLE_TIMEOUT` is 75s); `with_max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
 | `HttpPushSender` | 10s request timeout (`HttpPushSender::with_timeout`), 5s DNS lookup bound (`with_dns_timeout`), `PushRetryPolicy` above; SSRF guard on unless `allow_private_urls()` |
 | `JwtValidator`, `JwtAuthInterceptor` | clock-skew leeway 60s (`JwtValidator::with_leeway`); a remote JWKS is cached for 3,600s (`JwtAuthInterceptor::with_jwks_ttl`) and refetched for an unknown key id at most every 10s (`with_jwks_refetch_interval`) |
 
@@ -218,6 +218,7 @@ and the `with_*` setters.
 |-------|------|---------|-------------|
 | `timeout` | `Duration` | 30s | Per-request timeout, except a blocking send |
 | `send_timeout` | `Duration` | 600s | Bound on a blocking `SendMessage` (see `with_send_timeout` above) |
+| `ping_interval` | `Option<Duration>` | 15s | Idle pings; two silent intervals in a row close the connection (`without_ping()` for none) |
 | `connect_timeout` | `Duration` | 10s | Connection timeout |
 | `max_message_size` | `usize` | 4 MiB | Maximum message size |
 | `stream_channel_capacity` | `usize` | 64 | Streaming response buffer |

@@ -58,8 +58,13 @@ pub struct RateLimitConfig {
     /// Maximum number of caller buckets tracked at once.
     ///
     /// Bounds the limiter's memory. When the map is full, stale buckets from
-    /// previous windows are evicted first; if none can be freed, requests
-    /// from callers without an existing bucket are rejected (fail-closed).
+    /// previous windows are evicted first; if none can be freed, callers
+    /// without an existing bucket share one `overflow` bucket with the limit
+    /// of any one caller (so the map holds at most `max_buckets + 1`), and
+    /// [`RateLimitInterceptor::overflowed`](super::RateLimitInterceptor::overflowed)
+    /// counts the requests it took. Until 2026-11-01 they were rejected
+    /// instead, and `max_buckets` callers active in every window locked every
+    /// other caller out for as long as they stayed active (audit H16).
     /// Must be non-zero.
     pub max_buckets: usize,
 }

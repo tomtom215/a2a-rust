@@ -304,27 +304,51 @@ fn new_rejects_zero_max_buckets() {
 
 // ── Bounded bucket map (D3b) ───────────────────────────────────────────
 
-/// Regression (D3b): the bucket map must never exceed `max_buckets`; a
-/// new caller beyond capacity is rejected (fail-closed).
+/// Regression (D3b, changed by H16): the map holds at most `max_buckets`
+/// callers plus the one overflow bucket; a caller beyond the bound is charged
+/// to that bucket instead of being refused, and the callers that already had
+/// a bucket are unaffected.
 #[tokio::test]
-async fn bucket_map_is_bounded() {
+async fn bucket_map_is_bounded_and_overflows_to_one_shared_bucket() {
     let limiter = RateLimitInterceptor::new(RateLimitConfig {
-        requests_per_window: 10,
-        window_secs: 60,
+        requests_per_window: 3,
+        window_secs: 3600,
         max_buckets: 2,
         ..RateLimitConfig::default()
     })
     .expect("valid config");
     assert!(limiter.before(&make_ctx(Some("a"))).await.is_ok());
     assert!(limiter.before(&make_ctx(Some("b"))).await.is_ok());
+    assert_eq!(limiter.overflowed(), 0);
+
+    // Newcomers share one caller's budget between them: three requests.
+    for caller in ["c", "d", "c"] {
+        limiter
+            .before(&make_ctx(Some(caller)))
+            .await
+            .expect("within the overflow budget");
+    }
+    assert_eq!(limiter.overflowed(), 3);
+    assert_eq!(
+        limiter.buckets.read().await.len(),
+        3,
+        "two callers and the overflow bucket"
+    );
+
+    // The fourth is refused, and the refusal says why: it is not a caller's
+    // own limit, and an operator can tell the difference (audit H16).
     let err = limiter
-        .before(&make_ctx(Some("c")))
+        .before(&make_ctx(Some("e")))
         .await
-        .expect_err("third caller must be rejected at capacity");
-    assert!(err.to_string().contains("capacity"), "got: {err}");
-    assert_eq!(limiter.buckets.read().await.len(), 2);
-    // Existing callers keep working at capacity.
+        .expect_err("the overflow budget is spent");
+    let said = err.to_string();
+    assert!(said.contains("beyond them share one budget"), "got: {said}");
+    assert!(!said.contains("rate limit exceeded:"), "got: {said}");
+
+    // Callers with a bucket of their own are not locked out by the newcomers.
     assert!(limiter.before(&make_ctx(Some("a"))).await.is_ok());
+    assert!(limiter.before(&make_ctx(Some("b"))).await.is_ok());
+    assert_eq!(limiter.buckets.read().await.len(), 3);
 }
 
 /// When the map is full but holds stale (old-window) buckets, capacity is
@@ -363,7 +387,10 @@ async fn full_map_evicts_stale_buckets_before_rejecting() {
 }
 
 /// Concurrency: with many distinct callers racing, the map never exceeds
-/// `max_buckets` and exactly `max_buckets` callers are admitted.
+/// `max_buckets` plus the overflow bucket; `max_buckets` callers get a bucket
+/// of their own and the rest share one caller's budget, so 10 + 10 requests
+/// are admitted (audit H16: it used to be exactly 10, and the other 40
+/// callers were locked out).
 #[tokio::test]
 async fn concurrent_distinct_callers_respect_bucket_cap() {
     use std::sync::Arc;
@@ -394,9 +421,13 @@ async fn concurrent_distinct_callers_respect_bucket_cap() {
             Err(_) => err_count += 1,
         }
     }
-    assert_eq!(ok_count, 10, "exactly max_buckets callers admitted");
-    assert_eq!(err_count, 40);
-    assert_eq!(limiter.buckets.read().await.len(), 10);
+    assert_eq!(
+        ok_count, 20,
+        "max_buckets callers with a bucket, and one caller's budget for the rest"
+    );
+    assert_eq!(err_count, 30);
+    assert_eq!(limiter.buckets.read().await.len(), 11);
+    assert_eq!(limiter.overflowed(), 40, "every newcomer was charged to it");
 }
 
 #[tokio::test]

@@ -285,19 +285,36 @@ fn scope_from_key(key: &str) -> Option<HaltScope> {
         .map(|t| HaltScope::Tenant(t.to_owned()))
 }
 
-/// The halt a SQL store's row holds; a row whose key no scope makes is an
-/// error rather than skipped, since skipping it would resume what it halts.
+/// The halt a SQL store's row holds.
+///
+/// A row whose key no scope makes (a scope a newer version wrote, during a
+/// rolling upgrade, or a row someone edited) is read as a halt of everything,
+/// with the reason saying so. It is not skipped, since skipping it would
+/// resume what it halts; and it no longer fails the whole load (audit
+/// NEW-h-designs-4), which left a running replica keeping the halts it had read
+/// and never seeing another, and a replica that started beside the row unable
+/// to sync, so refusing every send. Removing the row resumes.
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
-fn from_row(key: &str, reason: String, by: String, at_unix_ms: i64) -> A2aResult<StoredHalt> {
-    let scope = scope_from_key(key).ok_or_else(|| {
-        a2a_protocol_types::error::A2aError::internal(format!(
-            "halt store: a row's scope {key:?} names no scope"
-        ))
-    })?;
-    Ok(StoredHalt {
-        scope,
-        reason,
+fn from_row(key: &str, reason: String, by: String, at_unix_ms: i64) -> StoredHalt {
+    if let Some(scope) = scope_from_key(key) {
+        return StoredHalt {
+            scope,
+            reason,
+            by,
+            at_unix_ms,
+        };
+    }
+    trace_warn!(
+        scope = key,
+        "a halt row names a scope this version does not know; treating it as a halt of everything until the row is removed"
+    );
+    StoredHalt {
+        scope: HaltScope::All,
+        reason: format!(
+            "the halt store has a row for a scope this version does not know ({key:?}), \
+             so everything stays halted until that row is removed: {reason}"
+        ),
         by,
         at_unix_ms,
-    })
+    }
 }

@@ -15,10 +15,12 @@
 //! [`AuthInterceptor`](crate::AuthInterceptor) produces are computed once and
 //! reused for every attempt. A server-directed `Retry-After` is honored up to
 //! [`RetryPolicy`]'s `max_backoff` (30 s by default, and never more than an
-//! hour), so a short-lived credential can expire between attempts — the
-//! retried request then fails with a non-retryable auth error rather than
-//! re-deriving the header. Refresh credentials in the store and issue a new
-//! call if that matters for your deployment.
+//! hour): never shortened, and lengthened at random by up to a quarter so that
+//! clients refused together do not all return together. A short-lived
+//! credential can expire between attempts — the retried request then fails with
+//! a non-retryable auth error rather than re-deriving the header. Refresh
+//! credentials in the store and issue a new call if that matters for your
+//! deployment.
 //!
 //! # Example
 //!
@@ -295,7 +297,14 @@ const fn safe_to_retry_non_idempotent(error: &ClientError) -> bool {
 }
 
 /// Computes the delay before the next retry: the server's `Retry-After` (from
-/// the previous error), clamped to `max_backoff`, else the jittered backoff.
+/// the previous error) spread by up to a quarter, clamped to `max_backoff`,
+/// else the jittered backoff.
+///
+/// The server's delay is a floor, not a schedule. Followed to the letter,
+/// every client refused in the same moment (a full server asks every one of
+/// them for the same second) came back in the same moment, and was refused
+/// again (audit NEW-h-designs-1). It is therefore never shortened, and
+/// lengthened by a random fraction up to 25%.
 fn retry_delay(
     last_err: Option<&ClientError>,
     backoff: Duration,
@@ -303,7 +312,22 @@ fn retry_delay(
 ) -> Duration {
     last_err
         .and_then(ClientError::retry_after)
-        .map_or_else(|| jittered(backoff), |after| after.min(max_backoff))
+        .map_or_else(|| jittered(backoff), |after| spread(after).min(max_backoff))
+}
+
+/// Maps a raw 64-bit random draw onto the factor `[1.0, 1.25]` that spreads a
+/// server-directed delay.
+#[allow(clippy::cast_precision_loss)] // Precision loss is acceptable for jitter
+fn spread_factor_from_bits(random_bits: u64) -> f64 {
+    (random_bits as f64 / u64::MAX as f64).mul_add(0.25, 1.0)
+}
+
+/// A server-directed delay, lengthened by a random fraction up to 25%.
+fn spread(after: Duration) -> Duration {
+    use std::hash::{BuildHasher, Hasher};
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    hasher.write_u128(after.as_nanos());
+    apply_jitter(after, spread_factor_from_bits(hasher.finish()))
 }
 
 // ── RetryTransport ───────────────────────────────────────────────────────────
@@ -1736,6 +1760,65 @@ mod tests {
             "should have waited the server-requested 20s, waited {:?}",
             start.elapsed()
         );
+    }
+
+    /// A server-directed delay is a floor: never shortened, lengthened by at
+    /// most a quarter (audit NEW-h-designs-1). The factor's arithmetic is pinned
+    /// at both ends of the draw, as the backoff jitter's is.
+    #[test]
+    fn spread_factor_covers_one_to_one_and_a_quarter() {
+        assert!((spread_factor_from_bits(0) - 1.0).abs() < f64::EPSILON);
+        assert!((spread_factor_from_bits(u64::MAX) - 1.25).abs() < 1e-12);
+        let mid = spread_factor_from_bits(u64::MAX / 2);
+        assert!((mid - 1.125).abs() < 1e-9, "{mid}");
+    }
+
+    #[test]
+    fn a_server_directed_delay_is_never_shortened_and_spread_by_at_most_a_quarter() {
+        let after = Duration::from_secs(8);
+        let mut distinct = std::collections::HashSet::new();
+        for _ in 0..200 {
+            let d = retry_delay(
+                Some(&ClientError::UnexpectedStatus {
+                    status: 503,
+                    body: String::new(),
+                    retry_after: Some(after),
+                }),
+                Duration::from_millis(1),
+                Duration::from_secs(30),
+            );
+            assert!(d >= after, "shortened to {d:?}");
+            assert!(
+                d <= Duration::from_secs(10),
+                "lengthened past a quarter: {d:?}"
+            );
+            distinct.insert(d);
+        }
+        assert!(
+            distinct.len() > 100,
+            "clients refused together must not return together: {} distinct delays in 200",
+            distinct.len()
+        );
+    }
+
+    /// The clamp applies to the spread delay, not the other way round.
+    #[test]
+    fn the_spread_never_passes_max_backoff() {
+        for _ in 0..50 {
+            let d = retry_delay(
+                Some(&ClientError::UnexpectedStatus {
+                    status: 503,
+                    body: String::new(),
+                    retry_after: Some(Duration::from_secs(29)),
+                }),
+                Duration::from_millis(1),
+                Duration::from_secs(30),
+            );
+            assert!(
+                d >= Duration::from_secs(29) && d <= Duration::from_secs(30),
+                "{d:?}"
+            );
+        }
     }
 
     #[test]

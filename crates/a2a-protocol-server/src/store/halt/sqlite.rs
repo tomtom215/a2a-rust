@@ -74,9 +74,10 @@ impl HaltStore for SqliteHaltStore {
                     .fetch_all(&self.pool)
                     .await
                     .map_err(|e| failed("load", &e))?;
-            rows.into_iter()
+            Ok(rows
+                .into_iter()
                 .map(|(key, reason, by, at)| from_row(&key, reason, by, at))
-                .collect()
+                .collect())
         })
     }
 

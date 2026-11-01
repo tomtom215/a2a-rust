@@ -612,6 +612,40 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **A server-directed `Retry-After` is spread, not followed to the letter**
+  (client; audit NEW-h-designs-1). A server that refuses for overload asks
+  every refused caller for the same second, and the client waited exactly that
+  long, so the callers it refused together came back together and were refused
+  again. The client now waits at least the delay it was asked for and up to a
+  quarter longer, chosen at random, still clamped to `max_backoff`.
+- **The rate limiter no longer locks new callers out when it is full** (server;
+  audit H16; maintainer's decision of 2026-11-01). With `max_buckets` callers
+  active in every window, every other caller was refused for as long as they
+  stayed active, with a message that read like an ordinary rate limit. Callers
+  beyond the bound now share one `overflow` bucket holding one caller's limit,
+  so the map holds `max_buckets + 1`; the callers that have a bucket are
+  unaffected; the overflow refusal says the callers beyond the bound have spent
+  their shared budget; `RateLimitInterceptor::overflowed()` counts the requests
+  it took (non-zero means `max_buckets` is too small for the callers seen).
+  Fairness among the callers beyond the bound is coarser than before: that is
+  the price of not refusing them all.
+- **An unreadable halt store is a retryable refusal, and `/ready` reads it**
+  (server; audit NEW-h-designs-7; maintainer's decision of 2026-11-01). Until a
+  handler with a halt store had read it once, every send was refused as a
+  non-retryable internal error on JSON-RPC while `/ready` answered 200, and
+  nothing read the store until a send arrived. The refusal is now the
+  `Overloaded` one the idempotency claim uses (`503` with `Retry-After`,
+  `RetryInfo` on every binding), and `RequestHandler::readiness()` performs the
+  first read itself: a replica is ready by having read the store, and answers
+  `halt_store` while it cannot.
+- **An unrecognised halt-store row halts everything instead of failing the
+  load** (server; audit NEW-h-designs-4). A row whose scope key this version
+  does not know (written by a newer version during a rolling upgrade) failed
+  the whole load: a running replica kept the halts it had read and never saw
+  another, and a replica that started beside it could not sync and refused
+  every send. The row is now read as a halt of everything, its reason saying
+  so and a warning logged; the rows beside it are read as usual. Removing the
+  row resumes.
 - **`deploy-agent` deletes finished tasks from PostgreSQL after a week**
   (example; audit NEW-a-l-1). With `DATABASE_URL` set the SDK's stores keep
   everything for ever, so a deployment that changed one variable changed its
@@ -1831,10 +1865,6 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   0.3.4 (its own range is `>=0.3.0, <0.5`; both versions were already locked).
   The binding builds, passes `clippy --all-targets -D warnings`, and its tests
   pass (133, 10 ignored: the SPIFFE suites need SPIRE).
-
-
-
-
 
 
 

@@ -24,6 +24,11 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 
 use super::{CLEANUP_INTERVAL, CallerBucket, RateLimitInterceptor};
 
+/// The bucket callers beyond `max_buckets` share (audit H16). It has no prefix
+/// of the kinds a caller key carries (`id:`, `ip:`, `tenant:`), so no caller
+/// can name it.
+const OVERFLOW_KEY: &str = "overflow";
+
 impl RateLimitInterceptor {
     /// Returns the current window number for the given timestamp.
     pub(super) const fn window_number(&self, now_secs: u64) -> u64 {
@@ -144,13 +149,10 @@ impl RateLimitInterceptor {
             return self.admit_or_roll_window(bucket, current_window, limit);
         }
         if buckets.len() >= self.config.max_buckets {
-            // Try to reclaim capacity from stale windows before rejecting.
+            // Try to reclaim capacity from stale windows before overflowing.
             Self::evict_stale(&mut buckets, current_window);
             if buckets.len() >= self.config.max_buckets {
-                return Err(self.refusal(format!(
-                    "rate limiter caller capacity exhausted ({} buckets); request rejected",
-                    self.config.max_buckets
-                )));
+                return self.charge_overflow(&mut buckets, current_window, limit);
             }
         }
         buckets.insert(
@@ -162,6 +164,41 @@ impl RateLimitInterceptor {
         );
         drop(buckets);
         Ok(())
+    }
+
+    /// Charges a caller that cannot have a bucket of its own to the shared
+    /// overflow bucket, which holds one caller's limit between them all.
+    ///
+    /// The refusal names the cause, so an operator can tell it from an ordinary
+    /// rate limit: the callers beyond `max_buckets` have spent the one budget
+    /// they share (audit H16).
+    fn charge_overflow(
+        &self,
+        buckets: &mut HashMap<String, CallerBucket>,
+        current_window: u64,
+        limit: u64,
+    ) -> A2aResult<()> {
+        let first = self.overflowed.fetch_add(1, Ordering::Relaxed) == 0;
+        if first {
+            trace_warn!(
+                max_buckets = self.config.max_buckets,
+                "rate limiter: more callers than max_buckets; the rest share one budget"
+            );
+        }
+        let bucket = buckets
+            .entry(OVERFLOW_KEY.to_owned())
+            .or_insert_with(|| CallerBucket {
+                window_start: AtomicU64::new(current_window),
+                count: AtomicU64::new(0),
+            });
+        self.admit_or_roll_window(bucket, current_window, limit)
+            .map_err(|_| {
+                self.refusal(format!(
+                    "rate limiter: the {} callers it tracks are all active, and the callers \
+                     beyond them share one budget, which is spent",
+                    self.config.max_buckets
+                ))
+            })
     }
 
     /// Applies the limit to a count that came from the shared counter.

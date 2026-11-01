@@ -108,7 +108,8 @@ nobody, so their callers are limited by address; use
 `BearerTokenAuthInterceptor::with_labelled_tokens([(token, "caller-a"), …])` or
 `ApiKeyAuthInterceptor::with_labelled_keys(…)` for per-caller limits (the key
 is then `id:bearer:caller-a` or `id:api-key:caller-a`). The bucket map is
-bounded by `max_buckets` (default 10,000).
+bounded by `max_buckets` (default 10,000); callers beyond it share one overflow bucket
+rather than being refused, and `overflowed()` counts its requests.
 
 > **Note:** `CallContext` fields are read-only (accessed via methods like
 > `ctx.method()`, `ctx.caller_identity()`, `ctx.http_headers()`), with
