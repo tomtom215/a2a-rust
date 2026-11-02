@@ -86,6 +86,11 @@ async fn waits_for_the_log_to_reach_the_stored_position() {
 
 /// A log that never reaches the position (its append failed, or the owner died
 /// between the save and the append) is waited for no longer than the bound.
+///
+/// The bound is met exactly: the wait polls every 10 ms and stops when the
+/// clock reaches the deadline, not one poll later. Time is paused, so the
+/// elapsed time is exact (100 ms; a poll at the deadline would make it 110 ms)
+/// and `assert_eq!` can say so, where `< 200 ms` accepted both.
 #[tokio::test(start_paused = true)]
 async fn gives_up_at_the_bound_when_the_log_never_arrives() {
     let store = store_with_two_events().await;
@@ -101,8 +106,11 @@ async fn gives_up_at_the_bound_when_the_log_never_arrives() {
     .await;
 
     assert_eq!(through_of(&found), 2, "what the log holds");
-    assert!(started.elapsed() >= Duration::from_millis(100));
-    assert!(started.elapsed() < Duration::from_millis(200));
+    assert_eq!(
+        started.elapsed(),
+        Duration::from_millis(100),
+        "stops when the clock reaches the bound"
+    );
 }
 
 /// Nothing to wait for: a stored task with no position, or one the log
