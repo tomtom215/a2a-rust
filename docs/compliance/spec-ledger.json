@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:12027 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:12038 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -691,7 +691,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:376 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:377 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/builder.rs:1114 RequestHandlerBuilder::build"
    ],
    "test_evidence": [
@@ -757,11 +757,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:376 RequestHandler::enter_caller_partition"
+    "crates/a2a-protocol-server/src/handler/mod.rs:377 RequestHandler::enter_caller_partition"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/caller_isolation.rs:130 isolated_another_callers_task_is_not_found_by_any_operation",
-    "crates/a2a-protocol-server/tests/caller_isolation.rs:337 isolation_holds_on_the_sqlite_stores"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs:364 isolation_holds_on_the_sqlite_stores"
    ],
    "notes": "Re-examined 2026-10-18: caller isolation scopes every operation to the caller's partition by default once callers are identified (in-memory, SQLite and PostgreSQL stores); a finer authorization model is the agent's, through ServerInterceptor (permission_denied).",
    "auditor": "A",
@@ -1091,12 +1091,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:376 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:377 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:881 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs:380 another_callers_push_config_cannot_be_read_or_deleted"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs:407 another_callers_push_config_cannot_be_read_or_deleted"
    ],
    "notes": "Re-examined 2026-10-18: a config that does not exist is PushConfigNotFound/TaskNotFound, and another caller's config is not found and cannot be deleted under caller isolation (the default with identified callers); the test added 2026-10-18 pins Get and Delete across callers, which no test covered.",
    "auditor": "A",
@@ -1825,13 +1825,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:376 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:377 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:881 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/caller_isolation.rs:130 isolated_another_callers_task_is_not_found_by_any_operation",
-    "crates/a2a-protocol-server/tests/caller_isolation.rs:380 another_callers_push_config_cannot_be_read_or_deleted"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs:407 another_callers_push_config_cannot_be_read_or_deleted"
    ],
    "notes": "Re-examined 2026-10-18: another caller's task answers exactly as an unknown id does (TaskNotFound, the test's control), from Get, Cancel, Subscribe and a continuing SendMessage, and their configs likewise; ACTS SEC-AUTH-003 and CORE-ERR-009 pass on three bindings. Since 2026-10-18 an unauthenticated push-config call is also refused for its credential before the capability check, so it learns nothing about the agent either.",
    "auditor": "B",
@@ -3721,7 +3721,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:337 RequestHandler::admit"
+    "crates/a2a-protocol-server/src/handler/mod.rs:338 RequestHandler::admit"
    ],
    "test_evidence": [
     "tck/src/equivalence.rs:718 bind_equiv_004",
@@ -4940,7 +4940,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/declared.rs:66 check",
-    "crates/a2a-protocol-server/src/handler/mod.rs:337 RequestHandler::admit",
+    "crates/a2a-protocol-server/src/handler/mod.rs:338 RequestHandler::admit",
     "crates/a2a-protocol-server/src/interceptor/mod.rs:150 ServerInterceptor::authenticates",
     "crates/a2a-protocol-server/src/handler/unreadable.rs:54 RequestHandler::admit_unreadable"
    ],
@@ -7584,7 +7584,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:376 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:377 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/builder.rs:1114 RequestHandlerBuilder::build"
    ],
    "test_evidence": [
@@ -7606,7 +7606,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/call_context.rs:372 CallContext::task_id",
-    "crates/a2a-protocol-server/src/handler/mod.rs:376 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:377 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/push_config.rs:73 RequestHandler::validate_and_store_push_config",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:140 RequestHandler::send_message_inner"
@@ -7630,7 +7630,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:376 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:377 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:881 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
@@ -7651,7 +7651,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:376 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:377 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:881 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
@@ -7694,7 +7694,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:376 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:377 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:881 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
@@ -7715,7 +7715,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:376 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:377 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:881 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
@@ -7736,13 +7736,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:376 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:377 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:881 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/caller_isolation.rs:130 isolated_another_callers_task_is_not_found_by_any_operation",
-    "crates/a2a-protocol-server/tests/caller_isolation.rs:380 another_callers_push_config_cannot_be_read_or_deleted"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs:407 another_callers_push_config_cannot_be_read_or_deleted"
    ],
    "notes": "Re-examined 2026-10-18: Cancel, Subscribe and the push-config operations on another caller's task are refused as not found; a webhook Bob registers lands in his own partition.",
    "auditor": "F",
@@ -7761,7 +7761,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:27 RequestHandler::on_list_tasks",
     "crates/a2a-protocol-server/src/handler/push_config.rs:73 RequestHandler::validate_and_store_push_config",
-    "crates/a2a-protocol-server/src/handler/tenant_resolution.rs:44 RequestHandler::resolve_tenant"
+    "crates/a2a-protocol-server/src/handler/tenant_resolution.rs:47 RequestHandler::resolve_tenant"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/interceptor_tests.rs:199 error_in_before_stops_chain",
@@ -8846,7 +8846,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/audit/log.rs:46 AuditLog"
+    "crates/a2a-protocol-server/src/audit/log.rs:75 AuditLog"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/audit_trail.rs:241 a_cancel_request_names_who_asked",
@@ -9058,7 +9058,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1131 process_ws_message",
-    "crates/a2a-protocol-server/src/handler/mod.rs:337 RequestHandler::admit"
+    "crates/a2a-protocol-server/src/handler/mod.rs:338 RequestHandler::admit"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_before_params/websocket.rs:42 websocket_malformed_frame_is_refused_without_credential",
@@ -11664,7 +11664,7 @@
     "severity": null,
     "impl_evidence": [
      "crates/a2a-protocol-server/src/interceptor/mod.rs:226 ServerInterceptorChain::run_before",
-     "crates/a2a-protocol-server/src/handler/mod.rs:337 RequestHandler::admit",
+     "crates/a2a-protocol-server/src/handler/mod.rs:338 RequestHandler::admit",
      "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:168 TerminalTracking::cancel_with"
     ],
     "test_evidence": [
@@ -11696,7 +11696,7 @@
     "severity": null,
     "impl_evidence": [
      "crates/a2a-protocol-server/src/interceptor/mod.rs:226 ServerInterceptorChain::run_before",
-     "crates/a2a-protocol-server/src/handler/mod.rs:337 RequestHandler::admit"
+     "crates/a2a-protocol-server/src/handler/mod.rs:338 RequestHandler::admit"
     ],
     "test_evidence": [
      "crates/a2a-protocol-server/tests/auth_required_state_tests.rs:169 auth_required_state_does_not_authorize_the_continuation"

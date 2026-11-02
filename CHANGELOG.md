@@ -1223,6 +1223,17 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **The audit log's per-chain locks no longer pile up** (server; audit
+  D-19). The map of append locks gained an entry per distinct chain name and
+  never lost one, and a chain is named for the tenant, which an unauthenticated
+  caller chooses in common configurations: one request per invented name grew
+  it for the life of the process. A chain's entry now exists while someone holds
+  or awaits its lock and is removed when the last of them lets go, including a
+  caller cancelled while it waited. A tenant name is also bounded
+  (`handler::MAX_TENANT_LEN`, 256 bytes; a longer one is `InvalidParams`), so the
+  name a request chooses is not unbounded either. Tests:
+  `audit/chain_lock_tests.rs`, `tests/caller_isolation.rs`.
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a

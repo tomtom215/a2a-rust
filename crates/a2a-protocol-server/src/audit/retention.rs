@@ -124,8 +124,7 @@ impl AuditLog {
     pub async fn place_hold(&self, chain: &str, reason: &str, by: &str) -> A2aResult<()> {
         // Under the chain's lock, so an erasure in this process sees the
         // hold or finishes before it.
-        let lock = self.chain_lock(chain);
-        let _guard = lock.lock().await;
+        let _guard = self.lock_chain(chain).await;
         let mut record = AuditRecord::new(chain, kind::HOLD_PLACED);
         record.actor = Some(Actor::new(by, Some("operator".to_owned())));
         record.detail.insert("reason".to_owned(), reason.into());
@@ -148,8 +147,7 @@ impl AuditLog {
     ///
     /// Returns an error when the store fails.
     pub async fn release_hold(&self, chain: &str, by: &str) -> A2aResult<bool> {
-        let lock = self.chain_lock(chain);
-        let _guard = lock.lock().await;
+        let _guard = self.lock_chain(chain).await;
         if !self
             .store()
             .holds()

@@ -13,6 +13,9 @@ use std::time::Instant;
 use super::RequestHandler;
 use crate::error::ServerResult;
 
+/// The longest tenant name a request may carry, in bytes.
+pub const MAX_TENANT_LEN: usize = 256;
+
 impl RequestHandler {
     /// Resolves the authoritative tenant for a request.
     ///
@@ -115,5 +118,49 @@ impl RequestHandler {
             )));
         }
         self.isolatable(authoritative)
+    }
+}
+
+impl RequestHandler {
+    /// Passes `tenant` through when this handler can keep it apart from
+    /// every other tenant, and refuses it otherwise.
+    ///
+    /// The empty tenant is the shared default partition every store has, so
+    /// it always passes. A non-empty one on stores that do not partition by
+    /// tenant would be served from the same records as every other tenant —
+    /// the cross-tenant read, list, subscribe and cancel the 2026-10-02
+    /// comparison measured — so it is refused before anything is read or
+    /// written.
+    ///
+    /// # Errors
+    ///
+    /// [`ServerError::UnsupportedOperation`](crate::error::ServerError::UnsupportedOperation)
+    /// naming what to configure.
+    pub(super) fn isolatable(&self, tenant: String) -> ServerResult<String> {
+        // The U+001F separator joins a tenant to a caller in a partition key,
+        // and a tenant is logged: no control character reaches either (§14).
+        if tenant.chars().any(char::is_control) {
+            return Err(crate::error::ServerError::InvalidParams(
+                "a tenant may not contain a control character such as U+001F".to_owned(),
+            ));
+        }
+        // A tenant names the audit chain and keys per-tenant state, and an
+        // unauthenticated caller can choose it in common configurations: a
+        // name of any length is a name the server keeps (audit D-19).
+        if tenant.len() > MAX_TENANT_LEN {
+            return Err(crate::error::ServerError::InvalidParams(format!(
+                "a tenant may not be longer than {MAX_TENANT_LEN} bytes"
+            )));
+        }
+        if tenant.is_empty() || !self.refuse_unisolated_tenants {
+            return Ok(tenant);
+        }
+        Err(crate::error::ServerError::UnsupportedOperation(
+            "this server cannot isolate tenants: its task store or push-config store does not \
+             partition by tenant, so a request naming a tenant would share every other \
+             tenant's records. Configure the TenantAware* stores, or call \
+             RequestHandlerBuilder::accept_unisolated_tenants() if tenants here only key limits"
+                .to_owned(),
+        ))
     }
 }

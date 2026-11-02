@@ -31,6 +31,35 @@ const MAX_TRACKED_RUNS: usize = 65_536;
 
 /// Read page size when exporting or verifying a whole chain.
 const READ_PAGE: usize = 1_000;
+type ChainLocks = StdMutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>;
+
+/// The hold on one chain's append lock; see [`AuditLog::lock_chain`].
+pub(super) struct ChainGuard<'a> {
+    locks: &'a ChainLocks,
+    chain: String,
+    held: Option<tokio::sync::OwnedMutexGuard<()>>,
+    lock: Option<Arc<tokio::sync::Mutex<()>>>,
+}
+
+impl Drop for ChainGuard<'_> {
+    fn drop(&mut self) {
+        // The lock first, then this guard's own handle on it.
+        drop(self.held.take());
+        drop(self.lock.take());
+        let mut locks = self
+            .locks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Checked under the lock that hands out clones: when the map's is the
+        // only one left, no one holds the chain and no one waits for it.
+        if locks
+            .get(&self.chain)
+            .is_some_and(|entry| Arc::strong_count(entry) == 1)
+        {
+            locks.remove(&self.chain);
+        }
+    }
+}
 
 /// The audit log: the one place records are sealed.
 ///
@@ -48,7 +77,7 @@ pub struct AuditLog {
     signer: Option<CheckpointSigner>,
     checkpoint_every: u64,
     require_record: bool,
-    locks: StdMutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    locks: ChainLocks,
     runs: StdMutex<Runs>,
     failures: AtomicU64,
     /// Protects what records say about people; see [`super::AuditPrivacy`].
@@ -144,12 +173,40 @@ impl AuditLog {
         self.failures.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub(super) fn chain_lock(&self, chain: &str) -> Arc<tokio::sync::Mutex<()>> {
-        let mut locks = self
-            .locks
+    /// Takes the append lock of `chain`, waiting for it.
+    ///
+    /// The map keeps an entry for a chain only while someone holds or awaits
+    /// it: the guard removes it when the last one lets go. The map grew by an
+    /// entry per distinct chain name and never shrank, and a chain is named
+    /// for the tenant, which an unauthenticated caller chooses in common
+    /// configurations (audit D-19). The guard is made before the wait, so a
+    /// caller cancelled while it waits leaves no entry behind either.
+    pub(super) async fn lock_chain(&self, chain: &str) -> ChainGuard<'_> {
+        let lock = {
+            let mut locks = self
+                .locks
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            Arc::clone(locks.entry(chain.to_owned()).or_default())
+        };
+        let to_wait_on = Arc::clone(&lock);
+        let mut guard = ChainGuard {
+            locks: &self.locks,
+            chain: chain.to_owned(),
+            held: None,
+            lock: Some(lock),
+        };
+        guard.held = Some(to_wait_on.lock_owned().await);
+        guard
+    }
+
+    /// How many chains the lock map holds an entry for.
+    #[cfg(test)]
+    pub(super) fn tracked_chains(&self) -> usize {
+        self.locks
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        Arc::clone(locks.entry(chain.to_owned()).or_default())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
     }
 
     /// Seals `record` onto the end of its chain and stores it; returns it
@@ -165,8 +222,7 @@ impl AuditLog {
     /// Returns an error when the store fails, or when the record lost the
     /// race for a position eight times in a row.
     pub async fn append(&self, record: AuditRecord) -> A2aResult<AuditRecord> {
-        let lock = self.chain_lock(&record.chain);
-        let _guard = lock.lock().await;
+        let _guard = self.lock_chain(&record.chain).await;
         self.append_locked(record).await
     }
 
@@ -248,8 +304,7 @@ impl AuditLog {
                 "no checkpoint signer is configured",
             ));
         }
-        let lock = self.chain_lock(chain);
-        let _guard = lock.lock().await;
+        let _guard = self.lock_chain(chain).await;
         let (seq, hash) = self
             .store
             .head(chain)

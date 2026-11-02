@@ -54,6 +54,8 @@ mod sqlite;
 #[cfg(test)]
 mod actors_tests;
 #[cfg(test)]
+mod chain_lock_tests;
+#[cfg(test)]
 mod executor_detail_tests;
 #[cfg(test)]
 mod tests;
