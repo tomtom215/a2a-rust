@@ -1258,6 +1258,12 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **`127.0.0.2` is loopback on Linux only.** A push test used it as "an address that is down" and passed
+  on Linux; on macOS nothing configures it, so the connect waited out the request timeout and the macOS
+  job of #186 failed with "timed out after 2s" (not "refused"). A test that needs a fast refusal on every
+  platform uses `::1` with nothing listening on it (`down_address` in `push/sender_pin_tests.rs`). The
+  sandbox cannot reproduce a black-holed address (it rejects at once), so the fix was verified on Linux
+  and confirmed by the CI re-run, not reproduced.
 - **Check a rule in a planning document against the gate that enforces it.** `DECISIONS.md` said a
   November 0.16.0 needed a `**Cadence exception:**` line because 0.15.0 was breaking in October; the gate
   (`check_release_tree.py`, `check_cadence`) compares the calendar months of the two release dates, so a

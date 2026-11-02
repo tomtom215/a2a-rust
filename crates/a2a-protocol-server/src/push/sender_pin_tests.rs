@@ -83,7 +83,7 @@ fn sender(pki: &Pki, attempts: usize) -> HttpPushSender {
     let rules = Arc::new(proxy::matcher(&|_| None, &ProxySetting::Environment));
     HttpPushSender {
         client: HttpsClient::with_rules(&tls, rules),
-        request_timeout: Duration::from_secs(2),
+        request_timeout: Duration::from_secs(10),
         retry_policy: PushRetryPolicy::default()
             .with_max_attempts(attempts)
             .with_backoff(vec![Duration::from_millis(10)]),
@@ -177,6 +177,19 @@ fn loopback(port: u16) -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], port))
 }
 
+/// An address on this machine that nothing listens on and that fails fast on
+/// every platform: `::1` is refused when IPv6 is up (the receivers listen on
+/// `127.0.0.1` only) and fails at once when it is not.
+///
+/// This was `127.0.0.2`, which Linux treats as loopback and refuses, but macOS
+/// does not configure it, so a connect to it waited out the request timeout
+/// and the macOS job of the pull request failed with "timed out after 2s". The
+/// request timeout is 10 s here because Windows can take about 2 s to refuse a
+/// closed loopback port.
+fn down_address(port: u16) -> SocketAddr {
+    SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, port))
+}
+
 /// The fix, end to end. The name resolves nowhere, so the connection can only
 /// have gone where the pin said, and the handshake succeeded, so the
 /// certificate was checked against the name in the URL.
@@ -247,8 +260,7 @@ async fn the_pin_ends_with_the_delivery() {
 }
 
 /// A host with an address that is down and one that is up: the connector goes
-/// on to the next address of the pin (127.0.0.2 is loopback too, with nothing
-/// listening on it).
+/// on to the next address of the pin.
 #[tokio::test]
 async fn an_https_delivery_goes_on_to_the_next_validated_address() {
     let (pki, server) = pki("pinned.test");
@@ -256,7 +268,7 @@ async fn an_https_delivery_goes_on_to_the_next_validated_address() {
     let port = tls_receiver(server, Arc::clone(&seen)).await;
     let sender = sender(&pki, 1);
     let url = format!("https://pinned.test:{port}/hook");
-    let down = SocketAddr::from(([127, 0, 0, 2], port));
+    let down = down_address(port);
 
     sender
         .deliver(
@@ -280,7 +292,7 @@ async fn an_http_delivery_tries_the_next_validated_address_on_each_attempt() {
     let port = plain_receiver(Arc::clone(&seen)).await;
     let sender = sender(&pki, 2);
     let url = format!("http://down.test:{port}/hook");
-    let down = SocketAddr::from(([127, 0, 0, 2], port));
+    let down = down_address(port);
 
     sender
         .deliver(
