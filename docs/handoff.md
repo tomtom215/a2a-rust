@@ -22,16 +22,17 @@ only: when something here is done, delete it rather than annotating it.
 - **Branch `claude/pensive-bardeen-c6ofm8` (2026-11-01), from `main` at `4a8243c`
   (the merge of pull request #185): the 149 open audit rows are triaged and most fix groups are
   committed (below). One pull request, opened only when the groups the maintainer wants pass the bar;
-  none is open. The branch was pushed on 2026-11-02 (pushing it runs no CI); the pull request is
-  the maintainer's call once the groups they want are in.**
+  the pull request was opened on 2026-11-02 at the maintainer's request.**
   - **First, next session.** (1) What waits on the maintainer: permission to run `promtool` (group J);
     forks F13 to F16, never asked, with positions in `docs/audits/2026-11-01-triage/DECISIONS.md`;
     whether the other 26 wire structs (G-10 option A) go into 0.16.0; the D-05 dead-webhook policy; the
     options for E-F18, E-F25 and D-18. (2) Then build, in this order: M (delegation hand-off on shutdown,
-    F5), O and the HttpPool (F7, ADR 0032), the contained rows of L (D-19, E-F15, E-F14, E-F22, E-F21),
-    the rest of I and G. (3) Before the pull request: `cargo mutants --in-diff` through CI's shards,
-    `cargo-semver-checks`, the official TCK, the Cadence-exception line and release prep (`PLAN.md`,
-    "Before 0.16.0 is tagged").
+    F5), O and the HttpPool (F7, ADR 0032), the contained rows of L (E-F14, E-F22, E-F21, E-F16, E-F17;
+    D-19 is done and E-F15 is documented only), the rest of I and G. The per-group status, with the rows
+    left open, is the table in `PLAN.md` ("Status when the pull request was opened"). (3) Read what the
+    pull request's CI says first: it runs `cargo mutants --in-diff`, `cargo-semver-checks`, and the jobs
+    this session could not run; fix what it finds before building anything new. Release prep is in
+    `PLAN.md`, "Before 0.16.0 is tagged".
   - **Fix work, `git log 4a8243c..` (oldest first; every commit is `Tom F.`, signed off, no other
     trailer, for DCO):**
       - `4a3cbe1` docs(audit): triage the 149 open rows of the 2026-10-29 audit against main@4a8243c
@@ -61,10 +62,11 @@ only: when something here is done, delete it rather than annotating it.
       - `2f35951` docs(handoff): the branch is pushed; what waits on the maintainer and what the next session builds first
       - `93dbb05` fix(server): the audit log's per-chain locks are released when unused, and a tenant name is bounded (audit D-19)
       - `af747a4` docs(server): AuthFailureThrottle's counts are per replica, and the book and rustdoc say how to size it for a fleet (audit E-F15, interim)
+      - `edd8ac2` docs: the audit register and handoff list D-19 and the E-F15 interim fix
+      - `d75efc9` docs(changelog): the 0.16.0 Internal section moves to docs/changelog-internal/ (audit G/C-01; fork F11)
     Each fix has a regression test that failed before it (the commit messages say how each was
     shown, and which hand-applied mutants each test kills).
-  - **Verified, and what was not.** On the Q commit (the last code commit; the later ones are
-    documentation): `cargo nextest run -p a2a-protocol-types -p a2a-protocol-client -p
+  - **Verified, and what was not.** On the Q commit (`c4c5c29`): `cargo nextest run -p a2a-protocol-types -p a2a-protocol-client -p
     a2a-protocol-server -p a2a-protocol-sdk --all-features --profile ci` 6055 passed, 177 skipped; the
     other 24 workspace members 319 passed; doctests types 54, client 31, server 75, sdk 2, book 316;
     `cargo hack clippy -p <the four crates> --all-targets --each-feature -- -D warnings` 59 of 59, no
@@ -72,8 +74,10 @@ only: when something here is done, delete it rather than annotating it.
     script gates; `cargo fmt --check`; the PostgreSQL suites against the local PostgreSQL 16
     (`scripts/run_postgres_suites.py`: 12 test targets and 11 library modules, then the named CI suites:
     `postgres_store_tests` 72, `multi_replica` 7, `turn_claims` + `replica_processes` +
-    `cross_replica_cancel` + `stale_write_position` 22, `encrypted_store` 1). Hand-applied mutants: 14 in
-    B2, 2 in I, 12 in F (after its keepalive was rewritten), 19 in K, 16 in G-10's builders, 10 in Q;
+    `cross_replica_cancel` + `stale_write_position` 22, `encrypted_store` 1). After D-19 (`93dbb05`, the last code commit) only the server
+    crate's suite (3941 passed), its clippy and the gates were re-run: nothing in the other crates changed.
+    Hand-applied mutants: 14 in
+    B2, 2 in I, 12 in F (after its keepalive was rewritten), 19 in K, 16 in G-10's builders, 10 in Q, 4 in D-19;
     `cargo mutants` cannot build 23 of the builders' 24 mutants (the types have no `Default`). **Not
     run:** `cargo mutants --in-diff` on the server and client crates (a client run on A to E: 70 mutants,
     48 caught, 21 unviable, 1 missed and killed afterwards; the server run was stopped at 20 of 168; the
@@ -987,8 +991,9 @@ it.
   - **F1, 0.16.0 breaks: all five.** `#[non_exhaustive]` on the generated wire structs (G-10),
     `tls-rustls` as a default feature of the server crate (G-06), `RequestContext.context_id` becomes
     `ContextId` (G-18), `AgentCard::new` defaults `streaming` to true (G-07), and `sign_agent_card` is
-    removed (NEW-g-api-4). Each under Breaking Changes with a migration; a `**Cadence exception:**` line
-    (0.15.0 was also breaking, in October).
+    removed (NEW-g-api-4). Each under Breaking Changes with a migration. No `**Cadence exception:**` line
+    is needed for a 0.16.0 dated in November or later (0.15.0 is dated in October; the check compares
+    calendar months, and this file said otherwise until 2026-11-02).
   - **F2, loopback and proxies: exempt loopback by default**, `A2A_PROXY_LOOPBACK=1` to opt back in, and
     Go's `NO_PROXY` dialect (B-23).
   - **F3, bad `OTEL_*` values: warn and fall back**; only an unusable endpoint URL still fails.
@@ -1251,6 +1256,11 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **Check a rule in a planning document against the gate that enforces it.** `DECISIONS.md` said a
+  November 0.16.0 needed a `**Cadence exception:**` line because 0.15.0 was breaking in October; the gate
+  (`check_release_tree.py`, `check_cadence`) compares the calendar months of the two release dates, so a
+  November release needs none. The wrong line had been copied into three documents and a to-do list; it
+  was found by reading the gate before drafting the line, 2026-11-02.
 - **A sandbox run that fails oddly may be a full disk.** `cancel_keeps_concurrent_writes sqlite`
   failed once in a full run while `df` read 100%, and passed 3 of 3 alone and in the next full run. The
   target directory is about 8 GB and each side manifest (`fuzz/`, `itk/`, `bindings/`) adds 300-700 MB;

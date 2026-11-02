@@ -392,12 +392,12 @@ Read nothing here as released: no tag, and no pull request is open.
 | `c902c46` | fixed | E-F7, NEW-e-1, NEW-h-s0-1, NEW-h-s0-5, NEW-h-s0-9, E-F11, H3 (part) |
 | `aa6e4ff` | fixed | NEW-d-1, D-03 (a to c), E-F9, NEW-e-2, E-F20, D-16, D-23, G-21, NEW-g-api-3 |
 | `6d746dd` | fixed (part) | NEW-g-api-1, G-20, G-04, NEW-g-api-2, B-20, B-03, B-15, B-18 (part), B-19, H2 (part) |
-| `065f0a0` | fixed | the documentation-drift rows of group H |
+| `065f0a0` | fixed (part) | G/D-02 to G/D-11, G/C-03, NEW-g-docs-3, NEW-g-docs-5, NEW-g-docs-6, NEW-g-docs-7, NEW-c-2 (NEW-g-docs-8 is not done) |
 | `4b6b382` | fixed (part) | NEW-b-2, B-23, B-27, B-12 |
 | `9c69ef6` | fixed | E-F13 |
 | `4fd80d0` | fixed (part) | C-08, NEW-c-5 |
 | `636eaf0` | fixed (part) | A13, A27, NEW-a-l-1, NEW-a-l-3, NEW-a-l-4b, L18 |
-| `41756f1` | fixed (part) | G-18, G-07, G-06; `sign_agent_card` removed |
+| `41756f1` | fixed (part) | G-18, G-07, G-06; NEW-g-api-4 (`sign_agent_card` removed) |
 | `7b36d51` | fixed | G-22, G-17, G-08, G-13, G-23 (part) |
 | `4ec89f3` | fixed | G-19 |
 | `a8bf45e` | fixed | NEW-h-designs-1, H16, NEW-h-designs-7, NEW-h-designs-4 |

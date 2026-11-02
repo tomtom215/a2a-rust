@@ -50,6 +50,42 @@ survivors. Live runs are listed per group and are in addition to, not instead of
 | 18 | P (wave 6) | Release policy and the changelog | 2 | F6 F11 | S |
 | 19 | Q (wave 6) | Examples that teach the right thing | 3 | none | M |
 
+## Status when the pull request was opened (2026-11-02)
+
+97 of the 191 items have at least one commit on the branch; 94 do not. (Counted by script: an item is
+counted when its ID is named in section O of `../2026-10-29/README.md`, which is written from the commit
+messages. Some of the 97 are done only in part, as the last column says.) The bar above was **not**
+fully met: the PostgreSQL suites, the per-feature clippy matrix and every script gate ran on the tip, but
+`cargo mutants --in-diff`, `cargo-semver-checks`, the official TCK and the live matrix did not, and group
+J's proof needs `promtool`, which could not be run here. The pull request was opened at the maintainer's
+request because the session had grown too long to continue in; CI runs the rest.
+
+| Group | Status | Commits | Left open |
+|---|---|---|---|
+| A | done | `a3a5dde` `78fcd2c` | |
+| B | part | `c902c46` | NEW-h-s0-6, NEW-h-s0-8; H3 in part |
+| C | part | `aa6e4ff` | E-F8 (fork F13); D-03 (d) (fork F14) |
+| D | part | `6d746dd` | B-14 (fork F15), B-29 (a decision), the rest of B-18, H2's pooling (fork F7) |
+| G | part | `636eaf0` | A14, A15, A19, A21, A22, A23, A24, A25, A26, NEW-a-l-2, NEW-a-l-4a, NEW-a-l-5, NEW-a-l-6 |
+| H | part | `065f0a0` | NEW-g-docs-8 |
+| E | part | `4b6b382` | NEW-b-1 and NEW-b-5 (fork F16), NEW-b-3, NEW-b-4, B-08, B-09, B-26, B-28 |
+| F | part | `e2712ec` | B-10, B-11, D-20, B-25 |
+| I | part | `4fd80d0` | C-06, C-09, C-10, C-12, C-13, C-16, C-22, C-23, NEW-c-3, NEW-c-4 |
+| J | **not started, blocked** | | all 8: the proof is `promtool test rules` and a live stack, and running `promtool` here was refused |
+| K | part | `2b83f88` | SEC-14, NEW-f-2, NEW-d-3; D-05 (the id and the book only: no outbox, no dead-webhook policy), D-13 and SEC-13 (direct connections only; fork F16), SEC-17 and NEW-f-4 (documented only) |
+| B2 | part | `9c69ef6` | E-F12 |
+| L | part | `93dbb05` `af747a4` | D-19 done; E-F15 documented only; open: E-F14, E-F16, E-F17, E-F19, E-F21, E-F22, E-F23, E-F24, E-F26; need a decision: E-F18, E-F25, D-18 |
+| M | **not started** | | all 8 (fork F5) |
+| O | **not started** | | H6, H12, D-10, D-11, D-12 (fork F7); NEW-h-designs-1 was done under R |
+| R | part | `a8bf45e` | the four fixes are done; open: NEW-h-designs-3, NEW-h-designs-6, H5, H7, H8, H9, H10, H11, H13, H14, H17, H19 |
+| N | part | `41756f1` `7b36d51` `4ec89f3` `b9c1304` | G-09, G-12, G-14, G-15, G-16; G-10 for the other 26 wire structs; G-23 in part |
+| P | done | `0b06ec2` `d75efc9` | |
+| Q | done | `c4c5c29` | |
+
+**Build next, in this order:** M, then O with the `HttpPool`, then the contained rows of L, then the rest of
+I and G. Rows that wait on the maintainer are in `DECISIONS.md` (forks F13 to F16, and the options for
+D-05's dead-webhook policy, E-F18, E-F25 and D-18).
+
 ### A. Credentials follow the host the caller named
 
 - **Items (7):** SEC-08, SEC-09, NEW-f-1, NEW-f-5, NEW-f-6, SEC-18, G/D-05
@@ -201,5 +237,5 @@ missing.
 
 1. Every row in `../2026-10-29/README.md` has a final status; none is `open`, `confirmed (read)` or `needs decision` unless the maintainer deferred it, with the reason in its note.
 2. The pull request's CI is green on every job, and `main` after the merge is green (the `CI` run on `4a8243c` had not finished when this was written).
-3. `RELEASING.md`'s checklist, `STABILITY.md` section 1 recomputed, the `**Cadence exception:**` line, and the 0.15 to 0.16 upgrade guide listing every break.
+3. `RELEASING.md`'s checklist, `STABILITY.md` section 1 recomputed, and the 0.15 to 0.16 upgrade guide listing every break. No `**Cadence exception:**` line is needed if 0.16.0 is dated in November or later (0.15.0 is dated 2026-10-25; the check compares calendar months).
 4. The live matrix has been run against the merged tree, not the branch.

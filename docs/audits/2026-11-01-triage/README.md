@@ -21,6 +21,9 @@ The three S0 rows are all `fixed (part)`: H2 is now S1, H3 medium, H4 high (`h-s
 The triage also found 57 things no report had (52 distinct; one of them found by the session, not an agent): section N of
 the audit README. `PLAN.md` groups the 191 items that need work into 19 commit groups for the one pull request;
 `DECISIONS.md` has the 46 decisions plus twelve forks that gate work, each with a position.
+**Status (2026-11-02):** the fixes are on branch `claude/pensive-bardeen-c6ofm8` and in its pull
+request. `PLAN.md` has a per-group table of what is committed and which rows are left, and `DECISIONS.md`
+has the same for the forks; the register of fixed rows is section O of `../2026-10-29/README.md`.
 
 ## How it was done
 

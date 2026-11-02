@@ -4,13 +4,30 @@
 # Decisions for the maintainer
 
 Triage of 2026-11-01, `main` at `4a8243c`. 46 audit rows are `needs decision`, and the triage added
-choices of its own (below). Nothing here is built. Each fork says what is being decided, what I would
+choices of its own (below). **What was built by 2026-11-02 is in the status table that follows;** the fork texts below are as written on 2026-11-01. Each fork says what is being decided, what I would
 do, and what that costs; the per-row options the triage agents wrote follow in the second half,
 unedited except for layout.
 
 **How to read the "my position" lines.** They are recommendations from reading the code, not
 measurements. Where one rests on a run, it names the run (`live-results.md`). Work that needs no
 decision (about 100 rows and 51 new findings) proceeds in the order in `PLAN.md` without waiting.
+
+## Status of the forks at the pull request (2026-11-02)
+
+| Fork | Maintainer's decision | Built |
+|---|---|---|
+| F1, the 0.16.0 breaks | all five | G-06, G-07, G-18 and the removal of `sign_agent_card` built (`41756f1`); G-10 built for the 13 protocol structs (`b9c1304`), **not** for the other 26 wire structs |
+| F2, loopback and proxies | loopback exempt | built (`4b6b382`) |
+| F3, `OTEL_*` errors | warn and fall back | built (`4fd80d0`) |
+| F4, Production on a shared store | refuse, with an opt-out | E-F13 built (`9c69ef6`); E-F12 not |
+| F5, delegation on shutdown | detach and resume, plus keep-alive | WebSocket keep-alive and write bounds built (`e2712ec`); gRPC keep-alive (B-10, B-11, D-20) and the detach on shutdown (group M) **not** |
+| F6, behaviour changes in patches | "v0.15.1 was never released": fold its notes into 0.16.0 | built (`0b06ec2`); no patch-policy gate was built |
+| F7, one HTTP pool | build the opt-in `HttpPool` | **not built** (ADR 0032) |
+| F8, a published image | signed image to GHCR from `release.yml` | the job is written (`636eaf0`); it has not run, since it runs on a tag |
+| F9, F10 | ADRs now, build later | ADRs 0035 and 0036 written (`50242e0`); not built |
+| F11, changelog shape | Highlights block; Internal moved out | built (`0b06ec2`, `d75efc9`) |
+| F12, the swarm designs | the four fixes only | built (`a8bf45e`) |
+| F13 to F16 | never asked | not built; positions are in their entries below |
 
 ## Forks that gate work
 
@@ -30,8 +47,11 @@ out at the earliest.
 | G-15 | Renames | Deprecated aliases in 0.16, removal in 0.17 | **Add aliases in 0.16** |
 | NEW-g-api-4 | `sign_agent_card` was documented as removed in 0.16.0 (four places) and is still public | The promise is in `CHANGELOG.md`, the book and the rustdoc | **Remove it**, as promised, and list it in Breaking Changes and the upgrade guide |
 
-Cadence: 0.15.0 was a breaking release in October, so a second one in November needs a
-`**Cadence exception:**` line (`STABILITY.md`, `RELEASING.md`). You chose 0.16.0 already; this is only a reminder that the line is required.
+Cadence (corrected 2026-11-02): `STABILITY.md` allows one breaking minor per calendar month, and
+`scripts/check_release_tree.py` compares the months of the two releases' dates. 0.15.0 is dated
+2026-10-25, so a 0.16.0 dated in November or later needs **no** `**Cadence exception:**` line; it would
+need one only if it were dated in October, or if another breaking release were dated in the same month as
+it. This text said a November release needed the line; that was wrong.
 
 ### F2. Loopback and `HTTP_PROXY` (NEW-b-2, B-23)
 Live (`live-results.md` LR-2): with `HTTP_PROXY` set and `NO_PROXY` unset, the client sends
