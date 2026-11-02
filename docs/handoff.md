@@ -107,8 +107,13 @@ only: when something here is done, delete it rather than annotating it.
     macos-latest)` at the stream assertion; that file, `tests/common` and the HTTP/1 path are
     unchanged by the branch, and it did not reproduce on Linux (0 of 300 alone, 0 of 1200 with 24
     copies on 4 cores, built with `--features signing`; a build without it holds no tests and
-    "passes" vacuously). The assertions now print what they got (`08c0b26`, local until the next
-    push); the cause is unknown. **Run after the fixes:** the binding's
+    "passes" vacuously). The assertions now print what they got (`08c0b26`); the cause is
+    unknown. (7) `cargo-deny` failed on RUSTSEC-2026-0433 (`pulldown-cmark` 0.13.5, a build
+    dependency of `prost-build`; quadratic parsing with `ENABLE_WIKILINKS`, off by default). Not
+    the branch's making: main locks the same version and the advisory is newer than main's last
+    green run. Bumped to 0.13.6 in the four lockfiles that carry it (`bc1abfe`); `cargo-deny` is
+    not installed here, so that check is unconfirmed until CI runs it. **Run after the
+    fixes:** the binding's
     own fmt, clippy `--all-targets -D warnings`, 19 integration targets (3 `#[ignore]`d for SPIRE) and
     75 unit tests; `itk` and `scripts/live/replica` `cargo check --all-targets`; `fuzz` with
     `--cfg fuzzing`; the 36 gates; the cancel test under clippy with `sqlite,postgres`. **Not re-run
