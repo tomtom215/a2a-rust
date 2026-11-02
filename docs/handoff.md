@@ -66,8 +66,31 @@ only: when something here is done, delete it rather than annotating it.
       - `d75efc9` docs(changelog): the 0.16.0 Internal section moves to docs/changelog-internal/ (audit G/C-01; fork F11)
       - `a27676e` docs(audit): per-group status of the plan and the forks at the pull request; the cadence-exception text corrected (a November 0.16.0 needs no line)
       - `95c9fb2` docs(audit): SPDX headers on the triage reports
+      - `0820857` docs(handoff): the pull request is #186
+      - `9e6d495` test(server): the push pin tests use ::1 for "an address that is down" (the macOS jobs)
+      - `aeb4cfb` test(server): the cancel test appends before cancel's own write, not on the next read
+      - `46b425f` style(slimrpc): rustfmt the five binding files the 0.16.0 codemods left unformatted
+      - `1ac2dbe` test(slimrpc): the slim-node OTEL test follows the warn-and-fall-back decision (F3, C-08)
+      - `3d671eb` style(itk): rustfmt the two files the constructor codemod left unformatted
     Each fix has a regression test that failed before it (the commit messages say how each was
     shown, and which hand-applied mutants each test kills).
+  - **What the pull request's first CI run found (2026-11-02): four failures, all of this branch's
+    making, all fixed in the last five commits above.** (1) macOS `pin_tests`: `127.0.0.2` is not
+    loopback on macOS, so "an address that is down" hung instead of refusing (`9e6d495`; fixed by
+    `::1`; not reproducible on Linux). (2) `cancel_keeps_concurrent_writes::sqlite`: this branch's
+    `SyncCollector::close_out` adds a read to the tail of `SendMessage`, which on SQLite can take the
+    test's "append on the next read" trigger; 17 of 200 runs failed on the branch and 0 of 300 on
+    main, 600 of 600 pass after the trigger moved to cancel's own write, and reverting cancel's fix
+    still fails the test on both stores (`aeb4cfb`). (3) The SLIMRPC binding's `slim-node` test still
+    asserted the pre-F3 exit; it is outside the workspace and behind `otlp`, so no workspace run
+    reached it (`1ac2dbe`: two tests, both fail when the node ignores `OTEL_*`). (4) `cargo fmt` of
+    the binding and `itk`, same cause (`46b425f`, `3d671eb`). **Run after the fixes:** the binding's
+    own fmt, clippy `--all-targets -D warnings`, 19 integration targets (3 `#[ignore]`d for SPIRE) and
+    75 unit tests; `itk` and `scripts/live/replica` `cargo check --all-targets`; `fuzz` with
+    `--cfg fuzzing`; the 36 gates; the cancel test under clippy with `sqlite,postgres`. **Not re-run
+    locally:** the full workspace nextest suite on the new tip (CI is the check), the `wasm-spike`
+    crates, and the fmt diffs in `fuzz`, `benches/sdk-comparison` and `scripts/live/replica/v015`,
+    which are in files this branch did not touch and which no CI job checks.
   - **Verified, and what was not.** On the Q commit (`c4c5c29`): `cargo nextest run -p a2a-protocol-types -p a2a-protocol-client -p
     a2a-protocol-server -p a2a-protocol-sdk --all-features --profile ci` 6055 passed, 177 skipped; the
     other 24 workspace members 319 passed; doctests types 54, client 31, server 75, sdk 2, book 316;
@@ -1416,6 +1439,19 @@ into this file: the commit that records it changes it.
   crate it changed: after WP-B, the CLI's and the MCP bridge's tests
   served cards without skills. Run the whole workspace, not the crates a
   package touched, before merging it.
+- Crates outside the workspace (`bindings/a2a-protocol-slimrpc`, `itk`, `fuzz`,
+  `benches/sdk-comparison/harness/*`, `scripts/live/replica`, the wasm spike) are
+  reached by none of `cargo fmt --all`, `cargo clippy --workspace` or nextest. A
+  codemod over the workspace leaves them unformatted and their old assertions
+  unrun, and the first CI run is where it shows. After one, run each manifest's
+  own commands: the SLIMRPC job is `cargo fmt --check`, `cargo clippy
+  --all-targets -- -D warnings`, `cargo test --tests`, run from the binding;
+  `fuzz` compiles only under `RUSTFLAGS="--cfg fuzzing"` (2026-11-02).
+- A test that forces an interleaving by firing on "the next read" breaks when
+  production code gains a read. The in-memory store hid it (its reads never
+  yield); SQLite showed it in 17 of 200 runs. Fire on the write that has one
+  author, and measure a flake as N separate-process runs on the branch against
+  N on main before deciding whose fault it is (2026-11-02).
 
 ## History
 
