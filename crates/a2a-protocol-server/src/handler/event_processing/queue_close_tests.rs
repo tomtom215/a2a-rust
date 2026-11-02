@@ -125,6 +125,45 @@ async fn the_collector_leaves_a_task_whose_executor_returns_after_the_queue_clos
     assert_eq!(state_in(&store, "t").await, TaskState::Working);
 }
 
+/// What a blocking send answers when the queue closes on a task the collector
+/// still holds as `working` and the store holds as `canceled`, as when another
+/// replica canceled it meanwhile: the store's ending, not the collector's last
+/// sight of it.
+///
+/// This goes through `collect_then_follow`, which the send path uses. The
+/// tests above go through `collect_events`, a test-only copy of the same
+/// steps, so the production conditional that runs `close_out` for a task that
+/// is not interrupted was never exercised: with its `!` deleted the answer is
+/// `working`.
+#[tokio::test]
+async fn a_send_answers_with_the_ending_the_store_holds() {
+    let (handler, store) = handler_with("t", Duration::from_secs(5)).await;
+    let mut canceled = task("t");
+    canceled.status = TaskStatus::new(TaskState::Canceled);
+    store.save_status_delta(&canceled).await.unwrap();
+
+    let mut executor = crate::handler::messaging::WatchedExecutor::Spawned(Some(executor(
+        Duration::ZERO,
+        Ends::Returning,
+    )));
+    let (answer, answered) = tokio::sync::oneshot::channel();
+    handler
+        .sync_collector()
+        .collect_then_follow(
+            closed_queue(),
+            TaskId::new("t"),
+            // The task as the send saved it: `working`.
+            Some(task("t")),
+            &mut executor,
+            answer,
+        )
+        .await;
+
+    let collected = answered.await.expect("answered").expect("collected");
+    assert_eq!(collected.task.status.state, TaskState::Canceled);
+    assert_eq!(state_in(&store, "t").await, TaskState::Canceled);
+}
+
 /// The wait for the executor is bounded by `executor_drain_timeout`: an
 /// executor still running when it elapses does not hold the answer, and is
 /// not failed by it.
