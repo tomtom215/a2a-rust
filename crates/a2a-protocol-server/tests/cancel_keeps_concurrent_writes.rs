@@ -10,8 +10,9 @@
 //! still refuses on a terminal task.
 //!
 //! The interleaving is forced without sleeps: the store wrapper waits until
-//! the executor's cancel hook has run, then, on cancel's re-read, appends a
-//! message as another replica would *after* taking the snapshot it returns.
+//! the executor's cancel hook has run, then, immediately before cancel's own
+//! write of `Canceled`, appends a message as another replica would *after*
+//! cancel took the snapshot it is about to write over.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -55,52 +56,72 @@ impl AgentExecutor for Parks {
     }
 }
 
-/// Once the cancel hook has run, the next read appends a message to the
-/// stored task after taking the snapshot it returns: another replica's
-/// write landing between cancel's read and its write.
-struct AppendsAfterRead {
+/// Once the cancel hook has run, the first write of `Canceled` is preceded by
+/// a message appended to the stored task: another replica's write landing
+/// between cancel's read and its write.
+///
+/// The trigger is cancel's own write, not "the next read". A read is not
+/// cancel's alone: the `SendMessage` call that parked the task finishes in
+/// the background (`SyncCollector::close_out` reads the task once more), and
+/// on a store whose reads yield, such as `SQLite`, that read can fall after the
+/// cancel hook and take a read-triggered append for itself, leaving cancel's
+/// re-read before the message (measured: 17 of 200 runs). Only cancel writes
+/// `Canceled`, so the interleaving is the same on every run and every store.
+struct AppendsBeforeCancelsWrite {
     inner: Arc<dyn TaskStore>,
     hook_ran: Arc<AtomicBool>,
 }
 
-impl TaskStore for AppendsAfterRead {
+impl AppendsBeforeCancelsWrite {
+    /// Writes the other replica's message first when `task` is cancel's write.
+    async fn interleave(&self, task: &Task) -> A2aResult<()> {
+        if task.status.state == TaskState::Canceled && self.hook_ran.swap(false, Ordering::SeqCst) {
+            let stored = self.inner.get(&task.id).await?.expect("task is stored");
+            self.inner
+                .save_appending_history(
+                    &stored,
+                    &[Message::agent_text("from-replica-b", "written meanwhile")],
+                    HistoryLimit::new(1024, usize::MAX),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+impl TaskStore for AppendsBeforeCancelsWrite {
     fn save<'a>(
         &'a self,
         task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        self.inner.save(task)
+        Box::pin(async move {
+            self.interleave(task).await?;
+            self.inner.save(task).await
+        })
     }
     fn save_status_delta<'a>(
         &'a self,
         task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        self.inner.save_status_delta(task)
+        Box::pin(async move {
+            self.interleave(task).await?;
+            self.inner.save_status_delta(task).await
+        })
     }
     fn try_save_status_delta<'a>(
         &'a self,
         task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
-        self.inner.try_save_status_delta(task)
+        Box::pin(async move {
+            self.interleave(task).await?;
+            self.inner.try_save_status_delta(task).await
+        })
     }
     fn get<'a>(
         &'a self,
         id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
-        Box::pin(async move {
-            let read = self.inner.get(id).await?;
-            if let Some(snapshot) = read.as_ref()
-                && self.hook_ran.swap(false, Ordering::SeqCst)
-            {
-                self.inner
-                    .save_appending_history(
-                        snapshot,
-                        &[Message::agent_text("from-replica-b", "written meanwhile")],
-                        HistoryLimit::new(1024, usize::MAX),
-                    )
-                    .await?;
-            }
-            Ok(read)
-        })
+        self.inner.get(id)
     }
     fn list<'a>(
         &'a self,
@@ -126,7 +147,7 @@ async fn cancel_keeps_the_concurrent_write(inner: Arc<dyn TaskStore>) {
     let hook_ran = Arc::new(AtomicBool::new(false));
     let handler = RequestHandlerBuilder::new(Parks(Arc::clone(&hook_ran)))
         .without_agent_card()
-        .with_task_store(AppendsAfterRead {
+        .with_task_store(AppendsBeforeCancelsWrite {
             inner: Arc::clone(&inner),
             hook_ran,
         })
