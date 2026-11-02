@@ -58,7 +58,7 @@ RUN --mount=type=secret,id=cacert,required=false \
 # SSL_CERT_DIR (a mounted PEM; set SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 # to trust this image's store), telemetry through OTEL_EXPORTER_OTLP_CERTIFICATE,
 # and PostgreSQL through the URL's sslrootcert.
-FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
