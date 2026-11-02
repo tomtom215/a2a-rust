@@ -59,11 +59,22 @@ impl AgentExecutor for Echo {
         Box::pin(async move {
             let heard = ctx.message.text().unwrap_or("(no text)").to_string();
             let status = |state| {
-                StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), TaskStatus::new(state)))
+                StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(state),
+                ))
             };
             queue.write(status(TaskState::Working)).await?;
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), Artifact::new("echo", vec![Part::text(format!("echo: {heard}"))])).with_last_chunk(true)))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new("echo", vec![Part::text(format!("echo: {heard}"))]),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
             queue.write(status(TaskState::Completed)).await?;
             Ok(())
@@ -73,7 +84,12 @@ impl AgentExecutor for Echo {
 
 /// The agent card, advertising the SLIMRPC binding at `name`.
 fn agent_card(name: &SlimName) -> AgentCard {
-    AgentCard::new("Echo over SLIM", "1.0.0", name.to_agent_interface()).with_description("Echoes what it is sent, reachable over the SLIM fabric").with_input_modes(vec!["text/plain"]).with_output_modes(vec!["text/plain"]).with_skill(AgentSkill::new("echo", "Echo", "Echoes input").with_tags(vec!["echo"])).with_capabilities(AgentCapabilities::default().with_streaming(true))
+    AgentCard::new("Echo over SLIM", "1.0.0", name.to_agent_interface())
+        .with_description("Echoes what it is sent, reachable over the SLIM fabric")
+        .with_input_modes(vec!["text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(AgentSkill::new("echo", "Echo", "Echoes input").with_tags(vec!["echo"]))
+        .with_capabilities(AgentCapabilities::default().with_streaming(true))
 }
 
 /// A SLIM app on `service` for `name`, authenticated with the shared secret.

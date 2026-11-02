@@ -65,16 +65,31 @@ impl AgentExecutor for SigningExecutor {
     ) -> Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), TaskStatus::new(TaskState::Working))))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), Artifact::new(
-                        "echo",
-                        vec![Part::text(format!("answered by {}", self.signature))],
-                    )).with_last_chunk(true)))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new(
+                            "echo",
+                            vec![Part::text(format!("answered by {}", self.signature))],
+                        ),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), TaskStatus::new(TaskState::Completed))))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -92,9 +107,20 @@ pub fn peer_authenticated_card(name: &SlimName) -> AgentCard {
 
 /// An agent card advertising `name` over SLIMRPC.
 pub fn agent_card(name: &SlimName) -> AgentCard {
-    AgentCard::new(format!("SLIM agent {}", name.service), "1.0.0", name.to_agent_interface()).with_description("Agent reachable over the SLIM fabric").with_input_modes(vec!["text/plain"]).with_output_modes(vec!["text/plain"]).with_skill(AgentSkill::new("echo", "Echo", "Echoes input").with_tags(vec!["echo"])).with_capabilities(AgentCapabilities::default()
+    AgentCard::new(
+        format!("SLIM agent {}", name.service),
+        "1.0.0",
+        name.to_agent_interface(),
+    )
+    .with_description("Agent reachable over the SLIM fabric")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes input").with_tags(vec!["echo"]))
+    .with_capabilities(
+        AgentCapabilities::default()
             .with_streaming(true)
-            .with_extended_agent_card(true))
+            .with_extended_agent_card(true),
+    )
 }
 
 /// A handler for an agent that signs its answers with its own service name.
