@@ -22,7 +22,16 @@ only: when something here is done, delete it rather than annotating it.
 - **Branch `claude/pensive-bardeen-c6ofm8` (2026-11-01), from `main` at `4a8243c`
   (the merge of pull request #185): the 149 open audit rows are triaged and most fix groups are
   committed (below). One pull request, opened only when the groups the maintainer wants pass the bar;
-  none is open and nothing past the triage is pushed.**
+  none is open. The branch was pushed on 2026-11-02 (pushing it runs no CI); the pull request is
+  the maintainer's call once the groups they want are in.**
+  - **First, next session.** (1) What waits on the maintainer: permission to run `promtool` (group J);
+    forks F13 to F16, never asked, with positions in `docs/audits/2026-11-01-triage/DECISIONS.md`;
+    whether the other 26 wire structs (G-10 option A) go into 0.16.0; the D-05 dead-webhook policy; the
+    options for E-F18, E-F25 and D-18. (2) Then build, in this order: M (delegation hand-off on shutdown,
+    F5), O and the HttpPool (F7, ADR 0032), the contained rows of L (D-19, E-F15, E-F14, E-F22, E-F21),
+    the rest of I and G. (3) Before the pull request: `cargo mutants --in-diff` through CI's shards,
+    `cargo-semver-checks`, the official TCK, the Cadence-exception line and release prep (`PLAN.md`,
+    "Before 0.16.0 is tagged").
   - **Fix work, `git log 4a8243c..` (oldest first; every commit is `Tom F.`, signed off, no other
     trailer, for DCO):**
       - `4a3cbe1` docs(audit): triage the 149 open rows of the 2026-10-29 audit against main@4a8243c
@@ -48,6 +57,7 @@ only: when something here is done, delete it rather than annotating it.
       - `b9c1304` feat!(types): thirteen protocol structs are #[non_exhaustive], built with new and with_* (audit G-10; fork F1)
       - `3c3bac5` docs(handoff): group K and G-10 committed, group J blocked on promtool, what was and was not run on the tip
       - `c4c5c29` fix(examples): agents are served with Server, the health monitor probes its roster, the bridge quotes the remote card (audit G-05, SEC-15, SEC-16)
+      - `da797f5` docs: the audit register's fix status after K, G-10 and Q, and what was run on the tip (PostgreSQL suites, feature matrix, 6055 tests)
     Each fix has a regression test that failed before it (the commit messages say how each was
     shown, and which hand-applied mutants each test kills).
   - **Verified, and what was not.** On the Q commit (the last code commit; the later ones are
