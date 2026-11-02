@@ -376,3 +376,33 @@ model unless its status says `confirmed (live)`; the two that were run are in
 | NEW-h-s0-8 | medium | The reaper's tenant-aware query filters tenant_tasks by state and updated_at across all tenants, but the only state index is (tenant_id, state) and the updated_at index is (tenant_id, updated_at DESC, id DESC). With tenant_id … | refuted (live) | Where: crates/a2a-protocol-server/src/store/claim/postgres.rs:59-64; crates/a2a-protocol-server/src/store/tenant_post …. Scenario: A tenant-aware PostgreSQL fleet with millions of retained tenant_tasks rows: N replicas each run a full scan every 15 s. Conjecture; confirm with EXPLAIN.. Evidence: ../2026-11-01-triage/h-s0.json. Measured 2026-11-01 on PostgreSQL 16.15 (500,000 rows, 2,000 tenants, 50 working): the planner used `idx_tenant_tasks_state` for the `state` condition, read about 1,100 buffers and finished in 4.3 ms, so it is a narrow-index scan that grows linearly, not a table scan. A partial index would matter at tens of millions of retained rows, not before. |
 | NEW-h-s0-9 | low | The reaped task's status says 'sending it again may succeed', and the H3 design says parents 'retry with the same idempotency key'. A send under the same key replays the stored Failed task (IdempotencyClaim::Replay) and runs … | confirmed (read) | Where: crates/a2a-protocol-server/src/handler/claims/reaper/mod.rs:50-52; crates/a2a-protocol-server/src/handler/mess …. Scenario: A parent that retries a reaped child with the original message (and so the original key) gets Failed back at once, every time, and concludes the worker is broken.. Evidence: ../2026-11-01-triage/h-s0.json. |
 | NEW-t-1 | low | `CITATION.cff` says version `0.15.1`, released `2026-10-26`, and `ROADMAP.md` names 0.15.1 as the current release, but no `v0.15.1` tag, GitHub release or crates.io version exists. | confirmed (read) | Checked 2026-11-01: crates.io's newest version of all four crates is 0.15.0, the GitHub latest release is v0.15.0 (2026-10-25), the remote tags end at v0.15.0. `CITATION.cff:17-18` says it is bumped at release prep and validated against the tag by `release.yml`, so it is right once 0.16.0 is tagged; until then GitHub's "Cite this repository" cites a release that does not exist. `CHANGELOG.md:1083` also dates `[0.15.1]` 2026-10-26. |
+
+## O. Fix status after the 2026-11-01 groups
+
+The `Status` column above is the triage's, as of `main@4a8243c`. These commits on
+`claude/pensive-bardeen-c6ofm8` fix rows since (each commit message says how the
+fix was shown and what was not run); a row listed here as `fixed (part)` has
+more to do, named in the commit. Rows not listed are as the table above says.
+Read nothing here as released: no tag, and no pull request is open.
+
+| Commit | Status now | Rows |
+|---|---|---|
+| `a3a5dde` | fixed | SEC-09 (CLI `--header`), NEW-f-1: the guard follows the interface that was checked |
+| `78fcd2c` | fixed | SEC-08, SEC-09, SEC-18, NEW-f-5, NEW-f-6, G/D-05 |
+| `c902c46` | fixed | E-F7, NEW-e-1, NEW-h-s0-1, NEW-h-s0-5, NEW-h-s0-9, E-F11, H3 (part) |
+| `aa6e4ff` | fixed | NEW-d-1, D-03 (a to c), E-F9, NEW-e-2, E-F20, D-16, D-23, G-21, NEW-g-api-3 |
+| `6d746dd` | fixed (part) | NEW-g-api-1, G-20, G-04, NEW-g-api-2, B-20, B-03, B-15, B-18 (part), B-19, H2 (part) |
+| `065f0a0` | fixed | the documentation-drift rows of group H |
+| `4b6b382` | fixed (part) | NEW-b-2, B-23, B-27, B-12 |
+| `9c69ef6` | fixed | E-F13 |
+| `4fd80d0` | fixed (part) | C-08, NEW-c-5 |
+| `636eaf0` | fixed (part) | A13, A27, NEW-a-l-1, NEW-a-l-3, NEW-a-l-4b, L18 |
+| `41756f1` | fixed (part) | G-18, G-07, G-06; `sign_agent_card` removed |
+| `7b36d51` | fixed | G-22, G-17, G-08, G-13, G-23 (part) |
+| `4ec89f3` | fixed | G-19 |
+| `a8bf45e` | fixed | NEW-h-designs-1, H16, NEW-h-designs-7, NEW-h-designs-4 |
+| `e2712ec` | fixed (part) | D-07, D-08, NEW-d-2, D-09, C-17 |
+| `0b06ec2` | fixed (part) | G/C-02 (0.15.1 folded into 0.16.0), G/C-01 (Highlights; Internal moved), NEW-t-1 |
+| `2b83f88` | fixed (part) | D-13 and SEC-13 (direct connections; behind a proxy there is still no pin, fork F16), B-13, D-22, B-30, D-05 (the delivery id and the book; no outbox, no dead-webhook policy), SEC-17 and NEW-f-4 (documented) |
+| `b9c1304` | fixed (part) | G-10 (the 13 protocol structs; the other 26 wire structs stay exhaustive and STABILITY.md section 4 says so) |
+| `c4c5c29` | fixed | G-05, SEC-15, SEC-16 |

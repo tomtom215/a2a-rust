@@ -46,29 +46,32 @@ only: when something here is done, delete it rather than annotating it.
       - `43e5d94` docs(handoff): the branch's commits, what is verified and what is not, two lessons from the WebSocket keepalive and the mutant runner
       - `2b83f88` fix(server): an https webhook is connected to the address that was checked, a host's other addresses are tried, DNS lookups cannot fill the blocking p
       - `b9c1304` feat!(types): thirteen protocol structs are #[non_exhaustive], built with new and with_* (audit G-10; fork F1)
+      - `3c3bac5` docs(handoff): group K and G-10 committed, group J blocked on promtool, what was and was not run on the tip
+      - `c4c5c29` fix(examples): agents are served with Server, the health monitor probes its roster, the bridge quotes the remote card (audit G-05, SEC-15, SEC-16)
     Each fix has a regression test that failed before it (the commit messages say how each was
     shown, and which hand-applied mutants each test kills).
-  - **Verified, and what was not.** On the G-10 commit (`b9c1304`) and so on the tip before the
-    handoff commit: `cargo nextest run -p a2a-protocol-types -p a2a-protocol-client -p a2a-protocol-server
-    -p a2a-protocol-sdk --all-features --profile ci` 6053 passed, 177 skipped; the other 24 workspace
-    members 304 passed; doctests types 54, client 31, server 75, sdk 2, book 316; `cargo clippy
-    --workspace --all-targets --all-features -- -D warnings` clean; 36 of 36 script gates; `cargo fmt
-    --check`. The per-feature clippy matrix (`cargo hack clippy ... --each-feature -- -D warnings`) passed
-    59 of 59 on groups A to C, and 21 of 21 on the server crate alone at the tree with B2 and I; it has
-    **not** been run since, and clippy was run on four feature sets of the server crate (all, none,
-    `tls-rustls`, `otlp`) at the K commit only. `cargo mutants --in-diff`: the client crate on A to E ran
-    70 mutants (48 caught, 21 unviable, 1 missed, killed afterwards by extra `NO_PROXY` negatives, shown
-    by hand); the **server crate's run was stopped at 20 of 168** for CPU and disk and **must be run on
-    the final tip** (`.github/workflows/mutants.yml` has the command; the G-10 diff makes it large, since
-    ~330 files changed). Hand-applied mutants: 14 in B2, 2 in I, 12 in F (after its keepalive was
-    rewritten), 19 in K, 16 in G-10's builders; `cargo mutants` cannot build 23 of the builders' 24
-    mutants (the types have no `Default`). Not run at all: the PostgreSQL suites, the toxiproxy partition
-    run for group B, Kubernetes, the official TCK, `cargo-semver-checks` against v0.15.0 (not installed
-    here; needed for the breaking list), the fuzz targets (compiled only), and a live pass of the Squid,
-    private-CA and model probes after the fixes. Live: the `deploy-agent` image was built from this tree
-    and run (it found that the build fails behind a TLS-inspecting proxy; fixed with a BuildKit secret),
-    and the retention sweep ran against the local PostgreSQL. Each intermediate commit was not built
-    on its own; only the tips were.
+  - **Verified, and what was not.** On the Q commit (the last code commit; the later ones are
+    documentation): `cargo nextest run -p a2a-protocol-types -p a2a-protocol-client -p
+    a2a-protocol-server -p a2a-protocol-sdk --all-features --profile ci` 6055 passed, 177 skipped; the
+    other 24 workspace members 319 passed; doctests types 54, client 31, server 75, sdk 2, book 316;
+    `cargo hack clippy -p <the four crates> --all-targets --each-feature -- -D warnings` 59 of 59, no
+    warnings; `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean; 36 of 36
+    script gates; `cargo fmt --check`; the PostgreSQL suites against the local PostgreSQL 16
+    (`scripts/run_postgres_suites.py`: 12 test targets and 11 library modules, then the named CI suites:
+    `postgres_store_tests` 72, `multi_replica` 7, `turn_claims` + `replica_processes` +
+    `cross_replica_cancel` + `stale_write_position` 22, `encrypted_store` 1). Hand-applied mutants: 14 in
+    B2, 2 in I, 12 in F (after its keepalive was rewritten), 19 in K, 16 in G-10's builders, 10 in Q;
+    `cargo mutants` cannot build 23 of the builders' 24 mutants (the types have no `Default`). **Not
+    run:** `cargo mutants --in-diff` on the server and client crates (a client run on A to E: 70 mutants,
+    48 caught, 21 unviable, 1 missed and killed afterwards; the server run was stopped at 20 of 168; the
+    G-10 conversion makes the diff ~330 files, so CI's shards are the way to run it,
+    `.github/workflows/mutants.yml` has the command); `cargo-semver-checks` against v0.15.0 (not
+    installed here; needed to confirm the breaking list); the official TCK; the toxiproxy partition run
+    for group B; Kubernetes; the fuzz targets (compiled only); a live pass of the Squid, private-CA and
+    model probes after the fixes; the sdk crate under `--no-default-features`. Live: the `deploy-agent`
+    image was built from this tree and run (it found that the build fails behind a TLS-inspecting proxy;
+    fixed with a BuildKit secret), and the retention sweep ran against the local PostgreSQL. Each
+    intermediate commit was not built on its own; only the tips were.
   - **Not built (open), by the plan's group** (`docs/audits/2026-11-01-triage/PLAN.md`):
     **J (observability stack) is blocked**: its proof is `promtool test rules` and a live stack, and the
     auto-mode classifier refused to run a `promtool` I had downloaded (the 111 MB
