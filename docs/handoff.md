@@ -155,10 +155,13 @@ only: when something here is done, delete it rather than annotating it.
     28 jobs are 26 shards and 2 skipped placeholders, so the "28 shards" and "N of 28" figures
     earlier in this entry are job counts and were not re-derived. Disk exhaustion has now hit one
     server shard in two of four runs (16 in run 1, 13 in run 4) and none in runs 2 and 3. A
-    cleanup step in `mutants.yml` was offered to the maintainer and not added. The push that
-    carries this entry cancels run 4 before its aggregator, `Test (stable, windows-latest)` and
-    `Test (1.94, macos-latest)` reported, so the next run on the new head is the check for all of
-    them, and for the macOS `content_verification` question in (6). **Run after the fixes:** the
+    cleanup step in `mutants.yml` was offered to the maintainer and not added. Run 4's aggregator
+    finished at 16:55 UTC with "Aggregated surviving mutants: 0" and a failed shard matrix, and
+    the `CI` run on `e60108d` finished at 17:00 UTC (both before the push that carries this
+    entry): 20 of its 22 jobs passed and 1 was skipped; the one failure is the x5c test in (8).
+    `Test (stable, windows-latest)` and `Test (1.94, macos-latest)` passed in it, so the macOS
+    `content_verification` failure in (6) did not recur in that run, which settles nothing about
+    its cause. **Run after the fixes:** the
     binding's
     own fmt, clippy `--all-targets -D warnings`, 19 integration targets (3 `#[ignore]`d for SPIRE) and
     75 unit tests; `itk` and `scripts/live/replica` `cargo check --all-targets`; `fuzz` with
