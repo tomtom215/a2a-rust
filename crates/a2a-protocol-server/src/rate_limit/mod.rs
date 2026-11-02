@@ -392,6 +392,8 @@ impl ServerInterceptor for RateLimitInterceptor {
 #[cfg(test)]
 mod keying_tests;
 #[cfg(test)]
+mod overflow_warning_tests;
+#[cfg(test)]
 mod shared_tests;
 #[cfg(test)]
 mod tests;

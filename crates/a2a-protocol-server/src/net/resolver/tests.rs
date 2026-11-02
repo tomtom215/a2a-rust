@@ -158,3 +158,13 @@ async fn system_tcp_dials_an_ordinary_address() {
     tcp.call(uri).await.expect("connects");
     assert!(accepted.await.expect("accept task"));
 }
+
+/// The resolver prints its type and nothing of its pins. A host and the
+/// addresses it was checked against are a delivery's business; they do not
+/// belong in a `{:?}` of the client that holds the resolver.
+#[test]
+fn debug_names_the_type_and_hides_the_pins() {
+    let resolver = PinResolver::default();
+    let _pin = resolver.pin("hooks.example", vec![addr("192.0.2.7:0")]);
+    assert_eq!(format!("{resolver:?}"), "PinResolver { .. }");
+}
