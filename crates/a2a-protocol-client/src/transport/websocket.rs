@@ -1299,10 +1299,13 @@ async fn enqueue(
 ) -> ClientResult<()> {
     match tokio::time::timeout_at(deadline, queue.send(command)).await {
         Ok(Ok(())) => Ok(()),
-        Ok(Err(_)) => Err(ClientError::Transport("WebSocket writer task closed".into())),
+        Ok(Err(_)) => Err(ClientError::Transport(
+            "WebSocket writer task closed".into(),
+        )),
         Err(_elapsed) if waits => Err(super::timed_out(true, budget)),
         Err(_elapsed) => Err(ClientError::Timeout(
-            "WebSocket request could not be queued: the connection is not accepting frames,              a peer that stopped reading"
+            "WebSocket request could not be queued: the connection is not accepting \
+             frames, which means the peer has stopped reading"
                 .into(),
         )),
     }

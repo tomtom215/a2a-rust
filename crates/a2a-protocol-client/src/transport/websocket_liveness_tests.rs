@@ -263,6 +263,14 @@ async fn queueing_gives_up_at_the_deadline_when_the_writer_is_stuck() {
     .await
     .expect_err("the queue is full");
     assert!(matches!(err, ClientError::Timeout(_)), "{err:?}");
+    // Both arms are a `Timeout`; the words tell them apart. A call that does
+    // not wait for the agent's turn says its frame could not be queued, and
+    // does not name the blocking send's setting.
+    let message = err.to_string();
+    assert!(
+        message.contains("could not be queued") && !message.contains("with_send_timeout"),
+        "{message}"
+    );
     assert!(
         started.elapsed() < Duration::from_secs(2),
         "{:?}",
