@@ -99,10 +99,20 @@ only: when something here is done, delete it rather than annotating it.
     non-secret `OTEL_*` variables), I could not dismiss them, so `d05a326` stops printing the
     notices; **whether CodeQL clears them is unconfirmed until its next run.** The other red
     check, `Mutation Testing (incremental)`, failed by design until the PR carried the
-    `mutation-test` label. The maintainer chose to add it now and it was added on 2026-11-02
-    (about 30 shards: server 20, client 2, types 2, sdk, discovery); they queued behind the runner
-    backlog, and **a push cancels and restarts the run**, so hold pushes until it reports unless a
-    failing check needs one. Its result is not recorded here yet. (6) One failure of
+    `mutation-test` label. The maintainer chose to add it now and it was added on 2026-11-02.
+    **The first full run (run 41439026142, head `2d9fbe3`: 28 shards, about 85 minutes behind
+    the runner backlog) found ten survivors in nine shards and one shard that did not finish.**
+    Client shard 0: `enqueue`'s guard `waits` (`3a2f729`). Client shard 1: `select_grpc_interface`
+    `||` and `execute_streaming_request`'s deadline `+` (`dae87b7`). Server: `finished`'s `<`
+    (shard 15, `bb4a284`); `delivery_id` as `Some("")` (shard 0), `None` (shard 19) and its guard
+    (shard 3), all killed by `c40ce47`; `charge_overflow`'s `==` (shard 9) and `PinResolver`'s
+    `Debug` (shard 12, `f0193ef`); `WebSocketDispatcher`'s `Debug` (shard 13, `5919e66`). Each kill
+    was shown by applying the exact mutant by hand. **Server shard 16 ran out of runner disk**
+    (35 MB free, 17 of 18 mutants graded): not a survivor, and the ungraded mutant is unknown.
+    The causes were two: assertions loose enough for the mutant to fit inside them (a `Timeout`
+    checked as any `Timeout`; `< 200 ms` of a 100 ms bound), and public helpers tested only by a
+    doctest, which nextest does not run. **A push cancels and restarts the run**, so the fixes
+    were held until it finished; the push that carries them starts the run again. (6) One failure of
     `content_verification::unsigned_content_passes_unless_signatures_are_required` on `Test (1.94,
     macos-latest)` at the stream assertion; that file, `tests/common` and the HTTP/1 path are
     unchanged by the branch, and it did not reproduce on Linux (0 of 300 alone, 0 of 1200 with 24
@@ -1483,6 +1493,14 @@ into this file: the commit that records it changes it.
   needs a binary the container lacks (`ssh-keygen`) as not run, not as passed.
   A new `if`/`run` step in a workflow that can decide to fail needs a Probe or
   an Exempt in `scripts/prove_workflow_gates_fail.py` (2026-11-02).
+- The incremental mutation run uses nextest, which does not run doctests: a public
+  helper tested only by its doctest (`webhook::delivery_id`) survives every mutant.
+  Give such a helper unit tests, and write the assertion as tight as the behaviour:
+  a bound checked with `>=` and `<` around it let `<` to `<=` through. Under
+  `start_paused` the elapsed time is exact, so assert it exactly. To list a mutation
+  run's failed shards cheaply, ask `get_job_logs` for `failed_only` with
+  `tail_lines: 1`; the verdict is the `MISSED` and `N mutants tested` lines of each
+  shard's `cargo-mutants execution log` group (2026-11-02).
 - A feature-gated test file built without its feature holds no tests, and running
   its binary by name exits 0: a repeat-run measurement of it "passes" every time.
   Before counting failures, list the binary (`$BIN --list | grep -c ': test$'`) and
