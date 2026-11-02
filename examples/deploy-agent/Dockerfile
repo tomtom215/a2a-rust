@@ -27,7 +27,7 @@
 #
 # Without the secret nothing changes. (`HTTP_PROXY`/`HTTPS_PROXY` given as
 # `--build-arg`s are passed through by Docker as they are.)
-FROM rust:1.94-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55 AS chef
+FROM rust:1.99-bookworm@sha256:9181b56c2a21ab1d5e73cffe04fc762426d30aa7fac3c91141dd033f49a7fc8b AS chef
 # An exact version from crates.io, built with its own lock file.
 RUN --mount=type=secret,id=cacert,required=false \
     if [ -s /run/secrets/cacert ]; then export CARGO_HTTP_CAINFO=/run/secrets/cacert; fi \
