@@ -74,6 +74,7 @@ only: when something here is done, delete it rather than annotating it.
       - `3d671eb` style(itk): rustfmt the two files the constructor codemod left unformatted
       - `b8199b8` docs(handoff): what the pull request's first CI run found, and two lessons
       - `62989d9` ci: the release Highlights gate has a probe that proves it can fail
+      - `d05a326` test(server): the notice tests' failure messages no longer print the notices (CodeQL 187 to 189)
     Each fix has a regression test that failed before it (the commit messages say how each was
     shown, and which hand-applied mutants each test kills).
   - **What the pull request's first CI run found (2026-11-02): five failures, all of this branch's
@@ -91,7 +92,15 @@ only: when something here is done, delete it rather than annotating it.
     Highlights block" had no Probe, so nothing proved it could fail. The 14 steps after it in that
     job had not run on CI; all 14 pass locally (`62989d9`; the new probe has a healthy control and
     three defects, all PROVEN; the full script cannot finish in this container because it has no
-    `ssh-keygen`, and reaches 24 PROVEN, 0 UNPROVEN before that probe). **Run after the fixes:** the binding's
+    `ssh-keygen`, and reaches 24 PROVEN, 0 UNPROVEN before that probe). Not a failure of the
+    code but red all the same: CodeQL's three "cleartext logging" alerts (code-scanning 187 to
+    189) on assertion messages that print `t.notices()` in `otel/telemetry/notice_tests.rs`. They
+    are false positives (a notice holds only `VAR="value" why; instead` for a fixed list of
+    non-secret `OTEL_*` variables), I could not dismiss them, so `d05a326` stops printing the
+    notices; **whether CodeQL clears them is unconfirmed until its next run.** The other red
+    check, `Mutation Testing (incremental)`, fails by design until the PR carries the
+    `mutation-test` label (the job says so); adding it starts a long run over a ~600-file diff and
+    is the maintainer's call. **Run after the fixes:** the binding's
     own fmt, clippy `--all-targets -D warnings`, 19 integration targets (3 `#[ignore]`d for SPIRE) and
     75 unit tests; `itk` and `scripts/live/replica` `cargo check --all-targets`; `fuzz` with
     `--cfg fuzzing`; the 36 gates; the cancel test under clippy with `sqlite,postgres`. **Not re-run
