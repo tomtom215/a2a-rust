@@ -112,7 +112,15 @@ only: when something here is done, delete it rather than annotating it.
     The causes were two: assertions loose enough for the mutant to fit inside them (a `Timeout`
     checked as any `Timeout`; `< 200 ms` of a 100 ms bound), and public helpers tested only by a
     doctest, which nextest does not run. **A push cancels and restarts the run**, so the fixes
-    were held until it finished; the push that carries them starts the run again. (6) One failure of
+    were held until it finished. **The second run (run 41452549529, head `fec9af2`, about 70
+    minutes) passed 26 of 28 shards, including all nine that failed before and server shard 16,
+    which this time graded every mutant: the fixes above are confirmed by the real run.** Its one
+    failing shard, server 14, found an eleventh survivor in code this branch did not touch:
+    `collect_then_follow`'s `!interrupted` (`sync_collector.rs:263`), whose conditional the unit
+    tests never reached because they go through `collect_events`, a test-only copy of it. Killed
+    by `0d4a4ce`; shard 14 had passed in the first run, so the mutant list shifted between runs
+    or something killed it by luck, and which one is not known. The push that carries `0d4a4ce`
+    starts the run a third time. (6) One failure of
     `content_verification::unsigned_content_passes_unless_signatures_are_required` on `Test (1.94,
     macos-latest)` at the stream assertion; that file, `tests/common` and the HTTP/1 path are
     unchanged by the branch, and it did not reproduce on Linux (0 of 300 alone, 0 of 1200 with 24
@@ -1501,6 +1509,12 @@ into this file: the commit that records it changes it.
   run's failed shards cheaply, ask `get_job_logs` for `failed_only` with
   `tail_lines: 1`; the verdict is the `MISSED` and `N mutants tested` lines of each
   shard's `cargo-mutants execution log` group (2026-11-02).
+- A `#[cfg(test)]` function that repeats a production function's steps lets the
+  tests pass while the production conditional goes unexercised:
+  `SyncCollector::collect_events` (test-only) and `collect_then_follow` (what a
+  blocking send runs) both had `if !interrupted { close_out }`, only the copy was
+  tested, and deleting the `!` from the real one survived. Test the function the
+  product calls, or make the test wrapper call it (2026-11-02).
 - A feature-gated test file built without its feature holds no tests, and running
   its binary by name exits 0: a repeat-run measurement of it "passes" every time.
   Before counting failures, list the binary (`$BIN --list | grep -c ': test$'`) and
