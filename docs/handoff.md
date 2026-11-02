@@ -135,8 +135,31 @@ only: when something here is done, delete it rather than annotating it.
     dependency of `prost-build`; quadratic parsing with `ENABLE_WIKILINKS`, off by default). Not
     the branch's making: main locks the same version and the advisory is newer than main's last
     green run. Bumped to 0.13.6 in the four lockfiles that carry it (`bc1abfe`); `cargo-deny` is
-    not installed here, so that check is unconfirmed until CI runs it. **Run after the
-    fixes:** the binding's
+    not installed here, and CI's `cargo-deny` passed on `e60108d`. (8) `Test (1.94,
+    windows-latest)` on `e60108d` failed one test of 6364,
+    `signing::keys::x5c::tests::x5c_malformed_chain_is_not_used` ("base64url, not base64", left 1,
+    right 0). **A test defect already on main, not a Windows difference and not this branch's
+    code:** the case spelled a randomly drawn certificate in the URL-safe alphabet and expected
+    `x5c` to refuse it, but a certificate whose standard base64 has no `+` or `/` and needs no `=`
+    is the same string in both alphabets, and `x5c` rightly accepts it. 99 of 200,000 freshly
+    keyed certificates are such; the unmodified test failed 65 of 100,000 in-process runs, every
+    time with that message; with the fix 0 of 200,000 (`98b121e`, test-only). A grep of the
+    workspace's Rust tests for "not base64" and "alphabet" found only fixed invalid strings
+    elsewhere (`%%%`, `not base64!`); the tests were not read one by one. CodeQL's check is green
+    on `e60108d`, which carries `d05a326`; the alert list itself was not read. (9) **The fourth
+    mutation run (run 41475178068, head `e60108d`): all 26 shards finished, 25 passed with no
+    missed mutant, and server shard 13 ran out of runner disk again** (the runner warned "Free
+    space left: 61 MB" at 16:09 UTC, then `No space left on device`; 15 of its 18 mutants were
+    graded: 1 caught, 14 unviable, 0 missed; the other 3 are unknown, and which they are cannot be
+    told because the mutant-to-shard assignment shifts between runs). Counting from the job list,
+    28 jobs are 26 shards and 2 skipped placeholders, so the "28 shards" and "N of 28" figures
+    earlier in this entry are job counts and were not re-derived. Disk exhaustion has now hit one
+    server shard in two of four runs (16 in run 1, 13 in run 4) and none in runs 2 and 3. A
+    cleanup step in `mutants.yml` was offered to the maintainer and not added. The push that
+    carries this entry cancels run 4 before its aggregator, `Test (stable, windows-latest)` and
+    `Test (1.94, macos-latest)` reported, so the next run on the new head is the check for all of
+    them, and for the macOS `content_verification` question in (6). **Run after the fixes:** the
+    binding's
     own fmt, clippy `--all-targets -D warnings`, 19 integration targets (3 `#[ignore]`d for SPIRE) and
     75 unit tests; `itk` and `scripts/live/replica` `cargo check --all-targets`; `fuzz` with
     `--cfg fuzzing`; the 36 gates; the cancel test under clippy with `sqlite,postgres`. **Not re-run
