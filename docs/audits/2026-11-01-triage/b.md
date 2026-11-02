@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
 # Slice b: TLS, CAs, proxies and the network (B-03 … B-30, 21 rows)
 
 Baseline `4a8243c` (confirmed with `git rev-parse HEAD`). Everything was read; no cargo, no live probe was run, and no test was run.

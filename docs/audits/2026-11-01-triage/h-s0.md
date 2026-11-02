@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
 # Triage slice h-s0: audit rows H2, H3, H4 (S0)
 
 Baseline: `4a8243c66df5ae07a54a69168ab419ac609b06e9` (checked with `git rev-parse HEAD`).

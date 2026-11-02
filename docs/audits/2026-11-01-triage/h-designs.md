@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
 # Slice h-designs: audit rows H5-H14, H16-H19 on `main` at `4a8243c`
 
 I read the code; nothing was built or run. The full evidence (with `file:line`), the options and the ship-now pieces for each row are in `h-designs.json`.

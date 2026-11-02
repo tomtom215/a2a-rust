@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
 # Slice f: security rows SEC-08, SEC-09, SEC-11 to SEC-18
 
 Baseline: `main` at `4a8243c` (confirmed with `git rev-parse HEAD`). I only read the code. I ran no cargo commands and no tests. Every test named below was judged by reading its assertions, and none was run.

@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
 # Live results log (this session). One entry per run; newest last.
 Environment: main@4a8243c, dev build with CI flags (RUSTFLAGS=-D warnings, CARGO_PROFILE_DEV_DEBUG=0).
 

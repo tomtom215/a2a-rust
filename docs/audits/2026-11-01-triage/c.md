@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
 # Slice c: observability rows C-05 to C-23 (C-11 is not in this slice)
 
 Baseline: `main` at `4a8243c66df5ae07a54a69168ab419ac609b06e9` (checked with `git rev-parse HEAD`).

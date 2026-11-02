@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
 # Triage brief (shared by every triage agent)
 
 You are re-checking audit rows against the code that is on `main` TODAY. You are

@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
 # Slice d: resilience rows (D-03 … D-25), checked against main at 4a8243c
 
 Baseline confirmed with `git rev-parse HEAD` (4a8243c66df5ae07a54a69168ab419ac609b06e9). Everything below comes from reading the code. Nothing was built, run or probed. Tests were read, not run.

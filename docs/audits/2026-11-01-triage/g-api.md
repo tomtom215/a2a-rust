@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
 # Triage of slice g-api (G-04 to G-23, API ergonomics)
 
 Baseline: `main` at `4a8243c66df5ae07a54a69168ab419ac609b06e9` (checked). Everything

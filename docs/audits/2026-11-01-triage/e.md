@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
 # Slice e: several replicas (E-F7, E-F8, E-F9, E-F11 to E-F26)
 
 Baseline `4a8243c66df5ae07a54a69168ab419ac609b06e9` (confirmed with `git rev-parse HEAD`). Everything here was read, not run: no cargo, no database, no live probe. Paths are under `crates/a2a-protocol-server/`. The row details are in `e.json`, which adds two keys to each row: `replica_failure` and `production_refuse`.
