@@ -72,10 +72,12 @@ only: when something here is done, delete it rather than annotating it.
       - `46b425f` style(slimrpc): rustfmt the five binding files the 0.16.0 codemods left unformatted
       - `1ac2dbe` test(slimrpc): the slim-node OTEL test follows the warn-and-fall-back decision (F3, C-08)
       - `3d671eb` style(itk): rustfmt the two files the constructor codemod left unformatted
+      - `b8199b8` docs(handoff): what the pull request's first CI run found, and two lessons
+      - `62989d9` ci: the release Highlights gate has a probe that proves it can fail
     Each fix has a regression test that failed before it (the commit messages say how each was
     shown, and which hand-applied mutants each test kills).
-  - **What the pull request's first CI run found (2026-11-02): four failures, all of this branch's
-    making, all fixed in the last five commits above.** (1) macOS `pin_tests`: `127.0.0.2` is not
+  - **What the pull request's first CI run found (2026-11-02): five failures, all of this branch's
+    making, fixed in the commits above from `9e6d495` on.** (1) macOS `pin_tests`: `127.0.0.2` is not
     loopback on macOS, so "an address that is down" hung instead of refusing (`9e6d495`; fixed by
     `::1`; not reproducible on Linux). (2) `cancel_keeps_concurrent_writes::sqlite`: this branch's
     `SyncCollector::close_out` adds a read to the tail of `SendMessage`, which on SQLite can take the
@@ -84,7 +86,12 @@ only: when something here is done, delete it rather than annotating it.
     still fails the test on both stores (`aeb4cfb`). (3) The SLIMRPC binding's `slim-node` test still
     asserted the pre-F3 exit; it is outside the workspace and behind `otlp`, so no workspace run
     reached it (`1ac2dbe`: two tests, both fail when the node ignores `OTEL_*`). (4) `cargo fmt` of
-    the binding and `itk`, same cause (`46b425f`, `3d671eb`). **Run after the fixes:** the binding's
+    the binding and `itk`, same cause (`46b425f`, `3d671eb`). (5) "Static checks" stopped at
+    `scripts/prove_workflow_gates_fail.py`: the `release.yml` step "The release notes open with a
+    Highlights block" had no Probe, so nothing proved it could fail. The 14 steps after it in that
+    job had not run on CI; all 14 pass locally (`62989d9`; the new probe has a healthy control and
+    three defects, all PROVEN; the full script cannot finish in this container because it has no
+    `ssh-keygen`, and reaches 24 PROVEN, 0 UNPROVEN before that probe). **Run after the fixes:** the binding's
     own fmt, clippy `--all-targets -D warnings`, 19 integration targets (3 `#[ignore]`d for SPIRE) and
     75 unit tests; `itk` and `scripts/live/replica` `cargo check --all-targets`; `fuzz` with
     `--cfg fuzzing`; the 36 gates; the cancel test under clippy with `sqlite,postgres`. **Not re-run
@@ -1447,6 +1454,13 @@ into this file: the commit that records it changes it.
   own commands: the SLIMRPC job is `cargo fmt --check`, `cargo clippy
   --all-targets -- -D warnings`, `cargo test --tests`, run from the binding;
   `fuzz` compiles only under `RUSTFLAGS="--cfg fuzzing"` (2026-11-02).
+- My local gate list (`gates.sh`, 36 scripts) was written from memory and is not
+  CI's: "Static checks" has 46 steps, and `prove_workflow_gates_fail.py` was not
+  among the ones I ran. Build the list from the job, with `yaml.safe_load` over
+  `.github/workflows/ci.yml` and every `run:` of the job, and treat a step that
+  needs a binary the container lacks (`ssh-keygen`) as not run, not as passed.
+  A new `if`/`run` step in a workflow that can decide to fail needs a Probe or
+  an Exempt in `scripts/prove_workflow_gates_fail.py` (2026-11-02).
 - A test that forces an interleaving by firing on "the next read" breaks when
   production code gains a read. The in-memory store hid it (its reads never
   yield); SQLite showed it in 17 of 200 runs. Fire on the write that has one
