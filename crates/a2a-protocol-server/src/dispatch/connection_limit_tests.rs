@@ -144,5 +144,23 @@ mod dispatcher_tests {
                     .expect("serves");
             assert!(accepts(addr).await);
         }
+
+        /// `{:?}` of a dispatcher shows the bounds an operator checks, set here
+        /// to values nothing defaults to, and not the handler behind it.
+        #[test]
+        fn debug_shows_the_bounds_and_not_the_handler() {
+            let dispatcher = WebSocketDispatcher::new(handler())
+                .with_handshake_timeout(std::time::Duration::from_secs(7))
+                .with_idle_timeout(std::time::Duration::from_secs(41))
+                .with_write_timeout(std::time::Duration::from_secs(9))
+                .with_max_connections(3)
+                .accept_missing_version_header();
+            assert_eq!(
+                format!("{dispatcher:?}"),
+                "WebSocketDispatcher { handshake_timeout: 7s, idle_timeout: Some(41s), \
+                 write_timeout: 9s, max_connections: Some(3), \
+                 require_version_header: false, .. }"
+            );
+        }
     }
 }
