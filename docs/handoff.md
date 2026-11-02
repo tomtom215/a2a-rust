@@ -22,7 +22,7 @@ only: when something here is done, delete it rather than annotating it.
 - **Branch `claude/pensive-bardeen-c6ofm8` (2026-11-01), from `main` at `4a8243c`
   (the merge of pull request #185): the 149 open audit rows are triaged and most fix groups are
   committed (below). One pull request, opened only when the groups the maintainer wants pass the bar;
-  the pull request was opened on 2026-11-02 at the maintainer's request.**
+  the pull request is tomtom215/a2a-rust#186, opened on 2026-11-02 at the maintainer's request.**
   - **First, next session.** (1) What waits on the maintainer: permission to run `promtool` (group J);
     forks F13 to F16, never asked, with positions in `docs/audits/2026-11-01-triage/DECISIONS.md`;
     whether the other 26 wire structs (G-10 option A) go into 0.16.0; the D-05 dead-webhook policy; the
@@ -64,6 +64,8 @@ only: when something here is done, delete it rather than annotating it.
       - `af747a4` docs(server): AuthFailureThrottle's counts are per replica, and the book and rustdoc say how to size it for a fleet (audit E-F15, interim)
       - `edd8ac2` docs: the audit register and handoff list D-19 and the E-F15 interim fix
       - `d75efc9` docs(changelog): the 0.16.0 Internal section moves to docs/changelog-internal/ (audit G/C-01; fork F11)
+      - `a27676e` docs(audit): per-group status of the plan and the forks at the pull request; the cadence-exception text corrected (a November 0.16.0 needs no line)
+      - `95c9fb2` docs(audit): SPDX headers on the triage reports
     Each fix has a regression test that failed before it (the commit messages say how each was
     shown, and which hand-applied mutants each test kills).
   - **Verified, and what was not.** On the Q commit (`c4c5c29`): `cargo nextest run -p a2a-protocol-types -p a2a-protocol-client -p
