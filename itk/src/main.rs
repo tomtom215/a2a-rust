@@ -203,7 +203,10 @@ async fn handle_call_agent(call: &pb::CallAgent) -> Result<Vec<String>, String> 
         }
         params.configuration = Some(SendMessageConfiguration {
             accepted_output_modes: Vec::new(),
-            task_push_notification_config: Some(TaskPushNotificationConfig::for_url(format!("{}/notifications", push.url)).with_token("itk-token".to_owned())),
+            task_push_notification_config: Some(
+                TaskPushNotificationConfig::for_url(format!("{}/notifications", push.url))
+                    .with_token("itk-token".to_owned()),
+            ),
             history_length: None,
             return_immediately: None,
         });
@@ -350,10 +353,22 @@ impl ItkExecutor {
         state: TaskState,
         text: Option<String>,
     ) -> StreamResponse {
-        let message = text.map(|t| Message::new(MessageId::new(format!("itk-status-{}", uuid_v4())), MessageRole::Agent, vec![Part::text(t)]).with_task_id(ctx.task_id.clone()).with_context_id(ctx.context_id.clone()));
+        let message = text.map(|t| {
+            Message::new(
+                MessageId::new(format!("itk-status-{}", uuid_v4())),
+                MessageRole::Agent,
+                vec![Part::text(t)],
+            )
+            .with_task_id(ctx.task_id.clone())
+            .with_context_id(ctx.context_id.clone())
+        });
         let mut status = TaskStatus::new(state);
         status.message = message;
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), status))
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            status,
+        ))
     }
 }
 
@@ -450,7 +465,33 @@ fn build_card(http_port: u16, grpc_port: u16) -> AgentCard {
     // Python side rejects a scheme outright.
     let grpc_url = format!("127.0.0.1:{grpc_port}");
     let (security_schemes, security_requirements) = acts_modes::security();
-    { let mut assembled = AgentCard::new("a2a-rust ITK current agent", "0.7.0", AgentInterface::new(http_url.clone(), "JSONRPC").with_protocol_version("1.0")).with_description("ITK traversal agent built on a2a-protocol-server/client").with_interface(AgentInterface::new(http_url.clone(), "HTTP+JSON").with_protocol_version("1.0")).with_interface(AgentInterface::new(grpc_url, "GRPC").with_protocol_version("1.0")).with_input_modes(vec!["application/x-protobuf", "text/plain"]).with_output_modes(vec!["text/plain"]).with_skill(AgentSkill::new("itk-traversal", "ITK traversal", "Executes nested ITK traversal instructions").with_tags(vec!["itk"])).with_capabilities(acts_modes::capabilities()); assembled.url = Some(http_url.clone()); assembled.security_schemes = security_schemes; assembled.security_requirements = security_requirements; assembled }
+    {
+        let mut assembled = AgentCard::new(
+            "a2a-rust ITK current agent",
+            "0.7.0",
+            AgentInterface::new(http_url.clone(), "JSONRPC").with_protocol_version("1.0"),
+        )
+        .with_description("ITK traversal agent built on a2a-protocol-server/client")
+        .with_interface(
+            AgentInterface::new(http_url.clone(), "HTTP+JSON").with_protocol_version("1.0"),
+        )
+        .with_interface(AgentInterface::new(grpc_url, "GRPC").with_protocol_version("1.0"))
+        .with_input_modes(vec!["application/x-protobuf", "text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(
+            AgentSkill::new(
+                "itk-traversal",
+                "ITK traversal",
+                "Executes nested ITK traversal instructions",
+            )
+            .with_tags(vec!["itk"]),
+        )
+        .with_capabilities(acts_modes::capabilities());
+        assembled.url = Some(http_url.clone());
+        assembled.security_schemes = security_schemes;
+        assembled.security_requirements = security_requirements;
+        assembled
+    }
 }
 
 fn uuid_v4() -> String {

@@ -83,7 +83,13 @@ pub(crate) fn behaviour(ctx: &RequestContext) -> Option<(&'static str, bool)> {
 }
 
 fn agent_message(ctx: &RequestContext, text: &str) -> Message {
-    Message::new(MessageId::new(format!("acts-{}", crate::uuid_v4())), MessageRole::Agent, vec![Part::text(text)]).with_task_id(ctx.task_id.clone()).with_context_id(ctx.context_id.clone())
+    Message::new(
+        MessageId::new(format!("acts-{}", crate::uuid_v4())),
+        MessageRole::Agent,
+        vec![Part::text(text)],
+    )
+    .with_task_id(ctx.task_id.clone())
+    .with_context_id(ctx.context_id.clone())
 }
 
 async fn status(
@@ -106,7 +112,15 @@ async fn artifact(
     last_chunk: bool,
 ) -> A2aResult<()> {
     queue
-        .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), Artifact::new(id, vec![part])).with_append(append).with_last_chunk(last_chunk)))
+        .write(StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                ctx.task_id.clone(),
+                ctx.context_id.clone(),
+                Artifact::new(id, vec![part]),
+            )
+            .with_append(append)
+            .with_last_chunk(last_chunk),
+        ))
         .await
 }
 
