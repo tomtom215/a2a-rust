@@ -189,6 +189,36 @@ mod tests {
         assert_eq!(notification_token(&h), None);
     }
 
+    /// The doctest on `delivery_id` shows this too, but the mutation run's test
+    /// tool does not run doctests: a body of `Some("")` passed every test it ran.
+    #[test]
+    fn the_delivery_id_is_read_from_its_header() {
+        let h = headers(&[("A2A-Delivery-Id", "0b7e")]);
+        assert_eq!(delivery_id(&h), Some("0b7e"));
+        // A token header is not a delivery id.
+        let h = headers(&[("A2A-Notification-Token", "t")]);
+        assert_eq!(delivery_id(&h), None);
+    }
+
+    #[test]
+    fn a_repeated_delivery_id_is_read_when_it_agrees_and_is_none_when_it_differs() {
+        let agree = headers(&[("a2a-delivery-id", "0b7e"), ("a2a-delivery-id", "0b7e")]);
+        assert_eq!(delivery_id(&agree), Some("0b7e"));
+        let differ = headers(&[("a2a-delivery-id", "0b7e"), ("a2a-delivery-id", "9c1d")]);
+        assert_eq!(delivery_id(&differ), None);
+    }
+
+    #[test]
+    fn an_absent_or_non_ascii_delivery_id_is_none() {
+        assert_eq!(delivery_id(&hyper::HeaderMap::new()), None);
+        let mut h = hyper::HeaderMap::new();
+        h.insert(
+            DELIVERY_ID_HEADER,
+            hyper::header::HeaderValue::from_bytes(b"caf\xc3\xa9").unwrap(),
+        );
+        assert_eq!(delivery_id(&h), None);
+    }
+
     #[test]
     fn origin_for_log_drops_path_query_and_userinfo() {
         assert_eq!(
