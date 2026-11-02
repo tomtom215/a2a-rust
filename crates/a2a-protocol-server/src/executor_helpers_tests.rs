@@ -166,3 +166,24 @@ async fn the_receiver_form_gives_the_body_the_agents_fields() {
     counter.execute(&ctx, &DummyWriter).await.unwrap();
     assert_eq!(counter.0.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
+
+/// `{:?}` names the task and the context and nothing the caller said (audit
+/// G-23): an emitter ends up in logs, and a log line made from it must not
+/// carry the message.
+#[test]
+fn debug_names_the_task_and_context_and_not_the_message() {
+    let message = Message::new(
+        MessageId::new("m"),
+        MessageRole::User,
+        vec![a2a_protocol_types::message::Part::text("SECRET-PROMPT")],
+    );
+    let ctx = RequestContext::new(message, TaskId::new("test-task"), "test-ctx");
+    let text = format!("{:?}", EventEmitter::new(&ctx, &DummyWriter));
+    assert!(text.starts_with("EventEmitter {"), "{text}");
+    assert!(
+        text.contains("test-task") && text.contains("test-ctx"),
+        "{text}"
+    );
+    assert!(text.ends_with(", .. }"), "{text}");
+    assert!(!text.contains("SECRET-PROMPT"), "{text}");
+}

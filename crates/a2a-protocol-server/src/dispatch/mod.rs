@@ -474,3 +474,6 @@ mod tests {
         assert_eq!(cfg.require_version_header, !default);
     }
 }
+
+#[cfg(test)]
+mod axum_adapter_debug_tests;
