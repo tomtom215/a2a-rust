@@ -58,6 +58,9 @@ only: when something here is done, delete it rather than annotating it.
       - `3c3bac5` docs(handoff): group K and G-10 committed, group J blocked on promtool, what was and was not run on the tip
       - `c4c5c29` fix(examples): agents are served with Server, the health monitor probes its roster, the bridge quotes the remote card (audit G-05, SEC-15, SEC-16)
       - `da797f5` docs: the audit register's fix status after K, G-10 and Q, and what was run on the tip (PostgreSQL suites, feature matrix, 6055 tests)
+      - `2f35951` docs(handoff): the branch is pushed; what waits on the maintainer and what the next session builds first
+      - `93dbb05` fix(server): the audit log's per-chain locks are released when unused, and a tenant name is bounded (audit D-19)
+      - `af747a4` docs(server): AuthFailureThrottle's counts are per replica, and the book and rustdoc say how to size it for a fleet (audit E-F15, interim)
     Each fix has a regression test that failed before it (the commit messages say how each was
     shown, and which hand-applied mutants each test kills).
   - **Verified, and what was not.** On the Q commit (the last code commit; the later ones are

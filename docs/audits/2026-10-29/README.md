@@ -406,3 +406,5 @@ Read nothing here as released: no tag, and no pull request is open.
 | `2b83f88` | fixed (part) | D-13 and SEC-13 (direct connections; behind a proxy there is still no pin, fork F16), B-13, D-22, B-30, D-05 (the delivery id and the book; no outbox, no dead-webhook policy), SEC-17 and NEW-f-4 (documented) |
 | `b9c1304` | fixed (part) | G-10 (the 13 protocol structs; the other 26 wire structs stay exhaustive and STABILITY.md section 4 says so) |
 | `c4c5c29` | fixed | G-05, SEC-15, SEC-16 |
+| `93dbb05` | fixed | D-19 |
+| `af747a4` | fixed (part) | E-F15 (documented; no shared counter) |
