@@ -1223,6 +1223,14 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **`AuthFailureThrottle`'s per-replica budget is documented** (audit E-F15,
+  interim): the counts are per process, so N replicas behind a balancer give a
+  peer up to N times `max_failures` guesses a window. The throttling page and
+  the type's rustdoc say so and say to size `max_failures` for the fleet or
+  throttle in the proxy in front. A counter shared through the database, as
+  `RateLimitInterceptor` has, is not built: the `RateLimitCounter` trait has no
+  read without counting, which the throttle's check before the call needs.
+
 - **The audit log's per-chain locks no longer pile up** (server; audit
   D-19). The map of append locks gained an entry per distinct chain name and
   never lost one, and a chain is named for the tenant, which an unauthenticated

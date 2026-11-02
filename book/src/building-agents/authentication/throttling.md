@@ -60,6 +60,17 @@ A throttled call answers `429` with `Retry-After` on HTTP+JSON, `200` with a
 `-32603` body on JSON-RPC, and `RESOURCE_EXHAUSTED` on gRPC; every binding
 carries a `RetryInfo` detail giving the seconds until the window ends.
 
+## Several replicas
+
+The counts live in the memory of the replica that saw the failures. Behind a
+balancer that spreads one peer's requests over N replicas, each replica sees
+about 1/N of that peer's failures, so the peer gets up to N × `max_failures`
+guesses per window before every replica refuses it. Size `max_failures` for
+the fleet (divide the number you want by N), or throttle in the proxy in front,
+which sees every request. A counter shared through the database, as
+`RateLimitInterceptor` has with `with_shared_counter`, is not available for this
+interceptor yet (audit E-F15).
+
 ## Who counts as a peer
 
 A peer is the IP address of the connection (`CallContext::peer_addr`), which

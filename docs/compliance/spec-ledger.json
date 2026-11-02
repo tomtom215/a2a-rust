@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:12038 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:12046 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -8777,8 +8777,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/auth/throttle.rs:233 AuthFailureThrottle::refuse_if_throttled",
-    "crates/a2a-protocol-server/src/auth/throttle.rs:256 AuthFailureThrottle::count_if_unauthenticated",
+    "crates/a2a-protocol-server/src/auth/throttle.rs:238 AuthFailureThrottle::refuse_if_throttled",
+    "crates/a2a-protocol-server/src/auth/throttle.rs:261 AuthFailureThrottle::count_if_unauthenticated",
     "crates/a2a-protocol-server/src/call_context.rs:340 CallContext::peer_addr",
     "crates/a2a-protocol-server/src/rate_limit/mod.rs:366 RateLimitInterceptor::before"
    ],
@@ -8829,7 +8829,7 @@
     "crates/a2a-protocol-server/src/metrics/mod.rs:52 Metrics",
     "crates/a2a-protocol-server/src/interceptor/mod.rs:131 ServerInterceptor::on_complete",
     "crates/a2a-protocol-server/src/rate_limit/mod.rs:182 RateLimitInterceptor",
-    "crates/a2a-protocol-server/src/auth/throttle.rs:153 AuthFailureThrottle"
+    "crates/a2a-protocol-server/src/auth/throttle.rs:158 AuthFailureThrottle"
    ],
    "test_evidence": [],
    "notes": "SDK exposes Metrics (on_request/on_error/on_latency per method) and OTel; anomaly detection is the operator's. Re-examined 2026-10-18, kept: what counts as unusual is deployment policy. The SDK emits the signals: per-method Metrics, ServerInterceptor::on_complete with the caller, OTel spans and metrics, RateLimitInterceptor, AuthFailureThrottle. Re-verified against the code 2026-10-20 (ledger audit): the citation named a ListTasks log line; it now names the signals the note lists. Re-audited 2026-10-24: RateLimitInterceptor and AuthFailureThrottle refuse requests and neither logs nor calls Metrics itself, so their refusals show through the generic on_error and the audit log; Metrics::on_request is per method, per-caller counts need on_complete or the audit log.",
