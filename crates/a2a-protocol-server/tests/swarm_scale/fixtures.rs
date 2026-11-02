@@ -22,37 +22,21 @@ pub fn swarm_card() -> a2a_protocol_types::agent_card::AgentCard {
     use a2a_protocol_types::agent_card::{
         AgentCapabilities, AgentCard, AgentInterface, AgentSkill,
     };
-    AgentCard {
-        url: None,
-        name: "swarm-scale".into(),
-        description: "Coordination-channel experiment fixture".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "http://127.0.0.1:0".into(),
-            protocol_binding: "HTTP+JSON".into(),
-            protocol_version: "1.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "channel".into(),
-            name: "Channel".into(),
-            description: "Appends a post to a channel".into(),
-            tags: vec!["test".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none()
+    AgentCard::new(
+        "swarm-scale",
+        "1.0.0",
+        AgentInterface::new("http://127.0.0.1:0", "HTTP+JSON").with_protocol_version("1.0"),
+    )
+    .with_description("Coordination-channel experiment fixture")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        AgentSkill::new("channel", "Channel", "Appends a post to a channel")
+            .with_tags(vec!["test"]),
+    )
+    .with_capabilities(
+        AgentCapabilities::none()
             .with_streaming(true)
             .with_push_notifications(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    )
 }

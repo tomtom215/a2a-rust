@@ -1,0 +1,169 @@
+{
+ "slice": "h-s0",
+ "baseline": "4a8243c66df5ae07a54a69168ab419ac609b06e9",
+ "rows": [
+  {
+   "id": "H2",
+   "verdict": "partly_fixed",
+   "severity_now": "S1 (down from S0): every binding can now trust a private CA and present a client certificate, so the S0 part (a private PKI or SPIFFE swarm cannot use the default client) is fixed. Still open: the token provider has no TLS option, gRPC does not read SSL_CERT_FILE, and there is one connection pool per A2aClient (an S1 cost at swarm scale)",
+   "evidence": [
+    "commit 57f034e (2026-10-29) - adds TlsConfig::Custom, ClientBuilder::with_tls_config, tls::tls_config_from_pem, SSL_CERT_FILE/SSL_CERT_DIR roots and a 50 s pool idle timeout",
+    "commit c4404e8 (2026-10-31) - adds CardFetchOptions::with_tls_config (card resolver and client JWKS) and makes default_tls_config a process-wide LazyLock; the server's push delivery, OIDC discovery and model client follow the proxy and CA variables",
+    "JSON-RPC and HTTP+JSON through ClientBuilder: crates/a2a-protocol-client/src/builder/transport_factory.rs:303-328 http_client() uses TlsConfig::Custom when set, else default_tls_config(). Private CA and mTLS work (builder/mod.rs:527-537 with_tls_config; tls.rs:150-200 tls_config_from_pem with a client identity)",
+    "JSON-RPC and HTTP+JSON built directly with JsonRpcTransport::new/with_*/RestTransport::new/with_*: crates/a2a-protocol-client/src/transport/jsonrpc.rs:114-135 -> transport/mod.rs:103-113 default_http_client (Mozilla roots plus SSL_CERT_* only). from_client is pub(crate) (jsonrpc.rs:138, rest/mod.rs:159), so these constructors cannot take a custom CA in code or a client certificate",
+    "WebSocket: crates/a2a-protocol-client/src/transport/websocket.rs:396-400 WebSocketTransportConfig::with_tls_config takes any rustls config (private CA and mTLS); without it :652-657 uses default_tls_config (env roots included). ClientBuilder never builds a WebSocket transport (builder/selection.rs:61-70 canonical_binding knows JSONRPC, HTTP+JSON and GRPC only), so ClientBuilder::with_tls_config does not reach it",
+    "gRPC: transport_factory.rs:216-220 build_grpc reads only grpc_tls_config (a tonic ClientTlsConfig: ca_certificate and identity, so private CA and mTLS work) and ignores ClientBuilder::with_tls_config. The default at grpc.rs:353-370 is ClientTlsConfig::new().with_enabled_roots(), with tonic features tls-ring and tls-webpki-roots (Cargo.toml:72): webpki roots only, and SSL_CERT_FILE/SSL_CERT_DIR are not read (tonic-0.14.6 src/transport/channel/tls.rs:119-128). A caller's config replaces the Mozilla roots instead of adding to them (B-20)",
+    "SLIMRPC: TLS belongs to SLIM's own slim_config (bindings/a2a-protocol-slimrpc/tests/remote_node_mtls.rs:91-97 TlsClientConfig::with_ca_pem plus with_cert_and_key_pem). Private CA and mTLS are exercised by remote_node_tls.rs and remote_node_mtls.rs (the slimrpc-binding CI job, ci.yml:1107). Read only; SLIM internals not audited",
+    "Card resolver: crates/a2a-protocol-client/src/discovery.rs:155-181 CardFetchOptions::with_tls_config. :615 fetch_inner builds a NEW HttpsClient (a new pool) on every fetch",
+    "Client JWKS: crates/a2a-protocol-client/src/jwks.rs:58-73 fetch_jwks(url, &CardFetchOptions) uses options.https_client()",
+    "Token provider: crates/a2a-protocol-client/src/token_provider.rs:748-762 build_token_http_client() always uses default_tls_config(); token_provider/exchange.rs:266 does the same. There is no with_tls_config or with_http_client. A private CA reaches it only through SSL_CERT_FILE/SSL_CERT_DIR, and a client certificate (RFC 8705 tls_client_auth) is impossible. discover_token_endpoint (token_provider.rs:662) is the same",
+    "Push sender: crates/a2a-protocol-server/src/push/sender.rs:304-315 HttpPushSender::with_tls_config (private CA and mTLS); the default uses net::roots (SSL_CERT_* honoured, net/roots.rs:7-10,84-91)",
+    "Server JWKS/OIDC: crates/a2a-protocol-server/src/auth/jwt.rs:857 from_jwks_url_with_tls_config, :910 from_oidc_issuer_with_tls_config",
+    "Delegation spawn path: crates/a2a-protocol-client/src/delegation/mod.rs:159-191 start takes Arc<A2aClient>. Renewal (delegation/renewal.rs:28-60, client.renew_lease), resume (resume.rs:216-240, subscribe_in and get_task), cancel (mod.rs:411, :436) and the drop-time cancel (drop.rs:26-41) all reuse that client, so they inherit its TLS and pool. There is no separate HTTP client",
+    "Pool per client: transport_factory.rs:279,289 call http_client() for each build(), and tls.rs:300-316 makes a new hyper_util Client per call. The only pool knob is pool_idle_timeout(50 s) (tls.rs:311): no pool_max_idle_per_host and no per-host cap. Plaintext stays HTTP/1.1, because proxy.rs:248-264 offers h2 only through ALPN on TLS and there is no h2c prior-knowledge option, so each http:// SSE stream holds its own TCP connection",
+    "Refuted sub-claim: 'fresh RootCertStore and TLS session cache per build'. tls.rs:100-108 caches default_tls_config in a static LazyLock (c4404e8), and rustls ClientConfig clones share Resumption.store (an Arc; rustls-0.23.46 src/client/client_conn.rs:480-483). TLS session resumption is therefore shared by every default-config client in the process",
+    "Shared pool today: there is no public API (ADR 0032 HttpPool is 'Proposed. Nothing here is built or run', docs/adr/0032-http-pool.md:6-9). Workarounds: (1) share one Arc<A2aClient> per peer, as Delegation and examples/swarm/src/topology.rs:44 do, which gives one interceptor chain and config for all users; (2) clone one JsonRpcTransport/RestTransport (Clone over Arc<Inner>, jsonrpc.rs:46-49, rest/mod.rs:63-66) into several builders with with_custom_transport. That shares the pool for one endpoint, but only with default TLS, and the builder's timeouts and TLS settings are not applied to a custom transport (transport_factory.rs:57-61)"
+   ],
+   "test": "crates/a2a-protocol-client/tests/private_ca.rs:27 a_private_ca_is_refused_by_default_and_trusted_when_given and :58 a_client_certificate_is_presented_when_given (JSONRPC and HTTP+JSON). Both assert UnknownIssuer or a refusal without the config and is_ok with it, so they would fail if TlsConfig::Custom were ignored. :132 the_card_fetch_takes_the_tls_configuration and :157 the_key_set_fetch_takes_the_tls_configuration assert UnknownIssuer without and a 404/400 with, so they would fail without c4404e8. gRPC private CA: tests/grpc_tls_apply_tests.rs:110. gRPC mTLS: crates/a2a-protocol-sdk/tests/grpc_mtls_caller_e2e.rs. WebSocket private CA: tests/ws_tls_tests.rs:101; WebSocket client certificate: no client-side test. Token provider TLS: none (no API). Pool sharing: none. All read, none run.",
+   "summary": "On main a private CA and mTLS work on JSON-RPC and HTTP+JSON (ClientBuilder::with_tls_config), WebSocket (WebSocketTransportConfig::with_tls_config), gRPC (with_grpc_tls_config, a tonic type), SLIMRPC (slim_config), the card resolver and client JWKS (CardFetchOptions::with_tls_config) and push. The token provider is the exception. Every build() still creates its own hyper pool, and nothing public lets several A2aClients share one.",
+   "remaining": "(1) Token provider (client credentials, OIDC discovery, RFC 8693 exchange): no TLS config and no client certificate; env roots only. (2) gRPC does not read SSL_CERT_FILE/SSL_CERT_DIR, and its custom config replaces the Mozilla roots (see NEW-h-s0-7). (3) One TLS identity has to be set up to four times in two type systems: the builder's rustls config, the tonic ClientTlsConfig, WebSocketTransportConfig and CardFetchOptions. Nothing propagates it. (4) The standalone JsonRpcTransport/RestTransport constructors take no TLS config. (5) Pooling: one pool per A2aClient, no per-host cap, no h2c, and a new pool per card fetch. ADR 0032 (proposed, not built) is the design. Decision: build HttpPool opt-in as ADR 0032 says, or document 'share one Arc<A2aClient> per peer' as the supported pattern for now. Recommendation: document the Arc pattern now, and build ADR 0032 when H6/H8 need per-origin state.",
+   "theme": "client-tls / http-pool",
+   "effort": "L",
+   "breaking": "none - every remaining item is additive (token provider with_tls_config; ADR 0032 is opt-in)",
+   "probe": "none to settle (read). To prove a pool fix: a counting TCP acceptor; build N A2aClients with one shared pool to one https:// and one http:// server and expect 1 connection (h2) instead of N. To prove token-provider TLS: Keycloak on a private CA with tls_client_auth; ClientCredentialsProvider must get a token with the client certificate and fail without it."
+  },
+  {
+   "id": "H3",
+   "verdict": "partly_fixed",
+   "severity_now": "medium (down from S0) for the row as written: on the bundled SQLite and PostgreSQL stores with turn claims (the default) an orphan is now ended failed/transient and its lease released. Still open: configurations with no reaper, renewals that are never refused, and a new false-positive risk the reaper introduces (NEW-h-s0-1, high)",
+   "evidence": [
+    "commit 57f034e (2026-10-29) - adds the reaper: crates/a2a-protocol-server/src/handler/claims/reaper/mod.rs:69-131. Every claim TTL (15 s, first look after one TTL, :76-84) it lists submitted/working tasks with no live claim that have not been written for one TTL (TurnClaimStore::abandoned), takes a claim on each (:108-125), and ends it Failed with FailureClass::Transient and REASON (:133-176). The write is fenced, and webhooks are pushed",
+    "commit e313835 (2026-10-31, merged in 4a8243c / PR #185) - adds release_lease after the Failed write (reaper/mod.rs:163, :220-230) and appends the Failed event to the task's log at last_event_seq+1 (:170, :187-212). Before it the lease row stayed and server-side renewals kept extending it. The client's renewal loop already stopped on a terminal task (renewal.rs:47)",
+    "Where the reaper runs: handler/claims/mod.rs:342-359 start_reaper, called from admit (handler/mod.rs:320-327), i.e. lazily on the first A2A request. Only when the handler has turn claims",
+    "Which stores: PostgreSQL plain and tenant-aware (store/claim/postgres.rs:52-64 SQL; :268-287; the claim store is built by PostgresTaskStore::turn_claims, postgres_store/store_impl.rs:43-48) and SQLite plain and tenant-aware (store/claim/sqlite.rs:57-69, :249-266; sqlite_store/mod.rs:602, tenant_sqlite_store.rs:266). The encrypted, audit and traced wrappers forward turn_claims (encrypted/mod.rs:252, audit/task_store.rs:159, traced.rs:234)",
+    "In-memory stores: TaskStore::turn_claims defaults to None (store/task_store/mod.rs:317), so there are no claims and no reaper. A crash loses the whole store, so no orphan survives a restart: GetTask gives TaskNotFound, the client's renewal loop logs and retries until its Delegation ends (renewal.rs:50-53), and the Delegation resumes, fails and ends Lost",
+    "No reaper: RequestHandlerBuilder::without_turn_claims (builder.rs:509, documented for 'a store only one replica uses'). A custom TurnClaimStore whose abandoned() is the trait default returns nothing (store/claim/mod.rs:183-186). PostgresTurnClaims::new has tasks: None (claim/postgres.rs:104-108) and so also finds nothing. In each case a task whose process died stays working forever",
+    "Renewal is never refused: handler/lease.rs:119-131 renew_lease_if_asked renews whenever the read succeeds, with no check of the claim or task state. Until the reaper acts (about TTL to 2xTTL) a dead owner's child's lease renews successfully, and with no reaper it renews forever. The lease watcher is still per process (lease.rs:148-184). The H-report fix ('renewal must refuse TaskNotRunning') was not built; the reaper approach was used instead",
+    "What a delegating parent sees on a SQL fleet with the reaper: its SSE stream to the dead replica breaks. Delegation::wait resumes (resume.rs:244-290), the subscription lands on a live replica, which polls the store every 250 ms (lifecycle/subscribe.rs:100-160). When the reaper writes Failed, the poll returns finished(...) built from the stored status (subscribe.rs:110-112, :627-650). The parent gets Outcome::Failed{class: Transient} with REASON (outcome.rs:50-62) about 15-30 s after the death. The client's renewal loop stops on that terminal task (renewal.rs:47). A follow_task poller sees Failed too",
+    "A resend under the same idempotency key replays the stored Failed task instead of running it again (handler/messaging/idempotency.rs:90-93), so 'retry with the same key', the H-report design, does not re-run the work",
+    "Rolling upgrade from 0.15: a legacy writer's claim (scope a2a.legacy) makes a2a_claim_turn return 'legacy' (store/claim/upgrade.rs:150-155), the reaper's claim() is Ok(false), and the task is left alone (reaper/mod.rs:118). Correct"
+   ],
+   "test": "crates/a2a-protocol-server/src/handler/claims/reaper/tests.rs:256 sqlite_the_reaper_ends_only_what_nobody_runs and :266 tenant_aware_sqlite_... (default all-features CI); :302 postgres_... and :312 tenant_aware_postgres_... (#[ignore], run by scripts/run_postgres_suites.py in ci.yml). Shared scenario at :66-229: asserts the orphan is Failed/Transient, three look-alikes are untouched, exactly one log entry at seq 1, the lease deadline is None and renew returns false, and one webhook. It would fail if the reaper or release_lease were removed (e313835's message says the SQLite case fails without the release; I read the assertion, did not run it). :333 a_request_starts_the_handlers_reaper would fail if admit did not start the reaper. Gaps: the lease part uses InMemoryLeaseStore, not PostgresLeaseStore; there is no test with a real killed process and a parent Delegation watching it, and none for without_turn_claims or a live owner whose renewals stall (NEW-h-s0-1). Not run.",
+   "summary": "A task left submitted/working by a dead replica is now ended failed/transient, webhooked, logged, and its lease row deleted, by a per-handler reaper. That holds on the bundled SQLite/PostgreSQL stores with turn claims, which is the default. Renewal is still unconditional, and deployments without turn claims or with a custom claim store get no reaper.",
+   "remaining": "(1) without_turn_claims() (e.g. a single-replica SQLite agent), a custom claim store, or PostgresTurnClaims::new: an orphan stays working and its lease is renewed forever. build() neither warns nor reaps at startup. (2) Renewal is not refused for a task with no live claim, so for about 1-2 TTL after a death, and forever with no reaper, the parent's renewals succeed. (3) Lease rows leak when an owner dies between its terminal write and the watcher's release, and for parked tasks that are never continued (NEW-h-s0-6). (4) The reaper starts only on the first request (NEW-h-s0-5). (5) A healthy owner whose renewals stall is declared dead and its task Failed while the executor keeps running (NEW-h-s0-1). (6) The REASON text invites a resend that, under the same idempotency key, replays Failed.",
+   "theme": "reaper / turn-claims",
+   "effort": "S",
+   "breaking": "behaviour - refusing a renewal for a claimless task, or failing working tasks at startup when claims are off, changes what callers see; a build() warning is non-breaking",
+   "probe": "Settled by reading for the default path. To prove the residual: (a) build a single replica on SQLite with without_turn_claims(), start a 60 s 'hold' turn, kill -9, restart, send any request, wait 60 s; GetTask still answers working (expected) while the default build answers failed/transient. (b) For NEW-h-s0-1: two replicas on PostgreSQL 17, toxiproxy between replica A and the database. Start a 120 s hold turn on A whose executor increments an external counter every second. Cut A's database link for 25 s and watch B's log for 'ended a task its replica left running'. The task becomes Failed while A's counter keeps rising until the link returns."
+  },
+  {
+   "id": "H4",
+   "verdict": "partly_fixed",
+   "severity_now": "high (down from S0): a JSON-RPC/HTTP+JSON delegation now survives stream blips, and reattach plus a PostgreSQL journal exist. On gRPC/WebSocket a long quiet child is still cancelled after a few idle cuts, a graceful supervisor redeploy still cascades cancels, and nothing in the SDK performs recovery",
+   "evidence": [
+    "commit 660196e (2026-10-31) - adds resume-before-cancel: crates/a2a-protocol-client/src/delegation/mod.rs:369-391 wait() calls resume() (resume.rs:244-290) under ResumePolicy (default 5 attempts, 200 ms doubling to 5 s, 30 s per loss; resume.rs:54-63). A refused resubscribe is followed by GetTask (history_length 0, resume.rs:229-240), so a child that settled during the gap is reported as what it became. Only GaveUp calls lost(), which sends CancelTask (mod.rs:432-439)",
+    "commit 660196e - adds Delegation::reattach(client, tenant, task_id, last_event_id) (resume.rs:160-199) and last_event_id() (:140-142). detach() keeps the record open (mod.rs:427-430; drop.rs:14 returns when !armed)",
+    "commit 49f5509 (2026-10-31) - adds the DelegationJournal trait and InMemoryDelegationJournal (crates/a2a-protocol-types/src/delegation_journal.rs:137-275), start_journaled/with_journal (client delegation/journal.rs:104-150; begin before send, progress at most every 2 s, settle on finish), and PostgresDelegationJournal (crates/a2a-protocol-server/src/store/delegation_journal.rs, postgres feature, store/mod.rs:11-12,126). There is no SQLite journal (ADR 0030 Status; book/src/client/delegation.md 'There is no SQLite journal')",
+    "Who calls reattach: nobody in the SDK. No helper lists open() and reattaches; examples/ has no journal or reattach use (grep); the only recovery code is the hand-written loop in book/src/client/delegation.md. The swarm run that kills a supervisor is 'not done' (docs/swarm-orchestration.md:310-316)",
+    "Owner model: open(owner) lists by an owner string, with no claim on a record and no owner liveness (delegation_journal.rs:137-149 contract; server store/delegation_journal.rs open SQL). ADR 0030 Consequences: the owner column is 'not enforce[d]'",
+    "No message text in the record (delegation_journal.rs:24-27 and the DelegationRecord fields). For a record with no task id, the documented recovery 'send the same message again under the record's idempotency key' needs the message from somewhere else",
+    "Leases and budgets: reattach sets renewal: None and budget: None (resume.rs:175-176; doc :153 'A lease or budget grant is not restored'). start_journaled calls only start() (journal.rs:128), so the API cannot journal a leased or budgeted delegation (only by hand: journal.begin, then start_leased, then with_journal). The record has no TTL field. A leased child picked up after a restart is therefore not renewed and is stopped at the next lapse, unless the application calls A2aClient::renew_lease (methods/tasks.rs:45) itself",
+    "Binding differences: last_event_id is only an SSE id (resume.rs:203-213; event_stream.rs:511). gRPC and WebSocket streams carry none, so a resume starts from the snapshot. Because last_event_id == resumed_at == None, the streak never resets (resume.rs:249-252), and over the whole life of a gRPC/WS delegation at most 'attempts' reopenings happen (documented at resume.rs:35-37). The client idle bound is 5 min (client.rs:102-107; config.rs:323), SSE keep-alive comments reset it (event_stream.rs:105) but gRPC/WS send no app-level keep-alive (B-10 open; dispatch/grpc/dispatcher.rs:47 keepalive None and HTTP/2 PINGs never reach the EventStream). A healthy child that is quiet in 6 separate 5-minute stretches, or 6 x 60 s behind an L7 balancer, is cancelled",
+    "SubscribeToTask on a child that already ended: this SDK's server refuses it with UnsupportedOperation even when Last-Event-ID is sent (crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:587-593). The delegation falls back to GetTask (history_length 0), so the outcome is right, but events logged between the cut and the end (artifact chunks) are not replayed to a caller reading next_event. A peer that answers with another error (e.g. TaskNotFound after a retention purge) is retried until the policy is spent, and the delegation then ends Lost with a failed CancelTask",
+    "Child id not yet known when the stream is lost: resume() gives up at once (resume.rs:245-247) and lost() sends no cancel (mod.rs:433). An unleased child is left unowned, and only the journal's idempotency key path can reach it",
+    "next_event() does not resume by itself (mod.rs:296-319). A parent that drives next_event in its own loop sees None at the first cut; only wait() resumes",
+    "Graceful shutdown of a supervisor that is itself an agent fires every executor token (crates/a2a-protocol-server/src/handler/shutdown/in_flight.rs:6-22, by design). The documented wait(ctx.cancellation_token.cancelled()) therefore sends CancelTask to every child (mod.rs:388) and settles each journal record 'canceled'. Journal and reattach help only after a hard kill (NEW-h-s0-2)"
+   ],
+   "test": "crates/a2a-protocol-client/tests/delegation_resume/resume.rs:13 a_cut_stream_is_resumed_and_the_running_child_completes asserts Outcome::Completed and the child state Completed after a proxy cut; with resume reverted the outcome is Lost and the child Canceled, so it would fail. Also :43 (finished during the gap), :78 and :121 (bounded by attempts and by deadline), :167 (progress resets the streak), :199 (position advances); reattach.rs:13, :42, :67; delegation_journal/lifecycle.rs:17, :61, :81, :125; server store/delegation_journal/tests.rs:137 (in-memory contract) and :145 postgres_keeps_the_contract (#[ignore], run by scripts/run_postgres_suites.py). Gaps: every resume/reattach test is JSON-RPC against TenantAwareInMemoryTaskStore (delegation_resume/harness.rs:70-77), with no gRPC/WebSocket resume test. The 'restarted supervisor' tests detach in the same process rather than kill one. No test combines journal with lease or budget. The supervisor-kill swarm run is not done. Read, not run.",
+   "summary": "A delegation over JSON-RPC/HTTP+JSON now resubscribes from the last SSE id before it cancels, can be reattached by task id and position, and can keep a journal in memory or in PostgreSQL. Recovery after a restart is entirely the application's job. Leases and budgets are not restored, gRPC/WebSocket resumes are capped for the whole delegation, and a graceful redeploy still cancels the subtree.",
+   "remaining": "(1) No recovery driver: the application must call open(owner), reattach or resend, and renew leases itself; nothing claims a record or adopts a dead owner's records (Kubernetes Deployment pods get new names; a shared fixed owner makes every replica reattach every record). (2) The journal does not hold the message, so a record with no task id cannot be resent from the journal alone. (3) No SQLite journal, and the types-crate docs claim one exists (NEW-h-s0-4); the PG journal is in the server crate. (4) Lease and budget are lost on reattach, and start_journaled cannot lease. (5) gRPC/WS: no event ids, so the streak never resets, and with no keep-alive a long quiet child is cancelled after about 6 idle cuts. (6) A graceful supervisor shutdown cascades cancels (NEW-h-s0-2). (7) Journal writes are awaited on the event path (NEW-h-s0-3). (8) next_event does not resume. Decision for (5)/(6): option A, a resume streak that resets on any received event (including the snapshot) for id-less bindings, plus a 'hand off on shutdown' mode that detaches instead of cancelling when a journal is attached; option B, keep cancel-on-shutdown and document that journaled supervisors must detach before shutdown; option C, server-side keep-alive frames on gRPC/WS streams (B-10). Recommendation: A, plus C for B-10.",
+   "theme": "delegation-resume / journal",
+   "effort": "M",
+   "breaking": "behaviour - resetting the streak on any event and detaching on shutdown change when a child is cancelled; a recovery helper and start_journaled_leased are additive (api)",
+   "probe": "(a) Supervisor kill: a supervisor process with PostgresDelegationJournal (owner set from an env var) starts 50 children of 60 s each against a PostgreSQL-backed worker (JSON-RPC). kill -9 it at 20 s, restart it within 10 s, and run the book's recovery loop. Count Completed vs Canceled vs still-open records and children; expect 50 Completed with no lease and many Canceled with start_leased at TTL 15 s. (b) gRPC idle: a child that emits one event and then sleeps 7 min, through Envoy or nginx (grpc_read_timeout 60s) or direct with stream_idle_timeout=60 s. Expect Outcome::Lost and a CancelTask after about 6 idle cuts. (c) Graceful redeploy: a supervisor agent behind Server::serve_with_shutdown with journaled children, SIGTERM. Expect every child canceled and every record settled 'canceled'."
+  }
+ ],
+ "new_findings": [
+  {
+   "id": "NEW-h-s0-1",
+   "severity": "high",
+   "where": "crates/a2a-protocol-server/src/handler/claims/reaper/mod.rs:86-176; crates/a2a-protocol-server/src/handler/claims/mod.rs:389-395; crates/a2a-protocol-server/src/store/pg_retry.rs:139-153; crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:43-48",
+   "finding": "The reaper turns a stalled renewal into a terminal failure while the work goes on. Claim renewal shares the task store's pool (store_impl.rs:43-48), pool_options sets no acquire_timeout (sqlx default 30 s, more than the 15 s TTL), and a failed renewal is only logged (claims/mod.rs:389-395), so there is no local self-fence (E-F7, open). The reaper on any other replica ends every task whose claim expired and that has not been written for one TTL: Failed/Transient, webhook sent, lease released. Before the reaper this needed a continuation send; now it happens automatically within about one TTL to every task of the starved or partitioned replica.",
+   "scenario": "Under load on a PostgreSQL fleet (hundreds of idle subscriber polls on 10 connections, E-F25), or during a 20 s network partition between one replica and the database, healthy long turns are marked failed/transient. Parents see Outcome::Failed and resend (with a fresh key), so the work runs twice and its side effects happen twice, while the original executor keeps running until its next successful renewal.",
+   "read_only": true,
+   "theme": "turn-claims self-fence"
+  },
+  {
+   "id": "NEW-h-s0-2",
+   "severity": "medium",
+   "where": "crates/a2a-protocol-server/src/handler/shutdown/in_flight.rs:6-22; crates/a2a-protocol-client/src/delegation/mod.rs:369-390; crates/a2a-protocol-client/src/delegation/journal.rs:197-208",
+   "finding": "ADR 0030 targets a supervisor that 'dies or is redeployed', but a redeploy is graceful. Shutdown fires every executor's cancellation token by design, and the documented pattern child.wait(ctx.cancellation_token.cancelled()) then cancels each child and settles its journal record 'canceled'. Only a hard kill (SIGKILL, OOM, node loss) leaves children running and records open to reattach. No mode detaches on shutdown.",
+   "scenario": "kubectl rollout restart of an orchestrator agent cancels every delegated subtree. The new pod's journal open() returns nothing to pick up.",
+   "read_only": true,
+   "theme": "delegation-resume"
+  },
+  {
+   "id": "NEW-h-s0-3",
+   "severity": "medium",
+   "where": "crates/a2a-protocol-client/src/delegation/mod.rs:317; crates/a2a-protocol-client/src/delegation/journal.rs:162-195; crates/a2a-protocol-server/src/store/delegation_journal.rs:107-200",
+   "finding": "Journal progress writes are awaited inline in next_event: at least every 2 s, and always when the child is named or the stream ends. PostgresDelegationJournal uses the caller's pool and pg_retry (one re-run) with no time bound of its own. If the journal database is slow or down, each journaled delegation stops reading its stream for up to the pool's acquire timeout (sqlx default 30 s, doubled by the re-run) per write, and a stream loss waits for the forced write before the resume starts. The doc says 'the delegation matters more than its record', but the write blocks the delegation.",
+   "scenario": "A PostgreSQL failover on the journal's database stalls every running delegation in the supervisor for tens of seconds. The children's servers see slow consumers and the resumes start late.",
+   "read_only": true,
+   "theme": "delegation-journal"
+  },
+  {
+   "id": "NEW-h-s0-4",
+   "severity": "low",
+   "where": "crates/a2a-protocol-types/src/delegation_journal.rs:36-39",
+   "finding": "The module docs say 'the SQLite and PostgreSQL versions are in the server crate behind its sqlite and postgres features'. Only PostgresDelegationJournal exists (crates/a2a-protocol-server/src/store/mod.rs:11-12,126), and ADR 0030 and the book both say no SQLite journal was built.",
+   "scenario": "A single-host supervisor on SQLite looks for a SqliteDelegationJournal that does not exist.",
+   "read_only": true,
+   "theme": "docs"
+  },
+  {
+   "id": "NEW-h-s0-5",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/handler/mod.rs:320-327; crates/a2a-protocol-server/src/handler/claims/mod.rs:342-359",
+   "finding": "The reaper starts lazily from admit(), on the first A2A request a handler serves. Health and readiness probes do not start it. A replica, or a whole fleet after a restart, that has served no request never reaps, so orphans stay working and their terminal webhooks go unsent until some request arrives.",
+   "scenario": "A cluster-wide restart at night: webhook consumers waiting for the terminal push of tasks killed mid-turn wait until the first client call of the morning.",
+   "read_only": true,
+   "theme": "reaper"
+  },
+  {
+   "id": "NEW-h-s0-6",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/handler/lease.rs:177-182; crates/a2a-protocol-server/src/handler/claims/reaper/mod.rs:220-230; crates/a2a-protocol-server/src/store/lease/postgres.rs:56-140",
+   "finding": "A lease row is deleted only by the owner's watcher when a turn ends unparked, or by the reaper for a task it ends. PostgresLeaseStore has no sweep. A replica that dies after its terminal write but before the watcher releases, or a parked child that is never continued, keeps its row forever, and renewals keep pushing its deadline.",
+   "scenario": "a2a_leases grows without bound in a long-running fleet with churn. No wrong behaviour, but a storage leak and misleading deadlines for operators.",
+   "read_only": true,
+   "theme": "lease"
+  },
+  {
+   "id": "NEW-h-s0-7",
+   "severity": "medium",
+   "where": "crates/a2a-protocol-client/src/transport/grpc.rs:353-370; crates/a2a-protocol-client/Cargo.toml:72",
+   "finding": "gRPC alone ignores SSL_CERT_FILE/SSL_CERT_DIR. The default ClientTlsConfig::new().with_enabled_roots() with tonic features tls-ring and tls-webpki-roots loads Mozilla roots only, while JSON-RPC, HTTP+JSON, WebSocket, card, JWKS and the token provider all add the env roots (tls.rs:207-216). The feature doc (Cargo.toml:37-41) does not say gRPC is excluded. Related to B-20 (a custom gRPC config replaces the roots).",
+   "scenario": "A container that mounts its corporate or TLS-inspection CA with SSL_CERT_FILE reaches the agent over JSON-RPC, but build_grpc() fails with UnknownIssuer for the same host.",
+   "read_only": true,
+   "theme": "client-tls"
+  },
+  {
+   "id": "NEW-h-s0-8",
+   "severity": "medium",
+   "where": "crates/a2a-protocol-server/src/store/claim/postgres.rs:59-64; crates/a2a-protocol-server/src/store/tenant_postgres_store/mod.rs:166-170",
+   "finding": "The reaper's tenant-aware query filters tenant_tasks by state and updated_at across all tenants, but the only state index is (tenant_id, state) and the updated_at index is (tenant_id, updated_at DESC, id DESC). With tenant_id leading in both and no tenant predicate, PostgreSQL 16/17 (no skip scan) probably scans the whole table. Every replica runs it every claim TTL (15 s). The plain store has idx_tasks_state and is fine.",
+   "scenario": "A tenant-aware PostgreSQL fleet with millions of retained tenant_tasks rows: N replicas each run a full scan every 15 s. Conjecture; confirm with EXPLAIN.",
+   "read_only": true,
+   "theme": "reaper-perf"
+  },
+  {
+   "id": "NEW-h-s0-9",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/handler/claims/reaper/mod.rs:50-52; crates/a2a-protocol-server/src/handler/messaging/idempotency.rs:90-93",
+   "finding": "The reaped task's status says 'sending it again may succeed', and the H3 design says parents 'retry with the same idempotency key'. A send under the same key replays the stored Failed task (IdempotencyClaim::Replay) and runs nothing. The journal's documented recovery for a record without a task id (resend under the record's key) gets the same replay if the child was meanwhile reaped.",
+   "scenario": "A parent that retries a reaped child with the original message (and so the original key) gets Failed back at once, every time, and concludes the worker is broken.",
+   "read_only": true,
+   "theme": "reaper / idempotency docs"
+  }
+ ]
+}

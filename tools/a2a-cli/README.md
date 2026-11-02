@@ -58,16 +58,23 @@ Accepted before or after the subcommand.
 | `--binding jsonrpc\|rest\|grpc\|websocket` | Which binding to speak to `<URL>` with. **Default: none given — the agent card is fetched from `<URL>/.well-known/agent-card.json` and the binding is chosen the way `ClientBuilder::from_card` does: the first interface the card lists that this client supports (spec §8.3.2); the card's URL for that interface is used, not `<URL>`.** With the flag no card is fetched and `<URL>` is the endpoint of that binding: `http(s)://` for `jsonrpc` and `rest`, `ws(s)://` for `websocket`, `host:port` or `http(s)://` for `grpc`. |
 | `--timeout <SECS>` | Per-request timeout; also bounds establishing a stream. Default 30. The TCP connect timeout stays at the library's 10 s unless this is shorter. Does not bound `send` (next row). |
 | `--send-timeout <SECS>` | How long `send` waits for the agent to finish its turn. Default 600. A blocking send is answered only when the turn ends, which for an agent calling a model takes as long as the model does; until 2026-10-29 `send` gave up at `--timeout`'s 30 s while the task went on running. `stream` shows the turn as it happens instead. |
-| `--header K=V` | Extra header on every request; repeatable, one value per name (a repeated name keeps the last). Split at the first `=`, so `--header "Authorization=Bearer abc=="` keeps the padding. Over gRPC the headers become request metadata; over WebSocket they go on the upgrade request. |
+| `--header K=V` | Extra header on every request; repeatable. A name compares without case and a repeated name keeps the last (`X-A=1 x-a=2` sends `x-a: 2`). Split at the first `=`, so `--header "Authorization=Bearer abc=="` keeps the padding. Over gRPC the headers become request metadata; over WebSocket they go on the upgrade request. `a2a card` sends them too, and is bounded by `--timeout`. A value on the command line is visible to other users of the machine in the process list: for a credential use `--header-env`. |
+| `--header-env K=VAR` | Like `--header`, but the value is read from the environment variable `VAR` (`export A2A_AUTH='Bearer abc'`, then `--header-env Authorization=A2A_AUTH`). The value is the whole header value, `Bearer ` included. It never appears in the process list. An unset or empty variable is a usage error (exit 2) that names the variable. A header from the environment wins over a `--header` of the same name, and is held to the same host rule (`--follow-card-origin`). |
 | `--follow-card-origin` | Send `--header` values to the host the agent card names, even when it is not the host you typed. By default they go only to the host in the URL you gave: a card is the agent's own word, and a card naming another host would otherwise receive your credentials on every call, so with `--header` set the command fails and says so. Also lets `card verify` send them to a JWK Set on another host than the card's (without it the keys are still fetched, without the header, and a note goes to stderr). A card read from a file has no host, so a JWK Set URL given with one gets the header. |
+| `--cacert <FILE>` | A PEM file of CA certificates to trust, in addition to Mozilla's roots and those `SSL_CERT_FILE` / `SSL_CERT_DIR` name. Repeatable. For a private CA, or a self-signed agent: pass its certificate, which trusts that certificate and nothing else it could sign. Reaches every binding, the card fetch and the JWK Set fetch. A file that is missing or holds no certificate is a usage error (exit 2). |
+| `--client-cert <FILE>`, `--client-key <FILE>` | The client certificate chain and its private key (PEM), presented when the agent asks for one (mutual TLS). Give both. A key that is not the certificate's is a usage error (exit 2). The key is read once and never printed. (`--key` is `card sign`'s signing key.) |
 | `--tenant <ID>` | Tenant for multi-tenant agents. Overrides the tenant the card advertises for the chosen interface. |
 | `--grpc-plaintext` | Dial a bare `host:port` gRPC address without TLS. The default is the library's: TLS for every host except loopback. No effect on an address that carries a scheme. |
 | `--no-capability-check` | Run `stream` even when the agent card does not set `capabilities.streaming` to `true`. By default, as `ClientBuilder::from_card` does (spec §3.3.4), the stream is refused before anything is sent. For an agent that streams without declaring it. No effect with `--binding`, which fetches no card. |
 
 There is no `--insecure-http`. The client library accepts `http://` without
 an opt-in (its HTTPS connector is `https_or_http`), and this tool does not add
-or remove any policy of its own: TLS verification is the library's, against
-its bundled roots, with no way to turn it off here.
+or remove any policy of its own: TLS verification is the library's, with no way
+to turn it off here. It trusts Mozilla's roots plus the certificates
+`SSL_CERT_FILE` and `SSL_CERT_DIR` name, on every binding (gRPC too, since
+0.16.0), so `SSL_CERT_FILE=/path/ca.pem a2a send https://internal-agent ...`
+reaches an agent behind a private CA. `--cacert` adds more, and `--client-cert`
+with `--client-key` presents a client certificate.
 
 ## Telemetry
 
@@ -370,7 +377,8 @@ than worked around, and all three closed in the 0.12 batch on 2026-09-10:
   and the fetch had its own fixed 30-second budget independent of
   `--timeout`. **Closed:** `resolve_agent_card_with_options` takes a
   `CardFetchOptions` with headers and a budget; `connect.rs` passes
-  `--header` and `--timeout` through it.
+  `--header` and `--timeout` through it, and so does `a2a card` (it did not until
+  2026-11-01).
 * ~~**The builder does not say which interface it chose.**~~ `ClientBuilder::
   from_card` picked one, but the choice was not readable, and gRPC and
   WebSocket need different constructors (`build_grpc`, a custom transport),

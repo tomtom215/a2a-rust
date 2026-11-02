@@ -41,11 +41,13 @@ use std::task::{Context, Poll};
 
 use hyper::rt::{Read, ReadBufCursor, Write};
 use hyper_util::client::legacy::connect::proxy::Tunnel;
-use hyper_util::client::legacy::connect::{Connected, Connection, HttpConnector};
+use hyper_util::client::legacy::connect::{Connected, Connection};
 use hyper_util::client::proxy::matcher::{Intercept, Matcher};
 use hyper_util::rt::TokioIo;
 use pin_project_lite::pin_project;
 use tokio::net::TcpStream;
+
+use super::resolver::{Tcp, system_tcp};
 
 /// Where variables come from: the process environment, or a test's table.
 pub type Env = dyn Fn(&str) -> Option<String> + Send + Sync;
@@ -101,6 +103,65 @@ fn unbracketed(no_proxy: &str) -> String {
         .join(",")
 }
 
+/// The destinations that never go through a proxy unless the environment asks
+/// for it: this machine. A blanket `HTTP_PROXY` is the normal state of a
+/// corporate laptop, and the SDK allows plaintext only to loopback, so a
+/// loopback token endpoint's client secret, or a credentialed local agent's
+/// bearer token, would otherwise be handed to the proxy in the clear
+/// (audit NEW-b-2, B-23; Go's `net/http` exempts the same names).
+const LOOPBACK: &str = "localhost,127.0.0.0/8,::1";
+
+/// Whether `value` (of `A2A_PROXY_LOOPBACK`) turns the loopback exemption off.
+fn truthy(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+/// `NO_PROXY` as `hyper-util` reads it, from the entries as Go's `net/http`
+/// reads them, with loopback added unless `loopback_to_proxy`.
+///
+/// `*.example.com` is `.example.com` (the matcher takes the second form and
+/// not the first, so the first exempted nothing), and an entry with a port,
+/// `example.com:8080`, which the matcher cannot honour and would never match,
+/// is said so once rather than ignored in silence.
+fn no_proxy_rules(no_proxy: &str, loopback_to_proxy: bool) -> String {
+    let loopback = if loopback_to_proxy { "" } else { LOOPBACK };
+    let entries: Vec<String> = loopback
+        .split(',')
+        .chain(no_proxy.split(','))
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            entry
+                .strip_prefix("*.")
+                .map_or_else(|| entry.to_owned(), |rest| format!(".{rest}"))
+        })
+        .collect();
+    let mut kept = Vec::with_capacity(entries.len());
+    for entry in entries {
+        if names_a_port(&entry) {
+            trace_warn!(
+                entry = %entry,
+                "NO_PROXY: an entry with a port is ignored (hosts only); it exempts nothing"
+            );
+        } else {
+            kept.push(entry);
+        }
+    }
+    unbracketed(&kept.join(","))
+}
+
+/// Whether a `NO_PROXY` entry ends in `:port`: `host:8080` or `[::1]:8080`,
+/// and not a bare IPv6 address, whose colons are part of it.
+fn names_a_port(entry: &str) -> bool {
+    entry
+        .rsplit_once(':')
+        .filter(|(host, _)| !host.contains(':') || host.ends_with(']'))
+        .is_some_and(|(_, port)| !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()))
+}
+
 /// The rules `setting` and `env` give.
 pub fn matcher(env: &Env, setting: &ProxySetting) -> Matcher {
     // CGI: a request header can set `HTTP_PROXY` there (httpoxy), so, like
@@ -115,7 +176,10 @@ pub fn matcher(env: &Env, setting: &ProxySetting) -> Matcher {
             .all(first(env, &["ALL_PROXY", "all_proxy"]))
             .http(first(env, &["HTTP_PROXY", "http_proxy"]))
             .https(first(env, &["HTTPS_PROXY", "https_proxy"]))
-            .no(unbracketed(&first(env, &["NO_PROXY", "no_proxy"])))
+            .no(no_proxy_rules(
+                &first(env, &["NO_PROXY", "no_proxy"]),
+                env("A2A_PROXY_LOOPBACK").is_some_and(|v| truthy(&v)),
+            ))
             .build(),
     }
 }
@@ -202,8 +266,8 @@ impl Write for Conn {
 #[derive(Clone)]
 pub struct ProxyConnector {
     tls: rustls::ClientConfig,
-    direct: hyper_rustls::HttpsConnector<HttpConnector>,
-    tcp: HttpConnector,
+    direct: hyper_rustls::HttpsConnector<Tcp>,
+    tcp: Tcp,
     rules: Arc<Matcher>,
     said_unsupported: Arc<AtomicBool>,
 }
@@ -211,17 +275,13 @@ pub struct ProxyConnector {
 impl ProxyConnector {
     #[cfg_attr(not(feature = "otlp"), allow(dead_code))]
     pub fn new(tls: &rustls::ClientConfig, rules: Arc<Matcher>) -> Self {
-        Self::with_tcp(tls, rules, HttpConnector::new())
+        Self::with_tcp(tls, rules, system_tcp())
     }
 
     /// As [`new`](Self::new), dialling TCP with `tcp`, already tuned (connect
     /// timeout, keepalive, `TCP_NODELAY`). The connector is told to accept
     /// `https://` destinations, which the TLS layer above it handles.
-    pub fn with_tcp(
-        tls: &rustls::ClientConfig,
-        rules: Arc<Matcher>,
-        mut tcp: HttpConnector,
-    ) -> Self {
+    pub fn with_tcp(tls: &rustls::ClientConfig, rules: Arc<Matcher>, mut tcp: Tcp) -> Self {
         tcp.enforce_http(false);
         let direct = hyper_rustls::HttpsConnectorBuilder::new()
             .with_tls_config(tls.clone())
@@ -239,10 +299,7 @@ impl ProxyConnector {
     }
 
     /// TLS to the collector over a `CONNECT` tunnel through `proxy`.
-    fn tunnelled_tls(
-        &self,
-        proxy: &Intercept,
-    ) -> hyper_rustls::HttpsConnector<Tunnel<HttpConnector>> {
+    fn tunnelled_tls(&self, proxy: &Intercept) -> hyper_rustls::HttpsConnector<Tunnel<Tcp>> {
         hyper_rustls::HttpsConnectorBuilder::new()
             .with_tls_config(self.tls.clone())
             .https_only()
@@ -254,7 +311,7 @@ impl ProxyConnector {
 
 /// A `CONNECT` tunnel through `proxy`, authenticated when its URL carried a
 /// user.
-pub fn tunnel(proxy: &Intercept, tcp: HttpConnector) -> Tunnel<HttpConnector> {
+pub fn tunnel(proxy: &Intercept, tcp: Tcp) -> Tunnel<Tcp> {
     let tunnel = Tunnel::new(proxy.uri().clone(), tcp);
     match proxy.basic_auth() {
         Some(auth) => tunnel.with_auth(auth.clone()),
@@ -314,3 +371,6 @@ impl tower_service::Service<http::Uri> for ProxyConnector {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod rules_tests;

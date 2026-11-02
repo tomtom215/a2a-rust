@@ -112,24 +112,21 @@ mod tests {
 
     /// Boots the agent on an ephemeral port and returns its base URL. The
     /// card has to carry the port that is actually bound, and the handler
-    /// serving the card is built before the socket is, so the port is learned
-    /// with a probe bind first.
+    /// serving the card is built before the socket is served, so the socket is
+    /// bound first and kept: binding, reading the port and dropping the
+    /// listener to bind again leaves a gap in which another process can take it.
     async fn spawn_agent_url() -> String {
-        let probe = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("probe bind");
-        let addr = probe.local_addr().expect("local_addr");
-        drop(probe);
-        let url = format!("http://{addr}");
+        let server = Server::bind("127.0.0.1:0").await.expect("bind");
+        let url = format!("http://{}", server.local_addr().expect("local_addr"));
         let handler = Arc::new(
             RequestHandlerBuilder::new(HelloAgent)
                 .with_agent_card(card(&url))
                 .build()
                 .expect("build handler"),
         );
-        serve_with_addr(addr, JsonRpcDispatcher::new(handler))
-            .await
-            .expect("bind ephemeral port");
+        tokio::spawn(
+            server.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
         url
     }
 

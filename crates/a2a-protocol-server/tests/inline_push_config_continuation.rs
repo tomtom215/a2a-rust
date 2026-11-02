@@ -42,51 +42,32 @@ use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};
 struct AsksForInput;
 agent_executor!(AsksForInput, |ctx, queue| async {
     queue
-        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
-            status: TaskStatus::new(TaskState::InputRequired),
-            metadata: None,
-        }))
+        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            TaskStatus::new(TaskState::InputRequired),
+        )))
         .await
 });
 
 fn push_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Push Test Agent".into(),
-        description: "Advertises push notifications".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "https://agent.example.com/rpc".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![
-            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
-        ],
-        capabilities: AgentCapabilities::none().with_push_notifications(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "Push Test Agent",
+        "1.0.0",
+        AgentInterface::new("https://agent.example.com/rpc", "JSONRPC")
+            .with_protocol_version("1.0.0"),
+    )
+    .with_description("Advertises push notifications")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+    )
+    .with_capabilities(AgentCapabilities::none().with_push_notifications(true))
 }
 
 fn config(url: &str) -> TaskPushNotificationConfig {
-    TaskPushNotificationConfig {
-        tenant: None,
-        task_id: None,
-        id: None,
-        url: url.to_owned(),
-        token: Some("validation-token".to_owned()),
-        authentication: None,
-    }
+    TaskPushNotificationConfig::for_url(url.to_owned()).with_token("validation-token".to_owned())
 }
 
 /// A blocking send in context `c-1`, continuing `task` when it is given.
@@ -97,15 +78,12 @@ fn send(
 ) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(id),
-            role: MessageRole::User,
-            parts: vec![Part::text(id)],
-            context_id: Some(ContextId::new("c-1")),
-            task_id: task.map(TaskId::new),
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
+        message: {
+            let mut built =
+                Message::new(MessageId::new(id), MessageRole::User, vec![Part::text(id)])
+                    .with_context_id(ContextId::new("c-1"));
+            built.task_id = task.map(TaskId::new);
+            built
         },
         configuration: Some(SendMessageConfiguration {
             accepted_output_modes: vec!["text/plain".to_owned()],
@@ -197,9 +175,10 @@ async fn a_continuation_over_the_push_config_quota_keeps_its_task() {
     let task_id = parked(&handler).await;
     handler
         .on_set_push_config(
-            TaskPushNotificationConfig {
-                task_id: Some(task_id.clone()),
-                ..config("http://127.0.0.1:9/a")
+            {
+                let mut built = config("http://127.0.0.1:9/a");
+                built.task_id = Some(task_id.clone());
+                built
             },
             None,
         )
@@ -321,15 +300,17 @@ async fn a_continuation_whose_turn_cannot_be_saved_keeps_a_named_config() {
         .build()
         .expect("handler must build");
     let task_id = parked(&handler).await;
-    let named = TaskPushNotificationConfig {
-        id: Some("hook-1".to_owned()),
-        ..config("http://127.0.0.1:9/hook")
+    let named = {
+        let mut built = config("http://127.0.0.1:9/hook");
+        built.id = Some("hook-1".to_owned());
+        built
     };
     handler
         .on_set_push_config(
-            TaskPushNotificationConfig {
-                task_id: Some(task_id.clone()),
-                ..named.clone()
+            {
+                let mut built = named.clone();
+                built.task_id = Some(task_id.clone());
+                built
             },
             None,
         )

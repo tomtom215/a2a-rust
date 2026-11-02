@@ -112,14 +112,11 @@ async fn a_role_with_only_data_privileges_starts_a_store_its_owner_made() {
 
     let started = PostgresTaskStore::new(&app_url).await;
     let store = started.expect("a data-only role starts a store on its owner's schema");
-    let task = Task {
-        id: TaskId::new("a10"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(TaskState::Submitted),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("a10"),
+        ContextId::new("c"),
+        TaskStatus::new(TaskState::Submitted),
+    );
     store.save(&task).await.expect("and writes");
     assert!(store.get(&task.id).await.expect("and reads").is_some());
     drop(store);
@@ -331,4 +328,109 @@ async fn a_replica_start_does_not_stall_writes_behind_an_open_one() {
     .execute(&mut conn)
     .await
     .expect("drop");
+}
+
+/// Audit E-F11: schema work waits for a table lock for ten seconds at most,
+/// unless the operator chose another limit, which is kept.
+#[tokio::test]
+#[ignore = "needs a live PostgreSQL (A2A_TEST_POSTGRES_URL)"]
+async fn schema_work_does_not_wait_for_a_table_lock_without_limit() {
+    use sqlx::Connection as _;
+
+    let (mut admin, url, name) = scratch("ef11a").await;
+    let mut db = sqlx::PgConnection::connect(&url).await.expect("db");
+
+    // No limit set: ten seconds, inside the schema transaction only.
+    let mut tx = db.begin().await.expect("tx");
+    assert_eq!(show_lock_timeout(&mut tx).await, "0");
+    super::lock(&mut tx).await.expect("lock");
+    assert_eq!(show_lock_timeout(&mut tx).await, "10s");
+    tx.rollback().await.expect("rollback");
+    let mut tx = db.begin().await.expect("tx");
+    assert_eq!(show_lock_timeout(&mut tx).await, "0", "and only there");
+    tx.rollback().await.expect("rollback");
+
+    // The operator's own limit is kept, however large.
+    let mut tx = db.begin().await.expect("tx");
+    sqlx::query("SET LOCAL lock_timeout = '45s'")
+        .execute(&mut *tx)
+        .await
+        .expect("set");
+    super::lock(&mut tx).await.expect("lock");
+    assert_eq!(show_lock_timeout(&mut tx).await, "45s");
+    tx.rollback().await.expect("rollback");
+
+    drop(db);
+    drop_database(&mut admin, &name).await;
+}
+
+/// The point of it: while another transaction holds a lock on the table, a
+/// column added under the schema lock gives up (`55P03`) instead of queueing
+/// every other statement on the table behind it.
+#[tokio::test]
+#[ignore = "needs a live PostgreSQL (A2A_TEST_POSTGRES_URL)"]
+async fn a_column_added_behind_an_open_transaction_gives_up_instead_of_queueing() {
+    use sqlx::Connection as _;
+
+    let (mut admin, url, name) = scratch("ef11b").await;
+    let mut holder = sqlx::PgConnection::connect(&url).await.expect("holder");
+    sqlx::query("CREATE TABLE ddl_probe (id INT)")
+        .execute(&mut holder)
+        .await
+        .expect("table");
+    // A long read transaction on the table, as a report or a stuck client has.
+    let mut open = holder.begin().await.expect("tx");
+    sqlx::query("LOCK TABLE ddl_probe IN ACCESS SHARE MODE")
+        .execute(&mut *open)
+        .await
+        .expect("held");
+
+    let mut db = sqlx::PgConnection::connect(&url).await.expect("db");
+    let mut tx = db.begin().await.expect("tx");
+    // A short limit stands in for the ten seconds, which the test above shows
+    // `lock` sets: this one proves the limit reaches the statement.
+    sqlx::query("SET LOCAL lock_timeout = '300ms'")
+        .execute(&mut *tx)
+        .await
+        .expect("set");
+    super::lock(&mut tx).await.expect("lock");
+    let started = std::time::Instant::now();
+    let refused = sqlx::query("ALTER TABLE ddl_probe ADD COLUMN extra INT")
+        .execute(&mut *tx)
+        .await
+        .expect_err("it must not wait for the open transaction");
+    assert_eq!(
+        refused
+            .as_database_error()
+            .and_then(|e| e.code().map(|c| c.to_string()))
+            .as_deref(),
+        Some("55P03"),
+        "{refused}"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+
+    tx.rollback().await.expect("rollback");
+    open.rollback().await.expect("release");
+    drop((holder, db));
+    drop_database(&mut admin, &name).await;
+}
+
+async fn show_lock_timeout(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> String {
+    sqlx::query_scalar("SELECT current_setting('lock_timeout')")
+        .fetch_one(&mut **tx)
+        .await
+        .expect("setting")
+}
+
+async fn drop_database(admin: &mut sqlx::PgConnection, name: &str) {
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
+    )))
+    .execute(admin)
+    .await
+    .expect("cleanup");
 }

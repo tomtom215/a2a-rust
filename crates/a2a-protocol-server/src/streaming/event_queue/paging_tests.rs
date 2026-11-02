@@ -24,16 +24,11 @@ use super::{
 use crate::store::RecordedEvent;
 
 fn status(state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus {
-            state,
-            message: None,
-            timestamp: None,
-        },
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(state),
+    ))
 }
 
 fn recorded(seq: u64) -> RecordedEvent {

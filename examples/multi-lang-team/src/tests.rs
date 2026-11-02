@@ -35,16 +35,11 @@ use crate::{
 
 fn ctx(text: &str) -> RequestContext {
     RequestContext::new(
-        Message {
-            id: MessageId::new("m-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text(text)],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        Message::new(
+            MessageId::new("m-1"),
+            MessageRole::User,
+            vec![Part::text(text)],
+        ),
         TaskId::new("t-1"),
         "ctx-1".to_owned(),
     )
@@ -130,9 +125,10 @@ fn every_worker_is_on_loopback() {
 fn extract_text_joins_text_parts_and_ignores_the_rest() {
     let parts = vec![
         Part::text("hello"),
-        Part {
-            content: PartContent::Data(serde_json::json!({"k": "v"})),
-            ..Part::text("")
+        {
+            let mut built = Part::text("");
+            built.content = PartContent::Data(serde_json::json!({"k": "v"}));
+            built
         },
         Part::text("world"),
     ];

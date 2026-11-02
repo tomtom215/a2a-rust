@@ -81,6 +81,71 @@ let client = ClientBuilder::from_card(&card)?
 # }
 ```
 
+### Which roots, and what a configuration you give replaces
+
+Without `with_grpc_tls_config` the client trusts Mozilla's roots plus the
+certificates `SSL_CERT_FILE` and `SSL_CERT_DIR` name (with the default
+`tls-rustls` feature), the roots the HTTP bindings, the card fetch and the JWK
+Set fetch trust. Until 2026-11-01 gRPC trusted Mozilla's alone, so a container
+whose private CA came from `SSL_CERT_FILE` could reach an agent over JSON-RPC
+and not over gRPC.
+
+A configuration you give is exact, as it is for the HTTP bindings: tonic's
+`ClientTlsConfig` trusts what it is given. `ca_certificate` adds to a
+`with_enabled_roots()` base and does not replace it, so
+`transport::grpc::tls_config_from_pem` starts from the default roots, adds the
+PEM you pass, and presents a client certificate and key if you pass those:
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::AgentCard;
+# async fn f(card: AgentCard, ca_pem: Vec<u8>, cert_pem: Vec<u8>, key_pem: Vec<u8>)
+#     -> Result<(), Box<dyn std::error::Error>> {
+use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_client::transport::grpc;
+
+// The default roots, your private CA, and mutual TLS.
+let tls = grpc::tls_config_from_pem(Some(&ca_pem), Some((&cert_pem, &key_pem)));
+let client = ClientBuilder::from_card(&card)?
+    .with_grpc_tls_config(tls)
+    .build_grpc()
+    .await?;
+# Ok(())
+# }
+```
+
+It does not check the PEM. `tls::tls_config_from_pem` takes the same arguments,
+refuses a file that holds no certificate or a key that is not the
+certificate's, and is what the `a2a` command line uses before it builds this.
+
+### What a card gives `build_grpc`
+
+A builder from an agent card dials the card's gRPC interface, not whichever
+interface it lists first. A card that lists JSON-RPC before gRPC used to have
+gRPC spoken to the JSON-RPC port. A card with no gRPC interface for this
+SDK's protocol major is refused, naming what it does offer, and the
+`connection_timeout` is checked as `build()` checks it.
+
+### Timeouts
+
+A blocking `SendMessage` waits for the agent's whole turn and is bounded by
+`with_send_timeout` (10 minutes by default), not by the request timeout every
+other call has. Until 2026-11-01 it was cut at the request timeout, 30 s,
+whatever send timeout was set, with `Protocol(Internal) "cancelled by the
+peer"`, and the task went on running. The deadline sent to the server in
+`grpc-timeout` is the setting plus half a second, so the client's own timer
+fires first and the error is a `Timeout` naming the setting to raise.
+
+### What the network has to offer
+
+gRPC needs HTTP/2 end to end. Over TLS the connection must negotiate `h2` by
+ALPN, which a TLS-terminating proxy has to offer (check yours: some speak
+HTTP/1.1 to the upstream unless told otherwise). Without TLS the client speaks HTTP/2 with prior
+knowledge (h2c), so a load balancer in front of a plaintext agent has to
+accept that. One connection carries every call a client makes and stays on the
+replica it opened to: with several replicas behind a Service, a client does
+not spread its calls over them. To spread calls, use a headless Service and a
+client per pod, or an L7 mesh that balances HTTP/2 streams.
+
 ## Serving TLS
 
 The server's gRPC listener is plaintext with the `grpc` feature — the shape

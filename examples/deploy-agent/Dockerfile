@@ -15,9 +15,23 @@
 # recipe, in a layer Docker reuses until a manifest or Cargo.lock changes;
 # the last stage builds the workspace's own crates over it. The workspace is
 # copied whole because this example depends on the SDK crates by path.
+#
+# Behind a TLS-inspecting proxy the build cannot reach crates.io: the proxy
+# signs it with its own CA, and `cargo` fails with "SSL certificate problem:
+# self-signed certificate in certificate chain" (reproduced 2026-11-01, audit
+# L18). Pass that CA as a BuildKit secret and every step that downloads trusts
+# it, without the file reaching a layer or the image:
+#
+#   docker build --secret id=cacert,src=/path/to/proxy-ca.pem \
+#     -f examples/deploy-agent/Dockerfile -t deploy-agent .
+#
+# Without the secret nothing changes. (`HTTP_PROXY`/`HTTPS_PROXY` given as
+# `--build-arg`s are passed through by Docker as they are.)
 FROM rust:1.94-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55 AS chef
 # An exact version from crates.io, built with its own lock file.
-RUN cargo install cargo-chef --version 0.1.78 --locked
+RUN --mount=type=secret,id=cacert,required=false \
+    if [ -s /run/secrets/cacert ]; then export CARGO_HTTP_CAINFO=/run/secrets/cacert; fi \
+    && cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /src
 
 FROM chef AS planner
@@ -26,13 +40,21 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS build
 COPY --from=planner /src/recipe.json recipe.json
-RUN cargo chef cook --release --locked -p deploy-agent --recipe-path recipe.json
+RUN --mount=type=secret,id=cacert,required=false \
+    if [ -s /run/secrets/cacert ]; then export CARGO_HTTP_CAINFO=/run/secrets/cacert; fi \
+    && cargo chef cook --release --locked -p deploy-agent --recipe-path recipe.json
 COPY . .
-RUN cargo build --release --locked -p deploy-agent
+RUN --mount=type=secret,id=cacert,required=false \
+    if [ -s /run/secrets/cacert ]; then export CARGO_HTTP_CAINFO=/run/secrets/cacert; fi \
+    && cargo build --release --locked -p deploy-agent
 
-# Debian slim rather than distroless or scratch: the binary links glibc. The
-# SDK verifies TLS against its bundled Mozilla roots, so a public CA needs
-# nothing here. A private CA reaches the A2A client through SSL_CERT_FILE or
+# Debian slim rather than scratch, and rather than distroless for a reason that
+# is a choice, not a necessity: distroless/cc carries glibc too, so the binary
+# would run there. Slim keeps a shell and a package manager, which is what
+# `docker exec` and an incident at 3 a.m. want, at the cost of a larger image
+# and more packages to patch (the base is pinned by digest, and Dependabot's
+# docker ecosystem refreshes the digest weekly). The SDK verifies
+# TLS against its bundled Mozilla roots, so a public CA needs nothing here. A private CA reaches the A2A client through SSL_CERT_FILE or
 # SSL_CERT_DIR (a mounted PEM; set SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 # to trust this image's store), telemetry through OTEL_EXPORTER_OTLP_CERTIFICATE,
 # and PostgreSQL through the URL's sslrootcert.
@@ -48,6 +70,12 @@ RUN useradd --system --uid 10001 --no-create-home agent
 USER 10001
 
 COPY --from=build /src/target/release/deploy-agent /usr/local/bin/deploy-agent
+
+# The version the agent card reports, set from the release tag by the image
+# job (release.yml). Empty, as from a local `docker build`, the binary reports
+# its own crate version.
+ARG AGENT_VERSION=
+ENV AGENT_VERSION=${AGENT_VERSION}
 
 # Documentation only — publishing a port does not bind it. The process reads
 # PORT and defaults to 8080; keep the two in step.

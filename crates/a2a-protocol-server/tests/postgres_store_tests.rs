@@ -122,25 +122,16 @@ impl TestDb {
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
 fn make_task(id: &str, context_id: &str) -> Task {
-    Task {
-        id: TaskId(id.to_string()),
-        context_id: ContextId(context_id.to_string()),
-        status: TaskStatus::new(TaskState::Submitted),
-        artifacts: None,
-        history: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId(id.to_string()),
+        ContextId(context_id.to_string()),
+        TaskStatus::new(TaskState::Submitted),
+    )
 }
 
 fn make_push_config(task_id: &str) -> TaskPushNotificationConfig {
-    TaskPushNotificationConfig {
-        task_id: Some(task_id.to_string()),
-        id: None,
-        tenant: None,
-        url: "https://example.com/push".to_string(),
-        token: Some("tok".to_string()),
-        authentication: None,
-    }
+    TaskPushNotificationConfig::new(task_id.to_string(), "https://example.com/push".to_string())
+        .with_token("tok".to_string())
 }
 
 // ── TaskStore tests ──────────────────────────────────────────────────────────
@@ -1908,12 +1899,11 @@ async fn idempotency_keys_are_scoped_per_tenant() {
 // here and through a string there.
 
 fn log_event(task_id: &str, state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId(task_id.to_string()),
-        context_id: ContextId("ctx1".to_string()),
-        status: TaskStatus::new(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId(task_id.to_string()),
+        ContextId("ctx1".to_string()),
+        TaskStatus::new(state),
+    ))
 }
 
 fn logged_states(events: &[RecordedEvent]) -> Vec<TaskState> {

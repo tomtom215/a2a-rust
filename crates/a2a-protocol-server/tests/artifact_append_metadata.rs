@@ -30,7 +30,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent};
 use a2a_protocol_types::message::{Message, Part};
 use a2a_protocol_types::params::{MessageSendParams, TaskQueryParams};
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, TaskState};
+use a2a_protocol_types::task::TaskState;
 use serde_json::json;
 
 /// One artifact in two chunks, each carrying metadata: the first `{"a": 1,
@@ -40,13 +40,12 @@ agent_executor!(Chunked, |ctx, queue| async {
     let chunk = |parts: &str, metadata: serde_json::Value, append: Option<bool>, last: bool| {
         let mut artifact = Artifact::new("report", vec![Part::text(parts)]);
         artifact.metadata = Some(metadata);
-        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
-            artifact,
-            append,
-            last_chunk: Some(last),
-            metadata: None,
+        StreamResponse::ArtifactUpdate({
+            let mut built =
+                TaskArtifactUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), artifact)
+                    .with_last_chunk(last);
+            built.append = append;
+            built
         })
     };
     queue

@@ -55,16 +55,11 @@ pub fn client(url: &str) -> Result<A2aClient, String> {
 }
 
 pub fn user_message(text: &str) -> Message {
-    Message {
-        id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-        role: MessageRole::User,
-        parts: vec![Part::text(text)],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    }
+    Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::User,
+        vec![Part::text(text)],
+    )
 }
 
 pub fn send_params(text: &str) -> MessageSendParams {
@@ -85,14 +80,9 @@ pub fn send_params(text: &str) -> MessageSendParams {
 pub fn send_params_with_push(text: &str, webhook: &str) -> MessageSendParams {
     let mut params = send_params(text);
     params.configuration = Some(SendMessageConfiguration {
-        task_push_notification_config: Some(TaskPushNotificationConfig {
-            tenant: None,
-            id: None,
-            task_id: None,
-            url: webhook.to_owned(),
-            token: None,
-            authentication: None,
-        }),
+        task_push_notification_config: Some(TaskPushNotificationConfig::for_url(
+            webhook.to_owned(),
+        )),
         ..SendMessageConfiguration::default()
     });
     params

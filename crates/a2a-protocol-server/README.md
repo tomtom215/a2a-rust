@@ -58,9 +58,10 @@ serve("0.0.0.0:3000", JsonRpcDispatcher::new(handler)).await?;
 # }
 ```
 
-`serve` is the shortest path, not the production one: it serves every
-connection with hyper's defaults, with no connection cap, no idle timeout,
-and no way to stop short of dropping its future. For a deployment, bind a
+`serve` is the shortest path, not the production one: it runs a `Server`
+under `ServeConfig::default()` (a 30 s header-read timeout, a 75 s idle
+timeout and the loopback `Host` check, with no connection cap) and has no way
+to stop short of dropping its future. For a deployment, bind a
 `Server`, give it a `ServeConfig`, and hand it the signal that ends it;
 in-flight work finishes (or is cancelled after `completion_grace`) before the
 connections drain. `ServeConfig::default()` adds header-read and idle
@@ -125,7 +126,7 @@ println!("{report:?}");
 | `InMemoryTaskStore` | Default in-memory store |
 | `ServerInterceptor` | Trait -- `before` / `after` / `on_complete` (runs on every outcome) |
 | `RateLimitInterceptor` | Fixed-window per-caller rate limiting |
-| `serve()` | Shortest path: no limits, no shutdown |
+| `serve()` | Shortest path: default timeouts, no connection cap, no shutdown |
 | `Server` + `ServeConfig` | Production listener: timeouts, optional connection cap, TLS (`tls-rustls`), graceful shutdown, `ServeReport` |
 
 ## Features
@@ -136,7 +137,7 @@ println!("{report:?}");
 |---------|---------|---------|
 | `signing` | No | Forwards `a2a-protocol-types/signing`; this crate itself neither signs nor verifies the card it serves |
 | `tracing` | Yes | Structured logging via the `tracing` crate; `default-features = false` compiles it out |
-| `tls-rustls` | No | HTTPS for the bundled push-notification sender, and TLS on `Server`'s own listener (`Server::with_tls`, `with_tls_pem`) |
+| `tls-rustls` | Yes | HTTPS for the bundled push-notification sender, JWKS and OIDC fetches and the model client, and TLS on `Server`'s own listener (`Server::with_tls`, `with_tls_pem`); on by default since 0.16.0, `default-features = false` opts out |
 | `sqlite` | No | SQLite-backed task and push-config stores |
 | `postgres` | No | PostgreSQL-backed task and push-config stores |
 | `websocket` | No | WebSocket transport |

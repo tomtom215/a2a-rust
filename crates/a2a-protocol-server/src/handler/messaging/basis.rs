@@ -128,14 +128,13 @@ mod tests {
     use super::*;
 
     fn task(id: &str, artifact: &str) -> Task {
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(TaskState::Submitted),
-            history: None,
-            artifacts: Some(vec![Artifact::new(artifact, vec![Part::text("x")])]),
-            metadata: Some(serde_json::json!({ "from": artifact })),
-        }
+        Task::new(
+            TaskId::new(id),
+            ContextId::new("ctx"),
+            TaskStatus::new(TaskState::Submitted),
+        )
+        .with_artifacts(vec![Artifact::new(artifact, vec![Part::text("x")])])
+        .with_metadata(serde_json::json!({ "from": artifact }))
     }
 
     #[test]

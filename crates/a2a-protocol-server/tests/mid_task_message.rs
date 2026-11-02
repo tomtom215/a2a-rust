@@ -31,7 +31,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskSt
 use a2a_protocol_types::message::{Message, MessageRole, Part};
 use a2a_protocol_types::params::{MessageSendParams, TaskIdParams, TaskQueryParams};
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
+use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
 
 /// Generous: only a hang outlasts it.
 const DEADLINE: Duration = Duration::from_secs(10);
@@ -55,31 +55,26 @@ impl AgentExecutor for Scripted {
         queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let context_id = ContextId::new(ctx.context_id.clone());
+            let context_id = ctx.context_id.clone();
             for step in self.0 {
                 let event = match *step {
-                    Step::Status(state) => StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: context_id.clone(),
-                        status: TaskStatus::new(state),
-                        metadata: None,
-                    }),
-                    Step::Snapshot => StreamResponse::Task(Task {
-                        id: ctx.task_id.clone(),
-                        context_id: context_id.clone(),
-                        status: TaskStatus::new(TaskState::Submitted),
-                        history: None,
-                        artifacts: None,
-                        metadata: None,
-                    }),
-                    Step::Artifact => StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: context_id.clone(),
-                        artifact: Artifact::new("a-1", vec![Part::text("result")]),
-                        append: None,
-                        last_chunk: None,
-                        metadata: None,
-                    }),
+                    Step::Status(state) => {
+                        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            context_id.clone(),
+                            TaskStatus::new(state),
+                        ))
+                    }
+                    Step::Snapshot => StreamResponse::Task(Task::new(
+                        ctx.task_id.clone(),
+                        context_id.clone(),
+                        TaskStatus::new(TaskState::Submitted),
+                    )),
+                    Step::Artifact => StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        context_id.clone(),
+                        Artifact::new("a-1", vec![Part::text("result")]),
+                    )),
                     Step::Say(id) => StreamResponse::Message(Message::agent_text(id, "progress")),
                 };
                 queue.write(event).await?;

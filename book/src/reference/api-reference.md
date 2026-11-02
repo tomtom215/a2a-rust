@@ -264,6 +264,7 @@ are rustdoc's job.
 
 | Function | Description |
 |----------|-------------|
+| `new_message_id()` | A fresh UUID v4 `MessageId` for a message about to be sent (in the SDK prelude too) |
 | `resolve_agent_card(base_url)` | `async` — fetches the `AgentCard` from the standard well-known path; no headers, 30 s budget |
 | `resolve_agent_card_with_options(base_url, &options)` | `async` — the same with the headers and budget in a `CardFetchOptions` (`discovery` module; `fetch_card_from_url_with_options` for an absolute URL) |
 
@@ -358,7 +359,7 @@ are rustdoc's job.
 | `tenant_config` | Per-tenant resource limits for multi-tenant A2A servers |
 | `tenant_resolver` | Tenant resolution for multi-tenant A2A servers |
 | `tool_loop` | Tool calling inside a task: the model/tool loop, its executor, and a chat-completions client (`tool-loop` feature, ADR 0022) |
-| `url_guard` | SSRF checks for URLs an agent fetches: `check_public_url`, `resolve_public_url` |
+| `url_guard` | SSRF checks for URLs an agent fetches: `check_public_url`, `resolve_public_url`, `resolve_public_addrs` |
 
 ### Constants
 

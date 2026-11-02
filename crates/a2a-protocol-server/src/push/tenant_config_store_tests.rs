@@ -10,13 +10,10 @@ use super::*;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 
 fn make_config(task_id: &str, id: Option<&str>, url: &str) -> TaskPushNotificationConfig {
-    TaskPushNotificationConfig {
-        tenant: None,
-        id: id.map(String::from),
-        task_id: Some(task_id.to_string()),
-        url: url.to_string(),
-        token: None,
-        authentication: None,
+    {
+        let mut built = TaskPushNotificationConfig::new(task_id.to_string(), url.to_string());
+        built.id = id.map(String::from);
+        built
     }
 }
 

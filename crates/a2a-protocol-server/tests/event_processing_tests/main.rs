@@ -29,7 +29,7 @@ use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::{ListTasksParams, MessageSendParams};
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::responses::{SendMessageResponse, TaskListResponse};
-use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::executor::AgentExecutor;
@@ -54,20 +54,18 @@ impl AgentExecutor for StatusExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -85,30 +83,28 @@ impl AgentExecutor for ArtifactExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: Artifact::new("art-1", vec![Part::text("artifact content")]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new("art-1", vec![Part::text("artifact content")]),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -125,17 +121,16 @@ impl AgentExecutor for TaskEventExecutor {
         queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let replacement = Task {
-                id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                status: TaskStatus::new(TaskState::Completed),
-                history: None,
-                artifacts: Some(vec![Artifact::new(
-                    "replaced-art",
-                    vec![Part::text("replaced")],
-                )]),
-                metadata: Some(serde_json::json!({"replaced": true})),
-            };
+            let replacement = Task::new(
+                ctx.task_id.clone(),
+                ctx.context_id.clone(),
+                TaskStatus::new(TaskState::Completed),
+            )
+            .with_artifacts(vec![Artifact::new(
+                "replaced-art",
+                vec![Part::text("replaced")],
+            )])
+            .with_metadata(serde_json::json!({"replaced": true}));
             queue.write(StreamResponse::Task(replacement)).await?;
             Ok(())
         })
@@ -166,31 +161,24 @@ impl AgentExecutor for MessageEventExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
-            let msg = Message {
-                id: MessageId::new("msg-event"),
-                role: MessageRole::Agent,
-                parts: vec![Part::text("hello from agent")],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            };
+            let msg = Message::new(
+                MessageId::new("msg-event"),
+                MessageRole::Agent,
+                vec![Part::text("hello from agent")],
+            );
             queue.write(StreamResponse::Message(msg)).await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -355,16 +343,11 @@ impl PushSender for SleepForeverPushSender {
 fn make_send_params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new("msg-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new("msg-1"),
+            MessageRole::User,
+            vec![Part::text("hello")],
+        ),
         configuration: None,
         metadata: None,
     }

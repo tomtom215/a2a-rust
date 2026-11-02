@@ -138,14 +138,11 @@ async fn a_store_without_a_log_subscribes_instead_of_failing() {
         .build()
         .expect("handler");
 
-    let task = Task {
-        id: TaskId::new("t-nolog"),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::InputRequired),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("t-nolog"),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::InputRequired),
+    );
     store.save(&task).await.expect("save");
 
     let reader = handler
@@ -317,24 +314,20 @@ async fn a_replay_never_crosses_the_tenant_boundary() {
     // caller-supplied. Only tenant-a's has a log.
     for tenant in ["tenant-a", "tenant-b"] {
         TenantContext::scope(tenant, async {
-            let task = Task {
-                id: TaskId::new("shared-id"),
-                context_id: ContextId::new("c-1"),
-                status: TaskStatus::new(TaskState::InputRequired),
-                history: None,
-                artifacts: None,
-                metadata: None,
-            };
+            let task = Task::new(
+                TaskId::new("shared-id"),
+                ContextId::new("c-1"),
+                TaskStatus::new(TaskState::InputRequired),
+            );
             store.save(&task).await.expect("save");
             if tenant == "tenant-a" {
                 for seq in 1..=3 {
                     let event = StreamResponse::StatusUpdate(
-                        a2a_protocol_types::events::TaskStatusUpdateEvent {
-                            task_id: task.id.clone(),
-                            context_id: task.context_id.clone(),
-                            status: TaskStatus::new(TaskState::Working),
-                            metadata: None,
-                        },
+                        a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+                            task.id.clone(),
+                            task.context_id.clone(),
+                            TaskStatus::new(TaskState::Working),
+                        ),
                     );
                     store
                         .append_event(&task.id, seq, &event)

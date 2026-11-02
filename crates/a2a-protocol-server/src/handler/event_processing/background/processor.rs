@@ -72,6 +72,12 @@ pub(super) struct Processor<'a> {
     /// Whether this processor has delivered a terminal status to push
     /// subscribers, so a superseding status is not pushed on top of it.
     pushed_terminal: bool,
+    /// The task's ending has been told to its webhooks and recorded in its log
+    /// — as the terminal event itself, or by [`announce`](Self::announce) —
+    /// or is left to the replica that took the task over. What
+    /// [`close_out`](Self::close_out) looks for is an ending nothing here
+    /// told.
+    ended: bool,
 }
 
 impl<'a> Processor<'a> {
@@ -92,7 +98,55 @@ impl<'a> Processor<'a> {
             applied,
             superseded: None,
             pushed_terminal: false,
+            ended: false,
         }
+    }
+
+    /// The queue has closed and every event is folded. A task that is
+    /// terminal in the store though no terminal event reached this processor
+    /// was ended by another writer: `CancelTask` on another replica, whose
+    /// writer is a throwaway with no persistence channel and no push, and
+    /// whose executor here simply returned on its token (audit E-F9, NEW-e-2).
+    /// Its webhooks have not heard, and its log has no ending.
+    pub(super) async fn close_out(&mut self) {
+        if self.ended {
+            return;
+        }
+        let status = if let Some(StreamResponse::StatusUpdate(update)) = &self.superseded {
+            update.status.clone()
+        } else {
+            match self.deps.task_store.get(self.task_id).await {
+                Ok(Some(stored)) if stored.status.state.is_terminal() => {
+                    self.last_task = stored;
+                    self.last_task.status.clone()
+                }
+                _ => return,
+            }
+        };
+        self.announce(status).await;
+    }
+
+    /// Tells the task's webhooks how it ended, unless this processor already
+    /// did, and records the ending in its log at the next position.
+    async fn announce(&mut self, status: TaskStatus) {
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            self.task_id.clone(),
+            self.last_task.context_id.clone(),
+            status,
+        ));
+        super::super::append_ending(
+            self.deps.task_store,
+            self.task_id,
+            &event,
+            self.deps.metrics,
+            self.deps.limits.store_write_retry,
+        )
+        .await;
+        if !self.pushed_terminal {
+            self.deps.push.push(self.task_id, &event);
+            self.pushed_terminal = true;
+        }
+        self.ended = true;
     }
 
     /// The executor panicked: a task it left running is marked `Failed`,
@@ -101,7 +155,7 @@ impl<'a> Processor<'a> {
         if self.superseded.is_some() || self.last_task.status.state.is_terminal() {
             return;
         }
-        let failed = super::super::panic_failure(&mut self.last_task);
+        let failed_event = super::super::panic_failure(&mut self.last_task);
         let task = &self.last_task;
         let saved = super::super::persisting(
             self.deps.limits.store_write_retry,
@@ -129,13 +183,13 @@ impl<'a> Processor<'a> {
             );
             return;
         }
-        // Saved: the webhooks hear what the store now holds. Not before, and
-        // not when the save failed, or they would be told of a state the
-        // task is not in (audit D-03).
-        if !self.pushed_terminal {
-            self.deps.push.push(self.task_id, &failed);
-            self.pushed_terminal = true;
-        }
+        // Saved: the webhooks hear what the store now holds, and the log
+        // records it. Not before, and not when the save failed, or they would
+        // be told of a state the task is not in (audit D-03).
+        let StreamResponse::StatusUpdate(failed) = failed_event else {
+            return;
+        };
+        self.announce(failed.status).await;
     }
 
     /// Folds one event from the persistence channel.
@@ -203,6 +257,7 @@ impl<'a> Processor<'a> {
                     // gone, and resolving it again does nothing.
                     release(&event);
                     self.record(seq, event).await;
+                    self.ended = true;
                 }
             }
         }
@@ -229,16 +284,16 @@ impl<'a> Processor<'a> {
             // Unreadable, or gone: the refusal itself says what state won.
             _ => self.last_task.status = TaskStatus::new(conflict.stored),
         }
-        let verdict = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: self.task_id.clone(),
-            context_id: self.last_task.context_id.clone(),
-            status: self.last_task.status.clone(),
-            metadata: None,
-        });
+        let verdict = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            self.task_id.clone(),
+            self.last_task.context_id.clone(),
+            self.last_task.status.clone(),
+        ));
 
         if terminal {
             self.answer(seq, verdict.clone());
             self.record(seq, verdict.clone()).await;
+            self.ended = true;
         }
         if !self.pushed_terminal {
             self.deps.push.push(self.task_id, &verdict);
@@ -263,16 +318,16 @@ impl<'a> Processor<'a> {
         if let Ok(Some(stored)) = self.deps.task_store.get(self.task_id).await {
             self.last_task = stored;
         }
-        let verdict = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: self.task_id.clone(),
-            context_id: self.last_task.context_id.clone(),
-            status: self.last_task.status.clone(),
-            metadata: None,
-        });
+        let verdict = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            self.task_id.clone(),
+            self.last_task.context_id.clone(),
+            self.last_task.status.clone(),
+        ));
         if terminal {
             self.answer(seq, verdict.clone());
         }
         self.pushed_terminal = true;
+        self.ended = true;
         self.superseded = Some(verdict);
     }
 
@@ -306,3 +361,7 @@ impl<'a> Processor<'a> {
 #[cfg(test)]
 #[path = "processor_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "close_out_tests.rs"]
+mod close_out_tests;

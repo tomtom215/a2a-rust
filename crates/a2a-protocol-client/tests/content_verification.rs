@@ -160,14 +160,16 @@ async fn unsigned_content_passes_unless_signatures_are_required() {
             .is_ok()
     );
     let strict = client(&url, Some(keys), true);
-    assert!(matches!(
-        strict.get_task(query()).await,
-        Err(ClientError::ContentNotVerified(_))
-    ));
-    assert!(matches!(
-        streamed(&strict).await,
-        Err(ClientError::ContentNotVerified(_))
-    ));
+    let got = strict.get_task(query()).await;
+    assert!(
+        matches!(got, Err(ClientError::ContentNotVerified(_))),
+        "GetTask: {got:?}"
+    );
+    let got = streamed(&strict).await;
+    assert!(
+        matches!(got, Err(ClientError::ContentNotVerified(_))),
+        "stream: {got:?}"
+    );
 }
 
 #[tokio::test]

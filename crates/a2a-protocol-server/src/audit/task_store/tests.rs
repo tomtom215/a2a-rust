@@ -25,14 +25,11 @@ async fn recorded(event: StreamResponse) -> AuditRecord {
         log: Arc::clone(&log),
         metrics: Arc::new(NoopMetrics),
     };
-    let task = Task {
-        id: TaskId::new("t-1"),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("t-1"),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::Working),
+    );
     store.save(&task).await.unwrap();
     store.append_event(&task.id, 1, &event).await.unwrap();
     let mut records = log.export("").await.unwrap();
@@ -47,14 +44,13 @@ async fn recorded(event: StreamResponse) -> AuditRecord {
 
 #[tokio::test]
 async fn an_artifact_event_names_its_artifact_and_context() {
-    let r = recorded(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-        task_id: TaskId::new("t-1"),
-        context_id: ContextId::new("c-1"),
-        artifact: Artifact::new("report", vec![Part::text("x")]),
-        append: None,
-        last_chunk: None,
-        metadata: None,
-    }))
+    let r = recorded(StreamResponse::ArtifactUpdate(
+        TaskArtifactUpdateEvent::new(
+            TaskId::new("t-1"),
+            ContextId::new("c-1"),
+            Artifact::new("report", vec![Part::text("x")]),
+        ),
+    ))
     .await;
     assert_eq!(r.context_id.as_deref(), Some("c-1"));
     assert_eq!(r.detail["artifactId"], "report");
@@ -63,14 +59,11 @@ async fn an_artifact_event_names_its_artifact_and_context() {
 
 #[tokio::test]
 async fn a_task_snapshot_names_its_context() {
-    let r = recorded(StreamResponse::Task(Task {
-        id: TaskId::new("t-1"),
-        context_id: ContextId::new("c-9"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }))
+    let r = recorded(StreamResponse::Task(Task::new(
+        TaskId::new("t-1"),
+        ContextId::new("c-9"),
+        TaskStatus::new(TaskState::Working),
+    )))
     .await;
     assert_eq!(r.context_id.as_deref(), Some("c-9"));
     assert!(r.detail.is_empty());
@@ -215,17 +208,15 @@ async fn deleting_a_task_is_a_chain_record_and_deleting_nothing_is_not() {
         log: Arc::clone(&log),
         metrics: Arc::new(NoopMetrics),
     };
-    let task = Task {
-        id: TaskId::new("t-1"),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: Some(vec![Message::user_text(
-            "m-1",
-            "a secret the record must not hold",
-        )]),
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("t-1"),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::Completed),
+    )
+    .with_history(vec![Message::user_text(
+        "m-1",
+        "a secret the record must not hold",
+    )]);
     store.save(&task).await.unwrap();
 
     store.delete(&TaskId::new("never-there")).await.unwrap();

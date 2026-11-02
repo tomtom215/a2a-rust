@@ -48,6 +48,15 @@ impl WebSocketDispatcher {
         listener: TcpListener,
         shutdown: impl Future<Output = ()> + Send,
     ) -> ServeReport {
+        if self.max_connections == Some(0) {
+            return ServeReport {
+                accepted: 0,
+                drained: true,
+                abandoned: 0,
+                tasks: None,
+                refused: Some(super::super::connection_limit::ZERO_CONNECTIONS.into()),
+            };
+        }
         trace_info!(
             addr = %listener
                 .local_addr()

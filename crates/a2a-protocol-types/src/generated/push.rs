@@ -31,6 +31,7 @@ pub struct AuthenticationInfo {
 /// secret into logs. Serialization is unaffected.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct TaskPushNotificationConfig {
     /// Optional. Opaque routing identifier. Must match the `tenant` value from
     /// the selected `AgentInterface` in the Agent Card when that field is set.

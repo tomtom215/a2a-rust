@@ -127,14 +127,7 @@ impl TenantStoreConfig {
 ///
 /// // Tenant A saves a task
 /// TenantContext::scope("tenant-a", async {
-///     let task = Task {
-///         id: TaskId::new("task-1"),
-///         context_id: ContextId::new("ctx-1"),
-///         status: TaskStatus::with_timestamp(TaskState::Submitted),
-///         history: None,
-///         artifacts: None,
-///         metadata: None,
-///     };
+///     let task = Task::new(TaskId::new("task-1"), ContextId::new("ctx-1"), TaskStatus::with_timestamp(TaskState::Submitted));
 ///     store.save(&task).await.unwrap();
 /// }).await;
 ///
@@ -670,14 +663,11 @@ mod tests {
 
     /// Helper to create a task with the given ID and state.
     fn make_task(id: &str, state: TaskState) -> Task {
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx-default"),
-            status: TaskStatus::new(state),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(
+            TaskId::new(id),
+            ContextId::new("ctx-default"),
+            TaskStatus::new(state),
+        )
     }
 
     /// `with_metrics` has to reach the partitions, which are built lazily
@@ -719,12 +709,11 @@ mod tests {
             .append_event(
                 &TaskId::new("gone"),
                 1,
-                &StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: TaskId::new("gone"),
-                    context_id: ContextId::new("ctx-default"),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }),
+                &StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    TaskId::new("gone"),
+                    ContextId::new("ctx-default"),
+                    TaskStatus::new(TaskState::Working),
+                )),
             )
             .await
             .expect("a missing task must not fail the agent");

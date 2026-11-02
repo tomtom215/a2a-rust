@@ -55,20 +55,18 @@ impl AgentExecutor for SimpleExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -91,56 +89,32 @@ impl PushSender for MockPushSender {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn minimal_agent_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "WS Test Agent".into(),
-        description: "A WebSocket test agent".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "ws://localhost/rpc".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "echo".into(),
-            name: "Echo".into(),
-            description: "Echoes input".into(),
-            tags: vec!["echo".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        // The WebSocket binding is a streaming transport; advertise streaming so
-        // capability validation (spec §3.3.4) permits streaming sends/subscribes.
-        capabilities: AgentCapabilities::none()
+    AgentCard::new(
+        "WS Test Agent",
+        "1.0.0",
+        AgentInterface::new("ws://localhost/rpc", "JSONRPC").with_protocol_version("1.0.0"),
+    )
+    .with_description("A WebSocket test agent")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes input").with_tags(vec!["echo"]))
+    // The WebSocket binding is a streaming transport; advertise streaming so
+    // capability validation (spec §3.3.4) permits streaming sends/subscribes.
+    .with_capabilities(
+        AgentCapabilities::none()
             .with_streaming(true)
             .with_push_notifications(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    )
 }
 
 fn make_send_params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new("msg-ws-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello via websocket")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new("msg-ws-1"),
+            MessageRole::User,
+            vec![Part::text("hello via websocket")],
+        ),
         configuration: None,
         metadata: None,
     }
@@ -429,22 +403,18 @@ async fn ws_upgrade_last_event_id_does_not_replay_the_log() {
 
     let store = InMemoryTaskStore::new();
     // Parked, because §3.1.6 forbids subscribing to a terminal task.
-    let task = Task {
-        id: TaskId::new("t-parked"),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::InputRequired),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("t-parked"),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::InputRequired),
+    );
     store.save(&task).await.expect("save");
     for seq in 1..=3 {
-        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: task.id.clone(),
-            context_id: task.context_id.clone(),
-            status: TaskStatus::new(TaskState::Working),
-            metadata: None,
-        });
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            task.id.clone(),
+            task.context_id.clone(),
+            TaskStatus::new(TaskState::Working),
+        ));
         store
             .append_event(&task.id, seq, &event)
             .await

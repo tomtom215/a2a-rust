@@ -23,14 +23,11 @@ use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 fn task(id: &str) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("ctx-1"),
+        TaskStatus::new(TaskState::Working),
+    )
 }
 
 fn limit() -> a2a_protocol_server::store::HistoryLimit {

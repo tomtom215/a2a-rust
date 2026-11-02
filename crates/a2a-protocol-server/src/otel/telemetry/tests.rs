@@ -144,14 +144,6 @@ fn langfuse_traces_ignore_a_grpc_protocol_variable() {
 }
 
 #[test]
-fn a_bad_variable_fails_the_build_naming_it() {
-    let err = with_env(&[("OTEL_LOGS_EXPORTER", "zipkin")])
-        .build()
-        .unwrap_err();
-    assert!(err.to_string().contains("OTEL_LOGS_EXPORTER"), "{err}");
-}
-
-#[test]
 fn compression_comes_from_the_environment_and_code_wins() {
     let t = |b: TelemetryBuilder| b.target(Signal::Traces).unwrap().compression;
     assert_eq!(t(with_env(&[])), None);
@@ -167,14 +159,19 @@ fn compression_comes_from_the_environment_and_code_wins() {
 }
 
 #[test]
-fn a_compression_this_crate_cannot_act_on_fails_the_build_naming_it() {
+fn a_compression_this_crate_cannot_act_on_is_noted_and_the_export_is_uncompressed() {
     for (var, value) in [
         ("OTEL_EXPORTER_OTLP_LOGS_COMPRESSION", "zstd"),
         ("OTEL_EXPORTER_OTLP_COMPRESSION", "brotli"),
     ] {
-        let err = with_env(&[(var, value)]).build().unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains(var) && msg.contains(value), "{msg}");
+        let t = with_env(&[(var, value)]).build().expect("not fatal");
+        let notices = t.notices().join("\n");
+        assert!(
+            notices.contains(var) && notices.contains(value),
+            "{notices}"
+        );
+        let b = with_env(&[(var, value)]);
+        assert_eq!(b.target(Signal::Logs).unwrap().compression, None);
     }
 }
 
@@ -257,16 +254,17 @@ fn process_env_reads_the_process_environment() {
 }
 
 /// `http/json` is a protocol the specification names, so without the
-/// `otlp-json` feature it is refused for a reason of its own rather than as
-/// unknown. With the feature, `tests/telemetry_export/` exports with it.
+/// `otlp-json` feature it is noted for a reason of its own rather than as
+/// unknown, and protobuf is used. With the feature, `tests/telemetry_export/`
+/// exports with it.
 #[cfg(not(feature = "otlp-json"))]
 #[test]
-fn http_json_is_refused_as_not_compiled_in() {
-    let err = with_env(&[("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")])
+fn http_json_is_noted_as_not_compiled_in() {
+    let t = with_env(&[("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")])
         .build()
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("not compiled in"), "{err}");
+        .expect("not fatal");
+    let notices = t.notices().join("\n");
+    assert!(notices.contains("not compiled in"), "{notices}");
 }
 
 #[test]

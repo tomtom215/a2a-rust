@@ -349,12 +349,9 @@ async fn rest_required_extension_enforced_and_echoed() {
 
     let mut card = minimal_agent_card();
     let mut caps = card.capabilities;
-    caps.extensions = Some(vec![AgentExtension {
-        uri: "https://example.com/ext/required/v1".into(),
-        description: None,
-        required: Some(true),
-        params: None,
-    }]);
+    caps.extensions = Some(vec![
+        AgentExtension::new("https://example.com/ext/required/v1").with_required(true),
+    ]);
     card.capabilities = caps;
 
     let handler = Arc::new(

@@ -17,13 +17,14 @@ The formula covers Apple-silicon macOS (`aarch64-apple-darwin`) and Linux
 on x86_64 and arm64. It has no Intel-macOS entry, because `release.yml`
 builds no `x86_64-apple-darwin` binary.
 
-No release can produce these binaries yet. `release.yml` refuses any `v*`
-tag not signed by a key committed under `.github/release-signers/`, and
-none is committed (see that directory's README).
+The binaries are off until the repository variable `PUBLISH_CLI_BINARIES` is
+`true` (step 2 below). `release.yml` refuses any `v*` tag not signed by a key
+committed under `.github/release-signers/`; the maintainer's key is committed
+there (see that directory's README).
 
 ## Turning the drafts into releases
 
-1. **Commit a release-signing key** to `.github/release-signers/`.
+1. ~~Commit a release-signing key~~ Done: `.github/release-signers/allowed_signers` holds the maintainer's.
 2. **Turn on the binaries.** Set the repository variable
    `PUBLISH_CLI_BINARIES=true`. The next release tag then builds `a2a` for
    four targets in `release.yml` (`cli-binaries`): `x86_64-unknown-linux-gnu`,

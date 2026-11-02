@@ -118,31 +118,19 @@ pub async fn test_otel_metrics_integration(ctx: &TestContext) -> TestResult {
         .build();
 
     // 2. Build a handler that uses OtelMetrics as its metrics observer.
-    let card = AgentCard {
-        url: None,
-        name: "OtelTestAgent".into(),
-        version: "1.0".into(),
-        description: "Agent for OtelMetrics integration test".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: ctx.analyzer_url.clone(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        capabilities: AgentCapabilities::none(),
-        security_schemes: None,
-        security_requirements: None,
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![
-            a2a_protocol_types::AgentSkill::new("analyze", "Analyze", "Analyzes code")
-                .with_tags(["code"]),
-        ],
-        signatures: None,
-    };
+    let card = AgentCard::new(
+        "OtelTestAgent",
+        "1.0",
+        AgentInterface::new(ctx.analyzer_url.clone(), "JSONRPC").with_protocol_version("1.0.0"),
+    )
+    .with_description("Agent for OtelMetrics integration test")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        a2a_protocol_types::AgentSkill::new("analyze", "Analyze", "Analyzes code")
+            .with_tags(["code"]),
+    )
+    .with_capabilities(AgentCapabilities::none());
 
     let handler = RequestHandlerBuilder::new(crate::executors::CodeAnalyzerExecutor)
         .with_agent_card(card)

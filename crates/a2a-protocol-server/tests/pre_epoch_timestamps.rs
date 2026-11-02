@@ -22,14 +22,7 @@ agent_executor!(Exec, |_ctx, _q| async { Ok(()) });
 fn task(id: &str, at: &str) -> Task {
     let mut status = TaskStatus::new(TaskState::Completed);
     status.timestamp = Some(at.to_owned());
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("c"),
-        status,
-        artifacts: None,
-        history: None,
-        metadata: None,
-    }
+    Task::new(TaskId::new(id), ContextId::new("c"), status)
 }
 
 fn after(at: &str) -> ListTasksParams {

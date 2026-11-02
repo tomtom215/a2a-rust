@@ -9,6 +9,8 @@
 #[cfg(feature = "axum")]
 pub mod axum_adapter;
 pub mod combined;
+#[cfg(any(feature = "websocket", feature = "grpc"))]
+mod connection_limit;
 pub mod cors;
 #[cfg(feature = "grpc")]
 pub mod grpc;
@@ -472,3 +474,6 @@ mod tests {
         assert_eq!(cfg.require_version_header, !default);
     }
 }
+
+#[cfg(test)]
+mod axum_adapter_debug_tests;

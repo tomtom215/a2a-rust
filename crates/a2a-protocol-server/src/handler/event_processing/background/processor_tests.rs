@@ -48,40 +48,36 @@ impl PushSender for Pushes {
     }
 }
 
-fn task(state: TaskState) -> Task {
-    Task {
-        id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(state),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
-}
-
-fn status(seq: u64, state: TaskState) -> StreamEvent {
-    StreamEvent::at(
-        seq,
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
-            status: TaskStatus::new(state),
-            metadata: None,
-        }),
+pub(super) fn task(state: TaskState) -> Task {
+    Task::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(state),
     )
 }
 
-fn artifact(seq: u64) -> StreamEvent {
+pub(super) fn status(seq: u64, state: TaskState) -> StreamEvent {
     StreamEvent::at(
         seq,
-        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
-            artifact: Artifact::new(ArtifactId::new("late"), vec![Part::text("x")]),
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        }),
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new("t"),
+            ContextId::new("c"),
+            TaskStatus::new(state),
+        )),
+    )
+}
+
+pub(super) fn artifact(seq: u64) -> StreamEvent {
+    StreamEvent::at(
+        seq,
+        StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                TaskId::new("t"),
+                ContextId::new("c"),
+                Artifact::new(ArtifactId::new("late"), vec![Part::text("x")]),
+            )
+            .with_last_chunk(true),
+        ),
     )
 }
 
@@ -92,30 +88,23 @@ const fn state_of(event: &StreamResponse) -> Option<TaskState> {
     }
 }
 
-struct Fixture {
-    store: InMemoryTaskStore,
+pub(super) struct Fixture {
+    pub(super) store: InMemoryTaskStore,
     pushes: Arc<Pushes>,
     lanes: super::super::PushLanes,
     limits: HandlerLimits,
     gate: TerminalGate,
-    cancel: CancellationToken,
+    pub(super) cancel: CancellationToken,
 }
 
 impl Fixture {
     /// A task stored in `stored`, one push config registered for it.
-    async fn new(stored: TaskState) -> Self {
+    pub(super) async fn new(stored: TaskState) -> Self {
         let store = InMemoryTaskStore::new();
         store.save(&task(stored)).await.expect("seed");
         let configs = InMemoryPushConfigStore::new();
         configs
-            .set(TaskPushNotificationConfig {
-                tenant: None,
-                id: Some("cfg".into()),
-                task_id: Some("t".into()),
-                url: "https://example.com/hook".into(),
-                token: None,
-                authentication: None,
-            })
+            .set(TaskPushNotificationConfig::new("t", "https://example.com/hook").with_id("cfg"))
             .await
             .expect("config");
         let pushes = Arc::new(Pushes::default());
@@ -138,7 +127,7 @@ impl Fixture {
     }
 
     /// A processor that believes the task is `Working`.
-    fn processor<'a>(&'a self, task_id: &'a TaskId) -> Processor<'a> {
+    pub(super) fn processor<'a>(&'a self, task_id: &'a TaskId) -> Processor<'a> {
         Processor::new(
             task_id,
             BackgroundDeps {
@@ -156,7 +145,7 @@ impl Fixture {
 
     /// What was pushed, once every queued delivery has run: deliveries go
     /// through the task's push lane, on a task of their own.
-    async fn pushed(&self) -> Vec<TaskState> {
+    pub(super) async fn pushed(&self) -> Vec<TaskState> {
         while !self.lanes.is_idle() {
             tokio::task::yield_now().await;
         }
@@ -167,7 +156,7 @@ impl Fixture {
             .clone()
     }
 
-    async fn logged(&self) -> Vec<(u64, Option<TaskState>)> {
+    pub(super) async fn logged(&self) -> Vec<(u64, Option<TaskState>)> {
         self.store
             .read_events(&TaskId::new("t"), 0, 100)
             .await

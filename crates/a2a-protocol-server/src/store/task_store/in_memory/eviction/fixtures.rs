@@ -18,14 +18,11 @@ use super::{StoreData, TaskStoreConfig};
 
 /// A task in `state`, with the fixed context every fixture shares.
 pub(super) fn task(id: &str, state: TaskState) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(state),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("ctx"),
+        TaskStatus::new(state),
+    )
 }
 
 /// Builds a store whose entries are aged one second apart, oldest first.

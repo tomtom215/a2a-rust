@@ -133,31 +133,18 @@ mod tests {
     agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
 
     fn make_agent_card() -> AgentCard {
-        AgentCard {
-            url: None,
-            name: "Test Agent".into(),
-            description: "A test agent".into(),
-            version: "1.0.0".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:8080".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: None,
-            }],
-            default_input_modes: vec!["text/plain".into()],
-            default_output_modes: vec!["text/plain".into()],
-            skills: vec![
-                a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
-                    .with_tags(["test"]),
-            ],
-            capabilities: AgentCapabilities::none(),
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            security_schemes: None,
-            security_requirements: None,
-            signatures: None,
-        }
+        AgentCard::new(
+            "Test Agent",
+            "1.0.0",
+            AgentInterface::new("http://localhost:8080", "JSONRPC").with_protocol_version("1.0.0"),
+        )
+        .with_description("A test agent")
+        .with_input_modes(vec!["text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(
+            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+        )
+        .with_capabilities(AgentCapabilities::none())
     }
 
     #[tokio::test]
@@ -290,12 +277,9 @@ mod tests {
         let uri = "https://example.com/ext/required/v1";
         let mut card = make_agent_card();
         card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
-        card.capabilities.extensions = Some(vec![AgentExtension {
-            uri: uri.to_owned(),
-            description: None,
-            required: Some(true),
-            params: None,
-        }]);
+        card.capabilities.extensions = Some(vec![
+            AgentExtension::new(uri.to_owned()).with_required(true),
+        ]);
         let handler = RequestHandlerBuilder::new(DummyExecutor)
             .with_agent_card(card.clone())
             .with_extended_agent_card(card)

@@ -224,16 +224,11 @@ impl AgentExecutor for ReplyOnlyExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::Message(Message {
-                    id: MessageId::new("direct-reply"),
-                    role: MessageRole::Agent,
-                    parts: vec![Part::text("done")],
-                    task_id: None,
-                    context_id: None,
-                    reference_task_ids: None,
-                    extensions: None,
-                    metadata: None,
-                }))
+                .write(StreamResponse::Message(Message::new(
+                    MessageId::new("direct-reply"),
+                    MessageRole::Agent,
+                    vec![Part::text("done")],
+                )))
                 .await
         })
     }

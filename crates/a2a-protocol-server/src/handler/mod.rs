@@ -83,6 +83,7 @@ use crate::tenant_config::PerTenantConfig;
 use crate::tenant_resolver::TenantResolver;
 
 pub use limits::{HandlerLimits, MIN_MESSAGE_ID_LENGTH};
+pub use tenant_resolution::MAX_TENANT_LEN;
 
 // Re-export the response type alongside the handler.
 pub use a2a_protocol_types::responses::SendMessageResponse;
@@ -243,6 +244,12 @@ pub(crate) struct ExecutorTurn {
     /// task's token is cancelled, so an executor that returns on the token
     /// sees it, and its task is ended `Canceled` as on shutdown.
     pub(crate) halted: std::sync::atomic::AtomicBool,
+    /// This replica could not keep the turn's claim (`handler::claims`): its
+    /// renewals went unanswered for most of the claim's time to live, so
+    /// another replica may take the task over. Set before the task's token is
+    /// cancelled, so an executor that returns on the token sees it, and its
+    /// task is ended `Failed`, failure class `transient`, never `Canceled`.
+    pub(crate) lapsed: std::sync::atomic::AtomicBool,
 }
 
 impl ExecutorTurn {
@@ -260,6 +267,17 @@ impl ExecutorTurn {
     /// Whether a halt stopped this turn.
     pub(crate) fn is_halted(&self) -> bool {
         self.halted.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Marks the turn's claim lapsed; the caller cancels its token next.
+    pub(crate) fn lapse(&self) {
+        self.lapsed
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    /// Whether this replica gave up the turn's claim.
+    pub(crate) fn is_lapsed(&self) -> bool {
+        self.lapsed.load(std::sync::atomic::Ordering::Acquire)
     }
 }
 
@@ -394,40 +412,6 @@ impl RequestHandler {
                 "caller isolation found no request scope to record the caller in".to_owned(),
             ))
         }
-    }
-
-    /// Passes `tenant` through when this handler can keep it apart from
-    /// every other tenant, and refuses it otherwise.
-    ///
-    /// The empty tenant is the shared default partition every store has, so
-    /// it always passes. A non-empty one on stores that do not partition by
-    /// tenant would be served from the same records as every other tenant —
-    /// the cross-tenant read, list, subscribe and cancel the 2026-10-02
-    /// comparison measured — so it is refused before anything is read or
-    /// written.
-    ///
-    /// # Errors
-    ///
-    /// [`ServerError::UnsupportedOperation`](crate::error::ServerError::UnsupportedOperation)
-    /// naming what to configure.
-    fn isolatable(&self, tenant: String) -> ServerResult<String> {
-        // The U+001F separator joins a tenant to a caller in a partition key,
-        // and a tenant is logged: no control character reaches either (§14).
-        if tenant.chars().any(char::is_control) {
-            return Err(crate::error::ServerError::InvalidParams(
-                "a tenant may not contain a control character such as U+001F".to_owned(),
-            ));
-        }
-        if tenant.is_empty() || !self.refuse_unisolated_tenants {
-            return Ok(tenant);
-        }
-        Err(crate::error::ServerError::UnsupportedOperation(
-            "this server cannot isolate tenants: its task store or push-config store does not \
-             partition by tenant, so a request naming a tenant would share every other \
-             tenant's records. Configure the TenantAware* stores, or call \
-             RequestHandlerBuilder::accept_unisolated_tenants() if tenants here only key limits"
-                .to_owned(),
-        ))
     }
 }
 

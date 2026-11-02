@@ -1,0 +1,394 @@
+{
+ "slice": "d",
+ "baseline": "4a8243c66df5ae07a54a69168ab419ac609b06e9",
+ "rows": [
+  {
+   "id": "D-03",
+   "verdict": "partly_fixed",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "commit ee0a4c4 - 'tell webhooks about ... an executor panic'; its own message and CHANGELOG say 'Still open (D-03 c, d)'",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/processor.rs:100-139 - executor_panicked: builds Failed via panic_failure, saves through persisting(), then (only if the save succeeded) self.deps.push.push(...) at :135-138. FIXED part (a): webhooks are told. No call to self.record()/self.log(): the Failed is NOT appended to the event log (sub-claim c open)",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:489-511 - blocking path: same save + state.record_for_push(..) at :507; also no log append",
+    "crates/a2a-protocol-server/src/handler/event_processing/mod.rs:25-53 - panic_failure: Failed with a fixed agent message, no panic text (SEC-07 consistent)",
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:178-181 - SendStreamingMessage reader gets with_catch_up + with_final_snapshot only; with_reattach is attached only in handler/lifecycle/subscribe.rs:423",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1604-1610 - on broadcast Closed with saw_terminal=false and no reattach hook the stream returns None: no terminal frame (sub-claim d open). in_memory.rs:1350-1353: the final-snapshot hook runs only after a terminal was seen, and handler/limits/mod.rs:368 final_task_snapshot=false",
+    "crates/a2a-protocol-server/src/handler/messaging/execute.rs:69-82 - CleanupGuard::drop spawns queue destroy on panic, which is what closes the stream",
+    "handler/limits/mod.rs:365 subscribe_max_idle: None - a resubscriber that attached before Failed was saved polls until it appears (forever if it never does, see NEW-d-1)"
+   ],
+   "test": "processor_tests.rs:336 a_panic_fails_a_running_task_but_not_a_finished_one asserts pushed == [Failed] and a readable message: would fail with the push removed (before ee0a4c4 nothing was pushed). sync_collector.rs:2442 collect_events_executor_panic_tells_the_webhooks asserts heard == [Failed] once: would fail before. Read, not run. GAP: both call executor_panicked / a raw panicking JoinHandle directly; no end-to-end test sends a streaming message to a panicking executor and asserts the stored state, so NEW-d-1 is not covered. No test for the log entry or the SSE terminal frame (both still open).",
+   "summary": "A panic now stores Failed with a message and pushes it once on both send paths. The Failed is still not in the event log, and a SendStreamingMessage stream still ends with no terminal frame (client sees IncompleteStream).",
+   "remaining": "(c) append the panic's Failed to the log at the next position (processor.rs:executor_panicked, sync_collector.rs:on_executor_finished); (d) broadcast it on the queue before CleanupGuard destroys it, or give the send stream a reattach/final-snapshot path for a closed-without-terminal queue; plus NEW-d-1 (the processor can skip executor_panicked entirely).",
+   "theme": "executor-panic",
+   "effort": "M",
+   "breaking": "none (adds a log entry and a terminal frame clients already handle)",
+   "probe": "none - settle with an in-process test: SendStreamingMessage to an executor that panics, on #[tokio::test] (current_thread) and flavor=multi_thread; assert last SSE frame is TASK_STATE_FAILED, get_task is Failed, and the event log holds the Failed"
+  },
+  {
+   "id": "D-04",
+   "verdict": "already_fixed",
+   "severity_now": "info (was medium)",
+   "evidence": [
+    "commit ee0a4c4 - 'Store outage (D-04)'",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:112-137 - list_configs: store.list retried under persisting(store_write_retry, PUSH_CONFIG_LIST) while is_unavailable; on final failure trace_warn! + metrics.on_push_delivery(push_outcome::FAILED)",
+    "push_delivery/mod.rs:77 - deliver_push_bg (streaming lanes, lanes.rs:111, and the reaper, claims/reaper/mod.rs:171) uses it",
+    "sync_collector.rs:890-899 - SyncPushJob::run uses the same list_configs"
+   ],
+   "test": "push_delivery/tests/config_list.rs:165-224 - a_store_that_is_briefly_unavailable_is_waited_out (sends==1 after 2 failures, two PUSH_CONFIG_LIST retries), a_store_that_stays_unavailable_costs_the_event_its_webhooks_and_says_so (outcomes==[failed]), an_error_that_is_not_unavailability_is_reported_without_a_retry (outcomes==[failed], 0 retries). Each would fail on the pre-fix 'let Ok(..) else { return }' (no retry, no outcome). Read, not run. GAP: all four go through deliver_push_bg; nothing exercises SyncPushJob::run with a failing list, so reverting only the blocking-path call site would pass. Minor: the outcome is the generic 'failed' (not a distinct config_unavailable as the report suggested), and the log line exists only with the non-default tracing feature, as for every log in this crate.",
+   "summary": "A failing push-config read is now retried like a task write and then logged and counted as one failed push, on both delivery paths.",
+   "remaining": "",
+   "theme": "push-delivery",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "D-05",
+   "verdict": "needs_decision",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/push/sender.rs:180-190 - PushRetryPolicy default 3 attempts, backoff [1s,2s]; whole delivery capped by push_delivery_timeout 30 s (push_delivery/mod.rs:232-236)",
+    "push_delivery/lanes.rs:67-77,146-165 - lanes are in-memory VecDeques on the handler's tracker: a restart loses everything queued; a full lane (push_queue_capacity 1024) drops the oldest non-turn-ending delivery (DROPPED)",
+    "push/sender.rs:640-693 - headers sent: content-type, host (pinned), authorization, X-A2A-Notification-Token + A2A-Notification-Token, traceparent. No delivery/event id",
+    "push/sender.rs:708-724 - a 4xx (404/410 included) is non-retryable for that delivery; nothing deletes, disables or backs off the config (grep for 410/GONE/disable in src/push finds nothing)",
+    "commits ee0a4c4 (gate) and lanes (D-02/D-06) do not touch durability, dedupe or dead-webhook handling; book push-notifications/delivery.md does not state that delivery is lost on restart"
+   ],
+   "test": "none (nothing to test yet)",
+   "summary": "All four sub-claims hold on main: a few in-memory attempts, nothing persisted across restart (and lanes now also shed under backlog), no dedupe id, and a 404/410 webhook is kept and paid for on every later event.",
+   "remaining": "durable outbox; delivery id header; dead-config handling; a sentence in the book that delivery is at-most-a-few-attempts and lost on restart.",
+   "theme": "push-durability",
+   "effort": "L",
+   "breaking": "none for a header and docs; behaviour for auto-disabling configs; schema for an outbox",
+   "probe": "none to confirm; to prove an outbox: kill -9 a replica with deliveries queued against a down receiver, bring the receiver up, observe deliveries arrive from another replica",
+   "options": "1) Cheap now (S): send a stable A2A-Delivery-Id (taskId:seq for streamed events, taskId:requestId:index for a blocking batch) and document at-most-N-attempts / lost-on-restart semantics. 2) Dead-webhook policy (M): count consecutive failures per config in the push-config store; after 410 or N failures stop delivering (spec 4.3.3 allows it) and expose it in metrics/GetTaskPushNotificationConfig; behaviour change, opt-out flag. 3) Durable outbox (L/XL): outbox table written with the event-log append, worker with exponential backoff+jitter over hours, claimed per row so replicas share it; needs an ADR. Recommendation: do 1 now, 2 next behind a default-on limit with a metric, write an ADR for 3 (it overlaps E-F14 per-task cap across replicas)."
+  },
+  {
+   "id": "D-07",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "SERVER crates/a2a-protocol-server/src/dispatch/websocket.rs:1333-1339 - send_json: writer.sink.lock().await then w.send(..).await, neither under a timeout",
+    "websocket.rs:719-731 - at 64 in-flight requests the busy reply is `send_json(writer, &busy).await` inside read_loop, outside the select at :684-694 that watches closing and next_frame",
+    "websocket.rs:747-762 - the binary-frame reply is the same untimed send_json in read_loop",
+    "websocket/stream.rs:55-58 - stream frames lock the sink and send untimed; a peer at zero window keeps that lock",
+    "websocket.rs:733-745 - request tasks are cancelled by peer_gone, which fires only when read_loop exits (drop guard :675), so the blocked stream task is never cancelled while read_loop is stuck",
+    "websocket.rs:686-692 - the closing branch waits acquire_many(64) for request tasks that are themselves blocked on the sink -> it is never reached anyway; websocket/shutdown.rs:70-73 bounds the whole drain by drain_timeout and reports the connection abandoned (the task and socket stay until exit)",
+    "websocket.rs:178 idle_timeout: None by default (D-20), so even the ping guard at :830-858 (try_lock, N30) is off",
+    "CLIENT crates/a2a-protocol-client/src/transport/websocket.rs:1101-1170 - route_frame never awaits (try_send, sheds with stream_lagged), so this SDK's own client cannot trigger it; a misbehaving or hostile peer, or one whose process is frozen, can"
+   ],
+   "test": "none covers a read-loop write that blocks; websocket.rs:1812 a_keepalive_that_finds_the_sink_busy_is_retried covers only the ping path",
+   "summary": "One connection whose peer stops reading can pin the server's read loop on an untimed sink lock, so the idle bound and the closing signal are never evaluated, and shutdown waits out drain_timeout and abandons it.",
+   "remaining": "Bound every sink lock+send (busy reply, binary reply, stream frames, unary replies) with a timeout tied to the idle budget or a fixed write timeout, and close the connection on expiry; or one writer task fed by a bounded channel with try_send from read_loop (drop the busy reply and close when full).",
+   "theme": "ws-server-liveness",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "none (in-process test): open a WS with a tiny SO_RCVBUF, subscribe to a chatty task, stop reading, send one binary frame; with with_idle_timeout(2s) assert the server closes within ~5 s and serve_with_shutdown reports drained=true. Today it would not."
+  },
+  {
+   "id": "D-08",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "CLIENT crates/a2a-protocol-client/src/transport/websocket.rs:590-768 - open(): no Ping is ever sent (reader ignores Pong/other frames at :749-751); direct path connect_async_tls_with_config/connect_async_with_config (:681-693) dials its own TcpStream with no keepalive; proxy path crate::proxy::tunnelled_tcp (proxy.rs:137) uses HttpConnector::new() with no keepalive. Only the HTTP bindings get TCP keepalive (transport/connector.rs:44-52)",
+    "websocket.rs:818-826 - a unary timeout returns ClientError::Timeout and leaves Inner.closed untouched; closed is set only in fail_all_pending (:1033-1034), run when the reader task exits or a write errors",
+    "websocket.rs:567-588 - connection() reconnects only when closed is set, so a RetryTransport retry of an idempotent call reuses the dead socket",
+    "websocket.rs:421-425 - docs promise 'a connection that drops is replaced on the next call'; true only for an observed drop",
+    "SERVER dispatch/websocket.rs:532-545 - accepted sockets get set_nodelay only, no TCP keepalive; with idle_timeout None (:178) the server side never detects the half-open peer either"
+   ],
+   "test": "none for a silent (blackholed) peer; websocket.rs:2080 server_close_fails_pending_request_fast covers only an observed close",
+   "summary": "A silently dropped WebSocket flow is never detected by the client: no ping, no TCP keepalive, and a timeout does not mark the connection dead, so every call times out on the same socket until the kernel gives up (~15 min with tcp_retries2), and longer if the client never writes.",
+   "remaining": "Client: periodic Ping with pong deadline (e.g. request_timeout/2), TCP keepalive on the dialled socket (dial the TcpStream via connector::http_connector settings and use client_async_tls_with_config; same for the tunnel), and mark the connection suspect after a unary timeout so the next call reconnects. See also NEW-d-2 (enqueue unbounded).",
+   "theme": "ws-client-liveness",
+   "effort": "M",
+   "breaking": "none",
+   "probe": "Live: run the SDK's WS echo agent and a client loop calling GetTask every 5 s; after the first success, `iptables -I INPUT -p tcp --sport <port> -j DROP` (or toxiproxy 'timeout' toxic) on the client host. Observe: every call fails with Timeout at 30 s on the same connection (no 'reconnecting' log) until ~15 min; after the fix, the ping/keepalive marks it dead within ~2x ping interval and the next call reconnects. Needs root or toxiproxy."
+  },
+  {
+   "id": "D-09",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-client/src/transport/websocket.rs:694-702 - connect timeout -> ClientError::Transport (non-retryable, retry.rs:162-187)",
+    "websocket.rs:1077-1093 connect_error - Error::Http(resp) -> UnexpectedStatus{.., retry_after: None} (:1083): the handshake's Retry-After is never read; Error::Io -> HttpClient (retryable); everything else (e.g. Protocol(HandshakeIncomplete) when an LB closes mid-upgrade) -> Transport",
+    "PARTLY MISREAD: tokio-tungstenite 0.30.0 src/tls.rs:136-139 maps a rustls handshake failure to Error::Io, so TLS failures (and a reset during TLS) are already HttpClient/retryable on the direct and the proxy path (the latter wraps tunnel errors as Error::Io too, websocket.rs:675-677)",
+    "websocket.rs:810-813, 889-892 - an enqueue to a writer that just died returns Transport('WebSocket writer task closed'), non-retryable, though it is the same 'connection dropped' case fail_all_pending reports as retryable HttpClient"
+   ],
+   "test": "websocket.rs:1673 connect_gives_up_on_a_server_that_never_completes_the_handshake asserts only the message text; nothing asserts retryability of connect timeout/handshake-incomplete or a handshake Retry-After",
+   "summary": "The connect timeout and protocol-level handshake failures are still non-retryable Transport errors and a 503 handshake's Retry-After is dropped; TLS failures are not affected (they arrive as Io and are retryable).",
+   "remaining": "Map connect timeout to Timeout (or HttpClient), Protocol(HandshakeIncomplete/ResetWithoutClosingHandshake) to HttpClient, parse Retry-After from resp.headers() via error::parse_retry_after, and map 'writer task closed' to HttpClient.",
+   "theme": "ws-client-errors",
+   "effort": "XS",
+   "breaking": "behaviour - a retry policy now retries these",
+   "probe": "none"
+  },
+  {
+   "id": "D-10",
+   "verdict": "needs_decision",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-client/src/retry.rs:298-306 - retry_delay: retry_after.min(max_backoff), no jitter on that branch; max_backoff default 30 s (:109)",
+    "crates/a2a-protocol-client/src/error/mod.rs:302-314 - parse_retry_after: delta-seconds only, clamped to 3600; HTTP-date -> None",
+    "retry.rs:13-21 - the clamp is documented as intended ('honored up to max_backoff')"
+   ],
+   "test": "none that pins the policy choice",
+   "summary": "As reported: a Retry-After longer than max_backoff is cut to 30 s and retried early, without jitter, and the HTTP-date form is ignored. The clamp is documented, so changing it is a policy choice.",
+   "remaining": "Choose the policy; add jitter and HTTP-date parsing either way.",
+   "theme": "client-retry",
+   "effort": "S",
+   "breaking": "behaviour (retry timing)",
+   "probe": "none",
+   "options": "1) Honour Retry-After up to the parser's 1 h cap (ignore max_backoff for server-directed delays): correct per RFC 9110 but a call can wait an hour. 2) Fail fast: if Retry-After > max_backoff (or > remaining budget) stop retrying and return the error, which already carries retry_after, so the caller decides. 3) Keep the clamp. In every option add additive jitter (e.g. +0-10% or +0-1 s) to server-directed delays and parse the HTTP-date form (httpdate is already in hyper's tree). Recommendation: 2 + jitter + HTTP-date: never retries inside a penalty window, never parks a call for an hour."
+  },
+  {
+   "id": "D-11",
+   "verdict": "needs_decision",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-client/src/builder/mod.rs:139,256 - retry_policy: None by default",
+    "crates/a2a-protocol-client/src/methods/follow.rs:61-64 - TaskFollow::next in How::Subscribed returns stream.next() as is: a cut subscription surfaces IncompleteStream, no resubscribe from last_event_id, no fallback to polling",
+    "commit 660196e + crates/a2a-protocol-client/src/delegation/resume.rs:1-60 - NEW since the report: Delegation (only) now resumes a cut stream (ResumePolicy default 5 attempts / 30 s) and can reattach (ADR 0030). Its doc notes gRPC and WebSocket streams carry no event ids, so resume there restarts from the snapshot",
+    "retry.rs RetryTransport retries stream connect only, and only when a policy is set"
+   ],
+   "test": "n/a (design); delegation resume has tests (commits 59e6ff0, 26ca4f1), not re-read here",
+   "summary": "Plain EventStream and follow_task still never resume a cut stream and retries are still off by default; only the Delegation API resumes now.",
+   "remaining": "Decide on automatic resume for follow_task / an opt-in resuming stream, and on the retry default.",
+   "theme": "client-stream-resume",
+   "effort": "M",
+   "breaking": "behaviour if any default changes; none for an opt-in API",
+   "probe": "none",
+   "options": "1) Make TaskFollow resume: on IncompleteStream resubscribe via subscribe_to_task_from(last_event_id) with the ResumePolicy Delegation already has, then fall back to polling GetTask (no API break; follow_task's contract is 'until it ends'). 2) Add opt-in EventStream::resuming(client, policy) for send/subscribe streams (send streams can only resume as SubscribeToTask once the task id is known). 3) Turn RetryPolicy on by default: safe for idempotent methods given safe_to_retry_non_idempotent (retry.rs:284-295), but changes timing for every caller. Recommendation: 1 now (reuse delegation::resume), 2 as opt-in, leave 3 off and document it in the quick start."
+  },
+  {
+   "id": "D-12",
+   "verdict": "partly_fixed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "commit 57f034e (2026-10-29, before the README's last edit; recorded as B-07 'fixed') - crates/a2a-protocol-client/src/tls.rs:307-312 and transport/mod.rs:59-61: pool_idle_timeout 50 s (below a 60 s LB and the server's 75 s). Sub-claim (a) idle race fixed",
+    "same builders set nothing else: no pool_max_idle_per_host, no http2_keep_alive_interval, no connection max-lifetime (hyper-util legacy has none) -> (b) DNS/lifetime, (c) per-host cap, (d) HTTP/2 keepalive open",
+    "crates/a2a-protocol-client/src/proxy.rs:252-257,272-277 - ALPN offers h2 (enable_http2), so h2 peers are used without HTTP/2 PING keepalive; transport/connector.rs:44-52 TCP keepalive 60 s + 4x15 s partly mitigates a dead h2 connection",
+    "docs/adr/0032-http-pool.md - Proposed: HttpPool with per-host max idle, HTTP/2 settings, per-origin in-flight cap"
+   ],
+   "test": "none for the 50 s value (hyper exposes no getter; no behavioural test with a server that closes idle connections at 55-60 s). Read, not run.",
+   "summary": "The idle-timeout race is fixed (50 s); connection max-lifetime, a per-host cap and HTTP/2 keepalive are still absent and are the subject of proposed ADR 0032.",
+   "remaining": "(b) recycle connections after N minutes; (c) per-host idle/in-flight cap; (d) http2_keep_alive_interval/timeout for h2 peers; a test pinning the 50 s idle bound.",
+   "theme": "client-pool",
+   "effort": "M",
+   "breaking": "none (new knobs); behaviour if a cap defaults on",
+   "probe": "none"
+  },
+  {
+   "id": "D-13",
+   "verdict": "partly_fixed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "commit 8bdf383 - crates/a2a-protocol-server/src/url_guard.rs:73-83 is_private_v4 now refuses 0.0.0.0/8, 192.0.0.0/24, 198.18.0.0/15 and 224.0.0.0 upward (multicast, 240/4, broadcast); :184-216 is_private_ip adds fec0::/10, ff00::/8, 64:ff9b:1::/48, Teredo 2001::/32, 100::/64; embedded_ipv4 :163-180 classifies 6to4 2002::/16 by its IPv4; :250 strips a trailing dot; :282-312 refuses *.localhost, *.home.arpa, empty labels, single-label names. Sub-claim (b) fixed",
+    "crates/a2a-protocol-server/src/push/pinning.rs:76-84 - pin_target still returns None for https, so for an https webhook net::client's HttpConnector (GaiResolver, net/client.rs:58) resolves the name a second time after url_guard::resolve (:353-361). Sub-claim (a) open",
+    "book/src/building-agents/push-notifications/delivery.md:28-35 - documents that behind a proxy the proxy resolves an https webhook's name, so the screen does not bind what is dialled"
+   ],
+   "test": "src/url_guard/tests.rs:26-45 every_ipv4_special_use_range_is_refused_at_both_of_its_edges (e.g. 0.255.255.255, 198.18.0.0, 240/255.255.255.255) and :82-110 every_ipv6_special_use_range_is_refused (fec0::1, ff00::1, 64:ff9b:1::1, 2001::1, 100::1, 2002:a9fe:a9fe::) - these fail on the old classifier, which accepted those addresses; edge 'public' tests guard over-blocking. Read, not run. No test for https pinning (nothing to test).",
+   "summary": "The missing reserved ranges and the trailing-dot bypass are fixed and tested at every edge; https webhooks are still not pinned, so a rebinding resolver gets a blind TCP connect + ClientHello to an internal address.",
+   "remaining": "(a) pin https too: give the push HttpConnector a resolver that returns only the validated SocketAddr (HttpConnector::new_with_resolver) so SNI/cert still use the hostname; this also removes the second getaddrinfo (D-22).",
+   "theme": "push-ssrf",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "Live: a rebinding DNS name (e.g. a local dnsmasq/CoreDNS answering 203.0.113.10 then 10.0.0.5 with TTL 0, or a public rebinder) registered as an https webhook; tcpdump on the agent host for SYNs to 10.0.0.5:443. Today: a SYN+ClientHello to 10.0.0.5 appears; after pinning: none."
+  },
+  {
+   "id": "D-16",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/handler/messaging/admission.rs:200-219 - when resume_after (last_event_seq / get_with_position) fails, any error, including A2aError::unavailable, becomes ServerError::Internal(format!(..)) and the is_unavailable flag is lost; no retry of the read",
+    "admission.rs:256-279 resume_after - plain reads, no persisting() retry",
+    "handler/messaging/idempotency.rs:85 - the new-task path maps is_unavailable to ServerError::Overloaded (503 + Retry-After): inconsistent with the continuation path",
+    "handler/messaging/mod.rs:106 + error/mod.rs:257-266 - every send error passes through not_retry_safe, which strips the unavailable flag from Protocol errors on purpose; Overloaded passes through. So the fix must map to Overloaded (safe here: the refusal happens at lease time, before the executor runs, and the queue is destroyed at :211-212)"
+   ],
+   "test": "admission.rs:369-399 an_unreadable_log_position_refuses_the_lease_rather_than_renumbering asserts ServerError::Internal for an internal error (pins the non-renumbering, not the outage mapping); no test for an unavailable store",
+   "summary": "A store blip while a continuation is admitted is still answered 500/-32603 (non-retryable), where a new task in the same blip gets 503 with Retry-After.",
+   "remaining": "if e.is_unavailable() return ServerError::Overloaded (or Protocol(unavailable).with_retry_after mapped so not_retry_safe keeps it) and add a test with a store whose last_event_seq returns A2aError::unavailable.",
+   "theme": "store-outage-mapping",
+   "effort": "XS",
+   "breaking": "wire - status 500 -> 503 for this case",
+   "probe": "none"
+  },
+  {
+   "id": "D-18",
+   "verdict": "needs_decision",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/eviction/capacity.rs:28 EVICTION_SCAN_WINDOW=1024; :84-112 capacity_victims tops up with the oldest non-terminal tasks when the window lacks terminal ones",
+    "store/task_store/config.rs:264 max_capacity Some(10_000); :78-90 documents the behaviour ('bounded memory is prioritized over retaining in-flight rows') and that an evicted in-flight task reappears only at its next persisted event",
+    "store/task_store/in_memory/mod.rs:113-119 - order_index is keyed by the status timestamp, so long-parked input-required tasks are the oldest and go first; a parked task has no next event, so the user's reply finds 'task not found'",
+    "no metric or log on a non-terminal eviction (grep in in_memory/ finds none)"
+   ],
+   "test": "capacity.rs tests pin the top-up arithmetic, i.e. the current policy",
+   "summary": "As reported, and documented as intended: once the oldest 1024 tasks are all live, capacity eviction removes running or parked tasks, silently.",
+   "remaining": "Policy choice plus a metric.",
+   "theme": "inmemory-store",
+   "effort": "S",
+   "breaking": "behaviour (new tasks refused instead of old ones evicted)",
+   "probe": "none",
+   "options": "1) Never evict non-terminal: when the window holds no terminal task, refuse the new task with Overloaded (503, Retry-After) and count it; memory stays bounded by max_capacity, availability drops under overload. 2) Evict working before input-required/auth-required, and count every non-terminal eviction (metric + warn). 3) Keep, add the metric only. Recommendation: 1 for parked (interrupted) tasks at least, i.e. 2 with parked tasks never evicted, plus the metric; the in-memory store is the default for small deployments where losing a human's pending task is the worst outcome."
+  },
+  {
+   "id": "D-19",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged; reachability now traced)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/audit/log.rs:51 locks: StdMutex<HashMap<String, Arc<Mutex<()>>>>; :147-153 chain_lock inserts with entry().or_default(); no removal anywhere in the file",
+    "audit/interceptor.rs:20-28 chain_of = TenantContext::current(); :73-78 one 'call' record per RPC 'including on a call that authentication refused'",
+    "REACHABILITY: tenant_resolver.rs:152-158 HeaderTenantResolver returns the raw header value; handler/tenant_resolution.rs:91 with no resolver the request body's params.tenant is used; handler/mod.rs:413-431 isolatable() refuses only control characters (no length/charset cap); handler/messaging/mod.rs:97-103 the tenant scope is entered before the call runs. So with audit on and either a header resolver or tenant-aware stores without a resolver, every distinct tenant string from an unauthenticated caller adds a map entry (key length up to the header/body limit) for the life of the process",
+    "handler/locks.rs keyed_lock sweeps at max_context_locks (the pattern the report suggests reusing)"
+   ],
+   "test": "none",
+   "summary": "The audit per-chain lock map grows by one entry per distinct tenant name and never shrinks, and unauthenticated callers can choose the name in common configurations.",
+   "remaining": "Drop entries whose Arc strong_count is 1 after use (as keyed_lock does) or use a bounded sharded lock array; cap tenant id length in isolatable().",
+   "theme": "audit-bounds",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "D-20",
+   "verdict": "needs_decision",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:47,49 keepalive None, max_connections None; :317-321 keepalive only when set; :127-150 docs record 400 silent connections accepted and alive; :445-460 test connection_knobs_are_off_by_default_and_carry_what_they_are_given pins 'off' deliberately",
+    "no tonic tcp_keepalive or HTTP/2 preface/handshake timeout set (build_router :308-330), so a peer that never sends the preface is held even with keepalive on",
+    "SERVER dispatch/websocket.rs:178 idle_timeout None, max_connections None (:177); accepted sockets get no TCP keepalive (:539 only nodelay)",
+    "CLIENT transport/websocket.rs - no ping and no TCP keepalive either (D-08), so with defaults neither end of a WS ever detects a half-open peer",
+    "serve/graceful/config.rs:44 HTTP listener: 75 s idle and a header timeout by default (the asymmetry the report names)"
+   ],
+   "test": "the defaults are pinned as off (dispatcher.rs:445; websocket.rs:1623 the_defaults_are_no_idle_timeout_and_no_connection_ceiling)",
+   "summary": "Unchanged and deliberate: the gRPC and WebSocket listeners have no liveness bound, connection cap or post-accept handshake bound unless the deployer opts in.",
+   "remaining": "Decide the defaults.",
+   "theme": "listener-liveness",
+   "effort": "S",
+   "breaking": "behaviour (pings to existing clients; idle connections closed)",
+   "probe": "none (already measured by the authors: 400 silent gRPC connections alive)",
+   "options": "1) Safe-by-default like the HTTP listener: gRPC HTTP/2 keepalive (60 s, 20 s) + tcp_keepalive, WS idle_timeout = DEFAULT_WS_IDLE_TIMEOUT (75 s, which pings at half and closes only unresponsive peers), and a default max_connections; opt-out setters. 2) Keep off, but make the deploy-agent and book's production recipe set them, and warn at serve() when unset. 3) Keep as is. Recommendation: 1 for WS idle_timeout and gRPC keepalive (both close only peers that do not answer a ping, which is the cost the 'off' rationale worries about least), 2 for max_connections."
+  },
+  {
+   "id": "D-21",
+   "verdict": "partly_fixed",
+   "severity_now": "medium (unchanged for long tasks)",
+   "evidence": [
+    "E-F2 fix (CHANGELOG 'Shutdown no longer ends running tasks canceled') - handler/shutdown/in_flight.rs:150-163 docs and :216-235 finish_in_flight: admission closed first (sends refused with 503 + Retry-After / UNAVAILABLE + RetryInfo), completion window, then cancel; a task the shutdown stops ends Failed with failure class transient, not Canceled. FIXED: the 'terminally Canceled' and 'clients see Canceled and resend into the same replica' parts",
+    "tests/graceful_shutdown_tasks.rs:176-235 the_documented_shutdown_ends_the_delegation asserts wire has TASK_STATE_FAILED and 'transient' and no TASK_STATE_CANCELED, and that downstream was cancelled before serve returned (would fail on the old Canceled path; read, not run)",
+    "STILL LOST, every binding (Server: serve/graceful/mod.rs:410; gRPC: dispatch/grpc/shutdown.rs:181; WS: dispatch/websocket/shutdown.rs:66 - all call finish_in_flight): any turn longer than DEFAULT_COMPLETION_GRACE (5 s, serve/graceful/config.rs:56) is ended Failed on every rolling deploy; its in-memory progress (model calls, tool results) is lost; Failed is terminal so the client must start a NEW task; a delegating executor cancels its children (the test above asserts that), so whole delegation trees are torn down; undelivered pushes beyond task_grace are dropped (D-05)",
+    "axum: nothing is ended unless the app calls finish_in_flight itself (in_flight.rs:140-147 docs); otherwise tasks are cut at exit with no terminal state -> reaper (claims + SQL) after TTL, or Working forever on the in-memory store",
+    "WS: D-07 can keep a connection past drain_timeout (abandoned)",
+    "no hand-off mode: nothing stops an executor without a terminal state and lets another replica re-run the turn; the reaper (E-F1) also ends orphaned turns Failed/transient, so the report's 'a crash is better than a graceful stop' no longer holds - both now fail the turn",
+    "stale docs: serve/graceful/config.rs:48-51 DEFAULT_COMPLETION_GRACE still says it stops a deploy turning tasks into `Canceled` answers; in_flight.rs ~197 'would have succeeded as `Canceled`'"
+   ],
+   "test": "graceful_shutdown_tasks.rs:176 (above); E-F2 lists tests on all four bindings and a live run (not re-run here)",
+   "summary": "A rolling deploy no longer cancels tasks; it fails every turn still running after 5 s as transient and refuses new sends retryably, but the work is still lost and has to be resent as a new task; no hand-off exists.",
+   "remaining": "Decide on a hand-off mode (needs_decision): options 1) document and tune: say plainly that long turns end Failed/transient on deploy, show raising completion_grace and terminationGracePeriodSeconds (XS); 2) longer default completion window bounded by the platform deadline (S; helps minutes-long turns only); 3) hand-off: with claims, on shutdown stop the executor without a terminal state, release the claim, mark the turn resumable, and have the reaper/a resumer re-run the turn's input on another replica - needs an executor idempotency contract (ADR 0026) and an ADR (L/XL). Recommend 1 now plus an ADR for 3. Fix the stale 'Canceled' doc comments.",
+   "theme": "shutdown-handoff",
+   "effort": "L",
+   "breaking": "none for docs; behaviour for a hand-off mode (opt-in)",
+   "probe": "Already run for E-F2 (two replicas, PostgreSQL). To prove a hand-off: two replicas behind a LB with claims, start a 60 s streaming turn on replica A, SIGTERM A, observe whether the task completes on B (today: Failed/transient at ~5 s)."
+  },
+  {
+   "id": "D-22",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/url_guard.rs:353-361,397-402 - validation resolves with tokio::net::lookup_host (getaddrinfo on spawn_blocking) under tokio::time::timeout(dns_timeout 5 s); the timeout drops the future, not the blocking thread",
+    "crates/a2a-protocol-server/src/net/client.rs:58 - push (and JWKS/OIDC/model) client uses HttpConnector::new() = GaiResolver, also spawn_blocking; for https (unpinned, pinning.rs:76-84) every delivery resolves again, bounded only by the 10 s request timeout",
+    "crates/a2a-protocol-server/src/push/gate.rs:170-182 - NEW since the report: PushGate bounds concurrent deliveries (512 overall, 64 per host) but the permit is released when the timed-out delivery returns, while its getaddrinfo thread keeps running; so stuck threads accumulate at ~512 per dns_timeout up to tokio's 512 blocking-thread cap",
+    "per-host bound is keyed by hostname (gate.rs:206-216), so distinct attacker names under a slow authoritative server each count separately"
+   ],
+   "test": "url_guard tests cover the timeout path with a resolver that never answers (resolve_with), which proves the bound on the future, not the thread",
+   "summary": "Push DNS lookups still run getaddrinfo on the blocking pool and a timeout does not free the thread; the new delivery gate bounds concurrency but not the leaked threads, so a caller who can register webhooks under a slow-answering domain can fill the blocking pool.",
+   "remaining": "Use an async resolver (hickory) for both validation and connect (and pin https with the validated address, D-13), or cap concurrent lookups with their own semaphore held until the blocking thread actually returns.",
+   "theme": "push-dns",
+   "effort": "M",
+   "breaking": "none (new dependency if hickory)",
+   "probe": "Live: point the agent's resolv.conf at a blackhole (e.g. nameserver 10.255.255.1) or register webhooks at names under an NS that never answers; create ~600 tasks each with a webhook at a distinct name; watch `grep Threads /proc/<pid>/status` climb toward ~520 and tokio::fs / other spawn_blocking users stall."
+  },
+  {
+   "id": "D-23",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/handler/messaging/execute.rs:69-82 CleanupGuard::drop -> tokio::task::spawn (panics with no runtime context)",
+    "execute.rs:116-122 DeferredExecutor::drop -> TaskTracker::spawn -> tokio::spawn",
+    "NOT IN REPORT: handler/messaging/commit_guard.rs:129-188 CommitGuard::drop -> tokio::spawn at :182 (the release of a send dropped mid-commit), same hazard",
+    "the codebase's own safe pattern exists: handler/claims/mod.rs:164-170 TurnClaim::drop and interceptor/completion.rs:106 and client delegation/drop.rs:17 use Handle::try_current()"
+   ],
+   "test": "none",
+   "summary": "Three Drop impls on the send path spawn without checking for a runtime; reachable only when such a future is dropped outside a Tokio context, so an edge case, but cheap to close.",
+   "remaining": "Use Handle::try_current() in all three and fall back to skipping (or synchronous best-effort) cleanup.",
+   "theme": "drop-spawn",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "D-24",
+   "verdict": "not_a_defect",
+   "severity_now": "info",
+   "evidence": [
+    "scripts/check_panic_paths.py - the project's ratchet: strips comments/literals, excises #[cfg(test)] items and cfg(test)-declared files (transitively), counts .unwrap()/.expect(/panic!/unreachable!/todo!/unimplemented! in crates/*/src",
+    "scripts/panic_paths_baseline.txt - runtime sites: server auth/jwt.rs 1 expect, net/roots.rs 1, rpc_span/call.rs 2; client auth.rs 3, retry.rs 2, tls.rs 1, trace_propagation.rs 1 (+3 build.rs)",
+    "sampled each: jwt.rs:1387-1390 position of a non-zero byte guarded by len >= 0x80 (DER of the server's own key); net/roots.rs:46 and client tls.rs:201 ring provider + default versions (constant); rpc_span/call.rs:55,60 poll-after-Ready (caller bug); client auth.rs:151-164 poisoned credentials lock (deliberate fail-fast); retry.rs:418,478 last_err after a 0..=max_retries loop (always one attempt); trace_propagation.rs:96 v4 UUID bytes never all zero. None reachable from untrusted input",
+    "outside the ratchet (my own read-only scan with the script's filters, a scan script that is not kept in the repository): 47 range slices in runtime code; sampled the request-path ones: dispatch/websocket/card.rs:105 (method <= MAX_METHOD guard), store/encrypted/cipher.rs:259 (length checked at :256), types lib.rs:284 (num(17,2) needs len >= 19), sqlite_store/journal.rs:222 (len >= count checked), rest/query.rs:40-49 (find('/') bounds), url_guard.rs:148 (len > 1): all guarded. Duration arithmetic from caller input: budget deadline uses checked_add (types budget/handle.rs:106-108, test handle/tests.rs:316)",
+    "checker blind spots (no defect found through them): assert!/indexing/slicing/Instant+Duration are not counted; #[cfg(all(test, ...))] modules are not excised (rpc_span/agent.rs:405, webhook.rs:416 - an over-count, harmless); SLIMRPC/tools/examples not covered; types signing/keys.rs:208-209 slices p[1..33]/p[33..65] of a public VerifyingKey::Es256(Vec<u8>) a downstream caller can construct short (API misuse, not request path)"
+   ],
+   "test": "the ratchet itself (CI); not run here",
+   "summary": "The report's conclusion holds on main: no panic site reachable from untrusted input was found in the ratchet's baseline or in a sample of the slicing sites it does not count.",
+   "remaining": "",
+   "theme": "panic-surface",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "D-25",
+   "verdict": "not_a_defect",
+   "severity_now": "info",
+   "evidence": [
+    "spot check 1, server SSE slow consumer: crates/a2a-protocol-server/src/streaming/sse.rs:397 per-stream mpsc::channel(cap) is bounded and :428 races body_writer.tx.closed() -> StreamOutcome::Abandoned. Holds",
+    "spot check 2, retry classification: crates/a2a-protocol-client/src/retry.rs:399-414 retries only when is_retryable && (idempotent || safe_to_retry_non_idempotent), :284-295 the latter is 429/503 or a Protocol error carrying retry_after; :206-219 CancelTask and SubscribeToTask are idempotent. Holds",
+    "also seen while reading other rows: WS frame/message cap 4 MiB at dispatch/websocket.rs:593-595; 64 requests per connection at :95 (but see D-07: the busy reply itself can block)"
+   ],
+   "test": "n/a",
+   "summary": "Two 'sound' claims re-checked by reading and both hold; the WS per-connection cap is sound as a cap but its busy reply is the D-07 hazard.",
+   "remaining": "",
+   "theme": "none",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  }
+ ],
+ "new_findings": [
+  {
+   "id": "NEW-d-1",
+   "severity": "medium",
+   "where": "crates/a2a-protocol-server/src/handler/event_processing/background/mod.rs:185-203 (also sync_collector.rs:339-352)",
+   "finding": "The streaming processor's select is `biased` with the persistence channel first and breaks on `None` without checking the executor's JoinHandle. On an executor panic, CleanupGuard::drop (execute.rs:69-82) spawns queue destroy, which removes the manager's Arc (streaming/event_queue/manager.rs:456-458), the last holder of the writer and so of the persistence Sender; recv() then returns None and the loop breaks before executor_panicked() runs. The task is never marked Failed and no webhook is told - undoing the D-03 fix in that interleaving.",
+   "scenario": "Current-thread runtime (#[tokio::main(flavor=\"current_thread\")], and every #[tokio::test]): tokio's current_thread scheduler queues FIFO (tokio-1.54.1 current_thread/mod.rs:355-356), and the destroy task is spawned during the harness's drop of the panicked future, before the JoinHandle wakes the processor, so destroy runs first: likely every streaming panic leaves the task Submitted/Working. Multi-thread: the LIFO slot usually runs the processor first, but a stealing worker can run destroy first (narrow race). Blocking path: same shape when the executor is Spawned (multi-thread); the Inline path (single worker) is safe because catch_unwind returns Ready(false) in the same poll. With SQL + claims the reaper ends the task after a TTL; in memory it stays Working forever and a resubscriber waits forever (subscribe_max_idle None). No test covers it: processor_tests call executor_panicked directly; handler/messaging/tests.rs:77 checks only token release. Fix: on recv() == None while !executor_done, await handle_fuse and call executor_panicked on Err (same in SyncCollector::run).",
+   "read_only": true,
+   "theme": "executor-panic"
+  },
+  {
+   "id": "NEW-d-2",
+   "severity": "low",
+   "where": "crates/a2a-protocol-client/src/transport/websocket.rs:808-813 and 887-892 (writer task :718-733)",
+   "finding": "A WebSocket call enqueues its frame with `write_tx.send(..).await` on a 64-slot channel before any timeout starts; request_timeout/send_timeout bound only the wait for the reply (:818). The writer task's ws_writer.send() is untimed. When the peer stops reading (zero window: a server wedged by D-07, a frozen process, or a half-open path once the send buffer fills), the writer blocks, the channel fills, and every later call on the connection hangs with no bound; when the socket finally dies the blocked callers get Transport('writer task closed'), non-retryable.",
+   "scenario": "Client sends to an agent whose WS read loop is pinned (D-07) or a half-open connection (D-08): after ~64 queued frames plus the socket buffer, GetTask/SendMessage calls never return (until ~15 min retransmission timeout on half-open; forever on a live-but-not-reading peer). Fix: put the enqueue under the same deadline (timeout around send + reply) or try_send and fail fast as retryable.",
+   "read_only": true,
+   "theme": "ws-client-liveness"
+  },
+  {
+   "id": "NEW-d-3",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/push/gate.rs:206-216 (destination)",
+   "finding": "The new per-destination delivery bound (push_max_in_flight_per_host, 64) is keyed by the URL's host name (and canonical IP literal), not by the resolved address, so N names that resolve to one IP (a wildcard DNS record) are N destinations. A caller can aim up to push_max_in_flight (512) concurrent deliveries at one third-party IP, 8x the intended per-destination bound.",
+   "scenario": "Anonymous agent with push enabled; attacker registers webhooks at a1..aN.evil.example, all A records pointing at a victim; the agent opens up to 512 concurrent connections to the victim. Overlaps the F-slice rows N-SEC-6/SEC-14 that ee0a4c4 closed; key the per-destination semaphore by the resolved address rather than the name (the gate runs before the sender resolves, so this means resolving in the gate, or taking the per-address permit inside HttpPushSender after url_guard::resolve).",
+   "read_only": true,
+   "theme": "push-gate"
+  }
+ ]
+}

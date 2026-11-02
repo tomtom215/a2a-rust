@@ -90,11 +90,13 @@ fn arb_part() -> impl Strategy<Value = Part> {
         proptest::option::of("[a-z]{1,8}\\.[a-z]{2,4}"),
         proptest::option::of(Just("application/octet-stream".to_owned())),
     )
-        .prop_map(|(content, metadata, filename, media_type)| Part {
-            content,
-            metadata,
-            filename,
-            media_type,
+        .prop_map(|(content, metadata, filename, media_type)| {
+            let mut built = Part::text(String::new());
+            built.content = content;
+            built.metadata = metadata;
+            built.filename = filename;
+            built.media_type = media_type;
+            built
         })
 }
 
@@ -107,15 +109,12 @@ fn arb_message() -> impl Strategy<Value = Message> {
         proptest::option::of(arb_id()),
         proptest::option::of(arb_metadata()),
     )
-        .prop_map(|(id, role, parts, task_id, context_id, metadata)| Message {
-            id: MessageId(id),
-            role,
-            parts,
-            task_id: task_id.map(TaskId),
-            context_id: context_id.map(ContextId),
-            reference_task_ids: None,
-            extensions: None,
-            metadata,
+        .prop_map(|(id, role, parts, task_id, context_id, metadata)| {
+            let mut built = Message::new(MessageId(id), role, parts);
+            built.task_id = task_id.map(TaskId);
+            built.context_id = context_id.map(ContextId);
+            built.metadata = metadata;
+            built
         })
 }
 
@@ -141,13 +140,12 @@ fn arb_artifact() -> impl Strategy<Value = Artifact> {
         proptest::collection::vec(arb_part(), 1..3),
         proptest::option::of(arb_metadata()),
     )
-        .prop_map(|(id, name, parts, metadata)| Artifact {
-            id: ArtifactId(id),
-            name,
-            description: None,
-            parts,
-            extensions: None,
-            metadata,
+        .prop_map(|(id, name, parts, metadata)| {
+            // `parts` has at least one element (the strategy above), as `new` asserts.
+            let mut artifact = Artifact::new(ArtifactId(id), parts);
+            artifact.name = name;
+            artifact.metadata = metadata;
+            artifact
         })
 }
 
@@ -162,17 +160,16 @@ fn arb_task() -> impl Strategy<Value = Task> {
         proptest::option::of(arb_metadata()),
     )
         .prop_map(
-            |(id, context_id, state, timestamp, history, artifacts, metadata)| Task {
-                id: TaskId(id),
-                context_id: ContextId(context_id),
-                status: TaskStatus {
-                    state,
-                    message: None,
-                    timestamp,
-                },
-                history,
-                artifacts,
-                metadata,
+            |(id, context_id, state, timestamp, history, artifacts, metadata)| {
+                let mut built = Task::new(TaskId(id), ContextId(context_id), {
+                    let mut built = TaskStatus::new(state);
+                    built.timestamp = timestamp;
+                    built
+                });
+                built.history = history;
+                built.artifacts = artifacts;
+                built.metadata = metadata;
+                built
             },
         )
 }
@@ -186,19 +183,18 @@ fn arb_push_config() -> impl Strategy<Value = TaskPushNotificationConfig> {
         proptest::option::of(arb_id()),
         proptest::option::of((arb_id(), proptest::option::of(arb_id()))),
     )
-        .prop_map(
-            |(tenant, id, task_id, url, token, auth)| TaskPushNotificationConfig {
-                tenant,
-                id,
-                task_id,
-                url,
-                token,
-                authentication: auth.map(|(scheme, credentials)| AuthenticationInfo {
-                    scheme,
-                    credentials,
-                }),
-            },
-        )
+        .prop_map(|(tenant, id, task_id, url, token, auth)| {
+            let mut built = TaskPushNotificationConfig::for_url(url);
+            built.tenant = tenant;
+            built.id = id;
+            built.task_id = task_id;
+            built.token = token;
+            built.authentication = auth.map(|(scheme, credentials)| AuthenticationInfo {
+                scheme,
+                credentials,
+            });
+            built
+        })
 }
 
 /// Runs a value through conversion AND real prost bytes, both directions.

@@ -239,17 +239,69 @@ fn the_node_requires_a_listen_address() {
 }
 
 /// The node builds the SDK's telemetry from the `OTEL_*` environment, as
-/// every other binary in the repository does: an endpoint configured with a
-/// protocol `Telemetry` cannot use stops it before it listens, with the
-/// variable named. A node that never read the environment would start, and
-/// is killed here at the deadline instead.
+/// every other binary in the repository does. A value the OpenTelemetry
+/// specification has an SDK warn about and ignore (here a protocol this crate
+/// lacks) is noted on stderr with what was used instead, and the node still
+/// listens: a fleet sets one `OTEL_*` preset for every SDK it runs, and a node
+/// that refused to start over one value took the rest down with it (audit
+/// C-08, decided 2026-11-01). A node that never read the environment would
+/// start too, and say nothing.
 #[cfg(feature = "otlp")]
 #[test]
-fn the_node_builds_telemetry_from_the_otel_environment() {
+fn the_node_notes_an_otel_value_it_cannot_use_and_still_starts() {
+    use std::io::Read as _;
+
     let mut child = Command::new(env!("CARGO_BIN_EXE_slim-node"))
         .args(["--listen", &format!("127.0.0.1:{}", common::free_port())])
         .env("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9")
         .env("OTEL_EXPORTER_OTLP_PROTOCOL", "carrier-pigeon")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn the slim-node binary");
+
+    // The readiness line is printed after the subscriber is installed and the
+    // notice logged, so by the time it is read the notice is already written.
+    let stdout = child.stdout.take().expect("piped stdout");
+    let ready = BufReader::new(stdout)
+        .lines()
+        .next()
+        .and_then(Result::ok)
+        .unwrap_or_else(|| String::from("<node exited before printing anything>"));
+    let _ = child.kill();
+    let _ = child.wait();
+    let mut stderr = String::new();
+    child
+        .stderr
+        .take()
+        .expect("piped stderr")
+        .read_to_string(&mut stderr)
+        .expect("the node's stderr");
+
+    assert!(
+        ready.contains("listening on"),
+        "an unusable OTEL_* value must not stop the node, said: {ready}\nstderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("OTEL_EXPORTER_OTLP_PROTOCOL") && stderr.contains("carrier-pigeon"),
+        "it must name the variable and its value, said: {stderr}"
+    );
+    assert!(
+        stderr.contains("http/protobuf"),
+        "it must say what it used instead, said: {stderr}"
+    );
+}
+
+/// What the node still refuses: an OTLP/HTTP endpoint with no scheme names no
+/// transport, and guessing `http` or `https` would be a guess about TLS. The
+/// node stops before it listens, with the variable named and exit code 2, a
+/// configuration error.
+#[cfg(feature = "otlp")]
+#[test]
+fn the_node_refuses_an_otel_configuration_it_cannot_act_on() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_slim-node"))
+        .args(["--listen", &format!("127.0.0.1:{}", common::free_port())])
+        .env("OTEL_EXPORTER_OTLP_ENDPOINT", "127.0.0.1:9")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -263,7 +315,7 @@ fn the_node_builds_telemetry_from_the_otel_environment() {
         if std::time::Instant::now() > deadline {
             let _ = child.kill();
             let _ = child.wait();
-            panic!("the node ignored the OTEL_* environment and kept running");
+            panic!("the node accepted an OTLP endpoint with no scheme and kept running");
         }
         std::thread::sleep(Duration::from_millis(5));
     };
@@ -272,7 +324,7 @@ fn the_node_builds_telemetry_from_the_otel_environment() {
     assert_eq!(status.code(), Some(2), "a configuration error");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("OTEL_EXPORTER_OTLP_PROTOCOL") && stderr.contains("carrier-pigeon"),
+        stderr.contains("OTEL_EXPORTER_OTLP_ENDPOINT") && stderr.contains("127.0.0.1:9"),
         "it must name the variable and its value, said: {stderr}"
     );
     assert!(

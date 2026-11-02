@@ -18,7 +18,7 @@ use a2a_protocol_types::error::A2aError;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::failure::{FailureClass, error_class, set_class};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskId, TaskState, TaskStatus};
 use tokio::sync::OwnedSemaphorePermit;
 use tokio::task::JoinHandle;
 
@@ -72,11 +72,16 @@ impl Drop for CleanupGuard {
             let qmgr = self.queue_mgr.clone();
             let tokens = Arc::clone(&self.tokens);
             let turn = Arc::clone(&self.turn);
-            tokio::task::spawn(async move {
+            let finished = Arc::clone(&turn);
+            // Without a runtime nothing can run the release; the turn is
+            // still marked finished, which needs no await (audit D-23).
+            if !super::drop_spawn::spawn(async move {
                 qmgr.destroy(&tid).await;
                 tokens.write().await.remove(&tid);
                 turn.finished.cancel();
-            });
+            }) {
+                finished.finished.cancel();
+            }
         }
     }
 }
@@ -116,7 +121,11 @@ impl DeferredExecutor {
 impl Drop for DeferredExecutor {
     fn drop(&mut self) {
         if let Some(run) = self.run.take() {
-            self.tracker.spawn(run);
+            // Dropped outside a runtime there is nothing to run it on; it is
+            // dropped, which runs its cleanup guard's destructor (audit D-23).
+            if let Some(handle) = super::drop_spawn::runtime() {
+                drop(self.tracker.spawn_on(run, &handle));
+            }
         }
     }
 }
@@ -179,6 +188,19 @@ impl std::future::Future for WatchedExecutor {
 }
 
 impl WatchedExecutor {
+    /// Waits up to `wait` for the executor to end: `Some(true)` when it
+    /// returned, `Some(false)` when it panicked or was aborted, `None` when it
+    /// is still running.
+    ///
+    /// For a reader whose queue has closed. The queue closes inside the
+    /// executor's own cleanup, which runs before its task ends — and when the
+    /// executor panics, as the unwind drops its future. A reader that stops
+    /// on the closed queue has therefore not yet been told how the executor
+    /// ended, and for a panic nothing else will tell it (audit NEW-d-1).
+    pub async fn ended_within(&mut self, wait: std::time::Duration) -> Option<bool> {
+        tokio::time::timeout(wait, self).await.ok()
+    }
+
     /// Runs an inline executor to its end. A blocking send answers as soon
     /// as the task is terminal or interrupted, which can be before the
     /// executor returns; its cleanup still has to run. A spawned executor
@@ -276,10 +298,10 @@ impl RequestHandler {
         // message when it is created. The call's own span learns the task
         // and context here too, the first point both are known.
         #[cfg(feature = "tracing")]
-        crate::rpc_span::record_task(&ctx.task_id.0, Some(&ctx.context_id));
+        crate::rpc_span::record_task(&ctx.task_id.0, Some(ctx.context_id.as_ref()));
         let span = crate::rpc_span::ExecutorSpan::open(
             &ctx.task_id.0,
-            &ctx.context_id,
+            ctx.context_id.as_ref(),
             self.agent_card.as_ref(),
             self.span_settings,
             &ctx.message,
@@ -318,7 +340,7 @@ impl RequestHandler {
                 run_executor(executor.as_ref(), &ctx, &writer, timeout, expose_internal)
             })
             .await;
-            let stop = Stop::of(turn.is_halted(), shutdown.is_cancelled());
+            let stop = Stop::of(turn.is_halted(), shutdown.is_cancelled(), turn.is_lapsed());
             run.finish(run_outcome(
                 &result,
                 stop != Stop::No || ctx.cancellation_token.is_cancelled(),
@@ -396,12 +418,14 @@ pub(super) async fn write_failure_event(
     class: FailureClass,
 ) {
     trace_error!(task_id = %ctx.task_id, error = %error, "executor failed");
-    let fail_event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: ctx.task_id.clone(),
-        context_id: ContextId::new(ctx.context_id.clone()),
-        status: failure_status(ctx, error, class),
-        metadata: Some(serde_json::json!({ "error": error.to_string() })),
-    });
+    let fail_event = StreamResponse::StatusUpdate(
+        TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            failure_status(ctx, error, class),
+        )
+        .with_metadata(serde_json::json!({ "error": error.to_string() })),
+    );
     if let Err(_write_err) = writer.write(fail_event).await {
         trace_error!(
             task_id = %ctx.task_id,
@@ -419,16 +443,13 @@ pub(super) fn failure_status(
     class: FailureClass,
 ) -> TaskStatus {
     let mut status = TaskStatus::with_timestamp(TaskState::Failed);
-    let mut note = Message {
-        id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-        role: MessageRole::Agent,
-        parts: vec![Part::text(error.to_string())],
-        task_id: Some(ctx.task_id.clone()),
-        context_id: Some(ContextId::new(ctx.context_id.clone())),
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    };
+    let mut note = Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::Agent,
+        vec![Part::text(error.to_string())],
+    )
+    .with_task_id(ctx.task_id.clone())
+    .with_context_id(ctx.context_id.clone());
     // The class rides the status message beside the prose, so a caller can
     // branch on a value instead of matching English. An executor that
     // classified for itself emits its own terminal status and never reaches
@@ -439,62 +460,5 @@ pub(super) fn failure_status(
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    use super::{DeferredExecutor, WatchedExecutor};
-
-    /// Dropped unrun, a deferred executor is spawned rather than lost: its
-    /// cleanup guard is armed only once it runs, so losing it would leak
-    /// the task's queue and token and leave the task `Submitted`.
-    #[tokio::test]
-    async fn a_deferred_executor_dropped_unrun_still_runs() {
-        let ran = Arc::new(AtomicBool::new(false));
-        let tracker = tokio_util::task::TaskTracker::new();
-        let deferred = DeferredExecutor {
-            run: Some(Box::pin({
-                let ran = Arc::clone(&ran);
-                async move { ran.store(true, Ordering::SeqCst) }
-            })),
-            tracker: tracker.clone(),
-        };
-        drop(deferred);
-        tracker.close();
-        tracker.wait().await;
-        assert!(ran.load(Ordering::SeqCst));
-    }
-
-    /// Taken with `watch`, it is not spawned a second time on drop.
-    #[tokio::test]
-    async fn a_watched_executor_runs_once_inline() {
-        let tracker = tokio_util::task::TaskTracker::new();
-        let deferred = DeferredExecutor {
-            run: Some(Box::pin(async {})),
-            tracker: tracker.clone(),
-        };
-        let mut watched = deferred.watch();
-        assert!(tracker.is_empty(), "watching does not spawn");
-        assert!(
-            (&mut watched).await,
-            "a returning executor resolves to true"
-        );
-        watched.finish().await;
-        assert!(tracker.is_empty());
-    }
-
-    #[tokio::test]
-    async fn an_inline_panic_resolves_to_false() {
-        let mut watched = WatchedExecutor::Inline(Some(Box::pin(async { panic!("inline panic") })));
-        assert!(!(&mut watched).await);
-    }
-
-    #[tokio::test]
-    async fn a_spawned_executor_reports_its_join_result() {
-        let mut ok = WatchedExecutor::Spawned(Some(tokio::spawn(async {})));
-        assert!((&mut ok).await);
-        let mut panicked =
-            WatchedExecutor::Spawned(Some(tokio::spawn(async { panic!("spawned panic") })));
-        assert!(!(&mut panicked).await);
-    }
-}
+#[path = "execute_tests.rs"]
+mod tests;

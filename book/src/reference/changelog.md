@@ -81,14 +81,20 @@ The SLIMRPC binding (`bindings/a2a-protocol-slimrpc`) is versioned
 independently and is not part of the tagged release; `release.yml` does not
 touch it.
 
-## v0.15.1 (2026-10-26)
+## v0.16.0 (in preparation, not released)
 
-A patch release that makes OpenTelemetry export work in more deployments and
-say what it is doing. A diff of the public items against v0.15.0 finds only
-additions. Two behaviours change, and the second affects any pod that sets
-`HTTP_PROXY`; [Upgrading Between Minor Versions](./upgrading.md#patch-releases-with-something-to-do) has both, and
+The fixes of the pre-release audit (2026-10-29 and 2026-11-01) and the 0.16
+breaking window; [Upgrading from 0.15 to 0.16](./upgrading/0.15-to-0.16.md) has
+the migrations and
 [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md)
-has every item in full.
+has every item in full. A 0.15.1 was prepared on 2026-10-26 and never tagged or
+published; what it held ships here, and is summarised next:
+
+OpenTelemetry export works in more deployments and says what it is doing. A
+diff of the public items against v0.15.0 finds only additions for that part.
+Two behaviours change, and the second affects any pod that sets `HTTP_PROXY`
+([the guide](./upgrading/0.15-to-0.16.md#telemetry-installs-a-subscriber-and-reads-the-proxy-variables)
+has both).
 
 - **A quick start per deployment**, in [Observability](../deployment/observability.md):
   a laptop with and without a collector, Docker, Kubernetes, HTTPS with a

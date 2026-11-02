@@ -30,13 +30,14 @@ async fn stores() -> (SqliteTaskStore, SqliteTaskStore) {
 }
 
 fn task_with(id: &str, artifacts: Option<Vec<Artifact>>) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts,
-        metadata: None,
+    {
+        let mut built = Task::new(
+            TaskId::new(id),
+            ContextId::new("ctx"),
+            TaskStatus::new(TaskState::Working),
+        );
+        built.artifacts = artifacts;
+        built
     }
 }
 

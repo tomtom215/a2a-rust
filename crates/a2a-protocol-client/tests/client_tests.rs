@@ -32,22 +32,22 @@ impl CallInterceptor for NoopInterceptor {
 
 /// Builds a minimal [`AgentCard`] with the given interfaces.
 fn agent_card_with_interfaces(interfaces: Vec<AgentInterface>) -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "test-agent".into(),
-        version: "1.0".into(),
-        description: "A test agent".into(),
-        supported_interfaces: interfaces,
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        capabilities: AgentCapabilities::none(),
-        security_schemes: None,
-        security_requirements: None,
-        default_input_modes: vec![],
-        default_output_modes: vec![],
-        skills: vec![],
-        signatures: None,
+    {
+        let mut built = AgentCard::new("test-agent", "1.0", AgentInterface::jsonrpc(String::new()));
+        built.url = None;
+        built.description = "A test agent".into();
+        built.supported_interfaces = interfaces;
+        built.provider = None;
+        built.icon_url = None;
+        built.documentation_url = None;
+        built.capabilities = AgentCapabilities::none();
+        built.security_schemes = None;
+        built.security_requirements = None;
+        built.default_input_modes = vec![];
+        built.default_output_modes = vec![];
+        built.skills = vec![];
+        built.signatures = None;
+        built
     }
 }
 

@@ -8,6 +8,7 @@
 /// A declaration of a protocol extension supported by an Agent.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct AgentExtension {
     /// The unique URI identifying the extension.
     pub uri: String,

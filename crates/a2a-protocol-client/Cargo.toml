@@ -75,7 +75,7 @@ grpc-tls = ["grpc", "tonic?/tls-ring", "tonic?/tls-webpki-roots"]
 ## duplicate suppression and an optional rate limit, framework-agnostic over
 ## `http::HeaderMap` and the body bytes. Needs `ring` for SHA-256, which the
 ## default `tls-rustls` build already links; on by default.
-webhook = ["dep:ring"]
+webhook = ["dep:ring", "dep:subtle"]
 ## `testing::ScriptedPeer`: a loopback A2A peer that stalls, cuts off,
 ## mis-frames or refuses every call on purpose, on each binding this build
 ## speaks, for testing code that calls agents. Adds no dependencies; not for
@@ -104,6 +104,11 @@ uuid           = { workspace = true }
 # SHA-256 for the webhook receiver's token index and duplicate cache. The same
 # `ring` rustls links in the default build; no new crate.
 ring           = { version = "0.17.12", optional = true }
+# The constant-time comparison of a push-notification token (audit SEC-18):
+# the vetted crate rustls and RustCrypto use, rather than a loop of our own that
+# a compiler may legally turn into an early exit. `no_std`, no dependencies;
+# already in the graph through rustls, no new crate.
+subtle         = { version = ">=2.5, <3", optional = true, default-features = false }
 tracing        = { workspace = true, optional = true }
 opentelemetry  = { version = "0.33", optional = true, default-features = false, features = ["trace", "metrics"] }
 tracing-opentelemetry = { version = ">=0.34, <0.35", optional = true, default-features = false }

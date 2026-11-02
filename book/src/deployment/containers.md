@@ -12,15 +12,19 @@ probes, shutdown) is on [its page](../examples/deploy-agent.md).
 
 | Files | What they are |
 |---|---|
-| `examples/deploy-agent/Dockerfile` | A multi-stage image for `deploy-agent`: build with the Rust toolchain, ship on Debian slim without it |
+| `examples/deploy-agent/Dockerfile` | A multi-stage image for `deploy-agent`: build with the Rust toolchain, ship on Debian slim without it. The release workflow builds it from each tag and publishes it, signed, to `ghcr.io/tomtom215/a2a-rust/deploy-agent` (from 0.16.0) |
 | `examples/deploy-agent/deployment.yaml` | A Kubernetes `Deployment` (two replicas) and `Service` for that image |
 | `deploy/observability/docker-compose.yml`, `docker-compose.prod.yml` | A telemetry stack (OpenTelemetry Collector, Prometheus, Tempo, Loki, Grafana) for a laptop or a test box; see [Observability](./observability.md) |
 | `itk/docker-compose.yml`, `itk/Dockerfile.*`, `itk/agents/*/Dockerfile` | The integration test kit: agents built with the Python, JavaScript, Go and Java SDKs and this SDK's `echo-agent`, run against each other. Test infrastructure, not a template for deploying |
 
-There are no Helm charts, no Kustomize overlays and no published container
-images. The workflows that build images (`acts.yml`, `itk-nightly.yml`) load
-them into the runner for a test and never push them. Copy the two
-`deploy-agent` files into your own project and adapt them.
+There are no Helm charts and no Kustomize overlays. The one published image is
+`deploy-agent`'s, pushed to GHCR by `release.yml` under the release version
+only, with a Sigstore-signed build-provenance attestation (`gh attestation
+verify oci://ghcr.io/tomtom215/a2a-rust/deploy-agent:<version> --repo
+tomtom215/a2a-rust`) and BuildKit's SBOM; an agent of your own is built from
+your own code, so copy the two `deploy-agent` files into your project and adapt
+them. The workflows that build the test images (`acts.yml`, `itk-nightly.yml`)
+load them into the runner for a test and never push them.
 
 ## Building the image
 
@@ -94,14 +98,15 @@ plaintext and does not check who answered; `verify-full` checks the server's
 certificate and name. `sslrootcert` is the CA file as the pod sees it, so mount
 it there.
 
-Three edits first:
+Two edits first, and one for an image of your own:
 
-- **The image.** The manifest names `deploy-agent:latest` and sets no
-  `imagePullPolicy`, and Kubernetes always pulls a `:latest` image, so a
-  locally built one is not used. Push the image to a registry the cluster can
-  reach and set `image:` to it, or on kind run
-  `kind load docker-image deploy-agent` and set
-  `imagePullPolicy: IfNotPresent`.
+- **The image.** From 0.16.0 the manifest names the published image,
+  `ghcr.io/tomtom215/a2a-rust/deploy-agent:0.16.0`, with
+  `imagePullPolicy: IfNotPresent`; nothing to set. (Until 2026-11-01 it named
+  `deploy-agent:latest`, which Kubernetes pulls from Docker Hub, where nothing
+  was published.) For a build of your own, push it to a registry the cluster
+  can reach and set `image:` to it, or on kind run
+  `kind load docker-image deploy-agent:dev` and set `image: deploy-agent:dev`.
 - **`AGENT_URL`.** The manifest sets the in-cluster Service URL. Set it to the
   URL callers will use: it is what goes on the agent card, and it cannot be
   derived from inside the pod. A card that advertises the bind address sends

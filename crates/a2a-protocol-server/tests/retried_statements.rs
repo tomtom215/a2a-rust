@@ -89,12 +89,11 @@ fn task(id: &str, state: TaskState, artifacts: serde_json::Value) -> Task {
 }
 
 fn status_event(id: &str, state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new(id),
-        context_id: ContextId::new("c-twins"),
-        status: TaskStatus::new(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new(id),
+        ContextId::new("c-twins"),
+        TaskStatus::new(state),
+    ))
 }
 
 /// What the store holds for `id`, with `id` blanked so twins compare equal.

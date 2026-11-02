@@ -58,31 +58,21 @@ async fn serving_tls_installs_a_default_provider_when_none_is_installed() {
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(NoopExecutor)
-            .with_agent_card(AgentCard {
-                url: None,
-                name: "provider-e2e".into(),
-                description: "Serves TLS with no provider pre-installed".into(),
-                version: "1.0.0".into(),
-                supported_interfaces: vec![AgentInterface {
-                    url: "127.0.0.1:0".into(),
-                    protocol_binding: "GRPC".into(),
-                    protocol_version: "1.0".into(),
-                    tenant: None,
-                }],
-                default_input_modes: vec!["text/plain".into()],
-                default_output_modes: vec!["text/plain".into()],
-                skills: vec![
+            .with_agent_card(
+                AgentCard::new(
+                    "provider-e2e",
+                    "1.0.0",
+                    AgentInterface::new("127.0.0.1:0", "GRPC").with_protocol_version("1.0"),
+                )
+                .with_description("Serves TLS with no provider pre-installed")
+                .with_input_modes(vec!["text/plain"])
+                .with_output_modes(vec!["text/plain"])
+                .with_skill(
                     a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
                         .with_tags(["test"]),
-                ],
-                capabilities: AgentCapabilities::none(),
-                provider: None,
-                icon_url: None,
-                documentation_url: None,
-                security_schemes: None,
-                security_requirements: None,
-                signatures: None,
-            })
+                )
+                .with_capabilities(AgentCapabilities::none()),
+            )
             .build()
             .expect("build handler"),
     );

@@ -35,6 +35,44 @@ pub const NOTIFICATION_TOKEN_HEADER: &str = "x-a2a-notification-token";
 /// The `A2A-Notification-Token` spelling, which a2a-go sends and reads.
 pub const NOTIFICATION_TOKEN_HEADER_UNPREFIXED: &str = "a2a-notification-token";
 
+/// The `A2A-Delivery-Id` header: one id for one event sent to one webhook,
+/// the same on every attempt of it.
+///
+/// A receiver that has handled an id and sees it again knows the sender is
+/// retrying (the first attempt may have been processed and its answer lost)
+/// and can answer without handling the event twice. The id is not kept
+/// across a restart of the sender and is not shared between the paths that
+/// can send the same event, so it deduplicates retries, not every duplicate;
+/// delivery is at most `max_attempts` tries held in memory, and an event
+/// still being retried when the process stops is lost.
+pub const DELIVERY_ID_HEADER: &str = "a2a-delivery-id";
+
+/// Reads the delivery id from a webhook request's headers
+/// ([`DELIVERY_ID_HEADER`]).
+///
+/// `None` when the header is absent, is not visible ASCII, or appears more
+/// than once with different values.
+///
+/// ```
+/// use a2a_protocol_server::push::webhook::delivery_id;
+///
+/// let mut headers = hyper::HeaderMap::new();
+/// headers.insert("A2A-Delivery-Id", "0b7e".parse().unwrap());
+/// assert_eq!(delivery_id(&headers), Some("0b7e"));
+/// ```
+#[must_use]
+pub fn delivery_id(headers: &hyper::HeaderMap) -> Option<&str> {
+    let mut found: Option<&str> = None;
+    for value in headers.get_all(DELIVERY_ID_HEADER) {
+        let value = value.to_str().ok()?;
+        match found {
+            Some(seen) if seen != value => return None,
+            _ => found = Some(value),
+        }
+    }
+    found
+}
+
 /// Reads the push notification token from a webhook request's headers,
 /// under either spelling.
 ///
@@ -149,6 +187,36 @@ mod tests {
             hyper::header::HeaderValue::from_bytes(b"caf\xc3\xa9").unwrap(),
         );
         assert_eq!(notification_token(&h), None);
+    }
+
+    /// The doctest on `delivery_id` shows this too, but the mutation run's test
+    /// tool does not run doctests: a body of `Some("")` passed every test it ran.
+    #[test]
+    fn the_delivery_id_is_read_from_its_header() {
+        let h = headers(&[("A2A-Delivery-Id", "0b7e")]);
+        assert_eq!(delivery_id(&h), Some("0b7e"));
+        // A token header is not a delivery id.
+        let h = headers(&[("A2A-Notification-Token", "t")]);
+        assert_eq!(delivery_id(&h), None);
+    }
+
+    #[test]
+    fn a_repeated_delivery_id_is_read_when_it_agrees_and_is_none_when_it_differs() {
+        let agree = headers(&[("a2a-delivery-id", "0b7e"), ("a2a-delivery-id", "0b7e")]);
+        assert_eq!(delivery_id(&agree), Some("0b7e"));
+        let differ = headers(&[("a2a-delivery-id", "0b7e"), ("a2a-delivery-id", "9c1d")]);
+        assert_eq!(delivery_id(&differ), None);
+    }
+
+    #[test]
+    fn an_absent_or_non_ascii_delivery_id_is_none() {
+        assert_eq!(delivery_id(&hyper::HeaderMap::new()), None);
+        let mut h = hyper::HeaderMap::new();
+        h.insert(
+            DELIVERY_ID_HEADER,
+            hyper::header::HeaderValue::from_bytes(b"caf\xc3\xa9").unwrap(),
+        );
+        assert_eq!(delivery_id(&h), None);
     }
 
     #[test]

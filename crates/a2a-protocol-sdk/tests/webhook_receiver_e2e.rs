@@ -119,12 +119,11 @@ fn config(addr: SocketAddr, token: &str) -> TaskPushNotificationConfig {
 }
 
 fn update(task: &str, state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new(task),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new(task),
+        ContextId::new("ctx"),
+        TaskStatus::new(state),
+    ))
 }
 
 /// §13.2: duplicates may occur and SHOULD be processed idempotently. The

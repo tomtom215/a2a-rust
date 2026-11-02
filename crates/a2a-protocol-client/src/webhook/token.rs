@@ -78,17 +78,13 @@ pub(super) fn is_sendable_token(token: &str) -> bool {
 
 /// Compares two byte slices in constant time with respect to their content.
 ///
-/// Length short-circuits — a token's length is not the secret. Mirrors the
-/// server crate's `auth::constant_time_eq`; `ring`'s own is deprecated.
+/// Length short-circuits — a token's length is not the secret. This is
+/// `subtle`'s `ct_eq`, as in the server crate's `auth::constant_time_eq`;
+/// `ring`'s own is deprecated, and a loop of our own could be turned into an
+/// early exit by an optimiser (audit SEC-18).
 pub(super) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b) {
-        diff |= x ^ y;
-    }
-    diff == 0
+    use subtle::ConstantTimeEq as _;
+    a.ct_eq(b).into()
 }
 
 /// Whether the request's one `Authorization` header is `scheme credentials`

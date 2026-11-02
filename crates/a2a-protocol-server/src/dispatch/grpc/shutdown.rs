@@ -119,6 +119,15 @@ impl GrpcDispatcher {
         listener: tokio::net::TcpListener,
         shutdown: impl Future<Output = ()> + Send,
     ) -> io::Result<ServeReport> {
+        if self.max_connections == Some(0) {
+            return Ok(ServeReport {
+                accepted: 0,
+                drained: true,
+                abandoned: 0,
+                tasks: None,
+                refused: Some(crate::dispatch::connection_limit::ZERO_CONNECTIONS.into()),
+            });
+        }
         trace_info!(
             addr = ?listener.local_addr().ok(),
             "A2A gRPC server listening (graceful)"

@@ -159,26 +159,21 @@ async fn start_https_webhook(certs: &TestCerts) -> (SocketAddr, mpsc::UnboundedR
 // ── Test fixtures ────────────────────────────────────────────────────────────
 
 fn status_event() -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("task-e2e"),
-        context_id: ContextId::new("ctx-e2e"),
-        status: TaskStatus::with_timestamp(TaskState::Completed),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("task-e2e"),
+        ContextId::new("ctx-e2e"),
+        TaskStatus::with_timestamp(TaskState::Completed),
+    ))
 }
 
 fn config_with_auth(url: &str) -> TaskPushNotificationConfig {
-    TaskPushNotificationConfig {
-        tenant: None,
-        id: Some("cfg-e2e".to_owned()),
-        task_id: Some("task-e2e".to_owned()),
-        url: url.to_owned(),
-        token: Some("notif-token-xyz".to_owned()),
-        authentication: Some(AuthenticationInfo {
+    TaskPushNotificationConfig::new("task-e2e".to_owned(), url.to_owned())
+        .with_id("cfg-e2e".to_owned())
+        .with_token("notif-token-xyz".to_owned())
+        .with_authentication(AuthenticationInfo {
             scheme: "bearer".to_owned(),
             credentials: Some("secret-bearer-abc".to_owned()),
-        }),
-    }
+        })
 }
 
 fn client_config_trusting(ca: &rustls_pki_types::CertificateDer<'static>) -> rustls::ClientConfig {

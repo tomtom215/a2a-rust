@@ -25,7 +25,7 @@ use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::{MessageSendParams, TaskQueryParams};
-use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
+use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
 
 const GUARD: Duration = Duration::from_secs(10);
 
@@ -59,12 +59,11 @@ enum HookWrites {
 }
 
 fn status(ctx: &RequestContext, state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: ctx.task_id.clone(),
-        context_id: ContextId::new(ctx.context_id.clone()),
-        status: TaskStatus::with_timestamp(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        ctx.task_id.clone(),
+        ctx.context_id.clone(),
+        TaskStatus::with_timestamp(state),
+    ))
 }
 
 impl AgentExecutor for Agent {
@@ -134,16 +133,11 @@ fn handler_with(
 fn params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid_like()),
-            role: MessageRole::User,
-            parts: vec![Part::text("go")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(uuid_like()),
+            MessageRole::User,
+            vec![Part::text("go")],
+        ),
         configuration: None,
         metadata: None,
     }

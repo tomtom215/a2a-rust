@@ -36,8 +36,12 @@ impl PushSender for SqsPushSender {
 
 A custom sender gets none of `HttpPushSender`'s delivery-time checks or
 retries. A sender that POSTs to the config's URL should resolve and screen it
-with `url_guard::resolve_public_url`, and send the notification token and
-`Authorization` as the config specifies. The handler still screens a URL when
+with `url_guard::resolve_public_addrs` and connect to the addresses it returns,
+not to the name (a client that looks the name up again at connect, as most do,
+reopens DNS rebinding); should not follow redirects (a `3xx` to an internal
+address is the same attack by another route); and should send the notification
+token and `Authorization` as the config specifies, and an `A2A-Delivery-Id`
+(`push::webhook::DELIVERY_ID_HEADER`) that is the same on its retries. The handler still screens a URL when
 the config is created, and bounds each `send` with `push_delivery_timeout`
 (30 s). Override `requires_https`, `allows_webhook_url` and
 `max_delivery_duration` when they apply.

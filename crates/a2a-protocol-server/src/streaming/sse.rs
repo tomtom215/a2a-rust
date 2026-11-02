@@ -767,16 +767,11 @@ mod tests {
         use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
         let event = || {
-            StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: TaskId::new("t1"),
-                context_id: ContextId::new("c1"),
-                status: TaskStatus {
-                    state: TaskState::Working,
-                    message: None,
-                    timestamp: None,
-                },
-                metadata: None,
-            })
+            StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                TaskId::new("t1"),
+                ContextId::new("c1"),
+                TaskStatus::new(TaskState::Working),
+            ))
         };
 
         let (writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
@@ -872,16 +867,11 @@ mod tests {
 
         let (writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
 
-        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("t1"),
-            context_id: ContextId::new("c1"),
-            status: TaskStatus {
-                state: TaskState::Working,
-                message: None,
-                timestamp: None,
-            },
-            metadata: None,
-        });
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new("t1"),
+            ContextId::new("c1"),
+            TaskStatus::new(TaskState::Working),
+        ));
 
         // Write an event then close the writer so the stream terminates.
         writer.write(event).await.expect("write should succeed");
@@ -944,16 +934,11 @@ mod tests {
 
         let (writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
         writer
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: TaskId::new("t1"),
-                context_id: ContextId::new("c1"),
-                status: TaskStatus {
-                    state: TaskState::Working,
-                    message: None,
-                    timestamp: None,
-                },
-                metadata: None,
-            }))
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                TaskId::new("t1"),
+                ContextId::new("c1"),
+                TaskStatus::new(TaskState::Working),
+            )))
             .await
             .expect("write should succeed");
         drop(writer);

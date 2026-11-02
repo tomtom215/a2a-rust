@@ -26,7 +26,7 @@ use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::error::A2aResult;
-use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
+use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::{MessageSendParams, TaskQueryParams};
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::responses::SendMessageResponse;
@@ -47,33 +47,31 @@ impl AgentExecutor for CompletingExecutor {
         use a2a_protocol_types::events::{
             StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent,
         };
-        use a2a_protocol_types::task::{ContextId, TaskStatus};
+        use a2a_protocol_types::task::TaskStatus;
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: Artifact::new("e2e-artifact", vec![Part::text("done")]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new("e2e-artifact", vec![Part::text("done")]),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -81,40 +79,21 @@ impl AgentExecutor for CompletingExecutor {
 }
 
 fn agent_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "gRPC e2e Agent".into(),
-        description: "Canonical gRPC e2e test agent".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "http://localhost:0".into(),
-            protocol_binding: "GRPC".into(),
-            protocol_version: "1.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "noop".into(),
-            name: "Noop".into(),
-            description: "Does nothing".into(),
-            tags: vec!["test".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none()
+    AgentCard::new(
+        "gRPC e2e Agent",
+        "1.0.0",
+        AgentInterface::new("http://localhost:0", "GRPC").with_protocol_version("1.0"),
+    )
+    .with_description("Canonical gRPC e2e test agent")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("noop", "Noop", "Does nothing").with_tags(vec!["test"]))
+    .with_capabilities(
+        AgentCapabilities::none()
             .with_streaming(true)
             .with_push_notifications(true)
             .with_extended_agent_card(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    )
 }
 
 /// Discards push events; present so the handler enables push config CRUD.
@@ -159,21 +138,11 @@ async fn start() -> A2aClient {
 }
 
 fn user_message(text: &str) -> Message {
-    Message {
-        id: MessageId(format!("m-{text}")),
-        role: MessageRole::User,
-        parts: vec![Part {
-            content: PartContent::Text(text.into()),
-            metadata: None,
-            filename: None,
-            media_type: Some("text/plain".into()),
-        }],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    }
+    Message::new(
+        MessageId(format!("m-{text}")),
+        MessageRole::User,
+        vec![Part::text(text).with_media_type("text/plain")],
+    )
 }
 
 fn send_params(text: &str) -> MessageSendParams {
@@ -293,14 +262,10 @@ async fn push_config_crud_roundtrip() {
     };
 
     let created = client
-        .set_push_config(TaskPushNotificationConfig {
-            tenant: None,
-            id: None,
-            task_id: Some(task.id.0.clone()),
-            url: "https://hooks.example.com/notify".into(),
-            token: Some("tok-1".into()),
-            authentication: None,
-        })
+        .set_push_config(
+            TaskPushNotificationConfig::new(task.id.0.clone(), "https://hooks.example.com/notify")
+                .with_token("tok-1"),
+        )
         .await
         .expect("create push config");
     let config_id = created.id.clone().expect("server must assign a config id");

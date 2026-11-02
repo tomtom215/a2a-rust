@@ -10,14 +10,20 @@
 
 use super::*;
 
-type Seen = Arc<std::sync::Mutex<Vec<String>>>;
+pub(super) type Seen = Arc<std::sync::Mutex<Vec<String>>>;
 
 /// A server that answers every request `200` with `body` and records each
 /// request's `authorization` header (`""` when absent).
-async fn serve_fixed(body: Vec<u8>, seen: Seen) -> SocketAddr {
+pub(super) async fn serve_fixed(body: Vec<u8>, seen: Seen) -> SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
+    serve_on(listener, body, seen)
+}
+
+/// [`serve_fixed`] on a listener the caller already holds, for a card that has
+/// to name its own server's port.
+pub(super) fn serve_on(listener: tokio::net::TcpListener, body: Vec<u8>, seen: Seen) -> SocketAddr {
     let addr = listener.local_addr().expect("addr");
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
@@ -25,12 +31,15 @@ async fn serve_fixed(body: Vec<u8>, seen: Seen) -> SocketAddr {
             tokio::spawn(async move {
                 let io = hyper_util::rt::TokioIo::new(stream);
                 let service = hyper::service::service_fn(move |req: hyper::Request<_>| {
+                    // Every value, in order, joined: a header sent twice must
+                    // show as two values, not as the first of them.
                     let auth = req
                         .headers()
-                        .get("authorization")
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or_default()
-                        .to_owned();
+                        .get_all("authorization")
+                        .iter()
+                        .filter_map(|v| v.to_str().ok())
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     seen.lock().unwrap().push(auth);
                     let body = body.clone();
                     async move {
@@ -55,7 +64,7 @@ async fn serve_fixed(body: Vec<u8>, seen: Seen) -> SocketAddr {
 
 /// The pair: returns the URL to type (server A, by the name `localhost`) and
 /// what server B has been sent.
-async fn card_that_names_another_host() -> (String, Seen) {
+pub(super) async fn card_that_names_another_host() -> (String, Seen) {
     let (seen_b, seen_a): (Seen, Seen) = (Arc::default(), Arc::default());
     let error = br#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"no"}}"#.to_vec();
     let b = serve_fixed(error, Arc::clone(&seen_b)).await;
@@ -123,6 +132,29 @@ async fn without_a_header_the_card_is_followed_as_before() {
     );
     assert!(!seen_b.lock().unwrap().is_empty(), "the call reached B");
 }
+
+/// [`a2a`] with environment variables set for the child.
+pub(super) async fn a2a_env(args: &[&str], env: &[(&str, &str)]) -> Output {
+    let args: Vec<String> = args.iter().map(|s| (*s).to_owned()).collect();
+    let env: Vec<(String, String)> = env
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect();
+    tokio::task::spawn_blocking(move || {
+        Command::new(env!("CARGO_BIN_EXE_a2a"))
+            .args(&args)
+            .envs(env)
+            .output()
+            .expect("spawn a2a")
+    })
+    .await
+    .expect("join")
+}
+
+/// A JSON-RPC error answer, which makes `send` fail after the request was
+/// recorded.
+pub(super) const A_JSON_RPC_ERROR: &[u8] =
+    br#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"no"}}"#;
 
 // -- `card verify`: the JWK Set is fetched from a URL of its own --------------
 

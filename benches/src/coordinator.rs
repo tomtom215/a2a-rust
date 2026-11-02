@@ -35,7 +35,7 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole};
 use a2a_protocol_types::params::MessageSendParams;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
@@ -93,27 +93,21 @@ impl AgentExecutor for ChainHopExecutor {
         Box::pin(async move {
             // 1. Emit Working so any streaming consumer sees progress.
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
 
             // 2. Build a forwarded message. We keep the incoming text parts
             //    verbatim because the point of the benchmark is to measure
             //    transport + coordination overhead, not message mutation.
-            let forwarded = Message {
-                id: MessageId::new(format!("{}-forward", self.label)),
-                role: MessageRole::Agent,
-                parts: ctx.message.parts.clone(),
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            };
+            let forwarded = Message::new(
+                MessageId::new(format!("{}-forward", self.label)),
+                MessageRole::Agent,
+                ctx.message.parts.clone(),
+            );
             let params = MessageSendParams {
                 tenant: None,
                 message: forwarded,
@@ -143,23 +137,21 @@ impl AgentExecutor for ChainHopExecutor {
             match next_result {
                 Ok(_) => {
                     queue
-                        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                            task_id: ctx.task_id.clone(),
-                            context_id: ContextId::new(ctx.context_id.clone()),
-                            status: TaskStatus::new(TaskState::Completed),
-                            metadata: None,
-                        }))
+                        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            ctx.context_id.clone(),
+                            TaskStatus::new(TaskState::Completed),
+                        )))
                         .await?;
                     Ok(())
                 }
                 Err(err) => {
                     queue
-                        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                            task_id: ctx.task_id.clone(),
-                            context_id: ContextId::new(ctx.context_id.clone()),
-                            status: TaskStatus::new(TaskState::Failed),
-                            metadata: None,
-                        }))
+                        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            ctx.context_id.clone(),
+                            TaskStatus::new(TaskState::Failed),
+                        )))
                         .await?;
                     Err(A2aError::internal(format!(
                         "{label}: downstream hop failed: {err}",
@@ -191,20 +183,18 @@ impl AgentExecutor for ChainLeafExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })

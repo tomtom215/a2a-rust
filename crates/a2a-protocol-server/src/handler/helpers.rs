@@ -383,15 +383,12 @@ mod tests {
     fn history(len: usize) -> Vec<Message> {
         use a2a_protocol_types::message::{MessageId, MessageRole, Part};
         (0..len)
-            .map(|i| Message {
-                id: MessageId::new(format!("h{i}")),
-                role: MessageRole::User,
-                parts: vec![Part::text("x")],
-                context_id: None,
-                task_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
+            .map(|i| {
+                Message::new(
+                    MessageId::new(format!("h{i}")),
+                    MessageRole::User,
+                    vec![Part::text("x")],
+                )
             })
             .collect()
     }
@@ -867,14 +864,11 @@ mod tests {
 
         /// Helper to create a task with the given `id`, `context_id`, and state.
         fn make_task(id: &str, context_id: &str, state: TaskState) -> Task {
-            Task {
-                id: TaskId::new(id.to_owned()),
-                context_id: ContextId::new(context_id),
-                status: TaskStatus::new(state),
-                history: None,
-                artifacts: None,
-                metadata: None,
-            }
+            Task::new(
+                TaskId::new(id.to_owned()),
+                ContextId::new(context_id),
+                TaskStatus::new(state),
+            )
         }
 
         #[tokio::test]

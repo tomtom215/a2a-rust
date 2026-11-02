@@ -31,7 +31,7 @@ Every `ClientBuilder` method, its default, and what it changes. The pages in thi
 | `with_tls_config(rustls::ClientConfig)` | Mozilla roots plus `SSL_CERT_FILE` / `SSL_CERT_DIR` | The TLS the JSON-RPC and HTTP+JSON bindings use: a private CA, a pinned self-signed certificate, a client certificate (`tls::tls_config_from_pem`) |
 | `with_peer_honouring_idempotency(bool)` | false (true when the card advertises the extension) | Let a keyed send be retried after an ambiguous failure; see [Idempotent Sends](../idempotency.md) |
 | `with_grpc_bare_address_scheme(GrpcBareAddressScheme)` | `HttpsExceptLoopback` | How `build_grpc` dials a bare `host:port` |
-| `with_grpc_tls_config(ClientTlsConfig)` | None (bundled Mozilla roots) | TLS settings for `build_grpc` (`grpc-tls` feature) |
+| `with_grpc_tls_config(ClientTlsConfig)` | Mozilla roots plus `SSL_CERT_FILE` / `SSL_CERT_DIR`; one you give is exact (`transport::grpc::tls_config_from_pem` keeps the defaults) | TLS settings for `build_grpc` (`grpc-tls` feature) |
 | `skip_required_extension_check()` | checks on | Build even when the card marks an extension `required` that `with_extensions` does not ask for; use it when an interceptor sends `A2A-Extensions` |
 | `require_https_credentials()` | warn once per client | Refuse, before sending, a call that carries a credential (`Authorization`, `Proxy-Authorization`, `Cookie`, an API-key header or query parameter) to an `http://` or `ws://` host other than loopback (spec §13.4); `ClientError::InsecureTransport` |
 | `require_https_webhooks()` | warn | Refuse a push config whose webhook URL is `http://` to a host other than loopback (spec §13.2); `ClientError::InsecureWebhook` |

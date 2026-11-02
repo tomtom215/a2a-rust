@@ -11,17 +11,8 @@ use a2a_protocol_types::message::{Message, MessageId, MessageRole};
 use a2a_protocol_types::task::TaskId;
 
 fn make_request_context() -> RequestContext {
-    let message = Message {
-        id: MessageId::new("test-msg"),
-        role: MessageRole::User,
-        parts: vec![],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    };
-    RequestContext::new(message, TaskId::new("test-task"), "test-ctx".into())
+    let message = Message::new(MessageId::new("test-msg"), MessageRole::User, vec![]);
+    RequestContext::new(message, TaskId::new("test-task"), "test-ctx")
 }
 
 /// Dummy writer for testing `EventEmitter` without needing a real queue.
@@ -115,4 +106,84 @@ async fn macro_cancel_form_compiles_and_runs() {
     let writer = DummyWriter;
     executor.execute(&ctx, &writer).await.unwrap();
     executor.cancel(&ctx, &writer).await.unwrap();
+}
+
+/// An agent with state, written with the receiver form of `agent_executor!`:
+/// its body reads `this.greeting` (audit G-08). The two-parameter form
+/// cannot, and an agent holding a model client had to write the whole
+/// `Pin<Box<dyn Future>>` signature.
+struct Greeter {
+    greeting: &'static str,
+    seen: std::sync::Mutex<Vec<String>>,
+}
+
+crate::agent_executor!(
+    Greeter,
+    execute: |this, ctx, queue| async {
+        let _ = queue;
+        this.seen
+            .lock()
+            .unwrap()
+            .push(format!("{} {}", this.greeting, ctx.task_id));
+        Ok(())
+    },
+    cancel: |this, ctx, queue| async {
+        let _ = queue;
+        this.seen
+            .lock()
+            .unwrap()
+            .push(format!("cancel {} {}", this.greeting, ctx.task_id));
+        Ok(())
+    }
+);
+
+/// The one-body receiver form, for an agent whose cancellation is the default.
+struct Counter(std::sync::atomic::AtomicUsize);
+
+crate::agent_executor!(Counter, |this, ctx, queue| async {
+    let _ = (ctx, queue);
+    this.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
+});
+
+#[tokio::test]
+async fn the_receiver_form_gives_the_body_the_agents_fields() {
+    use crate::executor::AgentExecutor;
+    let ctx = make_request_context();
+    let agent = Greeter {
+        greeting: "hello",
+        seen: std::sync::Mutex::default(),
+    };
+    agent.execute(&ctx, &DummyWriter).await.unwrap();
+    agent.cancel(&ctx, &DummyWriter).await.unwrap();
+    assert_eq!(
+        *agent.seen.lock().unwrap(),
+        ["hello test-task", "cancel hello test-task"]
+    );
+
+    let counter = Counter(std::sync::atomic::AtomicUsize::new(0));
+    counter.execute(&ctx, &DummyWriter).await.unwrap();
+    counter.execute(&ctx, &DummyWriter).await.unwrap();
+    assert_eq!(counter.0.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+/// `{:?}` names the task and the context and nothing the caller said (audit
+/// G-23): an emitter ends up in logs, and a log line made from it must not
+/// carry the message.
+#[test]
+fn debug_names_the_task_and_context_and_not_the_message() {
+    let message = Message::new(
+        MessageId::new("m"),
+        MessageRole::User,
+        vec![a2a_protocol_types::message::Part::text("SECRET-PROMPT")],
+    );
+    let ctx = RequestContext::new(message, TaskId::new("test-task"), "test-ctx");
+    let text = format!("{:?}", EventEmitter::new(&ctx, &DummyWriter));
+    assert!(text.starts_with("EventEmitter {"), "{text}");
+    assert!(
+        text.contains("test-task") && text.contains("test-ctx"),
+        "{text}"
+    );
+    assert!(text.ends_with(", .. }"), "{text}");
+    assert!(!text.contains("SECRET-PROMPT"), "{text}");
 }

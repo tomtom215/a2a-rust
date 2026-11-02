@@ -243,15 +243,36 @@ async fn a_halt_the_store_refused_holds_and_is_written_later() {
 }
 
 /// A store never read refuses sends rather than admit work a halt may
-/// cover, and the next send after it recovers is admitted.
+/// cover, retryably (it was a non-retryable internal error on JSON-RPC;
+/// audit NEW-h-designs-7), and the next send after it recovers is admitted.
 #[tokio::test]
 async fn sends_wait_for_the_first_read_of_the_store() {
     let store = Arc::new(Flaky::default());
     store.fail_reads.store(true, Ordering::SeqCst);
     let h = replica(Arc::clone(&store));
-    refused(start(&h).await, "could not be read");
+    let err = start(&h).await.expect_err("refused while unread");
+    assert!(
+        matches!(&err, ServerError::Overloaded(why) if why.contains("could not be read")),
+        "{err:?}"
+    );
+    assert_eq!(err.retry_after(), Some(Duration::from_secs(1)), "{err:?}");
     store.fail_reads.store(false, Ordering::SeqCst);
     start(&h).await.expect("admitted once the store is read");
+}
+
+/// `/ready` reads the halt store the first time: a replica is ready by having
+/// read it, and not ready while it cannot (audit NEW-h-designs-7).
+#[tokio::test]
+async fn readiness_waits_for_the_first_read_of_the_halt_store() {
+    let store = Arc::new(Flaky::default());
+    store.fail_reads.store(true, Ordering::SeqCst);
+    let h = replica(Arc::clone(&store));
+    assert_eq!(h.readiness().await, Err("halt_store"));
+    store.fail_reads.store(false, Ordering::SeqCst);
+    assert_eq!(h.readiness().await, Ok(()));
+    start(&h).await.expect("a ready replica admits work");
+    let plain = RequestHandlerBuilder::new(Sleeper).without_agent_card();
+    assert_eq!(plain.build().expect("handler").readiness().await, Ok(()));
 }
 
 /// A resume the store refuses changes nothing: the halt holds here and in

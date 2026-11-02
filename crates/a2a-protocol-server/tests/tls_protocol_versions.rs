@@ -265,12 +265,11 @@ async fn the_push_sender_offers_tls_1_3_and_1_2_only() {
         .allow_private_urls()
         .with_retry_policy(PushRetryPolicy::default().with_max_attempts(1));
     let url = format!("https://localhost:{}/hook", addr.port());
-    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    });
+    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(TaskState::Working),
+    ));
     let config = TaskPushNotificationConfig::new("t", url.clone());
     let sending = tokio::spawn(async move { sender.send(&url, &event, &config).await });
     let (kind, payload) = tokio::time::timeout(Duration::from_secs(5), hello)

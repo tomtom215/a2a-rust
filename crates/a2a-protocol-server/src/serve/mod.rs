@@ -117,6 +117,29 @@ pub trait Dispatcher: Send + Sync + 'static {
     }
 }
 
+/// A shared dispatcher is a dispatcher: `Arc<D>` forwards all three methods, so
+/// code that keeps an `Arc<JsonRpcDispatcher>` to hand clones to other tasks can
+/// give it to [`Server`] as it is. The two provided methods are forwarded
+/// too, not left at their defaults: a wrapper that kept the defaults would
+/// lose the shutdown that cancels in-flight work first
+/// ([`Dispatcher::request_handler`]).
+impl<D: Dispatcher> Dispatcher for Arc<D> {
+    fn dispatch(
+        &self,
+        req: hyper::Request<Incoming>,
+    ) -> Pin<Box<dyn Future<Output = DispatchResponse> + Send + '_>> {
+        (**self).dispatch(req)
+    }
+
+    fn request_handler(&self) -> Option<&Arc<crate::RequestHandler>> {
+        (**self).request_handler()
+    }
+
+    fn protocol_binding(&self) -> Option<&'static str> {
+        (**self).protocol_binding()
+    }
+}
+
 // ── serve ────────────────────────────────────────────────────────────────────
 
 /// Starts an HTTP server that dispatches requests using the given dispatcher.

@@ -410,7 +410,7 @@ impl A2aService for A2aServiceImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
+    use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
     use a2a_protocol_types::responses::SendMessageResponse;
     use a2a_protocol_types::task::{ContextId, TaskId};
 
@@ -430,14 +430,13 @@ mod tests {
         );
         for _ in 0..3 {
             let event = a2a_protocol_types::events::StreamResponse::StatusUpdate(
-                a2a_protocol_types::events::TaskStatusUpdateEvent {
-                    task_id: TaskId::new("t"),
-                    context_id: ContextId::new("c"),
-                    status: a2a_protocol_types::task::TaskStatus::new(
+                a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+                    TaskId::new("t"),
+                    ContextId::new("c"),
+                    a2a_protocol_types::task::TaskStatus::new(
                         a2a_protocol_types::task::TaskState::Working,
                     ),
-                    metadata: None,
-                },
+                ),
             );
             writer.write(event).await.expect("write");
         }
@@ -475,14 +474,13 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         let event = a2a_protocol_types::events::StreamResponse::StatusUpdate(
-            a2a_protocol_types::events::TaskStatusUpdateEvent {
-                task_id: TaskId::new("t"),
-                context_id: ContextId::new("c"),
-                status: a2a_protocol_types::task::TaskStatus::new(
+            a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+                TaskId::new("t"),
+                ContextId::new("c"),
+                a2a_protocol_types::task::TaskStatus::new(
                     a2a_protocol_types::task::TaskState::Working,
                 ),
-                metadata: None,
-            },
+            ),
         );
         assert!(
             writer.write(event).await.is_err(),
@@ -498,21 +496,15 @@ mod tests {
 
     #[test]
     fn send_result_message_wraps_into_stream_payload() {
-        let resp = SendMessageResponse::Message(Message {
-            id: MessageId("m".into()),
-            role: MessageRole::Agent,
-            parts: vec![Part {
-                content: PartContent::Text("hi".into()),
-                metadata: None,
-                filename: None,
-                media_type: None,
-            }],
-            task_id: Some(TaskId("t".into())),
-            context_id: Some(ContextId("c".into())),
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        });
+        let resp = SendMessageResponse::Message(
+            Message::new(
+                MessageId("m".into()),
+                MessageRole::Agent,
+                vec![Part::text("hi")],
+            )
+            .with_task_id(TaskId("t".into()))
+            .with_context_id(ContextId("c".into())),
+        );
         let stream = send_result_to_stream(resp).unwrap();
         assert!(matches!(
             stream.payload,
@@ -568,41 +560,22 @@ mod tests {
     }
 
     fn test_card() -> AgentCard {
-        AgentCard {
-            url: None,
-            name: "native-grpc-test-agent".into(),
-            description: "Fixture for the canonical gRPC binding".into(),
-            version: "1.0.0".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "grpc://localhost:50051".into(),
-                protocol_binding: "gRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: None,
-            }],
-            default_input_modes: vec!["text/plain".into()],
-            default_output_modes: vec!["text/plain".into()],
-            skills: vec![AgentSkill {
-                id: "noop".into(),
-                name: "Noop".into(),
-                description: "Does nothing".into(),
-                tags: vec!["test".into()],
-                examples: None,
-                input_modes: None,
-                output_modes: None,
-                security_requirements: None,
-            }],
-            capabilities: AgentCapabilities::none()
+        AgentCard::new(
+            "native-grpc-test-agent",
+            "1.0.0",
+            AgentInterface::new("grpc://localhost:50051", "gRPC").with_protocol_version("1.0.0"),
+        )
+        .with_description("Fixture for the canonical gRPC binding")
+        .with_input_modes(vec!["text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(AgentSkill::new("noop", "Noop", "Does nothing").with_tags(vec!["test"]))
+        .with_capabilities(
+            AgentCapabilities::none()
                 .with_extended_agent_card(true)
                 // Without this the push-config methods answer
                 // UNIMPLEMENTED before reaching any of their own logic.
                 .with_push_notifications(true),
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            security_schemes: None,
-            security_requirements: None,
-            signatures: None,
-        }
+        )
     }
 
     fn service() -> A2aServiceImpl {
@@ -1023,21 +996,14 @@ mod tests {
         use crate::streaming::event_queue::StreamEvent;
 
         fn message(metadata: serde_json::Value) -> Message {
-            Message {
-                id: MessageId("m".into()),
-                role: MessageRole::Agent,
-                parts: vec![Part {
-                    content: PartContent::Text("hi".into()),
-                    metadata: None,
-                    filename: None,
-                    media_type: None,
-                }],
-                task_id: Some(TaskId("t".into())),
-                context_id: Some(ContextId("c".into())),
-                reference_task_ids: None,
-                extensions: None,
-                metadata: Some(metadata),
-            }
+            Message::new(
+                MessageId("m".into()),
+                MessageRole::Agent,
+                vec![Part::text("hi")],
+            )
+            .with_task_id(TaskId("t".into()))
+            .with_context_id(ContextId("c".into()))
+            .with_metadata(metadata)
         }
 
         // `json_to_struct` rejects any metadata that is not a JSON object, so

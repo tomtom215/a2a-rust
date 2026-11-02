@@ -325,7 +325,15 @@ Before adding a dependency:
 
 1. Check `deny.toml` — `openssl-sys` and `reqwest` are banned.
 2. Verify the license is in the allowlist (`Apache-2.0 | MIT | BSD-2-Clause | BSD-3-Clause | ISC | Unicode-DFS-2016 | Unicode-3.0 | Zlib | CC0-1.0 | CDLA-Permissive-2.0`).
-3. Ask: can this be implemented in-tree in ≤ 100 lines? If yes, do that instead.
+3. Ask what the job is. A **small, plain** one (a few lines, nothing security-sensitive, nothing
+   easy to get subtly wrong) is done in-tree in pure Rust, to production grade, because every
+   dependency adds compile time, supply-chain surface and constraints on downstream builds. A job
+   that is **security-sensitive or intricate** (constant-time comparison, cryptography, a
+   standards-defined parser) uses the audited crate rather than a copy of our own: reinventing it
+   is the riskier choice, and "no new dependency" is not a reason to write it again. The rule is
+   to avoid a dependency when pure Rust can do the job properly, not to avoid dependencies. (The
+   maintainer's statement, 2026-11-01.) Prefer a crate already in `Cargo.lock`, and say in the
+   pull request what the change adds to the graph.
 4. Use bounded version ranges: `>= x.y, < z` — no open-ended `>=`.
 
 ---

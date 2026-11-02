@@ -37,7 +37,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskSt
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 use slim_auth::auth_provider::{AuthProvider, AuthVerifier};
 use slim_auth::shared_secret::SharedSecret;
 use slim_config::component::id::{ID, Kind};
@@ -59,23 +59,22 @@ impl AgentExecutor for Echo {
         Box::pin(async move {
             let heard = ctx.message.text().unwrap_or("(no text)").to_string();
             let status = |state| {
-                StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(state),
-                    metadata: None,
-                })
+                StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(state),
+                ))
             };
             queue.write(status(TaskState::Working)).await?;
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: Artifact::new("echo", vec![Part::text(format!("echo: {heard}"))]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new("echo", vec![Part::text(format!("echo: {heard}"))]),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
             queue.write(status(TaskState::Completed)).await?;
             Ok(())
@@ -85,32 +84,12 @@ impl AgentExecutor for Echo {
 
 /// The agent card, advertising the SLIMRPC binding at `name`.
 fn agent_card(name: &SlimName) -> AgentCard {
-    AgentCard {
-        name: "Echo over SLIM".into(),
-        url: None,
-        description: "Echoes what it is sent, reachable over the SLIM fabric".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![name.to_agent_interface()],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "echo".into(),
-            name: "Echo".into(),
-            description: "Echoes input".into(),
-            tags: vec!["echo".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::default().with_streaming(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new("Echo over SLIM", "1.0.0", name.to_agent_interface())
+        .with_description("Echoes what it is sent, reachable over the SLIM fabric")
+        .with_input_modes(vec!["text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(AgentSkill::new("echo", "Echo", "Echoes input").with_tags(vec!["echo"]))
+        .with_capabilities(AgentCapabilities::default().with_streaming(true))
 }
 
 /// A SLIM app on `service` for `name`, authenticated with the shared secret.

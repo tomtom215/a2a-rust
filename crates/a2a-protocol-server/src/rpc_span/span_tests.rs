@@ -85,16 +85,15 @@ fn a_task_response_records_its_id_context_and_state() {
 }
 
 fn status(state: TaskState, message: Option<Message>) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus {
-            state,
-            message,
-            timestamp: None,
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        {
+            let mut built = TaskStatus::new(state);
+            built.message = message;
+            built
         },
-        metadata: None,
-    })
+    ))
 }
 
 /// The executor span's fields after `events`, with content capture on.

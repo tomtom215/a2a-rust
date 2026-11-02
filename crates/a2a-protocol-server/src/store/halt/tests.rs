@@ -67,21 +67,54 @@ async fn sqlite_keeps_the_contract() {
     contract(&SqliteHaltStore::new("sqlite::memory:").await.unwrap()).await;
 }
 
-/// A row whose key names no scope fails the load rather than being
-/// skipped: skipped, it would resume whatever it halts.
+/// A row whose key names no scope is read as a halt of everything, neither
+/// skipped (skipped, it would resume whatever it halts) nor failing the whole
+/// load (which left a replica unable to sync, or deaf to every later halt and
+/// resume; audit NEW-h-designs-4). The rows beside it are still read.
 #[cfg(feature = "sqlite")]
 #[tokio::test]
-async fn an_unreadable_row_fails_the_load() {
+async fn an_unrecognised_row_halts_everything_and_does_not_fail_the_load() {
     let store = SqliteHaltStore::new("sqlite::memory:").await.unwrap();
+    store
+        .put(&StoredHalt::new(
+            HaltScope::Tenant("acme".to_owned()),
+            "maintenance",
+            "ops",
+        ))
+        .await
+        .unwrap();
     store
         .put(&StoredHalt::new(HaltScope::All, "r", "b"))
         .await
         .unwrap();
-    sqlx::query("UPDATE a2a_halts SET scope = 'nonsense'")
+    sqlx::query("UPDATE a2a_halts SET scope = 'tenant-group:eu' WHERE scope = 'all'")
         .execute(&store.pool)
         .await
         .unwrap();
-    assert!(store.load().await.is_err());
+
+    let loaded = store.load().await.expect("the load does not fail");
+    assert_eq!(loaded.len(), 2, "{loaded:?}");
+    assert!(
+        loaded
+            .iter()
+            .any(|h| h.scope == HaltScope::Tenant("acme".to_owned()) && h.reason == "maintenance"),
+        "the readable row is still read: {loaded:?}"
+    );
+    let unknown = loaded
+        .iter()
+        .find(|h| h.scope == HaltScope::All)
+        .expect("the unrecognised row halts everything");
+    assert!(
+        unknown.reason.contains("tenant-group:eu"),
+        "{}",
+        unknown.reason
+    );
+    assert!(
+        unknown.reason.contains("stays halted"),
+        "{}",
+        unknown.reason
+    );
+    assert_eq!(unknown.by, "b");
 }
 
 /// A database of its own for one test. The halt table and its notification

@@ -102,7 +102,9 @@ It is plain HTTP and unauthenticated: with `OTEL_EXPORTER_PROMETHEUS_HOST=0.0.0.
 (a scraper on another machine needs that or an address) anyone who can reach
 the port can read every metric, so it belongs behind the network policy that
 already protects your other metrics ports. Without the feature the value is
-an error naming it, and the process does not start. The feature is off by
+noted (`Telemetry::notices`, printed at `WARN`) and dropped, and a signal with
+no other exporter named gets its default; until 2026-11-01 it was an error and
+the process did not start. The feature is off by
 default, in the SDK as well, and `deploy-agent` is built without it.
 
 A scraped agent has an `up` series; one that pushes has none, which is why

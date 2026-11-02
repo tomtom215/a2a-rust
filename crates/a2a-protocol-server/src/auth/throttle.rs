@@ -150,6 +150,11 @@ struct Failures {
 
 /// Refuses a peer that has failed authentication too often; see the
 /// [module docs](self).
+///
+/// The counts are per process. Behind a balancer, N replicas give a peer up to
+/// N × [`max_failures`](AuthFailureThrottleConfig::max_failures) guesses a
+/// window, since each sees about 1/N of its failures: size `max_failures` for
+/// the fleet, or throttle in the proxy in front.
 pub struct AuthFailureThrottle {
     config: AuthFailureThrottleConfig,
     peers: Mutex<HashMap<String, Failures>>,

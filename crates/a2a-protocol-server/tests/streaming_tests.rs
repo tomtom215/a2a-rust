@@ -23,12 +23,11 @@ async fn queue_write_and_read() {
     let (writer, reader) = manager.get_or_create(&task_id).await;
     let mut reader = reader.expect("should get reader on first call");
 
-    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: task_id.clone(),
-        context_id: "ctx-1".into(),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    });
+    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        task_id.clone(),
+        "ctx-1",
+        TaskStatus::new(TaskState::Working),
+    ));
 
     writer.write(event).await.expect("write");
     drop(writer);
@@ -56,24 +55,23 @@ async fn queue_multiple_events() {
 
     // Write two events.
     writer
-        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: task_id.clone(),
-            context_id: "ctx".into(),
-            status: TaskStatus::new(TaskState::Working),
-            metadata: None,
-        }))
+        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            task_id.clone(),
+            "ctx",
+            TaskStatus::new(TaskState::Working),
+        )))
         .await
         .unwrap();
 
     writer
-        .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: task_id.clone(),
-            context_id: "ctx".into(),
-            artifact: Artifact::new("a1", vec![Part::text("data")]),
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        }))
+        .write(StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                task_id.clone(),
+                "ctx",
+                Artifact::new("a1", vec![Part::text("data")]),
+            )
+            .with_last_chunk(true),
+        ))
         .await
         .unwrap();
 

@@ -76,7 +76,7 @@ use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
 use a2a_protocol_types::params::MessageSendParams;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use crate::serving::{start_logs_agent, start_runbook_agent, start_triage_agent};
 
@@ -109,29 +109,19 @@ fn extract_text(parts: &[Part]) -> String {
 }
 
 fn agent_message(text: &str) -> Message {
-    Message {
-        id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-        role: MessageRole::Agent,
-        parts: vec![Part::text(text)],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    }
+    Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::Agent,
+        vec![Part::text(text)],
+    )
 }
 
 fn user_message(text: &str) -> Message {
-    Message {
-        id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-        role: MessageRole::User,
-        parts: vec![Part::text(text)],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    }
+    Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::User,
+        vec![Part::text(text)],
+    )
 }
 
 fn send_params(message: Message) -> MessageSendParams {
@@ -149,16 +139,11 @@ fn send_params(message: Message) -> MessageSendParams {
 /// client sees these the moment they happen.
 async fn progress(queue: &dyn EventQueueWriter, ctx: &RequestContext, note: &str) -> A2aResult<()> {
     queue
-        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
-            status: TaskStatus {
-                state: TaskState::Working,
-                message: Some(agent_message(note)),
-                timestamp: None,
-            },
-            metadata: None,
-        }))
+        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            TaskStatus::new(TaskState::Working).with_message(agent_message(note)),
+        )))
         .await
 }
 
@@ -169,25 +154,24 @@ async fn emit_artifact(
     text: &str,
 ) -> A2aResult<()> {
     queue
-        .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
-            artifact: Artifact::new(name, vec![Part::text(text)]),
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        }))
+        .write(StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                ctx.task_id.clone(),
+                ctx.context_id.clone(),
+                Artifact::new(name, vec![Part::text(text)]),
+            )
+            .with_last_chunk(true),
+        ))
         .await
 }
 
 async fn complete(queue: &dyn EventQueueWriter, ctx: &RequestContext) -> A2aResult<()> {
     queue
-        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
-            status: TaskStatus::new(TaskState::Completed),
-            metadata: None,
-        }))
+        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            TaskStatus::new(TaskState::Completed),
+        )))
         .await
 }
 

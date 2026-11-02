@@ -1,0 +1,413 @@
+{
+ "slice": "e",
+ "baseline": "4a8243c66df5ae07a54a69168ab419ac609b06e9",
+ "notes": "Paths are under crates/a2a-protocol-server/ unless they start with docs/, book/ or scripts/. Everything below was READ, nothing was built or run. Two keys are added to each row beyond the brief's schema: replica_failure (what a user sees on 2-5 replicas behind a per-request round-robin balancer on one PostgreSQL) and production_refuse (whether Profile::Production should refuse it). No source file in this slice's areas changed after the README's last edit except auth/throttle.rs keying (c76299c); the reaper (57f034e) and the CREATE INDEX guard (8a31cf7) landed before it.",
+ "rows": [
+  {
+   "id": "E-F7",
+   "verdict": "confirmed",
+   "severity_now": "medium",
+   "evidence": [
+    "src/store/postgres_store/store_impl.rs:43-51 - turn_claims() is PostgresTurnClaims::over(self.pool.clone(), ...): claim, renew, release, sweep and abandoned all run on the task store's own pool (tenant store the same, tenant_postgres_store/store_impl.rs:48)",
+    "src/store/postgres_store/pool.rs:29-36 and src/store/pg_retry.rs:139-153 - the pool is max_connections(size) (DEFAULT_POOL_SIZE 10, store/mod.rs:43) with no acquire_timeout, so sqlx's 30 s applies; handler/limits/mod.rs:338-342 states the 30 s itself",
+    "src/store/claim/postgres.rs:209-233 - renew is one UPDATE on that pool",
+    "src/handler/claims/mod.rs:374-404 - renew_loop: on Err only trace_warn 'turn claims not renewed; retrying next interval'; nothing records when a renewal last succeeded, and act_on (410-445) cancels executors only from a successful renewal's answer: no local self-fence",
+    "src/handler/claims/mod.rs:364-369 - the renewer is a plain tokio::spawn on the same runtime as the executors",
+    "src/handler/claims/reaper/mod.rs:89-131 with src/store/claim/postgres.rs:52-57 - since 57f034e every replica's reaper (the owner's own included: end() claims with claims.owner and never checks claims.held) ends a task whose claim has expired and whose row is unwritten for a TTL. A renewal gap >= TTL on a quiet turn is now ended failed/transient with no continuation needed; the owner learns at its next successful renewal (act_on 'taken over') and cancels its executor"
+   ],
+   "test": "none. tests/turn_claims/takeover.rs simulates a takeover by deleting the claim; nothing starves the pool, delays renewals or partitions an executor. Not run.",
+   "summary": "All three sub-claims hold on main: renewals share the (default 10) task-store pool with a 30 s acquire wait against a 15 s TTL, the renewer shares the executors' runtime, and an executor cut off from the database runs on unfenced until a renewal succeeds. The reaper added since makes the consequence automatic: a healthy quiet turn whose renewals stall for one TTL is ended failed/transient by any replica.",
+   "remaining": "Renew on a dedicated connection or small pool with acquire_timeout <= TTL/3; self-fence locally (monotonic clock from when the last successful renewal was sent: past TTL minus a margin, cancel the executor and stop its pushes); a renewal-age metric; the reaper should skip tasks its own handler holds (claims.held).",
+   "theme": "claims-liveness",
+   "effort": "M",
+   "breaking": "none",
+   "probe": "Two replicas of scripts/live/replica (NAME/PORT/DATABASE_URL as partition_live.py), each through its own toxiproxy link (pg_a 15432, pg_b 15433). (1) Starvation: build the replica with PostgresTaskStore::new_with_pool_size(url, 3); on N1 park 300 tasks ('park') and open SubscribeToTask on each against N1; send 'hold' to N1 (returnImmediately); every 2 s send a continuation of it to N2. Decides: an N1 log line 'turn claims not renewed', then the hold task stored TASK_STATE_FAILED with the reaper's text ('the replica running this task stopped before it finished') or N2 admitting the continuation while N1's executor is alive. (2) Partition: a 'tick'-like executor that POSTs a counter to a local webhook every 500 ms; disable pg_a 20 s; count POSTs from N1 after the task was ended or taken over (any > 0 = duplicated side effects).",
+   "replica_failure": "Normal load: nothing. Pool pressure (hundreds of idle subscribers per pod, E-F25), a lock queue (E-F11) or a CPU-bound executor on the runtime: renewals miss a TTL, and a quiet turn (a long model call) is ended failed/transient by a reaper while its pod is healthy. A pod partitioned from PostgreSQL keeps calling the model, tools and child agents for the whole partition; the client re-sends the transient failure elsewhere, so side effects run twice.",
+   "production_refuse": "No: Production cannot see pool settings or executor behaviour; fix in code."
+  },
+  {
+   "id": "E-F8",
+   "verdict": "confirmed",
+   "severity_now": "medium",
+   "evidence": [
+    "src/streaming/event_queue/in_memory.rs:696 and :738 - write_in_order assigns the position and broadcasts a non-terminal event to live readers at once, before the background processor has appended it (only terminal events wait for a verdict, :730-737)",
+    "src/handler/event_processing/background/processor.rs:160-165 - the processor appends later; :256-277 lose_claim on ClaimLost drops every later event without logging it, so positions the old owner broadcast never reach task_events",
+    "src/store/postgres_store/event_log.rs:38-43 - APPEND_SQL is fenced by the claim token and ON CONFLICT (task_id, seq) DO NOTHING",
+    "src/handler/messaging/admission.rs:256-277 - resume_after numbers the next turn (on the replica that took over) from max(log end, stored position); neither knows the positions the old owner broadcast",
+    "src/handler/claims/reaper/mod.rs:192-205 - the reaper appends its Failed at last_event_seq + 1 (it ignores the stored position, unlike resume_after)",
+    "src/handler/lifecycle/subscribe.rs:138-145 - a reattaching stream on the old owner returns Logged only when the log end exceeds its position; src/streaming/event_queue/in_memory.rs:1621-1663 and 1501-1548 replay from replayed_through, so the new turn's positions at or below it are skipped with no streamLagged (the log is contiguous after it)",
+    "src/handler/lifecycle/subscribe.rs:178-205 and in_memory.rs:1578-1583 - a SubscribeToTask with Last-Event-ID replays strictly after it and drops live events at or below it as already delivered"
+   ],
+   "test": "none (no test pairs a takeover with a live subscriber or a Last-Event-ID resume). Not run.",
+   "summary": "The conjecture is read-confirmed: positions are broadcast before they are logged, a takeover numbers from the log end, and both resume paths treat the reused positions as already delivered. Triggers: an owner stalled or partitioned past the TTL (the report's case), a SIGKILL/OOM or a drain that exits with broadcast-but-unappended events in the persistence channel, followed by a continuation or the reaper.",
+   "remaining": "On a takeover (a claim taken from an expired one) or a reaper ending, number after a gap the old owner cannot have reached (e.g. the claim row carries the owner's broadcast high-water mark, updated on renewal, plus the queue capacity; or jump to the next multiple of 2^20), or end the old owner's live streams with streamLagged on ClaimLost; the reaper should number from max(log end, stored position).",
+   "theme": "event-positions",
+   "effort": "M",
+   "breaking": "behaviour: event ids jump after a takeover (still strictly increasing)",
+   "probe": "Two processes, toxiproxy as in scripts/live/partition_live.py (N1 7811 via pg_a 15432, N2 7812 via pg_b 15433). 1) SendMessage 'tick' to N1 with returnImmediately; open curl -N -H 'A2A-Version: 1.0' -H 'content-type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"SubscribeToTask\",\"params\":{\"id\":\"<T>\"}}' http://127.0.0.1:7811/ and log every id: with the artifact part text. 2) After 2 s, POST /proxies/pg_a {\"enabled\":false}. N1 keeps ticking every 500 ms and its subscriber gets ids P+1..P+k. 3) At cut+16 s send 'tick' continuing <T> to N2 (if N2's reaper ended the task first, rerun). 4) At cut+20 s re-enable pg_a; wait 10 s. 5) psql: SELECT seq, payload FROM task_events WHERE task_id='<T>' ORDER BY seq. Decides: an id in P+1..P+k whose payload in the subscriber log is N1's tick and in task_events is N2's event, and the subscriber's next delivered id > P+k with no streamLagged error frame. 6) SubscribeToTask to N2 with header Last-Event-ID: P+k; its first replayed id is P+k+1 and N2's P+1..P+k are missing. A cheaper, racier variant without toxiproxy: while N1 ticks, psql DELETE FROM a2a_task_claims WHERE task_id='<T>' and at once send the continuation to N2.",
+   "replica_failure": "After a pod is killed, OOMs, is drained mid-turn or loses its database link, a client that resumes its stream through the balancer with Last-Event-ID (or a subscriber still on the old pod) silently misses the first events of the next turn on another pod: append-mode artifact chunks (corrupted text), status messages. No streamLagged tells it.",
+   "production_refuse": "No: not a configuration; fix in code."
+  },
+  {
+   "id": "E-F9",
+   "verdict": "confirmed",
+   "severity_now": "medium",
+   "evidence": [
+    "src/handler/lifecycle/cancel_task.rs:125-170 - on the non-owner B, writer_for_cancel returns a throwaway writer (src/streaming/event_queue/manager.rs:372-385: no persistence channel, no push), then save_status_delta(Canceled), publish_cancel and request_remote_cancel; B pushes nothing and appends nothing to the event log",
+    "src/handler/claims/mod.rs:421-428 and src/handler/halt/sync.rs:194-205 - on the owner A only the executor's token is fired ('The token only')",
+    "src/handler/messaging/execute.rs:321-333 - stop = Stop::of(turn.is_halted(), shutdown) is Stop::No for a cross-replica cancel; finish_run (terminal.rs:170-202) then calls repark_if_silent, which returns at once because the token is cancelled (terminal.rs:260-262); nothing is written",
+    "src/handler/event_processing/background/processor.rs:212-248 - Canceled is pushed only from supersede, i.e. after A writes something the store refuses; the processor loop (background/mod.rs:176-213) ends with no check of pushed_terminal against the stored state",
+    "book/src/deployment/horizontal-scaling/turn-claims.md:149-157 - 'A delivers Canceled to the task's webhooks, which nothing else would'",
+    "Control, same replica: cancel_task.rs:126 gets the live writer, the Canceled event goes through A's processor and is pushed"
+   ],
+   "test": "none: grep finds no push or webhook assertion in tests/cross_replica_cancel/ (main.rs, observed.rs, sql.rs). Not run.",
+   "summary": "The conjecture is read-confirmed: for an executor that returns Ok(()) on its token without writing (scripts/live/replica's 'hold' and 'tick' do exactly that), a cancel taken by another replica stores Canceled but no webhook is ever sent Canceled, and the event log (and audit chain) gets no terminal event (NEW-e-2).",
+   "remaining": "At the processor's end, when !pushed_terminal and the stored task is terminal, push the stored status once and append it to the log; or have the cancelling replica push when !runs_here and make A's supersede skip a push already made. Correct the book.",
+   "theme": "cross-replica-cancel",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "Two processes on one PostgreSQL. Build a scratch copy of scripts/live/replica (outside the repo) adding .with_push_sender(HttpPushSender::new().allow_private_urls()) and .with_push_config_store(PostgresPushConfigStore::new(&url).await?). Webhook: a python3 http.server handler on 127.0.0.1:9099 that appends each POST body's status.state to a file. SendMessage 'hold' to A (7811) with configuration {returnImmediately: true, taskPushNotificationConfig: {url: 'http://127.0.0.1:9099/hook'}}; wait for the WORKING POST; CancelTask via B (7812); wait 5 s. Decides: CancelTask answers TASK_STATE_CANCELED, A logs 'hold ended, cancelled=true', the webhook file has no CANCELED. Control: the same with CancelTask via A, where a CANCELED POST arrives.",
+   "replica_failure": "With round-robin, about (N-1)/N of CancelTask calls land on a pod not running the task; a webhook consumer then never hears CANCELED (it last saw WORKING) and waits until it polls.",
+   "production_refuse": "No: fix in code."
+  },
+  {
+   "id": "E-F11",
+   "verdict": "partly_fixed",
+   "severity_now": "low",
+   "evidence": [
+    "commit 8a31cf7 (2026-10-30, audit A11) - src/store/pg_schema/mod.rs:217-229 index_if_missing runs each CREATE INDEX IF NOT EXISTS only when to_regclass finds nothing; table_if_missing (:133-142) and function_if_older (:163-181) guard tables and functions; src/store/claim/upgrade.rs:185-218 triggers are created only when pg_trigger lacks them. A steady-state replica start takes no lock on tasks, task_events or a2a_task_claims (by reading; to_regclass and regclass casts take no relation lock)",
+    "src/store/postgres_store/mod.rs:185-229 - every statement of from_pool goes through pg_schema::apply, so all are guarded; other stores the same (grep pg_schema::apply: push config, tenant store, rate limit, halt, lease, audit, delegation journal)",
+    "src/store/pg_schema/mod.rs:51-59 - still SET LOCAL statement_timeout = 0, and lock_timeout is left as the operator set it (0 by default)",
+    "git show 7ff2c29 (0.15.1) store schema has no a2a_task_claims and no triggers, so the first new replica of a 0.15.1 fleet runs CREATE TRIGGER on tasks and task_events (SHARE ROW EXCLUSIVE, which conflicts with writers' ROW EXCLUSIVE) with no lock timeout"
+   ],
+   "test": "src/store/pg_schema/tests.rs:262-336 a_replica_start_does_not_stall_writes_behind_an_open_one: holds an INSERT open, requires a second PostgresTaskStore::new to finish in 5 s and a third INSERT under lock_timeout 2 s to succeed; with index_if_missing reverted the start waits on the SHARE lock and the 5 s timeout fails the test. #[ignore] needing A2A_TEST_POSTGRES_URL; CI runs it through scripts/run_postgres_suites.py (lib modules that read the URL). Unit test of the guard at :14. Read, not run. No test covers a start that must actually create DDL.",
+   "summary": "The every-start case (the same defect as A11) is fixed and tested. What remains: a start that has DDL to do (the first replica of a release that adds triggers, indexes or columns) still runs it with statement_timeout 0 and no lock_timeout, so behind one long write transaction it queues every replica's writes to that table until the transaction ends.",
+   "remaining": "SET LOCAL lock_timeout (a few seconds) in pg_schema::lock and retry the schema transaction with backoff, logging the blocker (pg_blocking_pids); say in the upgrade notes that the first new replica takes a brief SHARE ROW EXCLUSIVE lock on tasks and task_events.",
+   "theme": "pg-schema-locks",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "pg_locks query, run every 0.5 s during each start: SELECT a.pid, a.application_name, l.locktype, l.relation::regclass AS rel, l.mode, l.granted, a.wait_event_type, a.wait_event, left(a.query,80) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND (NOT l.granted OR l.relation IN ('tasks'::regclass,'task_events'::regclass,'a2a_task_claims'::regclass)) ORDER BY l.granted, a.pid; (A) the fixed half: start N1 so the schema exists; in psql BEGIN; INSERT INTO tasks (id,context_id,state,data) VALUES ('held','c','working','{}'); and leave it open; start N2. It should log serving within about 1 s, with no granted=f row of mode ShareLock, ShareRowExclusiveLock or AccessExclusiveLock on tasks, and a third session's SET lock_timeout='2s'; INSERT ... should succeed. (B) the residual: a fresh database created by the v0.15.0 replica (scripts/live/replica/v015, as upgrade_live.py builds it), with the same open INSERT; start the new replica. The query should show a granted=f ShareRowExclusiveLock on tasks from the new replica's pid, then the old replica's INSERTs and any third writer granted=f RowExclusiveLock (wait_event_type Lock) until the psql transaction ends, and the new replica not serving. (A) clean plus (B) waiters confirms partly_fixed.",
+   "replica_failure": "Day-to-day restarts, scale-ups and reschedules: none (fixed). The first pod of a release that adds DDL, started while any long write transaction is open on tasks or task_events (an analyst's session, a large manual DELETE): every pod's sends and claim writes on that table wait until the transaction ends; claims may expire and the reaper fire (NEW-e-1).",
+   "production_refuse": "No."
+  },
+  {
+   "id": "E-F12",
+   "verdict": "needs_decision",
+   "severity_now": "medium",
+   "evidence": [
+    "src/handler/concurrency.rs:51-68 - try_acquire_owned on a per-tenant tokio Semaphore held in this handler (map at :70ff)",
+    "src/tenant_config/mod.rs:116-125 and book/src/deployment/multi-tenancy.md:81-86, 110-124 - 'Enforced by a per-tenant semaphore'; neither says per replica",
+    "src/handler/messaging/commit.rs:38 then :139-150 - the slot is taken before the turn-claim wait (up to executor_drain_timeout, 5 s), so a send waiting on another replica's claim holds a slot"
+   ],
+   "test": "none for replicas (tenant_limits_tests.rs is in-process). Not run.",
+   "summary": "max_concurrent_tasks is enforced per process, so a fleet of N admits N times the limit, and the docs do not say so.",
+   "remaining": "A decision: document it as per replica, or enforce it fleet-wide.",
+   "theme": "fleet-limits",
+   "effort": "S",
+   "breaking": "none for (a); behaviour for (b)",
+   "probe": "none (settled by reading). Optional demo: report X15.",
+   "options": "(a) Document it as per replica (size it as the fleet limit / N; HPA changes N), and log at build when a PerTenantConfig sets it over a store that hands out turn claims. XS, no behaviour change. (b) Count live claims per tenant at claim time: a2a_claim_turn takes pg_advisory_xact_lock(hashtext('a2a.tenant:'||scope)) and refuses past the limit (the scope column already holds the tenant). M; one more lock per turn, and the limit is passed to the claim function. (c) A lease-row semaphore table renewed by the claim renewer. L. Recommendation: (a) now; (b) when someone needs the cap to hold across replicas.",
+   "replica_failure": "A tenant capped at 10 runs up to 10 x N turns at once (20-50 on 2-5 pods); the cap protects each pod, not the fleet or a downstream model quota. Pods disagree: a tenant can be refused on one pod while another has room.",
+   "production_refuse": "No refusal (it would block legitimate configs); warn at build when it is set over a shared task store."
+  },
+  {
+   "id": "E-F13",
+   "verdict": "needs_decision",
+   "severity_now": "high",
+   "evidence": [
+    "src/builder.rs:1599-1630 - check_production refuses only halt_store.is_none() and lease_store.is_none()",
+    "src/profile.rs:104-128 - the profile's own unsigned() and a_complete_production_configuration_builds use InMemoryHaltStore and InMemoryLeaseStore, and it builds",
+    "docs/adr/0025-production-profile.md:41-44 - deliberate: 'Any store satisfies the check, in-memory ones included ... a single-process deployment may want in-memory'",
+    "src/handler/lease.rs:119-131 with src/store/lease/mod.rs:135-147 - a lease renewal rides GetTask (handler/lifecycle/get_task.rs:56); in memory, a renewal reaching a replica that did not grant the lease updates nothing, and the granting replica's watcher (lease.rs:148-172) reads only its own store, sees no renewal and stops the task",
+    "src/store/halt/mod.rs:113-140 and src/store/lease/mod.rs:58-98 - neither trait says whether it is shared; builder.rs:1395-1413 (E-F4) already uses task_store.turn_claims().is_some() as the 'shared store' signal",
+    "src/store/lease/ has postgres.rs only: there is no SQLite lease store, so refusing in-memory leases over a shared SQLite store would leave Production unreachable for one-host multi-process SQLite"
+   ],
+   "test": "none that refuses; profile.rs production_tests pins the opposite (in-memory accepted). Read, not run.",
+   "summary": "Production still accepts in-memory halt and lease stores on a fleet. Severity raised from Medium: with an in-memory lease store, a parent's GetTask lease renewals that the balancer sends to other pods are no-ops, so the pod running a delegated child stops it while the parent is still renewing. And the halt (kill switch) stops one pod only.",
+   "remaining": "A policy decision that amends ADR 0025.",
+   "theme": "production-profile",
+   "effort": "M",
+   "breaking": "behaviour: build() refuses configurations it accepted",
+   "probe": "none (settled by reading). Optional demo: report X16, plus a lease variant: Production with InMemoryLeaseStore on 2 replicas; a delegated 'hold' with a 3 s lease renewed by GetTask with the lease extension every 1 s through a round-robin balancer; the task is stopped within a few TTLs.",
+   "options": "(a) Add an additive default method to HaltStore, LeaseStore, PushConfigStore and AuditStore, e.g. fn process_local(&self) -> bool { false }, true for the InMemory* types. When task_store.turn_claims().is_some(), Production refuses: a process-local halt store; a process-local lease store; a process-local push-config store when a push sender is set (E-F4 refuses this only when the card declares push); and, under Auditable, a process-local audit store. It warns for a RateLimitInterceptor without a shared counter, tenant max_concurrent_tasks (E-F12) and AuthFailureThrottle (E-F15, no shared option yet). Single-process deployments (no turn claims) keep in-memory. Needs a SQLite lease store or an explicit with_single_host() escape for one-host SQLite. M; behaviour change for the few who combine Production, a SQL store and in-memory halt/lease. (b) Warn instead of refuse: no breakage, but ADR 0025 chose refusal because 'a warning in a log nobody reads protects nobody'. (c) Keep and document. Recommendation: (a).",
+   "replica_failure": "A halt given through the balancer reaches one pod; the other N-1 keep admitting and running that tenant's work, and a pod restarted after the halt comes back unhalted. With an in-memory lease store, delegated tasks are stopped although their parent renews: with renewals every TTL/3, each TTL the granting pod is missed with probability ((N-1)/N)^3, which is 1/8 at N=2 and about 1/2 at N=5.",
+   "production_refuse": "Yes, when the task store hands out turn claims: refuse process-local halt, lease, push-config (with a push sender) and audit (under Auditable) stores; see options."
+  },
+  {
+   "id": "E-F14",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "src/handler/push_config.rs:104-138 - the per-task cap's read-decide-write is held under self.keyed_lock(format!(\"push:{task}\")), a per-handler map; the code's own comment says an overshoot here is permanent",
+    "src/push/postgres_config_store.rs set() is an upsert keyed (task_id, id) with no count check",
+    "src/handler/messaging/create.rs:201-230 - inline configs on a send take the same path"
+   ],
+   "test": "push_config.rs unit tests cover the in-process lock (measured 2026-08-19 in its comment); none across processes. Not run.",
+   "summary": "Two creates for one task on two replicas both read a count under the cap and both store, exceeding it by up to N-1, permanently.",
+   "remaining": "Enforce in the SQL stores: INSERT ... SELECT ... WHERE (SELECT count(*) FROM push_configs WHERE task_id=$1) < $cap under pg_advisory_xact_lock(hashtextextended('push:'||task_id,0)), or pass the cap to set().",
+   "theme": "fleet-limits",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "none",
+   "replica_failure": "Concurrent CreateTaskPushNotificationConfig calls for one task, spread by the balancer, can store cap + N - 1 configs (default cap 100); every later event fans out to all of them. Bounded and low impact.",
+   "production_refuse": "No."
+  },
+  {
+   "id": "E-F15",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "src/auth/throttle.rs:152-156 - counts live in a Mutex<HashMap> in the interceptor; :181-196 new() takes no counter; no with_shared_counter or RateLimitCounter on it (grep)",
+    "commit c76299c (2026-10-31) changed only the key (/64, trusted proxies), not where it is counted",
+    "book/src/building-agents/authentication/throttling.md and book/src/deployment/production/limits.md:159-168 - no word that the budget is per replica (grep 'replica' finds only the rate limiter's shared counter)"
+   ],
+   "test": "auth/throttle_tests.rs and tests/auth_failure_throttle.rs are single-process. Not run.",
+   "summary": "AuthFailureThrottle still counts per process with no shared option, so a fleet gives a peer N x max_failures per window; round-robin spreads the failures so each pod sees 1/N of them.",
+   "remaining": "Accept a RateLimitCounter (with_shared_counter, as RateLimitInterceptor does) keyed 'authfail:<peer>'; document the per-replica budget until then.",
+   "theme": "fleet-limits",
+   "effort": "M",
+   "breaking": "none",
+   "probe": "none",
+   "replica_failure": "A brute-forcer gets 2-5 x the configured attempts per window. Low with high-entropy bearer tokens or API keys; matters for guessable credentials.",
+   "production_refuse": "Not possible today (no shared option). Once one exists, warn when a throttle is registered without it over a shared store."
+  },
+  {
+   "id": "E-F16",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "src/rate_limit/window.rs:184-196 - the window number comes from this replica's SystemTime::now() and is what the shared counter is given",
+    "src/rate_limit/shared.rs:139 SWEEP_SQL 'DELETE FROM a2a_rate_limit WHERE window_no < $1' and :280-283 - every 1,000th count sweeps with the caller's own current window"
+   ],
+   "test": "rate_limit/shared_tests.rs sweep cadence tests use one clock. Not run.",
+   "summary": "A replica whose clock is ahead deletes the window others are still counting in when its sweep lands in the skew interval, resetting their counts; near a boundary replicas also count in different windows.",
+   "remaining": "Compute the window in SQL (floor(extract(epoch from now())/window_secs)) and sweep window_no < current - 1.",
+   "theme": "db-clock",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "none (report X19 would show it with faketime)",
+   "replica_failure": "With NTP-synced pods (ms skew), a rare extra limit's worth of admissions at a window boundary; with a pod skewed by seconds, more often. Low.",
+   "production_refuse": "No."
+  },
+  {
+   "id": "E-F17",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "src/handler/lease.rs:101-103 - grant writes now_unix_ms() + ttl from the granting replica's clock; :125-127 renew passes the renewing replica's now_unix_ms()",
+    "src/store/lease/postgres.rs:80-96 - 'UPDATE a2a_leases SET deadline_ms = $3 + ttl_ms' with $3 from the application",
+    "src/handler/lease.rs:143-145, 163-164 - lapse is judged on the owner's clock: now_unix_ms() > deadline",
+    "src/store/lease/mod.rs:31-35 - now_unix_ms is SystemTime"
+   ],
+   "test": "handler/lease/tests.rs and store/lease/tests.rs use one clock. Not run.",
+   "summary": "Lease deadlines mix replica wall clocks: a renewal from a pod behind the owner shortens the lease by the skew, and skew past the TTL stops delegated tasks.",
+   "remaining": "Use the database's now() for grant, renew and the lapse check (SELECT deadline_ms < extract(epoch from now())*1000).",
+   "theme": "db-clock",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "none",
+   "replica_failure": "Only on a pod with a broken clock (skew comparable to the lease TTL): delegated tasks stop early. Lowered from Low-Medium because NTP keeps Kubernetes and Docker hosts within milliseconds.",
+   "production_refuse": "No."
+  },
+  {
+   "id": "E-F18",
+   "verdict": "needs_decision",
+   "severity_now": "medium",
+   "evidence": [
+    "src/audit/log.rs:22 MAX_APPEND_ATTEMPTS = 8; :167-205 append_locked: head() read, seal, store.append; a lost (chain, seq) re-reads the head immediately, with no backoff or jitter",
+    "src/audit/log.rs:147-153 - chain_lock is per process; :40-44 docs: 'replicas interleave on one chain'",
+    "src/audit/postgres.rs:121-140 - INSERT ... ON CONFLICT (chain, seq) DO NOTHING; Conflict means lost race",
+    "src/audit/log.rs:192 - time from a2a_protocol_types::utc_now_iso8601(), the local clock",
+    "The chain is TenantContext::current(): one chain ('') for a whole single-tenant fleet (audit/task_store.rs:49, audit/mod.rs:94)"
+   ],
+   "test": "audit tests are single-process. Not run.",
+   "summary": "One optimistic append point per tenant chain for the whole fleet: each append is at least 2 round trips and every success invalidates the other replicas' reads. Back of the envelope (conjecture, not measured): with N saturated contenders a request loses 8 rounds with probability about ((N-1)/N)^8, 0.4% at N=2, 3.9% at N=3, 17% at N=5. So failures may appear well below the report's N >= 9, and under require_record(true) (Auditable) those requests are refused.",
+   "remaining": "A decision on the append protocol; then thresholds measured (X17).",
+   "theme": "audit-fleet",
+   "effort": "M",
+   "breaking": "none for (a)/(c); wire/format for (b)",
+   "probe": "Report X17: 1, 2, 3 and 5 replicas with AuditLog over PostgresAuditStore and require_record(true), load at 200-500 rps through a round-robin balancer; count 'audit append lost the race' errors and refused requests, and audited appends/s. Decides the thresholds; the mechanism is settled by reading.",
+   "options": "(a) Append in one transaction under pg_advisory_xact_lock(hashtextextended('a2a.audit:'||chain,0)): read head, insert, commit. No lost races and the same single-chain order; throughput stays bounded by one transaction per append per chain. S-M, no format change. (b) Per-replica sub-chains with periodic cross-signed checkpoints: scales, but changes the chain model, export and verification. L. (c) Jittered backoff and more attempts: XS, a mitigation only. Also take time_ms from the database in (a). Recommendation: (a).",
+   "replica_failure": "With auditing on PostgreSQL and require_record(true), under sustained load on 3-5 pods a few percent of audited calls fail 'audit append lost the race' and are refused; adding pods adds contention, not audited throughput.",
+   "production_refuse": "No (Auditable could refuse an in-memory audit store over a shared task store; see E-F13 option a)."
+  },
+  {
+   "id": "E-F19",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "src/audit/log.rs:300-336 - begin_run/run_of/end_run keep a per-process map bounded at MAX_TRACKED_RUNS 65,536 (:30)",
+    "src/audit/mod.rs:112 begin_run on run start; src/audit/task_store.rs:53 run_of on each appended event; :95 end_run only on a terminal event this process appends",
+    "A turn that parks on A and continues on B leaves A's entry; anything A later appends for that task (a reaper ending it, reaper/mod.rs:192-205 through the audited store; a supersede record) carries turn 1's runSeq, not the last run's",
+    "Misread sub-claim: src/audit/mod.rs:117-129 record_cancel_requested never sets runSeq on any replica, so 'a CancelTask handled by B records no runSeq' is not caused by replicas"
+   ],
+   "test": "audit tests are single-process. Not run.",
+   "summary": "The run registry is per process: entries linger on the replica that ran an earlier turn and can misattribute later records it writes for the task. The cancel sub-claim is not replica-specific.",
+   "remaining": "Look up the run from the chain (the last run.started record for the task) when the local map misses or is older than the task's last turn, or key entries by claim token and drop them on release.",
+   "theme": "audit-fleet",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "none",
+   "replica_failure": "A reaper's Failed record (or a supersede record) written on a pod that ran an earlier turn names that earlier turn's caller. Audit accuracy only.",
+   "production_refuse": "No."
+  },
+  {
+   "id": "E-F20",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "src/handler/event_processing/background/processor.rs:160-165, 197-206 - a terminal event is appended after the store has ruled on it, one round trip after the terminal save",
+    "src/handler/lifecycle/subscribe.rs:107-112 - a non-owner's poll that finds the stored task terminal returns finished(); :631-650 builds the frame with metadata: None and through = last_event_seq read then",
+    "src/streaming/event_queue/in_memory.rs:1522-1548 close_through - the synthesized frame is queued only when the replay page holds no terminal event, so the race needs the poll, last_event_seq and the replay read all to land before the owner's terminal append",
+    "src/handler/messaging/execute.rs:399-404 - event metadata carries {\"error\": ...}; handler/budget.rs:138-142 budget status is attached to event metadata",
+    "Misread sub-claim: the failure class is not lost; it rides status.message metadata (execute.rs:416-438, set_class), which finished() copies with task.status"
+   ],
+   "test": "none for the race. Not run.",
+   "summary": "A non-owner can still end a stream on a synthesized terminal frame without the event's metadata.error and budget report; the failure class and message do survive. The window is about one round trip per terminal event and needs three reads to fit in it.",
+   "remaining": "In finished(), when last_event_seq is below the stored task's position (get_with_position), wait (bounded by subscribe_replay_catchup) for the log to reach it before synthesizing.",
+   "theme": "event-positions",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "Frequency only, report X18: 500 runs of an executor that fails, a subscriber attached through the other replica; count terminal frames lacking metadata.error.",
+   "replica_failure": "Rarely, a client streaming through a pod that does not run the task gets a Failed frame without metadata.error or the budget report, while one on the owner gets them.",
+   "production_refuse": "No."
+  },
+  {
+   "id": "E-F21",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "src/store/retention/postgres.rs:50-57 - DELETE ... WHERE ctid IN (SELECT ctid ... LIMIT $3) with no FOR UPDATE SKIP LOCKED; :74-77 rows_affected == 0 sets complete = true",
+    "Under READ COMMITTED two concurrent sweeps pick the same ctids; the second waits on the first's row locks and then skips the deleted rows (PostgreSQL semantics, from knowledge, not run), possibly affecting 0 rows and reporting complete while eligible rows remain",
+    "src/store/postgres_store/mod.rs:254-256, tenant_postgres_store/mod.rs:206-208 and book/src/deployment/horizontal-scaling/sustained-load.md:104 - 'two sweeps racing delete disjoint sets' (on SQLite the single writer makes that true; on PostgreSQL it is not)"
+   ],
+   "test": "none concurrent. Not run.",
+   "summary": "Concurrent PostgreSQL sweeps overlap rather than split the work, and one can report complete=true early. No data harm.",
+   "remaining": "SELECT ctid ... LIMIT $3 FOR UPDATE SKIP LOCKED in the subquery; correct the doc comments and sustained-load.md.",
+   "theme": "retention",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "To prove the fix, report X20: purge_expired from 3 processes at once over 50k terminal rows, batch 1000; count reports with complete=true while SELECT count(*) of eligible rows > 0.",
+   "replica_failure": "A per-pod sweep loop (or CronJob running on several pods) stops early with complete=true while rows remain; wasted work, table grows a bit longer.",
+   "production_refuse": "No."
+  },
+  {
+   "id": "E-F22",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "src/agent_card/static_handler.rs:46-52 - last_modified = format_http_date(SystemTime::now()) at construction, so each pod's differs",
+    "src/agent_card/caching.rs:141-168 - If-None-Match decides when present; If-Modified-Since must equal this pod's string exactly",
+    "crates/a2a-protocol-types/src/signing.rs:399-405 - sign_card_es256 is randomized ECDSA, so a card signed at each pod's boot has different bytes and a different ETag per pod; sign_card_ed25519 (:448) is deterministic",
+    "tests/card_etag_determinism.rs pins the unsigned card's ETag as content-derived (the map-order fix), so unsigned cards agree across pods"
+   ],
+   "test": "tests/card_etag_determinism.rs covers ETag determinism for unsigned cards only. Not run.",
+   "summary": "Last-Modified differs per pod, and a card ES256-signed at boot has a different signature and ETag per pod; revalidations miss on (N-1)/N of requests. Cache efficiency and signature-pinning only, no stale data.",
+   "remaining": "Derive Last-Modified from the card (or the build) rather than process start; document signing the card once offline or with Ed25519 for fleets.",
+   "theme": "agent-card-cache",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "none",
+   "replica_failure": "Clients revalidating the card get 200 instead of 304 most of the time; a client pinning the card's ES256 signature sees it change from pod to pod (each one valid).",
+   "production_refuse": "No."
+  },
+  {
+   "id": "E-F23",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "src/handler/messaging/commit.rs:88-93 - the per-context lock (keyed_lock, per process) is taken and held",
+    "src/handler/messaging/commit.rs:139-150 -> claimed.rs:110-118, 139-148 -> handler/claims/mod.rs:192-217 claim_turn retries for up to executor_drain_timeout (5 s) while that guard is still held; it moves into CommitGuard only after (commit.rs:156-163)"
+   ],
+   "test": "none. Not run.",
+   "summary": "A send waiting up to 5 s for another replica's claim holds this replica's per-context lock, so every other send in that context on this replica waits behind it.",
+   "remaining": "Take the claim before the context lock for a continuation of a known task, or release the lock across the remote wait and re-run the find under it.",
+   "theme": "send-admission",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "none",
+   "replica_failure": "In one context with many tasks (a supervisor fanning out), a continuation stuck behind a remote claim delays every other send in that context on the same pod by up to 5 s.",
+   "production_refuse": "No."
+  },
+  {
+   "id": "E-F24",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "src/handler/messaging/commit.rs:130-135 - the send's idempotency key is claimed (committed INSERT into idempotency_keys) before the turn claim",
+    "src/handler/messaging/claimed.rs:110-118 - try_claim_turn (one a2a_claim_turn round trip plus a cancellation_tokens read) answers Busy, and only then does wait_for_turn release the key (:145-147, a DELETE round trip)",
+    "src/handler/messaging/idempotency.rs:88-93, 124-151 - a duplicate (same key, same message id) reaching another replica in that window gets IdempotencyClaim::Replay and is answered with the task as stored now (the previous turn's state), executing nothing",
+    "The original then waits up to 5 s and, if the other turn still runs, is refused 'already being processed' (claims/mod.rs:209-212): the message never runs, and the retry was told it was accepted",
+    "tests/turn_claims/lifecycle.rs:58-89 a_retry_while_its_send_waits_on_another_replica_is_not_replayed sends the retry 150 ms later, after the key is released, so it does not cover this window"
+   ],
+   "test": "none for the window (the lifecycle test above starts after it). Not run.",
+   "summary": "The conjecture is read-confirmed: between the key claim and its release on Busy (about two or three database round trips) a retry on another replica is answered as a replay, and the send it repeats can then be refused.",
+   "remaining": "Try the turn claim before claiming the key, or insert the key as 'pending' and make a replayer wait for it to become final (or be released) before answering.",
+   "theme": "send-admission",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "Two processes, N1 (7811) via pg_a with no toxic and N2 (7812) via pg_b with a 300 ms latency toxic (POST /proxies/pg_b/toxics {\"type\":\"latency\",\"attributes\":{\"latency\":300},\"stream\":\"downstream\"}), which widens the window to more than 0.5 s. 1) 'hold' to N1 with returnImmediately, task T. 2) Build a continuation M of T with metadata {\"a2a-rust.com/idempotency-key\":\"<uuid>\"} and returnImmediately. 3) Send M to N2 in a thread; poll psql SELECT 1 FROM idempotency_keys WHERE key='<uuid>' every 20 ms; the moment the row appears, send the identical M to N1. Decides: N1 answers a Task (no error) whose history lacks M's messageId; N2 answers 'already being processed' about 5 s later; tasks.data->'history' never gains M and no replica logs a run of M. Control: send the retry after the key row has gone; both are refused, as the existing test asserts.",
+   "replica_failure": "Rare: a client that retries within milliseconds (a hedged request, or a retry after a connection reset as a pod drains) on a task another pod is running can be told its message was accepted when it never ran.",
+   "production_refuse": "No."
+  },
+  {
+   "id": "E-F25",
+   "verdict": "needs_decision",
+   "severity_now": "low",
+   "evidence": [
+    "src/handler/limits/mod.rs:364-365 - subscribe_reattach_interval 250 ms, subscribe_max_idle None (deliberate, spec §3.1.6; pinned by tests/subscribe_no_idle_bound.rs)",
+    "src/handler/lifecycle/subscribe.rs:81-160 - each idle stream polls store.get, then last_event_seq, every interval: about 8 statements/s, on the task store's pool, the one claims renew on (E-F7)",
+    "Improved since: the reaper (57f034e) ends orphaned tasks, so a stream on an orphan now ends at its next poll instead of polling forever; parked (input-required) tasks still poll for as long as the client stays",
+    "During a store outage each subscriber keeps one acquire pending (up to 30 s each), queued ahead of renewals in sqlx's fair pool when the database returns (feeds NEW-e-1)"
+   ],
+   "test": "tests/subscribe_no_idle_bound.rs pins the no-bound default; nothing measures pool impact. Not run.",
+   "summary": "Polling is unbounded by design and shares the pool with claim renewal; orphans no longer poll forever since the reaper. The cost is about 8 statements/s per idle cross-replica subscriber, on the pool that keeps claims alive.",
+   "remaining": "A decision on how to cut idle polling without breaking §3.1.6.",
+   "theme": "subscribe-polling",
+   "effort": "M",
+   "breaking": "none for (a)/(c); behaviour (latency) for (a)",
+   "probe": "none for the mechanism; capacity numbers need a run (2,000 idle subscriptions on one pod; pg_stat_statements calls/s and renewal latency).",
+   "options": "(a) Back off the poll while nothing changes (250 ms doubling to a few seconds, reset on change); cheap, keeps §3.1.6, adds latency only to idle streams. (b) LISTEN/NOTIFY on appends (KNOWN unbuilt; poolers need care). (c) Run subscriber polls on a separate small read pool, and renewals on their own connection (E-F7). Recommendation: (a) plus (c) now, (b) later.",
+   "replica_failure": "Hundreds of clients holding SubscribeToTask on parked tasks through the balancer cost thousands of statements/s per pod and contend with claim renewals on the same pool (E-F7, NEW-e-1).",
+   "production_refuse": "No."
+  },
+  {
+   "id": "E-F26",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "src/store/claim/sqlite.rs:113-117 now_ms() is SystemTime; :170, 207, 230, 241, 263 bind it for claim, renew, cancel, sweep; :59, 66 the abandoned query uses strftime('now'), also wall time",
+    "src/store/claim/sqlite.rs:6-10 - 'never on a network filesystem' is a comment; grep finds no statfs or detection anywhere, and book/src/deployment/horizontal-scaling.md:47,115 limits SQLite sharing to one host"
+   ],
+   "test": "none. Not run.",
+   "summary": "SQLite claims use the host wall clock, so a forward step past the TTL (NTP step, VM resume) makes live claims look expired until the next renewal, during which a continuation or the reaper can take them; nothing detects a SQLite file on a network filesystem.",
+   "remaining": "Warn at open when the database file is on NFS/CIFS/FUSE (statfs f_type); state the clock dependency.",
+   "theme": "db-clock",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "none",
+   "replica_failure": "Not a PostgreSQL issue. In Kubernetes, pods sharing a SQLite file on a ReadWriteMany volume get no warning; claims and WAL are unreliable there.",
+   "production_refuse": "No (cannot be detected reliably; warn)."
+  }
+ ],
+ "new_findings": [
+  {
+   "id": "NEW-e-1",
+   "severity": "medium",
+   "where": "src/handler/claims/reaper/mod.rs:89-131 (look/end), src/store/claim/postgres.rs:52-57 (ABANDONED_PLAIN_SQL), src/handler/claims/mod.rs:389-396 (renewal error path), src/store/pg_retry.rs:139-153 (no acquire_timeout)",
+   "finding": "A database outage or failover longer than the claim TTL (15 s) lets the reapers end LIVE turns. During the outage no claim is renewed, so every claim expires on the database clock and every quiet turn's row is older than a TTL. When the database returns, each replica's pending or next reaper look (every TTL), including the owner's own (end() never checks claims.held), races the owners' renewals, which are themselves stuck in sqlx acquire/connect backoff. A reaper that wins claims the task, stores failed/transient with 'the replica running this task stopped before it finished', pushes it, and the owner then cancels its executor ('taken over'). The renewal UPDATE does not check expiry, so an owner that renews first keeps its claim; the outcome is a race.",
+   "scenario": "Kubernetes on a managed PostgreSQL (RDS/Cloud SQL HA failover typically takes 20-120 s), 2-5 pods: after a failover, in-flight turns waiting on a model (no events to write) are ended failed/transient although every pod stayed up; clients re-send, so side effects run twice. Single pod: the pod's own reaper can end its own turn. The book's 'Restart PostgreSQL mid-turn: the turn went on writing' was measured before the reaper and with a short restart. Probe: partition_live.py setup; 'hold' on N1; disable both pg_a and pg_b for 25 s, re-enable; repeat 10 times and count tasks stored TASK_STATE_FAILED with the reaper's text while N1 logs 'hold ended, cancelled=true'.",
+   "read_only": true,
+   "theme": "claims-liveness"
+  },
+  {
+   "id": "NEW-e-2",
+   "severity": "low",
+   "where": "src/handler/lifecycle/cancel_task.rs:125-170; src/handler/event_processing/background/processor.rs:160-165, 212-248; src/store/postgres_store/event_log.rs:38-43",
+   "finding": "A cancel taken by a replica not running the task appends nothing to the task's event log (throwaway writer, then save_status_delta only), so the log, and with the audit feature the chain's task.event records, never hold the Canceled ending. If the owner's executor writes once more after the cancel, that non-terminal event is appended (APPEND_SQL is fenced by the claim token only, not by terminal state, and non-terminal events are logged before the fold) and only then refused by the save. The log then ends on an event the stored task does not have, and supersede records the Canceled verdict only when the refused event was terminal. Same-replica cancels and the reaper (fixed for N-E-2) do log their ending.",
+   "scenario": "Audit export of a task cancelled through the balancer (N-1 of N cancels) shows no terminal task.event, and may show an artifact chunk recorded after the cancel; a log consumer replaying task_events never sees the task end.",
+   "read_only": true,
+   "theme": "cross-replica-cancel"
+  }
+ ]
+}

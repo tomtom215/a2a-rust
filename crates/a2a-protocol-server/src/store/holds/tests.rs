@@ -18,12 +18,11 @@ fn log(positions: std::ops::RangeInclusive<u64>) -> VecDeque<RecordedEvent> {
     positions
         .map(|seq| RecordedEvent {
             seq,
-            event: StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: TaskId::new("t"),
-                context_id: ContextId::new("c"),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            }),
+            event: StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                TaskId::new("t"),
+                ContextId::new("c"),
+                TaskStatus::new(TaskState::Working),
+            )),
         })
         .collect()
 }

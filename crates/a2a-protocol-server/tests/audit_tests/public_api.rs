@@ -128,14 +128,10 @@ fn artifact_new_construction() {
 #[test]
 fn artifact_validate_rejects_empty_parts() {
     // A2A spec requires at least one part. Artifact::validate() enforces this.
-    let artifact = Artifact {
-        id: a2a_protocol_types::artifact::ArtifactId::new("empty"),
-        name: None,
-        description: None,
-        parts: vec![],
-        extensions: None,
-        metadata: None,
-    };
+    let artifact = Artifact::unchecked(
+        a2a_protocol_types::artifact::ArtifactId::new("empty"),
+        vec![],
+    );
     assert!(
         artifact.validate().is_err(),
         "empty parts should fail validation"
@@ -366,12 +362,11 @@ async fn event_queue_manager_with_capacity() {
 
     // Write an event to verify the queue works.
     writer
-        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: task_id.clone(),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(TaskState::Working),
-            metadata: None,
-        }))
+        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            task_id.clone(),
+            ContextId::new("ctx"),
+            TaskStatus::new(TaskState::Working),
+        )))
         .await
         .expect("write event");
 
@@ -417,20 +412,17 @@ async fn event_queue_manager_destroy_all_clears() {
 #[test]
 fn request_context_with_stored_task() {
     let msg = make_message("test");
-    let ctx = RequestContext::new(msg, TaskId::new("task-1"), "ctx-1".into());
+    let ctx = RequestContext::new(msg, TaskId::new("task-1"), "ctx-1");
     assert!(
         ctx.stored_task.is_none(),
         "stored_task should initially be None"
     );
 
-    let stored = a2a_protocol_types::task::Task {
-        id: TaskId::new("old-task"),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let stored = a2a_protocol_types::task::Task::new(
+        TaskId::new("old-task"),
+        ContextId::new("ctx-1"),
+        TaskStatus::new(TaskState::Completed),
+    );
 
     let ctx = ctx.with_stored_task(stored.clone());
     assert!(
@@ -447,7 +439,7 @@ fn request_context_with_stored_task() {
 #[test]
 fn request_context_with_metadata() {
     let msg = make_message("test");
-    let ctx = RequestContext::new(msg, TaskId::new("task-1"), "ctx-1".into());
+    let ctx = RequestContext::new(msg, TaskId::new("task-1"), "ctx-1");
     assert!(ctx.metadata.is_none(), "metadata should initially be None");
 
     let meta = serde_json::json!({"key": "value"});

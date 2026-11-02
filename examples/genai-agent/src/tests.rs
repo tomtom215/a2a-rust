@@ -48,16 +48,7 @@ fn executor(fallback_on_error: bool) -> GenaiAgentExecutor {
 
 fn ctx_with(parts: Vec<Part>) -> RequestContext {
     RequestContext::new(
-        Message {
-            id: MessageId::new("m-1"),
-            role: MessageRole::User,
-            parts,
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        Message::new(MessageId::new("m-1"), MessageRole::User, parts),
         TaskId::new("t-1"),
         "ctx-1".to_owned(),
     )

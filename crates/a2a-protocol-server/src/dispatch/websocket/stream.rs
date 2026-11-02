@@ -6,7 +6,6 @@
 //! (`rpc_span::stream`). Moved out of `websocket.rs`, which is over the
 //! 500-line limit.
 
-use futures_util::SinkExt;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 use a2a_protocol_types::jsonrpc::{
@@ -52,14 +51,13 @@ async fn forward(
                     result: stream_resp,
                 };
                 let json = serde_json::to_string(&envelope).unwrap_or_default();
-                let mut w = writer.sink.lock().await;
-                if w.send(WsMessage::Text(json.into())).await.is_err() {
-                    return StreamOutcome::Abandoned; // Client disconnected
+                // Bounded: a consumer that stopped reading ends the stream
+                // instead of holding the sink for ever (audit D-07). A good write
+                // is the one that keeps a long subscription alive under an idle
+                // timeout, the consumer may say nothing for hours; `send` records it.
+                if !writer.send(WsMessage::Text(json.into())).await {
+                    return StreamOutcome::Abandoned; // Client disconnected or stopped reading
                 }
-                drop(w);
-                // This is the write that keeps a long subscription alive under
-                // an idle timeout: the consumer may say nothing for hours.
-                writer.activity.touch();
             }
             Err(e) => {
                 // The error's own code and details, as the SSE binding sends

@@ -20,7 +20,7 @@ a2a-protocol-server = { version = "0.16", features = ["axum"] }
 # agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_description("An example agent").with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
+# let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::rest("http://localhost:3000")).with_description("An example agent").with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
 use a2a_protocol_server::A2aRouter;
 use std::sync::Arc;
 
@@ -46,7 +46,7 @@ The returned `Router` can be merged with other Axum routes and middleware:
 ```rust
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {
 #     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::rest("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true))

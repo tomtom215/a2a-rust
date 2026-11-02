@@ -8,36 +8,39 @@
 use super::*;
 
 /// A halt is an operator's stop and ends `Canceled` even while the
-/// replica shuts down; shutdown alone ends a transient failure.
+/// replica shuts down; shutdown alone ends a transient failure, and so does a
+/// claim this replica could not keep (audit E-F7).
 #[test]
 fn a_halt_wins_over_a_shutdown() {
-    assert_eq!(Stop::of(true, true), Stop::Halted);
-    assert_eq!(Stop::of(true, false), Stop::Halted);
-    assert_eq!(Stop::of(false, true), Stop::ShutDown);
-    assert_eq!(Stop::of(false, false), Stop::No);
+    assert_eq!(Stop::of(true, true, true), Stop::Halted);
+    assert_eq!(Stop::of(true, false, false), Stop::Halted);
+    assert_eq!(Stop::of(false, true, false), Stop::ShutDown);
+    assert_eq!(
+        Stop::of(false, true, true),
+        Stop::ShutDown,
+        "shutdown names it first"
+    );
+    assert_eq!(Stop::of(false, false, true), Stop::ClaimLapsed);
+    assert_eq!(Stop::of(false, false, false), Stop::No);
 }
 
 use a2a_protocol_types::events::TaskStatusUpdateEvent;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 fn status(state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(state),
+    ))
 }
 
 fn snapshot(state: TaskState) -> StreamResponse {
-    StreamResponse::Task(Task {
-        id: TaskId::new("t"),
-        context_id: ContextId::new("c"),
-        status: TaskStatus::new(state),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    })
+    StreamResponse::Task(Task::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        TaskStatus::new(state),
+    ))
 }
 
 #[tokio::test]

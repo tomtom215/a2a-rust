@@ -50,6 +50,18 @@ pub fn now_unix_ms() -> i64 {
 /// - An error is an error: a store that cannot be read must not answer with
 ///   a deadline in the past, which would stop a child whose parent is alive.
 pub trait LeaseStore: Send + Sync + 'static {
+    /// Whether this store keeps its state in this process alone.
+    ///
+    /// The default is `false`: a store this crate cannot see into (yours, over
+    /// Redis, say) is taken to be shared. The in-memory ones answer `true`.
+    /// [`Profile::Production`](crate::profile::Profile::Production) reads it:
+    /// on a task store that is shared between processes, a store that only this
+    /// process can see makes the fleet behave as if it had no store
+    /// (audit E-F13).
+    fn is_process_local(&self) -> bool {
+        false
+    }
+
     /// Grants `task` a lease of `ttl_ms`, ending at `deadline_ms`.
     ///
     /// # Errors
@@ -120,6 +132,10 @@ impl InMemoryLeaseStore {
 }
 
 impl LeaseStore for InMemoryLeaseStore {
+    fn is_process_local(&self) -> bool {
+        true
+    }
+
     fn grant<'a>(
         &'a self,
         tenant: &'a str,

@@ -31,7 +31,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::failure::FailureClass;
 use a2a_protocol_types::message::Message;
 
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use a2a_protocol_types::budget::BudgetHandle;
 
@@ -73,17 +73,26 @@ pub(super) enum Stop {
     /// This replica is shutting down. Nobody cancelled the task, and another
     /// replica can run it: it ends `Failed`, failure class `transient`.
     ShutDown,
+    /// This replica could not keep the turn's claim (`handler::claims`): its
+    /// renewals went unanswered for most of the claim's time to live, so
+    /// another replica may take the task over, and the executor was stopped
+    /// before it could. Nobody cancelled the task: it ends `Failed`, failure
+    /// class `transient`, as a shutdown does (audit E-F7).
+    ClaimLapsed,
 }
 
 impl Stop {
-    /// How a run was stopped, from whether its turn was halted and whether
-    /// shutdown had begun when it returned. A halt wins: the operator's stop
-    /// is a cancellation.
-    pub(super) const fn of(halted: bool, shut_down: bool) -> Self {
+    /// How a run was stopped, from whether its turn was halted, whether
+    /// shutdown had begun when it returned, and whether its claim lapsed. A
+    /// halt wins: the operator's stop is a cancellation. Shutdown names the
+    /// cause before a lapsed claim does, as it releases the claims itself.
+    pub(super) const fn of(halted: bool, shut_down: bool, lapsed: bool) -> Self {
         if halted {
             Self::Halted
         } else if shut_down {
             Self::ShutDown
+        } else if lapsed {
+            Self::ClaimLapsed
         } else {
             Self::No
         }
@@ -92,7 +101,15 @@ impl Stop {
 
 /// The status message of a turn shutdown ended (audit E-F2).
 pub const SHUT_DOWN: &str = "the server running this task shut down before the turn \
-    ended; the task did not complete, and sending it again may succeed";
+    ended; the task did not complete. To try again, send it as a new request (a new \
+    message id and idempotency key): a retry with the same key is answered with this task";
+
+/// The status message of a turn stopped because its replica could not keep
+/// the claim on the task (audit E-F7).
+pub const CLAIM_LAPSED: &str = "the replica running this task lost contact with the shared \
+    store and stopped the turn before another replica could take the task over; the task \
+    did not complete. To try again, send it as a new request (a new message id and \
+    idempotency key): a retry with the same key is answered with this task";
 
 impl TerminalTracking {
     /// Wraps the task's writer.
@@ -195,20 +212,57 @@ impl TerminalTracking {
                 );
             }
         } else if stop == Stop::ShutDown && !self.terminal_written() {
-            self.end_for_shutdown(executor, ctx).await;
+            self.end_transient(executor, ctx, SHUT_DOWN, "shutdown")
+                .await;
+        } else if stop == Stop::ClaimLapsed && !self.terminal_written() {
+            self.end_transient(executor, ctx, CLAIM_LAPSED, "a lapsed claim")
+                .await;
         } else {
+            if result.is_ok() && self.left_unsettled(ctx) {
+                trace_warn!(
+                    task_id = %ctx.task_id,
+                    "the executor returned Ok(()) with the task still submitted or working, \
+                     having written no terminal or interrupted state; the task stays that way \
+                     and is not completed. Write completed, failed, canceled, rejected, \
+                     input-required or auth-required before returning"
+                );
+            }
             self.repark_if_silent(ctx).await;
         }
     }
 
-    /// Ends a turn this replica's shutdown stopped: `Failed`, failure class
-    /// `transient`, saying it may be sent again (audit E-F2). `Canceled`
-    /// would tell the caller someone cancelled it, and a caller does not
-    /// repeat a cancelled task; here nobody did, and another replica can run
-    /// it. The cancel hook still runs, for what it releases; a `Canceled` it
-    /// writes is written as this failure instead.
-    async fn end_for_shutdown(&self, executor: &dyn AgentExecutor, ctx: &RequestContext) {
-        let error = A2aError::unavailable(SHUT_DOWN);
+    /// Whether a turn that returned `Ok` left its task `submitted` or
+    /// `working` (audit G-21).
+    ///
+    /// The task stays in the last state written (the executor guide says so),
+    /// and nothing says why: with the database stores the reaper ends it
+    /// `failed` a claim lifetime later, without the in-memory store it stays
+    /// `working` for good. A turn the caller cancelled, or one that wrote a
+    /// terminal state or asked for input, is not this. Neither is one that
+    /// answered with a message alone: it set no state.
+    pub(super) fn left_unsettled(&self, ctx: &RequestContext) -> bool {
+        self.stated.load(Ordering::Acquire)
+            && !self.terminal_written()
+            && !self.turn.is_parked()
+            && !ctx.cancellation_token.is_cancelled()
+    }
+
+    /// Ends a turn this replica stopped for a reason of its own, its shutdown
+    /// (audit E-F2) or a claim it could not keep (E-F7): `Failed`, failure
+    /// class `transient`, saying it may be sent again. `Canceled` would tell
+    /// the caller someone cancelled it, and a caller does not repeat a
+    /// cancelled task; here nobody did, and another replica can run it. The
+    /// cancel hook still runs, for what it releases; a `Canceled` it writes
+    /// is written as this failure instead. `cause` names the reason in the
+    /// log line for a hook that fails.
+    async fn end_transient(
+        &self,
+        executor: &dyn AgentExecutor,
+        ctx: &RequestContext,
+        message: &'static str,
+        #[cfg_attr(not(feature = "tracing"), allow(unused_variables))] cause: &'static str,
+    ) {
+        let error = A2aError::unavailable(message);
         *self.replacement() = Some(super::execute::failure_status(
             ctx,
             &error,
@@ -218,7 +272,7 @@ impl TerminalTracking {
             trace_warn!(
                 task_id = %ctx.task_id,
                 error = %_e,
-                "cancel hook failed during shutdown"
+                "cancel hook failed during {cause}"
             );
         }
         *self.replacement() = None;
@@ -268,24 +322,18 @@ impl TerminalTracking {
         let Some(message) = said else {
             return;
         };
-        let update = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
-            status: TaskStatus {
-                state: waited,
-                message: Some(message),
-                timestamp: None,
-            },
-            metadata: None,
-        });
+        let update = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            TaskStatus::new(waited).with_message(message),
+        ));
         // The span has the reply's parts from the `Message` already; it sees
         // the state alone, or records the reply twice.
-        let seen = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
-            status: TaskStatus::new(waited),
-            metadata: None,
-        });
+        let seen = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            TaskStatus::new(waited),
+        ));
         if let Err(_e) = self.put(update, Some(&seen)).await {
             trace_warn!(task_id = %ctx.task_id, error = %_e, "re-parking a follow-up failed");
         }
@@ -382,3 +430,7 @@ impl EventQueueWriter for TerminalTracking {
 #[cfg(test)]
 #[path = "terminal_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "unsettled_tests.rs"]
+mod unsettled_tests;

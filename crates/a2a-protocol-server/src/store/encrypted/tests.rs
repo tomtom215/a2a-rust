@@ -33,23 +33,19 @@ pub(super) fn task(id: &str) -> Task {
         .with_filename(format!("{SECRET}.pdf"))
         .with_media_type("application/pdf");
     let noted = Part::text("x").with_metadata(serde_json::json!({ "note": SECRET }));
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus {
-            message: Some(Message::agent_text("s", format!("{SECRET} status"))),
-            ..TaskStatus::new(TaskState::Working)
-        },
-        history: Some(vec![
-            Message::user_text("h1", format!("{SECRET} asked")),
-            Message::user("h2", vec![raw, noted]),
-        ]),
-        artifacts: Some(vec![Artifact::new(
-            "a",
-            vec![Part::text(format!("{SECRET} made"))],
-        )]),
-        metadata: None,
-    }
+    Task::new(TaskId::new(id), ContextId::new("ctx"), {
+        let mut built = TaskStatus::new(TaskState::Working);
+        built.message = Some(Message::agent_text("s", format!("{SECRET} status")));
+        built
+    })
+    .with_history(vec![
+        Message::user_text("h1", format!("{SECRET} asked")),
+        Message::user("h2", vec![raw, noted]),
+    ])
+    .with_artifacts(vec![Artifact::new(
+        "a",
+        vec![Part::text(format!("{SECRET} made"))],
+    )])
 }
 
 pub(super) fn json<T: serde::Serialize>(value: &T) -> String {
@@ -143,20 +139,19 @@ pub(super) fn events(t: &Task) -> Vec<StreamResponse> {
     vec![
         StreamResponse::Task(t.clone()),
         StreamResponse::Message(Message::agent_text("m", SECRET)),
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: t.id.clone(),
-            context_id: t.context_id.clone(),
-            status: t.status.clone(),
-            metadata: None,
-        }),
-        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: t.id.clone(),
-            context_id: t.context_id.clone(),
-            artifact: Artifact::new("a", vec![Part::text(SECRET)]),
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        }),
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            t.id.clone(),
+            t.context_id.clone(),
+            t.status.clone(),
+        )),
+        StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                t.id.clone(),
+                t.context_id.clone(),
+                Artifact::new("a", vec![Part::text(SECRET)]),
+            )
+            .with_last_chunk(true),
+        ),
     ]
 }
 
@@ -292,14 +287,13 @@ async fn a_value_moved_within_its_task_is_refused() {
 }
 
 fn bare(id: &str, message: &str, artifact: &str) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(TaskState::Working),
-        history: Some(vec![Message::user_text(message, SECRET)]),
-        artifacts: Some(vec![Artifact::new(artifact, vec![Part::text("other")])]),
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("ctx"),
+        TaskStatus::new(TaskState::Working),
+    )
+    .with_history(vec![Message::user_text(message, SECRET)])
+    .with_artifacts(vec![Artifact::new(artifact, vec![Part::text("other")])])
 }
 
 /// A message and an artifact with one id are two places: a part does not

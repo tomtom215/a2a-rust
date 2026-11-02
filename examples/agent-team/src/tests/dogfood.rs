@@ -105,14 +105,11 @@ pub async fn test_push_list_jsonrpc_regression(ctx: &TestContext) -> TestResult 
     };
     let tid = task.id.to_string();
     for i in 0..2 {
-        let config = TaskPushNotificationConfig {
-            tenant: None,
-            id: None,
-            task_id: Some(tid.clone()),
-            url: format!("http://{}/webhook", ctx.webhook_addr),
-            token: Some(format!("regression-token-{i}")),
-            authentication: None,
-        };
+        let config = TaskPushNotificationConfig::new(
+            tid.clone(),
+            format!("http://{}/webhook", ctx.webhook_addr),
+        )
+        .with_token(format!("regression-token-{i}"));
         client.set_push_config(config).await.unwrap();
     }
     match client
@@ -159,17 +156,13 @@ pub async fn test_push_event_classification(ctx: &TestContext) -> TestResult {
     match client.stream_message(make_send_params("slow")).await {
         Ok(mut stream) => {
             if let Some(Ok(StreamResponse::StatusUpdate(ev))) = stream.next().await {
-                let push_config = TaskPushNotificationConfig {
-                    tenant: None,
-                    id: None,
-                    task_id: Some(ev.task_id.0.clone()),
-                    url: webhook_url,
-                    token: Some("classify-test".into()),
-                    authentication: Some(AuthenticationInfo {
-                        scheme: "bearer".into(),
-                        credentials: Some("test-cred".into()),
-                    }),
-                };
+                let push_config =
+                    TaskPushNotificationConfig::new(ev.task_id.0.clone(), webhook_url)
+                        .with_token("classify-test")
+                        .with_authentication(AuthenticationInfo {
+                            scheme: "bearer".into(),
+                            credentials: Some("test-cred".into()),
+                        });
                 let _ = client.set_push_config(push_config).await;
             }
             while stream.next().await.is_some() {}
@@ -339,16 +332,12 @@ pub async fn test_list_tasks_context_filter(ctx: &TestContext) -> TestResult {
     let context_id = uuid::Uuid::new_v4().to_string();
     let params = MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![Part::text("fn ctx_filter() {}")],
-            task_id: None,
-            context_id: Some(a2a_protocol_types::task::ContextId::new(context_id.clone())),
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
+            vec![Part::text("fn ctx_filter() {}")],
+        )
+        .with_context_id(a2a_protocol_types::task::ContextId::new(context_id.clone())),
         configuration: None,
         metadata: None,
     };
@@ -403,19 +392,14 @@ pub async fn test_file_parts(ctx: &TestContext) -> TestResult {
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
     let params = MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![
+        message: Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
+            vec![
                 Part::text("fn with_file() {}"),
                 Part::file_bytes("YmluYXJ5IGRhdGEgaGVyZQ=="),
             ],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        ),
         configuration: None,
         metadata: None,
     };

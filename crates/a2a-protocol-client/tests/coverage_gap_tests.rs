@@ -206,37 +206,18 @@ fn client_from_card_with_valid_interface() {
     use a2a_protocol_client::A2aClient;
     use a2a_protocol_types::*;
 
-    let card = AgentCard {
-        url: None,
-        name: "Test".into(),
-        description: "Test agent".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "http://localhost:8080".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: Some("acme".into()),
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "s1".into(),
-            name: "skill".into(),
-            description: "A skill".into(),
-            tags: vec![],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: a2a_protocol_types::AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    };
+    let card = AgentCard::new(
+        "Test",
+        "1.0.0",
+        AgentInterface::new("http://localhost:8080", "JSONRPC")
+            .with_protocol_version("1.0.0")
+            .with_tenant("acme"),
+    )
+    .with_description("Test agent")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("s1", "skill", "A skill"))
+    .with_capabilities(a2a_protocol_types::AgentCapabilities::none());
 
     let client = A2aClient::from_card(&card).expect("from_card should succeed with valid card");
     assert_eq!(

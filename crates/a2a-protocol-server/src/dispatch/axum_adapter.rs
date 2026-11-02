@@ -49,11 +49,22 @@
 //! The returned router can be merged with other Axum routes, middleware, and
 //! layers:
 //!
-//! ```rust,ignore
+//! ```rust
+//! # use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
+//! # use a2a_protocol_server::RequestHandler;
+//! # use axum::{extract::Request, middleware, middleware::Next, response::Response, routing::get};
+//! # use std::sync::Arc;
+//! # async fn custom_handler() -> &'static str { "ok" }
+//! # async fn log_requests(req: Request, next: Next) -> Response { next.run(req).await }
+//! # fn compose(handler: Arc<RequestHandler>) -> axum::Router {
+//! // Any `tower` layer goes where `log_requests` is, such as
+//! // `tower_http::cors::CorsLayer::permissive()` from the `tower-http` crate.
 //! let app = axum::Router::new()
 //!     .merge(A2aRouter::new(handler).into_router())
-//!     .layer(tower_http::cors::CorsLayer::permissive())
+//!     .layer(middleware::from_fn(log_requests))
 //!     .route("/custom", get(custom_handler));
+//! # app
+//! # }
 //! ```
 //!
 //! # Multi-tenancy: use a resolver, not the URL prefix
@@ -128,6 +139,14 @@ mod validate;
 pub struct A2aRouter {
     handler: Arc<RequestHandler>,
     config: super::DispatchConfig,
+}
+
+impl std::fmt::Debug for A2aRouter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("A2aRouter")
+            .field("config", &self.config)
+            .finish_non_exhaustive()
+    }
 }
 
 impl A2aRouter {
@@ -931,14 +950,11 @@ mod tests {
 
     async fn seed_task(state: &A2aState, id: &str) {
         use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
-        let task = Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(TaskState::Submitted),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        };
+        let task = Task::new(
+            TaskId::new(id),
+            ContextId::new("ctx"),
+            TaskStatus::new(TaskState::Submitted),
+        );
         state.handler.task_store.save(&task).await.unwrap();
     }
 

@@ -20,11 +20,10 @@ pub struct Task {
     pub artifacts: Option<Vec<Artifact>>,    // Produced results
     pub metadata: Option<serde_json::Value>, // Arbitrary key-value data
 }
-# // The real type has exactly these fields: this literal of it names them all.
-# let _ = a2a_protocol_sdk::types::task::Task {
-#     id: TaskId::new("t"), context_id: ContextId::new("c"),
-#     status: TaskStatus::new(TaskState::Working), history: None, artifacts: None, metadata: None,
-# };
+# // The real type has exactly these fields: this pattern names them all.
+# fn _fields(t: a2a_protocol_sdk::types::task::Task) {
+#     let a2a_protocol_sdk::types::task::Task { id: _, context_id: _, status: _, history: _, artifacts: _, metadata: _, .. } = t;
+# }
 ```
 
 A `SendMessage` response omits `history` unless the request's
@@ -172,10 +171,9 @@ pub struct Message {
     pub extensions: Option<Vec<String>>,         // Extension URIs
     pub metadata: Option<serde_json::Value>,
 }
-# let _ = a2a_protocol_sdk::types::message::Message {
-#     id: MessageId::new("m"), role: MessageRole::User, parts: vec![], task_id: None,
-#     context_id: None, reference_task_ids: None, extensions: None, metadata: None,
-# };
+# fn _fields(m: a2a_protocol_sdk::types::message::Message) {
+#     let a2a_protocol_sdk::types::message::Message { id: _, role: _, parts: _, task_id: _, context_id: _, reference_task_ids: _, extensions: _, metadata: _, .. } = m;
+# }
 ```
 
 ### Roles
@@ -191,16 +189,7 @@ pub struct Message {
 ```rust,no_run
 use a2a_protocol_sdk::prelude::*;
 
-let message = Message {
-    id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-    role: MessageRole::User,
-    parts: vec![Part::text("What is 2 + 2?")],
-    task_id: None,
-    context_id: None,
-    reference_task_ids: None,
-    extensions: None,
-    metadata: None,
-};
+let message = Message::new(MessageId::new(uuid::Uuid::new_v4().to_string()), MessageRole::User, vec![Part::text("What is 2 + 2?")]);
 ```
 
 ## Parts
@@ -290,10 +279,9 @@ pub struct Artifact {
     pub extensions: Option<Vec<String>>,
     pub metadata: Option<serde_json::Value>,
 }
-# let _ = a2a_protocol_sdk::types::artifact::Artifact {
-#     id: ArtifactId::new("a"), name: None, description: None, parts: vec![],
-#     extensions: None, metadata: None,
-# };
+# fn _fields(a: a2a_protocol_sdk::types::artifact::Artifact) {
+#     let a2a_protocol_sdk::types::artifact::Artifact { id: _, name: _, description: _, parts: _, extensions: _, metadata: _, .. } = a;
+# }
 ```
 
 Create and validate an artifact:
@@ -319,24 +307,25 @@ Artifacts can be delivered incrementally during streaming:
 # use a2a_protocol_sdk::prelude::*;
 # async fn f(ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
 // First chunk
-queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-    task_id: ctx.task_id.clone(),
-    context_id: ContextId::new(ctx.context_id.clone()),
-    artifact: Artifact::new("doc", vec![Part::text("First paragraph...")]),
-    append: None,
-    last_chunk: Some(false),  // More chunks coming
-    metadata: None,
-})).await?;
+queue.write(StreamResponse::ArtifactUpdate(
+    TaskArtifactUpdateEvent::new(
+        ctx.task_id.clone(),
+        ctx.context_id.clone(),
+        Artifact::new("doc", vec![Part::text("First paragraph...")]),
+    )
+    .with_last_chunk(false), // More chunks coming
+)).await?;
 
 // Final chunk — parts are appended, metadata is merged key by key
-queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-    task_id: ctx.task_id.clone(),
-    context_id: ContextId::new(ctx.context_id.clone()),
-    artifact: Artifact::new("doc", vec![Part::text("Last paragraph.")]),
-    append: Some(true),       // Append parts to existing artifact by ID
-    last_chunk: Some(true),   // This is the last chunk
-    metadata: None,
-})).await?;
+queue.write(StreamResponse::ArtifactUpdate(
+    TaskArtifactUpdateEvent::new(
+        ctx.task_id.clone(),
+        ctx.context_id.clone(),
+        Artifact::new("doc", vec![Part::text("Last paragraph.")]),
+    )
+    .with_append(true)      // Append parts to existing artifact by ID
+    .with_last_chunk(true), // This is the last chunk
+)).await?;
 # Ok(())
 # }
 ```

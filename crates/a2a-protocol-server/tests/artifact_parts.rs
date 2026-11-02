@@ -28,14 +28,11 @@ fn artifact(id: &str, parts: serde_json::Value) -> Artifact {
 }
 
 fn update(artifact: Artifact) -> StreamResponse {
-    StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-        task_id: TaskId::new(""),
-        context_id: ContextId::new(""),
+    StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(
+        TaskId::new(""),
+        ContextId::new(""),
         artifact,
-        append: None,
-        last_chunk: None,
-        metadata: None,
-    })
+    ))
 }
 
 struct EmptyArtifact;
@@ -48,12 +45,11 @@ agent_executor!(EmptyArtifact, |_ctx, queue| async {
         .write(update(artifact("full", serde_json::json!([{"text": "x"}]))))
         .await?;
     queue
-        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new(""),
-            context_id: ContextId::new(""),
-            status: TaskStatus::new(TaskState::Completed),
-            metadata: None,
-        }))
+        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new(""),
+            ContextId::new(""),
+            TaskStatus::new(TaskState::Completed),
+        )))
         .await
 });
 

@@ -16,7 +16,7 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent};
 use a2a_protocol_types::message::Part;
-use a2a_protocol_types::task::{ContextId, TaskState};
+use a2a_protocol_types::task::TaskState;
 
 use super::{CheckResult, Outcome, Report, check, check_with_context};
 use crate::executor::AgentExecutor;
@@ -178,14 +178,10 @@ executor!(NamelessArtifact, |ctx, queue| {
     let mut artifact = Artifact::new("placeholder", vec![Part::text("x")]);
     artifact.id = "".into();
     queue
-        .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
-            artifact,
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        }))
+        .write(StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), artifact)
+                .with_last_chunk(true),
+        ))
         .await?;
     if emit.is_cancelled() {
         return emit.status(TaskState::Canceled).await;

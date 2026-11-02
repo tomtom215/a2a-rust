@@ -102,6 +102,8 @@ pub(crate) enum CallerIsolation {
     EveryCaller,
 }
 
+mod shared_stores;
+
 /// What the builder was told about the agent card.
 enum CardSetting {
     /// Nothing: `build()` refuses (spec §8.1).
@@ -159,6 +161,7 @@ struct AuthWaivers {
 ///   Set your own with [`with_executor_timeout`](Self::with_executor_timeout),
 ///   or opt out with
 ///   [`without_executor_timeout`](Self::without_executor_timeout).
+#[allow(clippy::struct_excessive_bools)] // independent switches, each set by its own method
 pub struct RequestHandlerBuilder {
     executor: Arc<dyn AgentExecutor>,
     task_store: Option<Arc<dyn TaskStore>>,
@@ -193,6 +196,7 @@ pub struct RequestHandlerBuilder {
     lease_store: Option<Arc<dyn crate::store::LeaseStore>>,
     max_lease_ttl: std::time::Duration,
     turn_claims: TurnClaimsChoice,
+    allow_process_local_stores: bool,
     turn_claim_ttl: std::time::Duration,
     turn_claim_renewal: std::time::Duration,
     replica_name: Option<String>,
@@ -268,6 +272,7 @@ impl RequestHandlerBuilder {
             lease_store: None,
             max_lease_ttl: crate::handler::DEFAULT_MAX_LEASE_TTL,
             turn_claims: TurnClaimsChoice::FromStore,
+            allow_process_local_stores: false,
             turn_claim_ttl: crate::handler::DEFAULT_TURN_CLAIM_TTL,
             turn_claim_renewal: crate::handler::DEFAULT_TURN_CLAIM_RENEWAL,
             replica_name: None,
@@ -479,6 +484,29 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub fn with_lease_store(mut self, store: impl crate::store::LeaseStore) -> Self {
         self.lease_store = Some(Arc::new(store));
+        self
+    }
+
+    /// Lets [`Profile::Production`](crate::profile::Profile::Production)
+    /// accept halt, lease, push-config and audit stores that keep their state
+    /// in this process, on a task store that several processes share.
+    ///
+    /// Without it `build()` refuses that combination (audit E-F13, ADR 0025):
+    /// a halt given to one replica would not reach the tasks another runs, a
+    /// task delegated to one would be leased only there, a webhook registered
+    /// through one would never be sent by the replica that runs the task, and
+    /// each replica would keep an audit chain of its own. The task store
+    /// being shared is read from it: it hands out turn claims
+    /// (`TaskStore::turn_claims`), as the SQL stores do.
+    ///
+    /// Call this when the process-local store is the right one: a deployment
+    /// that runs on one replica at a time over a shared database, or that
+    /// routes every request for a task to one replica. It has no effect
+    /// without the production profile, and none when the task store is not
+    /// shared.
+    #[must_use]
+    pub const fn allow_process_local_stores(mut self) -> Self {
+        self.allow_process_local_stores = true;
         self
     }
 
@@ -1042,6 +1070,16 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// [`build`](Self::build), in the `Arc` every dispatcher takes (audit
+    /// G-17: every snippet wrapped `Arc::new(builder.build()?)`).
+    ///
+    /// # Errors
+    ///
+    /// As [`build`](Self::build).
+    pub fn build_arc(self) -> ServerResult<Arc<RequestHandler>> {
+        self.build().map(Arc::new)
+    }
+
     /// Builds the [`RequestHandler`].
     ///
     /// # Errors
@@ -1316,41 +1354,40 @@ impl RequestHandlerBuilder {
         let mut wanted: Vec<AgentExtension> = Vec::new();
         if agent_card.is_some() || extended_agent_card.is_some() {
             if task_store.supports_idempotency() {
-                wanted.push(AgentExtension {
-                    uri: idempotency::IDEMPOTENCY_EXTENSION_URI.to_owned(),
-                    description: Some(
-                        "Client-supplied idempotency keys on message/send: a \
+                wanted.push(
+                    AgentExtension::new(idempotency::IDEMPOTENCY_EXTENSION_URI.to_owned())
+                        .with_description(
+                            "Client-supplied idempotency keys on message/send: a \
                          retried send returns the task the first one created \
                          instead of starting a second."
-                            .to_owned(),
-                    ),
-                    required: Some(false),
-                    params: None,
-                });
+                                .to_owned(),
+                        )
+                        .with_required(false),
+                );
             }
             if self.lease_store.is_some() {
-                wanted.push(AgentExtension {
-                    uri: a2a_protocol_types::lease::LEASE_EXTENSION_URI.to_owned(),
-                    description: Some(
-                        "A delegated task is stopped when its parent stops renewing \
+                wanted.push(
+                    AgentExtension::new(a2a_protocol_types::lease::LEASE_EXTENSION_URI.to_owned())
+                        .with_description(
+                            "A delegated task is stopped when its parent stops renewing \
                          its lease; a GetTask activating this extension renews it."
-                            .to_owned(),
-                    ),
-                    required: Some(false),
-                    params: None,
-                });
+                                .to_owned(),
+                        )
+                        .with_required(false),
+                );
             }
             if self.approval_gate.is_some() {
-                wanted.push(AgentExtension {
-                    uri: a2a_protocol_types::approval::APPROVAL_EXTENSION_URI.to_owned(),
-                    description: Some(
+                wanted.push(
+                    AgentExtension::new(
+                        a2a_protocol_types::approval::APPROVAL_EXTENSION_URI.to_owned(),
+                    )
+                    .with_description(
                         "An agent asks before it acts; the answer is bound to the \
                          digest of the action and checked against who may approve."
                             .to_owned(),
-                    ),
-                    required: Some(false),
-                    params: None,
-                });
+                    )
+                    .with_required(false),
+                );
             }
             wanted.extend(crate::handler::budget::always_declared());
 
@@ -1481,7 +1518,19 @@ impl RequestHandlerBuilder {
 
         // Read before `task_store` moves into the handler.
         let turn_claims = match self.turn_claims {
-            TurnClaimsChoice::Off => None,
+            TurnClaimsChoice::Off => {
+                // Nothing then ends a task whose replica dies mid-turn: it
+                // stays `working` until a send for it arrives (audit H3).
+                if task_store.database().is_some() {
+                    trace_warn!(
+                        "turn claims are off over a store that names a database: a task whose \
+                         replica dies mid-turn will stay `working`, and nothing reaps it; \
+                         without_turn_claims is for a store only one replica uses, and even \
+                         then a restart leaves its running tasks unfinished"
+                    );
+                }
+                None
+            }
             // A store with claims of its own fences each write against them,
             // in its own database: claims kept anywhere else never satisfy
             // that fence, and every turn's first write would be refused.
@@ -1515,7 +1564,7 @@ impl RequestHandlerBuilder {
             Arc::clone(&self.metrics),
             in_flight.background().clone(),
         );
-        Ok(RequestHandler {
+        let handler = RequestHandler {
             executor: self.executor,
             task_store,
             push_config_store,
@@ -1589,7 +1638,17 @@ impl RequestHandlerBuilder {
             #[cfg(feature = "audit")]
             audit: self.audit,
             draining: std::sync::atomic::AtomicBool::new(false),
-        })
+        };
+        // Started now when a runtime is running, which is the usual case (a
+        // handler is built in `#[tokio::main]`): until 2026-11-01 it started
+        // at the first request, so a replica that was alive and idle, the
+        // survivor of a dead peer, ended nothing until someone called it
+        // (audit NEW-h-s0-5). Built outside a runtime it still starts from the
+        // first request, where one is certain.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            handler.start_reaper();
+        }
+        Ok(handler)
     }
 }
 
@@ -1617,6 +1676,7 @@ impl RequestHandlerBuilder {
                  delegated it has stopped",
             );
         }
+        self.check_stores_are_shared()?;
         if !self.outbound.signs() {
             return refuse(if cfg!(feature = "signing") {
                 "the production profile needs a content signer (with_content_signer): \
@@ -1711,6 +1771,10 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("lease_store", &self.lease_store.is_some())
             .field("max_lease_ttl", &self.max_lease_ttl)
             .field("turn_claims", &self.turn_claims)
+            .field(
+                "allow_process_local_stores",
+                &self.allow_process_local_stores,
+            )
             .field("turn_claim_ttl", &self.turn_claim_ttl)
             .field("turn_claim_renewal", &self.turn_claim_renewal)
             .field("replica_name", &self.replica_name);
@@ -1898,6 +1962,20 @@ mod tests {
             .expect("push declared, sender wired");
     }
 
+    /// `build_arc` is `build` in an `Arc`, and refuses what `build` refuses.
+    #[test]
+    fn build_arc_wraps_build_and_refuses_what_it_refuses() {
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
+            .build_arc()
+            .expect("builds");
+        assert_eq!(Arc::strong_count(&handler), 1);
+        let err = RequestHandlerBuilder::new(TestExecutor)
+            .build_arc()
+            .expect_err("no card and no opt-out");
+        assert!(err.to_string().contains("spec §8.1"), "{err}");
+    }
+
     #[test]
     fn without_agent_card_builds_a_handler_with_no_card() {
         let handler = RequestHandlerBuilder::new(TestExecutor)
@@ -1920,25 +1998,29 @@ mod tests {
     fn builder_empty_agent_card_interfaces_errors() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard};
 
-        let card = AgentCard {
-            url: None,
-            name: "empty".into(),
-            version: "1.0".into(),
-            description: "No interfaces".into(),
-            supported_interfaces: vec![],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec!["text/plain".into()],
-            default_output_modes: vec!["text/plain".into()],
-            skills: vec![
+        let card = {
+            let mut assembled = AgentCard::new(
+                "empty",
+                "1.0",
+                a2a_protocol_types::AgentInterface::jsonrpc(String::new()),
+            );
+            assembled.url = None;
+            assembled.description = "No interfaces".into();
+            assembled.supported_interfaces = vec![];
+            assembled.provider = None;
+            assembled.icon_url = None;
+            assembled.documentation_url = None;
+            assembled.capabilities = AgentCapabilities::none();
+            assembled.security_schemes = None;
+            assembled.security_requirements = None;
+            assembled.default_input_modes = vec!["text/plain".into()];
+            assembled.default_output_modes = vec!["text/plain".into()];
+            assembled.skills = vec![
                 a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
                     .with_tags(["test"]),
-            ],
-            signatures: None,
+            ];
+            assembled.signatures = None;
+            assembled
         };
 
         let result = RequestHandlerBuilder::new(TestExecutor)
@@ -1984,31 +2066,18 @@ mod tests {
     fn builder_with_all_options() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
-        let card = AgentCard {
-            url: None,
-            name: "test".into(),
-            version: "1.0".into(),
-            description: "Test agent".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:8080".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: None,
-            }],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec!["text/plain".into()],
-            default_output_modes: vec!["text/plain".into()],
-            skills: vec![
-                a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
-                    .with_tags(["test"]),
-            ],
-            signatures: None,
-        };
+        let card = AgentCard::new(
+            "test",
+            "1.0",
+            AgentInterface::new("http://localhost:8080", "JSONRPC").with_protocol_version("1.0.0"),
+        )
+        .with_description("Test agent")
+        .with_input_modes(vec!["text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(
+            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+        )
+        .with_capabilities(AgentCapabilities::none());
 
         let result = RequestHandlerBuilder::new(TestExecutor)
             .with_agent_card(card)

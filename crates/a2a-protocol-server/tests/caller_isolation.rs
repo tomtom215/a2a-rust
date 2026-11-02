@@ -330,6 +330,33 @@ async fn a_tenant_containing_the_partition_separator_is_refused() {
     );
 }
 
+/// A tenant is a name the server keeps (an audit chain, a limiter key), and the
+/// caller may choose it: past 256 bytes it is refused, at 256 it is not
+/// (audit D-19).
+#[tokio::test]
+async fn a_tenant_name_is_bounded() {
+    let h = handler(Callers::ByDefault);
+    let max = a2a_protocol_server::handler::MAX_TENANT_LEN;
+
+    let too_long = "t".repeat(max + 1);
+    let params = TaskQueryParams::new("t").with_tenant(too_long.as_str());
+    let r = h.on_get_task(params, Some(&as_caller("bob-token"))).await;
+    assert!(
+        matches!(r, Err(ServerError::InvalidParams(ref m)) if m.contains("256")),
+        "{r:?}"
+    );
+
+    // At the limit the name is accepted by the tenant rule; whatever else the
+    // request meets (no such task) is a different answer.
+    let at_limit = "t".repeat(max);
+    let params = TaskQueryParams::new("t").with_tenant(at_limit.as_str());
+    let r = h.on_get_task(params, Some(&as_caller("bob-token"))).await;
+    assert!(
+        !matches!(r, Err(ServerError::InvalidParams(ref m)) if m.contains("longer than")),
+        "{r:?}"
+    );
+}
+
 /// The SQL stores keep the partition in their `tenant_id` column, so the same
 /// separation has to hold there, not only in memory.
 #[cfg(feature = "sqlite")]

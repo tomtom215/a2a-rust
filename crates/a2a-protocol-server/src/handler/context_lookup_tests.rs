@@ -86,11 +86,15 @@ impl TaskStore for Counting {
 }
 
 fn task(id: &str, state: TaskState, messages: usize) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(state),
-        history: (messages > 0).then(|| {
+    {
+        let mut built = Task::new(
+            TaskId::new(id),
+            ContextId::new("ctx"),
+            TaskStatus::new(state),
+        )
+        .with_artifacts(vec![Artifact::new("a", vec![Part::text("artifact")])])
+        .with_metadata(serde_json::json!({"k": id}));
+        built.history = (messages > 0).then(|| {
             (0..messages)
                 .map(|i| {
                     Message::new(
@@ -100,9 +104,8 @@ fn task(id: &str, state: TaskState, messages: usize) -> Task {
                     )
                 })
                 .collect()
-        }),
-        artifacts: Some(vec![Artifact::new("a", vec![Part::text("artifact")])]),
-        metadata: Some(serde_json::json!({"k": id})),
+        });
+        built
     }
 }
 

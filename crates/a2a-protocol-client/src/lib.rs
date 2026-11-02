@@ -19,16 +19,7 @@
 //!
 //! let params = MessageSendParams {
 //!     tenant: None,
-//!     message: Message {
-//!         id: MessageId::new("msg-1"),
-//!         role: MessageRole::User,
-//!         parts: vec![Part::text("Hello, agent!")],
-//!         task_id: None,
-//!         context_id: None,
-//!         reference_task_ids: None,
-//!         extensions: None,
-//!         metadata: None,
-//!     },
+//!     message: Message::new(MessageId::new("msg-1"), MessageRole::User, vec![Part::text("Hello, agent!")]),
 //!     configuration: None,
 //!     metadata: None,
 //! };
@@ -48,9 +39,7 @@
 //! # let client = ClientBuilder::new("http://localhost:8080").build()?;
 //! # let params = MessageSendParams {
 //! #     tenant: None,
-//! #     message: Message { id: MessageId::new("m"), role: MessageRole::User,
-//! #         parts: vec![], task_id: None, context_id: None,
-//! #         reference_task_ids: None, extensions: None, metadata: None },
+//! #     message: Message::new(MessageId::new("m"), MessageRole::User, vec![]),
 //! #     configuration: None, metadata: None,
 //! # };
 //! let mut stream = client.stream_message(params).await?;
@@ -127,6 +116,7 @@ mod declared;
 mod extensions;
 mod legacy_card;
 mod loopback;
+mod message_id;
 mod plaintext;
 #[cfg(feature = "tls-rustls")]
 mod proxy;
@@ -174,6 +164,7 @@ pub use credential_preflight::CredentialPreflight;
 pub use discovery::resolve_agent_card;
 pub use error::{ClientError, ClientResult};
 pub use interceptor::{CallInterceptor, ClientRequest, ClientResponse, InterceptorChain};
+pub use message_id::new_message_id;
 pub use retry::RetryPolicy;
 pub use streaming::EventStream;
 pub use token_provider::{

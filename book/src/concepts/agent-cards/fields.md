@@ -66,19 +66,11 @@ Skills describe discrete capabilities:
 ```rust,no_run
 use a2a_protocol_sdk::types::agent_card::AgentSkill;
 
-let skill = AgentSkill {
-    id: "summarize".into(),
-    name: "Summarizer".into(),
-    description: "Summarizes long documents".into(),
-    tags: vec!["nlp".into(), "summarization".into()],
-    examples: Some(vec![
-        "Summarize this research paper".into(),
-        "Give me a 3-sentence summary".into(),
-    ]),
-    input_modes: Some(vec!["text/plain".into(), "application/pdf".into()]),
-    output_modes: Some(vec!["text/plain".into()]),
-    security_requirements: None,
-};
+let skill = AgentSkill::new("summarize", "Summarizer", "Summarizes long documents")
+    .with_tags(vec!["nlp", "summarization"])
+    .with_examples(vec!["Summarize this research paper", "Give me a 3-sentence summary"])
+    .with_input_modes(vec!["text/plain", "application/pdf"])
+    .with_output_modes(vec!["text/plain"]);
 ```
 
 Skills can override the agent's default input/output modes and declare their own security requirements.
@@ -135,12 +127,14 @@ Each interface describes a transport endpoint:
 ```rust,no_run
 use a2a_protocol_sdk::types::agent_card::AgentInterface;
 
-let interface = AgentInterface {
-    url: "https://agent.example.com/rpc".into(),
-    protocol_binding: "JSONRPC".into(),  // or "HTTP+JSON", "GRPC"
-    protocol_version: "1.0".into(), // Major.Minor only (spec §3.6)
-    tenant: None, // Optional: fixed tenant for this interface
-};
+// The binding is "JSONRPC", "HTTP+JSON" or "GRPC"; `AgentInterface::jsonrpc`,
+// `rest` and `grpc` name it for you.
+let interface = AgentInterface::new("https://agent.example.com/rpc", "JSONRPC")
+    // `new` writes the protocol version this SDK implements; to state another
+    // (Major.Minor only, spec §3.6):
+    .with_protocol_version("1.0")
+    // Optional: a fixed tenant for this interface.
+    .with_tenant("acme");
 ```
 
 For HTTP-based bindings `url` is an absolute URL (HTTPS in production). For

@@ -47,26 +47,21 @@ agent_executor!(EchoAgent, |ctx, queue| async {
 
 fn card_for(addr: SocketAddr) -> AgentCard {
     let url = format!("http://{addr}");
-    AgentCard {
-        url: Some(url.clone()),
-        name: "cli-test-agent".into(),
-        version: "0.0.0".into(),
-        description: "echo agent for the a2a CLI tests".into(),
-        // REST first, on purpose: the CLI's default must still pick JSONRPC,
-        // which is the preference `ClientBuilder::from_card` applies.
-        supported_interfaces: vec![AgentInterface::rest(&url), AgentInterface::jsonrpc(&url)],
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        capabilities: AgentCapabilities::none().with_streaming(true),
-        security_schemes: None,
-        security_requirements: None,
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![
-            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
-        ],
-        signatures: None,
+    {
+        let mut built = AgentCard::new("cli-test-agent", "0.0.0", AgentInterface::rest(&url))
+            .with_description("echo agent for the a2a CLI tests")
+            // REST first, on purpose: the CLI's default must still pick JSONRPC,
+            // which is the preference `ClientBuilder::from_card` applies.
+            .with_interface(AgentInterface::jsonrpc(&url))
+            .with_input_modes(vec!["text/plain"])
+            .with_output_modes(vec!["text/plain"])
+            .with_skill(
+                a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill")
+                    .with_tags(["test"]),
+            )
+            .with_capabilities(AgentCapabilities::none().with_streaming(true));
+        built.url = Some(url.clone());
+        built
     }
 }
 
@@ -198,6 +193,34 @@ async fn send_discovers_the_card_and_prints_the_completed_task() {
     assert_eq!(task["artifacts"][0]["parts"][0]["text"], "Echo: hello");
 }
 
+/// Audit NEW-f-5: what an agent sends back reaches stdout as JSON escapes, so
+/// a bidirectional override, a C1 control or DEL cannot reach a terminal raw
+/// (`serde_json` alone escapes only the characters below U+0020). The value a
+/// script reads is the same.
+#[tokio::test(flavor = "multi_thread")]
+async fn hostile_text_in_a_reply_is_written_out_on_stdout() {
+    let url = start_agent().await;
+    let text = "x\u{202e}y\u{85}z\u{7f}";
+    let out = a2a(&["send", &url, text]).await;
+    assert_eq!(code(&out), 0, "stderr: {}", stderr(&out));
+    let raw = stdout(&out);
+    for c in ['\u{202e}', '\u{85}', '\u{7f}'] {
+        assert!(
+            !raw.contains(c),
+            "U+{:04X} reached stdout raw: {raw:?}",
+            u32::from(c)
+        );
+    }
+    for written in ["\\u202e", "\\u0085", "\\u007f"] {
+        assert!(raw.contains(written), "{written} in {raw}");
+    }
+    assert_eq!(
+        json(&out)["task"]["artifacts"][0]["parts"][0]["text"],
+        format!("Echo: {text}"),
+        "the same value"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn send_honours_an_explicit_binding_and_context_id() {
     let url = start_agent().await;
@@ -278,7 +301,10 @@ async fn task_cancel_stops_a_running_task() {
 }
 
 mod card_origin;
+mod header_sources;
+mod interface_fallback;
 mod subscribe;
+mod tls_flags;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn task_list_shows_tasks_this_agent_has_seen() {

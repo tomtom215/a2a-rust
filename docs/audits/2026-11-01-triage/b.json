@@ -1,0 +1,459 @@
+{
+ "slice": "b",
+ "baseline": "4a8243c66df5ae07a54a69168ab419ac609b06e9",
+ "rows": [
+  {
+   "id": "B-03",
+   "verdict": "partly_fixed",
+   "severity_now": "medium",
+   "evidence": [
+    "commit c4404e8 - added CardFetchOptions::with_tls_config (card resolver + client fetch_jwks); commit 779ff31 touched the token provider (plaintext refusal, issuer binding) but added no TLS option",
+    "crates/a2a-protocol-client/src/discovery.rs:118-121,166-181 - CardFetchOptions carries Option<Arc<rustls::ClientConfig>>; https_client() builds the fetch client from it, else default_tls_config()",
+    "crates/a2a-protocol-client/src/discovery.rs:615 - fetch_inner uses options.https_client()",
+    "crates/a2a-protocol-client/src/jwks.rs:72-73 - fetch_jwks uses options.https_client(): same option reaches the client JWKS fetch",
+    "crates/a2a-protocol-client/src/tls.rs:100-108,207-228,300-314 - every one of these clients trusts Mozilla + SSL_CERT_FILE/SSL_CERT_DIR and dials through ProxyConnector with matcher_from_env (HTTPS_PROXY/HTTP_PROXY/ALL_PROXY/NO_PROXY)",
+    "crates/a2a-protocol-client/src/token_provider.rs:368,689,748-763 and token_provider/exchange.rs:266 - OAuth2ClientCredentials, discover_token_endpoint and TokenExchange always use build_token_http_client() = default_tls_config(); rg finds no with_tls_config/with_http_client on either type: no in-code private CA and no client certificate (RFC 8705 tls_client_auth) for the token endpoint; only SSL_CERT_FILE (process-wide) reaches it",
+    "crates/a2a-protocol-client/src/discovery.rs:306-308 - resolve_agent_card_with_path has no options variant: always default TLS",
+    "crates/a2a-protocol-client/src/builder/mod.rs:527-537 - ClientBuilder::with_tls_config reaches JSON-RPC and HTTP+JSON only; card, JWKS, token provider and WebSocket each need their own setting and gRPC a tonic type (builder/mod.rs:461-472)"
+   ],
+   "test": "crates/a2a-protocol-client/tests/private_ca.rs:131-152 the_card_fetch_takes_the_tls_configuration and :155-178 the_key_set_fetch_takes_the_tls_configuration - assert UnknownIssuer under defaults and a non-UnknownIssuer HTTP answer with the config; they would fail if https_client() ignored the option (read, not run). Token provider: no TLS test (nothing to test) and no test that it follows SSL_CERT_FILE or the proxy.",
+   "summary": "Card resolver and client fetch_jwks take a rustls config through CardFetchOptions::with_tls_config, and card, JWKS and token provider all read SSL_CERT_FILE/SSL_CERT_DIR and the proxy variables. The token provider (client credentials, OIDC discovery, RFC 8693 exchange) still has no in-code TLS option and cannot present a client certificate.",
+   "remaining": "with_tls_config (or with_http_client) on OAuth2ClientCredentials and TokenExchange plus an options variant of discover_token_endpoint; an options variant of resolve_agent_card_with_path; ideally one TLS setting that reaches card/JWKS/token/WebSocket/gRPC (ADR 0032 HttpPool is the natural carrier).",
+   "theme": "client-tls",
+   "effort": "S",
+   "breaking": "none - additive setters",
+   "probe": "none"
+  },
+  {
+   "id": "B-04",
+   "verdict": "already_fixed",
+   "severity_now": "info",
+   "evidence": [
+    "commit c4404e8 - JwtAuthInterceptor::from_oidc_issuer_with_tls_config; server JWKS/OIDC client trusts Mozilla + SSL_CERT_FILE/DIR and follows the proxy variables",
+    "commit 37c508d (2026-10-30, before the README edit but README still said open because the CA half was missing) - plaintext JWKS/issuer refusal",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:910-921 - from_oidc_issuer_with_tls_config uses one HttpsClient for discovery and passes the same config to from_jwks_url_with_tls_config for jwks_uri",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1160-1173 - default client = net::roots::default_tls_config() (Mozilla + SSL_CERT_FILE/DIR) through net::client::HttpsClient (proxy env)",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1105-1110 (fetch), :1240-1244 (issuer), :1275-1280 (discovered jwks_uri), :1290-1306 trustworthy_url - http:// only to localhost/*.localhost/loopback IP"
+   ],
+   "test": "crates/a2a-protocol-server/tests/jwks_https_e2e.rs:225-259 oidc_discovery_behind_a_private_ca_takes_the_tls_configuration (UnknownIssuer under defaults; discovery + token validation succeed with the CA; fails if the config were not used for discovery or jwks_uri); tests/auth_jwt_e2e/main.rs:353-363 oidc_discovery_with_a_plaintext_jwks_uri_is_refused (fails if bind_discovered's check is removed); src/auth/jwt.rs:1660 and :1682 unit tests of trustworthy_url and the fetch-time refusal (the latter asserts an 'https' message, which a connect error would not carry); tests/outbound_proxy_and_roots.rs:218 also covers OIDC discovery via SSL_CERT_FILE + proxy. All read, not run.",
+   "summary": "Server OIDC discovery can use a private CA (in code or via SSL_CERT_FILE) and a plaintext JWKS URL, issuer or discovered jwks_uri off loopback is refused. Both halves are covered by tests that would fail on revert.",
+   "remaining": "",
+   "theme": "server-auth-tls",
+   "effort": "XS",
+   "breaking": "none (already shipped; 37c508d was marked breaking)",
+   "probe": "none"
+  },
+  {
+   "id": "B-08",
+   "verdict": "confirmed",
+   "severity_now": "medium",
+   "evidence": [
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:36-55 - strip_tenant_prefix takes any non-route-head first segment followed by a route head as the tenant: /a2a/message:send -> tenant 'a2a'",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:462-476 - unit test strip_tenant_bare_canonical_form pins /acme/message:send -> (Some(\"acme\"), ...)",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:190,228 and dispatch/jsonrpc/mod.rs:116 - card matched only by exact '/.well-known/agent-card.json'",
+    "rg 'base_path|path_prefix|with_prefix' in server src: no hits; book has no prefix-stripping guidance (rg 'proxy_pass|path prefix' only finds the tenant docs)",
+    "Workaround exists only for axum users: Router::nest strips the prefix before A2aRouter sees the path"
+   ],
+   "test": "none (not fixed)",
+   "summary": "Behind a reverse proxy that keeps a path prefix, HTTP+JSON reads the prefix as a tenant and the card is not found under the prefix; there is no base-path option.",
+   "remaining": "DispatchConfig::with_base_path (stripped before tenant parsing and card matching, for REST, JSON-RPC and CombinedDispatcher); book note that nginx must strip the prefix (proxy_pass with trailing slash) otherwise.",
+   "theme": "reverse-proxy",
+   "effort": "S",
+   "breaking": "none - additive option",
+   "probe": "none (unit test already shows the parse); optional: nginx 'location /a2a/ { proxy_pass http://127.0.0.1:8080; }' in front of RestDispatcher, send through /a2a, then GetTask directly -> TaskNotFound"
+  },
+  {
+   "id": "B-09",
+   "verdict": "partly_fixed",
+   "severity_now": "low",
+   "evidence": [
+    "commit c76299c - TrustedProxy ranges, port stripping, /64 keying for the throttle",
+    "crates/a2a-protocol-server/src/rate_limit/trusted.rs:30-63,97-114 - TrustedProxy (CIDR, mapped IPv4 canonicalised)",
+    "crates/a2a-protocol-server/src/rate_limit/identity.rs:57-63 - behind_trusted_proxy: when ranges are named the peer must be in one; (a) fixed when configured",
+    "crates/a2a-protocol-server/src/rate_limit/identity.rs:135-144 - canonicalize_caller_ip parses SocketAddr first, so 203.0.113.7:51234 and [2001:db8::1]:443 key as the address; (b) fixed",
+    "crates/a2a-protocol-server/src/rate_limit/config.rs:45-56,75-76 and auth/throttle.rs:83-100 - trusted_proxies defaults to empty = the old hop-count-only belief; nothing logs when trusted_proxy_hops > 0 with no ranges",
+    "crates/a2a-protocol-server/src/rate_limit/identity.rs:46-51,121 - a chain shorter than hops behind a trusted proxy (or with no ranges) still lands in the shared 'anon' bucket; (c) fixed only for direct callers when ranges are named",
+    "rg 'forwarded' in server src: only the outbound proxy connector; RFC 7239 Forwarded is not parsed; (d) open (CHANGELOG says 'Not done: B-09 (d)')"
+   ],
+   "test": "crates/a2a-protocol-server/src/rate_limit/keying_tests.rs:115-153 the_header_is_believed_only_from_a_peer_in_the_trusted_ranges and :155-172 forging_the_header_from_outside_the_ranges_does_not_mint_budgets (fail if ranges are ignored); :176-195 a_port_in_a_forwarded_entry_does_not_make_a_new_key (fails on the old raw-string key); rate_limit/trusted/tests.rs range edges; auth/throttle_tests.rs:174. Read, not run.",
+   "summary": "A trusted-proxy address check and port stripping exist and are tested, but the address check is opt-in, so the default with hops set still believes any peer's X-Forwarded-For. Forwarded is unsupported and short chains still share 'anon'.",
+   "remaining": "RFC 7239 Forwarded; a startup warning (or refusal) when trusted_proxy_hops > 0 and trusted_proxies is empty; consider per-peer keying instead of 'anon' for short chains.",
+   "theme": "proxy-trust",
+   "effort": "S",
+   "breaking": "none for Forwarded/warning; behaviour if ranges become mandatory with hops",
+   "probe": "none"
+  },
+  {
+   "id": "B-10",
+   "verdict": "needs_decision",
+   "severity_now": "medium",
+   "evidence": [
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:147,178 - idle_timeout None by default; :789-791 next_frame returns without any ping when unset",
+    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:47 keepalive None; :152-155 with_http2_keepalive; :317-320 applied only when set",
+    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:452-457 - a test asserts keepalive must stay opt-in: the default is a recorded decision",
+    "crates/a2a-protocol-client/src/transport/websocket.rs - no ping/keepalive code (rg ping|keepalive: none)",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:301-311 - TCP keepalive only (comment cites grpc-go's ping-abuse GOAWAY); no http2_keep_alive_interval",
+    "SSE alone sends 30 s comments (server serve/graceful/config.rs:34-44)"
+   ],
+   "test": "dispatcher.rs:452-457 pins keepalive off (the current decision); no test of a quiet stream through an L7 idle timeout",
+   "summary": "Quiet WebSocket and gRPC streams still carry no traffic by default on either side, so an L7 load balancer's idle timeout (often 60 s) closes them. Turning keepalive on by default was explicitly decided against for gRPC.",
+   "remaining": "See options.",
+   "theme": "keepalive",
+   "effort": "M",
+   "breaking": "behaviour for (2); wire for a stream heartbeat; (1) none",
+   "probe": "nginx with proxy_read_timeout 20s (WebSocket) and grpc_read_timeout 20s (gRPC) in front of the dispatchers; `a2a stream` to an agent that emits one event then is silent 40 s; observe the close at ~20 s; repeat with WebSocketDispatcher::with_idle_timeout(30s) to show pings keep it open",
+   "options": "(1) Client WebSocket transport sends a Ping every ~25 s by default: servers answer automatically, and frames on the wire keep an L7 LB open; non-breaking. (2) Server WebSocketDispatcher idle_timeout on by default at DEFAULT_WS_IDLE_TIMEOUT (75 s, ping at 37.5 s): behaviour change, closes unresponsive peers. (3) gRPC: HTTP/2 PINGs are hop-by-hop and do not cross an LB that terminates HTTP/2, and grpc-go GOAWAYs clients that ping more often than 5 min, so only an application heartbeat on the stream works end to end: a wire decision for an ADR. Recommendation: (1) now, a book section on LB idle settings for WebSocket and gRPC, opt-in client gRPC keepalive; (3) via ADR before any gRPC default changes."
+  },
+  {
+   "id": "B-11",
+   "verdict": "needs_decision",
+   "severity_now": "medium",
+   "evidence": [
+    "crates/a2a-protocol-client/src/transport/mod.rs:66-76 - DEFAULT_SEND_TIMEOUT rustdoc (commit 57f034e) warns that a load balancer may cut a blocking send and advises streaming or return_immediately",
+    "crates/a2a-protocol-client/src/transport/mod.rs:76 and tools/a2a-cli/src/cli.rs:62-73 - blocking sends now wait 600 s by default, so behind a 60 s LB the 504 is now the usual failure instead of the client's own timeout",
+    "book/src: rg 504|proxy_read_timeout|load balancer finds no guidance for blocking sends (only error-classification tables)",
+    "crates/a2a-protocol-server/src/serve/graceful/tests.rs:220-254 - the server's own idle timer does not cut an in-flight request; the cutter is the LB",
+    "No heartbeat on blocking JSON-RPC/HTTP+JSON responses (response written only on completion)"
+   ],
+   "test": "none (docs; behaviour not implemented)",
+   "summary": "The rustdoc now warns, but the book does not and nothing keeps a long blocking SendMessage alive, so behind a 60 s LB it returns 504 while the task runs on, now more often because the client waits 600 s by default.",
+   "remaining": "See options.",
+   "theme": "lb-timeouts",
+   "effort": "S",
+   "breaking": "none for docs; behaviour for (2)/(3)",
+   "probe": "nginx proxy_read_timeout 10s in front of an agent whose turn takes 20 s; `a2a send` -> 504 / ambiguous failure while `a2a task get` later shows the task completed",
+   "options": "(1) Docs only: a book page 'Behind a load balancer' (blocking send longer than the LB idle gives 504; use send_streaming_message or return_immediately + subscribe; raise the LB idle) linked from the client and CLI pages. (2) Client: when the card declares streaming, run a blocking send over the streaming call and fold to the final result (SSE's 30 s comments keep the LB open): behaviour change on the wire, opt-in at first. (3) Server: leading-whitespace heartbeat on blocking JSON-RPC responses: commits a 200 before the outcome, breaking the HTTP-status mapping, and impossible for HTTP+JSON. Recommendation: (1) now, (2) as an opt-in, not (3)."
+  },
+  {
+   "id": "B-12",
+   "verdict": "confirmed",
+   "severity_now": "medium",
+   "evidence": [
+    "crates/a2a-protocol-client/src/transport/websocket.rs:680-688 - direct path calls tokio_tungstenite::connect_async_tls_with_config",
+    "~/.cargo/registry/src/*/tokio-tungstenite-0.30.0/src/connect.rs:90-91 - TcpStream::connect(format!(\"{domain}:{port}\")): addresses tried one at a time, no happy eyeballs, no keepalive",
+    "crates/a2a-protocol-client/src/transport/websocket.rs:694 + :307 - one 10 s connect_timeout bounds the whole, so a black-holed AAAA consumes it before A is tried",
+    "crates/a2a-protocol-client/src/proxy.rs:137-145 - the proxy branch dials with HttpConnector::new() (happy eyeballs to the proxy, but no keepalive/connect timeout) then client_async_tls_with_config: the pattern the direct path could reuse",
+    "crates/a2a-protocol-client/src/transport/connector.rs http_connector - HTTP and gRPC get keepalive + hyper-util happy eyeballs; WebSocket does not"
+   ],
+   "test": "none",
+   "summary": "The direct WebSocket dial is still tokio's sequential connect with no happy eyeballs and no TCP keepalive.",
+   "remaining": "Dial with transport::connector::http_connector(connect_timeout) and hand the stream to client_async_tls_with_config, as the proxy branch already does with its tunnel.",
+   "theme": "ws-client-dial",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "netns with a global IPv6 address and IPv6 egress dropped (ip6tables -A OUTPUT -p tcp --dport 8443 -j DROP), agent name resolving to AAAA and A: `a2a --binding websocket wss://agent:8443 ...` fails at 10 s while `--binding jsonrpc https://agent:8443` succeeds"
+  },
+  {
+   "id": "B-13",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "crates/a2a-protocol-server/src/url_guard.rs:417-436 - resolve_with checks every address but keeps only the first public one",
+    "crates/a2a-protocol-server/src/push/sender.rs:584-603 - resolved and pinned once per send",
+    "crates/a2a-protocol-server/src/push/sender.rs:646-653 - every retry attempt reuses pinned_uri",
+    "crates/a2a-protocol-server/src/push/pinning.rs:76-84 - only http:// is pinned; https:// goes through hyper's resolver (happy eyeballs), hence low, was medium"
+   ],
+   "test": "none for multi-address failover",
+   "summary": "An http:// webhook is still delivered to the first resolved public address on every attempt, with no failover across A/AAAA records.",
+   "remaining": "Return all validated addresses (an additive variant of resolve_public_url), rotate per attempt or race v6/v4, and keep re-validation on re-resolution.",
+   "theme": "push-delivery",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "netns: hosts entry for a public-looking name with 2001:db8::dead (unreachable) and 198.51.100.10 (receiver on a dummy interface); http:// webhook fails all 3 attempts; the same name over https:// with a valid cert succeeds"
+  },
+  {
+   "id": "B-14",
+   "verdict": "confirmed",
+   "severity_now": "medium",
+   "evidence": [
+    "crates/a2a-protocol-server/src/tls.rs:24-40 - TlsAcceptor built once from a ServerConfig",
+    "crates/a2a-protocol-server/src/serve/graceful/tls.rs:38,55 and dispatch/websocket.rs:216,233 - with_tls(rustls::ServerConfig) can carry a caller-written ResolvesServerCert (the only reload route); with_tls_pem is static",
+    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:122 - with_tls(tonic ServerTlsConfig); tonic-0.14.6/src/transport/server/tls.rs:25-78 has identity/client_ca_root/... and no resolver: GrpcDispatcher::serve* can rotate only by restart (into_service lets a caller run its own TLS)",
+    "rg 'ResolvesServerCert|reload' in server src: only agent-card hot reload",
+    "SLIMRPC: SLIM's own slim_config has a WatcherCertResolver (agntcy-slim-config tls/server.rs); not this crate's code"
+   ],
+   "test": "none",
+   "summary": "No certificate reload is shipped; HTTP and WebSocket can reload only through a hand-written resolver, and the built-in gRPC TLS cannot rotate without a restart.",
+   "remaining": "A ReloadingCertResolver (watch PEM files or SIGHUP, ArcSwap<CertifiedKey>) usable by Server::with_tls and WebSocketDispatcher::with_tls; gRPC served through serve_with_incoming over tokio-rustls with the same resolver.",
+   "theme": "server-tls",
+   "effort": "M",
+   "breaking": "none",
+   "probe": "to prove a fix: serve with cert A, overwrite the PEMs with cert B, compare `openssl s_client -connect host:port` serials before/after (grpcurl for gRPC)"
+  },
+  {
+   "id": "B-15",
+   "verdict": "partly_fixed",
+   "severity_now": "low",
+   "evidence": [
+    "tools/a2a-cli/src/cli.rs:46-108 - GlobalOpts has no --cacert/--cert/--key/--proxy/--insecure",
+    "tools/a2a-cli/src/connect.rs:129-131,182-217 - no TLS setting passed to CardFetchOptions, ClientBuilder, build_grpc or WebSocketTransportConfig",
+    "Inherited from the environment (library fixes B-01/B-02): SSL_CERT_FILE/SSL_CERT_DIR for card, JWKS, JSON-RPC, HTTP+JSON and WebSocket (client tls.rs:100-108,207-228; websocket.rs:654-656); HTTPS_PROXY/HTTP_PROXY/ALL_PROXY/NO_PROXY for all four bindings (tls.rs:304-306; websocket.rs:665; grpc.rs:534)",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:363-366 + client Cargo.toml:72 (grpc-tls = tls-ring + tls-webpki-roots) - gRPC trust ignores SSL_CERT_FILE, so `a2a --binding grpc` cannot reach a private-CA agent by any means",
+    "No client certificate can be presented from the CLI on any binding",
+    "tools/a2a-cli/README.md:67-70 - still says verification is 'against its bundled roots' and names no environment variable"
+   ],
+   "test": "Library level only: crates/a2a-protocol-client/tests/proxy_and_cert_env.rs:96-171 (SSL_CERT_FILE + proxy, JSON-RPC/HTTP+JSON), websocket_through_proxy.rs:103-173 (WebSocket via proxy, with an explicit TLS config, not SSL_CERT_FILE), grpc_tunnel_env.rs:18-76 (gRPC dials the proxy); each would fail without the env handling (read, not run). No CLI-level test (tools/a2a-cli/tests: rg SSL_CERT|HTTPS_PROXY none).",
+   "summary": "The CLI still has no TLS or proxy flags, but it now picks up SSL_CERT_FILE/SSL_CERT_DIR and the proxy variables, which covers private-CA and self-signed agents on JSON-RPC, HTTP+JSON and WebSocket. gRPC to a private CA and any mutual-TLS agent stay unreachable.",
+   "remaining": "--cacert FILE (repeatable PEM, fed to tls_config_from_pem, CardFetchOptions, WebSocket and a tonic config), --cert/--key; gRPC honouring SSL_CERT_FILE (B-20); README/book cli.md listing the environment variables; keep no --insecure.",
+   "theme": "cli-tls",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "private-CA agent serving JSON-RPC and gRPC: `SSL_CERT_FILE=ca.pem a2a --binding jsonrpc send https://localhost:8443 hi` succeeds; `SSL_CERT_FILE=ca.pem a2a --binding grpc send https://localhost:50051 hi` fails with UnknownIssuer"
+  },
+  {
+   "id": "B-18",
+   "verdict": "partly_fixed",
+   "severity_now": "low",
+   "evidence": [
+    "commit 57f034e - added tls_config_from_pem",
+    "crates/a2a-protocol-client/src/tls.rs:150-195 - tls_config_from_pem returns ClientError::Transport for an unparsable PEM, a non-anchor root, an empty bundle and a key/chain mismatch; PEM input",
+    "crates/a2a-protocol-client/src/tls.rs:110-133 - tls_config_with_extra_roots still logs (trace_warn, invisible without `tracing`) and skips; now documented as such",
+    "crates/a2a-protocol-client/src/tls.rs:210-213 and server net/roots.rs:77-80 - an SSL_CERT_FILE certificate rustls refuses as an anchor is dropped with no log at all",
+    "crates/a2a-protocol-client/src/tls.rs:269-271 and server net/roots.rs:136-138 - an SSL_CERT_FILE with no PEM certificate (e.g. a DER file) is logged at debug only",
+    "crates/a2a-protocol-server/src/lib.rs:151,155 - server tls/net modules private: no client-side PEM helper for HttpPushSender::with_tls_config, from_*_with_tls_config, OpenAiChatModel::with_tls_config",
+    "crates/a2a-protocol-server/src/otel/telemetry/exporters.rs:167-180 - OTLP still fails hard"
+   ],
+   "test": "crates/a2a-protocol-client/tests/private_ca.rs:91-110 bad_pem_is_refused_with_its_reason (no-PEM bundle and key mismatch; would fail if errors were swallowed); the 'not a trust anchor' branch is untested; tls.rs:346-371 pins the debug-level log for SSL_CERT_FILE without a certificate. Read, not run.",
+   "summary": "A strict PEM constructor exists and is tested, but the old DER helper still drops a bad CA silently, and an SSL_CERT_FILE that holds no usable certificate is invisible at normal log levels.",
+   "remaining": "Deprecate tls_config_with_extra_roots (or add a Result-returning twin); log once at warn when SSL_CERT_FILE yields no certificate or a refused anchor; expose an additive PEM client-config helper from the server crate (or re-export the client's).",
+   "theme": "tls-config-errors",
+   "effort": "S",
+   "breaking": "none if deprecated rather than changed",
+   "probe": "none"
+  },
+  {
+   "id": "B-19",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "~/.cargo/registry/src/*/tonic-0.14.6/src/transport/channel/service/tls.rs:149 - H2NotNegotiated unless assume_http2; rg assume_http2 in client: none",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:301-313 - one Channel per transport, no balance_list",
+    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:169 with_max_connection_age - server-side mitigation of replica pinning (off by default)",
+    "book/src/building-agents/dispatchers/grpc.md covers the server only; no client-side note on ALPN/h2c/balancing"
+   ],
+   "test": "none",
+   "summary": "Unchanged: the gRPC client needs h2 in ALPN, plaintext means h2c prior knowledge, and one connection pins one replica; none of it is documented for clients.",
+   "remaining": "Client docs (TLS-terminating proxies must offer h2; LB must accept h2c; use a headless Service, an L7 mesh or with_max_connection_age to spread); optionally expose assume_http2 in GrpcTransportConfig; ADR 0032 (H12) covers client-side balancing.",
+   "theme": "grpc-client-deploy",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "optional: nginx `listen 443 ssl;` without http2 doing grpc_pass -> H2NotNegotiated from build_grpc"
+  },
+  {
+   "id": "B-20",
+   "verdict": "confirmed",
+   "severity_now": "medium",
+   "evidence": [
+    "crates/a2a-protocol-client/src/tls.rs:100-108,207-215 - JSON-RPC, HTTP+JSON, card, JWKS, token provider and WebSocket default = Mozilla + SSL_CERT_FILE/DIR; tls_config_from_pem adds to that",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:363-366 + client Cargo.toml:72 - gRPC default = tonic webpki roots only; SSL_CERT_FILE/DIR not read (tonic in Cargo.lock has no rustls-native-certs); a caller's ClientTlsConfig::new().ca_certificate(..) replaces Mozilla",
+    "crates/a2a-protocol-client/src/config.rs:36-39, builder/mod.rs:461-472,527-537 - ClientBuilder::with_tls_config (rustls) is not used by build_grpc; gRPC takes a separate tonic ClientTlsConfig: two config types for one CA",
+    "crates/a2a-protocol-server/src/otel/telemetry/exporters.rs:140-150 - OTLP = Mozilla + OTEL_EXPORTER_OTLP_CERTIFICATE only; SSL_CERT_FILE/DIR not read, while push/JWKS/OIDC/model in the same process do (net/roots.rs:63-82)",
+    "crates/a2a-protocol-server/src/push/sender.rs:304, auth/jwt.rs:857,910, tool_loop/openai.rs:133 - with_tls_config replaces the trust store with whatever the caller built; the server crate offers no additive helper",
+    "tonic-0.14.6/src/transport/channel/tls.rs:119-127 - with_enabled_roots adds OS roots to gRPC only if any crate enables tonic/tls-native-roots (feature unification), still true"
+   ],
+   "test": "none for gRPC or OTLP with SSL_CERT_FILE",
+   "summary": "Trust still differs by path and has got wider: SSL_CERT_FILE reaches every HTTP path and WebSocket but not the gRPC client or OTLP, and gRPC needs its own tonic config type that replaces Mozilla's roots instead of adding to them. In a container whose private CA comes from SSL_CERT_FILE, JSON-RPC works and gRPC/OTLP fail.",
+   "remaining": "Build gRPC TLS from the same rustls ClientConfig (connect_with_connector + hyper-rustls with ALPN h2, as OTLP's DialsTls does) so SSL_CERT_FILE and ClientBuilder::with_tls_config reach it, or at least feed env roots into the tonic config; have OTLP start from net::roots::root_cert_store(); document 'replace vs add' per entry point.",
+   "theme": "tls-roots-unify",
+   "effort": "M",
+   "breaking": "behaviour - gRPC/OTLP would trust more roots; making a custom tonic config additive changes trust",
+   "probe": "private CA in SSL_CERT_FILE: `a2a --binding grpc` -> UnknownIssuer while `--binding jsonrpc` works; OTLP to a private-CA collector with only SSL_CERT_FILE set logs UnknownIssuer while push delivery to the same CA succeeds"
+  },
+  {
+   "id": "B-22",
+   "verdict": "already_fixed",
+   "severity_now": "info",
+   "evidence": [
+    "commit 8bdf383 - SSRF classifier extended",
+    "crates/a2a-protocol-server/src/url_guard.rs:73-83 - IPv4: 0/8, 192.0.0.0/24, 198.18/15, everything from 224.0.0.0 up",
+    "crates/a2a-protocol-server/src/url_guard.rs:163-180 - embedded IPv4 for mapped, NAT64, IPv4-compatible and 6to4 2002::/16",
+    "crates/a2a-protocol-server/src/url_guard.rs:184-216 - IPv6: fec0::/10, ff00::/8, 64:ff9b:1::/48, Teredo 2001::/32, 100::/64",
+    "crates/a2a-protocol-server/src/url_guard.rs:246-250 - one trailing dot stripped before every test"
+   ],
+   "test": "crates/a2a-protocol-server/src/url_guard/tests.rs:26-45, 82-115, 117-138, 140-156 - first/last address of each range and the neighbours; 198.18.0.0, 224.0.0.0, fec0::1 and 2002:a9fe:a9fe:: would have passed the old classifier, so the tests fail on revert (read, not run).",
+   "summary": "Every range the finding listed is refused now, edge-tested on both sides.",
+   "remaining": "",
+   "theme": "ssrf",
+   "effort": "XS",
+   "breaking": "behaviour (shipped): bare single-label hosts are refused",
+   "probe": "none"
+  },
+  {
+   "id": "B-23",
+   "verdict": "needs_decision",
+   "severity_now": "low",
+   "evidence": [
+    "crates/a2a-protocol-client/src/proxy.rs:74-86 and server net/proxy.rs:105-121 (kept identical by scripts/check_net_copies.py) - upper case wins; NO_PROXY handed to hyper-util after unbracketing",
+    "~/.cargo/registry/src/*/hyper-util-0.1.21/src/client/proxy/matcher.rs:444-466,510-535 - only bare '*' is a wildcard; 'collector:4318' and '*.svc.cluster.local' are domains that never match",
+    "hyper-util matcher.rs:122-133 - intercept consults only NO_PROXY: loopback/localhost are not exempt (Go's net/http exempts them); see NEW-b-2",
+    "crates/a2a-protocol-client/src/proxy.rs:95-99,125-136 - socks5:// and https:// proxies: direct with one warning",
+    "book/src/deployment/observability/tls-proxies.md:47-66 documents upper-case-wins and socks/https; nothing on host:port, *.domain or loopback",
+    "Scope grew: since c4404e8 these semantics govern every outbound path (client bindings, card/JWKS/token, push, server JWKS/OIDC, model client, OTLP), not OTLP only"
+   ],
+   "test": "client proxy.rs:367-432 (bracketed IPv6, lower case, CGI, socks noticed); no test of host:port or glob forms",
+   "summary": "Unchanged and now shared by every outbound path: NO_PROXY host:port and *.domain entries never match, upper case wins, loopback is not exempt, and SOCKS/HTTPS proxies are bypassed with a warning.",
+   "remaining": "See options.",
+   "theme": "proxy-semantics",
+   "effort": "S",
+   "breaking": "behaviour for loopback exemption / case precedence",
+   "probe": "none",
+   "options": "(1) Normalise NO_PROXY before hyper-util: '*.example.com' -> '.example.com', 'host:port' -> 'host' (errs toward direct): non-breaking for every entry that matched before. (2) Always exempt localhost, 127.0.0.0/8 and ::1, as Go does: behaviour change that closes NEW-b-2; the client test proxy_and_cert_env.rs relies on https://localhost being proxied and would need a non-loopback name. (3) Lower-case precedence as curl: behaviour change, little value. Recommendation: (1)+(2) in one change, document (3)."
+  },
+  {
+   "id": "B-25",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "rg 'hyper::upgrade|on_upgrade' in server src: none",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:417-447 - serve/serve_with_addr bind their own listener",
+    "crates/a2a-protocol-server/src/dispatch/combined.rs:6-20 - CombinedDispatcher shares a port between JSON-RPC and HTTP+JSON only",
+    "book/src/reference/configuration.md:164 - WebSocketDispatcher documented as its own listener"
+   ],
+   "test": "none",
+   "summary": "WebSocket still needs its own port; there is no upgrade route on Server, CombinedDispatcher or the axum router.",
+   "remaining": "A hyper/axum upgrade handler that hands the upgraded stream to the WebSocket connection loop, and a CombinedDispatcher route for it.",
+   "theme": "ws-server",
+   "effort": "M",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "B-26",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "crates/a2a-protocol-server/src/call_context.rs:100,106,351 - client certificate only from the PeerCertificate extension or ':peer-certificate'",
+    "rg 'x-forwarded-client-cert|xfcc|ssl_client|amzn-mtls' in crates/bindings: none (so no naive trust of a client-set header either)",
+    "crates/a2a-protocol-server/src/rate_limit/trusted.rs - TrustedProxy ranges now exist, the building block for a trusted-hop check"
+   ],
+   "test": "none",
+   "summary": "No forwarded-client-certificate support; behind Envoy/Istio, nginx or ALB mTLS the interceptor sees no certificate.",
+   "remaining": "An opt-in ForwardedClientCertInterceptor gated by TrustedProxy ranges, parsing Envoy XFCC, nginx $ssl_client_escaped_cert and ALB x-amzn-mtls-clientcert, ignoring the header from untrusted peers.",
+   "theme": "mtls-forwarded",
+   "effort": "M",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "B-27",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "crates/a2a-protocol-client/src/loopback.rs:15-25 - is_loopback_host uses IpAddr::is_loopback: [::ffff:127.0.0.1] is not loopback (needs to_canonical())",
+    "crates/a2a-protocol-server/src/otel/telemetry/prometheus.rs:69 - TcpListener::bind((host.as_str(), port)): OTEL_EXPORTER_PROMETHEUS_HOST='[::]' fails resolution",
+    "crates/a2a-protocol-server/src/serve/graceful/mod.rs:200-217 - from_listener is the bindv6only escape hatch (documented); no helper",
+    "Zone IDs: hyper::Uri grammar (not re-checked here); a2a-protocol-discovery filters IPv6 link-local addresses (discovered.rs is_ipv6_link_local), consistent with no zone-id support"
+   ],
+   "test": "none",
+   "summary": "All four IPv6 edge cases are unchanged.",
+   "remaining": "to_canonical() in is_loopback_host (and the server's trustworthy_url, jwt.rs:1302); strip brackets from OTEL_EXPORTER_PROMETHEUS_HOST; document zone IDs as unsupported.",
+   "theme": "ipv6",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none (OTEL_EXPORTER_PROMETHEUS_HOST='[::]' fails at startup with 'cannot listen there'; reading settles it)"
+  },
+  {
+   "id": "B-28",
+   "verdict": "confirmed",
+   "severity_now": "low",
+   "evidence": [
+    "crates/a2a-protocol-client/src/discovery.rs:175-181,615 - a fresh HttpsClient (pool, DNS lookup, TLS handshake) per card fetch, CachingCardResolver refreshes included; jwks.rs:73 same; token_provider.rs:689 per discovery call",
+    "~/.cargo/registry/src/*/hyper-util-0.1.21/src/client/legacy/connect/http.rs:551-562,772-773 - resolution happens before the connect timeout, which is then split across addresses",
+    "crates/a2a-protocol-server/src/push/sender.rs:145,327 - push alone has a DNS bound (5 s)",
+    "rg ndots in book: none; no resolver hook in the client"
+   ],
+   "test": "none",
+   "summary": "Unchanged: no DNS caching or bound on client transports, an unpooled client per card fetch, and no ndots guidance.",
+   "remaining": "Pool the card/JWKS/token clients (ADR 0032 HttpPool), a DNS timeout or resolver hook, a book note on trailing-dot FQDNs or dnsConfig ndots:1.",
+   "theme": "dns",
+   "effort": "M",
+   "breaking": "none",
+   "probe": "k8s pod with ndots:5 and an upstream forward to a black hole: time resolve_agent_card('https://agent.example.com') against 'https://agent.example.com.'"
+  },
+  {
+   "id": "B-29",
+   "verdict": "needs_decision",
+   "severity_now": "info",
+   "evidence": [
+    "crates/a2a-protocol-client/src/tls.rs:84-86,198-204, server net/roots.rs:31-49, otel/telemetry/exporters.rs:148-150 - ring hard-coded on every default path",
+    "rg 'danger|ServerCertVerifier|dangerous()' in crates/tools/bindings: none - no skip-verify mode anywhere",
+    "rg fips|aws-lc in Cargo.toml files: no FIPS feature; no CRL/OCSP helper",
+    "Every path except the token provider and the gRPC client takes a caller-built rustls ClientConfig, which may use any provider and a verifier with CRLs",
+    "bindings/a2a-protocol-slimrpc/src/lib.rs:204-223 - SLIMRPC installs aws-lc-rs as the process default (SLIM's own TLS)"
+   ],
+   "test": "none",
+   "summary": "Unchanged: ring only on default paths, TLS 1.2+ AEAD suites, no FIPS, CRL or OCSP, and no insecure mode. A custom ClientConfig is the escape hatch everywhere except the token provider and the gRPC client.",
+   "remaining": "See options.",
+   "theme": "crypto-policy",
+   "effort": "S",
+   "breaking": "none for (1)",
+   "probe": "none",
+   "options": "(1) Document 'bring your own ClientConfig' as the FIPS/CRL route, and close the two paths that cannot take one (token provider B-03, gRPC client B-20): no new dependency. (2) A `fips` feature switching every hard-coded ring to aws-lc-rs/fips: L effort across both copies of the net code, native C build. (3) A CRL helper (WebPkiServerVerifier::builder().with_crls()) in tls.rs. Recommendation: (1), then (3) on demand, (2) only when a user asks."
+  },
+  {
+   "id": "B-30",
+   "verdict": "partly_fixed",
+   "severity_now": "low",
+   "evidence": [
+    "commit c4404e8 - shared net::client",
+    "crates/a2a-protocol-server/src/net/client.rs:20-33,57-66 - CONNECT_TIMEOUT 10 s, TCP keepalive 30 s, nodelay, 50 s pool idle",
+    "Applied to push (push/sender.rs:49-51,55-63), server JWKS/OIDC (auth/jwt.rs:862,915,1171) and the model client (tool_loop/openai.rs:116,134)",
+    "crates/a2a-protocol-server/Cargo.toml:28 - the server crate's default features omit tls-rustls; then push/sender.rs:56-58 builds Client::builder().build_http(): no connect timeout, no keepalive, no proxy, 90 s pool idle (see NEW-b-3)"
+   ],
+   "test": "none pins the connect timeout or keepalive on net::client (net/client/tests.rs:14-16 checks Debug only); the client crate's transport/connector.rs connections_carry_keepalive_and_nodelay shows the pattern (reads SO_KEEPALIVE back)",
+   "summary": "In tls-rustls builds (the SDK default) the push, JWKS/OIDC and model clients now bound the TCP connect and keep connections alive. No test pins it, and the server crate's non-TLS build still has neither.",
+   "remaining": "A socket-option test for net::client::HttpsClient; the same tuned HttpConnector for the non-TLS build.",
+   "theme": "push-delivery",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "to prove: webhook to an address whose SYNs are dropped (iptables DROP to 198.51.100.1, allowed by the SSRF screen) -> each attempt ends near 10 s with a connect timeout; `ss -tio` on a live delivery shows the keepalive timer"
+  }
+ ],
+ "new_findings": [
+  {
+   "id": "NEW-b-1",
+   "severity": "medium",
+   "where": "crates/a2a-protocol-server/src/push/sender.rs:584-588; crates/a2a-protocol-server/src/url_guard.rs:354-415",
+   "finding": "The push SSRF pre-flight always resolves the webhook host in this process (tokio lookup_host) and fails the delivery when it cannot, even when HTTPS_PROXY/HTTP_PROXY will carry the request and the proxy does the resolution. The only way past it, allow_private_urls(), turns the whole SSRF screen off.",
+   "scenario": "Locked-down egress: a pod's resolver answers only cluster names and every external request goes through a corporate proxy that resolves names itself (common with Squid/Zscaler). Every webhook to a public https:// host fails with 'webhook URL hostname could not be resolved', although the proxy path works. book push-notifications/delivery.md discusses the proxy resolving, not this.",
+   "read_only": true,
+   "theme": "push-delivery"
+  },
+  {
+   "id": "NEW-b-2",
+   "severity": "medium",
+   "where": "crates/a2a-protocol-client/src/proxy.rs:74-99 and tls.rs:57-69; crates/a2a-protocol-server/src/net/proxy.rs:105-129 and net/client.rs:72-81; hyper-util-0.1.21 client/proxy/matcher.rs:122-133",
+   "finding": "Loopback is never exempt from the proxy variables: hyper-util's Matcher consults only NO_PROXY, and Go's net/http exempts localhost and loopback while this code does not. The SDK allows plaintext http:// only to loopback on the premise that it never leaves the host: the token endpoint (token_provider.rs:790-800, whose error text says so), fetch_jwks (jwks.rs:122-141), server JWKS/OIDC (jwt.rs:1290-1306) and credentialed A2A calls (loopback.rs). With HTTP_PROXY set and no NO_PROXY for localhost, those requests go as forward-proxy requests, in cleartext with their Authorization header or client-secret form, to the proxy host. The client test proxy_and_cert_env.rs:132-160 relies on https://localhost being tunnelled through the proxy.",
+   "scenario": "A pod-wide HTTP_PROXY=http://corp-proxy:3128 (set for all tools), with a sidecar token broker or IdP at http://127.0.0.1:8080: OAuth2ClientCredentials sends 'POST http://127.0.0.1:8080/token' with 'Authorization: Basic <client secret>' across the network to corp-proxy, which then fetches from its own loopback (fails, or reaches the wrong service). A local agent at http://localhost:9000 called with a bearer token leaks it the same way. Probe: `nc -l 3128` as HTTP_PROXY, OAuth2ClientCredentials::new(\"http://127.0.0.1:9/token\", id, secret) -> nc prints the request with the secret.",
+   "read_only": true,
+   "theme": "proxy-semantics"
+  },
+  {
+   "id": "NEW-b-3",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/push/sender.rs:55-58; crates/a2a-protocol-server/Cargo.toml:28; tool_loop/openai.rs:116",
+   "finding": "Without the server crate's tls-rustls feature (not in its default features; the SDK does turn it on), the push sender and the model client use Client::builder().build_http(): no HTTP_PROXY, no TCP connect timeout, no keepalive, hyper's 90 s idle pool. The N-B-1 and B-30 fixes apply only to TLS builds.",
+   "scenario": "A deployment depending on a2a-protocol-server directly with default features, delivering to http:// webhooks from a network whose only egress is a proxy: every delivery fails; a black-holed receiver holds each attempt for the full request timeout.",
+   "read_only": true,
+   "theme": "push-delivery"
+  },
+  {
+   "id": "NEW-b-4",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/push/sender.rs:597-603,646-650; crates/a2a-protocol-server/src/net/proxy.rs:125-129",
+   "finding": "For an http:// webhook the request URI is rewritten to the pinned IP before it reaches the proxy connector, so NO_PROXY is matched against the IP, not the webhook's name: a NO_PROXY entry naming the host (or its domain) no longer exempts it. https:// webhooks to the same host do match by name.",
+   "scenario": "NO_PROXY=.partner.example because partner hooks must go direct; http://hooks.partner.example/... is sent to the proxy as 'POST http://203.0.113.5/...', which the proxy denies or routes differently, while the https:// webhook to the same host goes direct.",
+   "read_only": true,
+   "theme": "push-delivery"
+  },
+  {
+   "id": "NEW-b-5",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/auth/jwt.rs:1296-1303",
+   "finding": "The server's trustworthy_url treats any *.localhost name as loopback and allows plaintext JWKS and OIDC discovery to it. glibc and musl send *.localhost subdomains to DNS unless nss-myhostname or systemd-resolved is in use, so the name is not guaranteed to resolve to loopback. The client's fetch_jwks (jwks.rs:140) does not accept *.localhost, so the two crates disagree.",
+   "scenario": "An operator configures from_jwks_url(\"http://idp.localhost:8080/jwks\") in a container whose resolver forwards it upstream. An on-path DNS answer points it at a host serving attacker keys over plaintext, and tokens signed with those keys validate.",
+   "read_only": true,
+   "theme": "server-auth-tls"
+  }
+ ]
+}

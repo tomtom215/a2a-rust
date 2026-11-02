@@ -103,6 +103,7 @@ const DEFAULT_FAILURE_BACKOFF: Duration = Duration::from_secs(1);
 
 mod exchange;
 mod flight;
+mod trusted_hosts;
 
 pub use exchange::{
     ACCESS_TOKEN_TYPE, ExchangeRequest, ExchangedToken, JWT_TOKEN_TYPE, TOKEN_EXCHANGE_GRANT,
@@ -378,6 +379,19 @@ impl OAuth2ClientCredentials {
     /// the scopes the agent *offers* (with descriptions); which of them to
     /// request is your decision.
     ///
+    /// # Security
+    ///
+    /// The card is the peer's own word, and **the client secret is sent to
+    /// whatever `https://` host its `tokenUrl` names**. A card fetched over a
+    /// network you do not control, or from an agent you do not fully trust,
+    /// can name an endpoint of its choosing and receive `client_id:client_secret`
+    /// on the first token request (audit SEC-08). Use
+    /// [`from_agent_card_trusting`](Self::from_agent_card_trusting) and name
+    /// the host your identity provider runs on, or build the provider with
+    /// [`new`](Self::new) from a URL you configured yourself. Plain
+    /// `from_agent_card` is for a card you verified, for example one read
+    /// through `ClientBuilder::from_signed_card` (feature `signing`).
+    ///
     /// # Errors
     ///
     /// Returns [`ClientError::InvalidEndpoint`] when the scheme is missing,
@@ -389,34 +403,13 @@ impl OAuth2ClientCredentials {
         client_id: impl Into<String>,
         client_secret: impl Into<String>,
     ) -> ClientResult<Self> {
-        use a2a_protocol_types::security::{OAuthFlows, SecurityScheme};
-
-        let scheme = card
-            .security_schemes
-            .as_ref()
-            .and_then(|schemes| schemes.get(scheme_name))
-            .ok_or_else(|| {
-                ClientError::InvalidEndpoint(format!(
-                    "agent card has no security scheme named {scheme_name:?}"
-                ))
-            })?;
-        let SecurityScheme::OAuth2(oauth2) = scheme else {
-            return Err(ClientError::InvalidEndpoint(format!(
-                "security scheme {scheme_name:?} is not an OAuth 2.0 scheme"
-            )));
-        };
-        let OAuthFlows::ClientCredentials(flow) = &oauth2.flows else {
-            return Err(ClientError::InvalidEndpoint(format!(
-                "security scheme {scheme_name:?} has no client-credentials flow \
-                 (interactive flows need a custom TokenProvider)"
-            )));
-        };
+        let token_url = card_token_url(card, scheme_name)?;
         // The card is the peer's word, and the secret goes where it says: a
         // `tokenUrl` that is plaintext to another machine is refused here
         // (audit SEC-08). To use one anyway, build the provider with `new`
         // from the URL you trust and call `allow_insecure_token_endpoint`.
-        check_endpoint_secure(&flow.token_url, "the agent card's tokenUrl", false)?;
-        Ok(Self::new(flow.token_url.clone(), client_id, client_secret))
+        check_endpoint_secure(&token_url, "the agent card's tokenUrl", false)?;
+        Ok(Self::new(token_url, client_id, client_secret))
     }
 
     /// Discovers the token endpoint from an OIDC issuer
@@ -443,6 +436,23 @@ impl OAuth2ClientCredentials {
     #[must_use]
     pub const fn allow_insecure_token_endpoint(mut self) -> Self {
         self.allow_insecure = true;
+        self
+    }
+
+    /// Connects to the token endpoint with `tls`: an identity provider behind
+    /// a private CA, or one that asks for a client certificate (mutual TLS, as
+    /// a service mesh or SPIFFE does).
+    ///
+    /// Without this the roots are Mozilla's plus those `SSL_CERT_FILE` and
+    /// `SSL_CERT_DIR` name, and no client certificate is presented. A
+    /// configuration given here is exact. Build one with
+    /// [`tls::tls_config_from_pem`](crate::tls::tls_config_from_pem). Until
+    /// this setter existed the provider took no TLS configuration at all, and
+    /// every other outbound path of this crate did (audit B-03).
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn with_tls_config(mut self, tls: rustls::ClientConfig) -> Self {
+        self.client = token_http_client_with(tls);
         self
     }
 
@@ -663,12 +673,42 @@ pub async fn discover_token_endpoint(issuer: &str) -> ClientResult<String> {
     discover_token_endpoint_within(issuer, DEFAULT_TOKEN_REQUEST_TIMEOUT).await
 }
 
+/// [`discover_token_endpoint`] over `tls`: for an issuer behind a private CA,
+/// or one that asks for a client certificate. Built with
+/// [`tls::tls_config_from_pem`](crate::tls::tls_config_from_pem); a
+/// configuration given here is exact (audit B-03).
+///
+/// # Errors
+///
+/// As [`discover_token_endpoint`].
+#[cfg(feature = "tls-rustls")]
+pub async fn discover_token_endpoint_with_tls_config(
+    issuer: &str,
+    tls: rustls::ClientConfig,
+) -> ClientResult<String> {
+    discover_using(
+        &token_http_client_with(tls),
+        issuer,
+        DEFAULT_TOKEN_REQUEST_TIMEOUT,
+    )
+    .await
+}
+
 /// [`discover_token_endpoint`] with the whole request — headers and body —
 /// bounded by `budget`. Until 2026-09-10 the body read took a fresh
 /// [`DEFAULT_TOKEN_REQUEST_TIMEOUT`] after the headers had spent one, so
 /// discovery could take twice the documented timeout; the server's JWKS fetch
 /// had the same defect and the same fix (`JWKS_FETCH_BUDGET`).
 pub(crate) async fn discover_token_endpoint_within(
+    issuer: &str,
+    budget: Duration,
+) -> ClientResult<String> {
+    discover_using(&build_token_http_client(), issuer, budget).await
+}
+
+/// Discovery over `client`, whole request bounded by `budget`.
+async fn discover_using(
+    client: &TokenHttpClient,
     issuer: &str,
     budget: Duration,
 ) -> ClientResult<String> {
@@ -686,7 +726,6 @@ pub(crate) async fn discover_token_endpoint_within(
     check_endpoint_secure(&url, "OIDC discovery URL", false)?;
     check_endpoint_reachable(cfg!(feature = "tls-rustls"), &url, "OIDC discovery")?;
 
-    let client = build_token_http_client();
     let req = hyper::Request::builder()
         .method(hyper::Method::GET)
         .uri(&url)
@@ -745,20 +784,27 @@ fn check_issuer(found: Option<&str>, asked: &str) -> ClientResult<()> {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// How long a connection to a token endpoint may take to open.
+const TOKEN_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The token endpoint's client with `tls` as its TLS configuration: exactly
+/// its roots, and its client certificate if it has one.
+#[cfg(feature = "tls-rustls")]
+fn token_http_client_with(tls: rustls::ClientConfig) -> TokenHttpClient {
+    crate::tls::build_https_client_with_connect_timeout(tls, TOKEN_CONNECT_TIMEOUT)
+}
+
 fn build_token_http_client() -> TokenHttpClient {
     #[cfg(not(feature = "tls-rustls"))]
     {
         let mut connector = HttpConnector::new();
-        connector.set_connect_timeout(Some(Duration::from_secs(10)));
+        connector.set_connect_timeout(Some(TOKEN_CONNECT_TIMEOUT));
         connector.set_nodelay(true);
         Client::builder(TokioExecutor::new()).build(connector)
     }
     #[cfg(feature = "tls-rustls")]
     {
-        crate::tls::build_https_client_with_connect_timeout(
-            crate::tls::default_tls_config(),
-            Duration::from_secs(10),
-        )
+        token_http_client_with(crate::tls::default_tls_config())
     }
 }
 
@@ -778,6 +824,37 @@ fn check_endpoint_reachable(tls: bool, url: &str, what: &str) -> ClientResult<()
         )));
     }
     Ok(())
+}
+
+/// The `tokenUrl` of the card's OAuth 2.0 client-credentials flow named
+/// `scheme_name`: what both card constructors read before they judge it.
+fn card_token_url(
+    card: &a2a_protocol_types::agent_card::AgentCard,
+    scheme_name: &str,
+) -> ClientResult<String> {
+    use a2a_protocol_types::security::{OAuthFlows, SecurityScheme};
+
+    let scheme = card
+        .security_schemes
+        .as_ref()
+        .and_then(|schemes| schemes.get(scheme_name))
+        .ok_or_else(|| {
+            ClientError::InvalidEndpoint(format!(
+                "agent card has no security scheme named {scheme_name:?}"
+            ))
+        })?;
+    let SecurityScheme::OAuth2(oauth2) = scheme else {
+        return Err(ClientError::InvalidEndpoint(format!(
+            "security scheme {scheme_name:?} is not an OAuth 2.0 scheme"
+        )));
+    };
+    let OAuthFlows::ClientCredentials(flow) = &oauth2.flows else {
+        return Err(ClientError::InvalidEndpoint(format!(
+            "security scheme {scheme_name:?} has no client-credentials flow \
+             (interactive flows need a custom TokenProvider)"
+        )));
+    };
+    Ok(flow.token_url.clone())
 }
 
 /// Refuses a token endpoint that is plaintext `http://` to a host other than
@@ -1130,7 +1207,7 @@ mod tests {
 
     // -- from_agent_card ------------------------------------------------------
 
-    fn card_with_oauth2(
+    pub(super) fn card_with_oauth2(
         flows: a2a_protocol_types::security::OAuthFlows,
     ) -> a2a_protocol_types::agent_card::AgentCard {
         use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard};
@@ -1144,22 +1221,26 @@ mod tests {
                 description: None,
             })),
         );
-        AgentCard {
-            name: "a".into(),
-            url: None,
-            description: "d".into(),
-            version: "1".into(),
-            supported_interfaces: vec![],
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
-            capabilities: AgentCapabilities::none(),
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            security_schemes: Some(schemes),
-            security_requirements: None,
-            signatures: None,
+        {
+            let mut built = AgentCard::new(
+                "a",
+                "1",
+                a2a_protocol_types::AgentInterface::jsonrpc(String::new()),
+            );
+            built.url = None;
+            built.description = "d".into();
+            built.supported_interfaces = vec![];
+            built.default_input_modes = vec![];
+            built.default_output_modes = vec![];
+            built.skills = vec![];
+            built.capabilities = AgentCapabilities::none();
+            built.provider = None;
+            built.icon_url = None;
+            built.documentation_url = None;
+            built.security_schemes = Some(schemes);
+            built.security_requirements = None;
+            built.signatures = None;
+            built
         }
     }
 

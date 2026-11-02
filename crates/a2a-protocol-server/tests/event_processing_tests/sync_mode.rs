@@ -166,23 +166,22 @@ impl AgentExecutor for ReplacingArtifactExecutor {
         Box::pin(async move {
             for text in ["first draft", "final"] {
                 queue
-                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        artifact: Artifact::new("a1", vec![Part::text(text)]),
-                        append: None,
-                        last_chunk: Some(true),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::ArtifactUpdate(
+                        TaskArtifactUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            ctx.context_id.clone(),
+                            Artifact::new("a1", vec![Part::text(text)]),
+                        )
+                        .with_last_chunk(true),
+                    ))
                     .await?;
             }
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await
         })
     }

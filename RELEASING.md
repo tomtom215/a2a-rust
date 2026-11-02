@@ -266,6 +266,7 @@ This triggers the release workflow (`.github/workflows/release.yml`) which:
 5. **Runs a publish dry run** to verify packages are publishable
 6. **Creates a GitHub Release** with notes extracted from CHANGELOG.md and attached `.crate` artifacts. GitHub refuses a release body over 125,000 characters, so a section longer than 120,000 is released as its Known Limitations, Breaking Changes, Deprecated and Security sections plus a link to the whole section at the tag (0.15.0's section is about 289,000)
 7. **Publishes to crates.io** in dependency order with index propagation delays (requires `crates-io` environment approval; authenticates with Trusted Publishing, falling back to the environment secret)
+8. **Publishes the `deploy-agent` image** to `ghcr.io/tomtom215/a2a-rust/deploy-agent:<version>` once the GitHub release exists (job `deploy-agent-image`; set the repository variable `PUBLISH_DEPLOY_AGENT_IMAGE` to `false` to skip it). Built from the tagged tree with `examples/deploy-agent/Dockerfile`, tagged with the version only (no `latest`), with BuildKit's SBOM and maximum provenance in the image index and a Sigstore-signed build-provenance attestation stored beside it; the job verifies that attestation with `gh attestation verify` before it finishes. `examples/deploy-agent/deployment.yaml` names this image at the workspace version, so a release bumps that line with the version (`scripts/check_doc_versions.py` is the gate)
 
 ### The tag must be the release-preparation commit
 
@@ -273,13 +274,14 @@ This triggers the release workflow (`.github/workflows/release.yml`) which:
 preparation, and shipped nineteen changes — one breaking — that the tagged
 `CHANGELOG.md` still listed under `[Unreleased]` and the release notes never
 mentioned (`docs/adopter-audit-2026-09-22.md`, N7). Four checks in
-`release.yml`, all in `scripts/check_release_tree.py`, now refuse that:
+`release.yml`, all in `scripts/check_release_tree.py`, now refuse that (and a fifth, from 0.16.0, refuses release notes with no summary):
 
 | Step | Refuses |
 |---|---|
 | `Nothing is left under [Unreleased] in the tagged tree` | any entry under `## [Unreleased]`; the placeholder `Nothing yet.` is allowed |
 | `The tag is the release-preparation commit` | any file packaged into the four crates (their directories, and the root `Cargo.toml` they inherit from) that differs between the tag and the last commit that edited the release's own `## [X.Y.Z]` section — apart from the crates' version strings and pins |
 | `Breaking releases keep the STABILITY.md cadence` | a `### Breaking Changes` section in a patch release, or in a second release in the same calendar month as another breaking one, unless that release's section declares `**Cadence exception:** <reason>` (STABILITY.md §3) |
+| `The release notes open with a Highlights block` | from 0.16.0, a `## [X.Y.Z]` section with no `### Highlights` block, an empty one, or one over 15 non-blank lines: what a reader must know before upgrading, at a glance (audit G/C-01; `python3 scripts/check_release_tree.py self-test` proves the rule) |
 | `Packaged crates were built from the tagged commit` (package job) | a `.crate` whose `.cargo_vcs_info.json` names another commit, or a dirty tree |
 
 What that asks of the process: **write the release notes last.** Anything that
@@ -290,10 +292,10 @@ point: whoever changes shipped code after the notes were written has to open
 the notes, which is exactly the step 0.13.0 skipped. Bumping versions and pins
 after the notes is allowed, since 0.12.1 was prepared in that order.
 
-Before tagging, run all three tree checks on the commit you intend to tag:
+Before tagging, run the four tree checks on the commit you intend to tag:
 
 ```bash
-for c in unreleased prep cadence; do
+for c in unreleased prep cadence highlights; do
   python3 scripts/check_release_tree.py "$c" vX.Y.Z HEAD || echo "FAILED: $c"
 done
 ```
@@ -308,6 +310,7 @@ fixable; it is the measurement of how often the gap was used.
 
 - Verify all 4 crates appear on [crates.io](https://crates.io)
 - Verify docs build on [docs.rs](https://docs.rs)
+- Verify the image: `gh attestation verify oci://ghcr.io/tomtom215/a2a-rust/deploy-agent:<version> --repo tomtom215/a2a-rust`. The first time, set the package's visibility to public in the repository's Packages settings (a new GHCR package is private until then), or `kubectl apply` cannot pull it
 - Verify the site moved to the release: the Release workflow's success starts
   *Deploy Documentation* (`workflow_run`), after which
   [a2a-rust.com](https://a2a-rust.com) is the new release's book, its version

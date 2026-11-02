@@ -92,6 +92,18 @@ pub struct LegalHold {
 /// normalises a field (reorders object keys is fine; drops an empty map is
 /// not) changes the record's hash and makes the chain fail to verify.
 pub trait AuditStore: Send + Sync + 'static {
+    /// Whether this store keeps its state in this process alone.
+    ///
+    /// The default is `false`: a store this crate cannot see into (yours, over
+    /// Redis, say) is taken to be shared. The in-memory ones answer `true`.
+    /// [`Profile::Production`](crate::profile::Profile::Production) reads it:
+    /// on a task store that is shared between processes, a store that only this
+    /// process can see makes the fleet behave as if it had no store
+    /// (audit E-F13).
+    fn is_process_local(&self) -> bool {
+        false
+    }
+
     /// The highest `seq` stored in `chain` and that record's hash.
     fn head<'a>(&'a self, chain: &'a str) -> BoxFuture<'a, A2aResult<Option<(u64, String)>>>;
 
@@ -257,6 +269,10 @@ impl std::fmt::Debug for InMemoryAuditStore {
 }
 
 impl AuditStore for InMemoryAuditStore {
+    fn is_process_local(&self) -> bool {
+        true
+    }
+
     fn head<'a>(&'a self, chain: &'a str) -> BoxFuture<'a, A2aResult<Option<(u64, String)>>> {
         Box::pin(async move {
             let chains = self.chains.read().await;

@@ -17,6 +17,18 @@ use tokio::sync::RwLock;
 ///
 /// Object-safe; used as `Box<dyn PushConfigStore>`.
 pub trait PushConfigStore: Send + Sync + 'static {
+    /// Whether this store keeps its state in this process alone.
+    ///
+    /// The default is `false`: a store this crate cannot see into (yours, over
+    /// Redis, say) is taken to be shared. The in-memory ones answer `true`.
+    /// [`Profile::Production`](crate::profile::Profile::Production) reads it:
+    /// on a task store that is shared between processes, a store that only this
+    /// process can see makes the fleet behave as if it had no store
+    /// (audit E-F13).
+    fn is_process_local(&self) -> bool {
+        false
+    }
+
     /// Stores (creates or updates) a push notification config.
     ///
     /// # Errors
@@ -152,6 +164,10 @@ impl InMemoryPushConfigStore {
 
 #[allow(clippy::manual_async_fn)]
 impl PushConfigStore for InMemoryPushConfigStore {
+    fn is_process_local(&self) -> bool {
+        true
+    }
+
     fn set<'a>(
         &'a self,
         mut config: TaskPushNotificationConfig,
@@ -283,13 +299,10 @@ mod tests {
     use a2a_protocol_types::push::TaskPushNotificationConfig;
 
     fn make_config(task_id: &str, id: Option<&str>, url: &str) -> TaskPushNotificationConfig {
-        TaskPushNotificationConfig {
-            tenant: None,
-            id: id.map(String::from),
-            task_id: Some(task_id.to_string()),
-            url: url.to_string(),
-            token: None,
-            authentication: None,
+        {
+            let mut built = TaskPushNotificationConfig::new(task_id.to_string(), url.to_string());
+            built.id = id.map(String::from);
+            built
         }
     }
 
@@ -341,14 +354,7 @@ mod tests {
     #[tokio::test]
     async fn set_without_task_id_returns_invalid_params() {
         let store = InMemoryPushConfigStore::new();
-        let config = TaskPushNotificationConfig {
-            tenant: None,
-            id: None,
-            task_id: None,
-            url: "https://example.com/hook".to_string(),
-            token: None,
-            authentication: None,
-        };
+        let config = TaskPushNotificationConfig::for_url("https://example.com/hook".to_string());
         let err = store
             .set(config)
             .await

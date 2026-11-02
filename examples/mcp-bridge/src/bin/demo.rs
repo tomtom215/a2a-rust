@@ -34,7 +34,7 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 use rmcp::ServiceExt;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ClientCapabilities, ClientConfig, GetTaskParams,
@@ -120,25 +120,21 @@ async fn status(
     note: Option<&str>,
 ) -> A2aResult<()> {
     queue
-        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
-            status: TaskStatus {
-                state,
-                message: note.map(|text| Message {
-                    id: MessageId::new(format!("note-{text}")),
-                    role: MessageRole::Agent,
-                    parts: vec![Part::text(text)],
-                    task_id: None,
-                    context_id: None,
-                    reference_task_ids: None,
-                    extensions: None,
-                    metadata: None,
-                }),
-                timestamp: None,
+        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            {
+                let mut built = TaskStatus::new(state);
+                built.message = note.map(|text| {
+                    Message::new(
+                        MessageId::new(format!("note-{text}")),
+                        MessageRole::Agent,
+                        vec![Part::text(text)],
+                    )
+                });
+                built
             },
-            metadata: None,
-        }))
+        )))
         .await
 }
 
@@ -148,14 +144,14 @@ async fn emit_artifact(
     text: &str,
 ) -> A2aResult<()> {
     queue
-        .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
-            artifact: Artifact::new("report", vec![Part::text(text)]),
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        }))
+        .write(StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                ctx.task_id.clone(),
+                ctx.context_id.clone(),
+                Artifact::new("report", vec![Part::text(text)]),
+            )
+            .with_last_chunk(true),
+        ))
         .await
 }
 
@@ -195,24 +191,9 @@ async fn start_agent() -> Result<String, Box<dyn std::error::Error>> {
     );
     let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
     tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                continue;
-            };
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let dispatcher = Arc::clone(&dispatcher);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&dispatcher);
-                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-            });
-        }
+        let _ = a2a_protocol_server::serve::Server::from_listener(listener)
+            .serve_with_shutdown(dispatcher, std::future::pending())
+            .await;
     });
     Ok(url)
 }

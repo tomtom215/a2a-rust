@@ -1432,6 +1432,26 @@ def build_registry() -> dict[str, Probe | Exempt]:
             ),
         ],
     )
+    reg["release.yml::validate::The release notes open with a Highlights block"] = Probe(
+        healthy=_next_release_fixture(),
+        defects=[
+            Defect(
+                "release notes with no Highlights block",
+                _next_release_fixture("no-highlights"),
+                "has no '### Highlights' block",
+            ),
+            Defect(
+                "a Highlights block with nothing in it",
+                _next_release_fixture("empty-highlights"),
+                "'### Highlights' block is empty",
+            ),
+            Defect(
+                "a Highlights block too long to take in at a glance",
+                _next_release_fixture("long-highlights"),
+                "non-blank lines",
+            ),
+        ],
+    )
     reg["release.yml::package::Packaged crates were built from the tagged commit"] = Probe(
         healthy=_crate_fixture(),
         defects=[
@@ -1833,6 +1853,22 @@ def _next_release_fixture(defect: str | None = None) -> Setup:
         body = m.group(1).strip()
         if not body or body == "Nothing yet.":
             body = "### Fixed\n\n- A fixture entry."
+        # From 0.16.0 the notes open with a Highlights block. The healthy
+        # control carries one of its own rather than the tree's: `[Unreleased]`
+        # is empty right after a release, and a fixture without a block would
+        # fail the `highlights` step for the wrong reason.
+        # The block is closed by a heading of its own: the tree's `[Unreleased]`
+        # may open with prose before its first `###`, and prose directly under
+        # `### Highlights` would count as the block's lines.
+        body = re.sub(r"(?ms)^### Highlights[^\n]*\n.*?(?=^### |\Z)", "", body).strip()
+        block = {
+            "no-highlights": "",
+            "empty-highlights": "### Highlights\n\n",
+            "long-highlights": "### Highlights\n\n"
+            + "".join(f"- line {i}\n" for i in range(16)),
+        }.get(defect, "### Highlights\n\n- A fixture highlight.\n")
+        if block:
+            body = block + "\n### Changed\n\n" + body
         if defect == "same-month-empty-exception":
             body = "**Cadence exception:** n/a\n\n" + body
         elif defect == "same-month-excepted":

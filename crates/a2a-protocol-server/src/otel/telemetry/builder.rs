@@ -32,6 +32,8 @@ pub struct TelemetryBuilder {
     install_globally: bool,
     where_configured: bool,
     env: Arc<Env>,
+    /// What the environment said that was not acted on; see [`config::Notes`].
+    notes: config::Notes,
 }
 
 impl std::fmt::Debug for TelemetryBuilder {
@@ -73,6 +75,7 @@ impl TelemetryBuilder {
             install_globally: true,
             where_configured: false,
             env,
+            notes: config::Notes::default(),
         }
     }
 
@@ -297,9 +300,9 @@ impl TelemetryBuilder {
         self
     }
 
-    fn selection(&self, signal: Signal) -> Result<Selection, TelemetryError> {
+    fn selection(&self, signal: Signal) -> Selection {
         if config::sdk_disabled(&*self.env) {
-            return Ok(Selection::OFF);
+            return Selection::OFF;
         }
         let (explicit, preset_default) = match signal {
             Signal::Traces => (self.traces, true),
@@ -313,7 +316,7 @@ impl TelemetryBuilder {
         } else {
             preset_default
         };
-        selection::from_env(&*self.env, signal, explicit.unwrap_or(default))
+        selection::from_env(&*self.env, signal, explicit.unwrap_or(default), &self.notes)
     }
 
     /// OTLP/HTTP's endpoint must carry a scheme. `opentelemetry-otlp` answers
@@ -349,9 +352,7 @@ impl TelemetryBuilder {
         const SIGNALS: [Signal; 3] = [Signal::Traces, Signal::Metrics, Signal::Logs];
         const PATHS: [&str; 3] = ["/v1/traces", "/v1/metrics", "/v1/logs"];
         for (signal, over_otlp) in SIGNALS.into_iter().zip(otlp) {
-            let Ok(protocol) = config::protocol(&*self.env, signal, self.protocol) else {
-                continue;
-            };
+            let protocol = config::protocol(&*self.env, signal, self.protocol, &self.notes);
             if !over_otlp || !protocol.is_http() {
                 continue;
             }
@@ -401,12 +402,11 @@ impl TelemetryBuilder {
             ca_pem.extend_from_slice(&read_file(&var, &path)?);
         }
         let client_identity = self.client_identity_for(signal)?;
-        let timeout = config::timeout(env, signal)?;
+        let timeout = config::timeout(env, signal, &self.notes);
         let proxy = Arc::new(proxy::matcher(env, &self.proxy));
-        let compression = match self.compression {
-            Some(c) => Some(c),
-            None => compression::from_env(env, signal)?,
-        };
+        let compression = self
+            .compression
+            .map_or_else(|| compression::from_env(env, signal, &self.notes), Some);
         if let (Signal::Traces, Some(lf)) = (signal, &self.langfuse) {
             let endpoint = lf.traces_endpoint();
             return Ok(Target {
@@ -428,7 +428,7 @@ impl TelemetryBuilder {
                 client_identity,
             });
         }
-        let protocol = config::protocol(env, signal, self.protocol)?;
+        let protocol = config::protocol(env, signal, self.protocol, &self.notes);
         if protocol.is_http() {
             self.require_scheme(signal)?;
         }

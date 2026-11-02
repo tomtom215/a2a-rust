@@ -1679,16 +1679,11 @@ mod tests {
 
     /// Helper: create a minimal `StreamResponse::StatusUpdate` for testing.
     fn make_status_event(task_id: &str, state: TaskState) -> StreamResponse {
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new(task_id),
-            context_id: ContextId::new("ctx-test"),
-            status: TaskStatus {
-                state,
-                message: None,
-                timestamp: None,
-            },
-            metadata: None,
-        })
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new(task_id),
+            ContextId::new("ctx-test"),
+            TaskStatus::new(state),
+        ))
     }
 
     // ── §3.1.2 provisional snapshot ──────────────────────────────────────
@@ -1699,16 +1694,11 @@ mod tests {
     // decision may be lost when that happens.
 
     fn reply() -> StreamResponse {
-        StreamResponse::Message(a2a_protocol_types::message::Message {
-            id: a2a_protocol_types::message::MessageId::new("reply"),
-            role: a2a_protocol_types::message::MessageRole::Agent,
-            parts: vec![a2a_protocol_types::message::Part::text("hi")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        })
+        StreamResponse::Message(a2a_protocol_types::message::Message::new(
+            a2a_protocol_types::message::MessageId::new("reply"),
+            a2a_protocol_types::message::MessageRole::Agent,
+            vec![a2a_protocol_types::message::Part::text("hi")],
+        ))
     }
 
     // The reader treats the snapshot as an opaque frame, so a `Submitted`
@@ -1825,18 +1815,11 @@ mod tests {
         let (writer, reader) = new_in_memory_queue();
         let called = Arc::new(AtomicBool::new(false));
         let mut reader = reader.with_reattach(counting_reattach(&called));
-        reader.set_first_event(StreamResponse::Task(Task {
-            id: TaskId::new("t-snap"),
-            context_id: ContextId::new("ctx-test"),
-            status: TaskStatus {
-                state: TaskState::Completed,
-                message: None,
-                timestamp: None,
-            },
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }));
+        reader.set_first_event(StreamResponse::Task(Task::new(
+            TaskId::new("t-snap"),
+            ContextId::new("ctx-test"),
+            TaskStatus::new(TaskState::Completed),
+        )));
         drop(writer);
 
         assert!(reader.read().await.is_some(), "the snapshot arrives first");

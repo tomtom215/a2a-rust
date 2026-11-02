@@ -9,7 +9,18 @@
 //! worst moment. Adopters write their own stores; this grades one the way
 //! [`check`](super::check) grades an executor.
 //!
-//! ```rust,ignore
+//! ```rust
+//! # use std::sync::Arc;
+//! # use a2a_protocol_server::conformance::halt::{check_handlers, check_store};
+//! # use a2a_protocol_server::store::{HaltStore, InMemoryHaltStore};
+//! # // rustdoc drops a `#[test]` fn without type-checking it, so make `#[tokio::test]` build it.
+//! # mod tokio { pub use ::tokio::*; pub use ::tokio::main as test; }
+//! # const URL: &str = "postgres://localhost/halts";
+//! # struct MyHaltStore;
+//! # impl MyHaltStore {
+//! #     async fn connect(_url: &str) -> InMemoryHaltStore { InMemoryHaltStore::new() }
+//! # }
+//!
 //! #[tokio::test]
 //! async fn my_halt_store_conforms() {
 //!     // Each call opens the same backing store, as a second replica would,

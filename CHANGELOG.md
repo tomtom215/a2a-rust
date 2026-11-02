@@ -23,8 +23,132 @@ Qwen3.5-2B and Gemma 4 E2B) and a real observability stack (OpenTelemetry
 Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 13.2.4), 2026-10-28.
 
+
+### Highlights
+
+- **Action required if you build against the SDK (eleven breaking items, each with its migration in `book/src/reference/upgrading/0.15-to-0.16.md`):** `RequestContext.context_id` is a `ContextId`; thirteen protocol structs (`Task`, `Message`, `Part`, `AgentCard`, the update events and others) are `#[non_exhaustive]`, built with `new` and `with_*`; `AgentCard::new` declares streaming; `a2a-protocol-server` enables `tls-rustls` by default; `sign_agent_card` is removed; configuration errors are `ServerError::Config`/`ClientError::Config`; internal error text is withheld from callers; `JwtValidator` checks `iss` and `aud`; the WebSocket listener refuses browsers unless allowed; `ServeReport` is `#[must_use]`; `tls::HttpsClient` is a struct.
+- **Action required if you deploy it:** loopback is never sent to a proxy (`A2A_PROXY_LOOPBACK=1` restores it); `Profile::Production` refuses an in-memory halt, lease, push-config or audit store over a shared task store (`allow_process_local_stores()` opts out); a wrong `OTEL_*` value is noted instead of stopping the process; an exporter named `zipkin` no longer takes a fleet down.
+- **Several replicas on one PostgreSQL database need no session affinity:** each turn claims its task, a cancel reaches the executor on another replica within about a second, a dead replica's tasks are handed over, and a replica that stalls past its claim writes nothing more.
+- **A task's ending always reaches its webhooks, its log and its caller;** an executor that panics leaves the task `failed`; a blocking send over gRPC is no longer cut at the request timeout; credentials go only to the host the caller named; a private CA and mutual TLS reach every binding, the token provider included.
+- **Shipping:** a signed `deploy-agent` image on GHCR with build provenance, a card that reports its version, and retention of finished tasks; OpenTelemetry export through proxies with gzip, console and Prometheus exporters, resource detection and lost-export warnings; WebSocket connections that detect a dead peer.
+- **Not in this release:** `#[non_exhaustive]` on the other 26 wire structs (parameters, responses, security schemes), the swarm designs beyond the four fixes, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
+
 ### Added
 
+- **`Arc<D>` is a `Dispatcher` when `D` is** (server; audit G-05): code that
+  keeps an `Arc<JsonRpcDispatcher>` to hand clones to other tasks can give it
+  to `Server::serve_with_shutdown` as it is. It forwards `request_handler` and
+  `protocol_binding` as well as `dispatch`; a wrapper that kept their defaults
+  would lose the shutdown that cancels in-flight work before it drains the
+  sockets.
+
+- **`A2A-Delivery-Id` on every webhook request** (server; audit D-05;
+  `push::webhook::{DELIVERY_ID_HEADER, delivery_id}`): one UUID per event per
+  webhook, the same on every attempt of it, so a receiver that handled the
+  first attempt and lost its answer can tell the retry from a second event. It
+  is not kept across a restart and not shared between the paths that can send
+  one event, so it deduplicates retries only; `WebhookReceiver` still
+  deduplicates by body. The book now says what delivery is: at most the
+  configured attempts, held in memory, not retried after a restart or a full
+  lane. Not done: a durable outbox, and stopping delivery to a config that
+  answers `410` (both behind decisions the maintainer has not made).
+- **`url_guard::resolve_public_addrs`** (server; audit B-13): every address a
+  webhook host resolved to, all checked, in the resolver's order without
+  repeats. `resolve_public_url` still returns the first.
+
+- **`Debug` for `EventEmitter`, `A2aRouter` and `WebSocketDispatcher`** (server;
+  audit G-23): the first names the task and context and not the message, the
+  others their settings and no secrets.
+- **`SendMessageResponse::{as_task, into_task, as_message, into_message,
+  text}`** (types; audit G-22): every caller of a blocking send matched the
+  two variants by hand. `text` is a message's text or a task's first artifact
+  text.
+- **`RequestHandlerBuilder::build_arc`** (server; audit G-17): `build` in the
+  `Arc` every dispatcher takes, where every snippet wrote
+  `Arc::new(builder.build()?)`.
+- **`agent_executor!` takes the receiver** (server; audit G-08):
+  `agent_executor!(Ty, |this, ctx, queue| async { this.model … })`, and the
+  same in the `execute:`/`cancel:` form, so an agent with state (a model
+  client, its configuration) no longer falls back to the full
+  `Pin<Box<dyn Future>>` signature. The two-parameter form is unchanged (an
+  invocation of three identifiers cannot match it); a `compile_fail` doctest
+  records that `self` is still not available there.
+- **`a2a_protocol_client::new_message_id()`**, also in the SDK prelude (client;
+  audit G-13): a fresh UUID v4 `MessageId`; the docs hard-coded `"m1"` or told
+  the reader to add `uuid`.
+- **A signed `deploy-agent` container image, published to GHCR by the release
+  workflow** (audit A13, A27, NEW-a-l-4b; maintainer's decision of 2026-11-01).
+  The job `deploy-agent-image` builds `examples/deploy-agent/Dockerfile` from the
+  tagged tree, pushes `ghcr.io/tomtom215/a2a-rust/deploy-agent:<version>` (that
+  tag only; there is no `latest`), puts BuildKit's SBOM and maximum provenance
+  in the image index, stores a Sigstore-signed SLSA build-provenance
+  attestation beside it, and verifies that attestation with `gh attestation
+  verify` before it finishes. On by default; the repository variable
+  `PUBLISH_DEPLOY_AGENT_IMAGE=false` skips it. `deployment.yaml` now names that
+  image at the workspace version with `imagePullPolicy: IfNotPresent` (it named
+  `deploy-agent:latest`, which Kubernetes pulled from Docker Hub, where nothing
+  was published, so `kubectl apply` as shipped failed); `check_doc_versions.py`
+  fails a manifest that names another version. `AGENT_VERSION` (set from the
+  release tag by the image build) is the version on the agent card, which
+  reported the example crate's `0.0.0` for every rollout. Dependabot's docker
+  ecosystem refreshes the Dockerfile's two base-image digests weekly. Not
+  verified by a run: the job itself (it needs a pushed tag); the Dockerfile
+  and the manifest are checked as stated under *Internal*.
+- **`is_process_local()` on `HaltStore`, `LeaseStore`, `PushConfigStore` and
+  `AuditStore`, and `RequestHandlerBuilder::allow_process_local_stores()`**
+  (server; audit E-F13). The method defaults to `false`; the in-memory stores
+  answer `true`, which is what the production profile reads. A custom store
+  that only this process can see should override it. The opt-out is described
+  under *Behaviour Changes*. `profile::shared_store_tests` cover the refusals,
+  the opt-out, and the cases that stay accepted.
+- **`with_tls_config` on `OAuth2ClientCredentials` and `TokenExchange`, and
+  `discover_token_endpoint_with_tls_config`** (client; `tls-rustls`; audits
+  B-03, H2). The token provider, the RFC 8693 exchange and OIDC discovery took
+  no TLS configuration, though every other outbound path did, so an identity
+  provider behind a private CA worked only through `SSL_CERT_FILE` and one
+  that requires mutual TLS (a service mesh, SPIFFE) not at all. A
+  configuration given is exact; `tls::tls_config_from_pem` builds one that
+  keeps the defaults. `token_provider_tls.rs`: a private CA and a required
+  client certificate, for each of the three.
+- **`transport::grpc::tls_config_from_pem` and a `tls::ClientConfig`
+  re-export** (client; `grpc-tls`; audits B-15, H2): the gRPC counterpart of
+  `tls::tls_config_from_pem`, starting from the default roots, adding the PEM
+  roots and a client certificate. Before it the only gRPC TLS setting was
+  tonic's own type built by hand, whose roots replace the defaults.
+  `grpc_pem_config.rs` against a server that requires a client certificate.
+- **`a2a --cacert FILE`, `--client-cert FILE`, `--client-key FILE`** (a2a-cli;
+  audit B-15). The tool had no way to trust a private CA or present a client
+  certificate except `SSL_CERT_FILE`, which covers the first only and which
+  gRPC ignored. `--cacert` is repeatable and adds to the default roots; the
+  certificate and key go together. They reach every binding, the card fetch and
+  the JWK Set fetch. Files are read when the flags are parsed: one that is
+  missing, holds no certificate, or a key that is not the certificate's, is a
+  usage error (exit 2) before anything is sent. There is still no flag that
+  turns verification off; a self-signed agent is reached by passing its
+  certificate. (`--key` is `card sign`'s, so the client key is `--client-key`.)
+  `tls_flags.rs` runs the binary against a TLS agent on a CA made for the test.
+- **`OAuth2ClientCredentials::from_agent_card_trusting`** (client; audit
+  SEC-08): `from_agent_card` plus the hosts you trust, refusing a card whose
+  `tokenUrl` is on any other. `from_agent_card` sends the client secret to
+  whatever `https://` host the card names, which is safe only for a card you
+  verified; its rustdoc and the book now say so. Hosts compare exactly (case,
+  one trailing dot, the port and the path do not matter); `auth.example.com`
+  does not admit `auth.example.com.evil.example` or
+  `https://auth.example.com@evil.example/`, and an empty list refuses every
+  card.
+- **`JwtValidator::with_required_typ`** (server; `auth-jwt`; audit SEC-18):
+  refuse a token whose `typ` header is not the one named (`at+jwt`,
+  RFC 9068), so an ID token cannot be presented as an access token
+  (RFC 8725 section 3.11). Compared as a media type. Off by default, as many
+  issuers still sign access tokens with `typ: JWT`.
+- **`a2a --header-env K=VAR`** (a2a-cli; audit SEC-09): the header value comes
+  from an environment variable, so a credential is not in the process list. An
+  unset or empty variable is a usage error that names it.
+- **`ClientBuilder::without_interface_fallback`** (client; audit SEC-09,
+  NEW-f-1): use only the interface `from_card` chose, and make `build()` fail
+  instead of moving to the card's next interface. For a caller who attaches a
+  credential for the host of the interface they chose; the card's other
+  interfaces can be on any host. `with_protocol_binding` already behaved so.
 - **`ToolLoopExecutor::with_drafts`** (audit L5): each model turn's text
   streams, as the model sends it, to a `draft-N` artifact of the turn's own
   (`draft_artifact_id`), closed with `lastChunk` when the next turn starts or
@@ -303,7 +427,141 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `#anchor` and image, which nothing did (`docs.yml` built it only after
   merge). `benchmarks.yml` runs it before its bot push.
 
+- **OTLP export works from more setups, and says what it is doing.** Each item
+  was found by running the repository's `hello-agent` against a stand-in
+  collector (2026-10-26) and was silent or refused before.
+  - **Proxies**: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`, in
+    either case, as curl reads them. An `https://` collector is reached
+    through a `CONNECT` tunnel with TLS inside it (its certificate is still
+    checked); a plain `http://` one over OTLP/HTTP as a forward-proxy request
+    with `Proxy-Authorization` from the proxy URL's login; OTLP/gRPC is
+    tunnelled for both. Only `http://` proxies are spoken: any other kind is
+    ignored with one warning and the export goes direct. New
+    `TelemetryBuilder::with_proxy` (does not consult `NO_PROXY`) and
+    `without_proxy`. Before, a collector only the proxy could resolve received
+    nothing and the process printed nothing.
+  - **Compression**: `OTEL_EXPORTER_OTLP_COMPRESSION=gzip` (and per signal) on
+    both transports, `none` accepted, `zstd` and anything else an error naming
+    the variable. The first traces export of `hello-agent` went from 6,031 to
+    1,607 bytes and the first metrics export from 2,484 to 1,080 (body bytes
+    on the wire, one run each, 2026-10-26). New `TelemetryBuilder::with_compression`
+    and `OtlpCompression`. Before, the value was ignored: `opentelemetry-otlp`
+    warns when it was not built for a compression, and `Telemetry` had no
+    subscriber when it built the exporters.
+  - **A console exporter**: `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER` and
+    `OTEL_LOGS_EXPORTER` take a comma list of `otlp`, `console` (and the
+    deprecated `logging`) and `none`; `console` was refused. One line per span,
+    metric data point and log record on standard output, no collector and, for a
+    console-only process, no export thread.
+  - **A Prometheus endpoint**: with the new, off-by-default `otel-prometheus`
+    feature (server and SDK crates), `OTEL_METRICS_EXPORTER=prometheus` serves
+    `/metrics` on `OTEL_EXPORTER_PROMETHEUS_HOST` (`localhost`) and `_PORT`
+    (9464) for a Prometheus that scrapes, under the names the book's Prometheus
+    table gives. Plain HTTP, unauthenticated. Adds `opentelemetry-prometheus` and
+    `prometheus` to the lockfile. `Telemetry::prometheus_addr` reports where.
+  - **Resource attributes** `host.name`, `host.arch`, `os.type`, `process.pid`
+    and `process.executable.name`, each only when `OTEL_RESOURCE_ATTRIBUTES` does
+    not name it; `TelemetryBuilder::without_resource_detection` omits them.
+    `host.name` is `HOSTNAME`, `COMPUTERNAME` or the kernel's hostname file
+    (this crate forbids `unsafe`, which `gethostname(2)` needs), so a macOS
+    process that does not export `HOSTNAME` has none.
+  - **`OTEL_PROPAGATORS`**: `tracecontext`, `baggage` and `none` are honoured; a
+    name this SDK does not have (`b3`, `jaeger`, …) is reported by
+    `Telemetry::notices` and a warning, not an error.
+  - **`Telemetry::describe`** (where each signal goes, with any login in a URL
+    removed) and **`Telemetry::notices`**.
+  - OTLP/HTTP endpoints with no scheme are refused with what to write; the
+    message was "invalid format".
+  - **Why an export failed.** `opentelemetry-otlp` 0.33.1 reports every
+    OTLP/HTTP transport failure as `HTTP export failed: network error`, so a
+    refused connection, an unknown CA, a gRPC-only collector and a missing proxy
+    read the same. The loss warning now appends the transport's own error
+    (`cause: client error (Connect): invalid peer certificate: UnknownIssuer`)
+    and, only where the failure itself names the fix, a `Hint`: an unknown
+    issuer (`OTEL_EXPORTER_OTLP_CERTIFICATE`; the exporter trusts Mozilla's
+    roots, never the operating system's), a certificate for another name or an
+    expired one, a `401` or `403` (the headers), a `404` over OTLP/HTTP (the
+    paths), and a failure with no HTTP status to port 4317 over HTTP or 4318
+    over gRPC (the other transport's usual port). A bare refused connection
+    gets none.
+  - **A base endpoint that already ends in `/v1/traces`** (or `/v1/metrics`,
+    `/v1/logs`) posts to a doubled path and a `404`; a startup notice now says
+    what it would post to and what to give instead.
+  - **`OTEL_RESOURCE_ATTRIBUTES` is percent-decoded**, as the specification
+    requires for `,` and `=` in a value (`prod%2Cwest` is `prod,west`);
+    `opentelemetry_sdk` 0.33.1 kept it literal. An entry that is not valid
+    percent-encoding is kept as written and reported at startup.
+  - **`TelemetryBuilder::without_startup_summary`** keeps `install_subscriber`'s
+    startup line off while warnings and errors still print. The `a2a` CLI uses
+    it, so a one-shot command prints nothing extra.
+  Book: [Observability](book/src/deployment/observability.md), "Seeing it with
+  no collector", "When something is wrong", "Proxies, compression and private
+  CAs", "Prometheus: scrape instead of push" and "What the resource says", and a
+  [troubleshooting](book/src/deployment/troubleshooting.md) entry.
+- **`shutdown_signal()`**, a future that resolves on `SIGTERM` or `SIGINT`
+  (Ctrl-C elsewhere than Unix), for `Server::serve_with_shutdown`. A server
+  that waits on `tokio::signal::ctrl_c()` alone is ended by the `SIGTERM` a
+  container runtime sends, without returning from `main`, so no `Telemetry`
+  guard is dropped: measured on `hello-agent`, the collector received no spans
+  and no metrics. With it the server drains, `main` returns and the guard
+  flushes. The flush after `SIGTERM` took 0.1 s to a collector that answers,
+  1.8 s to a port that refuses and 15.0 s to one that accepts and never
+  answers (each provider waits up to 5 s; `OTEL_EXPORTER_OTLP_TIMEOUT=2000`
+  made that 4.1 s; one run each), so a pod's `terminationGracePeriodSeconds`
+  has to include it. Exported from the server crate and the SDK prelude.
+- **A Compliance part in the book** (`book/src/compliance/`): a
+  [Compliance Overview](book/src/compliance/overview.md) with an obligation to
+  page table, the 88-provision control map summarised by framework and the
+  protections that are off until switched on; a
+  [GDPR](book/src/compliance/gdpr.md) page (where personal data sits, article
+  by article what the SDK carries and leaves, erasure and what it does not
+  reach); and a
+  [Cyber Resilience Act](book/src/compliance/cyber-resilience-act.md) page (what
+  the project publishes, Annex I property by property, the advisory missing from
+  RustSec). The EU AI Act chapter (retitled "EU AI Act: Is Your Agent
+  High-Risk?"), Audit Trail, Human Oversight and Provenance and Signatures move
+  into the part; their URLs are unchanged. Every claim is taken from a row of
+  `docs/compliance/controls.toml`, and none says the SDK is compliant with
+  anything.
+- **Book pages for the five examples that had none** (`book/src/examples/`):
+  [Resilient Agent](book/src/examples/resilient-agent.md),
+  [Tool-Loop Agent](book/src/examples/tool-loop-agent.md),
+  [Live Model](book/src/examples/live-model.md),
+  [Langfuse Agent](book/src/examples/langfuse-agent.md) and
+  [Swarm](book/src/examples/swarm.md). Each is in the table of contents, the
+  overview table and the doctest harness; the overview no longer says five
+  examples have no page.
+
 ### Breaking Changes
+
+- **Thirteen protocol structs are `#[non_exhaustive]`** (types; audit G-10):
+  `AgentCard`, `AgentSkill`, `AgentInterface`, `AgentProvider`,
+  `AgentExtension`, `Message`, `Part`, `Task`, `TaskStatus`, `Artifact`,
+  `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent` and
+  `TaskPushNotificationConfig` (`AgentCapabilities` already was). They cannot
+  be written as struct literals outside `a2a-protocol-types`, so a field the
+  specification adds is a minor-version addition for callers that build them
+  with `new` and the `with_*` setters. `STABILITY.md` §4 said all wire structs
+  were marked and 13 of 14 protocol structs were not; it now names the 14 and
+  the 26 that stay exhaustive. New: `TaskStatusUpdateEvent::new`,
+  `TaskArtifactUpdateEvent::new` (with `with_append`, `with_last_chunk`,
+  `with_metadata`), `TaskStatus::with_message` and `at`, `Task::with_history`,
+  `with_artifacts`, `with_metadata`, `Artifact::with_name`,
+  `with_description`, `with_metadata`, `with_extensions`,
+  `Artifact::unchecked`, `TaskPushNotificationConfig::for_url`, `with_id`,
+  `with_token`, `with_authentication`, `with_tenant`, `AgentExtension`'s
+  `with_description`, `with_required`, `with_params`, `AgentProvider::new`,
+  `AgentCapabilities::with_extensions` and `AgentInterface::with_protocol_version`.
+  The migration, with a before and after for each type, is in
+  `book/src/reference/upgrading/0.15-to-0.16.md`. Every literal of the thirteen
+  in this repository (several hundred outside the types crate, in the
+  library crates, tests, benchmarks, examples, the CLI, the TCK and the book) was
+  converted with a script that matches braces outside strings and comments and
+  declines what it cannot convert; the sites it declined, and every
+  `E0639`/inference error the compiler reported after it, were fixed by hand,
+  and all of it compiles with `--all-targets --all-features`. Where a field
+  had a computed value or a comment, the result assigns the field after `new`
+  (assignment is not restricted).
 
 - **Configuration errors have a variant of their own** (server, client;
   audit G-11). Every `RequestHandlerBuilder::build()` refusal was
@@ -365,9 +623,281 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   and `Server::with_config` are no longer `const fn`, and `TlsConfig` and
   `ClientConfig` are no longer `UnwindSafe` or `RefUnwindSafe` (the variant
   holds an `Arc<rustls::ClientConfig>`), as `cargo-semver-checks` reports.
+- **`RequestContext.context_id` is a `ContextId`, not a `String`** (server;
+  audit G-18; maintainer's decision of 2026-11-01). The task's id beside it
+  was a `TaskId` and the types crate's policy is a newtype per identifier, so
+  an executor passed one around as a string and the other as a newtype, and
+  wrote `ContextId::new(ctx.context_id.clone())` forty-odd times in this
+  repository. Reads change: `ctx.context_id.clone()` is now what the events
+  take; `ctx.context_id.as_ref()` is the `&str`, `.to_string()` the `String`;
+  `format!("{}", ctx.context_id)` works as before. `RequestContext::new` takes
+  `impl Into<ContextId>`, so a `String` or `&str` still works, and a bare
+  `.into()` of a literal no longer infers. No deprecation window: a public
+  field's type has none, and `cargo-semver-checks` has no lint for it, so it
+  is listed here by hand.
+- **`AgentCard::new` declares streaming** (types; audit G-07; maintainer's
+  decision of 2026-11-01). A card built with `new` had no capabilities set, so
+  the card of a server that streams said it did not, and a client that honours
+  the card refused to stream; the flagship example could not. `new` now sets
+  `capabilities.streaming = Some(true)`. Cards built with `new` start
+  advertising it on the wire (their ETag changes); a card that must declare
+  nothing replaces the capabilities with
+  `.with_capabilities(AgentCapabilities::none())`. The rustdoc that called a
+  card from `new` "valid by construction" was wrong (it needs a description
+  and a skill with a tag, which `validate` names) and is corrected.
+- **`tls-rustls` is a default feature of `a2a-protocol-server`** (server;
+  audit G-06; maintainer's decision of 2026-11-01). Without it the crate
+  could not reach any `https://` webhook, JWKS or OIDC issuer, or model
+  endpoint, the spec's normal case, and a reader who depended on it alone was
+  told nothing at build time. A default-feature change is a minor-version
+  change under `STABILITY.md` §2, and `cargo-semver-checks` has no lint for an
+  added default. It adds rustls, ring, webpki-roots, hyper-rustls and
+  tokio-rustls to a server-only build (they are in every SDK build already);
+  `default-features = false` opts out.
+- **`sign_agent_card` is removed** (types; deprecated in 0.15.0, one minor
+  ago, as `STABILITY.md` §3 requires). Its key id was an `Option`, so it could
+  write a card signature with no `kid` that spec §8.4.2 requires; 0.15.0 made
+  it refuse `None`. Use `sign_card_es256(card, pkcs8, key_id)`, whose key id
+  is a `&str`. The test that pinned the deprecation went with it.
 
 ### Behaviour Changes
 
+- **An `https://` webhook is connected to the address that was checked**
+  (server; audit D-13, SEC-13; direct connections only). The delivery
+  resolved the host, refused a private answer, and then let the client resolve
+  it again; a name that answered differently the second time (DNS rebinding)
+  got a TCP connection and a TLS `ClientHello` at an internal address, a
+  blind port scan, with TLS stopping only the exchange that followed. The
+  client's resolver is now told, for the length of the delivery, that the name
+  is the checked addresses (`net::resolver`), so the connection still asks for
+  the name and the certificate is verified against it. `http://` was already
+  pinned by rewriting the URL. Through a proxy there is still no pin, since the
+  proxy resolves the name: what a proxy may reach is its own policy, and what
+  this process should check on its behalf is an open question (triage F16).
+  Tested end to end against a local TLS server with a name that resolves
+  nowhere (`push/sender_pin_tests.rs`): delivered with the pin, refused
+  without it, refused when the certificate is for another name, the pin gone
+  when the delivery ends. A host with several addresses is now tried in turn
+  (the connector for `https://`, one per attempt for `http://`), where it used
+  to be tried at its first address only (audit B-13).
+
+- **A WebSocket connection whose peer stopped reading is closed, and one whose
+  peer went silent is found out** (server and client; audits D-07, D-08,
+  NEW-d-2). Server: a write to a peer with a full receive window waited for it
+  for ever while holding the connection's sink, so the read loop stalled behind
+  its next reply and neither the idle bound nor a shutdown was evaluated again;
+  every frame now has a write timeout (`WebSocketDispatcher::with_write_timeout`,
+  30 s), after which the connection is marked dead, its read loop ends and its
+  requests are cancelled. Client: no ping, and a call's timeout did not mark the
+  connection dead, so a half-open connection (a NAT or balancer that forgot the
+  flow) timed out every call on one socket until the kernel gave up, about 15
+  minutes later; the transport now pings an idle connection every 15 s
+  (`WebSocketTransportConfig::with_ping_interval`, `without_ping`), treats
+  two silent intervals in a row, pongs included, as a dropped connection (every pending
+  call fails at once, retryably, and the next call reconnects), bounds each
+  frame's write by the request timeout, and bounds queueing a call behind a
+  stuck writer by the call's own deadline (the 64th call waited for ever). Any
+  frame from the peer counts as life, so a busy connection sends no pings. The
+  new tests are in `dispatch/websocket_write_tests.rs` and
+  `transport/websocket_liveness_tests.rs`; twelve hand-applied mutants each fail
+  one of them. The first version of the keepalive compared the time since the
+  last frame with the interval and closed a live connection about every other
+  time the timer ran (22 of 40 runs of the control test failed on an idle
+  machine); it now counts quiet ticks, and the same test passes 40 of 40 idle
+  and 40 of 40 under CPU load.
+- **A failed WebSocket handshake says whether to try again** (client; audit
+  D-09). The connect deadline is a `Timeout`, a `503` with `Retry-After` keeps
+  it, and a peer that went away mid-handshake is `HttpClient`, retryable like an
+  I/O failure; each was a non-retryable `Transport`. The per-call warning no
+  longer fires for `A2A-Extensions`, which is delivered at connect (audit C-17).
+- **A server-directed `Retry-After` is spread, not followed to the letter**
+  (client; audit NEW-h-designs-1). A server that refuses for overload asks
+  every refused caller for the same second, and the client waited exactly that
+  long, so the callers it refused together came back together and were refused
+  again. The client now waits at least the delay it was asked for and up to a
+  quarter longer, chosen at random, still clamped to `max_backoff`.
+- **The rate limiter no longer locks new callers out when it is full** (server;
+  audit H16; maintainer's decision of 2026-11-01). With `max_buckets` callers
+  active in every window, every other caller was refused for as long as they
+  stayed active, with a message that read like an ordinary rate limit. Callers
+  beyond the bound now share one `overflow` bucket holding one caller's limit,
+  so the map holds `max_buckets + 1`; the callers that have a bucket are
+  unaffected; the overflow refusal says the callers beyond the bound have spent
+  their shared budget; `RateLimitInterceptor::overflowed()` counts the requests
+  it took (non-zero means `max_buckets` is too small for the callers seen).
+  Fairness among the callers beyond the bound is coarser than before: that is
+  the price of not refusing them all.
+- **An unreadable halt store is a retryable refusal, and `/ready` reads it**
+  (server; audit NEW-h-designs-7; maintainer's decision of 2026-11-01). Until a
+  handler with a halt store had read it once, every send was refused as a
+  non-retryable internal error on JSON-RPC while `/ready` answered 200, and
+  nothing read the store until a send arrived. The refusal is now the
+  `Overloaded` one the idempotency claim uses (`503` with `Retry-After`,
+  `RetryInfo` on every binding), and `RequestHandler::readiness()` performs the
+  first read itself: a replica is ready by having read the store, and answers
+  `halt_store` while it cannot.
+- **An unrecognised halt-store row halts everything instead of failing the
+  load** (server; audit NEW-h-designs-4). A row whose scope key this version
+  does not know (written by a newer version during a rolling upgrade) failed
+  the whole load: a running replica kept the halts it had read and never saw
+  another, and a replica that started beside it could not sync and refused
+  every send. The row is now read as a halt of everything, its reason saying
+  so and a warning logged; the rows beside it are read as usual. Removing the
+  row resumes.
+- **`deploy-agent` deletes finished tasks from PostgreSQL after a week**
+  (example; audit NEW-a-l-1). With `DATABASE_URL` set the SDK's stores keep
+  everything for ever, so a deployment that changed one variable changed its
+  retention from the in-memory store's hour to ever, and `tasks`,
+  `task_events` and `idempotency_keys` grew without bound. The agent now
+  sweeps its own database hourly from every replica, in bounded batches: a
+  completed, failed, canceled or rejected task is deleted `TASK_RETENTION_HOURS`
+  (168) after its last update, with the idempotency keys that outlived it; a
+  task still working or waiting for input is never deleted. `0` keeps
+  everything and says so at startup. `tests.rs::the_sweep_deletes_finished_tasks_and_keeps_running_ones`
+  runs it against a PostgreSQL (ignored without `A2A_TEST_POSTGRES_URL`).
+
+- **A wrong `OTEL_*` value is noted, not fatal** (server; audit C-08;
+  maintainer's decision of 2026-11-01). The OpenTelemetry specification has an
+  SDK warn and ignore a value it cannot use. `Telemetry` refused to build, and
+  every binary exited with status 2, over an exporter name it does not have
+  (`zipkin`, `jaeger`), `prometheus` without the `otel-prometheus` feature, a
+  protocol or compression it lacks (`zstd`, `http/json` without `otlp-json`), a
+  timeout or Prometheus port that is not a number; a fleet that sets one
+  `OTEL_*` preset for every SDK it runs lost every agent to a name only one SDK
+  lacked. Each now becomes a line in `Telemetry::notices` (printed at `WARN` by
+  `install_subscriber`) naming the variable, the value and what was used
+  instead (so is `OTEL_SDK_DISABLED=1`, which does not disable, audit NEW-c-5): a dropped exporter name leaves the others, and with none left the
+  variable counts as unset; protocol falls back to `http/protobuf`, compression
+  to none, the timeout to 10 s, the Prometheus port to 9464. Protocol names are
+  matched without regard to case. Still an error naming the variable: an
+  OTLP/HTTP endpoint with no scheme or that is not a URL, a certificate or key
+  file that cannot be read or is not PEM, a client certificate without its
+  key, a header name that is not one, a Prometheus address that cannot be
+  listened on. The cost is stated in the notice and the book: a typo starts a
+  process that exports differently from what was meant, visible as one `WARN`
+  line. `TelemetryBuilder::build`'s `# Errors` section and the book's
+  observability pages (`environment.md`, `debugging.md`, `telemetry.md`,
+  `prometheus.md`, `quick-start.md`) say so. Tests: the parsers' own
+  (`selection`, `compression`, `config`, `prometheus`), and
+  `tests.rs::every_unusable_value_is_noted_with_what_was_used_instead` and
+  `what_cannot_be_done_without_still_fails_the_build` through `build()`.
+
+- **`Profile::Production` refuses a halt, lease, push-config or audit store
+  that keeps its state in one process, over a task store several processes
+  share** (server; audit E-F13; maintainer's decision of 2026-11-01; amends
+  ADR 0025). A task store that hands out turn claims (the SQL stores) is the
+  sign that more than one replica serves the same tasks. Over one, a halt
+  given to a replica did not reach the tasks another ran, a delegated task was
+  leased only where it was accepted, a webhook registered through one replica
+  was never sent by the one running the task, and each replica kept an audit
+  chain of its own, with nothing to say so. `build()` now names the store, what
+  it costs, and the store to use. A deployment that routes every request for a
+  task to one replica, or runs one replica at a time, calls
+  `allow_process_local_stores()`. Nothing changes without the profile, or
+  with a task store that is not shared, or for a store this crate cannot see
+  into (it is taken to be shared). The push-config store is checked only when
+  the card declares `pushNotifications`. The halt, lease and audit stores are
+  checked whenever they are set.
+- **Loopback is never sent to a proxy** (client and server; audits NEW-b-2,
+  B-23, B-27; maintainer's decision of 2026-11-01). With `HTTP_PROXY` set and
+  `NO_PROXY` unset, a request for `http://127.0.0.1:3000/` went to the proxy as
+  a forward-proxy request, with no error that mentioned one, and a credential
+  the SDK allows over plaintext because the peer is this machine (a loopback
+  token endpoint's client secret, a local agent's bearer token) went with it.
+  `localhost`, `127.0.0.0/8`, `::1` and the IPv4-mapped `::ffff:127.0.0.1` now
+  go direct on every outbound path, as in Go's `net/http`.
+  `A2A_PROXY_LOOPBACK=1` (`true`, `yes`, `on`) sends them through the proxy
+  again; a proxy named in code still carries loopback. `NO_PROXY` entries are
+  read as Go reads them (`*.example.com` is `.example.com`, which the matcher
+  alone read as a literal name), and an entry with a port, which the matcher
+  cannot honour and which exempted nothing, is ignored with one warning.
+  `loopback_not_proxied.rs` reproduces it end to end (the call died at a
+  socket that accepted and dropped it; it fails against the old behaviour);
+  the matcher's behaviour is tested in both crates (three hand reversions of
+  the client's copy each fail a test; the server's copy is the same code,
+  held identical by `check_net_copies.py`), and six existing integration tests that dial loopback servers through
+  loopback proxies now set the opt-in.
+- **The gRPC client trusts `SSL_CERT_FILE` and `SSL_CERT_DIR`** (client;
+  `grpc-tls`; audits B-20, H2). In a container whose private CA came from
+  `SSL_CERT_FILE`, JSON-RPC over TLS worked and gRPC failed with an unknown
+  issuer: the HTTP bindings, the card fetch and the JWK Set fetch read the
+  variables and the gRPC client built its TLS from tonic's bundled roots alone.
+  It now adds them, as the others do. A configuration given to
+  `with_grpc_tls_config` stays exact and is not given the environment's
+  roots. `grpc_env_roots.rs` (fails before, passes after, and checks the
+  second sentence).
+- **`build_grpc` on a builder from a card dials the card's gRPC interface**
+  (client; audit G-04). It dialled whichever interface `from_card` chose, so a
+  card listing JSON-RPC before gRPC had gRPC spoken to the JSON-RPC port with
+  that interface's tenant. A card with no gRPC interface for this SDK's
+  protocol major is refused with `ClientError::Config`, naming what it offers.
+  A zero `connection_timeout` is refused, as `build()` refuses it.
+  `grpc_card_selection.rs` (fails before without the selector).
+- **`max_connections` on `GrpcDispatcher` and `WebSocketDispatcher` means what
+  it does on `Server`** (server; audit NEW-g-api-2). `usize::MAX` panicked
+  (`Semaphore::new` above its maximum) and `0` started a server that accepted
+  nothing and said nothing. The first is clamped; the second is refused: the
+  `serve*` methods return `InvalidInput` and the graceful ones a `ServeReport`
+  with `refused` set, as `Server`'s does. On gRPC, reverting the clamp and
+  reverting the refusal each fail a test; the WebSocket twins are tested the
+  same way but were not reverted by hand.
+- **A timeout that is not a blocking send names the setting** (client; audit
+  G-20). It read `request timed out`; it now says how long the call was given
+  and that `ClientBuilder::with_timeout` (or, for a stream,
+  `with_stream_connect_timeout`) raises it.
+- **A continuation refused because the store was briefly unavailable is
+  answered 503 with `Retry-After`, not 500** (server; audit D-16). Admitting a
+  continuation reads the task's event log position first; a store that
+  answered "not now" there became `INTERNAL`, which tells a caller that
+  retrying will not help, while a new task's send in the same blip got 503.
+  Nothing ran when the read failed, so the retry is safe, and the answer is
+  now the same for both. A read that failed for any other reason is still
+  `INTERNAL`. `an_unavailable_store_refuses_the_lease_as_overloaded`.
+- **The reaper's message no longer says the replica stopped** (server; audit
+  NEW-g-api-3). A task left `submitted` or `working` with no replica running
+  it is ended `failed`, class `transient`, whether its replica died or its
+  executor returned without writing a terminal or interrupted state; the
+  reaper cannot tell which, and the old text named only the first. It now
+  says that no replica is running the task, and gives both causes.
+
+- **A replica that cannot renew a turn's claim stops the turn** (server;
+  audit E-F7, NEW-e-1, NEW-h-s0-1). A replica cut off from its database learned
+  nothing: renewals failed and were logged, the executor ran on, and another
+  replica's reaper ended the task `failed` while the work went on, so a caller
+  that resent it had it done twice. A claim not proven for four fifths of its
+  time to live (12 s of 15) now stops its turn: the executor's token fires and
+  the task ends `failed`, failure class `transient`, never `canceled`. Raise
+  `with_turn_claim_timing`'s time to live to ride out longer outages. A blip
+  shorter than the margin stops nothing. `tests/claim_lapse.rs` runs both; with
+  the watchdog disabled by hand the first fails. Not yet repeated through
+  toxiproxy (`book/src/deployment/horizontal-scaling/turn-claims.md` says so).
+- **A handler's reaper starts when it is built, not at its first request**
+  (server; audit NEW-h-s0-5), when a runtime is running: an idle survivor of a
+  dead peer used to end nothing until someone called it. A handler built
+  outside a runtime still starts it at its first request.
+- **The messages of a task a replica ended say how to try again** (server;
+  audit NEW-h-s0-9): a retry that reuses the first send's idempotency key is
+  answered with the failed task, so "sending it again may succeed" sent callers
+  round in a circle. They now say to send it as a new request (a new message id
+  and idempotency key). Shutdown's, the reaper's and the new lapsed-claim one.
+- **Schema work waits ten seconds at most for a table lock** (server,
+  PostgreSQL; audit E-F11), unless the operator set a `lock_timeout`, which is
+  kept. The first replica of a release that adds a column, trigger or index took
+  a lock that queued behind any open transaction on the table and, while it
+  queued, stalled every later reader and writer. It now fails with `55P03` after
+  ten seconds and is restarted; the table is free in between.
+- **`a2a`: header names compare without case, and `a2a card` sends the
+  headers** (a2a-cli; audit G/D-05). `--header X-A=1 --header x-a=2` sent both
+  values of one header; it now sends `x-a: 2`. `a2a card <URL>` ignored
+  `--header` and `--timeout` (a card behind authentication was unreachable, and
+  a stalled one waited 30 s); it now carries the first and obeys the second.
+- **`a2a`: characters that reorder or hide text are written out** (a2a-cli;
+  audit NEW-f-5). A bidirectional override or isolate, a line or paragraph
+  separator, a zero-width space, a word joiner or a byte-order mark in an agent's
+  reply now prints as a `\u` escape on stdout and stderr, as control characters
+  did; so do DEL and the C1 controls on stdout, which `serde_json` leaves raw.
+  The value a script reads is the same. Emoji joiners and the plain
+  left-to-right and right-to-left marks are left alone.
 - **The default `BearerTokenTenantResolver` names a token by a digest, not by
   the token** (server; audit SEC-11). `BearerTokenTenantResolver::default()`,
   and `new()`, used the raw bearer token as the tenant id, which stored a live
@@ -473,6 +1003,46 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   the header. `tests/e2e/card_origin.rs`; hand-disabling the check in
   `resolve_target` fails the test for it. Not covered by a test: the
   `card verify` half (read in `offline.rs`, not run).
+- **`a2a --header` no longer follows a card's fallback to another host**
+  (a2a-cli; audit NEW-f-1, found by running it). The check above looked only
+  at the interface `from_card` chose, and `build()` moves on to the card's
+  later interfaces when that one cannot be built (a binding the client
+  lacks, a scheme that is not `http(s)`), so a card whose first interface
+  was on the typed host but unusable, and whose second was elsewhere, still
+  received the credential. With `--header` and without `--follow-card-origin`
+  the client now uses the checked interface or fails, and the error names the
+  flag. Reproduced before the fix with both variants
+  (`docs/audits/2026-11-01-triage/live-results.md`); the two new tests in
+  `tests/e2e/card_origin.rs` fail without it, and the headerless fallback and
+  the flag's opt-in are pinned beside them.
+- **Claim renewals no longer wait behind the replica's own traffic**
+  (server, PostgreSQL; audit E-F7): renewals and the sweep use a pool of two
+  connections of their own, opened at the first renewal. On the task store's
+  pool a renewal could wait up to sqlx's 30 s for a connection against a 15 s
+  time to live. `postgres_renews_while_the_task_pool_is_exhausted` reproduced
+  the timeout on the main pool and passes on the new one. Each replica may open
+  two more connections (`shared-stores.md` counts them).
+- **A replica's own reaper no longer races its own renewals** (server; audit
+  NEW-e-1): it skips the tasks the handler holds a claim on. After a database
+  outage longer than the time to live every claim had expired and every quiet
+  turn's row was old, so it could end a turn that was still running.
+- **A handler built with turn claims off over a store that names a database
+  logs a warning** (server; audit H3): nothing then ends a task whose replica
+  dies mid-turn.
+- **API keys, bearer tokens and push tokens are compared with `subtle`**
+  (server and client; audit SEC-18). Two hand-written XOR loops did the work but
+  nothing stopped an optimiser from ending them at the first difference; the
+  audited crate the project's TLS stack already uses does the comparison now.
+  `subtle` (BSD-3-Clause, `no_std`, no dependencies) was in the lockfile through
+  `rustls` already; the client takes it only with its `webhook` feature.
+  `CONTRIBUTING.md` and ADR 0002 now say that a dependency is to be avoided when
+  pure Rust can do the job to production grade, not when a vetted crate would.
+- **The `BearerTokenTenantResolver::with_mapper` example no longer puts the raw
+  token in the tenant** (audit NEW-f-6), the thing the default was changed to
+  stop; the `mcp-bridge` README example uses `https://`.
+- **The `delegation_journal` module doc no longer says a SQLite journal
+  exists** (types; audit NEW-h-s0-4). The only durable journal is
+  `PostgresDelegationJournal`.
 - **A tool-loop run whose model provider is briefly away ends failure class
   `transient`, not `internal`** (server; `tool-loop`): HTTP 429, 502, 503
   or 504 from the provider, no answer within the timeout, or no connection.
@@ -619,7 +1189,212 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   with one line and exit status 2**, instead of a panic with a backtrace and
   `SIGABRT` (status 134) in the release profile.
 
+- **`Telemetry::install_subscriber` always installs a subscriber** (except under
+  `OTEL_SDK_DISABLED=true`). It installed nothing when no trace or log provider
+  was built, "so a process run without a collector keeps no subscriber at all",
+  which left such a process showing nothing: not its own warnings, not how to
+  turn export on. The subscriber now has a layer that prints warnings and errors
+  to standard error (`RUST_LOG` in `target=level` form decides what; default
+  `warn`) and logs `Telemetry::describe()` once. It still never replaces a
+  global subscriber already set. Code that calls it and then installs its own
+  with `.init()` now panics (the slot is taken) where it did not before:
+  install yours first, or use `Telemetry::layer()` in it. `tests/telemetry_install_subscriber.rs`
+  asserted the old contract and now asserts this one.
+- **A lost export is reported.** After the exporter's retries, a `warn` names the
+  signal and the destination, at most once every 30 s with a count of the ones
+  held back, on a target `Telemetry` never exports. The SDK's own per-batch
+  `ExportError` event is left out of the printed output (the warning supersedes
+  it). Before, a collector that was not there produced no output in nine seconds.
+- **"no live event subscribers; event persisted only" is `debug`, not `warn`.**
+  The code's own comment says it is not an error: it is the ordinary path of
+  every blocking call. It was three warnings a request, unseen until a
+  subscriber printed warnings.
+- **Exports carry five more resource attributes** (above); an export to a party
+  that should not learn them uses `without_resource_detection`.
+- **The proxy variables are read for the export.** `HTTP_PROXY`, `HTTPS_PROXY`,
+  `ALL_PROXY` and `NO_PROXY` (upper or lower case; upper wins when both are set,
+  unlike curl) were ignored by the exporter and now decide where it connects. A
+  pod that sets `HTTP_PROXY` for its other traffic and exports to an in-cluster
+  collector now sends the export to the proxy, which cannot reach the collector,
+  unless `NO_PROXY` lists it: `.cluster.local` or `.svc.cluster.local` for a
+  `*.svc.cluster.local` name (`.svc` alone does not match, and a CIDR matches
+  only a destination written as an IP). The startup line says `via proxy`, and
+  a lost export names the proxy. `without_proxy()` restores the old behaviour.
+
 ### Fixed
+
+- **`AuthFailureThrottle`'s per-replica budget is documented** (audit E-F15,
+  interim): the counts are per process, so N replicas behind a balancer give a
+  peer up to N times `max_failures` guesses a window. The throttling page and
+  the type's rustdoc say so and say to size `max_failures` for the fleet or
+  throttle in the proxy in front. A counter shared through the database, as
+  `RateLimitInterceptor` has, is not built: the `RateLimitCounter` trait has no
+  read without counting, which the throttle's check before the call needs.
+
+- **The audit log's per-chain locks no longer pile up** (server; audit
+  D-19). The map of append locks gained an entry per distinct chain name and
+  never lost one, and a chain is named for the tenant, which an unauthenticated
+  caller chooses in common configurations: one request per invented name grew
+  it for the life of the process. A chain's entry now exists while someone holds
+  or awaits its lock and is removed when the last of them lets go, including a
+  caller cancelled while it waited. A tenant name is also bounded
+  (`handler::MAX_TENANT_LEN`, 256 bytes; a longer one is `InvalidParams`), so the
+  name a request chooses is not unbounded either. Tests:
+  `audit/chain_lock_tests.rs`, `tests/caller_isolation.rs`.
+
+- **The examples serve agents with `Server`, not a hand-written accept loop**
+  (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
+  calls a defect: no connection cap, no drain, and a `continue` that spins a
+  core on a persistent accept error. They now use
+  `Server::from_listener(..).serve_with_shutdown(..)` (`CombinedDispatcher` for
+  JSON-RPC and REST on one port in `incident-response`), `hello-agent`'s test
+  binds once and keeps the listener instead of binding, reading the port,
+  dropping it and binding again, and `scripts/check_example_servers.py`, run in
+  CI, fails on a new loop; the ten stubs that remain (webhook sinks, a JWKS
+  document, fault injectors) are listed with a reason. `agent-team`'s health
+  monitor probes only its roster (it fetched, and listed the tasks of, any URL
+  a caller put in the message, and said whether each answered), and a request
+  is capped at 16 URLs. `mcp-bridge` quotes the remote agent's skill text as the
+  remote agent's, cuts it, strips control, bidirectional and zero-width
+  characters, and refuses an `http://` agent on another machine unless
+  `A2A_MCP_BRIDGE_ALLOW_PLAINTEXT=1`; its README says the card is untrusted
+  input to the model. Tests: `serve/tests.rs`, `executors/health_monitor.rs`,
+  `mcp-bridge/src/trust_tests.rs` and `tests.rs`.
+
+- **A build without `tls-rustls` dials with the same TCP settings as one with
+  it** (server; audit B-30). Push delivery and JWKS fetches there used the
+  operating system's defaults: no bound on a connect to an address that drops
+  packets (the SYN retry schedule, minutes) and no keepalive on a pooled
+  connection. `tcp::tune` sets `TCP_NODELAY`, a 10 s connect bound and a 30 s
+  keepalive, and the pool lets go of an idle connection after 50 s, for every
+  outbound client; `tcp/tests.rs` and `net/client/tests.rs` read the options
+  off a connection the tuned connector opened. The connect bound itself is
+  not tested (it needs an address that drops packets).
+
+- **Push DNS lookups can no longer fill the blocking pool** (server; audit
+  D-22). `getaddrinfo` cannot be cancelled, so a lookup that outlived its
+  5 s bound kept its blocking-pool thread until the resolver answered, and a
+  caller who could register webhooks under a domain with a slow name server
+  held one thread per registration. At most 32 lookups hold a thread at once,
+  the slot is returned when the thread returns, not when the caller stops
+  waiting, and a lookup past the limit waits inside its own bound
+  (`url_guard/lookup.rs`; the bound is exercised with a lookup that blocks
+  until released, abandoned by its caller's timeout).
+
+- **A tenant the caller set is kept in whichever order the builder is called**
+  (client; audit G-19). `with_tenant` before `with_protocol_binding`,
+  `build_grpc` or a fall back to the card's next interface replaced the
+  caller's tenant with the card's, or cleared it. A tenant that came from the
+  card still moves with its interface. Each path has a test that fails on the
+  old logic (`builder/tenant_order_tests.rs`).
+- **The WebSocket client dialled with tokio's sequential connect and set no
+  keepalive** (client; audit B-12). A destination with several addresses cost
+  the whole timeout for each one a network drops before the next was tried
+  (an IPv6 address on a network without IPv6), and a peer that vanished left a
+  connection that looked open for hours. A direct `ws://` or `wss://` is now
+  dialled through the connector the HTTP transports use: bounded connect,
+  Happy Eyeballs, no Nagle delay, TCP keepalive. The socket options are read
+  back from a dialled stream in a test.
+- **`::ffff:127.0.0.1` was not loopback** (client and server; audit B-27): the
+  IPv4-mapped form a dual-stack socket reports for a local peer is compared
+  canonically now, in the client's plaintext-webhook check and the server's
+  JWKS and issuer URL check. Not done in B-27: bracketed
+  `OTEL_EXPORTER_PROMETHEUS_HOST`.
+- **Documentation that disagreed with the code** (audits G/D-02, G/D-03, G/D-04,
+  G/D-06 to G/D-11, NEW-g-docs-3, NEW-g-docs-6, NEW-c-2, NEW-t-1). `serve`'s
+  READMEs said it had no limits (it runs under `ServeConfig::default()`: a 30 s
+  header-read and a 75 s idle timeout); the `with_max_connections` rustdoc
+  predicted fields the type already has; `packaging/README.md` said no release
+  key was committed; the shutdown page said both dispatchers return the same
+  report; the Axum, REST, gRPC and WebSocket pages' hidden cards advertised
+  JSON-RPC, so a reader who copied one published a card that misrouted clients;
+  the server crate's quick start told users to wire a dispatcher into their own
+  hyper server; `ClientError::Transport` was listed as retryable and it is not;
+  `hello-agent` was "one screen" and "no flags" (about 50 lines of code, on the
+  SDK's default features); the prelude lists were subsets; the TCK README said
+  `BIND-EQUIV-004` was graded structurally only, though it grades enforcement
+  against a target that requires credentials; the CLI README said TLS used
+  "bundled roots"; `logs.md` said every span is exported (it is every span at or
+  above `with_span_level`) and the walkthrough counted eight alerts (nine);
+  `CITATION.cff` and `ROADMAP.md` named a `0.15.1` that was never published
+  (`0.15.0` is the newest release).
+- **A release too long for GitHub's release body dropped its Behaviour
+  Changes** (release workflow; audit NEW-g-docs-7). The shortened notes kept
+  four headings and not the opening paragraph or `### Behaviour Changes`, the
+  section that tells an adopter a runtime change needs no code change. They keep
+  both now. On this section (90,898 characters) the shortened notes are 31,094.
+
+- **A blocking `SendMessage` over gRPC was cut at the request timeout** (client;
+  audits NEW-g-api-1, D-01, G-20). The send's own deadline was sent in
+  `grpc-timeout`, but the channel was also built with
+  `Endpoint::timeout(request_timeout)` and tonic applies the shorter of the two:
+  a turn longer than 30 s failed with `Protocol(Internal) "cancelled by the
+  peer"`, which is not retryable, while the task went on. The channel has no
+  timeout of its own now (every call is bounded by its `grpc-timeout` and the
+  client's own timer), and the deadline sent is the setting plus 500 ms so the
+  client's timer fires first, with an error that names the setting.
+  `grpc_blocking_send.rs`: a 3 s turn under a 1 s request timeout failed with
+  "Timeout expired" before and completes after; a 1 s send timeout still
+  bounds it at about 1 s.
+- **`SSL_CERT_FILE` naming a file with no certificate was invisible** (client;
+  audit B-18, part). Logged at debug, so a wrong path or a bundle in another
+  format added no root and said nothing; it is now a warning. A file found in
+  `SSL_CERT_DIR` with none, the usual state of a directory of hashed links,
+  stays at debug. Not done: deprecating `tls_config_with_extra_roots` (which
+  skips a bad CA with a warning) and a PEM client-config helper in the server
+  crate.
+- **An executor that panicked could leave its task `working` for good** (server;
+  audit NEW-d-1, D-03). A panic's unwind closes the task's event queue from
+  the turn's cleanup, a moment before the executor's own task ends. The task
+  that stores the turn's events (and the blocking send's collector) treated
+  the closed queue as the end and never asked how the executor ended, so on a
+  multi-thread runtime it could stop before the join result arrived, and
+  nothing marked the task `failed`. It now asks, waiting at most
+  `executor_drain_timeout` (5 s) for an executor that has not ended. The
+  `Failed` a panic stores is also recorded in the event log, which only the
+  push had. `tests/executor_panic_terminal.rs` failed 31 of 40 runs before and
+  0 of 40 after; the ordering is fixed deterministically in
+  `queue_close_tests` (four hand edits of the wait each fail a test). Open:
+  a `SendStreamingMessage` stream whose executor panics still closes without a
+  terminal frame (D-03 d).
+- **A cancel taken by another replica was never pushed or logged, and a
+  blocking send could answer `working` for a task stored `canceled`** (server;
+  audit E-F9, NEW-e-2). `CancelTask` on a replica that does not run the task
+  stores `Canceled` through a writer with no queue to the owner. An executor
+  that simply returns on its token writes nothing, so the owner's processor
+  never saw a terminal event: the webhooks never heard `CANCELED`, the log (and
+  with the audit feature the chain) had no ending, and a blocking send
+  answered the state it last held. When the turn's events are all stored, a
+  task that is terminal in the store without a terminal event having reached
+  the processor is now pushed once and appended to the log at the next
+  position; a blocking send is answered with the stored task. The book said
+  the owner already delivered it; that was true only if the executor wrote
+  after the cancel. `close_out_tests` (seven cases, including no second push
+  or log entry for a terminal the processor handled, and nothing after a lost
+  claim) and `the_collector_answers_with_an_ending_only_the_store_holds`,
+  which answered `working` before.
+- **A stream attached through a replica that does not run the task could end
+  on a terminal frame without the event's `error` metadata** (server; audit
+  E-F20). The owner appends the terminal event one round trip after the store
+  takes the terminal save; a reattaching stream that read in between built
+  the frame from the stored status alone. It now waits, up to
+  `subscribe_replay_catchup` (2 s), for the log to reach the position the
+  stored task reflects, so the stream's replay holds the real event (by
+  reading `close_through`: the built frame is queued only when the replay has
+  no terminal event). `finished_tests` covers the wait and its bound, not a
+  whole stream.
+- **Three `Drop` impls on the send path panicked outside a Tokio runtime**
+  (server; audit D-23). `CleanupGuard`, `DeferredExecutor` and `CommitGuard`
+  spawned their release with `tokio::spawn`, which panics with no runtime in
+  context, and a panic in a `Drop` during an unwind aborts the process. They
+  spawn through `drop_spawn`, which drops the release unrun when there is no
+  runtime (and still marks the turn finished, which needs no await). Each of
+  three hand reversions fails its test.
+- **An executor that returned `Ok(())` and left its task `working` said nothing**
+  (server; audit G-21). It now logs a warning naming the task (not for a
+  task the caller cancelled, one that settled, or a reply by message alone).
+  The executor guide already said the task stays in the last state written;
+  nothing at run time said so.
 
 - **The `deploy-agent` example logged a password given in the database URL's
   query, and two of its Secret recipes omitted `sslmode`** (examples; audits
@@ -1031,209 +1806,6 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   not flush telemetry on `SIGTERM`**: each ran until killed. They now return
   on `shutdown_signal()`, which drops their `Telemetry`.
 
-### Internal
-
-- ADRs 0031 to 0034, proposed, with nothing built: finding agents beyond one
-  link (a static list, unicast DNS-SD, Kubernetes DNS SRV and the Kubernetes
-  API behind one `AgentSource` interface), an opt-in shared `HttpPool`,
-  group delegation for fan-out, and task lineage with a halt by root. Each
-  names the test that would settle it and its open questions. Audit H2, H6,
-  H8, H10 and H12 point at them.
-- OSV GHSA-qwgh-2vcv-g2f7 (`block-buffer` < 0.12.1, a caught panic leaves
-  the cursor stored in the block invalid) is waived until 2027-01-29 in the
-  `osv-scanner.toml` beside the four lockfiles that lock 0.10.4 (root,
-  binding, `fuzz/`, `benches/sdk-comparison/harness/agent-a2a-rust/`). No
-  0.10.x release has a fix, and 0.10.4 keeps its cursor in a separate field
-  the callback never sees. The advisory's PoC ported to 0.10.4 runs clean
-  under Miri; on 0.11.0 it trips the crate's invariant check. osv-scanner
-  2.7.0 with `osv.yml`'s lockfile arguments: four findings before, "No
-  issues found" after.
-- `scripts/check_pg_retry.py`, a CI step: every statement on a PostgreSQL
-  task store's pool runs inside `pg_retry::retry` or `checked`, since those
-  pools no longer ping before each statement; a PostgreSQL module on a pool
-  of its own is listed with the reason. It found the migration runner's
-  version read and `BEGIN` outside both, now inside `retry`.
-- `otel_pipeline_default_endpoint` asserted that the final flush failed
-  against the default endpoint, so it failed wherever a collector listened on
-  `localhost:4317`; it now runs in a child whose `OTEL_EXPORTER_OTLP_ENDPOINT`
-  names a stand-in collector, and asserts the export arrives there.
-  `swarm_scale` kept its turn shape in two statics shared by tests running at
-  once, so one test's 1,024-event turns overran another's replay; the shape
-  now belongs to each deployment.
-- **CI runs the test matrix under cargo-nextest** (`--profile ci`: each test
-  in its own process, a hung test killed and named at two minutes, no
-  retries, a JUnit report uploaded), with the doctests, which nextest does not
-  run, in their own steps under default, all and no default features. The
-  nextest version is read from the mutation gate's install script. The whole
-  workspace with every feature passed under it locally: 5,851 tests.
-- **The `deploy-agent` image caches its dependencies** (cargo-chef 0.1.78):
-  after a change to the source only, the dependency layer was reused and the
-  build took 221 s instead of 428 s (measured in a sandbox build; the rest is
-  the workspace's own crates under fat LTO).
-- **The multi-replica soak's rate-limit check holds at any request rate.**
-  The sweep runs every 1,000th count, so through a slow link (11 ms per round
-  trip) more windows passed between sweeps than the fixed 32-row ceiling
-  allowed, and every such run failed though the sweep ran. Below the rate the
-  ceiling assumes, the run must now show a sweep and stay within what one
-  sweep interval allows at the measured rate; with the sweep removed, it still
-  fails.
-- **A turn-claim test raced the previous turn's claim release** and failed
-  when the release had not run yet; it retries as a replica does.
-
-## [0.15.1] - 2026-10-26
-
-Telemetry export works in more deployments and says what it is doing: proxies,
-gzip, a console exporter and a Prometheus endpoint; a warning when an export
-is lost, with the transport's cause and, where the failure names the fix, a
-hint; and `shutdown_signal()`, so a pod stopped by `SIGTERM` flushes. A diff of
-the public items against `v0.15.0` finds only additions: `shutdown_signal`,
-`OtlpCompression`, five `TelemetryBuilder` methods, three `Telemetry` methods
-and the off-by-default `otel-prometheus` feature. Two behaviours change, under
-*Behaviour Changes*; the proxy one affects any pod that sets `HTTP_PROXY`.
-
-### Added
-
-- **OTLP export works from more setups, and says what it is doing.** Each item
-  was found by running the repository's `hello-agent` against a stand-in
-  collector (2026-10-26) and was silent or refused before.
-  - **Proxies**: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`, in
-    either case, as curl reads them. An `https://` collector is reached
-    through a `CONNECT` tunnel with TLS inside it (its certificate is still
-    checked); a plain `http://` one over OTLP/HTTP as a forward-proxy request
-    with `Proxy-Authorization` from the proxy URL's login; OTLP/gRPC is
-    tunnelled for both. Only `http://` proxies are spoken: any other kind is
-    ignored with one warning and the export goes direct. New
-    `TelemetryBuilder::with_proxy` (does not consult `NO_PROXY`) and
-    `without_proxy`. Before, a collector only the proxy could resolve received
-    nothing and the process printed nothing.
-  - **Compression**: `OTEL_EXPORTER_OTLP_COMPRESSION=gzip` (and per signal) on
-    both transports, `none` accepted, `zstd` and anything else an error naming
-    the variable. The first traces export of `hello-agent` went from 6,031 to
-    1,607 bytes and the first metrics export from 2,484 to 1,080 (body bytes
-    on the wire, one run each, 2026-10-26). New `TelemetryBuilder::with_compression`
-    and `OtlpCompression`. Before, the value was ignored: `opentelemetry-otlp`
-    warns when it was not built for a compression, and `Telemetry` had no
-    subscriber when it built the exporters.
-  - **A console exporter**: `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER` and
-    `OTEL_LOGS_EXPORTER` take a comma list of `otlp`, `console` (and the
-    deprecated `logging`) and `none`; `console` was refused. One line per span,
-    metric data point and log record on standard output, no collector and, for a
-    console-only process, no export thread.
-  - **A Prometheus endpoint**: with the new, off-by-default `otel-prometheus`
-    feature (server and SDK crates), `OTEL_METRICS_EXPORTER=prometheus` serves
-    `/metrics` on `OTEL_EXPORTER_PROMETHEUS_HOST` (`localhost`) and `_PORT`
-    (9464) for a Prometheus that scrapes, under the names the book's Prometheus
-    table gives. Plain HTTP, unauthenticated. Adds `opentelemetry-prometheus` and
-    `prometheus` to the lockfile. `Telemetry::prometheus_addr` reports where.
-  - **Resource attributes** `host.name`, `host.arch`, `os.type`, `process.pid`
-    and `process.executable.name`, each only when `OTEL_RESOURCE_ATTRIBUTES` does
-    not name it; `TelemetryBuilder::without_resource_detection` omits them.
-    `host.name` is `HOSTNAME`, `COMPUTERNAME` or the kernel's hostname file
-    (this crate forbids `unsafe`, which `gethostname(2)` needs), so a macOS
-    process that does not export `HOSTNAME` has none.
-  - **`OTEL_PROPAGATORS`**: `tracecontext`, `baggage` and `none` are honoured; a
-    name this SDK does not have (`b3`, `jaeger`, …) is reported by
-    `Telemetry::notices` and a warning, not an error.
-  - **`Telemetry::describe`** (where each signal goes, with any login in a URL
-    removed) and **`Telemetry::notices`**.
-  - OTLP/HTTP endpoints with no scheme are refused with what to write; the
-    message was "invalid format".
-  - **Why an export failed.** `opentelemetry-otlp` 0.33.1 reports every
-    OTLP/HTTP transport failure as `HTTP export failed: network error`, so a
-    refused connection, an unknown CA, a gRPC-only collector and a missing proxy
-    read the same. The loss warning now appends the transport's own error
-    (`cause: client error (Connect): invalid peer certificate: UnknownIssuer`)
-    and, only where the failure itself names the fix, a `Hint`: an unknown
-    issuer (`OTEL_EXPORTER_OTLP_CERTIFICATE`; the exporter trusts Mozilla's
-    roots, never the operating system's), a certificate for another name or an
-    expired one, a `401` or `403` (the headers), a `404` over OTLP/HTTP (the
-    paths), and a failure with no HTTP status to port 4317 over HTTP or 4318
-    over gRPC (the other transport's usual port). A bare refused connection
-    gets none.
-  - **A base endpoint that already ends in `/v1/traces`** (or `/v1/metrics`,
-    `/v1/logs`) posts to a doubled path and a `404`; a startup notice now says
-    what it would post to and what to give instead.
-  - **`OTEL_RESOURCE_ATTRIBUTES` is percent-decoded**, as the specification
-    requires for `,` and `=` in a value (`prod%2Cwest` is `prod,west`);
-    `opentelemetry_sdk` 0.33.1 kept it literal. An entry that is not valid
-    percent-encoding is kept as written and reported at startup.
-  - **`TelemetryBuilder::without_startup_summary`** keeps `install_subscriber`'s
-    startup line off while warnings and errors still print. The `a2a` CLI uses
-    it, so a one-shot command prints nothing extra.
-  Book: [Observability](book/src/deployment/observability.md), "Seeing it with
-  no collector", "When something is wrong", "Proxies, compression and private
-  CAs", "Prometheus: scrape instead of push" and "What the resource says", and a
-  [troubleshooting](book/src/deployment/troubleshooting.md) entry.
-- **`shutdown_signal()`**, a future that resolves on `SIGTERM` or `SIGINT`
-  (Ctrl-C elsewhere than Unix), for `Server::serve_with_shutdown`. A server
-  that waits on `tokio::signal::ctrl_c()` alone is ended by the `SIGTERM` a
-  container runtime sends, without returning from `main`, so no `Telemetry`
-  guard is dropped: measured on `hello-agent`, the collector received no spans
-  and no metrics. With it the server drains, `main` returns and the guard
-  flushes. The flush after `SIGTERM` took 0.1 s to a collector that answers,
-  1.8 s to a port that refuses and 15.0 s to one that accepts and never
-  answers (each provider waits up to 5 s; `OTEL_EXPORTER_OTLP_TIMEOUT=2000`
-  made that 4.1 s; one run each), so a pod's `terminationGracePeriodSeconds`
-  has to include it. Exported from the server crate and the SDK prelude.
-- **A Compliance part in the book** (`book/src/compliance/`): a
-  [Compliance Overview](book/src/compliance/overview.md) with an obligation to
-  page table, the 88-provision control map summarised by framework and the
-  protections that are off until switched on; a
-  [GDPR](book/src/compliance/gdpr.md) page (where personal data sits, article
-  by article what the SDK carries and leaves, erasure and what it does not
-  reach); and a
-  [Cyber Resilience Act](book/src/compliance/cyber-resilience-act.md) page (what
-  the project publishes, Annex I property by property, the advisory missing from
-  RustSec). The EU AI Act chapter (retitled "EU AI Act: Is Your Agent
-  High-Risk?"), Audit Trail, Human Oversight and Provenance and Signatures move
-  into the part; their URLs are unchanged. Every claim is taken from a row of
-  `docs/compliance/controls.toml`, and none says the SDK is compliant with
-  anything.
-- **Book pages for the five examples that had none** (`book/src/examples/`):
-  [Resilient Agent](book/src/examples/resilient-agent.md),
-  [Tool-Loop Agent](book/src/examples/tool-loop-agent.md),
-  [Live Model](book/src/examples/live-model.md),
-  [Langfuse Agent](book/src/examples/langfuse-agent.md) and
-  [Swarm](book/src/examples/swarm.md). Each is in the table of contents, the
-  overview table and the doctest harness; the overview no longer says five
-  examples have no page.
-
-### Behaviour Changes
-
-- **`Telemetry::install_subscriber` always installs a subscriber** (except under
-  `OTEL_SDK_DISABLED=true`). It installed nothing when no trace or log provider
-  was built, "so a process run without a collector keeps no subscriber at all",
-  which left such a process showing nothing: not its own warnings, not how to
-  turn export on. The subscriber now has a layer that prints warnings and errors
-  to standard error (`RUST_LOG` in `target=level` form decides what; default
-  `warn`) and logs `Telemetry::describe()` once. It still never replaces a
-  global subscriber already set. Code that calls it and then installs its own
-  with `.init()` now panics (the slot is taken) where it did not before:
-  install yours first, or use `Telemetry::layer()` in it. `tests/telemetry_install_subscriber.rs`
-  asserted the old contract and now asserts this one.
-- **A lost export is reported.** After the exporter's retries, a `warn` names the
-  signal and the destination, at most once every 30 s with a count of the ones
-  held back, on a target `Telemetry` never exports. The SDK's own per-batch
-  `ExportError` event is left out of the printed output (the warning supersedes
-  it). Before, a collector that was not there produced no output in nine seconds.
-- **"no live event subscribers; event persisted only" is `debug`, not `warn`.**
-  The code's own comment says it is not an error: it is the ordinary path of
-  every blocking call. It was three warnings a request, unseen until a
-  subscriber printed warnings.
-- **Exports carry five more resource attributes** (above); an export to a party
-  that should not learn them uses `without_resource_detection`.
-- **The proxy variables are read for the export.** `HTTP_PROXY`, `HTTPS_PROXY`,
-  `ALL_PROXY` and `NO_PROXY` (upper or lower case; upper wins when both are set,
-  unlike curl) were ignored by the exporter and now decide where it connects. A
-  pod that sets `HTTP_PROXY` for its other traffic and exports to an in-cluster
-  collector now sends the export to the proxy, which cannot reach the collector,
-  unless `NO_PROXY` lists it: `.cluster.local` or `.svc.cluster.local` for a
-  `*.svc.cluster.local` name (`.svc` alone does not match, and a CIDR matches
-  only a destination written as an IP). The startup line says `via proxy`, and
-  a lost export names the proxy. `without_proxy()` restores the old behaviour.
-
-### Fixed
-
 - **`hello-agent`, `genai-agent`, `rig-agent`, `mcp-agent`, `multi-lang-team`,
   `incident-response` and the SLIMRPC `slim_node` waited on Ctrl-C alone**, so a
   `SIGTERM` ended them without a flush (and `slim_node` without
@@ -1264,113 +1836,9 @@ and the off-by-default `otel-prometheus` feature. Two behaviours change, under
 
 ### Internal
 
-- **ADR 0028 (Proposed), and the experiment behind it in
-  `docs/adr/0028-wasm-spike/`: the server on Cloudflare Workers.** The real
-  `RequestHandler` was run inside `workerd` (`wrangler dev --local`) behind a
-  runtime seam; 11 of 11 checks pass, the native lib suite is unchanged (1,545
-  passed, identical per-test results), and `reproduce.sh` regenerates every
-  figure from a clean worktree. **No crate changed**: the server and client do
-  not build for `wasm32-unknown-unknown` at this commit, and the types crate
-  builds but panics on its first timestamp. The ADR asks the maintainer to
-  qualify ADR 0003 before any of it lands.
-- **`scripts/check_book_examples.py` fails the build when an example has no
-  book page** (`ci.yml`, `static-checks`). Every directory under `examples/`
-  with a `Cargo.toml` needs `book/src/examples/<name>.md`, a `SUMMARY.md` entry
-  and an overview row, unless `scripts/book_examples_allowlist.txt` names it
-  with a reason (`harness`, the shared coverage-matrix library, is the one
-  entry). A page left for an example that no longer exists, and an exemption
-  whose example has gained a page, fail it too. Its proof in
-  `prove_gates_fail.sh` drops an example from `SUMMARY.md`.
-- **Lints CI's clippy 1.99.1 reported on this release's own code, fixed.** The
-  console exporter's three `export` impls were `async fn`s that never await
-  (`unused_async_trait_impl`) and return ready futures now; eight
-  `assert!(x.is_empty())` in the new tests are `assert_eq!` (`assert_is_empty`);
-  `shutdown_signal` allows `manual_async_fn` off Unix, where it has no handlers to
-  register before returning its future; and its doc comment no longer links to
-  `Telemetry`, which exists only with `otlp`, so `cargo doc -p
-  a2a-protocol-server` builds. A test helper named `Message` shadowed a generated
-  type (`a2a-codegen --check`, ADR 0016) and is `MessageText`; so is a second,
-  in a test the mutation-testing fixes added. All were found by CI (the
-  `manual_async_fn` one on Windows). Each was reproduced, with rustc 1.99.1 or
-  the codegen tool, before it was fixed, except that second `Message`, which CI
-  reported and which the tool passes once renamed.
-- **The coverage job frees the workspace's instrumented build output before it
-  builds the SLIMRPC binding** (`coverage.yml`: `rm -rf target/llvm-cov-target`
-  once the report is written). On this release's PR the runner reported 33 MB
-  free after that build and the job's post step failed with `No space left on
-  device`; two earlier attempts died with a `rust-lld` Bus error while linking a
-  SLIMRPC test binary, which is inferred, not shown, to be the same cause. CI
-  only; no library code changed.
-- **Eight gaps the `mutation-test` label's first `cargo-mutants` run found in
-  this release's own code, closed.** Five were tests too weak to see a change.
-  The resource-detection test asserted 8 of the 16 names in `os_type` and
-  `host_arch`, so the `aix` arm, the `netbsd` arm and six others could be
-  deleted unseen. The `rfc3339` test had no date after 2100-02-28, before which
-  one term of the century correction is zero. The warning that an `https://`
-  proxy is not supported, said once, was not tested to be said once.
-  `Conn::poll_flush` was not tested to wait for TLS bytes the socket had not
-  taken; it is now, against a peer that stops reading. And the `prometheus`
-  arm for traces and logs was asserted by two words the fallback message also
-  contains. Three were mutants no test could tell from the original.
-  `percent_decode` combined hex digits with `high << 4 | low`, where `|` can
-  become `^` unseen; it is `(high << 4) + low`, identical for all 256 digit
-  pairs. `prometheus` exporter selection went through a helper whose whole body
-  was `Ok(true)` with the feature on; it is inline in its match arm.
-  `ProxyConnector::poll_ready` is `Poll::Ready(Ok(()))`, the value its mutant
-  returns, so it carries `#[mutants::skip]` as ADR 0006 asks. No behaviour
-  changed.
-- **Six more survivors from the second `cargo-mutants` run, closed.** Four were
-  tests too weak to see a change: nothing asserted the "(N more since the last
-  report)" suffix of a lost-export warning, present or absent; `Target::proxied`
-  had no direct test; nothing tested the unit boundaries of `human` at exactly
-  1 µs, 1 ms and 1 s; and the test of the cause slot overwrote what
-  `Cause::record` wrote before reading it. Two were mutants no test could tell
-  from the original, in the console metric exporter: `shutdown_with_timeout`
-  returns `Ok(())`, and `temporality` returns `Temporality::Cumulative`, which
-  is the SDK's own default (a test asserts that). Both carry
-  `#[mutants::skip]`, and so does `force_flush`, the same shape as the first.
-  No behaviour changed.
-- **Three survivors from the third `cargo-mutants` run, closed.** All three
-  were tests too weak to see a change. Nothing checked that `Conn::poll_shutdown`
-  closes the write half of the socket (shard 0): a request and its reply now
-  cross a `Conn` to a real socket, to the collector and through a forward
-  proxy, and the peer answers only after the client has shut its write half, so
-  `poll_write`, `poll_shutdown` and `poll_read` are each needed for the reply
-  to arrive. The `Delta` arm of the console's `temporality` text (shard 6) is
-  unreachable through the exporter, which only asks for running totals, so a
-  test names both values. And an error status with no description was not
-  checked to print `status=error` with nothing after it (shard 13). Shard 13's
-  runner was shut down by GitHub before it ran a mutant, so its 25 mutants were
-  run locally with the CI selection and flags; this was the one that survived.
-  Each test fails with its mutant applied by hand. No behaviour changed.
-- **One more survivor, from the fourth `cargo-mutants` run, closed.** Deleting
-  the `"zstd"` arm of `compression::from_env` sent `zstd` to the arm for unknown
-  values, and the test asserted the variable, the value and `gzip`, all of which
-  that arm's message also carries. It now asserts the reason, `not supported`.
-  The three earlier runs had recorded this mutant as caught, because a
-  PostgreSQL test unrelated to compression ran past its time limit while the
-  mutant was applied. No behaviour changed.
-- **`a_call_the_caller_drops_is_recorded_as_cancelled` accepts a recorded
-  duration of half the wait or more**, where it accepted the wait less 10 ms.
-  On this release's PR the macOS stable job failed twice running, measuring
-  49.8 ms and then 48.0 ms of a 60 ms wait (59.8 ms on 2026-10-25, which the
-  10 ms was added for); Linux reads 61 to 62 ms. Why macOS reads short is not
-  established. The test still fails for a recorded duration of 0 or of 5 ms
-  (both checked by applying them by hand). Test only; no library code changed.
-- **`lease_renewals_are_in_the_parents_trace` waits for two recorded renewals**
-  (10 s deadline, the exported span names in its failure message) instead of
-  sleeping one second. It failed once on Windows in the `v0.15.0` release run
-  ("1 renewals"); the same tree passed there 150 of 150 times in a probe, and
-  the cause of that failure is not established. No library code changed.
-- **The SLIMRPC binding's lockfile moves `crypto-bigint` from 0.7.6 to 0.7.9.**
-  crates.io yanked 0.7.0 through 0.7.8 on 2026-10-25, and `cargo-deny`'s yanked
-  check then failed the "SLIMRPC binding (out-of-workspace)" job. 0.7.9 is the
-  one 0.7 release not yanked. The crate reaches the binding only through
-  `agntcy-slim-auth`'s `p256`, and no other lockfile holds it. Lockfile only:
-  the binding is unpublished. Cargo also re-resolved `tempfile`'s `getrandom` to
-  0.3.4 (its own range is `>=0.3.0, <0.5`; both versions were already locked).
-  The binding builds, passes `clippy --all-targets -D warnings`, and its tests
-  pass (133, 10 ignored: the SPIFFE suites need SPIRE).
+Tests, tooling, gates and lab measurements for this release are in
+[`docs/changelog-internal/0.16.0.md`](docs/changelog-internal/0.16.0.md); nothing
+in them changes what a user of the SDK does.
 
 ## [0.15.0] - 2026-10-25
 

@@ -784,14 +784,7 @@ mod tests {
     }
 
     fn make_task(id: &str, ctx: &str, state: TaskState) -> Task {
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new(ctx),
-            status: TaskStatus::new(state),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(TaskId::new(id), ContextId::new(ctx), TaskStatus::new(state))
     }
 
     /// `health` asks the database: a store whose pool is closed is unhealthy.
@@ -1327,23 +1320,19 @@ mod event_log_tests {
     }
 
     fn task(id: &str) -> Task {
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("c-1"),
-            status: TaskStatus::new(TaskState::Working),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(
+            TaskId::new(id),
+            ContextId::new("c-1"),
+            TaskStatus::new(TaskState::Working),
+        )
     }
 
     fn event(id: &str, state: TaskState) -> StreamResponse {
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new(id),
-            context_id: ContextId::new("c-1"),
-            status: TaskStatus::new(state),
-            metadata: None,
-        })
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new(id),
+            ContextId::new("c-1"),
+            TaskStatus::new(state),
+        ))
     }
 
     fn states(events: &[RecordedEvent]) -> Vec<TaskState> {

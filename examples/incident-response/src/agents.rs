@@ -22,7 +22,7 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use crate::{
     INCIDENT_LOG, RUNBOOKS, agent_message, complete, emit_artifact, extract_text, find_service,
@@ -228,19 +228,16 @@ impl AgentExecutor for TriageExecutor {
                     .unwrap()
                     .insert(ctx.task_id.0.clone(), alert);
                 return queue
-                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        status: TaskStatus {
-                            state: TaskState::InputRequired,
-                            message: Some(agent_message(&format!(
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        TaskStatus::new(TaskState::InputRequired).with_message(agent_message(
+                            &format!(
                                 "Which service is affected? I have runbooks for: {}",
                                 known_services().join(", ")
-                            ))),
-                            timestamp: None,
-                        },
-                        metadata: None,
-                    }))
+                            ),
+                        )),
+                    )))
                     .await;
             };
 

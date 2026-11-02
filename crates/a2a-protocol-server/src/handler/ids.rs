@@ -166,9 +166,10 @@ mod tests {
 
     #[test]
     fn refuse_control_chars_in_push_config_checks_id_and_task_id() {
-        let config = |id: &str, task: &str| TaskPushNotificationConfig {
-            id: Some(id.to_owned()),
-            ..TaskPushNotificationConfig::new(task, "https://example.com/hook")
+        let config = |id: &str, task: &str| {
+            let mut built = TaskPushNotificationConfig::new(task, "https://example.com/hook");
+            built.id = Some(id.to_owned());
+            built
         };
         assert!(refuse_control_chars_in_push_config(&config("cfg-é", "t-1")).is_ok());
         for (bad, field) in [(config("c\r\n", "t"), "id"), (config("c", "t\n"), "taskId")] {

@@ -56,8 +56,8 @@ until 2026-10-18 the HTTP dispatchers did not see it. See
 a fine choice when it already manages your certificates.
 
 The client and the push sender speak TLS via `tls-rustls`, which is on by
-default in `a2a-protocol-sdk` and `a2a-protocol-client` and off in a direct
-dependency on `a2a-protocol-server`.
+default in `a2a-protocol-sdk`, `a2a-protocol-client` and, since 0.16.0,
+`a2a-protocol-server`.
 
 ## Outbound requests are the dangerous ones
 
@@ -90,8 +90,9 @@ something stops it. The bundled `HttpPushSender` does:
 If you replace the sender, you inherit all of that as your responsibility. The
 validation is public in `a2a_protocol_server::url_guard`: `check_public_url`
 applies the address checks above to a URL, and `resolve_public_url` also
-resolves its host and refuses it if any address is private. Use them rather
-than reimplementing the list above.
+resolves its host and refuses it if any address is private
+(`resolve_public_addrs` returns every address, for a caller that fails over
+from one to the next). Use them rather than reimplementing the list above.
 
 The same applies to file references in messages (spec §14: they "MUST be
 validated to prevent SSRF"). The SDK never fetches a `Part`'s URL, so this

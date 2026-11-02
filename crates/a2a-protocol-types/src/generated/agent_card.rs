@@ -13,6 +13,7 @@
 /// protocol version; [`AgentInterface::new`] takes an arbitrary binding.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct AgentInterface {
     /// The URL where this interface is available. Must be a valid absolute HTTPS URL in production.
     /// Example: `"https://api.example.com/a2a/v1"`, `"https://grpc.example.com/a2a"`
@@ -56,16 +57,24 @@ pub struct AgentInterface {
 ///
 /// Prefer [`AgentCard::new`] and the twelve `with_*` methods beside it over a
 /// struct literal: `new` takes the three things the type cannot invent — a
-/// name, a version, an interface — and defaults the rest, so a card built
-/// that way is valid by construction.
+/// name, a version, an interface — and defaults the rest. The card is not
+/// publishable yet: [`AgentCard::validate`], which the server's builder runs,
+/// also needs a description and one skill with a tag, which
+/// [`with_description`](AgentCard::with_description) and
+/// [`with_skill`](AgentCard::with_skill) add. `new` declares streaming
+/// (`capabilities.streaming` is `Some(true)`, since 0.16.0), because every
+/// binding this SDK serves streams; [`with_capabilities`](AgentCard::with_capabilities)
+/// replaces the capabilities.
 ///
 /// ```rust
 /// use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
 ///
 /// let card = AgentCard::new("triage", "1.0.0", AgentInterface::jsonrpc("http://localhost:8080"))
 ///     .with_description("Routes incidents to the right runbook")
-///     .with_skill(AgentSkill::new("triage", "Triage", "Classifies an incident"));
+///     .with_skill(AgentSkill::new("triage", "Triage", "Classifies an incident").with_tags(["triage"]));
 /// assert_eq!(card.skills.len(), 1);
+/// assert!(card.validate().is_ok());
+/// assert_eq!(card.capabilities.streaming, Some(true));
 /// ```
 ///
 /// The builders live in `agent_card/builders.rs`. Three examples written in a
@@ -73,6 +82,7 @@ pub struct AgentInterface {
 /// without finding them, which is what this section is here to prevent.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct AgentCard {
     /// A human readable name for the agent.
     /// Example: "Recipe Agent"
@@ -156,6 +166,7 @@ pub struct AgentCard {
 /// Represents the service provider of an agent.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct AgentProvider {
     /// A URL for the agent provider's website or relevant documentation.
     /// Example: `"https://ai.google.dev"`
@@ -195,6 +206,7 @@ pub struct AgentCapabilities {
 /// the two mode lists are set by the `with_*` methods beside it.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct AgentSkill {
     /// A unique identifier for the agent's skill.
     pub id: String,

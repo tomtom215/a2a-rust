@@ -32,7 +32,7 @@ use a2a_protocol_server::{PathSegmentTenantResolver, TenantAwareInMemoryTaskStor
 
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 /// Records the tenant every execution ran as.
 #[derive(Clone, Default)]
@@ -47,12 +47,11 @@ impl AgentExecutor for Recorder {
         Box::pin(async move {
             self.0.lock().unwrap().push(ctx.tenant().map(str::to_owned));
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await
         })
     }

@@ -8,10 +8,9 @@
 //! exits 1 on a failed verification, so a script can gate on it.
 
 use std::path::Path;
-use std::time::Duration;
 
 use a2a_protocol_client::discovery::{
-    CardFetchOptions, fetch_card_from_url_with_options, resolve_agent_card_with_options,
+    fetch_card_from_url_with_options, resolve_agent_card_with_options,
 };
 use a2a_protocol_client::jwks::fetch_jwks;
 use a2a_protocol_types::AgentCard;
@@ -22,7 +21,6 @@ use a2a_protocol_types::signing::{
 
 use crate::cli::{GlobalOpts, SignAlg};
 use crate::commands::print_pretty;
-use crate::connect::header_map;
 use crate::error::CliError;
 
 fn read(path: &Path) -> Result<Vec<u8>, CliError> {
@@ -53,9 +51,7 @@ pub async fn card_verify(opts: &GlobalOpts, card: &str, jwks: &str) -> Result<()
     // `card` is shadowed by the parsed card below; the argument is needed again
     // for the host comparison.
     let card_arg = card;
-    let options = CardFetchOptions::default()
-        .with_headers(header_map(opts))
-        .with_timeout(Duration::from_secs(opts.timeout));
+    let options = crate::connect::fetch_options(opts, true);
     let card: AgentCard = if card.starts_with("http://") || card.starts_with("https://") {
         if card.ends_with("agent-card.json") {
             fetch_card_from_url_with_options(card, &options).await?
@@ -82,7 +78,7 @@ pub async fn card_verify(opts: &GlobalOpts, card: &str, jwks: &str) -> Result<()
                 "note: --header is not sent to the JWK Set's host; \
                  pass --follow-card-origin to send it"
             );
-            CardFetchOptions::default().with_timeout(Duration::from_secs(opts.timeout))
+            crate::connect::fetch_options(opts, false)
         };
         fetch_jwks(jwks, &jwks_options).await?
     } else {

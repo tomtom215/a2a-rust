@@ -36,31 +36,23 @@ struct NoopExecutor;
 agent_executor!(NoopExecutor, |_ctx, _queue| async { Ok(()) });
 
 fn push_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Push Test Agent".into(),
-        description: "Advertises push notifications".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![a2a_protocol_types::agent_card::AgentInterface {
-            url: "https://agent.example.com/rpc".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![
-            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
-        ],
-        // Spec §3.3.4 rejects push operations unless the card advertises them.
-        capabilities: AgentCapabilities::none().with_push_notifications(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "Push Test Agent",
+        "1.0.0",
+        a2a_protocol_types::agent_card::AgentInterface::new(
+            "https://agent.example.com/rpc",
+            "JSONRPC",
+        )
+        .with_protocol_version("1.0.0"),
+    )
+    .with_description("Advertises push notifications")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+    )
+    // Spec §3.3.4 rejects push operations unless the card advertises them.
+    .with_capabilities(AgentCapabilities::none().with_push_notifications(true))
 }
 
 /// A handler that supports push notifications and permits loopback webhooks.
@@ -73,34 +65,23 @@ fn handler_with_push() -> RequestHandler {
 }
 
 fn inline_config(url: &str) -> TaskPushNotificationConfig {
-    TaskPushNotificationConfig {
-        tenant: None,
-        // Deliberately absent — the schema says the client leaves it empty
-        // here and the server fills it in from the task it creates.
-        task_id: None,
-        id: None,
-        url: url.to_owned(),
-        token: Some("validation-token".to_owned()),
-        authentication: Some(AuthenticationInfo {
+    TaskPushNotificationConfig::for_url(url.to_owned())
+        .with_token("validation-token".to_owned())
+        .with_authentication(AuthenticationInfo {
             scheme: "Bearer".to_owned(),
             credentials: Some("tck-test-token".to_owned()),
-        }),
-    }
+        })
 }
 
 fn send_with(config: Option<TaskPushNotificationConfig>, ctx: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(format!("msg-{ctx}")),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello")],
-            context_id: Some(ContextId::new(ctx)),
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(format!("msg-{ctx}")),
+            MessageRole::User,
+            vec![Part::text("hello")],
+        )
+        .with_context_id(ContextId::new(ctx)),
         configuration: Some(SendMessageConfiguration {
             accepted_output_modes: vec!["text/plain".to_owned()],
             task_push_notification_config: config,
@@ -273,9 +254,10 @@ async fn inline_config_respects_the_per_task_quota() {
     // A standalone create for the same task is now over quota...
     let standalone = handler
         .on_set_push_config(
-            TaskPushNotificationConfig {
-                task_id: Some(task_id.clone()),
-                ..inline_config("http://127.0.0.1:9/b")
+            {
+                let mut built = inline_config("http://127.0.0.1:9/b");
+                built.task_id = Some(task_id.clone());
+                built
             },
             None,
         )

@@ -88,16 +88,11 @@ fn traced_headers() -> HashMap<String, String> {
 fn params(msg_id: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(msg_id),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello")],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(msg_id),
+            MessageRole::User,
+            vec![Part::text("hello")],
+        ),
         configuration: None,
         metadata: None,
     }

@@ -234,7 +234,13 @@ impl RequestHandler {
                 sync.apply(&self.halts, &self.cancellation_tokens)
                     .await
                     .map_err(|e| {
-                        ServerError::Halted(format!("the halt store could not be read: {e}"))
+                        // Temporary, and refused before any work began, so a
+                        // client may send again: `Overloaded` goes out with
+                        // `Retry-After` and `RetryInfo`, as the idempotency
+                        // claim's refusal does. The `Halted` this used to be
+                        // went out as a non-retryable internal error on
+                        // JSON-RPC (audit NEW-h-designs-7).
+                        ServerError::Overloaded(format!("the halt store could not be read: {e}"))
                     })?;
                 sync::spawn_poller(
                     Arc::clone(sync),

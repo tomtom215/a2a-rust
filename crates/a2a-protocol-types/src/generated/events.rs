@@ -11,6 +11,7 @@
 /// of separate `state`/`message` fields, and the `final` field is gone.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct TaskStatusUpdateEvent {
     /// The ID of the task that has changed.
     #[serde(alias = "task_id")]
@@ -31,6 +32,7 @@ pub struct TaskStatusUpdateEvent {
 /// [`StreamResponse`] discriminated union.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct TaskArtifactUpdateEvent {
     /// The ID of the task for this artifact.
     #[serde(alias = "task_id")]

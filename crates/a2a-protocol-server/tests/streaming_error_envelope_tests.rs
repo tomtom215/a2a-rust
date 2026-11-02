@@ -38,12 +38,11 @@ use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 const TINY_CAPACITY: usize = 2;
 
 fn status_event(n: usize) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new(format!("task-{n}")),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new(format!("task-{n}")),
+        ContextId::new("ctx-1"),
+        TaskStatus::new(TaskState::Working),
+    ))
 }
 
 /// Drives an SSE response whose reader is guaranteed to have lagged, and

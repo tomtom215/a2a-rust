@@ -47,16 +47,11 @@ impl Metrics for Sends {
 fn send(id: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(id),
-            role: MessageRole::User,
-            parts: vec![Part::text("go")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(id),
+            MessageRole::User,
+            vec![Part::text("go")],
+        ),
         configuration: None,
         metadata: None,
     }

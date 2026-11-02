@@ -159,55 +159,34 @@ impl PushConfigStore for GatedPushConfigStore {
 // ── harness ──────────────────────────────────────────────────────────────────
 
 fn push_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Push Guard Agent".into(),
-        description: "Advertises push notifications".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "https://agent.example.com/rpc".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![
-            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
-        ],
-        capabilities: AgentCapabilities::none().with_push_notifications(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "Push Guard Agent",
+        "1.0.0",
+        AgentInterface::new("https://agent.example.com/rpc", "JSONRPC")
+            .with_protocol_version("1.0.0"),
+    )
+    .with_description("Advertises push notifications")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
+    )
+    .with_capabilities(AgentCapabilities::none().with_push_notifications(true))
 }
 
 fn send(msg_id: &str, ctx: &str, with_config: bool) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(msg_id),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello")],
-            context_id: Some(ContextId::new(ctx)),
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(msg_id),
+            MessageRole::User,
+            vec![Part::text("hello")],
+        )
+        .with_context_id(ContextId::new(ctx)),
         configuration: Some(SendMessageConfiguration {
             accepted_output_modes: vec!["text/plain".to_owned()],
-            task_push_notification_config: with_config.then(|| TaskPushNotificationConfig {
-                tenant: None,
-                task_id: None,
-                id: None,
-                url: "http://127.0.0.1:9/hook".to_owned(),
-                token: None,
-                authentication: None,
-            }),
+            task_push_notification_config: with_config
+                .then(|| TaskPushNotificationConfig::for_url("http://127.0.0.1:9/hook".to_owned())),
             history_length: None,
             return_immediately: Some(true),
         }),

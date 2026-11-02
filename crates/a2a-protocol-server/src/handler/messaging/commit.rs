@@ -220,17 +220,14 @@ impl RequestHandler {
             let (writer, reader, persistence_rx, lease_read) = self
                 .lease_event_queue(&task_id, use_background, !continues, known)
                 .await?;
-            writer.bind_identity(
-                task_id.clone(),
-                a2a_protocol_types::task::ContextId::new(ctx.context_id.clone()),
-            );
+            writer.bind_identity(task_id.clone(), ctx.context_id.clone());
             guard_ref.leased();
             let turn = self
                 .register_cancellation_token(&task_id, ctx.cancellation_token.clone())
                 .await;
             let claim = claim.map(std::sync::Arc::new);
             if let Some(claim) = &claim {
-                claim.attach(&ctx.cancellation_token);
+                claim.attach(&ctx.cancellation_token, &turn);
             }
             guard_ref.registered(&turn);
             // A halt that landed after the check above may have walked the

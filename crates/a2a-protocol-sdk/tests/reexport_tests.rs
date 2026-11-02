@@ -82,16 +82,7 @@ fn part_text_construction() {
     use a2a_protocol_sdk::prelude::*;
 
     let part = Part::text("Hello from SDK");
-    let msg = Message {
-        id: MessageId::new("msg-1"),
-        role: MessageRole::User,
-        parts: vec![part],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    };
+    let msg = Message::new(MessageId::new("msg-1"), MessageRole::User, vec![part]);
     assert_eq!(msg.role, MessageRole::User);
     assert_eq!(msg.parts.len(), 1);
 }

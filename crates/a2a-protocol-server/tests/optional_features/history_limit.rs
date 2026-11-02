@@ -37,14 +37,14 @@ async fn handler_with_a_full_history() -> RequestHandler {
         .map(|i| Message::user_text(format!("old-{i}"), "earlier turn"))
         .collect();
     store
-        .save(&Task {
-            id: TaskId::new("long"),
-            context_id: ContextId::new("ctx-long"),
-            status: TaskStatus::new(TaskState::InputRequired),
-            history: Some(history),
-            artifacts: None,
-            metadata: None,
-        })
+        .save(
+            &Task::new(
+                TaskId::new("long"),
+                ContextId::new("ctx-long"),
+                TaskStatus::new(TaskState::InputRequired),
+            )
+            .with_history(history),
+        )
         .await
         .unwrap();
     RequestHandlerBuilder::new(AsksAgain)

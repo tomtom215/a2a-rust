@@ -161,14 +161,13 @@ pub trait AgentExecutor: Send + Sync + 'static {
 /// receivers, and that must not fail the cancel — the handler persists the
 /// Canceled state either way.
 pub(crate) async fn write_canceled(ctx: &RequestContext, queue: &dyn EventQueueWriter) {
-    let event = a2a_protocol_types::events::TaskStatusUpdateEvent {
-        task_id: ctx.task_id.clone(),
-        context_id: a2a_protocol_types::task::ContextId::new(ctx.context_id.clone()),
-        status: a2a_protocol_types::task::TaskStatus::with_timestamp(
+    let event = a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+        ctx.task_id.clone(),
+        ctx.context_id.clone(),
+        a2a_protocol_types::task::TaskStatus::with_timestamp(
             a2a_protocol_types::task::TaskState::Canceled,
         ),
-        metadata: None,
-    };
+    );
     let _ = queue
         .write(a2a_protocol_types::events::StreamResponse::StatusUpdate(
             event,

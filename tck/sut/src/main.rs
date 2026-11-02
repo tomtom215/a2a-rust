@@ -44,7 +44,7 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::executor::AgentExecutor;
@@ -72,12 +72,11 @@ impl TckSutExecutor {
         state: TaskState,
     ) -> A2aResult<()> {
         queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                status: TaskStatus::new(state),
-                metadata: None,
-            }))
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                ctx.task_id.clone(),
+                ctx.context_id.clone(),
+                TaskStatus::new(state),
+            )))
             .await
     }
 
@@ -88,14 +87,14 @@ impl TckSutExecutor {
         parts: Vec<Part>,
     ) -> A2aResult<()> {
         queue
-            .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                artifact: Artifact::new("tck-artifact", parts),
-                append: None,
-                last_chunk: Some(true),
-                metadata: None,
-            }))
+            .write(StreamResponse::ArtifactUpdate(
+                TaskArtifactUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    Artifact::new("tck-artifact", parts),
+                )
+                .with_last_chunk(true),
+            ))
             .await
     }
 
@@ -107,14 +106,15 @@ impl TckSutExecutor {
         last: bool,
     ) -> A2aResult<()> {
         queue
-            .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                artifact: Artifact::new("tck-artifact", vec![Part::text(text)]),
-                append: Some(true),
-                last_chunk: Some(last),
-                metadata: None,
-            }))
+            .write(StreamResponse::ArtifactUpdate(
+                TaskArtifactUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    Artifact::new("tck-artifact", vec![Part::text(text)]),
+                )
+                .with_append(true)
+                .with_last_chunk(last),
+            ))
             .await
     }
 
@@ -137,16 +137,11 @@ impl TckSutExecutor {
     /// An immediate agent `Message` reply (no task), for `tck-message-response`.
     async fn message_reply(queue: &dyn EventQueueWriter, text: &str) -> A2aResult<()> {
         queue
-            .write(StreamResponse::Message(Message {
-                id: MessageId::new(format!("sut-{}", uuid_like(text))),
-                role: MessageRole::Agent,
-                parts: vec![Part::text(text)],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            }))
+            .write(StreamResponse::Message(Message::new(
+                MessageId::new(format!("sut-{}", uuid_like(text))),
+                MessageRole::Agent,
+                vec![Part::text(text)],
+            )))
             .await
     }
 }
@@ -380,67 +375,41 @@ fn make_agent_card(
     ws_url: Option<&str>,
     profile: Profile,
 ) -> AgentCard {
-    AgentCard {
-        url: Some(base_url.into()),
-        name: "a2a-rust System Under Test (SUT)".into(),
-        description: "System Under Test for A2A TCK conformance".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![
-            AgentInterface {
-                url: base_url.into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            },
-            AgentInterface {
-                url: base_url.into(),
-                protocol_binding: "HTTP+JSON".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            },
-            // The TCK builds one client per advertised interface, so declaring
-            // GRPC is what makes it run the whole core suite a third time over
-            // the gRPC binding — and what turns the six `GRPC-*` MUST
-            // requirements from SKIPPED into a real pass/fail result.
-            AgentInterface {
-                url: grpc_url.into(),
-                protocol_binding: "GRPC".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            },
-        ]
-        .into_iter()
+    {
+        let mut card = AgentCard::new(
+            "a2a-rust System Under Test (SUT)",
+            "1.0.0",
+            AgentInterface::new(base_url, "JSONRPC"),
+        )
+        .with_description("System Under Test for A2A TCK conformance")
+        .with_interface(AgentInterface::new(base_url, "HTTP+JSON"))
+        // The TCK builds one client per advertised interface, so declaring
+        // GRPC is what makes it run the whole core suite a third time over
+        // the gRPC binding — and what turns the six `GRPC-*` MUST
+        // requirements from SKIPPED into a real pass/fail result.
+        .with_interface(AgentInterface::new(grpc_url, "GRPC"));
         // §12's custom binding, advertised only when the listener is up. The
         // official suite ignores a binding name it does not know; the in-repo
         // TCK's `--binding websocket` leg discovers the socket here, the same
         // way a real client would.
-        .chain(ws_url.map(|url| AgentInterface {
-            url: url.into(),
-            // §5.8: a custom binding SHOULD be identified by a URI. The
-            // SUT is the target this repository's conformance claim is
-            // measured against, so it advertises the spec-preferred form.
-            // The examples deliberately still advertise the bare
-            // `"WEBSOCKET"`, which keeps CI exercising both spellings —
-            // agents written before 0.11.0 emit the old one and the kit has
-            // to keep finding them.
-            protocol_binding: a2a_protocol_types::WEBSOCKET_BINDING_URI.into(),
-            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-            tenant: None,
-        }))
-        .collect(),
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "tck".into(),
-            name: "TCK conformance".into(),
-            description: "Emits the artifact and message shapes the A2A TCK asserts".into(),
-            tags: vec!["tck".into(), "conformance".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: match profile {
+        if let Some(url) = ws_url {
+            card = card.with_interface(AgentInterface::new(
+                url,
+                a2a_protocol_types::WEBSOCKET_BINDING_URI,
+            ));
+        }
+        card.url = Some(base_url.into());
+        card.default_input_modes = vec!["text/plain".into()];
+        card.default_output_modes = vec!["text/plain".into()];
+        card.skills = vec![
+            AgentSkill::new(
+                "tck",
+                "TCK conformance",
+                "Emits the artifact and message shapes the A2A TCK asserts",
+            )
+            .with_tags(vec!["tck", "conformance"]),
+        ];
+        card.capabilities = match profile {
             Profile::Full => AgentCapabilities::none()
                 .with_streaming(true)
                 .with_push_notifications(true)
@@ -456,16 +425,14 @@ fn make_agent_card(
                     .with_streaming(true)
                     .with_push_notifications(true)
                     .with_extended_agent_card(true);
-                caps.extensions = Some(vec![a2a_protocol_types::extensions::AgentExtension {
-                    uri: REQUIRED_EXTENSION_URI.into(),
-                    description: Some(
-                        "TCK sentinel extension for CORE-CAP-004 (required-extension \
-                         negotiation). Carries no behaviour."
-                            .into(),
-                    ),
-                    required: Some(true),
-                    params: None,
-                }]);
+                caps.extensions = Some(vec![
+                    a2a_protocol_types::extensions::AgentExtension::new(REQUIRED_EXTENSION_URI)
+                        .with_description(
+                            "TCK sentinel extension for CORE-CAP-004 (required-extension \
+                         negotiation). Carries no behaviour.",
+                        )
+                        .with_required(true),
+                ]);
                 caps
             }
             // Same capabilities as Full. The only variable this profile
@@ -475,15 +442,16 @@ fn make_agent_card(
                 .with_streaming(true)
                 .with_push_notifications(true)
                 .with_extended_agent_card(true),
-        },
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
+        };
+        card.provider = None;
+        card.icon_url = None;
+        card.documentation_url = None;
+
         // Declared at card level and nowhere else, which is the shape
         // BIND-EQUIV-004's structural half asserts: v1.0 gives
         // `AgentInterface` no security fields, so one declaration here binds
         // every binding equally.
-        security_schemes: match profile {
+        card.security_schemes = match profile {
             Profile::Secured => Some(
                 [(
                     SECURED_PROFILE_SCHEME.to_string(),
@@ -503,8 +471,8 @@ fn make_agent_card(
                 .collect(),
             ),
             _ => None,
-        },
-        security_requirements: match profile {
+        };
+        card.security_requirements = match profile {
             Profile::Secured => Some(vec![a2a_protocol_types::SecurityRequirement {
                 schemes: [(
                     SECURED_PROFILE_SCHEME.to_string(),
@@ -516,8 +484,9 @@ fn make_agent_card(
                 .collect(),
             }]),
             _ => None,
-        },
-        signatures: None,
+        };
+        card.signatures = None;
+        card
     }
 }
 

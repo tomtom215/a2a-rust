@@ -66,14 +66,7 @@ impl PushConfigStore for EveryTask {
 }
 
 fn hook(task_id: &str) -> TaskPushNotificationConfig {
-    TaskPushNotificationConfig {
-        tenant: None,
-        id: Some("hook".into()),
-        task_id: Some(task_id.into()),
-        url: "https://receiver.example/hook".into(),
-        token: None,
-        authentication: None,
-    }
+    TaskPushNotificationConfig::new(task_id, "https://receiver.example/hook").with_id("hook")
 }
 
 /// Which events the webhook hangs on.

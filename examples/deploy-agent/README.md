@@ -50,6 +50,8 @@ Configuration:
 | `AGENT_URL` | `http://localhost:$PORT` | The **externally reachable** URL, `http://` or `https://`. Goes on the agent card |
 | `DRAIN_DELAY_SECONDS` | `0` | After `SIGTERM`, how long to answer `/ready` with 503 and go on serving before stopping, while load balancers learn the pod is leaving. `deployment.yaml` sets 5 |
 | `DATABASE_URL` | unset: tasks in memory | A PostgreSQL URL. Tasks and push configs go there, which is what lets several replicas serve the agent; unset, run one replica (the process says so at startup). TLS to the database: `?sslmode=verify-full&sslrootcert=/path/ca.pem` (or `require`), as hosted PostgreSQL documents |
+| `AGENT_VERSION` | this crate's own version | What the agent card reports as its `version`, so rollouts can be told apart from the card alone. The published image sets it to the release; refused at startup if it contains whitespace |
+| `TASK_RETENTION_HOURS` | `168` | With `DATABASE_URL`, how long a finished task (completed, failed, canceled, rejected) is kept after its last update: the agent deletes older ones, and the idempotency keys that outlived them, every hour, in bounded batches, from every replica (safe: each batch picks its own rows). A task still working or waiting for input is never deleted. `0` keeps everything, and says so at startup: then schedule your own `PostgresTaskStore::purge_expired`. Until 2026-11-01 nothing deleted, so a database-backed deployment grew without bound where the in-memory one kept an hour. Refused at startup unless a whole number of hours |
 | `DATABASE_POOL_SIZE` | `10` | Connections in the task store's pool; the push-config store's is 2, so a replica uses this plus 2, logged at startup. Replicas × that, with a surge pod during a rollout, must stay under PostgreSQL's `max_connections` (97 usable by default). Refused at startup unless a whole number from 1 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset: nothing exported | A collector's OTLP/HTTP URL, e.g. `http://localhost:4318` for [`deploy/observability`](../../deploy/observability)'s stack; traces, metrics and logs all go there |
 
@@ -87,22 +89,23 @@ and graceful shutdown silently stops working.
 ## Kubernetes
 
 ```sh
+kubectl create secret generic deploy-agent-db \
+  --from-literal=url='postgres://USER:PASSWORD@HOST:5432/DB?sslmode=verify-full&sslrootcert=/path/ca.pem'
 kubectl apply -f examples/deploy-agent/deployment.yaml
 ```
 
-Three edits first (`kubectl apply` as shipped fails twice: the Secret is
-missing, then the image cannot be pulled):
+The manifest names the image the release workflow publishes,
+`ghcr.io/tomtom215/a2a-rust/deploy-agent:0.16.0` (from 0.16.0 on; tagged with
+the release version only, there is no `latest`), with
+`imagePullPolicy: IfNotPresent`. Until 2026-11-01 it named `deploy-agent:latest`,
+which Kubernetes pulls from Docker Hub, where nothing was published, so
+`kubectl apply` as shipped failed twice: the Secret was missing, then the
+image could not be pulled. Two things to set:
 
-- **The image.** The manifest names `deploy-agent:latest` and sets no
-  `imagePullPolicy`, and Kubernetes pulls a `:latest` image by default, so a
-  locally built image is not used. Push it to a registry the cluster can reach
-  and set `image:` to it, or on kind run `kind load docker-image deploy-agent`
-  and set `imagePullPolicy: IfNotPresent`.
 - **`AGENT_URL`.** The manifest sets the in-cluster Service URL. Set it to the
   URL callers will use (see the trap below).
 - **The database.** The manifest runs two replicas and takes `DATABASE_URL`
-  from the Secret `deploy-agent-db`, which you create:
-  `kubectl create secret generic deploy-agent-db --from-literal=url='postgres://USER:PASSWORD@HOST:5432/DB?sslmode=verify-full&sslrootcert=/path/ca.pem'`.
+  from the Secret `deploy-agent-db`, which the first command creates.
   Keep the `sslmode`: the driver's default, `prefer`, falls back to plaintext
   and does not check who answered, while `verify-full` checks the server's
   certificate and name. `sslrootcert` is the CA file as the pod sees it, so
@@ -110,6 +113,28 @@ missing, then the image cannot be pulled):
   two replicas on in-memory stores answer `TaskNotFound` for every task the
   other one created. For one replica and no database, delete the entry and
   set `replicas: 1`.
+
+For an image of your own, build it as above, then push it to a registry the
+cluster can reach and set `image:` to it, or on kind run
+`kind load docker-image deploy-agent:dev` (after `docker build ... -t
+deploy-agent:dev`) and set `image: deploy-agent:dev`. A built-from-source
+image reports the crate's version on its agent card; the published one
+reports the release it was built for (`AGENT_VERSION`).
+
+### Verify the image
+
+Each published image carries a Sigstore-signed SLSA build-provenance
+attestation, stored beside it in the registry, and BuildKit's SBOM and
+provenance in the image index:
+
+```sh
+gh attestation verify oci://ghcr.io/tomtom215/a2a-rust/deploy-agent:0.16.0 \
+  --repo tomtom215/a2a-rust
+```
+
+The release workflow runs the same command on the image it has just pushed
+and fails if it cannot verify it. The attestation says which workflow, at
+which commit, built that digest; it does not say the code is free of defects.
 
 Two replicas on one database need no session affinity: each turn of a task
 takes a claim in the database, so a continuation that reaches the other pod
@@ -189,9 +214,18 @@ these reads as an endorsement:
   anonymous. See [Authentication](https://a2a-rust.com/building-agents/authentication.html)
   and the `harden` act of [`incident-response`](../incident-response).
 - **The database itself.** `DATABASE_URL` names a PostgreSQL you run; its
-  backups, upgrades and connection limits are yours. Without it the store is
+  backups, upgrades and connection limits are yours. A server certificate
+  signed by a CA outside Mozilla's roots (an internal CA, or a provider's own)
+  needs `sslrootcert` and the CA file mounted in the pod; `deployment.yaml`
+  carries the ConfigMap volume as a commented example. Without it the store is
   in memory: tasks do not survive a restart, and the agent must run as one
   replica.
+- **Network policy, ingress and scraping.** The manifest ships no
+  `NetworkPolicy`, no `Ingress` with TLS and no `ServiceMonitor`. A cluster
+  with a default-deny policy needs one allowing the ingress namespace to reach
+  port 8080; metrics reach a Prometheus Operator only through a Collector,
+  because this binary is built without `otel-prometheus` (asking for it makes
+  the process start without it and say so at `WARN`).
 - **The observability stack in Kubernetes.** With `OTEL_EXPORTER_OTLP_ENDPOINT`
   set (or a per-signal endpoint) the binary sends traces, metrics and logs to
   that collector; with none set nothing is built. `deploy/observability` has a

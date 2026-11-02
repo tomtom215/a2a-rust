@@ -1,0 +1,403 @@
+{
+ "slice": "g-api",
+ "baseline": "4a8243c66df5ae07a54a69168ab419ac609b06e9",
+ "policy_context": [
+  "STABILITY.md section 2: changing a public signature, adding #[non_exhaustive], changing what a default feature enables, or changing which requests are rejected is a minor (0.y) bump, never a patch.",
+  "STABILITY.md section 3.1: a removed or renamed item stays one minor release with #[deprecated(since, note)] first; section 3.2: at most one breaking minor per calendar month. 0.15.0 shipped 2026-10-25; a 0.16.0 in November is the month's one breaking window. After 0.16.0 ships the next one is December at the earliest (or needs a 'Cadence exception' line).",
+  "Every crate's Cargo.toml already reads 0.16.0 (crates/a2a-protocol-*/Cargo.toml:6) against 0.15.1 on crates.io (per CHANGELOG), so the cargo-semver-checks job (.github/workflows/ci.yml:985-999, all four published crates, all features) reports any break as a 'major change' and passes. Nothing below would be blocked by CI before 0.16.0 is published; every API break below is blocked after it (it would need 0.17.0). Each deliberate break still needs a '### Breaking Changes' entry and an upgrade-guide section (book-tests/tests/upgrading_guide.rs enforces a section per breaking minor; book/src/reference/upgrading/0.15-to-0.16.md lists six items today, covering G-03 and G-11 from this report and none of the rows below).",
+  "The SDK prelude (crates/a2a-protocol-sdk/src/lib.rs:100-120) re-exports EventStream, EventEmitter, agent_executor!, Server, serve, serve_with_addr, Telemetry, A2aRouter: a rename or deprecation in the server or client crate must keep the SDK re-export compiling."
+ ],
+ "rows": [
+  {
+   "id": "G-04",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-client/src/builder/mod.rs:171-173 - from_card is from_card_preferring(card, &[]): the card's first compatible interface wins (:216-227), endpoint and tenant come from it, preferred_binding = that binding (:255); card_interfaces kept (:260)",
+    "crates/a2a-protocol-client/src/builder/transport_factory.rs:180-249 - build_grpc never reads preferred_binding, card_interfaces or fallback_interfaces; it dials self.endpoint (:227 GrpcTransport::connect_with_config(&self.endpoint, ..)) and labels the span GRPC at that endpoint (:202). For a card [JSONRPC @ :1111, GRPC @ :2222], from_card(&card)?.build_grpc() dials gRPC at :1111 with the JSON-RPC interface's tenant",
+    "crates/a2a-protocol-client/src/builder/mod.rs:425-439 - with_protocol_binding is the only path that moves endpoint+tenant to the card's gRPC interface; its own rustdoc (:410-415) describes the gRPC-against-:1111 bug as fixed, but only for this path",
+    "crates/a2a-protocol-client/src/builder/transport_factory.rs:183-196 vs :50-54 - build() refuses a zero connection_timeout with ClientError::Config; build_grpc checks request/send/stream_connect timeouts but not connection_timeout, which reaches tonic's Endpoint::connect_timeout (transport/grpc.rs:303)",
+    "crates/a2a-protocol-client/src/builder/transport_factory.rs:207-220 - build_grpc reads grpc_tls_config only; ClientBuilder::without_tls() (builder/mod.rs:516-525, 'plain HTTP only') and with_tls_config (:527-537, documented as HTTP-bindings-only) are silently ignored on the gRPC path, so without_tls()+build_grpc on a bare non-loopback host:port still dials TLS",
+    "tools/a2a-cli/src/connect.rs:202-216 - the CLI still branches three ways (build_grpc / WebSocketTransport::connect_with_config + with_custom_transport / build)"
+   ],
+   "test": "none: transport_factory_tests.rs:91 and :109 cover only zero timeouts on build_grpc; selection_tests.rs:172 covers build() falling back past a gRPC interface, not build_grpc on a multi-interface card",
+   "summary": "build_grpc still dials whatever endpoint from_card chose (the card's first interface), so a card listing JSON-RPC before gRPC gets gRPC spoken to the JSON-RPC port with the wrong tenant; it also skips the zero connection_timeout check build() has.",
+   "remaining": "In build_grpc, when the builder came from a card and the caller did not name a binding, move endpoint and tenant to the card's first GRPC interface (or refuse with ClientError::Config naming it); validate connection_timeout; optionally an async connect() that picks the transport (WebSocket included) from chosen_interface().",
+   "theme": "client-builder",
+   "effort": "S",
+   "breaking": "behaviour only (build_grpc dials the card's gRPC URL instead of the JSON-RPC one, which never worked unless both share a port; a zero connection_timeout becomes a build-time Config error). No API change; fine in 0.16.0, defensible even as a patch-level bug fix. A new async connect() is additive.",
+   "probe": "none (a unit test with two loopback listeners, card [JSONRPC @ A, GRPC @ B], from_card + build_grpc, asserting the call reaches B, settles it)"
+  },
+  {
+   "id": "G-05",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged; the report undercounts)",
+   "evidence": [
+    "15 agent-serving accept loops over JsonRpcDispatcher/RestDispatcher in 11 non-test example files: agent-team/src/infrastructure.rs:287,335; echo-agent/src/serve.rs:40,65; genai-agent/src/main.rs:253 and surface.rs:117; incident-response/src/hardening/mod.rs:164, serving.rs:171,370; mcp-agent/src/main.rs:257; mcp-bridge/src/bin/demo.rs:199; multi-lang-team/src/main.rs:329 and surface.rs:117; rig-agent/src/main.rs:288 and surface.rs:135 (plus mcp-bridge/src/tests.rs:289, a test). The other ~13 accept loops in examples/ are webhook sinks, JWKS/HTTPS mocks and fault proxies",
+    "Every one of them, not five, retries an accept error with a bare 'continue' and no backoff (grep -A2 'listener.accept().await else' examples/*/src: all continue), so they busy-spin on EMFILE; each builds hyper_util auto::Builder::new(..).serve_connection with no timer, no header-read or idle timeout, no connection cap, no task-ending shutdown (e.g. examples/genai-agent/src/main.rs:250-271, examples/echo-agent/src/serve.rs:33-79)",
+    "crates/a2a-protocol-server/src/serve/mod.rs:131-134 - the SDK documents its own former loop of this shape as the slowloris defect; Server::from_listener (serve/graceful/mod.rs:217) + local_addr (:239) serve the 'bind before building the card' reason these examples give",
+    "examples/hello-agent/src/main.rs:117-122 - the test helper still probe-binds port 0, drops the listener, then serve_with_addr(addr, ..): racy (another process can take the port in between)"
+   ],
+   "test": "none (no CI grep forbids listener.accept() in examples)",
+   "summary": "Examples still teach the hand-rolled hyper accept loop the SDK calls a defect, 15 times, all busy-spinning on accept errors.",
+   "remaining": "Replace the 15 agent loops with Server::from_listener(listener).serve_with_shutdown(..) (tests can use std::future::pending()); fix hello-agent's probe-bind with Server::bind(\"127.0.0.1:0\") + local_addr(); add a CI grep forbidding listener.accept() in examples/*/src outside named webhook/mock helpers.",
+   "theme": "examples-serving",
+   "effort": "M",
+   "breaking": "none (examples/ is outside STABILITY.md section 6)",
+   "probe": "none"
+  },
+  {
+   "id": "G-06",
+   "verdict": "needs_decision",
+   "severity_now": "medium (unchanged; the server-only gap is wider than the report says)",
+   "evidence": [
+    "crates/a2a-protocol-sdk/Cargo.toml:31 - default = [tls-rustls, tracing, otel, otlp, webhook]; the comment above it records otlp in the SDK defaults as a decision of 2026-10-14. Server otlp (crates/a2a-protocol-server/Cargo.toml:85-96) pulls opentelemetry_sdk, opentelemetry-otlp (grpc-tonic, http-proto: :220), tonic, tracing-subscriber, hyper-rustls, rustls, webpki-roots. Compile cost not measured (cargo not run)",
+    "crates/a2a-protocol-server/Cargo.toml:28 - server default = [tracing, otel], no tls-rustls; client :29 and SDK :31 both default to tls-rustls",
+    "crates/a2a-protocol-server/src/push/sender.rs:218 - without tls-rustls HttpPushSender is plaintext-only and fails fast on https://",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1150-1170 - without tls-rustls the JWKS/OIDC client is a plain hyper-util HttpConnector (which refuses https URIs by default, per hyper-util; not run), and since 0.16 a plaintext non-loopback JWKS URL is refused (CHANGELOG [Unreleased] Breaking Changes, SEC-06): a server-only build with auth-jwt therefore refuses every token from any non-loopback identity provider",
+    "crates/a2a-protocol-server/src/tool_loop/openai.rs:96-104 - same for OpenAiChatModel (fails fast with a message, at least)",
+    "book/src/getting-started/installation.md:32-33 recommends 'a2a-protocol-server = \"0.16\"' for 'Server only' with no warning; crates/a2a-protocol-server/README.md:14 likewise; only the feature table (README.md:139, installation.md feature section) says tls-rustls is off"
+   ],
+   "test": "push/sender.rs:1473 https_without_tls_feature_fails_fast pins the current (fail-fast) behaviour; nothing tests the defaults themselves",
+   "summary": "Both directions still hold: the SDK's defaults compile the OTLP exporter and tonic for hello-agent (deliberately), and the server crate alone cannot reach any https:// webhook, JWKS/OIDC issuer or model endpoint.",
+   "remaining": "Decide the server default; fix the 'Server only' docs either way.",
+   "theme": "features-defaults",
+   "effort": "S",
+   "breaking": "Adding tls-rustls to the server's defaults is a default-feature change: a minor-bump change under STABILITY.md section 2, so 0.16.0 only (cargo-semver-checks has no lint for an added default feature; it is not blocked). Removing otlp from the SDK defaults is also 0.16.0-only and is the kind cargo-semver-checks flags (a feature no longer enabled by default); code using Telemetry then fails to compile until it enables otlp (loud, not silent).",
+   "probe": "measurement only, not live: cargo build --timings -p hello-agent with the SDK defaults vs default-features=false + [tls-rustls, tracing, otel, webhook] (Telemetry removed), clean target dir each, to put a number on the otlp cost before deciding option C",
+   "options": "A) Server default = [tracing, otel, tls-rustls] in 0.16.0: matches client and SDK, fixes push/JWKS/model over https for server-only users; costs rustls+ring+webpki-roots+hyper-rustls+tokio-rustls in every server-only build (already in every SDK build). B) Keep the defaults; make the docs say 'server only: add features = [\"tls-rustls\"] or push, JWT (JWKS) and the model client cannot reach https://' and have RequestHandlerBuilder::build() / JwtAuthInterceptor log a startup error when they are configured without TLS: non-breaking, but leaves a default that silently cannot do the spec's normal case. C) Additionally move otlp out of the SDK defaults (hello-agent and every Telemetry user adds features = [\"otlp\"]). Recommendation: A in 0.16.0; keep the SDK's otlp default as decided on 2026-10-14 unless the measurement above shows a material cost, and then decide C with the number."
+  },
+  {
+   "id": "G-07",
+   "verdict": "needs_decision",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-types/src/agent_card/builders.rs:272-294 - AgentCard::new sets description '' (:280), skills [] (:285), capabilities none() (:286); its rustdoc now says so ('Not yet publishable', :246-250) and its doctest asserts validate() fails (:265)",
+    "crates/a2a-protocol-types/src/agent_card/builders.rs:142-157 - AgentSkill::new sets tags [] (:151)",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117 - pub const fn validate(&self) -> Result<(), &'static str>; :131 'must declare at least one skill', :158 'every agent skill must have at least one tag' - no index or skill id",
+    "crates/a2a-protocol-server/src/handler/capability.rs:39-48 - streaming refused unless capabilities.streaming == Some(true) (spec section 3.3.4, so the server is right to refuse)",
+    "examples/hello-agent/src/main.rs:50-58 - the flagship card has no with_streaming(true): stream_message against hello-agent is refused (client CapabilityNotDeclared, server UnsupportedOperation); README.md:199 does set it",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:56-60 - AgentCard's own rustdoc says a card built with new 'is valid by construction', contradicting builders.rs:246-250; its example (:62-69) adds a skill with no tags, which validate() refuses (the doctest asserts only skills.len()); the text comes from codegen.toml"
+   ],
+   "test": "builders.rs:256-270 doctest pins the current (unpublishable) behaviour; nothing asserts hello-agent streams",
+   "summary": "All three sub-claims hold: new() yields a card build() refuses, validate() names no index, and streaming is opt-in, so the flagship example cannot stream; AgentCard's rustdoc also wrongly calls new() 'valid by construction'.",
+   "remaining": "Constructor/validation shape and the streaming default; fix the 'valid by construction' rustdoc (codegen.toml) and its example now.",
+   "theme": "agent-card-ergonomics",
+   "effort": "M",
+   "breaking": "Additive: AgentCard::minimal/new constructor taking description + skill, a detailed check returning a typed error with the skill index, a build()-time warning when streaming is undeclared. Changing new()'s signature or validate()'s return type needs a deprecation cycle (section 3.1: new item in 0.16, old deprecated, removed 0.17). Defaulting streaming to Some(true) in AgentCard::new is a wire-visible behaviour change (cards built with new() start advertising streaming): 0.16.0 only, with a Breaking Changes entry and an upgrade-guide section.",
+   "probe": "none",
+   "options": "A) Additive only: AgentCard::minimal(name, version, iface, description, skill), AgentCard::check() -> Result<(), CardError> naming the field/index (keep validate()), and RequestHandlerBuilder::build() logging when capabilities.streaming is None; set with_streaming(true) in hello-agent. Zero break. B) A plus default streaming = Some(true) in AgentCard::new in 0.16.0: every executor streams through the event queue, so the SDK can always honour it; costs one Breaking Changes entry and changes what existing cards advertise. C) Make new() take description and skill (deprecate-first; churns every caller). Recommendation: A now (can land before 0.16.0), B in 0.16.0 if the maintainer accepts the wire change; not C."
+  },
+  {
+   "id": "G-08",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/executor_helpers.rs:125-183 - both arms take only |$ctx:ident, $queue:ident| and splice the caller's block into a fn whose '&'a self' the macro itself writes (:130, :153, :168); macro_rules hygiene resolves 'self' like a local binding, so a caller's self.field cannot see the macro-written receiver (rustc E0424, 'a macro invocation can only access identifiers it receives from parameters'). Inferred from the language rule; not compiled (cargo forbidden)",
+    "grep of every agent_executor! use in examples/, book/, crates/ (40 files) finds no body that uses self: all are unit structs",
+    "crates/a2a-protocol-sdk/src/lib.rs:117-120 - the prelude advertises the macro as the shortest path from 'I have a struct' to 'I have an agent'; no arm can express impl<M> ... for Agent<M> either"
+   ],
+   "test": "none (no compile_fail doctest pins the limitation either way)",
+   "summary": "The macro still cannot give its body access to self, so any agent with state (a model client, config) falls off it onto the full Pin<Box<dyn Future>> signature.",
+   "remaining": "Add an arm binding the receiver, e.g. agent_executor!(Ty, |this, ctx, queue| async { this.model.. }) emitting 'let $this = self;' inside the impl (and the same for the execute/cancel form); document the generic-impl limit; add a compile_fail doctest for the 2-ident form using self so the docs stay honest.",
+   "theme": "executor-macro",
+   "effort": "S",
+   "breaking": "none (a new macro arm with three idents cannot capture an existing two-ident invocation; additive, any release)",
+   "probe": "none (a compile_fail doctest settles the [inferred] part without a live process; not run here)"
+  },
+  {
+   "id": "G-09",
+   "verdict": "needs_decision",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/serve/mod.rs:182 serve(addr, d) never returns; :253 serve_with_addr spawns detached, no handle",
+    "crates/a2a-protocol-server/src/serve/graceful/mod.rs:272-276 Server::serve_with_shutdown(self, dispatcher, signal) -> ServeReport",
+    "crates/a2a-protocol-server/src/dispatch/grpc/shutdown.rs:117-121 GrpcDispatcher::serve_with_shutdown(self, listener, signal) -> io::Result<ServeReport>; grpc/dispatcher.rs:215 serve(self, addr) -> io::Result<()>, :240 serve_with_addr, serve_with_listener",
+    "crates/a2a-protocol-server/src/dispatch/websocket/shutdown.rs:46-50 WebSocketDispatcher::serve_with_shutdown(self: Arc<Self>, listener, signal) -> ServeReport; websocket.rs:417 serve(self: Arc<Self>, addr), :440 serve_with_addr",
+    "ServeConfig applies to Server only: gRPC and WebSocket repeat with_completion_grace/with_task_grace/with_drain_timeout/with_max_connections on themselves (grpc/dispatcher.rs:89,181,189,198; websocket.rs:332,381,390,399) and have no header-read timeout, production refusal or host check from ServeConfig",
+    "Dispatcher is implemented only by RestDispatcher (dispatch/rest/mod.rs:751), JsonRpcDispatcher (jsonrpc/mod.rs:475), CombinedDispatcher (combined.rs:146) and Hsts (hsts.rs:59): A2aRouter (axum_adapter.rs:128) cannot be given to Server; its module example (axum_adapter.rs:41-42) binds 0.0.0.0:3000 under plain axum::serve with none of Server's timeouts; book/src/deployment/production/graceful-shutdown.md:89-93 tells Axum users to hand-wire finish_in_flight"
+   ],
+   "test": "n/a (design)",
+   "summary": "Eight entry points with three receiver shapes and three return types remain; only Server gets ServeConfig, and Axum users get none of its protections.",
+   "remaining": "Pick the target shape; the additive half can land before 0.16.0.",
+   "theme": "serve-unification",
+   "effort": "L",
+   "breaking": "Additive half (A2aRouter as a Dispatcher, ServeConfig accepted by gRPC/WebSocket): none. Unifying return types or receivers (gRPC io::Result<ServeReport> -> ServeReport, WebSocket self: Arc<Self> -> self) changes public signatures: section 3.1 wants a new name + #[deprecated] on the old one in 0.16, removal in 0.17; changing them in place is only possible in 0.16.0 and would be listed as Breaking (cargo-semver-checks would flag the signature change; passes now only because the version is already 0.16.0).",
+   "probe": "none",
+   "options": "A) Additive: impl Dispatcher for A2aRouter (call the axum Router as a tower service, map its body into DispatchResponse; body errors become truncation) so Axum users can run on Server; GrpcDispatcher/WebSocketDispatcher::with_serve_config(ServeConfig) reading the shared struct, their own grace/drain/max_connections setters deprecated in 0.16. B) A plus deprecate the free serve/serve_with_addr and the per-dispatcher serve/serve_with_addr in 0.16 (removed in 0.17), leaving one serve_with_shutdown shape per listener kind. C) Document the matrix in the book and change nothing. Recommendation: A in 0.16.0 (or before), B's deprecations in 0.16.0 so 0.17 can remove; do not change signatures in place."
+  },
+  {
+   "id": "G-10",
+   "verdict": "needs_decision",
+   "severity_now": "medium (unchanged; STABILITY.md section 4 is wrong about it)",
+   "evidence": [
+    "crates/a2a-protocol-types/src/generated/*.rs - 40 of the 47 generated pub structs are not #[non_exhaustive] (AgentCard agent_card.rs:76, AgentInterface :16, AgentSkill :198, Message message.rs:89, Part :42, Task task.rs:67, TaskStatus :95, Artifact artifact.rs:11, both update events events.rs:14,34, every params struct, every security scheme); the only struct marked is AgentCapabilities (agent_card.rs:174-175); all 7 enums are marked (checked with a script over the attribute blocks, not cargo)",
+    "STABILITY.md:127-129 - 'Protocol enums and structs that can grow with the A2A specification are #[non_exhaustive], so a new variant or field ... is a patch-level addition': false for structs; a new proto field on any of the 40 is a breaking change under section 2",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:136-153 - AgentCard.url is 'accepted on input, never emitted' and not #[deprecated] (field deprecation has precedent: generated/security.rs:190, client config.rs:137)",
+    "commit 57f034e (2026-10-29) - examples/deploy-agent/src/main.rs:219-232 now builds its card with AgentCard::new; the report's deploy-agent example is fixed. Still struct literals with url: None: examples/agent-team/src/cards.rs:9,52,88,126,162, agent-team/src/surface.rs:143, echo-agent/src/agent.rs:65, genai-agent/src/main.rs:208",
+    "rough grep count (not exact, includes tests/tck/book) of struct-literal constructions of these types outside the types crate: ~1,000 (TaskStatusUpdateEvent ~235, Task ~135, Message ~117, ListTasksParams ~117, MessageSendParams ~89, AgentCard ~85, AgentInterface ~75); several types have no constructor at all (TaskStatusUpdateEvent, TaskArtifactUpdateEvent, SendMessageConfiguration)"
+   ],
+   "test": "none (examples are not covered by STABILITY.md section 6, so the deploy-agent change needs no test)",
+   "summary": "The wire structs are still exhaustive with all-public fields, contrary to STABILITY.md section 4; deploy-agent was moved to AgentCard::new in 57f034e but five other examples still teach the literal and the dead url field.",
+   "remaining": "Decide whether to mark them in 0.16.0; in any case correct STABILITY.md section 4, deprecate AgentCard.url, move the remaining example literals to constructors.",
+   "theme": "wire-types-non-exhaustive",
+   "effort": "XL",
+   "breaking": "api: #[non_exhaustive] on a struct breaks every downstream struct literal and exhaustive destructure, with no deprecation path; 0.16.0 window only (cargo-semver-checks flags 'struct marked non_exhaustive'; passes now only because the version is 0.16.0; after 0.16.0 ships it is blocked until 0.17.0). Deprecating the url field and fixing STABILITY.md are additive.",
+   "probe": "none",
+   "options": "A) Mark all 40 in 0.16.0 via codegen.toml attrs, after giving each type a constructor (TaskStatusUpdateEvent::new, TaskArtifactUpdateEvent::new, SendMessageConfiguration builders ...) and converting the in-workspace literals (XL). B) Mark only the protocol objects most likely to grow (AgentCard, AgentSkill, AgentInterface, AgentProvider, AgentExtension, Message, Part, Task, TaskStatus, Artifact, the two update events, TaskPushNotificationConfig) in 0.16.0; params later (L). C) Keep them exhaustive and rewrite STABILITY.md section 4 to say a new proto field is a breaking minor; deprecate url (S). Recommendation: 0.16.0 already breaks and section 7's clock restarts anyway, so it is the cheapest moment for B (or A if the effort fits); if neither fits 0.16.0, do C now so the policy stops promising what the code does not do."
+  },
+  {
+   "id": "G-12",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-client/src/streaming/event_stream.rs:74 pub struct EventStream; :462 pub async fn next(&mut self) -> Option<ClientResult<StreamResponse>> is the only consumption API",
+    "no 'impl ... Stream for' anywhere in crates/a2a-protocol-client/src (grep); futures-util is optional and only behind websocket (Cargo.toml:63,111); no futures-core dependency",
+    "Cargo.lock - futures-core is already in the client's graph through hyper, h2 and http-body-util, so implementing futures_core::Stream adds no crate",
+    "event_stream.rs:500-547 - next_event awaits tokio::time::timeout_at and rx.recv(); a poll_next needs those as a stored Sleep and rx.poll_recv, or an into_stream(self) built with stream::unfold"
+   ],
+   "test": "none",
+   "summary": "EventStream still does not implement futures_core::Stream; callers must write while-let loops and cannot use StreamExt, select_all, StreamMap or axum Sse without an adapter.",
+   "remaining": "impl futures_core::Stream for EventStream (hand-written poll_next keeping the deadline-not-restarted-by-cancellation property of next(), see :106-110), keep the inherent next(); or, cheaper, an into_stream(self) -> impl Stream.",
+   "theme": "client-stream",
+   "effort": "M",
+   "breaking": "none (a new trait impl is additive; the inherent next() keeps winning method resolution, so existing calls do not become ambiguous). Makes futures-core 0.3 a public dependency of the client: say so next to STABILITY.md section 6's list. Any release.",
+   "probe": "none"
+  },
+  {
+   "id": "G-13",
+   "verdict": "confirmed",
+   "severity_now": "low (report: M) - this server never keys on message id (no dedupe by messageId found by grep in crates/a2a-protocol-server/src), so a hard-coded id breaks nothing against this SDK; a peer that deduplicates on it was not checked",
+   "evidence": [
+    "crates/a2a-protocol-types/src/message.rs:31-38 - MessageId(pub String) with only new(s); no generator",
+    "crates/a2a-protocol-types/src/message.rs:111,133,146,162,175 - Message::new, user, agent, user_text, agent_text all take the id",
+    "crates/a2a-protocol-types/Cargo.toml [dependencies] - no uuid/getrandom (the 'no I/O' crate); client (Cargo.toml:103) and server (:158) both depend on uuid and generate ids internally (e.g. executor_helpers.rs:255)",
+    "README.md:206,214 use \"m1\"/\"m2\"; crates/a2a-protocol-client/README.md:33 \"msg-1\"; book/src/getting-started/first-agent.md:20 adds uuid as a dependency"
+   ],
+   "test": "none",
+   "summary": "No message-id generator exists; docs hard-code ids or tell users to add uuid.",
+   "remaining": "Add a generator where an RNG already is (e.g. a2a_protocol_client::new_message_id() / MessageSendParams::text(..) with an auto id, or MessageId::random() behind a new opt-in types feature the client/SDK enable), keep the id-taking constructors; update README and book.",
+   "theme": "message-ids",
+   "effort": "S",
+   "breaking": "none (additive; a new optional feature on the types crate is additive under section 4). Any release.",
+   "probe": "none"
+  },
+  {
+   "id": "G-14",
+   "verdict": "needs_decision",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/otel/telemetry/mod.rs:122-123 - #[derive(Debug)] pub struct Telemetry, no #[must_use]; :112-121 dropping it flushes and shuts every provider down (measured up to 15 s per its own doc); impl Drop at :450. 'Telemetry::init()?;' drops it at once with no warning",
+    "crates/a2a-protocol-server/src/otel/telemetry/mod.rs:168 - init() is builder().build(); builder.rs:114-132 - without with_export_where_configured every signal is exported, to localhost when no endpoint is named (as the OpenTelemetry environment specification says); every example adds with_export_where_configured (e.g. examples/hello-agent/src/main.rs:66-69)",
+    "crates/a2a-protocol-server/src/otel/pipeline.rs:97,119 and otel/mod.rs:71 - init_otlp_pipeline / init_otlp_pipeline_with_endpoint public, not #[deprecated] (no #[deprecated] in src/otel/)",
+    "the 15 s blocking Drop is documented (mod.rs:112-121) and stated safe on any thread"
+   ],
+   "test": "none for must_use or the init() default",
+   "summary": "All four points hold: no #[must_use] on the drop guard, init() exports to localhost by default, the older pipeline API is undeprecated, and Drop can block (documented).",
+   "remaining": "#[must_use] and the deprecation are mechanical; the init() default is the decision.",
+   "theme": "telemetry-ergonomics",
+   "effort": "S",
+   "breaking": "#[must_use] on Telemetry: warning only (an error under -D warnings), same precedent as ServeReport in 0.16.0. #[deprecated] on init_otlp_pipeline*: additive now, removal no earlier than 0.17. Changing what init() exports to is a behaviour change: 0.16.0 only, with an upgrade-guide section; it silently stops export for a deployment relying on a localhost collector (a sidecar) with no OTEL_* variable set.",
+   "probe": "none",
+   "options": "1) #[must_use = \"dropping Telemetry shuts export down\"] in 0.16.0 (recommended). 2) init(): A) keep the spec-conformant localhost default, document it at init(), and add an explicitly named Telemetry::init_where_configured() that examples use (additive); B) make init() export-where-configured in 0.16.0 (behaviour break, sidecar risk above); C) leave. Recommend A. 3) Deprecate init_otlp_pipeline* in 0.16.0, remove in 0.17 (recommended)."
+  },
+  {
+   "id": "G-15",
+   "verdict": "needs_decision",
+   "severity_now": "low (report L-M)",
+   "evidence": [
+    "with_config: setter on Server (serve/graceful/mod.rs:228, self -> Self); constructor on JsonRpcDispatcher (dispatch/jsonrpc/mod.rs:64), RestDispatcher (rest/mod.rs:71), CombinedDispatcher (combined.rs:76), A2aRouter (axum_adapter.rs:145), InMemoryTaskStore (store/task_store/in_memory/mod.rs:616), the tenant store (store/tenant/store.rs:193)",
+    "auth interceptors: client AuthInterceptor (auth.rs:186) and BearerAuthInterceptor (token_provider.rs:217) vs server BearerTokenAuthInterceptor (auth/mod.rs:329); traits CallInterceptor (client interceptor.rs:154) vs ServerInterceptor (server interceptor/mod.rs:56)",
+    "spec SubscribeToTask = client subscribe_to_task (methods/tasks.rs:184) but RequestHandler::on_resubscribe (handler/lifecycle/subscribe.rs:543); spec CreateTaskPushNotificationConfig = client set_push_config (methods/push_config.rs:73) and RequestHandler::on_set_push_config (handler/push_config.rs:174)",
+    "RequestHandlerBuilder mixes with_x, without_x, require_x, allow_x, accept_x, expose_x, refuse_x and bare verbs (isolate_tasks_by_caller, share_tasks_across_callers, authenticated_upstream) (builder.rs, method list)",
+    "TenantLimitsBuilder setters have no with_ (tenant_config/mod.rs:218-246) while TenantLimits has with_* (:176-198); PerTenantConfigBuilder mixes default_limits (:333) with with_override (:340)",
+    "A2aRouter serves HTTP+JSON only (axum_adapter.rs:110-127); RateLimitConfig::window_secs: u64 (rate_limit/config.rs:28, setter :92) where every other config uses Duration"
+   ],
+   "test": "n/a",
+   "summary": "Every naming inconsistency the report lists is still present.",
+   "remaining": "Choose which names are worth a deprecation cycle.",
+   "theme": "naming",
+   "effort": "M",
+   "breaking": "Each rename is a section 3.1 change: add the new name in 0.16 (additive), #[deprecated(since = \"0.16.0\")] on the old one, remove in 0.17 at the earliest; the SDK prelude must re-export both meanwhile. Renaming in place would be a break cargo-semver-checks blocks once 0.16.0 is published.",
+   "probe": "none",
+   "options": "A) A short list with real confusion, as new names + deprecated aliases in 0.16: RequestHandler::on_subscribe_to_task (for on_resubscribe), create_push_config / on_create_push_config (for set_push_config), a type alias for A2aRouter that names HTTP+JSON, RateLimitConfig::with_window(Duration), with_ prefixes on TenantLimitsBuilder. B) Normalise the whole builder vocabulary (many deprecations, little user value). C) Change nothing; add a naming rule to CONTRIBUTING.md for new APIs. Recommendation: A plus C."
+  },
+  {
+   "id": "G-16",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/executor_helpers.rs:330-347 - pub async fn artifact(&self, id: &str, parts: Vec<Part>, append: Option<bool>, last_chunk: Option<bool>); metadata hard-coded None",
+    "executor_helpers.rs:223-232 - status(state) cannot attach a message; there is no text_artifact or complete_with_text, so hello is three calls (examples/hello-agent/src/main.rs:30-43)",
+    "executor_helpers.rs:194 - the EventEmitter rustdoc example is rust,ignore (uncompiled on docs.rs)"
+   ],
+   "test": "none",
+   "summary": "The two positional Option<bool> arguments and the three-call hello remain, and the main helper's example is still uncompiled.",
+   "remaining": "Add text_artifact(id, text), complete_with_text(text) (or complete_with(parts)), an ArtifactChunk { append, last } variant of artifact; make the rustdoc example compile (hidden setup lines).",
+   "theme": "event-emitter-helpers",
+   "effort": "S",
+   "breaking": "none (new methods are additive; the 4-argument artifact can stay or be deprecated in 0.16 and removed in 0.17)",
+   "probe": "none"
+  },
+  {
+   "id": "G-17",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/builder.rs:1076 - build(self) -> ServerResult<RequestHandler>",
+    "every dispatcher takes Arc<RequestHandler>: grpc/dispatcher.rs:43 (pub const fn), rest/mod.rs:65, jsonrpc/mod.rs:58, websocket.rs:172 (pub const fn), axum_adapter.rs:136, combined.rs:69; WebSocketDispatcher::serve*/serve_with_shutdown take self: Arc<Self> (websocket.rs:417,440; websocket/shutdown.rs:46-50)"
+   ],
+   "test": "none",
+   "summary": "Every snippet still wraps Arc::new(.. .build()?) because build() returns a bare RequestHandler and every dispatcher wants an Arc.",
+   "remaining": "Either an additive RequestHandlerBuilder::build_arc(), or dispatcher constructors taking impl Into<Arc<RequestHandler>> (std's From<T> for Arc<T> makes both forms work).",
+   "theme": "arc-boilerplate",
+   "effort": "S",
+   "breaking": "build_arc(): none, any release. impl Into<Arc<_>> parameters: source-compatible for ordinary callers, but GrpcDispatcher::new and WebSocketDispatcher::new are const fn today and a generic .into() cannot stay const, so they lose const - a break cargo-semver-checks reports (const removed); 0.16.0 window only, listed under Breaking Changes.",
+   "probe": "none"
+  },
+  {
+   "id": "G-18",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/request_context.rs:39-48 - #[non_exhaustive] pub struct RequestContext { pub task_id: TaskId, ... pub context_id: String }",
+    "19 rewraps ContextId::new(..context_id.clone()) inside crates/a2a-protocol-server/src (e.g. executor_helpers.rs:227, handler/messaging/terminal.rs:272) and 23 example/book files reading ctx.context_id (e.g. examples/rig-agent/src/main.rs:168, examples/genai-agent/src/main.rs:124)",
+    "crates/a2a-protocol-types/src/task.rs:97-150 - ContextId(pub String) with From<String>, From<&str>, AsRef<str>, Display; no From<ContextId> for String, so ContextId::new(ctx.context_id.clone()) stops compiling if the field changes type"
+   ],
+   "test": "none",
+   "summary": "context_id is still a String beside a TaskId, against the types crate's newtype policy.",
+   "remaining": "Change the field to ContextId (or add a typed accessor and deprecate the field).",
+   "theme": "request-context-types",
+   "effort": "M",
+   "breaking": "api: a public field's type change has no deprecation path; 0.16.0 window only. RequestContext is #[non_exhaustive] so only reads break, but every executor that reads ctx.context_id must change. cargo-semver-checks may not detect a field-type change (I know of no lint for it), so it must be listed in Breaking Changes by hand. The additive alternative (fn context(&self) -> ContextId, field #[deprecated]) works in any release.",
+   "probe": "none"
+  },
+  {
+   "id": "G-19",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-client/src/builder/mod.rs:422-435 - with_protocol_binding unconditionally sets self.config.tenant = the card interface's tenant (which may be None); its rustdoc says to call with_tenant after it",
+    "crates/a2a-protocol-client/src/builder/mod.rs:494-497 - with_tenant just overwrites; nothing records that the caller chose it",
+    "crates/a2a-protocol-client/src/builder/transport_factory.rs:140-154 - fall_back guesses whether the tenant came from the card by comparing values (tenant_from_card), so a caller who explicitly set the same tenant as the card's has it replaced by the fallback interface's",
+    "tools/a2a-cli/src/connect.rs:190-194 - the CLI works around the ordering with a comment"
+   ],
+   "test": "builder/mod.rs:973 with_tenant_after_a_binding_switch_wins covers only the documented order; no test for with_tenant before with_protocol_binding",
+   "summary": "Calling with_tenant before with_protocol_binding still silently replaces (or clears) the caller's tenant.",
+   "remaining": "Record an explicit tenant (Option flag) and let it win in with_protocol_binding and fall_back regardless of order; test both orders.",
+   "theme": "client-builder",
+   "effort": "S",
+   "breaking": "behaviour only (a caller's tenant set first is now kept, which is what it asked for); no API change; fine in 0.16.0 or as a bug fix.",
+   "probe": "none"
+  },
+  {
+   "id": "G-20",
+   "verdict": "partly_fixed",
+   "severity_now": "low (unchanged) for the row; see NEW-g-api-1 (medium) for a gRPC hole in the fix",
+   "evidence": [
+    "commit 57f034e (2026-10-29) - added ClientConfig::send_timeout (crates/a2a-protocol-client/src/config.rs:164-170, default transport/mod.rs:76 DEFAULT_SEND_TIMEOUT = 600 s) bounding a blocking SendMessage instead of the 30 s request timeout, and an actionable message (transport/mod.rs:87-99 timed_out: names the seconds waited, with_send_timeout, streaming and return_immediately)",
+    "used by JSON-RPC (transport/jsonrpc.rs:249-267), HTTP+JSON (rest/request.rs:178-194), WebSocket (websocket.rs:786-826) and gRPC (grpc.rs:638-656, plus req.set_timeout(send_timeout) at :678-683)",
+    "still not actionable: every non-send timeout is 'request timed out' (transport/mod.rs:98), 'gRPC request timed out' (grpc.rs:654), 'WebSocket response timed out' (websocket.rs:825), 'stream connect timed out' (jsonrpc.rs:389, rest/streaming.rs:50) - none names the limit or the setter",
+    "server executor timeout default is still 1 h (crates/a2a-protocol-server/src/builder.rs:58-72) against the client's 10 min send timeout; documented at transport/mod.rs:64-75"
+   ],
+   "test": "crates/a2a-protocol-client/tests/blocking_send_timeout.rs:70-95 a_blocking_send_outlives_the_request_timeout (request timeout 500 ms, 1.5 s turn, JSONRPC and HTTP+JSON: would fail with Timeout if send_timeout were reverted) and :97-113 an_exhausted_send_timeout_says_what_to_do (asserts the text names with_send_timeout and 'goes on running': would fail if the message were reverted); tests/ws_timeouts.rs:36-61 the same for WebSocket. Read, not run. No test covers the gRPC path, which is where NEW-g-api-1 lives.",
+   "summary": "The blocking-send half is fixed for JSON-RPC, HTTP+JSON and WebSocket with tests; other timeouts still say only 'timed out', and the gRPC blocking send is still capped at the request timeout (NEW-g-api-1).",
+   "remaining": "Name the bound and the setter in the non-send timeout messages (with_timeout / with_stream_connect_timeout / with_connection_timeout); fix NEW-g-api-1 and add a gRPC case to blocking_send_timeout.rs.",
+   "theme": "client-timeouts",
+   "effort": "S",
+   "breaking": "none (message text only)",
+   "probe": "none (an integration test settles it)"
+  },
+  {
+   "id": "G-21",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged); the multi-replica consequence is NEW-g-api-3",
+   "evidence": [
+    "book/src/building-agents/executor.md:30-32 - documents that Ok(()) without a terminal or interrupted state 'invents none: the task stays in the last state written'",
+    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:170-202 - finish_run handles Err (failure event), Stop::Halted, Stop::ShutDown, and otherwise only repark_if_silent (:247-292), which acts only on a continued task that waited in input-/auth-required and only if the executor said something; a plain Ok(()) with no terminal state gets no log line at any level (grep for a warning found none)",
+    "crates/a2a-protocol-server/src/handler/claims/reaper/mod.rs:17-30, :49-51 and store/claim/postgres.rs:52-57 - with the bundled PostgreSQL/SQLite stores (turn claims on by default: builder.rs:216-223, :270 FromStore) the task left submitted/working is later ended 'failed', class transient, with the message that the replica running it stopped; with the in-memory store it stays working for good"
+   ],
+   "test": "none",
+   "summary": "An executor that forgets its terminal status still leaves the task non-terminal with no warning; on the database stores the reaper later fails it with a misleading 'replica stopped' reason.",
+   "remaining": "Log a warn! naming the task and the last state when execute returns Ok(()) with nothing terminal or interrupted written (TerminalTracking already knows: terminal_written()); optionally an opt-in HandlerLimits::complete_on_ok; give the reaper a distinct reason for a task whose turn ended normally (NEW-g-api-3).",
+   "theme": "executor-contract",
+   "effort": "S",
+   "breaking": "none for the warning; an opt-in HandlerLimits field is additive (HandlerLimits is #[non_exhaustive]). Completing or failing such tasks by default would be a behaviour change for 0.16.0 only.",
+   "probe": "none (an integration test on the SQLite store with a short with_turn_claim_timing TTL shows both the missing warning and the reaper's message)"
+  },
+  {
+   "id": "G-22",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-types/src/generated/responses.rs:35-43 - #[non_exhaustive] pub enum SendMessageResponse { Task(Task), Message(Message) }; grep for 'impl SendMessageResponse' across crates/ finds nothing (only the oneof_deserialize! macro at :45-51)",
+    "examples/hello-agent/src/main.rs:147-155 - callers still write the match plus a wildcard arm"
+   ],
+   "test": "none",
+   "summary": "SendMessageResponse still has no accessors.",
+   "remaining": "Add as_task(), into_task(), as_message(), into_message() and text() (delegating to Task::text / Message::text).",
+   "theme": "response-accessors",
+   "effort": "XS",
+   "breaking": "none (inherent methods are additive; any release)",
+   "probe": "none"
+  },
+  {
+   "id": "G-23",
+   "verdict": "confirmed",
+   "severity_now": "low (report L); two of the five sub-items are not defects",
+   "evidence": [
+    "(a) confirmed - no Debug: EventEmitter (crates/a2a-protocol-server/src/executor_helpers.rs:204), A2aRouter (dispatch/axum_adapter.rs:128), and also WebSocketDispatcher (dispatch/websocket.rs:142, re-exported at lib.rs:200), which the report missed (script over pub structs without derive(Debug) or impl Debug; the other hits are crate-private or unit namespace structs)",
+    "(b) confirmed and spread - mutants is a normal dependency of the server (crates/a2a-protocol-server/Cargo.toml:146) and, since 57f034e, of the client (crates/a2a-protocol-client/Cargo.toml:118), unconditionally, so every downstream build compiles it (attribute-only, zero dependencies). The usual alternative is #[cfg_attr(test, mutants::skip)] with mutants as a dev-dependency; the server's comment (Cargo.toml:142-145) says a normal dependency is needed because cargo-mutants builds the library outside cfg(test), which is the case where cfg_attr(test, ..) needs no crate at all - worth re-checking before changing",
+    "(c) not a defect - pub fields beside setters do not bypass validation where it matters: PushRetryPolicy::with_max_attempts maps 0 to 1 (push/sender.rs:196-198) and the sender re-clamps at use (:506, :629) and indexes backoff with get(..).or_else(last) (:519-521, :746-748); ServeConfig's setters do not clamp at all, and serve re-checks max_connections at use (serve/graceful/mod.rs refuses Some(0) and clamps to Semaphore::MAX_PERMITS at :326-327)",
+    "(d) confirmed, cosmetic - ServeConfig::production is both a pub bool field (serve/graceful/config.rs:127) and an associated constructor (:215); legal, merely confusing",
+    "(e) not a defect - STABILITY.md:184-187 lists hyper among dependencies whose types leak and says a major bump of one is a breaking change of this crate; it said so at 8dc4331 too (git show 8dc4331:STABILITY.md line 184)"
+   ],
+   "test": "none",
+   "summary": "Missing Debug (now three types) and the unconditional mutants dependency (now in two crates) hold; the pub-field and hyper-documentation items do not; the production field/constructor pair is cosmetic. (Rule 6 would label a mixed row partly_fixed, but nothing here was fixed: (c) and (e) were never defects.)",
+   "remaining": "Debug for EventEmitter, A2aRouter, WebSocketDispatcher (finish_non_exhaustive, no secrets); decide on mutants as a dev-dependency with cfg_attr(test, ..) in server and client.",
+   "theme": "hygiene",
+   "effort": "S",
+   "breaking": "none (adding Debug impls is additive; dropping a non-re-exported normal dependency is invisible to the API). Any release.",
+   "probe": "none"
+  }
+ ],
+ "new_findings": [
+  {
+   "id": "NEW-g-api-1",
+   "severity": "medium",
+   "where": "crates/a2a-protocol-client/src/transport/grpc.rs:304 (.timeout(config.timeout) on the tonic Endpoint) with :678-683 (req.set_timeout(send_timeout)); tonic 0.14.6 (Cargo.lock) src/transport/channel/service/connection.rs:73 and src/transport/service/grpc_timeout.rs:47-56; tonic src/status.rs:644",
+   "finding": "The gRPC channel is built with Endpoint::timeout(request_timeout) (30 s default, builder transport_factory.rs:208). tonic's client stack wraps every call in GrpcTimeout, which uses the SHORTER of the channel timeout and the request's grpc-timeout header. So the send_timeout (600 s) that grpc.rs:682 puts on a blocking SendMessage is capped at 30 s: the call fails with TimeoutExpired, which tonic turns into Status::cancelled(\"Timeout expired\"), which this client maps to ClientError::Protocol(InternalError) saying the call was 'cancelled by the peer' (status_to_error; pinned by the test at grpc.rs:1396-1405, which also asserts !is_retryable()) - not Timeout, not retryable, blaming the agent, and without the actionable message. The outer tokio::time::timeout(send_timeout) at :643-656 never fires.",
+   "scenario": "An LLM agent over gRPC whose turn takes longer than 30 s, called with a blocking send_message (return_immediately unset) and default timeouts: fails at 30 s with a protocol error while the task keeps running on the server and the caller never learns its id - the audit D-01 failure that 57f034e fixed for JSON-RPC, HTTP+JSON and WebSocket. Streaming establishment is capped the same way (a stream whose response headers take longer than request_timeout).",
+   "read_only": true,
+   "theme": "client-timeouts",
+   "probe": "none needed: a gRPC case in tests/blocking_send_timeout.rs (build_grpc with with_timeout(500 ms), a 1.5 s turn) should fail today; fix by building the channel with the larger of the two (or no channel timeout, relying on per-request grpc-timeout headers already set at :452 and :682)"
+  },
+  {
+   "id": "NEW-g-api-2",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/dispatch/grpc/bounded_incoming.rs:56-57; crates/a2a-protocol-server/src/dispatch/websocket.rs:471-474; setters grpc/dispatcher.rs:89-92, websocket.rs:332-335",
+   "finding": "G-02 was fixed for Server only (serve/graceful/mod.rs refuses max_connections 0 and clamps to Semaphore::MAX_PERMITS at :326-327). GrpcDispatcher::with_max_connections and WebSocketDispatcher::with_max_connections still pass the value straight to tokio::sync::Semaphore::new: usize::MAX (or anything above MAX_PERMITS = usize::MAX >> 3) panics, and 0 builds a listener that never accepts and never says why.",
+   "scenario": "A deployment that writes with_max_connections(usize::MAX) to mean 'unbounded': the gRPC serve future panics at start (inside a spawned task for serve_with_addr / serve_with_listener, so the listener is silently gone); with 0 (e.g. from an unset environment variable parsed to 0) the WebSocket or gRPC listener accepts nothing.",
+   "read_only": true,
+   "theme": "server-config-validation"
+  },
+  {
+   "id": "NEW-g-api-3",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:170-202; crates/a2a-protocol-server/src/handler/claims/reaper/mod.rs:17-30, :49-51; crates/a2a-protocol-server/src/store/claim/postgres.rs:52-57",
+   "finding": "With turn claims (on by default for the bundled PostgreSQL and SQLite stores), an executor that returns Ok(()) without a terminal state (G-21) releases its claim at turn end; the reaper then finds a submitted/working task with no live claim and ends it failed, class transient, with REASON 'the replica running this task stopped before it finished ... sending it again may succeed'. The same bug is silent and permanent on the in-memory store.",
+   "scenario": "Several replicas on PostgreSQL, an executor that forgets emit.status(Completed): ~15 s (claim TTL) later every such task fails with a message blaming a replica crash, operators chase non-existent restarts, and clients retry a 'transient' failure that reproduces deterministically. Behaviour differs by store for the same executor.",
+   "read_only": true,
+   "theme": "executor-contract"
+  },
+  {
+   "id": "NEW-g-api-4",
+   "severity": "low",
+   "where": "STABILITY.md:15-24; crates/a2a-protocol-types/src/signing.rs:420-424; crates/a2a-protocol-client/src/config.rs:137-142; crates/a2a-protocol-server/src/agent_card/hot_reload.rs:107-110",
+   "finding": "STABILITY.md section 1 says the crates are at 0.15.0, 'the newest release' (0.15.1 shipped 2026-10-26), and promises that sign_agent_card 'is removed in 0.16.0'. It is still public (deprecated since 0.15.0) and its removal is not in CHANGELOG [Unreleased] Breaking Changes or the 0.15-to-0.16 guide. ClientConfig::preferred_bindings and HotReloadAgentCardHandler::update are also deprecated since 0.15.0 and become removable in 0.16.0 under section 3.1.",
+   "scenario": "0.16.0 ships without the removal STABILITY.md promised; removing it later needs another breaking minor (December at the earliest under section 3.2), restarting section 7's 1.0 clock again.",
+   "read_only": true,
+   "theme": "release-0.16-breaking"
+  }
+ ]
+}

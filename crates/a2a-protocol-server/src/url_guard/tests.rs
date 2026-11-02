@@ -235,3 +235,77 @@ fn an_embedded_ipv4_is_classified_by_the_address_inside() {
     );
     assert_eq!(embedded_ipv4("2606:4700::1".parse().unwrap()), None);
 }
+
+// ── resolve_with: every address, checked ─────────────────────────────────────
+
+fn answer(
+    addrs: &[&str],
+) -> impl FnOnce(String) -> std::future::Ready<std::io::Result<Vec<SocketAddr>>> {
+    let parsed: Vec<SocketAddr> = addrs.iter().map(|a| a.parse().unwrap()).collect();
+    move |_| std::future::ready(Ok(parsed))
+}
+
+async fn resolved(addrs: &[&str]) -> A2aResult<Option<Vec<SocketAddr>>> {
+    resolve_with(
+        "https://hooks.example/x",
+        "webhook URL",
+        std::time::Duration::from_secs(1),
+        answer(addrs),
+    )
+    .await
+}
+
+/// A host with several public addresses returns all of them, in the order
+/// the resolver gave them and without repeats, so a caller can fail over.
+/// Until 0.16.0 only the first was returned (audit B-13).
+#[tokio::test]
+async fn every_public_address_is_returned_in_order_without_repeats() {
+    let got = resolved(&[
+        "203.0.113.5:443",
+        "[2001:db8::7]:443",
+        "203.0.113.5:443",
+        "203.0.113.6:443",
+    ])
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        got,
+        [
+            "203.0.113.5:443".parse::<SocketAddr>().unwrap(),
+            "[2001:db8::7]:443".parse().unwrap(),
+            "203.0.113.6:443".parse().unwrap(),
+        ]
+    );
+}
+
+/// One private address among public ones refuses the name whole: the
+/// connector must never be offered it.
+#[tokio::test]
+async fn one_private_address_among_public_ones_refuses_the_name() {
+    let err = resolved(&["203.0.113.5:443", "10.0.0.7:443", "203.0.113.6:443"])
+        .await
+        .expect_err("refused");
+    assert!(err.message.contains("10.0.0.7"), "{}", err.message);
+}
+
+/// A resolver that answers nothing is an error, not an empty list.
+#[tokio::test]
+async fn a_name_that_resolves_to_nothing_is_refused() {
+    let err = resolved(&[]).await.expect_err("refused");
+    assert!(err.message.contains("did not resolve"), "{}", err.message);
+}
+
+/// A literal address needs no lookup and has nothing to pin.
+#[tokio::test]
+async fn a_literal_address_returns_none() {
+    let got = resolve_with(
+        "https://203.0.113.9/x",
+        "webhook URL",
+        std::time::Duration::from_secs(1),
+        |_| async { panic!("no lookup for a literal") },
+    )
+    .await
+    .unwrap();
+    assert_eq!(got, None);
+}

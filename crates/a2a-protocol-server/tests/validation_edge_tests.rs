@@ -35,20 +35,18 @@ impl AgentExecutor for CompletingExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::with_timestamp(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::with_timestamp(TaskState::Working),
+                )))
                 .await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::with_timestamp(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::with_timestamp(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -65,37 +63,33 @@ impl AgentExecutor for ArtifactExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::with_timestamp(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::with_timestamp(TaskState::Working),
+                )))
                 .await?;
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: a2a_protocol_types::Artifact {
-                        id: a2a_protocol_types::ArtifactId::new("art-1"),
-                        name: Some("output.txt".into()),
-                        description: None,
-                        parts: vec![Part::text("artifact content")],
-                        extensions: None,
-                        metadata: None,
-                    },
-                    append: Some(false),
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        a2a_protocol_types::Artifact::new(
+                            a2a_protocol_types::ArtifactId::new("art-1"),
+                            vec![Part::text("artifact content")],
+                        )
+                        .with_name("output.txt"),
+                    )
+                    .with_append(false)
+                    .with_last_chunk(true),
+                ))
                 .await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::with_timestamp(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::with_timestamp(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -105,16 +99,11 @@ impl AgentExecutor for ArtifactExecutor {
 fn make_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![Part::text(text)],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
+            vec![Part::text(text)],
+        ),
         configuration: None,
         metadata: None,
     }
@@ -123,16 +112,12 @@ fn make_params(text: &str) -> MessageSendParams {
 fn make_params_with_context(text: &str, ctx_id: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![Part::text(text)],
-            task_id: None,
-            context_id: Some(ContextId::new(ctx_id)),
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
+            vec![Part::text(text)],
+        )
+        .with_context_id(ContextId::new(ctx_id)),
         configuration: None,
         metadata: None,
     }
@@ -240,16 +225,7 @@ async fn reject_empty_parts() {
 
     let params = MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new("msg-1"),
-            role: MessageRole::User,
-            parts: vec![],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(MessageId::new("msg-1"), MessageRole::User, vec![]),
         configuration: None,
         metadata: None,
     };
@@ -384,31 +360,31 @@ async fn builder_rejects_zero_timeout() {
 
 #[tokio::test]
 async fn builder_rejects_empty_interfaces_in_card() {
-    let card = a2a_protocol_types::AgentCard {
-        url: None,
-        name: "test".into(),
-        description: "test agent".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![], // empty
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![a2a_protocol_types::AgentSkill {
-            id: "skill-1".into(),
-            name: "test-skill".into(),
-            description: "A skill".into(),
-            tags: vec!["test".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: a2a_protocol_types::AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
+    let card = {
+        let mut built = a2a_protocol_types::AgentCard::new(
+            "test",
+            "1.0.0",
+            a2a_protocol_types::AgentInterface::jsonrpc(String::new()),
+        );
+        built.url = None;
+        built.description = "test agent".into();
+        built.supported_interfaces = vec![];
+
+        // empty
+        built.default_input_modes = vec!["text/plain".into()];
+        built.default_output_modes = vec!["text/plain".into()];
+        built.skills = vec![
+            a2a_protocol_types::AgentSkill::new("skill-1", "test-skill", "A skill")
+                .with_tags(vec!["test"]),
+        ];
+        built.capabilities = a2a_protocol_types::AgentCapabilities::none();
+        built.provider = None;
+        built.icon_url = None;
+        built.documentation_url = None;
+        built.security_schemes = None;
+        built.security_requirements = None;
+        built.signatures = None;
+        built
     };
 
     let result = RequestHandlerBuilder::new(CompletingExecutor)
@@ -433,9 +409,10 @@ async fn builder_rejects_a_card_without_a_description_or_version() {
     for (card, missing) in [
         (card(), "description"),
         (
-            a2a_protocol_types::AgentCard {
-                version: String::new(),
-                ..card().with_description("A test agent")
+            {
+                let mut built = card().with_description("A test agent");
+                built.version = String::new();
+                built
             },
             "version",
         ),
@@ -470,12 +447,11 @@ async fn shutdown_cancels_in_flight_tasks() {
         ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
             Box::pin(async move {
                 queue
-                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        status: TaskStatus::with_timestamp(TaskState::Working),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        TaskStatus::with_timestamp(TaskState::Working),
+                    )))
                     .await?;
                 // Wait indefinitely (or until cancelled)
                 ctx.cancellation_token.cancelled().await;

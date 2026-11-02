@@ -181,6 +181,13 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
+// The README is this crate's crates.io page. Compiling its examples as
+// doctests keeps it true to the API: nothing did before, so a block could
+// name a method that no longer existed and stay green.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
 pub mod binding;
 pub mod client;
 pub mod codec;

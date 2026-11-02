@@ -14,7 +14,7 @@ use crate::store::InMemoryTaskStore;
 use crate::store::tenant::TenantContext;
 use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::events::TaskArtifactUpdateEvent;
-use a2a_protocol_types::message::{Part, PartContent};
+use a2a_protocol_types::message::Part;
 
 /// A logged `Task` event is bound to the log it is in, not to the task id it
 /// carries: copied into another task's log, it does not open there.
@@ -59,14 +59,11 @@ async fn a_logged_part_planted_in_the_record_is_refused() {
     let id = TaskId::new("t1");
     let t = task("t1");
     store.save(&t).await.unwrap();
-    let chunk = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-        task_id: id.clone(),
-        context_id: t.context_id.clone(),
-        artifact: Artifact::new("a", vec![Part::text("chunk")]),
-        append: None,
-        last_chunk: None,
-        metadata: None,
-    });
+    let chunk = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(
+        id.clone(),
+        t.context_id.clone(),
+        Artifact::new("a", vec![Part::text("chunk")]),
+    ));
     store.append_event(&id, 1, &chunk).await.unwrap();
     let logged = inner.read_events(&id, 0, 1).await.unwrap();
     let StreamResponse::ArtifactUpdate(update) = &logged[0].event else {
@@ -102,12 +99,8 @@ async fn a_record_read_in_another_partition_is_refused() {
 async fn a_part_labelled_sealed_but_malformed_is_refused_even_when_accepting_unsealed() {
     let inner = Arc::new(InMemoryTaskStore::new());
     let mut t = task("t1");
-    t.history.as_mut().unwrap()[0].parts[0] = Part {
-        content: PartContent::Data(serde_json::json!({ "note": SECRET })),
-        metadata: None,
-        filename: None,
-        media_type: Some(SEALED_MEDIA_TYPE.to_owned()),
-    };
+    t.history.as_mut().unwrap()[0].parts[0] = Part::data(serde_json::json!({ "note": SECRET }))
+        .with_media_type(SEALED_MEDIA_TYPE.to_owned());
     inner.save(&t).await.unwrap();
     let store =
         EncryptedTaskStore::from_arc(inner, cipher("k1", 1).into_arc()).accept_unsealed_parts();

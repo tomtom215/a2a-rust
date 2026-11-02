@@ -6,16 +6,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::{CombinedDispatcher, Config, ServeConfig, bind, handler, redacted};
+use super::{CombinedDispatcher, Config, ServeConfig, Vars, bind, handler, redacted};
 
 fn config(port: u16) -> Config {
-    Config::from_vars(
-        Some(port.to_string()),
-        Some("http://agent.example.com".to_owned()),
-        None,
-        None,
-        None,
-    )
+    Config::from_vars(Vars {
+        port: Some(port.to_string()),
+        agent_url: Some("http://agent.example.com".to_owned()),
+        ..Vars::default()
+    })
     .expect("config")
 }
 
@@ -178,13 +176,12 @@ async fn bind_takes_every_address() {
 #[test]
 fn invalid_configuration_is_rejected() {
     let err = |port: Option<&str>, url: Option<&str>, drain: Option<&str>| {
-        Config::from_vars(
-            port.map(str::to_owned),
-            url.map(str::to_owned),
-            None,
-            drain.map(str::to_owned),
-            None,
-        )
+        Config::from_vars(Vars {
+            port: port.map(str::to_owned),
+            agent_url: url.map(str::to_owned),
+            drain_delay: drain.map(str::to_owned),
+            ..Vars::default()
+        })
         .err()
         .expect("refused")
     };
@@ -192,12 +189,21 @@ fn invalid_configuration_is_rejected() {
     assert!(err(Some("0"), None, None).contains("not a valid port"));
     assert!(err(None, Some("agent.example.com"), None).contains("AGENT_URL"));
     assert!(err(None, None, Some("5s")).contains("DRAIN_DELAY_SECONDS"));
-    let ok = Config::from_vars(None, None, None, Some("5".into()), None).expect("defaults");
+    let ok = Config::from_vars(Vars {
+        drain_delay: Some("5".into()),
+        ..Vars::default()
+    })
+    .expect("defaults");
     assert_eq!(ok.port, 8080);
     assert_eq!(ok.public_url, "http://localhost:8080");
     assert_eq!(ok.drain_delay, Duration::from_secs(5));
     assert_eq!(ok.pool_size, 10);
-    let pool = |raw: &str| Config::from_vars(None, None, None, None, Some(raw.into()));
+    let pool = |raw: &str| {
+        Config::from_vars(Vars {
+            pool_size: Some(raw.into()),
+            ..Vars::default()
+        })
+    };
     assert_eq!(pool("4").expect("a size").pool_size, 4);
     for bad in ["0", "-1", "ten"] {
         assert!(
@@ -255,4 +261,109 @@ fn a_password_in_the_query_is_not_logged_either() {
         "postgres://db?password=***"
     );
     assert_eq!(redacted("not a url"), "not a url");
+}
+
+/// Every deployed deploy-agent advertised version 0.0.0, so the card could not
+/// tell one rollout from the next (audit A27). The image build sets
+/// `AGENT_VERSION` from the release tag; unset, the crate's own version stands.
+#[test]
+fn the_card_reports_the_version_the_image_was_built_for() {
+    let version = |raw: Option<&str>| {
+        let config = Config::from_vars(Vars {
+            agent_version: raw.map(str::to_owned),
+            ..Vars::default()
+        })
+        .expect("config");
+        super::card(&config).version
+    };
+    assert_eq!(version(Some("0.16.0")), "0.16.0");
+    assert_eq!(version(None), env!("CARGO_PKG_VERSION"));
+    assert!(
+        Config::from_vars(Vars {
+            agent_version: Some("1.0 beta".into()),
+            ..Vars::default()
+        })
+        .is_err(),
+        "a version with a space is refused at startup"
+    );
+}
+
+/// `TASK_RETENTION_HOURS`: unset keeps a week, `0` keeps everything, and a
+/// value that is not a whole number of hours stops startup. A product that
+/// overflows is refused rather than wrapped to a short retention that deletes
+/// work (audit NEW-a-l-1).
+#[test]
+fn task_retention_is_read_and_refused_like_the_other_configuration() {
+    use super::retention::{DEFAULT_RETENTION_HOURS, from_hours};
+    let hours = |n: u64| Some(Duration::from_secs(n * 3600));
+    assert_eq!(from_hours(None), Ok(hours(DEFAULT_RETENTION_HOURS)));
+    assert_eq!(DEFAULT_RETENTION_HOURS, 168);
+    assert_eq!(from_hours(Some("24")), Ok(hours(24)));
+    assert_eq!(from_hours(Some("0")), Ok(None), "0 keeps everything");
+    for bad in ["1d", "-1", "1.5", "", "forever"] {
+        let why = from_hours(Some(bad)).expect_err(bad);
+        assert!(why.contains("TASK_RETENTION_HOURS"), "{bad:?}: {why}");
+    }
+    let why = from_hours(Some(&u64::MAX.to_string())).expect_err("overflow");
+    assert!(why.contains("too large"), "{why}");
+    let config = |raw: &str| {
+        Config::from_vars(Vars {
+            retention_hours: Some(raw.into()),
+            ..Vars::default()
+        })
+    };
+    assert_eq!(config("48").expect("config").retention, hours(48));
+    assert!(config("soon").is_err());
+}
+
+/// The sweep deletes a finished task past the retention and leaves a task
+/// still working, however old: against a real PostgreSQL, because the
+/// deletion is the database's statement and nothing less exercises it.
+///
+/// ```sh
+/// A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres \
+///   cargo test -p deploy-agent -- --ignored
+/// ```
+#[tokio::test]
+#[ignore = "needs a live PostgreSQL (A2A_TEST_POSTGRES_URL)"]
+async fn the_sweep_deletes_finished_tasks_and_keeps_running_ones() {
+    use a2a_protocol_sdk::prelude::{Task, TaskState, TaskStatus};
+    use a2a_protocol_sdk::server::store::{PostgresTaskStore, TaskStore};
+
+    let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+    let store = PostgresTaskStore::new_with_pool_size(&url, 2)
+        .await
+        .expect("store");
+    let run = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let done = Task::new(
+        format!("retention-done-{run}"),
+        "ctx",
+        TaskStatus::new(TaskState::Completed),
+    );
+    let working = Task::new(
+        format!("retention-working-{run}"),
+        "ctx",
+        TaskStatus::new(TaskState::Working),
+    );
+    store.save(&done).await.expect("save");
+    store.save(&working).await.expect("save");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Younger than a day: nothing is deleted.
+    super::retention::sweep(&store, Duration::from_secs(24 * 3600))
+        .await
+        .expect("sweep");
+    assert!(store.get(&done.id).await.expect("get").is_some());
+
+    // Past the retention: the finished task goes, the working one stays.
+    let deleted = super::retention::sweep(&store, Duration::ZERO)
+        .await
+        .expect("sweep");
+    assert!(deleted >= 1, "deleted {deleted}");
+    assert!(store.get(&done.id).await.expect("get").is_none());
+    assert!(store.get(&working.id).await.expect("get").is_some());
+    store.delete(&working.id).await.expect("cleanup");
 }

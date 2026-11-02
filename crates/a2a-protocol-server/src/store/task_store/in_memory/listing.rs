@@ -18,13 +18,16 @@ pub(super) fn listed(task: &Task, history_length: Option<u32>) -> Task {
         (None, Some(all)) => Some(all.to_vec()),
         (Some(n), Some(all)) => Some(all[all.len().saturating_sub(n as usize)..].to_vec()),
     };
-    Task {
-        id: task.id.clone(),
-        context_id: task.context_id.clone(),
-        status: task.status.clone(),
-        artifacts: task.artifacts.clone(),
-        history,
-        metadata: task.metadata.clone(),
+    {
+        let mut built = Task::new(
+            task.id.clone(),
+            task.context_id.clone(),
+            task.status.clone(),
+        );
+        built.artifacts.clone_from(&task.artifacts);
+        built.history = history;
+        built.metadata.clone_from(&task.metadata);
+        built
     }
 }
 
@@ -37,19 +40,21 @@ mod tests {
     use crate::handler::helpers::truncate_history;
 
     fn task(history: Option<usize>) -> Task {
-        Task {
-            id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
-            status: TaskStatus::new(TaskState::Working),
-            artifacts: None,
-            history: history.map(|n| {
+        {
+            let mut built = Task::new(
+                TaskId::new("t"),
+                ContextId::new("c"),
+                TaskStatus::new(TaskState::Working),
+            )
+            .with_metadata(serde_json::json!({"k": 1}));
+            built.history = history.map(|n| {
                 (0..n)
                     .map(|i| {
                         Message::new(format!("m{i}"), MessageRole::User, vec![Part::text("x")])
                     })
                     .collect()
-            }),
-            metadata: Some(serde_json::json!({"k": 1})),
+            });
+            built
         }
     }
 

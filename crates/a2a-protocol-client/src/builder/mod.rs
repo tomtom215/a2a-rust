@@ -35,7 +35,11 @@ mod selection;
 mod transport_factory;
 
 #[cfg(test)]
+mod grpc_selection_tests;
+#[cfg(test)]
 mod selection_tests;
+#[cfg(test)]
+mod tenant_order_tests;
 
 #[cfg(feature = "signing")]
 mod signed;
@@ -92,6 +96,14 @@ pub struct ClientBuilder {
     /// [`ClientBuilder::with_protocol_binding`]: a binding the caller named
     /// is a decision, not a preference to substitute for.
     pub(super) fallback_interfaces: Vec<AgentInterface>,
+    /// Whether the caller named a tenant with [`with_tenant`](Self::with_tenant).
+    ///
+    /// A tenant from the card belongs to the interface it came with and moves
+    /// when the interface does; one the caller set is theirs, whichever order
+    /// they called the builder in (audit G-19: `with_tenant` before
+    /// `with_protocol_binding`, `build_grpc` or a fallback replaced it, or
+    /// cleared it).
+    pub(super) tenant_set: bool,
     /// How a bare `host:port` gRPC address is dialled by [`build_grpc`].
     ///
     /// Lives on the builder rather than on [`ClientConfig`] because it is a
@@ -144,6 +156,7 @@ impl ClientBuilder {
             grpc_tls_config: None,
             card_interfaces: Vec::new(),
             fallback_interfaces: Vec::new(),
+            tenant_set: false,
             agent: None,
             declared: None,
             extensions: Vec::new(),
@@ -259,6 +272,7 @@ impl ClientBuilder {
             grpc_tls_config: None,
             card_interfaces: card.supported_interfaces.clone(),
             fallback_interfaces: candidates.collect(),
+            tenant_set: false,
             agent: Some(crate::call_span::agent_identity(card)),
             declared: Some(crate::declared::DeclaredCapabilities::of(
                 &card.capabilities,
@@ -419,8 +433,9 @@ impl ClientBuilder {
     /// left as the caller set it. There is nothing to resolve against, and the
     /// caller is assumed to know their own URL.
     ///
-    /// Ordering: this re-resolves the tenant from the card, so call
-    /// [`ClientBuilder::with_tenant`] *after* this to override it.
+    /// A tenant the caller set with [`ClientBuilder::with_tenant`] is kept
+    /// whichever call comes first; without one, the tenant moves with the
+    /// interface (audit G-19).
     #[must_use]
     pub fn with_protocol_binding(mut self, binding: impl Into<String>) -> Self {
         let binding = binding.into();
@@ -431,9 +446,33 @@ impl ClientBuilder {
             .map(|i| (i.url.clone(), i.tenant.clone()));
         if let Some((url, tenant)) = resolved {
             self.endpoint = url;
-            self.config.tenant = tenant;
+            if !self.tenant_set {
+                self.config.tenant = tenant;
+            }
         }
         self.preferred_binding = Some(binding);
+        self.fallback_interfaces.clear();
+        self
+    }
+
+    /// Uses only the interface [`from_card`](Self::from_card) chose: when it
+    /// cannot be built, [`build`](Self::build) fails instead of moving on.
+    ///
+    /// Without this, `build` falls back to the card's next interface when the
+    /// chosen one cannot be built here (a binding this SDK does not implement,
+    /// a scheme the transports refuse), and the client then talks to whatever
+    /// host that interface names. That suits a caller who trusts the card. It is
+    /// wrong for one who attaches a credential for the host of the interface
+    /// they chose, such as an interceptor that adds `Authorization` or a token
+    /// provider: the card is the agent's word, the next interface can be on any
+    /// host, and the credential would follow it (audit SEC-09).
+    ///
+    /// The error is the chosen interface's own, so it says why it could not be
+    /// built. A builder from [`ClientBuilder::new`] has nothing to fall back to,
+    /// and [`with_protocol_binding`](Self::with_protocol_binding) already does
+    /// this, so neither is affected.
+    #[must_use]
+    pub fn without_interface_fallback(mut self) -> Self {
         self.fallback_interfaces.clear();
         self
     }
@@ -493,6 +532,7 @@ impl ClientBuilder {
     #[must_use]
     pub fn with_tenant(mut self, tenant: impl Into<String>) -> Self {
         self.config.tenant = Some(tenant.into());
+        self.tenant_set = true;
         self
     }
 
@@ -739,32 +779,27 @@ mod tests {
     fn card_with(interfaces: Vec<a2a_protocol_types::AgentInterface>) -> AgentCard {
         use a2a_protocol_types::AgentCapabilities;
 
-        AgentCard {
-            url: None,
-            name: "prefs".into(),
-            version: "1.0".into(),
-            description: "Binding preference fixture".into(),
-            supported_interfaces: interfaces,
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
-            signatures: None,
+        {
+            let mut built = AgentCard::new("prefs", "1.0", AgentInterface::jsonrpc(String::new()));
+            built.url = None;
+            built.description = "Binding preference fixture".into();
+            built.supported_interfaces = interfaces;
+            built.provider = None;
+            built.icon_url = None;
+            built.documentation_url = None;
+            built.capabilities = AgentCapabilities::none();
+            built.security_schemes = None;
+            built.security_requirements = None;
+            built.default_input_modes = vec![];
+            built.default_output_modes = vec![];
+            built.skills = vec![];
+            built.signatures = None;
+            built
         }
     }
 
     fn iface(binding: &str, url: &str) -> a2a_protocol_types::AgentInterface {
-        a2a_protocol_types::AgentInterface {
-            url: url.into(),
-            protocol_binding: binding.into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }
+        a2a_protocol_types::AgentInterface::new(url, binding).with_protocol_version("1.0.0")
     }
 
     /// JSONRPC at `:1111` first, GRPC at `:2222` second.
@@ -949,13 +984,11 @@ mod tests {
 
     #[test]
     fn switching_binding_carries_that_interfaces_tenant() {
-        let card = card_with(vec![
-            iface(BINDING_JSONRPC, "http://localhost:1111"),
-            a2a_protocol_types::AgentInterface {
-                tenant: Some("grpc-tenant".into()),
-                ..iface(BINDING_GRPC, "http://localhost:2222")
-            },
-        ]);
+        let card = card_with(vec![iface(BINDING_JSONRPC, "http://localhost:1111"), {
+            let mut built = iface(BINDING_GRPC, "http://localhost:2222");
+            built.tenant = Some("grpc-tenant".into());
+            built
+        }]);
 
         let builder = ClientBuilder::from_card(&card)
             .expect("from_card")
@@ -1087,28 +1120,15 @@ mod tests {
     fn builder_from_card_uses_card_url() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
-        let card = AgentCard {
-            url: None,
-            name: "test".into(),
-            version: "1.0".into(),
-            description: "A test agent".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:9090".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: None,
-            }],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
-            signatures: None,
-        };
+        let card = AgentCard::new(
+            "test",
+            "1.0",
+            AgentInterface::new("http://localhost:9090", "JSONRPC").with_protocol_version("1.0.0"),
+        )
+        .with_description("A test agent")
+        .with_input_modes(Vec::<String>::new())
+        .with_output_modes(Vec::<String>::new())
+        .with_capabilities(AgentCapabilities::none());
 
         let client = ClientBuilder::from_card(&card)
             .unwrap()
@@ -1130,22 +1150,22 @@ mod tests {
     fn builder_from_card_empty_interfaces_returns_error() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard};
 
-        let card = AgentCard {
-            url: None,
-            name: "empty".into(),
-            version: "1.0".into(),
-            description: "No interfaces".into(),
-            supported_interfaces: vec![],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
-            signatures: None,
+        let card = {
+            let mut built = AgentCard::new("empty", "1.0", AgentInterface::jsonrpc(String::new()));
+            built.url = None;
+            built.description = "No interfaces".into();
+            built.supported_interfaces = vec![];
+            built.provider = None;
+            built.icon_url = None;
+            built.documentation_url = None;
+            built.capabilities = AgentCapabilities::none();
+            built.security_schemes = None;
+            built.security_requirements = None;
+            built.default_input_modes = vec![];
+            built.default_output_modes = vec![];
+            built.skills = vec![];
+            built.signatures = None;
+            built
         };
 
         let result = ClientBuilder::from_card(&card);
@@ -1191,28 +1211,15 @@ mod tests {
     fn builder_from_card_mismatched_version() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
-        let card = AgentCard {
-            url: None,
-            name: "mismatch".into(),
-            version: "1.0".into(),
-            description: "Version mismatch test".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:9091".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "99.0.0".into(), // non-matching major version
-                tenant: None,
-            }],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
-            signatures: None,
-        };
+        let card = AgentCard::new(
+            "mismatch",
+            "1.0",
+            AgentInterface::new("http://localhost:9091", "JSONRPC").with_protocol_version("99.0.0"),
+        )
+        .with_description("Version mismatch test")
+        .with_input_modes(Vec::<String>::new())
+        .with_output_modes(Vec::<String>::new())
+        .with_capabilities(AgentCapabilities::none());
 
         let err = ClientBuilder::from_card(&card).expect_err("major 99 is not major 1");
         assert!(
@@ -1231,28 +1238,17 @@ mod tests {
     fn builder_from_card_preserves_tenant() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
-        let card = AgentCard {
-            url: None,
-            name: "multi-tenant".into(),
-            version: "1.0".into(),
-            description: "Multi-tenant agent".into(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:9092".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: Some("tenant-42".into()),
-            }],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
-            signatures: None,
-        };
+        let card = AgentCard::new(
+            "multi-tenant",
+            "1.0",
+            AgentInterface::new("http://localhost:9092", "JSONRPC")
+                .with_protocol_version("1.0.0")
+                .with_tenant("tenant-42"),
+        )
+        .with_description("Multi-tenant agent")
+        .with_input_modes(Vec::<String>::new())
+        .with_output_modes(Vec::<String>::new())
+        .with_capabilities(AgentCapabilities::none());
 
         let builder = ClientBuilder::from_card(&card).expect("from_card");
         assert_eq!(
@@ -1266,28 +1262,15 @@ mod tests {
     fn builder_from_card_none_tenant_stays_none() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
-        let card = AgentCard {
-            url: None,
-            name: "no-tenant".into(),
-            version: "1.0".into(),
-            description: String::new(),
-            supported_interfaces: vec![AgentInterface {
-                url: "http://localhost:9093".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: None,
-            }],
-            provider: None,
-            icon_url: None,
-            documentation_url: None,
-            capabilities: AgentCapabilities::none(),
-            security_schemes: None,
-            security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
-            signatures: None,
-        };
+        let card = AgentCard::new(
+            "no-tenant",
+            "1.0",
+            AgentInterface::new("http://localhost:9093", "JSONRPC").with_protocol_version("1.0.0"),
+        )
+        .with_description(String::new())
+        .with_input_modes(Vec::<String>::new())
+        .with_output_modes(Vec::<String>::new())
+        .with_capabilities(AgentCapabilities::none());
 
         let builder = ClientBuilder::from_card(&card).expect("from_card");
         assert!(builder.config.tenant.is_none());

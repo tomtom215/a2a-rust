@@ -59,3 +59,18 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: "ci"
+
+  # The deploy-agent image is published from the release workflow, so its two
+  # base images are pinned by digest and nothing else refreshes the digests:
+  # a glibc fix upstream never reached a build from this tree (audit
+  # NEW-a-l-4b). Dependabot updates the digest and the tag together.
+  - package-ecosystem: docker
+    directory: /examples/deploy-agent
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "deps(docker)"

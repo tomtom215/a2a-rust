@@ -8,6 +8,8 @@
 //! Usage errors never reach this type: `clap` reports them and exits 2
 //! before `main` runs a command. Everything here is therefore exit 1 — the
 //! distinction the type carries is *what to print*, not which code to use.
+//! The other exit 2, an unusable `OTEL_*` setting, happens in `main` before the
+//! arguments are parsed and does not pass through here either.
 
 use std::fmt;
 
@@ -68,23 +70,26 @@ impl CliError {
         if let Some(e) = self.protocol_error()
             && let Ok(json) = serde_json::to_string(&serde_json::json!({ "error": e }))
         {
-            eprintln!("{json}");
+            eprintln!("{}", crate::terminal::json_safe(&json));
         }
     }
 }
 
-/// `text` with every control character written out (`\n`, `\u{1b}`), so that
-/// it cannot move the cursor, clear the screen, retitle the terminal or start a
-/// line of its own. An error's text can come from the agent being talked to
-/// (a JSON-RPC error message, an SSE id) or from a file being read, and the
-/// terminal obeys whatever it is sent (audit N-SEC-4: a message of
-/// `ESC[2J` and a newline then `error: ...` forged a line of the CLI's own).
-/// Stdout is not affected: it is written through `serde_json`, which escapes
-/// them. Printable text, non-ASCII included, is left as it is.
+/// `text` with every control character, and every character that reorders or
+/// hides text, written out (`\n`, `\u{1b}`, `\u{202e}`; see
+/// [`is_hostile`](crate::terminal::is_hostile)), so that it cannot move the
+/// cursor, clear the screen, retitle the terminal, start a line of its own or
+/// make a line read as something it is not. An error's text can come from the
+/// agent being talked to (a JSON-RPC error message, an SSE id) or from a file
+/// being read, and the terminal obeys whatever it is sent (audit N-SEC-4: a
+/// message of `ESC[2J` and a newline then `error: ...` forged a line of the
+/// CLI's own; audit NEW-f-5: a bidirectional override did the same to how a
+/// line reads). Stdout goes through [`json_safe`](crate::terminal::json_safe).
+/// Printable text, non-ASCII included, is left as it is.
 fn plain(text: &str) -> String {
     text.chars()
         .map(|c| {
-            if c.is_control() {
+            if crate::terminal::is_hostile(c) {
                 c.escape_default().to_string()
             } else {
                 c.to_string()
@@ -277,6 +282,37 @@ mod terminal_text {
         let failed = CliError::Failed(FORGED.to_owned()).to_string();
         assert_eq!(failed.lines().count(), 1, "{failed:?}");
         assert!(!failed.chars().any(char::is_control), "{failed:?}");
+    }
+
+    /// Audit NEW-f-5: a bidirectional override makes a line read as something
+    /// it is not, and none of it is a control character.
+    #[test]
+    fn text_that_reorders_or_hides_a_line_is_written_out() {
+        let hostile = "refused \u{202e}txt.exe\u{2066} \u{200b}ok\u{feff}\u{2028}error: forged";
+        let text = CliError::Client(ClientError::Protocol(A2aError::internal(hostile))).to_string();
+        for written in [
+            "\\u{202e}",
+            "\\u{2066}",
+            "\\u{200b}",
+            "\\u{feff}",
+            "\\u{2028}",
+        ] {
+            assert!(text.contains(written), "{written} in {text:?}");
+        }
+        assert_eq!(text.lines().count(), 1, "{text:?}");
+        assert!(
+            text.contains("txt.exe") && text.contains("forged"),
+            "still readable"
+        );
+    }
+
+    /// The marks and joiners that Persian, Hebrew, Arabic and emoji text need
+    /// are not touched.
+    #[test]
+    fn scripts_that_need_marks_and_joiners_are_unchanged() {
+        let ok = "\u{5e9}\u{5dc}\u{5d5}\u{5dd}\u{200f} \u{644}\u{627}\u{200c}\u{646} \u{1f468}\u{200d}\u{1f469}";
+        let text = CliError::Failed(ok.to_owned()).to_string();
+        assert_eq!(text, ok);
     }
 
     #[test]

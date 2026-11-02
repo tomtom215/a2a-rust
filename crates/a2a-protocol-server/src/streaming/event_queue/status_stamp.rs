@@ -110,12 +110,11 @@ mod tests {
     use super::stamp_status;
 
     fn update(status: TaskStatus) -> StreamResponse {
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new("t"),
+            ContextId::new("c"),
             status,
-            metadata: None,
-        })
+        ))
     }
 
     fn timestamp(event: &StreamResponse) -> Option<&str> {
@@ -149,14 +148,11 @@ mod tests {
 
     #[test]
     fn a_task_snapshot_without_a_timestamp_is_stamped() {
-        let mut event = StreamResponse::Task(Task {
-            id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
-            status: TaskStatus::new(TaskState::Submitted),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        });
+        let mut event = StreamResponse::Task(Task::new(
+            TaskId::new("t"),
+            ContextId::new("c"),
+            TaskStatus::new(TaskState::Submitted),
+        ));
         stamp_status(&mut event).expect("stamps");
         let ts = timestamp(&event).expect("stamped");
         assert!(
@@ -232,14 +228,14 @@ mod tests {
         let mut own = Message::agent("m2", vec![Part::text("x")]);
         own.context_id = Some(ContextId::new("given"));
         let user = Message::user_text("u1", "hi");
-        let mut event = StreamResponse::Task(Task {
-            id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
-            status: TaskStatus::new(TaskState::Working),
-            history: Some(vec![user, own]),
-            artifacts: None,
-            metadata: None,
-        });
+        let mut event = StreamResponse::Task(
+            Task::new(
+                TaskId::new("t"),
+                ContextId::new("c"),
+                TaskStatus::new(TaskState::Working),
+            )
+            .with_history(vec![user, own]),
+        );
         stamp_status(&mut event).expect("stamp");
         let StreamResponse::Task(task) = &event else {
             unreachable!()

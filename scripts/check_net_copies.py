@@ -17,8 +17,11 @@ crates were fixed two days apart, because a fix in one did not reach the other.
 A copy whose functions differ is that fault waiting to recur, so the functions
 below must stay text-identical, whitespace and visibility keywords ignored.
 Functions that differ for a stated reason (the client's `ProxyConnector::new`
-takes a TCP connector, the server's `matcher` takes an injected environment)
-are not listed.
+takes a TCP connector, the server's `matcher` takes an injected environment,
+and the server's `tunnel` and `tunnelled_tls` name its TCP connector type
+`Tcp` = `HttpConnector<PinResolver>`, whose resolver can be told a host is a
+set of checked addresses for an `https://` webhook, where the client's is
+`HttpConnector`: audit D-13, SEC-13) are not listed.
 
 Usage:
     python3 scripts/check_net_copies.py
@@ -40,10 +43,11 @@ PAIRS = [
         "crates/a2a-protocol-server/src/net/proxy.rs",
         [
             "unbracketed",
+            "truthy",
+            "no_proxy_rules",
+            "names_a_port",
             "intercept",
             "unsupported",
-            "tunnel",
-            "tunnelled_tls",
             "connected",
             "poll_read",
             "poll_write",

@@ -176,9 +176,10 @@ fn bench_payload_complexity(c: &mut Criterion) {
 
     // Nested metadata (10 levels deep)
     // Pre-construct the message outside iter to measure only send overhead.
-    let nested_msg = a2a_protocol_types::message::Message {
-        metadata: Some(fixtures::nested_metadata(10)),
-        ..fixtures::user_message("With nested metadata")
+    let nested_msg = {
+        let mut built = fixtures::user_message("With nested metadata");
+        built.metadata = Some(fixtures::nested_metadata(10));
+        built
     };
     group.bench_function("nested_metadata_10", |b| {
         b.to_async(&runtime).iter(|| async {

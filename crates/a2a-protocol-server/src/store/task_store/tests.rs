@@ -75,16 +75,11 @@ async fn defaults_a_store_has_not_implemented_refuse_rather_than_pretend() {
 
     let store = MinimalStore;
     let id = TaskId::new("t");
-    let task = Task {
-        id: id.clone(),
-        context_id: a2a_protocol_types::task::ContextId::new("ctx"),
-        status: a2a_protocol_types::task::TaskStatus::new(
-            a2a_protocol_types::task::TaskState::Submitted,
-        ),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        id.clone(),
+        a2a_protocol_types::task::ContextId::new("ctx"),
+        a2a_protocol_types::task::TaskStatus::new(a2a_protocol_types::task::TaskState::Submitted),
+    );
 
     let appended = store
         .append_event(&id, 1, &StreamResponse::Task(task))
@@ -178,16 +173,11 @@ fn task_store_config_clone_and_debug() {
 #[tokio::test]
 async fn minimal_store_save_get_list_delete() {
     let store = MinimalStore;
-    let task = Task {
-        id: TaskId::new("test"),
-        context_id: a2a_protocol_types::task::ContextId::new("ctx"),
-        status: a2a_protocol_types::task::TaskStatus::new(
-            a2a_protocol_types::task::TaskState::Submitted,
-        ),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("test"),
+        a2a_protocol_types::task::ContextId::new("ctx"),
+        a2a_protocol_types::task::TaskStatus::new(a2a_protocol_types::task::TaskState::Submitted),
+    );
     store.save(&task).await.expect("save should succeed");
     // MinimalStore is a no-op store, so get should return None.
     assert!(

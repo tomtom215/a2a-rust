@@ -309,6 +309,13 @@ jobs:
       - name: Client and server outbound-HTTP copies agree
         run: python3 scripts/check_net_copies.py --self-test && python3 scripts/check_net_copies.py
 
+      # The examples served their agents with a hand-written hyper accept loop
+      # fifteen times (audit G-05): no connection cap, no drain, and a `continue`
+      # that spins a core on a persistent accept error. A reader copied it. The
+      # stubs that remain are listed with a reason.
+      - name: Examples serve agents with Server, not a hand-written accept loop
+        run: python3 scripts/check_example_servers.py --self-test && python3 scripts/check_example_servers.py
+
       # Each SQL store feature compiles only its own driver (release audit
       # F25): `postgres` alone linked SQLite until 2026-10-18.
       - name: SQL store features link only their own driver

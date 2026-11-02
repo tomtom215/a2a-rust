@@ -257,12 +257,11 @@ impl ServeConfig {
         self
     }
 
-    /// Caps the connections served at once.
+    /// Caps the connections served at once. `0` is refused when the server
+    /// starts ([`ServeReport::refused`](super::ServeReport::refused)).
     ///
-    /// This type is `#[non_exhaustive]` — a header-read timeout and an idle
-    /// timeout are the obvious next fields — so it is built with setters rather
-    /// than a struct literal, and gaining one of those is not a breaking
-    /// change.
+    /// This type is `#[non_exhaustive]`, so it is built with setters rather
+    /// than a struct literal, and a new field is not a breaking change.
     #[must_use]
     pub const fn with_max_connections(mut self, max: usize) -> Self {
         self.max_connections = Some(max);

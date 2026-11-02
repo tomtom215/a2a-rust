@@ -134,7 +134,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `window_secs` | `u64` | 60 | Window duration in seconds |
 | `trusted_proxy_hops` | `usize` | 0 | How many `X-Forwarded-For` hops to trust (0 = ignore XFF entirely) |
 | `trusted_proxies` | `Vec<TrustedProxy>` | `[]` | Address ranges the proxies connect from; when set, XFF is believed only from a peer in one (no effect while `trusted_proxy_hops` is 0) |
-| `max_buckets` | `usize` | 10,000 | Hard bound on tracked caller buckets (fail-closed when full) |
+| `max_buckets` | `usize` | 10,000 | Bound on tracked caller buckets. When full of live buckets, callers without one share a single `overflow` bucket holding one caller's limit (`RateLimitInterceptor::overflowed()` counts its requests); they used to be refused outright, which locked every new caller out while `max_buckets` callers stayed active |
 
 ### ServeConfig
 
@@ -161,7 +161,7 @@ take the same three through their own `with_completion_grace`,
 |------|----------|
 | `CorsConfig::new(origin)` | `allow_methods` `GET, POST, PUT, DELETE, OPTIONS`; `allow_headers` `content-type, authorization, a2a-version, a2a-extensions, last-event-id, x-a2a-notification-token`; `max_age_secs` 86400 |
 | `TenantStoreConfig` | `max_tenants` 1,000 partitions (each caller's partition counts when tasks are isolated by caller); `max_total_tasks` none |
-| `WebSocketDispatcher` | handshake timeout 10s (`with_handshake_timeout`); idle timeout off (`with_idle_timeout`; `DEFAULT_WS_IDLE_TIMEOUT` is 75s); `with_max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
+| `WebSocketDispatcher` | handshake timeout 10s (`with_handshake_timeout`); write timeout 30s (`with_write_timeout`: a peer that stops reading is dropped at it, and the connection with it); idle timeout off (`with_idle_timeout`; `DEFAULT_WS_IDLE_TIMEOUT` is 75s); `with_max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
 | `HttpPushSender` | 10s request timeout (`HttpPushSender::with_timeout`), 5s DNS lookup bound (`with_dns_timeout`), `PushRetryPolicy` above; SSRF guard on unless `allow_private_urls()` |
 | `JwtValidator`, `JwtAuthInterceptor` | clock-skew leeway 60s (`JwtValidator::with_leeway`); a remote JWKS is cached for 3,600s (`JwtAuthInterceptor::with_jwks_ttl`) and refetched for an unknown key id at most every 10s (`with_jwks_refetch_interval`) |
 
@@ -195,7 +195,7 @@ take the same three through their own `with_completion_grace`,
 | `with_tenant` | `impl Into<String>` | None (auto from `AgentCard`) | Tenant sent on **every** request (spec §8.3.2 rule 4); a per-request `tenant` overrides it |
 | `with_grpc_bare_address_scheme` | `GrpcBareAddressScheme` | `HttpsExceptLoopback` | How `build_grpc` dials a card's bare `host:port` gRPC target: TLS except for loopback (default), always TLS, or always plaintext |
 | `with_tls_config` | `rustls::ClientConfig` | Mozilla roots plus `SSL_CERT_FILE` / `SSL_CERT_DIR` | `tls-rustls` feature: the TLS the JSON-RPC and HTTP+JSON bindings use — a private CA, a pinned self-signed certificate, or a client certificate (`tls::tls_config_from_pem` builds one from PEM). Proxies come from `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` / `NO_PROXY`, for every binding: WebSocket and gRPC through a `CONNECT` tunnel |
-| `with_grpc_tls_config` | `ClientTlsConfig` | None (bundled Mozilla roots) | `grpc-tls` feature: the TLS settings `build_grpc` uses for an `https://` endpoint, explicit or policy-chosen — a private CA, a client certificate, or a server name that differs from the host |
+| `with_grpc_tls_config` | `ClientTlsConfig` | Mozilla roots plus `SSL_CERT_FILE` / `SSL_CERT_DIR`; one you give is exact (`transport::grpc::tls_config_from_pem` keeps the defaults) | `grpc-tls` feature: the TLS settings `build_grpc` uses for an `https://` endpoint, explicit or policy-chosen — a private CA, a client certificate, or a server name that differs from the host |
 | `with_interceptor` | `impl CallInterceptor` | Empty chain | Client middleware |
 | `with_max_response_size` | `usize` | 32 MiB | Largest buffered (non-streaming) response body; JSON-RPC and REST enforce it and gRPC takes it as its `max_message_size`. Not applied to a transport given to `with_custom_transport` (`WebSocketTransport` has its own `max_message_size`) |
 | `with_custom_transport` | `impl Transport` | None | Use this transport instead of the one built from the endpoint and binding |
@@ -256,7 +256,7 @@ and the `with_*` setters.
 |---------|---------|-------------|
 | `signing` | Off | Forwards `a2a-protocol-types/signing`; the server itself neither signs nor verifies the card it serves |
 | `tracing` | **On** | Structured logging via `tracing` crate; `default-features = false` compiles it out |
-| `tls-rustls` | Off | HTTPS delivery for the bundled push-notification sender, `Server::with_tls` / `with_tls_pem` (HTTPS on its own listener), and `auth::MutualTlsAuthInterceptor` |
+| `tls-rustls` | **On** | HTTPS delivery for the bundled push-notification sender, JWKS/OIDC fetches and the model client, `Server::with_tls` / `with_tls_pem` (HTTPS on its own listener), and `auth::MutualTlsAuthInterceptor`; on by default since 0.16.0 |
 | `sqlite` | Off | SQLite-backed task and push config stores via `sqlx` |
 | `postgres` | Off | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
@@ -323,6 +323,7 @@ and the `with_*` setters.
 | Variable | Description |
 |----------|-------------|
 | `RUST_LOG` | Log level filter (when the `tracing` feature is enabled — the client's, server's and SDK's default — and the application's subscriber reads it) |
+| `A2A_PROXY_LOOPBACK` | Read by the client and the server's outbound HTTP, gRPC and WebSocket paths. Loopback (`localhost`, `127.0.0.0/8`, `::1`) is never sent to the proxy named by `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` unless this is `1`, `true`, `yes` or `on`. `NO_PROXY` entries are read as Go reads them: `*.example.com` works, an entry with a port is ignored with a warning. |
 | `OTEL_*` | Read by `Telemetry` (server `otlp` feature, on in the SDK) and the OpenTelemetry crates beneath it: `OTEL_SDK_DISABLED`, `OTEL_TRACES_EXPORTER` / `OTEL_METRICS_EXPORTER` / `OTEL_LOGS_EXPORTER` (a list of `otlp`, `console` and, for metrics with the `otel-prometheus` feature, `prometheus`; or `none`), `OTEL_EXPORTER_OTLP_ENDPOINT` / `_PROTOCOL` / `_HEADERS` / `_COMPRESSION` / `_TIMEOUT` (10 s) / `_CERTIFICATE` / `_CLIENT_CERTIFICATE` / `_CLIENT_KEY` and their per-signal forms, `_INSECURE` (only for a scheme-less OTLP/gRPC endpoint), `OTEL_EXPORTER_PROMETHEUS_HOST` / `_PORT`, `OTEL_PROPAGATORS`, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`; and `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` for the export; see [Observability](../deployment/observability.md) |
 | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | Read by `Langfuse::from_env()`; the base URL defaults to `http://localhost:3000` |
 | `PROTOC` | The `proto`/`grpc` build scripts use a vendored `protoc` unless this names another |

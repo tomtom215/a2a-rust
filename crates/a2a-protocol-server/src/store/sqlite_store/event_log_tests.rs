@@ -23,23 +23,19 @@ async fn store() -> SqliteTaskStore {
 }
 
 fn task(id: &str) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::Working),
+    )
 }
 
 fn event(state: TaskState) -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t-1"),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(state),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t-1"),
+        ContextId::new("c-1"),
+        TaskStatus::new(state),
+    ))
 }
 
 fn states(events: &[crate::store::RecordedEvent]) -> Vec<TaskState> {

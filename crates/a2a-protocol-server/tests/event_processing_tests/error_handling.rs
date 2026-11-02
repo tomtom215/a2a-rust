@@ -25,12 +25,11 @@ impl AgentExecutor for WorkThenErrorExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
             Err(A2aError::internal("executor failed mid-flight"))
         })
@@ -92,12 +91,11 @@ async fn streaming_mode_work_then_error_marks_failed_in_store() {
                 self.started.store(true, Ordering::SeqCst);
                 self.proceed.notified().await;
                 queue
-                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        status: TaskStatus::new(TaskState::Working),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        TaskStatus::new(TaskState::Working),
+                    )))
                     .await?;
                 Err(A2aError::internal("deliberate error after working"))
             })

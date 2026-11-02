@@ -55,11 +55,10 @@ pub fn requested(message: &Message, received: Instant) -> ServerResult<Option<Bu
 /// the failure taxonomy (every server classifies, in this crate's own
 /// failure path) and the budget (every server honours one).
 pub fn always_declared() -> [AgentExtension; 2] {
-    let declare = |uri: &str, description: &str| AgentExtension {
-        uri: uri.to_owned(),
-        description: Some(description.to_owned()),
-        required: Some(false),
-        params: None,
+    let declare = |uri: &str, description: &str| {
+        AgentExtension::new(uri.to_owned())
+            .with_description(description.to_owned())
+            .with_required(false)
     };
     [
         declare(

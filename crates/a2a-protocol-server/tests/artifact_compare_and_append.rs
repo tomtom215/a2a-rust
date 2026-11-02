@@ -77,14 +77,12 @@ impl Db {
 }
 
 fn task(artifacts: Vec<Artifact>) -> Task {
-    Task {
-        id: TaskId::new("t-cas"),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(TaskState::Working),
-        history: None,
-        artifacts: Some(artifacts),
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new("t-cas"),
+        ContextId::new("ctx"),
+        TaskStatus::new(TaskState::Working),
+    )
+    .with_artifacts(artifacts)
 }
 
 fn parts(texts: &[&str]) -> Vec<Part> {

@@ -21,37 +21,19 @@ pub async fn test_backpressure_lagged(_ctx: &TestContext) -> TestResult {
     let url = format!("http://{addr}");
 
     let metrics = Arc::new(TeamMetrics::new("BackpressureTest"));
-    let card = AgentCard {
-        url: None,
-        name: "BackpressureAgent".into(),
-        description: "Agent with tiny event queue".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: url.clone(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "bp-test".into(),
-            name: "Backpressure Test".into(),
-            description: "Tests lagged events".into(),
-            tags: vec!["test".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none().with_streaming(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    };
+    let card = AgentCard::new(
+        "BackpressureAgent",
+        "1.0.0",
+        AgentInterface::new(url.clone(), "JSONRPC").with_protocol_version("1.0.0"),
+    )
+    .with_description("Agent with tiny event queue")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        AgentSkill::new("bp-test", "Backpressure Test", "Tests lagged events")
+            .with_tags(vec!["test"]),
+    )
+    .with_capabilities(AgentCapabilities::none().with_streaming(true));
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(crate::executors::CodeAnalyzerExecutor)

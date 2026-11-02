@@ -1,0 +1,407 @@
+{
+ "slice": "c",
+ "baseline": "4a8243c66df5ae07a54a69168ab419ac609b06e9",
+ "rows": [
+  {
+   "id": "C-05",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "~/.cargo/registry/src/*/opentelemetry_sdk-0.33.1/src/metrics/internal/histogram.rs:195,249 (and sum.rs, last_value.rs, exponential_histogram.rs) - every data point is built with exemplars: vec![]; data/mod.rs:174,233,358 the exemplars field is pub(crate), so neither an exporter nor this crate can add one",
+    "rg OTEL_METRICS_EXEMPLAR_FILTER over the SDK sources and the repo - read nowhere. Spec (metrics SDK, Exemplar): ExemplarFilter configurable, default trace_based, env OTEL_METRICS_EXEMPLAR_FILTER; the Rust SDK 0.33.1 implements neither",
+    "deploy/observability/docker-compose.yml:39-42 - Prometheus runs with --web.enable-otlp-receiver and a retention flag only: no --enable-feature=exemplar-storage, no --web.enable-remote-write-receiver",
+    "deploy/observability/grafana/provisioning/datasources/prometheus.yml:8-15 - no jsonData.exemplarTraceIdDestinations",
+    "deploy/observability/grafana/dashboards/{a2a-server,a2a-client,a2a-genai}.json - 0 occurrences of 'exemplar' (rg -c)",
+    "deploy/observability/grafana/provisioning/traces-and-logs.yml:24-27 - tracesToMetrics has only datasourceUid (no queries); serviceMap points at Prometheus",
+    "deploy/observability/tempo/tempo.yaml:8-29 - no metrics_generator block, so no traces_service_graph_* or traces_spanmetrics_* series can exist for serviceMap to read",
+    "docs/adr/0013-observability.md:481-483 - exemplars listed as 'not examined'; rg -i exemplar over book/src finds nothing, so the gap is undocumented"
+   ],
+   "test": "none",
+   "summary": "The SDK cannot emit exemplars (upstream opentelemetry_sdk 0.33.1 hard-codes none and ignores OTEL_METRICS_EXEMPLAR_FILTER), and the shipped stack neither stores exemplars nor generates span metrics, so no panel links to a trace and Tempo's service graph and span-to-metrics links are empty.",
+   "remaining": "SDK side is upstream (track opentelemetry-rust exemplar support). Stack side is fixable now: Tempo metrics_generator (service-graphs + span-metrics, which carry exemplars) with remote_write to Prometheus, Prometheus --web.enable-remote-write-receiver and --enable-feature=exemplar-storage, datasource exemplarTraceIdDestinations, tracesToMetrics.queries; and one paragraph in the book saying exemplars are absent.",
+   "theme": "otel-stack",
+   "effort": "M",
+   "breaking": "none",
+   "probe": "Settled by reading. To prove a fix: docker compose -f deploy/observability/docker-compose.yml up -d, run any agent with OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 and drive traffic; curl 'http://localhost:9090/api/v1/query?query=traces_spanmetrics_calls_total' returns series and /api/v1/query_exemplars on that metric returns trace_ids; Grafana Tempo Service Graph tab shows nodes (today: empty)."
+  },
+  {
+   "id": "C-06",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/otel/telemetry/diagnostics.rs:89-95 - the only console layer install_subscriber adds is tracing_subscriber::fmt::layer().with_writer(stderr): plain text, no trace_id/span_id field",
+    "crates/a2a-protocol-server/Cargo.toml:232 - tracing-subscriber features registry, std, fmt only (no json, no env-filter)",
+    "crates/a2a-protocol-server/src/otel/telemetry/diagnostics.rs:24 - DEFAULT_FILTER warn (plus the startup line), so stdout/stderr collectors see little anyway",
+    "crates/a2a-protocol-server/src/otel/telemetry/console.rs:263-287 - partial path: with OTEL_LOGS_EXPORTER=console log records go to stdout with ' trace=<hex> span=<hex>'; the keys are not the trace_id/span_id/trace_flags the OTel 'Trace Context in non-OTLP Log Formats' compatibility doc says non-OTLP formats SHOULD use, the line is not JSON, and the body is written unescaped",
+    "book/src/deployment/observability/logs.md:'Logs without OTLP' - tells the reader to install their own fmt().json() layer and admits it 'does not carry the OpenTelemetry trace id'"
+   ],
+   "test": "none",
+   "summary": "What install_subscriber prints carries no trace context and is not JSON; trace correlation exists only for OTLP-exported records (and, informally, the console log exporter's 'trace=' keys).",
+   "remaining": "Offer a structured console format (builder option or env, e.g. JSON lines) whose formatter reads the OpenTelemetry SpanContext from the current span (tracing-opentelemetry OtelData) and writes trace_id, span_id, trace_flags; rename the console exporter's keys to trace_id/span_id; document the stdout-collection path (Fluent Bit / Promtail).",
+   "theme": "otel-logs",
+   "effort": "M",
+   "breaking": "none (opt-in format)",
+   "probe": "none"
+  },
+  {
+   "id": "C-07",
+   "verdict": "already_fixed",
+   "severity_now": "medium -> fixed",
+   "evidence": [
+    "commit 51d33eb - removes 'if self.disabled { return false; }' from Telemetry::install_subscriber",
+    "crates/a2a-protocol-server/src/otel/telemetry/mod.rs:250-275 - install_subscriber now always builds registry().with(self.layer()).with(diagnostics::layer(..)) and, once installed, logs describe() and every notice",
+    "crates/a2a-protocol-server/src/otel/telemetry/mod.rs:346-349 - describe() returns 'telemetry: disabled by OTEL_SDK_DISABLED'",
+    "crates/a2a-protocol-server/src/otel/telemetry/builder.rs:300-303 - selection() returns Selection::OFF when disabled, so no provider is built and layer() contributes Identity for both halves (mod.rs:191-224)",
+    "crates/a2a-protocol-server/src/otel/telemetry/builder/assemble.rs:110-116 - the global propagator is still installed when disabled, which matches the spec ('This setting has no effect on propagators configured through OTEL_PROPAGATORS')",
+    "All shipped binaries reach this through install_subscriber (tck/sut/src/telemetry.rs:27, itk/src/telemetry.rs, tools/a2a-cli/src/main.rs:122, examples/*); none short-circuits on the variable itself (rg OTEL_SDK_DISABLED)"
+   ],
+   "test": "crates/a2a-protocol-server/tests/telemetry_export/console.rs:264 a_disabled_sdk_exports_nothing_but_still_prints_warnings - re-runs the binary as a child with the console exporters and OTEL_SDK_DISABLED=true; the child asserts install_subscriber() returned true (console.rs:31), the parent asserts a WARN line on stderr, the 'disabled by OTEL_SDK_DISABLED' line, and no SPAN/LOG/METRIC on stdout. With the early return restored the child's assertion fails and run_child's success assertion fails, so it would fail on revert. Read, not run. The test binary is #![cfg(feature = \"otlp\")]. report_tests.rs a_disabled_sdk_builds_nothing_and_says_so pins that no provider is built.",
+   "summary": "Under OTEL_SDK_DISABLED=true the stderr layer (warnings, errors, the application's INFO lines, the startup line) is installed and no export layer is; the incident no longer goes dark for binaries using install_subscriber.",
+   "remaining": "",
+   "theme": "otel-config",
+   "effort": "XS",
+   "breaking": "behaviour - install_subscriber now returns true under OTEL_SDK_DISABLED (documented in book environment.md and debugging.md)",
+   "probe": "none. Related, not this row: the legacy init_otlp_pipeline still ignores OTEL_SDK_DISABLED (C-12), and OTEL_SDK_DISABLED=1 is silently not a disable (NEW-c-5)."
+  },
+  {
+   "id": "C-08",
+   "verdict": "needs_decision",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/otel/telemetry/selection.rs:98-104 - any OTEL_{TRACES,METRICS,LOGS}_EXPORTER item other than otlp/console/logging/none/prometheus is Err; :80-90 prometheus without the otel-prometheus feature is Err",
+    "crates/a2a-protocol-server/src/otel/telemetry/config.rs:157-166 - OTEL_EXPORTER_OTLP_{,SIGNAL_}PROTOCOL: unknown value is Err, and the match is on value.trim() with no lower-casing, so 'GRPC' or 'HTTP/PROTOBUF' are refused (spec: enum values SHOULD be case-insensitive)",
+    "crates/a2a-protocol-server/src/otel/telemetry/config.rs:199-207 - a non-integer OTEL_EXPORTER_OTLP_TIMEOUT is Err",
+    "crates/a2a-protocol-server/src/otel/telemetry/compression.rs:55-68 - zstd and anything else is Err; prometheus.rs:61-66 a non-numeric OTEL_EXPORTER_PROMETHEUS_PORT is Err",
+    "every shipped binary turns the Err into exit(2): examples/hello-agent/src/main.rs:76, examples/deploy-agent/src/main.rs:382, tools/a2a-cli/src/main.rs:120, tck/sut/src/telemetry.rs:25, itk/src/telemetry.rs:25 and 14 more (rg 'process::exit(2)')",
+    "deliberate and documented: selection.rs:8-10, compression.rs:5-14, book environment.md:11-17 ('an error naming the variable, and build fails')",
+    "inconsistent with the crate's own OTEL_PROPAGATORS policy (propagators.rs:10-13, 'reported, not refused' for fleet-wide values) and with upstream opentelemetry-otlp 0.33.1, which warns and ignores (exporter/mod.rs:177-191, used for the temporality preference at metric.rs:133-143)",
+    "the original reason for refusing (compression.rs:8-12: no subscriber exists at build time, so a warning went nowhere) no longer holds: Telemetry::notices() exists and install_subscriber logs each at WARN (mod.rs:267-272)",
+    "Spec (environment variables, configuration types): an enum value the implementation does not recognize MUST produce a warning and be gracefully ignored; an unparsable number SHOULD produce a warning and be treated as not set"
+   ],
+   "test": "selection.rs tests an_exporter_this_crate_lacks_is_refused_with_its_name, prometheus_without_its_feature_is_refused_naming_the_feature; config.rs protocol_refuses_garbage_naming_the_variable, timeout_is_milliseconds_with_a_ten_second_default; compression.rs tests - they pin the refusal and would change with any fix",
+   "summary": "Unrecognised enum values and unparsable numbers in the OTEL_* variables fail build() and every binary exits 2, contrary to the spec's MUST warn-and-ignore; this is a documented choice, not an oversight.",
+   "remaining": "Decide the policy; then change selection/protocol/compression/timeout/prometheus-port parsing, the tests that pin refusal, and environment.md.",
+   "theme": "otel-config",
+   "effort": "S",
+   "breaking": "behaviour - a configuration that used to stop the process would start and export differently",
+   "probe": "none",
+   "options": "(1) Spec behaviour: push a Telemetry notice (printed at WARN by install_subscriber) and treat the variable as unset: an unknown exporter item is dropped (the whole variable ignored if nothing valid is left), protocol falls back to http/protobuf, compression to none, timeout to 10 s, the Prometheus port to 9464; match enums case-insensitively; keep hard errors for unreadable certificate/key files and for values given in code. Trade-off: a typo starts a process that exports differently, visible only as one WARN line. (2) Keep refusing by default and add an opt-in lenient mode (builder method or env). Trade-off: still violates the MUST by default, fleets with a shared OTEL_* preset still crash-loop. (3) Hybrid: names that belong to other SDKs (zipkin, jaeger, zstd, prometheus without the feature) turn that item off with a notice; malformed numbers and protocol strings still refuse. Recommendation: (1), because the notices channel removes the reason the refusal was introduced and the crate already applies it to OTEL_PROPAGATORS."
+  },
+  {
+   "id": "C-09",
+   "verdict": "partly_fixed",
+   "severity_now": "low (was medium)",
+   "evidence": [
+    "commit 43e142b - rules only (deploy/observability/prometheus/rules/*, tests, book); no code change",
+    "deploy/observability/prometheus/rules/a2a-recording.yml:27-35 - a2a:rpc_server_errors:rate5m and a2a:rpc_server_error_ratio:rate5m now select error_type!=\"\",error_type!=\"cancelled\"; :29-30 new a2a:rpc_server_cancelled:rate5m; :72-76 a2a:rpc_client_error_ratio:rate5m excludes cancelled too",
+    "deploy/observability/prometheus/rules/a2a-alerts.yml:13-21 - A2AServerErrorRatioHigh now requires 'and on (job) sum by (job) (a2a:rpc_server_calls:rate5m) > 0.1'",
+    "STILL OPEN, instrumentation: crates/a2a-protocol-server/src/rpc_span/mod.rs:392 failed_with = status.filter(|s| *s == CANCELLED || is_server_error(s)) - an abandoned stream (stream.rs:53) or a unary call dropped in flight (call.rs:80-82) still gets error.type=cancelled and otel.status_code=ERROR on the span, so span-based error rates (Tempo, span metrics, APM backends) still count client hang-ups as server failures",
+    "STILL OPEN, gRPC semconv: on the gRPC binding rpc.status_code is recorded as 'cancelled' (lowercase, mod.rs:384-388) rather than the status name CANCELLED, and names.rs:71-83 itself classifies CANCELLED as not a server error per semconv grpc.md - the abandoned path bypasses that rule",
+    "STILL OPEN, visibility: no dashboard panel uses a2a:rpc_server_cancelled:rate5m (rg over grafana/dashboards); the report's fix asked for one. book dashboards.md:156 describes the rule as 'streams the client abandoned', but it also holds unary calls cut by a load balancer (B-11: a blocking SendMessage past the LB idle timeout is a 504 to the client and 'cancelled' on the server) and streams dropped on server shutdown - all now outside the only error alert",
+    "STILL OPEN, new gap from the floor: a job under 0.1 calls/s (e.g. 3 calls a minute, all failing) can no longer fire A2AServerErrorRatioHigh, and no absolute-error alert exists",
+    "No CI job runs promtool (rg promtool .github/workflows: none); the commit message says so"
+   ],
+   "test": "deploy/observability/prometheus/tests/a2a-alerts.test.yml:36-57 'impatient' (20% cancelled: alert silent, cancelled rule non-empty, errors rule empty) and :59-70 'quiet' (50% failed at 0.033 calls/s: silent). Against the pre-43e142b rules both fail (ratio 20%/50% with no exclusion, no cancelled rule, no floor) and each half of the fix is separately covered - read, not run; promtool is not run by me or by CI. No test covers the client ratio's exclusion.",
+   "summary": "The recording rules and the server alert no longer treat abandoned calls as failures and need traffic before paging; the spans and the raw metric still mark them as errors, and the cancelled rate has no panel or alert.",
+   "remaining": "Decide whether the server span should mark a client-abandoned call ERROR (semconv grpc.md says server-side CANCELLED is not an error; record rpc.status_code CANCELLED on gRPC); add a cancelled-rate panel and, for unary methods, a cancelled-ratio warning (it catches LB idle cut-offs); add an absolute-errors alert for low-traffic jobs; run promtool test rules in CI; add a promtool case for the client ratio.",
+   "theme": "alerts",
+   "effort": "S",
+   "breaking": "behaviour (only if span status for cancelled changes)",
+   "probe": "promtool, not a live service: docker run --rm -v $PWD/deploy/observability/prometheus:/p --entrypoint promtool prom/prometheus:v3.15.1 test rules /p/tests/a2a-alerts.test.yml -> SUCCESS; with rules/ checked out from 43e142b^ the three C-09 cases fail."
+  },
+  {
+   "id": "C-10",
+   "verdict": "needs_decision",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-client/src/call_span.rs:365-414 propagate() - writes traceparent and tracestate from the span context, nothing else; never calls the global propagator",
+    "crates/a2a-protocol-server/src/rpc_span/webhook.rs:96-111 inject() - push deliveries carry the same two headers only",
+    "crates/a2a-protocol-server/src/handler/helpers.rs:189-232 parse_trace_context() - inbound reads traceparent (and tracestate) only",
+    "rg baggage over crates/, bindings/ (excluding telemetry/propagators.rs and builder docs) - no read or write of the 'baggage' header anywhere",
+    "crates/a2a-protocol-server/src/otel/telemetry/propagators.rs:7-10 - 'A2A's own wire handling does not use the global propagator'; builder/assemble.rs:110-116 installs a composite tracecontext+baggage global propagator that nothing on the A2A path calls",
+    "OTEL_PROPAGATORS=none does not stop injection (only ClientBuilder::with_trace_propagation(false)); b3/jaeger are not implemented at all (propagators.rs:58-61, reported as a notice)",
+    "book trace-context.md 'What is not done' does not mention baggage",
+    "Spec (Propagators API): instrumentation SHOULD inject/extract through the configured propagators on remote calls; OTEL_PROPAGATORS configures them (default tracecontext,baggage). W3C Baggage carries privacy risk across trust boundaries"
+   ],
+   "test": "none",
+   "summary": "W3C baggage dies at every A2A hop (client, push, server), and OTEL_PROPAGATORS changes only the global propagator that A2A never uses.",
+   "remaining": "Pick a policy; implement on JSON-RPC/HTTP+JSON/gRPC client, push sender and listener; document WebSocket (no per-request headers) as unchanged.",
+   "theme": "otel-propagation",
+   "effort": "M",
+   "breaking": "behaviour (option 1: OTEL_PROPAGATORS=none stops traceparent, baggage reaches remote agents)",
+   "probe": "none to settle. To prove a fix: two agents exporting to a collector, send a request with 'baggage: tenant.id=t1' through agent A to agent B and assert B's executor sees it (opentelemetry::baggage on the current context) and B's span carries it if a span processor copies baggage.",
+   "options": "(1) Inject and extract through opentelemetry::global::get_text_map_propagator on every header-carrying binding, keeping InboundTracePolicy (Restart and Drop also discard inbound baggage) and with_trace_propagation(false) as the off switch for both. Spec-aligned; OTEL_PROPAGATORS=none would stop traceparent; any upstream baggage is forwarded to third-party agents. (2) Keep the hard-coded W3C trace context and add opt-in baggage propagation (ClientBuilder and RequestHandlerBuilder switches, default off), plus honour OTEL_PROPAGATORS=none as 'do not inject'. Low risk, partial spec alignment. (3) Document the gap only. Recommendation: (2) - baggage is a data channel to remote agents, so opt-in fits the crate's trust model; ADR 0034's lineage proposal could use the same channel."
+  },
+  {
+   "id": "C-12",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/otel/pipeline.rs:95-99 pub fn init_otlp_pipeline, re-exported at otel/mod.rs:71 and listed in a2a-protocol-sdk's otlp feature; rg deprecated over src/otel finds no #[deprecated]",
+    "crates/a2a-protocol-server/src/otel/pipeline.rs:145-170 build_pipeline - MetricExporter::builder().with_tonic() (gRPC only), resource() from Resource::builder() default detectors: no service.instance.id (the new path adds one, builder/resource.rs:43-47), no read of OTEL_SDK_DISABLED or OTEL_METRICS_EXPORTER",
+    "~/.cargo/registry/src/*/opentelemetry_sdk-0.33.1/src/resource/env.rs:44-58 - the SDK's EnvResourceDetector splits OTEL_RESOURCE_ATTRIBUTES on ',' and '=' with no percent-decoding (the new path decodes, telemetry/resource_env.rs)",
+    "crates/a2a-protocol-server/src/otel/pipeline.rs:38-46 - doc says otlp is compiled with only grpc-tonic+metrics; stale against Cargo.toml:220 (http-proto, trace, logs, gzip)",
+    "crates/a2a-protocol-server/src/otel/pipeline.rs:80-81 - doc says release builds use panic = 'abort'; stale since the workspace profile unwinds (Cargo.toml:100-105, audit A4)",
+    "crates/a2a-protocol-server/Cargo.toml:214-219 - no tonic TLS feature (the new path uses its own rustls connector), so this exporter has no TLS for an https:// collector and follows no proxy variables (read only; tonic's exact error not checked)",
+    "still used by examples/incident-response/src/hardening/observability.rs:371"
+   ],
+   "test": "crates/a2a-protocol-server/tests/otel_pipeline_tests.rs, tests/otel_pipeline_default_endpoint.rs and pipeline.rs unit tests pin that it builds and exports; nothing covers the listed gaps",
+   "summary": "The legacy metrics-only gRPC pipeline is public, undeprecated and still used by one example, and it lacks service.instance.id, OTEL_SDK_DISABLED/OTEL_METRICS_EXPORTER handling, percent-decoding and TLS; two doc statements on it are stale.",
+   "remaining": "#[deprecated] pointing at Telemetry::builder().with_traces(false).with_logs(false) (or reimplement it on TelemetryBuilder), fix the two stale doc paragraphs, move incident-response to Telemetry.",
+   "theme": "otel-legacy",
+   "effort": "S",
+   "breaking": "none for deprecation (warnings); removal later is api",
+   "probe": "Optional, for the impact claim: compose stack; start two processes that call init_otlp_pipeline with OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 and the same OTEL_SERVICE_NAME; in Prometheus, resets(a2a_server_requests_total[10m]) > 0 on a single series shows the interleaving."
+  },
+  {
+   "id": "C-13",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "rg 'process\\.cpu|process\\.memory|tokio\\.runtime|observable_gauge|observable_counter|otel\\.sdk' over crates/, bindings/, examples/ - no match",
+    "crates/a2a-protocol-server/src/otel/telemetry/counting.rs:37-38,80-104 - a lost export is a WARN at most every 30 s; the count is surfaced only by force_flush/shutdown (mod.rs:380-459); no instrument, no health endpoint",
+    "~/.cargo/registry/src/*/opentelemetry_sdk-0.33.1/src/trace/span_processor.rs:862-873,930-940 - spans dropped on a full queue are logged once and counted only at shutdown; Counting does not see them",
+    "opentelemetry_sdk 0.33.1 offers otel.sdk.processor.span.processed, otel.sdk.processor.log.processed, otel.sdk.processor.log.queue.capacity, otel.sdk.log.created behind its experimental_metrics_bound_instruments feature (Cargo.toml:54-57); crates/a2a-protocol-server/Cargo.toml:207 does not enable it",
+    "Semconv: process metrics (process.cpu.time, process.memory.usage, process.open_file_descriptor.count, ...) and SDK self-observability metrics (otel.sdk.*) both exist in Development status; neither is emitted"
+   ],
+   "test": "none",
+   "summary": "No process, runtime or telemetry-pipeline metric exists; lost exports and queue-full drops are visible only in logs and at shutdown.",
+   "remaining": "Expose lost exports as an observable counter (own name or otel.sdk.exporter.* semconv names); consider a crate feature that enables the SDK's experimental self-metrics; a small observable-gauge set for RSS, CPU time and open FDs (from /proc, no new dependency) or a documented companion crate; document that tokio runtime metrics need tokio_unstable.",
+   "theme": "otel-self-metrics",
+   "effort": "M",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "C-14",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "(a) deploy/observability/prometheus/rules/a2a-alerts.yml:95-96 p99 > 2.5; crates/a2a-protocol-server/src/otel/mod.rs:421-423 RPC_DURATION_BUCKETS ... 1.0, 5.0 ... (client call_metric.rs:34-36 the same). 98 calls <= 1 s and 2 at 1.1 s: rank 99 falls in (1,5] with 2 of 2 counts -> 1 + 4 x 1/2 = 3.0 s > 2.5, the alert fires though no call took over 1.1 s",
+    "(b) deploy/observability/prometheus/prometheus.yml:16-39 and prometheus-collector.yml - no alerting: block; docker-compose.yml has no Alertmanager service",
+    "(c) rg -c over prometheus/rules and grafana/dashboards for store_retries, pool_created, a2a_server_request_duration, http_server_request_duration, http_client_request_duration, otelcol_ - zero; no alert on executor outcome failures, gen_ai error ratio or client error ratio either",
+    "(d) a2a-alerts.yml:34-38 A2APersistenceErrors: rate(...[5m]) > 0, for: 1m, severity critical - one failed write pages for about 5 minutes and resolves"
+   ],
+   "test": "deploy/observability/prometheus/tests/a2a-alerts.test.yml:173 A2AUnaryLatencyHigh case - does not exercise the coarse-bucket interpolation",
+   "summary": "All four sub-claims hold: a threshold inside the (1,5] bucket, alerts with no receiver, uncovered failure signals, and a single-error critical page.",
+   "remaining": "Add 2.5 (and similar) boundaries or alert on bucket ratios (rate of le=\"1\" vs count); ship Alertmanager (or say plainly that alerts have no receiver); add alerts for store retries, executor failures, GenAI failure ratio, client error ratio, Collector send failures; persistence alert on increase()[15m] with a runbook annotation. See NEW-c-1 for JSON-RPC caller errors in the ratio.",
+   "theme": "alerts",
+   "effort": "M",
+   "breaking": "behaviour - new bucket boundaries add le series; deviates from the semconv advisory buckets the code cites",
+   "probe": "promtool case reproducing (a): a classic histogram with 98 in le=1 and 2 in le=5 at 0.2 calls/s for 30 m; A2AUnaryLatencyHigh fires at eval 25m."
+  },
+  {
+   "id": "C-15",
+   "verdict": "confirmed",
+   "severity_now": "medium (unchanged)",
+   "evidence": [
+    "deploy/observability/otel-collector/config-compose.yaml and config.yaml - no service.telemetry section; prometheus/prometheus.yml:36-39 scrapes only Prometheus itself; nothing reads otelcol_* metrics",
+    "deploy/observability/otel-collector/config-compose.yaml:30-33 - memory_limiter limit_percentage 80 / spike 20; docker-compose.yml:26-35 the collector has no mem_limit (only docker-compose.prod.yml:26 sets 1g)",
+    "deploy/observability/otel-collector/config-compose.yaml:36-49 - exporters use the default in-memory queue; no file_storage extension, so a Collector restart loses queued data",
+    "book/src/deployment/observability/prometheus.md ('Through the Collector') says the limits are '80% and 20% of the container's memory limit' - true only with the prod overlay",
+    "health_check on 13133 (config-compose.yaml:17-19) is neither published nor used by a compose healthcheck"
+   ],
+   "test": "none",
+   "summary": "The Collector's own failures (refused, dropped, failed sends) are unobserved, and in the base compose memory_limiter has no container limit to take a share of.",
+   "remaining": "service.telemetry.metrics reader with a pull endpoint reachable on the compose network, a scrape job, alerts on otelcol_exporter_send_failed_*, otelcol_processor_refused_* / otelcol_receiver_refused_* and queue size; mem_limit in the base compose; file_storage for exporter queues; fix the book sentence.",
+   "theme": "otel-stack",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "docker compose -f deploy/observability/docker-compose.yml up -d otel-collector; docker inspect shows Memory 0 (no limit); the Collector's startup log line for memory_limiter shows a limit near 80% of host RAM (conjecture until seen); from the prometheus container, wget otel-collector:8888/metrics fails."
+  },
+  {
+   "id": "C-16",
+   "verdict": "needs_decision",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/otel/telemetry/prometheus.rs:59 host defaults to 'localhost', :38 port 9464 - both the spec's defaults for OTEL_EXPORTER_PROMETHEUS_HOST/PORT",
+    "crates/a2a-protocol-server/src/otel/telemetry/prometheus.rs:93-117 - one task per accepted connection, no connection cap, header_read_timeout only (no keep-alive idle timeout), plain HTTP, no auth",
+    "rg '\"/metrics\"' over the server outside prometheus.rs - no route on Server or A2aRouter",
+    "crates/a2a-protocol-sdk/Cargo.toml:31,61-63 - otel-prometheus off by default; deploy-agent built without it",
+    "book/src/deployment/observability/prometheus.md 'Scrape the agent, no collector' - documents localhost, 0.0.0.0, no auth and the feature"
+   ],
+   "test": "prometheus.rs unit tests cover GET/HEAD/405/404 on 127.0.0.1:0; nothing on limits",
+   "summary": "The default is the spec's and is documented; in Kubernetes the operator must set the host and rebuild with the feature, and the scrape port is a second, unauthenticated, uncapped listener.",
+   "remaining": "Choose whether /metrics can be mounted on the A2A server's own port; give the listener an idle timeout and a connection cap either way.",
+   "theme": "otel-prometheus",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "none",
+   "options": "(1) Leave it: spec default, documented. (2) Add an additive handler (e.g. Telemetry::metrics_service() or an axum route) so /metrics can sit on the A2A port behind its auth and connection limits; keep the separate listener for non-axum users; add idle timeout + cap. (3) Default the host to 0.0.0.0 when KUBERNETES_SERVICE_HOST is set - deviates from the spec and widens exposure silently. Recommendation: (2)."
+  },
+  {
+   "id": "C-17",
+   "verdict": "needs_decision",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-client/src/transport/websocket.rs:973-993 - warns on every call that carries any non-trace header; :994 the trace-header warning is once per connection",
+    "crates/a2a-protocol-client/src/transport/websocket.rs:2216-2267 warn_dropped_per_request_headers_warns_iff_headers_present - pins the per-call repeat on purpose ('A credential is a per-request fact: every call says so again')",
+    "crates/a2a-protocol-client/src/extensions.rs:50-66 + builder/transport_factory.rs:124-127 - with_extensions adds the SDK's own ExtensionsHeader interceptor, which puts A2A-Extensions in extra_headers, so a WebSocket client with extensions warns on every call with a message about credentials, although WebSocket sends extensions at connect time (websocket.rs:362-377). Read only; not run"
+   ],
+   "test": "websocket.rs:2216 - asserts the current per-call behaviour; it would have to change with any fix",
+   "summary": "The per-call WARN is real and deliberate; it also fires for the SDK's own non-credential A2A-Extensions header, where its advice is wrong.",
+   "remaining": "Decide the policy; at minimum exclude A2A-Extensions (delivered at connect) from the warning.",
+   "theme": "client-logging",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none",
+   "options": "(1) Rate-limit as counting.rs does (one line per 30 s with a held-back count). (2) Once per connection per distinct header-name set, plus a client counter. (3) Per call only for credential-bearing headers (Authorization, the card's apiKey names), never for A2A-Extensions. Recommendation: (3) combined with (1)."
+  },
+  {
+   "id": "C-18",
+   "verdict": "cannot_check",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "deploy/observability/grafana/provisioning/traces-and-logs.yml:19-23 - tracesToLogsV2 {datasourceUid a2a-loki, filterByTraceID true, time shifts}, no customQuery, no tags",
+    "deploy/observability/loki/loki.yaml:3-8,32-33 - OTLP ingestion with allow_structured_metadata: trace_id/span_id are structured metadata, not in the line",
+    "the reverse link (traces-and-logs.yml:36-41, derivedFields matcherType: label) is written for structured metadata",
+    "book walkthrough.md:114-121 and logs.md:131-134 claim the span-to-logs link works; rg of docs/handoff*.md, CHANGELOG.md, deploy/observability/README.md finds no recorded live check of it"
+   ],
+   "test": "none",
+   "summary": "Whether Grafana 13.2.4 turns filterByTraceID into a line filter (which cannot match structured metadata) or a metadata filter is Grafana's behaviour, not readable from this repo.",
+   "remaining": "Run the probe; if confirmed, set customQuery with a structured-metadata filter.",
+   "theme": "otel-stack",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "docker compose -f deploy/observability/docker-compose.yml up -d; run examples/hello-agent with OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 and send one SendMessage with the a2a CLI; Grafana http://localhost:3001 Explore -> Tempo -> open the trace -> 'Logs for this span'; Query inspector shows the LogQL. Confirmed if it is a '|= \"<traceId>\"' line filter returning 0 rows while {service_name=\"hello-agent\"} | trace_id=\"<traceId>\" returns rows."
+  },
+  {
+   "id": "C-19",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "deploy/observability/loki/loki.yaml:32-33 - limits_config has only allow_structured_metadata; no compactor retention, so retention is unbounded",
+    "deploy/observability/tempo/tempo.yaml:19 block_retention 24h; docker-compose.yml:42 --storage.tsdb.retention.time=7d with no retention.size",
+    "deploy/observability/docker-compose.yml:72-93 grafana has no data volume; grafana/provisioning/dashboards/a2a.yml:11 allowUiUpdates: true invites UI edits that are lost on recreate",
+    "deploy/observability/docker-compose.yml:27,38,52,63,73 images by tag, not digest (pin-freshness.yml does not cover them)",
+    "deploy/observability/docker-compose.yml:54 tempo user: \"0\"",
+    "deploy/observability/docker-compose.yml:48,59,69 publish 9090, 3200, 3100 on all interfaces; Prometheus has --web.enable-otlp-receiver (:41), so anyone on the LAN can write series; docker-compose.prod.yml:30-37 removes these ports; the base file says laptop stack"
+   ],
+   "test": "none",
+   "summary": "Every listed gap is present as reported; the prod overlay addresses only the published ports.",
+   "remaining": "Loki compactor + retention_period; Prometheus retention.size; a Grafana volume or allowUiUpdates false; digest pins; Tempo as non-root with a chowned volume; base ports bound to 127.0.0.1.",
+   "theme": "otel-stack",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "C-20",
+   "verdict": "not_a_defect",
+   "severity_now": "info as cited (residual: NEW-c-4, low)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/rpc_span/agent.rs:58 CONTENT_LIMIT = 64 KiB; :191-197 the 'input' recorded at :197 is the JSON value built from parts_json(&input.parts, &mut budget), shadowing the message - the report read input.to_string() as the raw message",
+    "crates/a2a-protocol-server/src/rpc_span/agent.rs:392-402 take() cuts text at the budget with a '...[truncated N bytes]' marker; :375-381 structured data over budget becomes {truncated, length}; raw bytes are never recorded (:366-372)",
+    "git show 8dc4331:crates/a2a-protocol-server/src/rpc_span/agent.rs - the same budget at the audited commit, so this was a misreading, not a later fix",
+    "true but upstream: opentelemetry_sdk 0.33.1 reads no OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT / OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT (rg)"
+   ],
+   "test": "crates/a2a-protocol-server/src/rpc_span/agent.rs tests (around :440-473) assert the truncation marker and the truncated data part",
+   "summary": "Opt-in content capture is bounded at 64 KiB of text and data per attribute; the cited unbounded input.to_string() is the budgeted JSON. The bound leaks through per-part overhead, filed as NEW-c-4.",
+   "remaining": "",
+   "theme": "otel-genai",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "none"
+  },
+  {
+   "id": "C-21",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "~/.cargo/registry/src/*/opentelemetry-otlp-0.33.1/src/metric.rs:125-147,153,164 - the exporter reads OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE at build; crates/a2a-protocol-server/src/otel/telemetry/exporters.rs:308-345 sets no temporality, so the variable applies",
+    "deploy/observability/docker-compose.yml:39-42 - Prometheus without --enable-feature=otlp-deltatocumulative (or native delta ingestion); otel-collector/config-compose.yaml:28-34 has no deltatocumulative processor",
+    "book/src/deployment/observability/environment.md:47 presents delta as 'for a backend that wants it' with no warning; :53-55 says delta was run against a collector, not against the shipped Prometheus",
+    "Conjecture: Prometheus 3.x's OTLP receiver drops delta sums and histograms without the flag"
+   ],
+   "test": "none",
+   "summary": "Setting the delta preference is honoured by the exporter and nothing in the shipped stack converts it, so the stack's dashboards would go empty; the docs do not warn.",
+   "remaining": "A warning in environment.md and prometheus.md, or a deltatocumulative processor in the compose Collector's metrics pipeline (or the Prometheus flag).",
+   "theme": "otel-stack",
+   "effort": "XS",
+   "breaking": "none",
+   "probe": "docker compose -f deploy/observability/docker-compose.yml up -d; run hello-agent with OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta OTEL_METRIC_EXPORT_INTERVAL=5000 and send calls; after 30 s query rpc_server_call_duration_seconds_count in Prometheus: absent (and Prometheus/Collector logs a rejection) confirms; present with correct rates refutes."
+  },
+  {
+   "id": "C-22",
+   "verdict": "needs_decision",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "git ls-files deploy/ - observability only; no Chart.yaml, kustomization, ServiceMonitor, PodMonitor or PrometheusRule anywhere in the tree",
+    "examples/deploy-agent/deployment.yaml:111-123 - partial: a commented OTEL_* block with service.instance.id=$(POD_NAME), k8s.pod.name and k8s.namespace.name"
+   ],
+   "test": "none",
+   "summary": "Kubernetes users get a Deployment with commented OTEL env but no PrometheusRule, dashboards as ConfigMaps, scrape objects or Collector values.",
+   "remaining": "Decide scope.",
+   "theme": "k8s",
+   "effort": "M",
+   "breaking": "none",
+   "probe": "none",
+   "options": "(1) Generate a PrometheusRule from rules/*.yml and Grafana dashboard ConfigMaps (sidecar label) from dashboards/*.json, with a CI check that they match the sources. (2) Document how to load the existing files into kube-prometheus-stack and the Grafana Operator only. (3) A Helm chart for the Collector and stack - ongoing maintenance of a second deployment surface. Recommendation: (1), plus uncommenting the deploy-agent OTEL block behind a clear 'set the endpoint' note."
+  },
+  {
+   "id": "C-23",
+   "verdict": "confirmed",
+   "severity_now": "low (unchanged)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/store/traced.rs:136-141 - opentelemetry::global::meter(..).f64_histogram(..).with_boundaries(DURATION_BUCKETS.to_vec()).build() on every DB operation",
+    "crates/a2a-protocol-server/src/rpc_span/card.rs:280-285 and webhook.rs:218-223 - the same per card request and per push attempt",
+    "crates/a2a-protocol-server/src/rpc_span/tool_metrics.rs:205-208, 240-245, 253-255, 348-351, 366-369 - per model turn, tool call and run",
+    "crates/a2a-protocol-client/src/call_metric.rs:39-70 - the client already caches (provider, histogram) pairs, the pattern to reuse"
+   ],
+   "test": "none",
+   "summary": "Instruments are rebuilt on every measurement (provider lookup, scope lookup, instrument dedupe and a Vec clone each time); magnitude not measured.",
+   "remaining": "Cache instruments per provider as CallMetric does; optionally a criterion bench of a TracedTaskStore op with and without.",
+   "theme": "otel-perf",
+   "effort": "S",
+   "breaking": "none",
+   "probe": "none (an optional microbenchmark would size it)"
+  }
+ ],
+ "new_findings": [
+  {
+   "id": "NEW-c-1",
+   "severity": "medium",
+   "where": "deploy/observability/prometheus/rules/a2a-recording.yml:27-35; crates/a2a-protocol-server/src/rpc_span/names.rs:61-66",
+   "finding": "The server error ratio and A2AServerErrorRatioHigh count every JSON-RPC error code, including caller mistakes (-32001 TaskNotFound, -32602 invalid params, -32601 method not found, version not supported), because the JSON-RPC conventions make every code an error; the same traffic over HTTP+JSON (404) or gRPC (NOT_FOUND) is not counted. The instrumentation follows semconv; the alert built on it pages on binding choice.",
+   "scenario": "A client polls GetTask for tasks the reaper or retention removed, or a buggy client sends bad params, over JSON-RPC: 5% of calls for 10 minutes pages the on-call although the server is healthy. book walkthrough.md:102-104 shows exactly this firing from deliberate task-not-found traffic.",
+   "read_only": true,
+   "theme": "alerts"
+  },
+  {
+   "id": "NEW-c-2",
+   "severity": "low",
+   "where": "book/src/deployment/observability/logs.md:42,63-64; book/src/deployment/observability/walkthrough.md:102",
+   "finding": "logs.md says spans are not filtered by level and that with install_subscriber 'every span is exported'; since the C-01 fix spans below TelemetryBuilder::with_span_level (default INFO, telemetry/mod.rs:191-205) are not exported, and with_span_level appears nowhere in the book (rg). walkthrough.md says Prometheus 'lists the eight alerts'; a2a-alerts.yml has nine (A2AAgentInstancesLost added with C-04).",
+   "scenario": "An operator who needs DEBUG spans for an incident reads the book, does not find with_span_level, and concludes they are already exported.",
+   "read_only": true,
+   "theme": "docs"
+  },
+  {
+   "id": "NEW-c-3",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/otel/telemetry/exporters.rs:335 (builder.build()); opentelemetry-otlp-0.33.1/src/metric.rs:133-143 -> exporter/mod.rs:177-191",
+   "finding": "Values the upstream crates warn about and ignore (an invalid OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE, an unknown OTEL_TRACES_SAMPLER) are reported through otel_warn! while Telemetry::build constructs the exporters, before install_subscriber has installed any subscriber, so the warning is dropped. environment.md:13-16 admits this for the sampler only.",
+   "scenario": "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=Delta-typo or OTEL_TRACES_SAMPLER=traceidratio-typo: the setting is silently replaced by the default and nothing is printed.",
+   "read_only": true,
+   "theme": "otel-config"
+  },
+  {
+   "id": "NEW-c-4",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/rpc_span/agent.rs:259-269, 353-391",
+   "finding": "The 64 KiB content budget is charged only for text, URIs and data: mime_type and filename are not charged (:363, :370-371), every part still adds a JSON object after the budget is spent (take() returns a marker per part), and OutputRecorder extends its Vec for every output event until the turn ends. Neither the attribute nor the memory held is bounded by CONTENT_LIMIT.",
+   "scenario": "With with_span_content_capture(true), an agent streaming 100k append ArtifactUpdate chunks holds 100k serde_json Values for the turn and records a multi-MB gen_ai.output.messages; over OTLP/gRPC that can exceed the Collector's 4 MiB default receive size and lose the whole batch (conjecture). Opt-in only.",
+   "read_only": true,
+   "theme": "otel-genai"
+  },
+  {
+   "id": "NEW-c-5",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/otel/telemetry/config.rs:139-141 (and :87-89 for OTEL_EXPORTER_OTLP_INSECURE)",
+   "finding": "OTEL_SDK_DISABLED accepts only case-insensitive 'true'; '1', 'yes' or 'on' are silently false. The spec's boolean rule says any value other than true, false or empty SHOULD log a warning; none is pushed to notices.",
+   "scenario": "An operator sets OTEL_SDK_DISABLED=1 to rule telemetry out during an incident; export continues and nothing says the variable was not understood.",
+   "read_only": true,
+   "theme": "otel-config"
+  }
+ ]
+}

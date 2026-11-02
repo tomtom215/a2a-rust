@@ -134,14 +134,11 @@ async fn handler_with(
     let id = TaskId::new("t-gap");
     handler
         .task_store
-        .save(&Task {
-            id: id.clone(),
-            context_id: ContextId::new("ctx-1"),
-            status: TaskStatus::new(TaskState::Working),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        })
+        .save(&Task::new(
+            id.clone(),
+            ContextId::new("ctx-1"),
+            TaskStatus::new(TaskState::Working),
+        ))
         .await
         .expect("save");
     let (writer, reader) = handler.event_queue_manager.get_or_create(&id).await;
@@ -154,12 +151,11 @@ async fn handler_with(
 async fn write(writer: &crate::streaming::InMemoryQueueWriter, id: &TaskId, count: u64) {
     for _ in 0..count {
         writer
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: id.clone(),
-                context_id: ContextId::new("ctx-1"),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            }))
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                id.clone(),
+                ContextId::new("ctx-1"),
+                TaskStatus::new(TaskState::Working),
+            )))
             .await
             .expect("write");
     }

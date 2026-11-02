@@ -30,30 +30,27 @@ struct HandWritten;
 agent_executor!(HandWritten, |_ctx, queue| async {
     // Ids left empty: the server fills them.
     queue
-        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new(""),
-            context_id: ContextId::new(""),
-            status: TaskStatus::new(TaskState::Working),
-            metadata: None,
-        }))
+        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new(""),
+            ContextId::new(""),
+            TaskStatus::new(TaskState::Working),
+        )))
         .await?;
     // Another task's id: refused, and the executor is told why.
     let foreign = queue
-        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("someone-elses-task"),
-            context_id: ContextId::new(""),
-            status: TaskStatus::new(TaskState::Working),
-            metadata: None,
-        }))
+        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new("someone-elses-task"),
+            ContextId::new(""),
+            TaskStatus::new(TaskState::Working),
+        )))
         .await;
     *REFUSED.lock().await = foreign.err().map(|e| e.message);
     queue
-        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new(""),
-            context_id: ContextId::new(""),
-            status: TaskStatus::new(TaskState::Completed),
-            metadata: None,
-        }))
+        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new(""),
+            ContextId::new(""),
+            TaskStatus::new(TaskState::Completed),
+        )))
         .await
 });
 
@@ -106,21 +103,14 @@ async fn empty_ids_are_filled_and_foreign_ones_refused() {
 static ARTIFACT_REFUSED: Mutex<Vec<String>> = Mutex::const_new(Vec::new());
 
 fn artifact_update(task: &str, context: &str, id: &str) -> StreamResponse {
-    StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-        task_id: TaskId::new(task),
-        context_id: ContextId::new(context),
-        artifact: Artifact {
-            id: ArtifactId::new(id),
-            name: None,
-            description: None,
-            parts: vec![Part::text(id)],
-            metadata: None,
-            extensions: None,
-        },
-        append: None,
-        last_chunk: Some(true),
-        metadata: None,
-    })
+    StreamResponse::ArtifactUpdate(
+        TaskArtifactUpdateEvent::new(
+            TaskId::new(task),
+            ContextId::new(context),
+            Artifact::new(ArtifactId::new(id), vec![Part::text(id)]),
+        )
+        .with_last_chunk(true),
+    )
 }
 
 /// The same for `TaskArtifactUpdateEvent`, whose ids are bound by their own

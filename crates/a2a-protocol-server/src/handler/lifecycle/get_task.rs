@@ -107,14 +107,11 @@ mod tests {
     agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
 
     fn make_completed_task(id: &str) -> Task {
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx-1"),
-            status: TaskStatus::new(TaskState::Completed),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(
+            TaskId::new(id),
+            ContextId::new("ctx-1"),
+            TaskStatus::new(TaskState::Completed),
+        )
     }
 
     #[tokio::test]
@@ -181,28 +178,26 @@ mod tests {
     fn make_task_with_history(id: &str, num_messages: usize) -> Task {
         use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
         let history: Vec<Message> = (0..num_messages)
-            .map(|i| Message {
-                id: MessageId::new(format!("msg-{i}")),
-                role: MessageRole::User,
-                parts: vec![Part::text(format!("message {i}"))],
-                context_id: None,
-                task_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
+            .map(|i| {
+                Message::new(
+                    MessageId::new(format!("msg-{i}")),
+                    MessageRole::User,
+                    vec![Part::text(format!("message {i}"))],
+                )
             })
             .collect();
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx-hist"),
-            status: TaskStatus::new(TaskState::Completed),
-            history: if history.is_empty() {
+        {
+            let mut built = Task::new(
+                TaskId::new(id),
+                ContextId::new("ctx-hist"),
+                TaskStatus::new(TaskState::Completed),
+            );
+            built.history = if history.is_empty() {
                 None
             } else {
                 Some(history)
-            },
-            artifacts: None,
-            metadata: None,
+            };
+            built
         }
     }
 

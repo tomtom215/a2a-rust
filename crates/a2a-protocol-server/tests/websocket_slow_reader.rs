@@ -34,7 +34,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskSt
 use a2a_protocol_types::jsonrpc::JsonRpcRequest;
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::MessageSendParams;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 /// The message id of the request the stalled peer sends.
 const FLOOD_MESSAGE_ID: &str = "msg-flood";
@@ -64,17 +64,18 @@ impl AgentExecutor for FloodExecutor {
                 let mut first = true;
                 while !ctx.cancellation_token.is_cancelled() {
                     queue
-                        .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                            task_id: ctx.task_id.clone(),
-                            context_id: ContextId::new(ctx.context_id.clone()),
-                            artifact: a2a_protocol_types::artifact::Artifact::new(
-                                "flood",
-                                vec![Part::text(text.clone())],
-                            ),
-                            append: Some(!first),
-                            last_chunk: Some(false),
-                            metadata: None,
-                        }))
+                        .write(StreamResponse::ArtifactUpdate(
+                            TaskArtifactUpdateEvent::new(
+                                ctx.task_id.clone(),
+                                ctx.context_id.clone(),
+                                a2a_protocol_types::artifact::Artifact::new(
+                                    "flood",
+                                    vec![Part::text(text.clone())],
+                                ),
+                            )
+                            .with_append(!first)
+                            .with_last_chunk(false),
+                        ))
                         .await?;
                     first = false;
                     // The test runtime has one thread, shared with the
@@ -84,12 +85,11 @@ impl AgentExecutor for FloodExecutor {
                 return Ok(());
             }
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -99,16 +99,11 @@ impl AgentExecutor for FloodExecutor {
 fn request(id: &str, method: &str) -> WsMessage {
     let params = MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(format!("msg-{id}")),
-            role: MessageRole::User,
-            parts: vec![Part::text("go")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(format!("msg-{id}")),
+            MessageRole::User,
+            vec![Part::text("go")],
+        ),
         configuration: None,
         metadata: None,
     };

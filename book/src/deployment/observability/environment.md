@@ -8,14 +8,22 @@ it, and most variables have a builder method that sets the same thing in code.
 This page is the one table of both: what each variable does, its per-signal
 form, the method that matches it, which of the two wins, and the default.
 
-A value for an exporter, a protocol, a compression, a timeout, a certificate or
-a header that it cannot act on is an error naming the variable, and `build`
-fails. A few are reported and skipped instead (an `OTEL_PROPAGATORS` name it
-does not have, a proxy kind it does not speak), and the OpenTelemetry crates
-fall back on their own for others (an unrecognised `OTEL_TRACES_SAMPLER`
-becomes `parentbased_always_on`, with a warning printed before any subscriber
-exists, so it is usually not seen). An empty value is read as unset, as the
-specification asks.
+A value it cannot use is reported, not fatal, as the OpenTelemetry
+specification asks (until 2026-11-01 these stopped the process, and a fleet that
+sets one `OTEL_*` preset for every SDK it runs lost every agent to a name only
+one of them lacked). An exporter name it does not have, a protocol, a
+compression, a timeout or a Prometheus port it cannot read, an
+`OTEL_PROPAGATORS` name it does not have and a proxy kind it does not speak are
+each noted in `Telemetry::notices`, which `install_subscriber` prints at
+`WARN`, with what was used instead; the OpenTelemetry crates fall back on their
+own for others (an unrecognised `OTEL_TRACES_SAMPLER` becomes
+`parentbased_always_on`, with a warning printed before any subscriber exists, so
+it is usually not seen). What stays an error naming the variable, and `build`
+fails, is what it cannot do without: an OTLP/HTTP endpoint with no scheme or
+that is not a URL, a certificate or key file that cannot be read or is not PEM,
+a client certificate without its key, a header name that is not one, a
+Prometheus address that cannot be listened on. An empty value is read as unset,
+as the specification asks.
 
 ## The matrix
 
@@ -26,17 +34,17 @@ signal's own form wins over the general one.
 | Variable | Per signal | Builder method | Which wins | Default | Effect |
 |---|---|---|---|---|---|
 | `OTEL_SDK_DISABLED` | — | — | — | unset | `true` (in any case) builds no providers and no exporters, the layer records nothing; `install_subscriber` still installs the layer that prints warnings and errors to standard error, because the variable turns off the SDK and not the process's own diagnostics (until 2026-10-31 it installed nothing); the W3C propagators are still installed. `1` does not disable |
-| `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` | each is one signal's | `with_traces`, `with_metrics`, `with_logs` | **The variable** | `otlp` (metrics and logs off with `with_langfuse`) | A comma list: `otlp`, `console` (print to standard output) and, for metrics with the `otel-prometheus` feature, `prometheus` (serve `/metrics`); `none` anywhere turns the signal off. Any other value (`zipkin`, `jaeger`, …) is an error naming it |
+| `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` | each is one signal's | `with_traces`, `with_metrics`, `with_logs` | **The variable** | `otlp` (metrics and logs off with `with_langfuse`) | A comma list: `otlp`, `console` (print to standard output) and, for metrics with the `otel-prometheus` feature, `prometheus` (serve `/metrics`); `none` anywhere turns the signal off. Any other name (`zipkin`, `jaeger`, …) is dropped with a notice naming it; with none left, the variable counts as unset and the default applies |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | yes | `with_otlp_endpoint` | **The code** | `http://localhost:4318` (HTTP), `http://localhost:4317` (gRPC) | The collector. OTLP/HTTP appends `/v1/traces`, `/v1/metrics` or `/v1/logs` to the general variable and to the code's URL; a per-signal variable is used as given. Over OTLP/HTTP it needs its scheme |
-| `OTEL_EXPORTER_OTLP_PROTOCOL` | yes | `with_otlp_protocol` | **The code** | `http/protobuf` | `grpc`, `http/protobuf` or, with the `otlp-json` feature, `http/json`; without it `http/json` is an error naming the feature |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | yes | `with_otlp_protocol` | **The code** | `http/protobuf` | `grpc`, `http/protobuf` or, with the `otlp-json` feature, `http/json` (in any case); anything else, and `http/json` without the feature, is noted and `http/protobuf` used |
 | `OTEL_EXPORTER_OTLP_INSECURE` | yes | — | — | `false` | Only for an OTLP/gRPC endpoint written without a scheme: `true` reads it as `http://`, otherwise `https://` |
 | `OTEL_EXPORTER_OTLP_HEADERS` | yes | `with_otlp_header` | **The variable**, for a header of the same name; headers with different names are all sent | none | Sent with every export |
-| `OTEL_EXPORTER_OTLP_TIMEOUT` | yes | — | — | 10 s | Milliseconds, per export |
-| `OTEL_EXPORTER_OTLP_COMPRESSION` | yes | `with_compression` | **The code**, but code cannot turn off what the variable turned on | none | `gzip` or `none`; `zstd` (it needs a C library) and anything else is an error naming the variable |
+| `OTEL_EXPORTER_OTLP_TIMEOUT` | yes | — | — | 10 s | Milliseconds, per export; a value that is not a number is noted and 10 s used |
+| `OTEL_EXPORTER_OTLP_COMPRESSION` | yes | `with_compression` | **The code**, but code cannot turn off what the variable turned on | none | `gzip` or `none`; `zstd` (it needs a C library) and anything else is noted and the export is not compressed |
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` | yes | `with_ca_certificate_pem` | **Both**: the code's CAs are added to the file's | Mozilla roots | A PEM file of CA certificates trusted alongside the bundled Mozilla roots |
 | `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY` | yes | `with_client_certificate_pem` | **The variables** | none | PEM files of the client certificate chain and its key, for a collector that requires mutual TLS; one without the other is an error |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` (either case) | — | `with_proxy`, `without_proxy` | **The code** | direct | Export goes through an `http://` proxy, as curl reads them; see [TLS, proxies and compression](./tls-proxies.md#proxies) |
-| `OTEL_EXPORTER_PROMETHEUS_HOST`, `OTEL_EXPORTER_PROMETHEUS_PORT` | — | — | — | `localhost`, 9464 | Where `prometheus` serves `/metrics`; port `0` lets the operating system choose (`Telemetry::prometheus_addr` returns it) |
+| `OTEL_EXPORTER_PROMETHEUS_HOST`, `OTEL_EXPORTER_PROMETHEUS_PORT` | — | — | — | `localhost`, 9464 | Where `prometheus` serves `/metrics`; port `0` lets the operating system choose (`Telemetry::prometheus_addr` returns it); a port that is not a number is noted and 9464 used |
 | `OTEL_PROPAGATORS` | — | — | — | `tracecontext,baggage` | `tracecontext`, `baggage`, `none`, in a list; another name (`b3`, `jaeger`, …) is reported and skipped (`Telemetry::notices`), not an error |
 | `OTEL_SERVICE_NAME` | — | `with_default_service_name` | **The variable** | `unknown_service` | `service.name`; see [Resource attributes](./resource.md) |
 | `OTEL_RESOURCE_ATTRIBUTES` | — | — | — | — | Resource attributes, `key=value,…`. `service.name` here also wins over `with_default_service_name`. `,` and `=` inside a value are written percent-encoded (`prod%2Cwest` is `prod,west`) and decoded; an entry that is not valid percent-encoding is kept as written and reported at startup |

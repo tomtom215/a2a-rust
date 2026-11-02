@@ -39,12 +39,11 @@ async fn wait_for(what: &str, mut condition: impl FnMut() -> bool) {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn status_event() -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("task-1"),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("task-1"),
+        ContextId::new("ctx"),
+        TaskStatus::new(TaskState::Working),
+    ))
 }
 
 fn base_config(url: &str) -> TaskPushNotificationConfig {

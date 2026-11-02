@@ -39,16 +39,11 @@ mod tests;
 pub fn make_send_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![Part::text(text)],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
+            vec![Part::text(text)],
+        ),
         configuration: None,
         metadata: None,
     }
@@ -284,14 +279,10 @@ pub async fn sweep(
     let mut created_config_id: Option<String> = None;
 
     match client
-        .set_push_config(TaskPushNotificationConfig {
-            tenant: None,
-            id: None,
-            task_id: Some(push_task_id.clone()),
-            url: webhook_url.to_owned(),
-            token: Some("echo-demo-token".into()),
-            authentication: None,
-        })
+        .set_push_config(
+            TaskPushNotificationConfig::new(push_task_id.clone(), webhook_url.to_owned())
+                .with_token("echo-demo-token"),
+        )
         .await
     {
         Ok(cfg) => {

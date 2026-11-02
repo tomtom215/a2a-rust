@@ -358,7 +358,14 @@ Removing a task is something a controller has to be able to show (GDPR Art.
 - `purge_expired` and `erase_caller` are calls you make on a concrete store,
   outside any request, so nothing wraps them. Report what they returned:
 
-  ```rust,ignore
+  ```rust,no_run
+  # use a2a_protocol_server::audit::{AuditLog, Erased};
+  # use a2a_protocol_server::store::{RetentionPolicy, TenantAwareSqliteTaskStore};
+  # async fn f(
+  #     store: &TenantAwareSqliteTaskStore,
+  #     policy: &RetentionPolicy,
+  #     log: &AuditLog,
+  # ) -> Result<(), Box<dyn std::error::Error>> {
   let swept = store.purge_expired(&policy).await?;
   log.record_erasure("acme", "operator:dpo", Erased::Expired { tasks: swept.tasks_deleted }).await?;
 
@@ -368,6 +375,8 @@ Removing a task is something a controller has to be able to show (GDPR Art.
       partitions: gone.partitions,
       rows: gone.rows,
   }).await?;
+  # Ok(())
+  # }
   ```
 
   The SQL stores' `erase_caller` returns a `Result`, as the `?` shows; the

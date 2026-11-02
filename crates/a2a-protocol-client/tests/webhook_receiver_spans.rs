@@ -76,12 +76,11 @@ fn headers(token: &str, authorization: &str, traceparent: bool) -> hyper::Header
 }
 
 fn body() -> Vec<u8> {
-    serde_json::to_vec(&StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new(TASK),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    }))
+    serde_json::to_vec(&StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new(TASK),
+        ContextId::new("ctx"),
+        TaskStatus::new(TaskState::Working),
+    )))
     .unwrap()
 }
 

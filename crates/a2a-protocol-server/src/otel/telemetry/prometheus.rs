@@ -31,7 +31,7 @@ use opentelemetry_prometheus::PrometheusExporter;
 use prometheus::{Registry, TextEncoder};
 
 use super::TelemetryError;
-use super::config::Env;
+use super::config::{Env, Notes};
 use super::runtime::ExportRuntime;
 
 /// The specification's default port for the Prometheus exporter.
@@ -46,24 +46,41 @@ pub(super) struct Started {
     pub(super) addr: SocketAddr,
 }
 
+/// `OTEL_EXPORTER_PROMETHEUS_PORT`: the default when unset, and when it is not
+/// a port number (noted).
+fn port(env: &Env, notes: &Notes) -> u16 {
+    const PORT: &str = "OTEL_EXPORTER_PROMETHEUS_PORT";
+    let Some(value) = env(PORT) else {
+        return DEFAULT_PORT;
+    };
+    value.trim().parse::<u16>().unwrap_or_else(|_| {
+        notes.ignored(
+            PORT,
+            &value,
+            "is not a port number",
+            &format!("{DEFAULT_PORT} is used"),
+        );
+        DEFAULT_PORT
+    })
+}
+
 /// Binds `OTEL_EXPORTER_PROMETHEUS_HOST`:`_PORT` and starts serving.
+///
+/// A port that is not a number is noted and the default used (audit C-08).
 ///
 /// # Errors
 ///
-/// A port that is not a number, an address that cannot be listened on (the
-/// port in use, say), or an exporter that cannot be built — each naming what
-/// to change.
-pub(super) fn start(env: &Env, runtime: &ExportRuntime) -> Result<Started, TelemetryError> {
+/// An address that cannot be listened on (the port in use, say) or an exporter
+/// that cannot be built, naming what to change.
+pub(super) fn start(
+    env: &Env,
+    runtime: &ExportRuntime,
+    notes: &Notes,
+) -> Result<Started, TelemetryError> {
     const HOST: &str = "OTEL_EXPORTER_PROMETHEUS_HOST";
     const PORT: &str = "OTEL_EXPORTER_PROMETHEUS_PORT";
     let host = env(HOST).unwrap_or_else(|| "localhost".to_owned());
-    let port = match env(PORT) {
-        None => DEFAULT_PORT,
-        Some(value) => value
-            .trim()
-            .parse::<u16>()
-            .map_err(|_| TelemetryError::config(PORT, &value, "expected a port number"))?,
-    };
+    let port = port(env, notes);
     // Bound here, not in the serving task, so a port in use fails the build
     // — where it is seen — and not the first scrape.
     let listener = TcpListener::bind((host.as_str(), port)).map_err(|e| {
@@ -312,23 +329,36 @@ mod tests {
         );
     }
 
+    /// A port that is not a number is noted and the default used, as the
+    /// specification has an SDK do with a value it cannot read (audit C-08).
+    /// The default is read directly: binding it would collide with another
+    /// process on a machine that already serves a scrape there.
     #[test]
-    fn a_port_that_is_not_a_number_is_refused() {
-        let err = Telemetry::builder()
-            .install_globally(false)
-            .with_env(env(&[
-                ("OTEL_TRACES_EXPORTER", "none"),
-                ("OTEL_LOGS_EXPORTER", "none"),
-                ("OTEL_METRICS_EXPORTER", "prometheus"),
-                ("OTEL_EXPORTER_PROMETHEUS_PORT", "nine"),
-            ]))
-            .build()
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("OTEL_EXPORTER_PROMETHEUS_PORT") && err.contains("nine"),
-            "{err}"
+    fn a_port_that_is_not_a_number_is_noted_and_the_default_used() {
+        let notes = Notes::default();
+        for bad in ["nine", "65536", "-1", "9464.5"] {
+            let got = port(&env(&[("OTEL_EXPORTER_PROMETHEUS_PORT", bad)]), &notes);
+            assert_eq!(got, 9464, "{bad:?}");
+        }
+        let lines = notes.take();
+        assert_eq!(lines.len(), 4, "{lines:?}");
+        assert!(lines[0].contains("OTEL_EXPORTER_PROMETHEUS_PORT") && lines[0].contains("nine"));
+        assert!(lines[0].contains("9464 is used"), "{lines:?}");
+    }
+
+    #[test]
+    fn a_port_number_is_read_with_spaces_and_unset_is_the_default() {
+        let notes = Notes::default();
+        assert_eq!(
+            port(&env(&[("OTEL_EXPORTER_PROMETHEUS_PORT", " 1234 ")]), &notes),
+            1234
         );
+        assert_eq!(
+            port(&env(&[("OTEL_EXPORTER_PROMETHEUS_PORT", "0")]), &notes),
+            0
+        );
+        assert_eq!(port(&env(&[]), &notes), 9464);
+        assert_eq!(notes.take(), Vec::<String>::new());
     }
 
     /// `otlp,prometheus` is both: the export runtime serves the scrape and

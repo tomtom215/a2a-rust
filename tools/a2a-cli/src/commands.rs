@@ -13,8 +13,9 @@
 
 use std::io::Write;
 
-use a2a_protocol_client::discovery::fetch_card_from_url;
-use a2a_protocol_client::resolve_agent_card;
+use a2a_protocol_client::discovery::{
+    fetch_card_from_url_with_options, resolve_agent_card_with_options,
+};
 use a2a_protocol_types::params::SendMessageConfiguration;
 use a2a_protocol_types::{
     ContextId, ListTasksParams, Message, MessageId, MessageRole, MessageSendParams, Part,
@@ -28,8 +29,9 @@ use crate::error::CliError;
 
 /// Writes `value` to stdout as pretty-printed JSON with a trailing newline.
 pub(crate) fn print_pretty<T: Serialize>(value: &T) -> Result<(), CliError> {
+    let json = crate::terminal::json_safe(&serde_json::to_string_pretty(value)?);
     let mut out = std::io::stdout().lock();
-    serde_json::to_writer_pretty(&mut out, value)?;
+    out.write_all(json.as_bytes())?;
     out.write_all(b"\n")?;
     Ok(())
 }
@@ -37,19 +39,24 @@ pub(crate) fn print_pretty<T: Serialize>(value: &T) -> Result<(), CliError> {
 /// Writes `value` to stdout as one JSON line and flushes, so a reader on the
 /// other end of a pipe sees each event as it arrives rather than at exit.
 fn print_line<T: Serialize>(value: &T) -> Result<(), CliError> {
+    let json = crate::terminal::json_safe(&serde_json::to_string(value)?);
     let mut out = std::io::stdout().lock();
-    serde_json::to_writer(&mut out, value)?;
+    out.write_all(json.as_bytes())?;
     out.write_all(b"\n")?;
     out.flush()?;
     Ok(())
 }
 
 /// `a2a card <url>`
-pub async fn card(url: &str) -> Result<(), CliError> {
+///
+/// Sends `--header` to the URL given, which is the host the caller named, and
+/// is bounded by `--timeout`, as discovery is for every other command.
+pub async fn card(opts: &GlobalOpts, url: &str) -> Result<(), CliError> {
+    let options = crate::connect::fetch_options(opts, true);
     let card = if url.ends_with("agent-card.json") {
-        fetch_card_from_url(url).await?
+        fetch_card_from_url_with_options(url, &options).await?
     } else {
-        resolve_agent_card(url).await?
+        resolve_agent_card_with_options(url, &options).await?
     };
     print_pretty(&card)
 }
@@ -59,15 +66,15 @@ pub async fn card(url: &str) -> Result<(), CliError> {
 fn send_params(args: &SendArgs) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![Part::text(&args.text)],
-            task_id: args.task_id.clone().map(TaskId::new),
-            context_id: args.context_id.clone().map(ContextId::new),
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
+        message: {
+            let mut built = Message::new(
+                MessageId::new(uuid::Uuid::new_v4().to_string()),
+                MessageRole::User,
+                vec![Part::text(&args.text)],
+            );
+            built.task_id = args.task_id.clone().map(TaskId::new);
+            built.context_id = args.context_id.clone().map(ContextId::new);
+            built
         },
         configuration: args.no_wait.then(|| SendMessageConfiguration {
             return_immediately: Some(true),
@@ -224,12 +231,11 @@ mod tests {
     }
 
     fn status_event(state: TaskState) -> StreamResponse {
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
-            status: TaskStatus::new(state),
-            metadata: None,
-        })
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new("t"),
+            ContextId::new("c"),
+            TaskStatus::new(state),
+        ))
     }
 
     #[test]
@@ -252,13 +258,12 @@ mod tests {
 
     #[test]
     fn a_task_event_is_terminal_only_when_its_state_is() {
-        let task = |state| Task {
-            id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
-            status: TaskStatus::new(state),
-            history: None,
-            artifacts: None,
-            metadata: None,
+        let task = |state| {
+            Task::new(
+                TaskId::new("t"),
+                ContextId::new("c"),
+                TaskStatus::new(state),
+            )
         };
         assert!(!is_terminal(&StreamResponse::Task(task(
             TaskState::Submitted

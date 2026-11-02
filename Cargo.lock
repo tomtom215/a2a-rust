@@ -54,6 +54,9 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "rcgen",
+ "rustls",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "tokio",
@@ -115,6 +118,7 @@ dependencies = [
  "serde",
  "serde_json",
  "socket2",
+ "subtle",
  "tokio",
  "tokio-rustls",
  "tokio-stream",
@@ -206,6 +210,7 @@ dependencies = [
  "serde_path_to_error",
  "sha2 0.11.1",
  "sqlx",
+ "subtle",
  "tokio",
  "tokio-rustls",
  "tokio-stream",
@@ -3067,9 +3072,9 @@ checksum = "263a3f48f01e7309e857138bd47f785585b4a005e8e56c6d2824ce91195999c3"
 
 [[package]]
 name = "pulldown-cmark"
-version = "0.13.5"
+version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "278e9268c93b9e498a2da46c34d90ba93a3255eb99009646398f34bc73ab36eb"
+checksum = "3db2be46835f013dd3f4fa7f5f7402c537787b54ebb6fe2b94bbdd7e2669bb7b"
 dependencies = [
  "bitflags 2.13.2",
  "memchr",

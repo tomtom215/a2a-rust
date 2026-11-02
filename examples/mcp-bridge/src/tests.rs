@@ -51,26 +51,21 @@ fn card_with(url: &str, skills: Vec<AgentSkill>) -> AgentCard {
 }
 
 fn task_in(state: TaskState, artifact_text: Option<&str>, note: Option<&str>) -> Task {
-    Task {
-        id: TaskId::new("t-1"),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus {
-            state,
-            message: note.map(|text| Message {
-                id: MessageId::new("m-note"),
-                role: MessageRole::Agent,
-                parts: vec![Part::text(text)],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            }),
-            timestamp: None,
-        },
-        history: None,
-        artifacts: artifact_text.map(|text| vec![Artifact::new("out", vec![Part::text(text)])]),
-        metadata: None,
+    {
+        let mut built = Task::new(TaskId::new("t-1"), ContextId::new("ctx-1"), {
+            let mut built = TaskStatus::new(state);
+            built.message = note.map(|text| {
+                Message::new(
+                    MessageId::new("m-note"),
+                    MessageRole::Agent,
+                    vec![Part::text(text)],
+                )
+            });
+            built
+        });
+        built.artifacts =
+            artifact_text.map(|text| vec![Artifact::new("out", vec![Part::text(text)])]);
+        built
     }
 }
 
@@ -133,9 +128,17 @@ fn a_published_tool_carries_the_agents_own_description() {
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0].name, "report");
     let description = tools[0].description.as_deref().unwrap_or_default();
-    assert!(description.starts_with("does report"), "{description}");
-    // Plus the one thing the skill cannot know about itself.
-    assert!(description.contains("remote agent"), "{description}");
+    // The agent's words, quoted and attributed to it (audit SEC-16) ...
+    assert!(
+        description
+            .starts_with("Remote agent 'Test Agent' describes this skill as: \"does report\""),
+        "{description}"
+    );
+    // ... plus the one thing the skill cannot know about itself.
+    assert!(
+        description.contains("one call is one agent task"),
+        "{description}"
+    );
     assert_eq!(tools[0].input_schema.get("type"), Some(&json!("object")));
     assert_eq!(
         tools[0].input_schema.get("required"),
@@ -225,22 +228,21 @@ impl AgentExecutor for TestAgent {
             }
 
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: Artifact::new("out", vec![Part::text(format!("hint={hint}"))]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new("out", vec![Part::text(format!("hint={hint}"))]),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -285,24 +287,9 @@ async fn start_agent(skills: Vec<AgentSkill>) -> String {
     );
     let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
     tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                continue;
-            };
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let dispatcher = Arc::clone(&dispatcher);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&dispatcher);
-                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-            });
-        }
+        let _ = a2a_protocol_server::serve::Server::from_listener(listener)
+            .serve_with_shutdown(dispatcher, std::future::pending())
+            .await;
     });
     url
 }

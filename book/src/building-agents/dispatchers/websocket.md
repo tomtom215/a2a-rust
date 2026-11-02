@@ -68,7 +68,7 @@ descriptor for the life of the process. Two knobs bound that, both opt-in:
 ```rust,no_run
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {
 #     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::new("ws://localhost:3000", a2a_protocol_types::WEBSOCKET_BINDING_URI))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true))

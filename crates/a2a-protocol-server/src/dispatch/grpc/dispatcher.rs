@@ -304,8 +304,9 @@ impl GrpcDispatcher {
     /// `serve*` callers are the same in both builds.
     #[cfg_attr(not(feature = "grpc-tls"), allow(clippy::unnecessary_wraps))]
     pub(super) fn build_router(&self) -> std::io::Result<tonic::transport::server::Router> {
-        // Every serve path builds its router here, so this is where a card
-        // that does not declare gRPC is reported (spec §5.2).
+        // Every serve path builds its router here: where a ceiling of 0 is
+        // refused (audit NEW-g-api-2) and a card without gRPC is reported (§5.2).
+        crate::dispatch::connection_limit::refuse_zero(self.max_connections)?;
         self.handler.warn_if_undeclared("GRPC");
         // Spec §8.1: the agent card on this listener too; a card fetch is
         // usually HTTP/1.1. See `well_known`.

@@ -29,7 +29,7 @@ use a2a_protocol_types::provenance::{ContentSigner, provenance_of, sign_content,
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::signing::Jwks;
-use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
+use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -69,12 +69,11 @@ impl AgentExecutor for Agent {
             let status = |state, note: Option<Message>| {
                 let mut status = TaskStatus::new(state);
                 status.message = note;
-                StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
+                StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
                     status,
-                    metadata: None,
-                })
+                ))
             };
             if ctx.message.text() == Some("park") {
                 EventEmitter::new(ctx, queue)
@@ -104,14 +103,14 @@ impl AgentExecutor for Agent {
             )
             .await?;
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: self.forwarded.clone(),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        self.forwarded.clone(),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
             queue
                 .write(status(

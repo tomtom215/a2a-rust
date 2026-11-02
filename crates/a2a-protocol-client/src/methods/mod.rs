@@ -100,9 +100,10 @@ mod tests {
     }
 
     fn push_config(tenant: Option<&str>) -> TaskPushNotificationConfig {
-        TaskPushNotificationConfig {
-            tenant: tenant.map(str::to_owned),
-            ..TaskPushNotificationConfig::new("task-1", "https://hook.example/cb")
+        {
+            let mut built = TaskPushNotificationConfig::new("task-1", "https://hook.example/cb");
+            built.tenant = tenant.map(str::to_owned);
+            built
         }
     }
 

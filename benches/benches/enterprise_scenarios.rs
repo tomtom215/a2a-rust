@@ -650,11 +650,12 @@ fn bench_handler_limits(c: &mut Criterion) {
 
     // Measure rejection latency: send oversized metadata that exceeds the limit.
     group.bench_function("metadata_rejection", |b| {
-        let oversized_msg = a2a_protocol_types::message::Message {
-            metadata: Some(serde_json::json!({
+        let oversized_msg = {
+            let mut built = fixtures::user_message("oversized metadata");
+            built.metadata = Some(serde_json::json!({
                 "large_field": "x".repeat(1024),
-            })),
-            ..fixtures::user_message("oversized metadata")
+            }));
+            built
         };
         b.to_async(&runtime).iter(|| {
             let params = a2a_protocol_types::params::MessageSendParams {

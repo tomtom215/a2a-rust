@@ -132,6 +132,18 @@ pub trait HaltStore: Send + Sync + 'static {
         scope: &'a HaltScope,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>>;
 
+    /// Whether this store keeps its state in this process alone.
+    ///
+    /// The default is `false`: a store this crate cannot see into (yours, over
+    /// Redis, say) is taken to be shared. The in-memory ones answer `true`.
+    /// [`Profile::Production`](crate::profile::Profile::Production) reads it:
+    /// on a task store that is shared between processes, a store that only this
+    /// process can see makes the fleet behave as if it had no store
+    /// (audit E-F13).
+    fn is_process_local(&self) -> bool {
+        false
+    }
+
     /// A subscription to this store's pushed signals, or `None` (the
     /// default) for a store that cannot push; the handler then polls only.
     fn signals(&self) -> Option<tokio::sync::broadcast::Receiver<HaltSignal>> {
@@ -195,6 +207,10 @@ impl InMemoryHaltStore {
 }
 
 impl HaltStore for InMemoryHaltStore {
+    fn is_process_local(&self) -> bool {
+        true
+    }
+
     fn load(&self) -> Pin<Box<dyn Future<Output = A2aResult<Vec<StoredHalt>>> + Send + '_>> {
         let halts = self
             .halts
@@ -269,19 +285,36 @@ fn scope_from_key(key: &str) -> Option<HaltScope> {
         .map(|t| HaltScope::Tenant(t.to_owned()))
 }
 
-/// The halt a SQL store's row holds; a row whose key no scope makes is an
-/// error rather than skipped, since skipping it would resume what it halts.
+/// The halt a SQL store's row holds.
+///
+/// A row whose key no scope makes (a scope a newer version wrote, during a
+/// rolling upgrade, or a row someone edited) is read as a halt of everything,
+/// with the reason saying so. It is not skipped, since skipping it would
+/// resume what it halts; and it no longer fails the whole load (audit
+/// NEW-h-designs-4), which left a running replica keeping the halts it had read
+/// and never seeing another, and a replica that started beside the row unable
+/// to sync, so refusing every send. Removing the row resumes.
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
-fn from_row(key: &str, reason: String, by: String, at_unix_ms: i64) -> A2aResult<StoredHalt> {
-    let scope = scope_from_key(key).ok_or_else(|| {
-        a2a_protocol_types::error::A2aError::internal(format!(
-            "halt store: a row's scope {key:?} names no scope"
-        ))
-    })?;
-    Ok(StoredHalt {
-        scope,
-        reason,
+fn from_row(key: &str, reason: String, by: String, at_unix_ms: i64) -> StoredHalt {
+    if let Some(scope) = scope_from_key(key) {
+        return StoredHalt {
+            scope,
+            reason,
+            by,
+            at_unix_ms,
+        };
+    }
+    trace_warn!(
+        scope = key,
+        "a halt row names a scope this version does not know; treating it as a halt of everything until the row is removed"
+    );
+    StoredHalt {
+        scope: HaltScope::All,
+        reason: format!(
+            "the halt store has a row for a scope this version does not know ({key:?}), \
+             so everything stays halted until that row is removed: {reason}"
+        ),
         by,
         at_unix_ms,
-    })
+    }
 }

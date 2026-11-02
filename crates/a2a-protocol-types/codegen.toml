@@ -102,9 +102,11 @@ ROLE_AGENT = { aliases = ["agent"] }
 
 [messages.AgentProvider]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.AgentExtension]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.AgentExtension.fields.uri]
 type = "String"
@@ -112,6 +114,7 @@ why = "an extension is identified by its URI: one without is not an extension, s
 
 [messages.AgentInterface]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 doc_append = """
 [`AgentInterface::jsonrpc`], [`AgentInterface::grpc`] and
 [`AgentInterface::rest`] take a URL and fill in the binding name and the
@@ -146,6 +149,7 @@ aliases = ["extended_agent_card"]
 
 [messages.AgentSkill]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 doc_append = """
 # Construction
 
@@ -173,6 +177,7 @@ derives = ["Debug", "Clone", "Serialize", "Deserialize"]
 
 [messages.AgentCard]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 doc_append = """
 Served at `/.well-known/agent-card.json`.
 
@@ -180,16 +185,24 @@ Served at `/.well-known/agent-card.json`.
 
 Prefer [`AgentCard::new`] and the twelve `with_*` methods beside it over a
 struct literal: `new` takes the three things the type cannot invent — a
-name, a version, an interface — and defaults the rest, so a card built
-that way is valid by construction.
+name, a version, an interface — and defaults the rest. The card is not
+publishable yet: [`AgentCard::validate`], which the server's builder runs,
+also needs a description and one skill with a tag, which
+[`with_description`](AgentCard::with_description) and
+[`with_skill`](AgentCard::with_skill) add. `new` declares streaming
+(`capabilities.streaming` is `Some(true)`, since 0.16.0), because every
+binding this SDK serves streams; [`with_capabilities`](AgentCard::with_capabilities)
+replaces the capabilities.
 
 ```rust
 use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
 
 let card = AgentCard::new("triage", "1.0.0", AgentInterface::jsonrpc("http://localhost:8080"))
     .with_description("Routes incidents to the right runbook")
-    .with_skill(AgentSkill::new("triage", "Triage", "Classifies an incident"));
+    .with_skill(AgentSkill::new("triage", "Triage", "Classifies an incident").with_tags(["triage"]));
 assert_eq!(card.skills.len(), 1);
+assert!(card.validate().is_ok());
+assert_eq!(card.capabilities.streaming, Some(true));
 ```
 
 The builders live in `agent_card/builders.rs`. Three examples written in a
@@ -259,9 +272,11 @@ Read it if you have it; to publish an agent's address, use
 
 [messages.TaskStatus]
 derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.Task]
 derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 doc_append = """
 The wire `kind` field (`"task"`) is injected by enclosing discriminated
 unions such as [`crate::events::StreamResponse`] and
@@ -285,6 +300,7 @@ as an empty id rather than failing the whole response."""
 
 [messages.Message]
 derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.Message.fields.message_id]
 rename = "id"
@@ -320,6 +336,7 @@ why = "the task id newtype"
 
 [messages.Artifact]
 derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.Artifact.fields.artifact_id]
 rename = "id"
@@ -339,6 +356,7 @@ server-side event processors drop empty-parts artifacts explicitly."""
 
 [messages.TaskStatusUpdateEvent]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 doc_append = """
 In v1.0 this wraps [`TaskStatus`](crate::task::TaskStatus) directly instead
 of separate `state`/`message` fields, and the `final` field is gone."""
@@ -355,6 +373,7 @@ why = "the context id newtype"
 
 [messages.TaskArtifactUpdateEvent]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 doc_append = """
 The wire `kind` field (`"artifact-update"`) is injected by the enclosing
 [`StreamResponse`] discriminated union."""
@@ -524,6 +543,7 @@ sent on the wire."""
 
 [messages.TaskPushNotificationConfig]
 derives = ["Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 doc_append = """
 `token` is a secret and is **redacted** in the [`Debug`] representation
 (presence shown, value hidden), as is any `credentials` inside
@@ -826,6 +846,7 @@ why = "the variant names the scheme, spelled as its type MutualTlsSecurityScheme
 
 [messages.Part]
 derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize"]
+attrs = ["#[non_exhaustive]"]
 doc_append = """
 On the wire the member that is set names the content, beside the other
 fields, and `Deserialize` is written by hand, beside this type, to read

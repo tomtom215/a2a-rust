@@ -47,27 +47,20 @@ fn artifact(id: &str, parts: usize) -> Artifact {
 }
 
 fn task(id: &str, state: TaskState, artifacts: Vec<Artifact>) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(state),
-        history: None,
-        artifacts: Some(artifacts),
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new(id),
+        ContextId::new("ctx"),
+        TaskStatus::new(state),
+    )
+    .with_artifacts(artifacts)
 }
 
 fn message(id: &str) -> Message {
-    Message {
-        id: MessageId::new(id),
-        role: MessageRole::User,
-        parts: vec![Part::text("late")],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    }
+    Message::new(
+        MessageId::new(id),
+        MessageRole::User,
+        vec![Part::text("late")],
+    )
 }
 
 /// Asserts `result` is the refusal of `attempted` over `stored`.

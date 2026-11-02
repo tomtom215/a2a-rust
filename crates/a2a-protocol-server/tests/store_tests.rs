@@ -16,14 +16,7 @@ use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 
 fn make_task(id: &str, ctx: &str, state: TaskState) -> Task {
-    Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new(ctx),
-        status: TaskStatus::new(state),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    }
+    Task::new(TaskId::new(id), ContextId::new(ctx), TaskStatus::new(state))
 }
 
 fn default_list_params() -> ListTasksParams {

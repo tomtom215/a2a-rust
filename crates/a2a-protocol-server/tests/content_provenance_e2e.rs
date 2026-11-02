@@ -20,7 +20,7 @@ use a2a_protocol_types::provenance::{
     ContentSigner, mark_ai_generated, sign_content, verify_content,
 };
 use a2a_protocol_types::signing::Jwks;
-use a2a_protocol_types::task::{ContextId, Task, TaskState};
+use a2a_protocol_types::task::{Task, TaskState};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 
@@ -48,14 +48,10 @@ agent_executor!(Echo, |ctx, queue| async {
     mark_ai_generated(&mut artifact, Some("echo-agent/1"));
     sign_content(&mut artifact, &signer())?;
     queue
-        .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
-            artifact,
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        }))
+        .write(StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), artifact)
+                .with_last_chunk(true),
+        ))
         .await?;
     EventEmitter::new(ctx, queue)
         .status(TaskState::Completed)

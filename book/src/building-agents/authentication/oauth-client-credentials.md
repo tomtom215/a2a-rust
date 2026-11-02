@@ -35,7 +35,29 @@ let client = ClientBuilder::new("https://agent.example.com")
 ## From the agent card
 
 An agent that advertises an OAuth2 client-credentials
-scheme carries its token endpoint:
+scheme carries its token endpoint. **The card is the agent's own word, and the
+client secret goes to whatever host its `tokenUrl` names.** A card fetched over
+a network you do not control, or from an agent you do not fully trust, can name
+an endpoint of its choosing and receive `client-id:client-secret` on the first
+token request. Name the host your identity provider runs on:
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# fn f(card: AgentCard) -> Result<(), Box<dyn std::error::Error>> {
+let provider = OAuth2ClientCredentials::from_agent_card_trusting(
+    &card, "my-oauth-scheme", "client-id", "client-secret",
+    &["login.example.com"],
+)?;
+# Ok(())
+# }
+```
+
+The host must match exactly (case, a trailing dot, the port and the path do not
+matter): `login.example.com` does not admit `login.example.com.evil.example`,
+`evil-login.example.com` or `https://login.example.com@evil.example/`, and an
+empty list refuses every card. `from_agent_card` is the same without the list,
+for a card you have verified yourself (a signed card read with
+`ClientBuilder::from_signed_card`, for example):
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
@@ -61,6 +83,34 @@ let provider = OAuth2ClientCredentials::from_oidc_issuer(
 # Ok(())
 # }
 ```
+
+## An identity provider behind a private CA, or one that wants a certificate
+
+The token request trusts Mozilla's roots and the certificates `SSL_CERT_FILE`
+and `SSL_CERT_DIR` name, and presents no client certificate. For a private CA
+set in code, or an identity provider that requires mutual TLS (a service mesh,
+SPIFFE), give the provider a TLS configuration: `with_tls_config` on
+`OAuth2ClientCredentials` and on `TokenExchange`, and
+`discover_token_endpoint_with_tls_config` for the discovery request. A
+configuration you give is exact, and `tls::tls_config_from_pem` builds one
+from PEM that keeps the default roots, adds yours, and presents your
+certificate and key:
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_client::tls;
+# async fn f(ca: Vec<u8>, cert: Vec<u8>, key: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
+let tls = tls::tls_config_from_pem(Some(&ca), Some((&cert, &key)))?;
+let provider = OAuth2ClientCredentials::new(
+    "https://idp.internal/oauth/token", "client-id", "client-secret",
+)
+.with_tls_config(tls);
+# Ok(())
+# }
+```
+
+Until 2026-11-01 the provider took no TLS configuration at all, though every
+other outbound path of the client did.
 
 ## Plaintext endpoints are refused
 

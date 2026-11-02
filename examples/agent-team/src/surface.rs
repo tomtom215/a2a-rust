@@ -32,7 +32,7 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::Part;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::executor::AgentExecutor;
@@ -87,12 +87,11 @@ impl AgentExecutor for SurfaceExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Working),
+                )))
                 .await?;
 
             let text = ctx
@@ -110,23 +109,22 @@ impl AgentExecutor for SurfaceExecutor {
             }
 
             queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: Artifact::new("surface", vec![Part::text(format!("echo: {text}"))]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        Artifact::new("surface", vec![Part::text(format!("echo: {text}"))]),
+                    )
+                    .with_last_chunk(true),
+                ))
                 .await?;
 
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::new(TaskState::Completed),
+                )))
                 .await?;
             Ok(())
         })
@@ -134,43 +132,19 @@ impl AgentExecutor for SurfaceExecutor {
 }
 
 fn card(ep: &SurfaceEndpoints, name: &str, capabilities: AgentCapabilities) -> AgentCard {
-    let iface = |url: &str, binding: &str| AgentInterface {
-        url: url.to_owned(),
-        protocol_binding: binding.to_owned(),
-        protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-        tenant: None,
-    };
-    AgentCard {
-        url: None,
-        name: name.into(),
-        description: "Serves every binding so the surface matrix can be measured".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![
-            iface(&ep.jsonrpc, "JSONRPC"),
-            iface(&ep.rest, "HTTP+JSON"),
-            iface(&ep.grpc, "GRPC"),
-            iface(&ep.websocket, "WEBSOCKET"),
-        ],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "surface".into(),
-            name: "Surface".into(),
-            description: "Echoes input; pauses when asked".into(),
-            tags: vec!["surface".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities,
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    let iface = |url: &str, binding: &str| AgentInterface::new(url.to_owned(), binding.to_owned());
+    AgentCard::new(name, "1.0.0", iface(&ep.jsonrpc, "JSONRPC"))
+        .with_description("Serves every binding so the surface matrix can be measured")
+        .with_interface(iface(&ep.rest, "HTTP+JSON"))
+        .with_interface(iface(&ep.grpc, "GRPC"))
+        .with_interface(iface(&ep.websocket, "WEBSOCKET"))
+        .with_input_modes(vec!["text/plain"])
+        .with_output_modes(vec!["text/plain"])
+        .with_skill(
+            AgentSkill::new("surface", "Surface", "Echoes input; pauses when asked")
+                .with_tags(vec!["surface"]),
+        )
+        .with_capabilities(capabilities)
 }
 
 /// Starts the surface agent on all four bindings.

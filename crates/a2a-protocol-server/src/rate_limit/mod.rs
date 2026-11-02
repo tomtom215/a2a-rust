@@ -20,32 +20,38 @@
 //! # Example
 //!
 //! ```rust
-//! use std::sync::Arc;
 //! use a2a_protocol_server::rate_limit::{RateLimitInterceptor, RateLimitConfig};
 //!
-//! let limiter = Arc::new(
-//!     RateLimitInterceptor::new(
-//!         RateLimitConfig::default()
-//!             .with_requests_per_window(100)
-//!             .with_window_secs(60),
-//!     )
-//!     .expect("valid rate limit config"),
-//! );
+//! let limiter = RateLimitInterceptor::new(
+//!     RateLimitConfig::default()
+//!         .with_requests_per_window(100)
+//!         .with_window_secs(60),
+//! )
+//! .expect("valid rate limit config");
 //! ```
 //!
 //! Then add it to the handler builder:
 //!
-//! ```rust,ignore
+//! ```rust,no_run
 //! # fn card() -> a2a_protocol_types::agent_card::AgentCard {
 //! #     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
 //! #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 //! #         .with_description("An example agent")
 //! #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 //! # }
+//! # use a2a_protocol_server::rate_limit::{RateLimitConfig, RateLimitInterceptor};
+//! # use a2a_protocol_server::RequestHandlerBuilder;
+//! # struct MyExecutor;
+//! # a2a_protocol_server::agent_executor!(MyExecutor, |_ctx, _q| async { Ok(()) });
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # let executor = MyExecutor;
+//! # let limiter = RateLimitInterceptor::new(RateLimitConfig::default())?;
 //! let handler = RequestHandlerBuilder::new(executor)
 //!     .with_agent_card(card())
 //!     .with_interceptor(limiter)
 //!     .build()?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Caller identity
@@ -99,7 +105,7 @@
 //!
 //! Size [`RateLimitConfig::max_buckets`] for the distinct client addresses
 //! one window can see: once it is full of live buckets, a new address is
-//! refused (fail-closed).
+//! charged to one shared `overflow` bucket (see below) instead of refused.
 //!
 //! # Design
 //!
@@ -113,8 +119,16 @@
 //! `RESOURCE_EXHAUSTED`) and a `google.rpc.RetryInfo` detail on every binding.
 //!
 //! The bucket map is bounded by [`RateLimitConfig::max_buckets`]. When the
-//! map is full and stale buckets cannot be evicted, requests from *new*
-//! callers are rejected until capacity frees up (fail-closed).
+//! map is full and stale buckets cannot be evicted, *new* callers share one
+//! `overflow` bucket with the limit of any one caller, in addition to the
+//! bound (so the map holds at most `max_buckets + 1`), and
+//! [`RateLimitInterceptor::overflowed`] counts how many requests it took. Callers
+//! that already have a bucket are unaffected. Until 2026-11-01 new callers
+//! were refused outright: a set of `max_buckets` callers active in every
+//! window locked out every other caller for as long as they stayed active,
+//! and the refusal looked like an ordinary rate limit (audit H16); the
+//! overflow bucket trades fairness among the callers beyond the bound for
+//! never locking them all out, and its refusal says which it is.
 //!
 //! For production deployments requiring sliding windows, distributed counters,
 //! or more sophisticated algorithms, implement a custom [`ServerInterceptor`]
@@ -170,6 +184,9 @@ pub struct RateLimitInterceptor {
     buckets: RwLock<HashMap<String, CallerBucket>>,
     /// Counter for amortized stale-bucket cleanup.
     check_count: AtomicU64,
+    /// Requests charged to the overflow bucket since this limiter was made;
+    /// see [`overflowed`](Self::overflowed).
+    overflowed: AtomicU64,
     /// The deployment-wide counter, when one is configured.
     ///
     /// `None` keeps the process-local map as the only authority, which is the
@@ -226,7 +243,18 @@ impl RateLimitInterceptor {
             shared: None,
             tenant_config: None,
             check_count: AtomicU64::new(0),
+            overflowed: AtomicU64::new(0),
         })
+    }
+
+    /// How many requests were charged to the shared overflow bucket because
+    /// [`max_buckets`](RateLimitConfig::max_buckets) callers already had
+    /// buckets. Non-zero means the bound is too small for the callers this
+    /// limiter sees: raise it, or accept that the callers beyond it share one
+    /// caller's budget. Read it from a metric or a health page of your own.
+    #[must_use]
+    pub fn overflowed(&self) -> u64 {
+        self.overflowed.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Counts against a deployment-wide counter instead of this process's map.
@@ -363,6 +391,8 @@ impl ServerInterceptor for RateLimitInterceptor {
 
 #[cfg(test)]
 mod keying_tests;
+#[cfg(test)]
+mod overflow_warning_tests;
 #[cfg(test)]
 mod shared_tests;
 #[cfg(test)]

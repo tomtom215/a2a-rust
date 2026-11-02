@@ -330,9 +330,13 @@ impl Telemetry {
     }
 
     /// What the environment or the code asked for that this SDK does not do,
-    /// and went on without: a propagator it does not have, for one. Each is
+    /// and went on without: an exporter name, protocol or compression it does
+    /// not have, a timeout or port it could not read, a propagator it does not
+    /// have, an `OTEL_SDK_DISABLED` that is not `true` or `false`. Each line
+    /// names the variable and its value and says what was used instead. Each is
     /// also logged at `warn` by [`install_subscriber`](Self::install_subscriber);
-    /// an application with its own subscriber reads them here.
+    /// an application with its own subscriber reads them here. Until
+    /// 2026-11-01 most of these stopped [`build`](TelemetryBuilder::build).
     #[must_use]
     pub fn notices(&self) -> &[String] {
         &self.notices

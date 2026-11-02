@@ -53,7 +53,7 @@ impl BoundedIncoming {
         listener: TcpListener,
         max_connections: Option<usize>,
     ) -> (Self, OpenConnections) {
-        let capacity = max_connections.unwrap_or(Semaphore::MAX_PERMITS);
+        let capacity = crate::dispatch::connection_limit::permits(max_connections);
         let limiter = Arc::new(Semaphore::new(capacity));
         let open = OpenConnections {
             limiter: Arc::clone(&limiter),

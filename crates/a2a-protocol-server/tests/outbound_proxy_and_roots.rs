@@ -195,23 +195,16 @@ async fn proxy(seen: Seen) -> u16 {
 }
 
 fn status_event() -> StreamResponse {
-    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("task-env"),
-        context_id: ContextId::new("ctx-env"),
-        status: TaskStatus::with_timestamp(TaskState::Completed),
-        metadata: None,
-    })
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("task-env"),
+        ContextId::new("ctx-env"),
+        TaskStatus::with_timestamp(TaskState::Completed),
+    ))
 }
 
 fn config(url: &str) -> TaskPushNotificationConfig {
-    TaskPushNotificationConfig {
-        tenant: None,
-        id: Some("cfg-env".to_owned()),
-        task_id: Some("task-env".to_owned()),
-        url: url.to_owned(),
-        token: None,
-        authentication: None,
-    }
+    TaskPushNotificationConfig::new("task-env".to_owned(), url.to_owned())
+        .with_id("cfg-env".to_owned())
 }
 
 #[test]
@@ -247,6 +240,9 @@ fn push_oidc_and_the_model_client_follow_ssl_cert_file_and_the_proxy_variables()
         std::env::set_var("SSL_CERT_FILE", &ca_file);
         std::env::set_var("HTTPS_PROXY", &proxy_url);
         std::env::set_var("HTTP_PROXY", &proxy_url);
+        // Loopback servers are what these tests dial; loopback goes direct by default
+        // (audit NEW-b-2), so ask for the proxy, as an operator who wants one would.
+        std::env::set_var("A2A_PROXY_LOOPBACK", "1");
     }
 
     runtime.block_on(async {

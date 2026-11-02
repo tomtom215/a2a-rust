@@ -50,15 +50,10 @@ patches still ask something of some deployments:
   `BearerTokenTenantResolver`, or `HeaderTenantResolver` behind a proxy that
   sets the header and strips any inbound copy; the `[0.14.1]` entry in
   CHANGELOG.md has the advisory.
-- **0.15.1** breaks no API but changes two behaviours of `Telemetry` that
-  existing code can notice: `install_subscriber` now always installs a
-  subscriber, so a `tracing_subscriber` `.init()` after it panics (install
-  yours first, or add `Telemetry::layer()` to it); and `HTTP_PROXY`,
-  `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY` now apply to the export, so a pod
-  that sets `HTTP_PROXY` for its other traffic and exports to an in-cluster
-  collector must list the collector in `NO_PROXY`
-  ([Observability](../deployment/observability/tls-proxies.md#no_proxy-and-an-in-cluster-collector)
-  has the entries that match and the ones that do not).
+- **There is no 0.15.1.** One was prepared on 2026-10-26 and never tagged or
+  published (crates.io and the GitHub releases end at 0.15.0); what it held
+  ships in 0.16.0, and its two `Telemetry` behaviour changes are in
+  [the 0.15 to 0.16 guide](./upgrading/0.15-to-0.16.md#telemetry-installs-a-subscriber-and-reads-the-proxy-variables).
 
 ## The policy
 

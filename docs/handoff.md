@@ -19,30 +19,228 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-- **Branch `claude/amazing-turing-y8pjhv` (2026-10-29), from `main` at
-  `8dc4331`: a pre-release audit, not a release.** The maintainer asked for
-  every remaining gap to be found and fixed before 0.15.1 or later, with live
-  runs against llama.cpp and small Qwen and Gemma models.
-  - **The task list is `docs/audits/2026-10-29/README.md`**: eight
-    read-only reviews (reports A to H beside it) plus findings from live runs
-    (section L), and four low findings from re-reading this branch's own
-    fixes (section M). Its `Status` column is the only record of what was checked;
-    count it rather than trusting a figure here. At this commit, 226 rows:
-    149 `open`, 4 `confirmed (read)`, 59 `fixed`, 4 `fixed (part)`, 7
-    `verified live`, 1 refuted, 2 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
-    including a "Breaking Changes" section.
-  - **Not release-ready.** L5 (no token streaming in the tool loop) was
-    built as the maintainer chose on 2026-10-30: a draft artifact per turn
-    (`ToolLoopExecutor::with_drafts`), the `answer` artifact sent whole at
-    the end as before. 149 rows stay `open`. By the list's own labels: 3 S0
-    (H2, H3, H4), 9 S1 (H5 to H11, H13, H19), 1 high (B-03), 52 medium,
-    5 S2, 5 low to medium, 69 low and 5 info. **This handoff said "every
-    row judged release-relevant is fixed" until 2026-10-30; that was not
-    checked and is withdrawn.** Some open rows are likely stale (H2's
-    private CA and mTLS look covered by `TlsConfig::Custom`, H3's orphaned
-    `working` tasks by the turn-claim reaper), some are real (H4, the S1
-    designs), and none has been re-checked against the code since its
-    report was written.
+- **Branch `claude/pensive-bardeen-c6ofm8` (2026-11-01), from `main` at `4a8243c`
+  (the merge of pull request #185): the 149 open audit rows are triaged and most fix groups are
+  committed (below). One pull request, opened only when the groups the maintainer wants pass the bar;
+  the pull request is tomtom215/a2a-rust#186, opened on 2026-11-02 at the maintainer's request.**
+  - **First, next session.** (1) What waits on the maintainer: permission to run `promtool` (group J);
+    forks F13 to F16, never asked, with positions in `docs/audits/2026-11-01-triage/DECISIONS.md`;
+    whether the other 26 wire structs (G-10 option A) go into 0.16.0; the D-05 dead-webhook policy; the
+    options for E-F18, E-F25 and D-18. (2) Then build, in this order: M (delegation hand-off on shutdown,
+    F5), O and the HttpPool (F7, ADR 0032), the contained rows of L (E-F14, E-F22, E-F21, E-F16, E-F17;
+    D-19 is done and E-F15 is documented only), the rest of I and G. The per-group status, with the rows
+    left open, is the table in `PLAN.md` ("Status when the pull request was opened"). (3) Read what the
+    pull request's CI says first: it runs `cargo mutants --in-diff`, `cargo-semver-checks`, and the jobs
+    this session could not run; fix what it finds before building anything new. Release prep is in
+    `PLAN.md`, "Before 0.16.0 is tagged".
+  - **Fix work, `git log 4a8243c..` (oldest first; every commit is `Tom F.`, signed off, no other
+    trailer, for DCO):**
+      - `4a3cbe1` docs(audit): triage the 149 open rows of the 2026-10-29 audit against main@4a8243c
+      - `a3a5dde` fix(client,cli): --header goes only to the interface that was checked (audit SEC-09, NEW-f-1)
+      - `78fcd2c` fix: credentials go only to the host the caller named (audit SEC-08, SEC-09, SEC-18, NEW-f-5, NEW-f-6, G/D-05)
+      - `c902c46` fix(server): a replica that cannot renew a claim stops the turn before anyone can take the task (audit E-F7, NEW-e-1, NEW-h-s0-1, NEW-h-s0-5, NEW-h-s0
+      - `aa6e4ff` fix(server): a task's ending always reaches its webhooks, its log and its caller (audit NEW-d-1, D-03, E-F9, NEW-e-2, E-F20, D-16, D-23, G-21, NEW-g-a
+      - `6d746dd` fix(client,server,cli): gRPC honours its send timeout, its card and the process's roots; one TLS identity reaches every path (audit NEW-g-api-1, G-20,
+      - `065f0a0` docs: documentation that disagreed with the code, the book's ignore ratchet, and thirteen rustdoc blocks nothing compiled (audit G/D-02 to G/D-11, G/C
+      - `50242e0` docs(adr): Agent Skills and steering a running task, proposed (triage forks F9, F10)
+      - `4b6b382` fix(client,server): loopback is never sent to a proxy, NO_PROXY is read as Go reads it, the WebSocket dials like the HTTP transports (audit NEW-b-2, B
+      - `9c69ef6` feat(server): the production profile refuses process-local stores over a shared task store (audit E-F13; amends ADR 0025)
+      - `4fd80d0` fix(server): a wrong OTEL_* value is noted and the process starts, as the specification asks (audit C-08, NEW-c-5)
+      - `636eaf0` feat(deploy-agent): a signed image from the release workflow, a version on the card, retention in PostgreSQL (audit A13, A27, NEW-a-l-1, NEW-a-l-3, NE
+      - `41756f1` feat!: RequestContext.context_id is a ContextId, AgentCard::new declares streaming, the server crate defaults to tls-rustls, sign_agent_card is remove
+      - `0b06ec2` docs: 0.15.1 was never released, so its notes are 0.16.0's; the release notes open with a Highlights block (audit G/C-01, G/C-02, NEW-t-1; forks F6, F
+      - `7b36d51` feat: SendMessageResponse accessors, build_arc, agent_executor! with a receiver, new_message_id, Debug for EventEmitter and A2aRouter (audit G-22, G-1
+      - `4ec89f3` fix(client): a tenant the caller set is kept in whichever order the builder is called (audit G-19)
+      - `a8bf45e` fix: Retry-After is spread, the rate limiter overflows to one bucket, an unread halt store is retryable and not ready, an unknown halt row halts every
+      - `e2712ec` fix(client,server): a WebSocket peer that stopped reading is dropped, one that went silent is found out, a failed handshake says whether to retry (aud
+      - `43e5d94` docs(handoff): the branch's commits, what is verified and what is not, two lessons from the WebSocket keepalive and the mutant runner
+      - `2b83f88` fix(server): an https webhook is connected to the address that was checked, a host's other addresses are tried, DNS lookups cannot fill the blocking p
+      - `b9c1304` feat!(types): thirteen protocol structs are #[non_exhaustive], built with new and with_* (audit G-10; fork F1)
+      - `3c3bac5` docs(handoff): group K and G-10 committed, group J blocked on promtool, what was and was not run on the tip
+      - `c4c5c29` fix(examples): agents are served with Server, the health monitor probes its roster, the bridge quotes the remote card (audit G-05, SEC-15, SEC-16)
+      - `da797f5` docs: the audit register's fix status after K, G-10 and Q, and what was run on the tip (PostgreSQL suites, feature matrix, 6055 tests)
+      - `2f35951` docs(handoff): the branch is pushed; what waits on the maintainer and what the next session builds first
+      - `93dbb05` fix(server): the audit log's per-chain locks are released when unused, and a tenant name is bounded (audit D-19)
+      - `af747a4` docs(server): AuthFailureThrottle's counts are per replica, and the book and rustdoc say how to size it for a fleet (audit E-F15, interim)
+      - `edd8ac2` docs: the audit register and handoff list D-19 and the E-F15 interim fix
+      - `d75efc9` docs(changelog): the 0.16.0 Internal section moves to docs/changelog-internal/ (audit G/C-01; fork F11)
+      - `a27676e` docs(audit): per-group status of the plan and the forks at the pull request; the cadence-exception text corrected (a November 0.16.0 needs no line)
+      - `95c9fb2` docs(audit): SPDX headers on the triage reports
+      - `0820857` docs(handoff): the pull request is #186
+      - `9e6d495` test(server): the push pin tests use ::1 for "an address that is down" (the macOS jobs)
+      - `aeb4cfb` test(server): the cancel test appends before cancel's own write, not on the next read
+      - `46b425f` style(slimrpc): rustfmt the five binding files the 0.16.0 codemods left unformatted
+      - `1ac2dbe` test(slimrpc): the slim-node OTEL test follows the warn-and-fall-back decision (F3, C-08)
+      - `3d671eb` style(itk): rustfmt the two files the constructor codemod left unformatted
+      - `b8199b8` docs(handoff): what the pull request's first CI run found, and two lessons
+      - `62989d9` ci: the release Highlights gate has a probe that proves it can fail
+      - `d05a326` test(server): the notice tests' failure messages no longer print the notices (CodeQL 187 to 189)
+    Each fix has a regression test that failed before it (the commit messages say how each was
+    shown, and which hand-applied mutants each test kills).
+  - **What the pull request's first CI run found (2026-11-02): five failures, all of this branch's
+    making, fixed in the commits above from `9e6d495` on.** (1) macOS `pin_tests`: `127.0.0.2` is not
+    loopback on macOS, so "an address that is down" hung instead of refusing (`9e6d495`; fixed by
+    `::1`; not reproducible on Linux). (2) `cancel_keeps_concurrent_writes::sqlite`: this branch's
+    `SyncCollector::close_out` adds a read to the tail of `SendMessage`, which on SQLite can take the
+    test's "append on the next read" trigger; 17 of 200 runs failed on the branch and 0 of 300 on
+    main, 600 of 600 pass after the trigger moved to cancel's own write, and reverting cancel's fix
+    still fails the test on both stores (`aeb4cfb`). (3) The SLIMRPC binding's `slim-node` test still
+    asserted the pre-F3 exit; it is outside the workspace and behind `otlp`, so no workspace run
+    reached it (`1ac2dbe`: two tests, both fail when the node ignores `OTEL_*`). (4) `cargo fmt` of
+    the binding and `itk`, same cause (`46b425f`, `3d671eb`). (5) "Static checks" stopped at
+    `scripts/prove_workflow_gates_fail.py`: the `release.yml` step "The release notes open with a
+    Highlights block" had no Probe, so nothing proved it could fail. The 14 steps after it in that
+    job had not run on CI; all 14 pass locally (`62989d9`; the new probe has a healthy control and
+    three defects, all PROVEN; the full script cannot finish in this container because it has no
+    `ssh-keygen`, and reaches 24 PROVEN, 0 UNPROVEN before that probe). Not a failure of the
+    code but red all the same: CodeQL's three "cleartext logging" alerts (code-scanning 187 to
+    189) on assertion messages that print `t.notices()` in `otel/telemetry/notice_tests.rs`. They
+    are false positives (a notice holds only `VAR="value" why; instead` for a fixed list of
+    non-secret `OTEL_*` variables), I could not dismiss them, so `d05a326` stops printing the
+    notices; **whether CodeQL clears them is unconfirmed until its next run.** The other red
+    check, `Mutation Testing (incremental)`, failed by design until the PR carried the
+    `mutation-test` label. The maintainer chose to add it now and it was added on 2026-11-02.
+    **The first full run (run 41439026142, head `2d9fbe3`: 28 shards, about 85 minutes behind
+    the runner backlog) found ten survivors in nine shards and one shard that did not finish.**
+    Client shard 0: `enqueue`'s guard `waits` (`3a2f729`). Client shard 1: `select_grpc_interface`
+    `||` and `execute_streaming_request`'s deadline `+` (`dae87b7`). Server: `finished`'s `<`
+    (shard 15, `bb4a284`); `delivery_id` as `Some("")` (shard 0), `None` (shard 19) and its guard
+    (shard 3), all killed by `c40ce47`; `charge_overflow`'s `==` (shard 9) and `PinResolver`'s
+    `Debug` (shard 12, `f0193ef`); `WebSocketDispatcher`'s `Debug` (shard 13, `5919e66`). Each kill
+    was shown by applying the exact mutant by hand. **Server shard 16 ran out of runner disk**
+    (35 MB free, 17 of 18 mutants graded): not a survivor, and the ungraded mutant is unknown.
+    The causes were two: assertions loose enough for the mutant to fit inside them (a `Timeout`
+    checked as any `Timeout`; `< 200 ms` of a 100 ms bound), and public helpers tested only by a
+    doctest, which nextest does not run. **A push cancels and restarts the run**, so the fixes
+    were held until it finished. **The second run (run 41452549529, head `fec9af2`, about 70
+    minutes) passed 26 of 28 shards, including all nine that failed before and server shard 16,
+    which this time graded every mutant: the fixes above are confirmed by the real run.** Its one
+    failing shard, server 14, found an eleventh survivor in code this branch did not touch:
+    `collect_then_follow`'s `!interrupted` (`sync_collector.rs:263`), whose conditional the unit
+    tests never reached because they go through `collect_events`, a test-only copy of it. Killed
+    by `0d4a4ce`; shard 14 had passed in the first run, so the mutant list shifted between runs
+    or something killed it by luck, and which one is not known. **The third run (run
+    41462668225, head `89e27f0`, about 65 minutes) passed 27 of 28 shards, shard 14 among them, so
+    `0d4a4ce` is confirmed by the real run.** Its one failing shard, server 9, found a twelfth
+    survivor: `EventEmitter`'s `Debug` (`executor_helpers.rs:154`). This branch added four `Debug`
+    impls and the run reports them one at a time; `A2aRouter`'s, identical in kind and not yet
+    reported, is covered with it in `1ea639c`. The push that carries `1ea639c` starts a fourth
+    run, which is the check. (6) One failure of
+    `content_verification::unsigned_content_passes_unless_signatures_are_required` on `Test (1.94,
+    macos-latest)` at the stream assertion; that file, `tests/common` and the HTTP/1 path are
+    unchanged by the branch, and it did not reproduce on Linux (0 of 300 alone, 0 of 1200 with 24
+    copies on 4 cores, built with `--features signing`; a build without it holds no tests and
+    "passes" vacuously). The assertions now print what they got (`08c0b26`); the cause is
+    unknown. (7) `cargo-deny` failed on RUSTSEC-2026-0433 (`pulldown-cmark` 0.13.5, a build
+    dependency of `prost-build`; quadratic parsing with `ENABLE_WIKILINKS`, off by default). Not
+    the branch's making: main locks the same version and the advisory is newer than main's last
+    green run. Bumped to 0.13.6 in the four lockfiles that carry it (`bc1abfe`); `cargo-deny` is
+    not installed here, and CI's `cargo-deny` passed on `e60108d`. (8) `Test (1.94,
+    windows-latest)` on `e60108d` failed one test of 6364,
+    `signing::keys::x5c::tests::x5c_malformed_chain_is_not_used` ("base64url, not base64", left 1,
+    right 0). **A test defect already on main, not a Windows difference and not this branch's
+    code:** the case spelled a randomly drawn certificate in the URL-safe alphabet and expected
+    `x5c` to refuse it, but a certificate whose standard base64 has no `+` or `/` and needs no `=`
+    is the same string in both alphabets, and `x5c` rightly accepts it. 99 of 200,000 freshly
+    keyed certificates are such; the unmodified test failed 65 of 100,000 in-process runs, every
+    time with that message; with the fix 0 of 200,000 (`98b121e`, test-only). A grep of the
+    workspace's Rust tests for "not base64" and "alphabet" found only fixed invalid strings
+    elsewhere (`%%%`, `not base64!`); the tests were not read one by one. CodeQL's check is green
+    on `e60108d`, which carries `d05a326`; the alert list itself was not read. (9) **The fourth
+    mutation run (run 41475178068, head `e60108d`): all 26 shards finished, 25 passed with no
+    missed mutant, and server shard 13 ran out of runner disk again** (the runner warned "Free
+    space left: 61 MB" at 16:09 UTC, then `No space left on device`; 15 of its 18 mutants were
+    graded: 1 caught, 14 unviable, 0 missed; the other 3 are unknown, and which they are cannot be
+    told because the mutant-to-shard assignment shifts between runs). Counting from the job list,
+    28 jobs are 26 shards and 2 skipped placeholders, so the "28 shards" and "N of 28" figures
+    earlier in this entry are job counts and were not re-derived. Disk exhaustion has now hit one
+    server shard in two of four runs (16 in run 1, 13 in run 4) and none in runs 2 and 3. A
+    cleanup step in `mutants.yml` was offered to the maintainer and not added. Run 4's aggregator
+    finished at 16:55 UTC with "Aggregated surviving mutants: 0" and a failed shard matrix, and
+    the `CI` run on `e60108d` finished at 17:00 UTC (both before the push that carries this
+    entry): 20 of its 22 jobs passed and 1 was skipped; the one failure is the x5c test in (8).
+    `Test (stable, windows-latest)` and `Test (1.94, macos-latest)` passed in it, so the macOS
+    `content_verification` failure in (6) did not recur in that run, which settles nothing about
+    its cause. **Run after the fixes:** the
+    binding's
+    own fmt, clippy `--all-targets -D warnings`, 19 integration targets (3 `#[ignore]`d for SPIRE) and
+    75 unit tests; `itk` and `scripts/live/replica` `cargo check --all-targets`; `fuzz` with
+    `--cfg fuzzing`; the 36 gates; the cancel test under clippy with `sqlite,postgres`. **Not re-run
+    locally:** the full workspace nextest suite on the new tip (CI is the check), the `wasm-spike`
+    crates, and the fmt diffs in `fuzz`, `benches/sdk-comparison` and `scripts/live/replica/v015`,
+    which are in files this branch did not touch and which no CI job checks.
+  - **Verified, and what was not.** On the Q commit (`c4c5c29`): `cargo nextest run -p a2a-protocol-types -p a2a-protocol-client -p
+    a2a-protocol-server -p a2a-protocol-sdk --all-features --profile ci` 6055 passed, 177 skipped; the
+    other 24 workspace members 319 passed; doctests types 54, client 31, server 75, sdk 2, book 316;
+    `cargo hack clippy -p <the four crates> --all-targets --each-feature -- -D warnings` 59 of 59, no
+    warnings; `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean; 36 of 36
+    script gates; `cargo fmt --check`; the PostgreSQL suites against the local PostgreSQL 16
+    (`scripts/run_postgres_suites.py`: 12 test targets and 11 library modules, then the named CI suites:
+    `postgres_store_tests` 72, `multi_replica` 7, `turn_claims` + `replica_processes` +
+    `cross_replica_cancel` + `stale_write_position` 22, `encrypted_store` 1). After D-19 (`93dbb05`, the last code commit) only the server
+    crate's suite (3941 passed), its clippy and the gates were re-run: nothing in the other crates changed.
+    Hand-applied mutants: 14 in
+    B2, 2 in I, 12 in F (after its keepalive was rewritten), 19 in K, 16 in G-10's builders, 10 in Q, 4 in D-19;
+    `cargo mutants` cannot build 23 of the builders' 24 mutants (the types have no `Default`). **Not
+    run:** `cargo mutants --in-diff` on the server and client crates (a client run on A to E: 70 mutants,
+    48 caught, 21 unviable, 1 missed and killed afterwards; the server run was stopped at 20 of 168; the
+    G-10 conversion makes the diff ~330 files, so CI's shards are the way to run it,
+    `.github/workflows/mutants.yml` has the command); `cargo-semver-checks` against v0.15.0 (not
+    installed here; needed to confirm the breaking list); the official TCK; the toxiproxy partition run
+    for group B; Kubernetes; the fuzz targets (compiled only); a live pass of the Squid, private-CA and
+    model probes after the fixes; the sdk crate under `--no-default-features`. Live: the `deploy-agent`
+    image was built from this tree and run (it found that the build fails behind a TLS-inspecting proxy;
+    fixed with a BuildKit secret), and the retention sweep ran against the local PostgreSQL. Each
+    intermediate commit was not built on its own; only the tips were.
+  - **Not built (open), by the plan's group** (`docs/audits/2026-11-01-triage/PLAN.md`):
+    **J (observability stack) is blocked**: its proof is `promtool test rules` and a live stack, and the
+    auto-mode classifier refused to run a `promtool` I had downloaded (the 111 MB
+    `prometheus-3.15.1.linux-amd64.tar.gz`, no checksum check; deleted, never run). Needs the maintainer to
+    allow `promtool` (or the pinned `prom/prometheus:v3.15.1` image). No workflow runs
+    `deploy/observability/prometheus/tests/a2a-alerts.test.yml` today. **G-10 option A remainder**: the
+    other 26 wire structs (params, responses, security) are still exhaustive, about 600 literal sites, same
+    codemod (`STABILITY.md` section 4 says so). G-12, G-16, G-09/G-14/G-15 (undecided), the rest of I
+    (C-06, C-09, C-10, C-12, C-13, C-16, C-22, C-23, NEW-c-3/-4), K's NEW-d-3 (per-address bound),
+    NEW-f-2 (fairness between callers: the sender is not told who registered a config), SEC-14's
+    per-caller quota, per-destination rate and verification handshake, D-05's dead-webhook policy and
+    outbox, L (fleet correctness), M (delegation hand-off on shutdown, F5), O and the HttpPool (F7,
+    ADR 0032), the swarm designs beyond the four fixes, Q, most of G (A14, A15, A19, A21-A23, A25, A26,
+    NEW-a-l-2, -4a, -5), B-10/B-11/D-20 (gRPC and idle defaults), D-03(d), E-F8 (F13), B-14 cert reload
+    (F15), NEW-b-1/-5 and the proxy boundary for https pinning (F16). Nothing built forecloses any of them.
+    The maintainer's brief: find every way the SDK fails a real deployment (local, Docker, Kubernetes,
+  proxy or none, public/private/self-signed CA, mDNS, replicas, outages, disconnects), with live runs
+  against llama.cpp and small Qwen and Gemma models, A2A v1.0.1 conformance, OpenTelemetry, the EU AI
+  Act and GDPR; consider Agent Skills (agentskills.io); support sub-agents, fan-out and messaging a
+  running agent; and ship 0.16.0 only when it is checked, never on assumption.
+  - **The record is `docs/audits/2026-11-01-triage/`**: `README.md` (method, what was and was not
+    checked, corrections), `PLAN.md` (191 items in 19 commit groups, each item in exactly one),
+    `DECISIONS.md` (12 forks and 46 per-row option sets), ten `<slice>.json` with `file:line` evidence,
+    `live-results.md` and `probes/`. `docs/audits/2026-10-29/README.md`'s `Status` column is updated
+    for all 149 rows and has a new section N for what the triage found. Counted with the
+    findings-triage skill's counter on 2026-11-01: 283 rows; confirmed (read) 125, fixed 66, needs
+    decision 46, fixed (part) 25, verified live 7, not a defect 5, duplicate 5, confirmed (live) 2,
+    refuted 1, cannot check 1; **none `open`**. Of the 149: 71 confirmed, 46 need a decision, 21 fixed
+    in part, 7 already fixed, 3 not defects, 1 cannot be checked by reading. The previous figure here
+    (149 `open`, "some likely stale") is withdrawn: 7 were already fixed, and of the 3 not-defects C-20 was
+    a misreading while D-24 and D-25 record areas found sound.
+  - **The three S0 rows are all `fixed (part)`.** H2 (private CA and mTLS) is S1: every binding can
+    trust a private CA, except the token provider and gRPC's use of `SSL_CERT_FILE`; one pool per
+    client remains. H3 (orphaned tasks) is medium: the reaper fixes the default SQL configuration, but a
+    reaper that ends a live task whose owner merely failed to renew is a new risk (NEW-h-s0-1,
+    NEW-e-1; a probe is written, not run). H4 (delegation) is high: resume, `reattach` and a
+    journal exist, but nothing drives recovery, a graceful supervisor redeploy still cancels its
+    children, and gRPC/WebSocket delegations are cancelled when idle.
+  - **Found by running it (this session):** the CLI's `--header` guard (SEC-09, merged in #185) was
+    bypassed when the card's first interface is on the typed host but cannot be built (binding
+    `NOPE`, or `ftp://`) and a later one is on another host (NEW-f-1; fixed in A). A blanket
+    `HTTP_PROXY` sends loopback traffic to the proxy (NEW-b-2; not fixed, F2). `live-results.md`.
+    A blocking send over gRPC was cut at the request timeout by tonic's channel timeout
+    (NEW-g-api-1): reproduced and fixed in D at a small scale (a 3 s turn, a 1 s request timeout), not
+    with a 40 s executor. A blocking send to a task another replica had cancelled was answered
+    `working` (found while fixing E-F9; fixed in C).
+  - **Not release-ready.** `docs/readiness-bar.md` still records no measurement for R1 to R7, C1 to C5
+    and F1 to F5. No Kubernetes, IPv6-on-the-wire, public-CA collector or official-TCK run has been made
+    since #185.
   - **How #184 was verified, the bar for what follows.** Before a push:
     `scripts/preflight.sh --force`; every script gate (the list is in the
     workflow's Static checks job); `cargo hack clippy -p a2a-protocol-types
@@ -59,18 +257,16 @@ only: when something here is done, delete it rather than annotating it.
     survivors by hand (scratchpad script pattern: replace, run the one
     test, restore) and let CI's run be the full one. macOS and Windows
     cannot be run here; CI is their check.
-  - **Pull request [#184](https://github.com/tomtom215/a2a-rust/pull/184)**
-    (2026-10-30). The workspace reads **0.16.0**, bumped there at the
-    maintainer's choice because `cargo-semver-checks` blocks the branch's
-    deliberate breaks under 0.15.x (0.15.1 was prepared, never published:
-    crates.io has 0.15.0). It is a version bump, not a release: no tag,
-    `CITATION.cff` and `ROADMAP.md` still name 0.15.1, and the
-    `0.15 → 0.16` upgrade guide is
-    `book/src/reference/upgrading/0.15-to-0.16.md`. Before tagging 0.16.0:
-    RELEASING.md's checklist, and STABILITY.md's cadence, since 0.15.0 was
-    a breaking release in October 2026 (a second one that month needs a
-    `**Cadence exception:**`). The SLIMRPC binding's requirements read
-    `0.16`; its own version (0.7.0) moves at its own release (RELEASING.md,
+  - **Pull requests [#184](https://github.com/tomtom215/a2a-rust/pull/184) and
+    [#185](https://github.com/tomtom215/a2a-rust/pull/185) are merged** (`a0e6673`, `4a8243c`). The
+    workspace reads **0.16.0**, bumped at the maintainer's choice because `cargo-semver-checks` blocks
+    the branch's deliberate breaks under 0.15.x. It is a version bump, not a release: no tag.
+    **0.15.1 was never tagged or published** (checked 2026-11-01: crates.io, the GitHub latest release
+    and the remote tags all end at 0.15.0), yet `CITATION.cff` still says 0.15.1, released 2026-10-26
+    (NEW-t-1). The `0.15 → 0.16` upgrade guide is `book/src/reference/upgrading/0.15-to-0.16.md`. Before
+    tagging 0.16.0: RELEASING.md's checklist, and STABILITY.md's cadence, since 0.15.0 was a breaking
+    release in October 2026 (a second one that month needs a `**Cadence exception:**`). The SLIMRPC
+    binding's requirements read `0.16`; its own version (0.7.0) moves at its own release (RELEASING.md,
     "releases separately").
   - **mDNS discovery is built, not released:** `crates/a2a-protocol-discovery`
     (ADR 0029, proposed) is `publish = false`. Publishing it needs its
@@ -86,28 +282,52 @@ only: when something here is done, delete it rather than annotating it.
     of 11 twice against Qwen3.5-2B (`examples/live-model/README.md`); every
     server PostgreSQL test through PgBouncer 1.26.1, 147 of 151, which found the halt store's
     `LISTEN` broken behind it (L16, fixed; L17).
-    `deploy-agent` as two hardened containers on PostgreSQL (L18).
+    `deploy-agent` as two hardened containers on PostgreSQL (L18); its Dockerfile's build stages ran on 2026-11-01 (see above).
     `promtool test rules` (Prometheus 3.15.1, from its image) on
     `deploy/observability/prometheus/tests/`: passes. CI does not run it.
   - **Not yet run live:** the client dashboard with a
     long-lived client (L11: short-lived CLI processes never export); the
-    `deploy-agent` Dockerfile's build stages (its runtime stage ran, L18).
-  - **First, next session (plan agreed with the maintainer 2026-10-30),
-    once #184 is green and merged:**
-    1. **Triage, no code.** Re-check every `open` row against the code on
-       `main`: read it, or run it where it is a behaviour. Mark each
-       `fixed` (with the commit), `confirmed (read)` or `verified live`
-       (still real), `not a defect`, or `needs decision` (a design the
-       maintainer chooses, as L5 was). Start with the S0, S1 and high rows
-       above, then the rest by severity. Correct the count here.
-    2. **Fix in themed pull requests**, each held to the bar above before
-       its first push: docs and READMEs (report G's 33 rows, mostly
-       cheap), then client, then stores, then the remaining SEC rows.
-    3. **The H-report designs** (retry budget and circuit breaker,
-       admission queue and fairness, task lineage and tree-scoped halt,
-       per-tenant metrics, polyglot swarm controls) each need an ADR and
-       the maintainer's choice before they are built; set out the options
-       for each, as was done for L5, rather than building one.
+    (the `deploy-agent` Dockerfile's build stages ran on 2026-11-01.)
+  - **First, next (2026-11-01).** The maintainer chose **one large pull request**, built as the
+    19 commit groups of `docs/audits/2026-11-01-triage/PLAN.md`; open it only when the groups meant for
+    0.16.0 pass the bar above (a pushed branch starts no CI; the workflows run on `pull_request`).
+    1. Groups A to D of `PLAN.md`, in that order. Each regression test first, seen to fail on the
+       unfixed code. A and the NEW-d-1 test of C are reproducible now: `probes/` holds the two live runs.
+    2. Put the twelve forks of `docs/audits/2026-11-01-triage/DECISIONS.md` to the maintainer; none of
+       groups A to D waits on one.
+    3. Run the baseline suites on `4a8243c` in this environment (they were not run: only the 36 script
+       gates, each exit 0, and a dev build of `deploy-agent`, `a2a`, `live-model` and `hello-agent`).
+    4. `main`'s own `CI` run on `4a8243c` had not finished when it was last read (13 other push
+       workflows were `success`); read it before building on `main`.
+  - **Environment for live runs, as stood up 2026-11-01** (4 vCPU, 15 GB, about 22 GB of disk free after
+    the build; the Docker daemon, PostgreSQL and the services below are *not* running at session start):
+    `dockerd >/tmp/dockerd.log 2>&1 &` (the CLI is installed, the daemon is not); `pg_ctlcluster 16 main
+    start` then `su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'postgres'\""`, giving
+    `postgres://postgres:postgres@localhost:5432/postgres` (PostgreSQL 16.15). llama.cpp: `docker pull
+    ghcr.io/ggml-org/llama.cpp:server` works (build 12030, commit `a91eab67d`); models come from Hugging
+    Face, which is reachable: `unsloth/Qwen3.5-2B-GGUF` `Qwen3.5-2B-Q4_K_M.gguf` (SHA-256 `aaf42c8b…9223`,
+    the file of the 2026-10-28 run) and `unsloth/gemma-4-E2B-it-GGUF` `gemma-4-E2B-it-Q4_0.gguf`
+    (`31d3a3c6…0132`, **not** the 2026-10-28 Gemma file `8e30dff3…6a52`, so Gemma results are not
+    byte-comparable with that run). Serve with `docker run -d --name llama -p 127.0.0.1:8080:8080 -v
+    /home/user/models:/models:ro ghcr.io/ggml-org/llama.cpp:server -m /models/<file> --host 0.0.0.0
+    --port 8080 --jinja -c 16384 -np 2 -t 4`; a smoke prompt answered. `scripts/install_cargo_mutants.sh`
+    (about 5 minutes) installs the patched `cargo-mutants` 27.1.0 and `cargo-nextest` 0.9.146. Not
+    installed and not run: `cargo-hack`, `cargo-deny`, `cargo-semver-checks`, `mdbook`, `kind`,
+    `kubectl`, `promtool`, the Collector, Squid, HAProxy, toxiproxy (pull images where a run needs
+    them). Build with CI's flags (`RUSTFLAGS=-D warnings CARGO_PROFILE_DEV_DEBUG=0`) so `preflight.sh`
+    reuses the artifacts. `pkill -f <text>` kills your own shell when the text is in its command line;
+    use `pkill -x <name>`. Git here is configured as `Claude <noreply@anthropic.com>`, which `dco.yml`
+    rejects; commit with `git -c user.name='Tom F.' -c user.email=tomf@tomtomtech.net commit -s`, as
+    the merged commits are. The maintainer confirmed on 2026-11-01 that he signs off every commit as
+    Tom F. with no other trailer, so that DCO passes.
+  - **Toolchain: run `rustup update stable` first.** This image shipped Rust 1.97.0; CI's
+    `toolchain: stable` was 1.99.1 (2026-10-15). Clippy 1.97 failed `doc_markdown` and
+    `duration_suboptimal_units` on files nobody had touched, which looks like a defect in `main` and
+    is not; under 1.99.1 clippy is clean on the crates checked. Clear `target/` after the update.
+  - **Dependencies (maintainer, 2026-11-01):** the repository does not ban new dependencies. Avoid one
+    where pure Rust can do the job to production grade; do not reinvent a vetted solution to avoid
+    one, above all for anything security-sensitive. `CONTRIBUTING.md` (Dependency Policy) and ADR
+    0002 (amendment) say so; the first use is `subtle` for constant-time comparison.
 - **Branch `claude/intelligent-bohr-9qraxk` (2026-10-28), on `main` at
   `568fc6c1` (pull request #182, the 0.15.1 preparation, merged; no tag).**
   The maintainer judged 0.15.0 not ready in practice and asked for everything
@@ -291,8 +511,8 @@ only: when something here is done, delete it rather than annotating it.
   the book with stale claims (`tools/a2a-cli` exit codes and `--header` on
   `card`, `tck/README.md` on BIND-EQUIV-004, `packaging/README.md` on the
   signing key).
-- **Working branch:** `claude/amazing-turing-y8pjhv`, from `main` at
-  `8dc4331`. `git log origin/main..` lists what it holds that `main` lacks.
+- **Working branch:** `claude/pensive-bardeen-c6ofm8`, from `main` at `4a8243c`. `git log origin/main..`
+  lists what it holds that `main` lacks.
 - **Merged in #179** (branch `claude/zealous-fermat-f4kg9z`, 2026-10-23 to
   2026-10-24; merged 2026-10-24 13:23 UTC as `2781bb69`). The PR head
   `6707f4d` had 104 check runs, 98 success and 6 skipped by their own
@@ -869,6 +1089,40 @@ read `cargo deny check advisories` after the update, not before.
 Kept under this heading because `release.yml` and `packaging/README.md` cite
 it.
 
+- **2026-11-01, answers to `docs/audits/2026-11-01-triage/DECISIONS.md`** (all built or recorded as
+  below; the forks are described there):
+  - **F1, 0.16.0 breaks: all five.** `#[non_exhaustive]` on the generated wire structs (G-10),
+    `tls-rustls` as a default feature of the server crate (G-06), `RequestContext.context_id` becomes
+    `ContextId` (G-18), `AgentCard::new` defaults `streaming` to true (G-07), and `sign_agent_card` is
+    removed (NEW-g-api-4). Each under Breaking Changes with a migration. No `**Cadence exception:**` line
+    is needed for a 0.16.0 dated in November or later (0.15.0 is dated in October; the check compares
+    calendar months, and this file said otherwise until 2026-11-02).
+  - **F2, loopback and proxies: exempt loopback by default**, `A2A_PROXY_LOOPBACK=1` to opt back in, and
+    Go's `NO_PROXY` dialect (B-23).
+  - **F3, bad `OTEL_*` values: warn and fall back**; only an unusable endpoint URL still fails.
+  - **F4, Production profile: refuse** a process-local halt, lease, push-config or audit store when the
+    task store hands out claims, with an explicit opt-out (amends ADR 0025).
+  - **F5, delegation on shutdown: detach and resume.** With a journal attached, shutdown detaches; the
+    resume streak resets on any event; stream keep-alive for gRPC and WebSocket; a journaled
+    delegation can be leased and budgeted.
+  - **F7, one HTTP pool: build ADR 0032's opt-in `HttpPool` now** (not the "document the `Arc` pattern"
+    position the triage recommended).
+  - **F8, container image: publish a signed image to GHCR from `release.yml`** with provenance (written
+    here, cannot be exercised here), beside fixing the README and manifest.
+  - **F9, Agent Skills: an ADR now, a feature-gated module in 0.17.0**, no script execution.
+  - **F10, steering a running agent: an ADR and the extension URI now, the build after the audit PR.**
+  - **F12, swarm designs: only the four fixes** (H16, NEW-h-designs-1, -4, -7) in this PR; each design is
+    its own ADR and later PR.
+  - **F11, changelog: a highlights block (at most 15 lines) checked by `check_release_tree.py`, and
+    `### Internal` moved out to `docs/changelog-internal/`**, as its own commit at the end.
+  - **F6, patch behaviour policy: no work.** The maintainer's answer: "we are planning to release
+    v0.16.0, v0.15.1 was never released." Read as: the `[0.15.1]` changelog section (dated 2026-10-26,
+    never tagged) is not a release and its entries belong to 0.16.0's notes; no patch gate is built.
+    That folding is not done yet (group P); say so to the maintainer if it was not what they meant.
+  - **F13 to F15 were not asked;** the positions in `DECISIONS.md` stand until told otherwise (F13
+    accept and document the window, F14 a bounded wait in the stream reader, F15 certificate reload
+    after 0.16.0 and deprecate `tls_config_with_extra_roots` now).
+
 - **2026-10-28:** replicas must work without session affinity, and the
   release is not ready until they do and the observability stack works out of
   the box; every check is to be run live (llama.cpp with current small Qwen
@@ -1105,6 +1359,44 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **`127.0.0.2` is loopback on Linux only.** A push test used it as "an address that is down" and passed
+  on Linux; on macOS nothing configures it, so the connect waited out the request timeout and the macOS
+  job of #186 failed with "timed out after 2s" (not "refused"). A test that needs a fast refusal on every
+  platform uses `::1` with nothing listening on it (`down_address` in `push/sender_pin_tests.rs`). The
+  sandbox cannot reproduce a black-holed address (it rejects at once), so the fix was verified on Linux
+  and confirmed by the CI re-run, not reproduced.
+- **Check a rule in a planning document against the gate that enforces it.** `DECISIONS.md` said a
+  November 0.16.0 needed a `**Cadence exception:**` line because 0.15.0 was breaking in October; the gate
+  (`check_release_tree.py`, `check_cadence`) compares the calendar months of the two release dates, so a
+  November release needs none. The wrong line had been copied into three documents and a to-do list; it
+  was found by reading the gate before drafting the line, 2026-11-02.
+- **A sandbox run that fails oddly may be a full disk.** `cancel_keeps_concurrent_writes sqlite`
+  failed once in a full run while `df` read 100%, and passed 3 of 3 alone and in the next full run. The
+  target directory is about 8 GB and each side manifest (`fuzz/`, `itk/`, `bindings/`) adds 300-700 MB;
+  `cargo clean -p a2a-protocol-server -p a2a-protocol-sdk`, `rm -rf target/nextest` and removing the side
+  `target/` directories gets it back. Check `df` before blaming a test.
+- **A codemod over hundreds of sites needs a fixpoint, a path allowlist and a comment rule.**
+  Nested literals are not reached by one pass; `pb::Message` (prost) and a different SDK's harness matched
+  the type names and had to be kept out; comments inside a literal vanish unless carried to the new call.
+  Run it to zero conversions, then let the compiler list what is left. See the G-10 commit message.
+- **A liveness check that compares a clock with the interval is decided by
+  timer jitter** (found 2026-11-01 by a test that failed 22 of 40 runs on an
+  idle machine). The WebSocket client's first keepalive asked "has the idle
+  time reached the interval?" at each tick; right after a pong the idle time
+  was 99 ms against a 100 ms interval, so that tick sent no ping and the next
+  saw 200 ms and closed a live connection. At the 15 s default the same thing
+  would have dropped healthy idle connections about every other timer run. It
+  now counts quiet ticks (`Keepalive`, `transport/websocket.rs`): a ping on the
+  first, close on the second, any frame resets. Count events, do not compare a
+  duration with the period that produces the sample.
+- **Restoring a mutated file by `shutil.move` of a backup leaves cargo with a
+  stale binary.** The backup was copied before the mutant was written, so the
+  restored file's modification time is older than the mutant's build output, and
+  cargo does not rebuild: the next test run still contains the last mutant
+  (`a2a_extensions_is_not_reported_as_a_dropped_header` failed with left 1,
+  right 0 on correct source). Restore by writing the content back, or `touch`
+  the file, and treat any failure that follows a mutant run as stale until a
+  rebuild shows it.
 - **A scoped tracing subscriber is not enough to capture a log line in a
   parallel test binary** (root cause of the 1-in-20 `log_redaction` flake,
   found 2026-10-24). `tracing-core` 0.1.36 keeps `has_just_one` true while
@@ -1225,6 +1517,51 @@ into this file: the commit that records it changes it.
   crate it changed: after WP-B, the CLI's and the MCP bridge's tests
   served cards without skills. Run the whole workspace, not the crates a
   package touched, before merging it.
+- Crates outside the workspace (`bindings/a2a-protocol-slimrpc`, `itk`, `fuzz`,
+  `benches/sdk-comparison/harness/*`, `scripts/live/replica`, the wasm spike) are
+  reached by none of `cargo fmt --all`, `cargo clippy --workspace` or nextest. A
+  codemod over the workspace leaves them unformatted and their old assertions
+  unrun, and the first CI run is where it shows. After one, run each manifest's
+  own commands: the SLIMRPC job is `cargo fmt --check`, `cargo clippy
+  --all-targets -- -D warnings`, `cargo test --tests`, run from the binding;
+  `fuzz` compiles only under `RUSTFLAGS="--cfg fuzzing"` (2026-11-02).
+- My local gate list (`gates.sh`, 36 scripts) was written from memory and is not
+  CI's: "Static checks" has 46 steps, and `prove_workflow_gates_fail.py` was not
+  among the ones I ran. Build the list from the job, with `yaml.safe_load` over
+  `.github/workflows/ci.yml` and every `run:` of the job, and treat a step that
+  needs a binary the container lacks (`ssh-keygen`) as not run, not as passed.
+  A new `if`/`run` step in a workflow that can decide to fail needs a Probe or
+  an Exempt in `scripts/prove_workflow_gates_fail.py` (2026-11-02).
+- The incremental mutation run uses nextest, which does not run doctests: a public
+  helper tested only by its doctest (`webhook::delivery_id`) survives every mutant.
+  Give such a helper unit tests, and write the assertion as tight as the behaviour:
+  a bound checked with `>=` and `<` around it let `<` to `<=` through. Under
+  `start_paused` the elapsed time is exact, so assert it exactly. To list a mutation
+  run's failed shards cheaply, ask `get_job_logs` for `failed_only` with
+  `tail_lines: 1`; the verdict is the `MISSED` and `N mutants tested` lines of each
+  shard's `cargo-mutants execution log` group (2026-11-02).
+- Every `Debug` impl a branch adds is a mutant (`replace fmt with
+  Ok(Default::default())`) that survives unless a test prints it, and a run reports
+  them one shard at a time. List them from the diff before the run
+  (`git diff origin/main...HEAD | grep -E '^\+.*impl.*Debug for'`) and test each,
+  asserting the exact string, including what it leaves out (2026-11-02).
+- A `#[cfg(test)]` function that repeats a production function's steps lets the
+  tests pass while the production conditional goes unexercised:
+  `SyncCollector::collect_events` (test-only) and `collect_then_follow` (what a
+  blocking send runs) both had `if !interrupted { close_out }`, only the copy was
+  tested, and deleting the `!` from the real one survived. Test the function the
+  product calls, or make the test wrapper call it (2026-11-02).
+- A feature-gated test file built without its feature holds no tests, and running
+  its binary by name exits 0: a repeat-run measurement of it "passes" every time.
+  Before counting failures, list the binary (`$BIN --list | grep -c ': test$'`) and
+  build with the feature the file is gated on (`content_verification` needs
+  `--features signing`); I reported 1,940 passing runs of a binary with 0 tests
+  before I checked (2026-11-02).
+- A test that forces an interleaving by firing on "the next read" breaks when
+  production code gains a read. The in-memory store hid it (its reads never
+  yield); SQLite showed it in 17 of 200 runs. Fire on the write that has one
+  author, and measure a flake as N separate-process runs on the branch against
+  N on main before deciding whose fault it is (2026-11-02).
 
 ## History
 

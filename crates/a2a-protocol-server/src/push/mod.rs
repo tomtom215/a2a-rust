@@ -10,6 +10,7 @@ pub mod cipher;
 pub mod config_store;
 pub(crate) mod gate;
 mod pinning;
+mod request;
 pub mod sender;
 pub mod tenant_config_store;
 pub mod webhook;

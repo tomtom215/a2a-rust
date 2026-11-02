@@ -38,12 +38,7 @@ const BOTH: &str = "https://example.com/ext/required/v1, https://example.com/ext
 const TASK_NOT_FOUND: i64 = -32001;
 
 fn extension(uri: &str, required: bool) -> AgentExtension {
-    AgentExtension {
-        uri: uri.to_owned(),
-        description: None,
-        required: Some(required),
-        params: None,
-    }
+    AgentExtension::new(uri.to_owned()).with_required(required)
 }
 
 fn handler() -> Arc<RequestHandler> {

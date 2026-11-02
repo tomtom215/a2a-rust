@@ -235,14 +235,9 @@ mod tests {
     fn task() -> Task {
         let mut status = TaskStatus::new(TaskState::InputRequired);
         status.timestamp = Some("2026-10-29T00:00:00Z".into());
-        Task {
-            id: TaskId::new("t"),
-            context_id: ContextId::new("ctx"),
-            status,
-            history: Some(vec![Message::user_text("m", "x")]),
-            artifacts: Some(vec![Artifact::new("a", vec![Part::text("x")])]),
-            metadata: None,
-        }
+        Task::new(TaskId::new("t"), ContextId::new("ctx"), status)
+            .with_history(vec![Message::user_text("m", "x")])
+            .with_artifacts(vec![Artifact::new("a", vec![Part::text("x")])])
     }
 
     /// Each of the four differs alone, with the rest the same: a change in

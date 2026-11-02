@@ -23,20 +23,32 @@
 //! claim missing (taken over after this process failed to renew it for a
 //! whole time to live); in the second case the fence has already refused,
 //! or will refuse, everything the turn writes.
+//!
+//! A replica cut off from the store learns neither of those: its renewals
+//! fail, nothing is reported, and until the link returns its executor runs on
+//! while another replica's reaper ends the task. So a holder must stop acting
+//! on a claim it can no longer prove it holds, and before anyone else can
+//! take it over. Each claim records when this replica last had proof (the
+//! moment before it was taken, or before the renewal the store last
+//! answered); a watchdog, independent of the renewal call, which can itself be
+//! stuck, stops every turn whose proof is older than four fifths of the time
+//! to live ([`lapse_after`]). Such a turn ends `Failed`, failure class
+//! `transient`, as a shutdown ends one (audit E-F7).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError, Weak};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use a2a_protocol_types::task::TaskId;
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::{ServerError, ServerResult};
 use crate::store::TurnClaimStore;
 use crate::store::tenant::TenantContext;
 
-use super::RequestHandler;
+use super::{ExecutorTurn, RequestHandler};
 
 /// How long a claim lives without renewal: the longest a task stays
 /// unavailable after the replica running it dies.
@@ -49,12 +61,6 @@ pub const DEFAULT_TURN_CLAIM_RENEWAL: Duration = Duration::from_secs(1);
 /// The shortest time to live `build` accepts: under it, a renewal delayed by
 /// one slow database round trip can lose a live claim.
 pub const MIN_TURN_CLAIM_TTL: Duration = Duration::from_secs(3);
-
-/// How long expired claims are kept before a renewer sweeps them.
-const SWEEP_AFTER: Duration = Duration::from_secs(3600);
-
-/// Renewals between two sweeps.
-const RENEWALS_PER_SWEEP: u32 = 600;
 
 /// The first wait between two attempts on a claim another turn holds, and
 /// the longest; each wait doubles the last.
@@ -82,6 +88,15 @@ struct Held {
     task_id: TaskId,
     /// The executor's token, once the turn has one.
     cancel: Option<CancellationToken>,
+    /// The turn the executor runs, once it has one: told when the claim
+    /// lapses, so the turn ends transient and not canceled.
+    turn: Option<Arc<ExecutorTurn>>,
+    /// When this replica last had proof it held the claim: before it was
+    /// taken, or before the last renewal the store answered. Taken before the
+    /// call, so it never overstates how recent the proof is.
+    fresh_at: Instant,
+    /// The claim lapsed (see [`lapse_after`]) and its turn was stopped.
+    lapsed: bool,
 }
 
 impl TurnClaims {
@@ -132,11 +147,17 @@ pub struct TurnClaim {
 }
 
 impl TurnClaim {
-    /// Hands the renewer the executor's token, so a cancel from another
-    /// replica or a lost claim stops the executor.
-    pub(crate) fn attach(&self, cancel: &CancellationToken) {
+    /// Hands the renewer the executor's token and turn, so a cancel from
+    /// another replica, a lost claim or a lapsed one stops the executor. A
+    /// claim that lapsed before the executor existed stops it now.
+    pub(crate) fn attach(&self, cancel: &CancellationToken, turn: &Arc<ExecutorTurn>) {
         if let Some(held) = self.claims.held().get_mut(&self.token) {
             held.cancel = Some(cancel.clone());
+            held.turn = Some(Arc::clone(turn));
+            if held.lapsed {
+                turn.lapse();
+                cancel.cancel();
+            }
         }
     }
 }
@@ -197,7 +218,9 @@ impl RequestHandler {
         let token = uuid::Uuid::new_v4().to_string();
         let deadline = tokio::time::Instant::now() + self.limits.executor_drain_timeout;
         let mut wait = RETRY_FIRST;
+        let mut started;
         loop {
+            started = Instant::now();
             if claims
                 .store
                 .claim(&scope, &task_id.0, &claims.owner, &token, claims.ttl)
@@ -213,7 +236,7 @@ impl RequestHandler {
             tokio::time::sleep(wait.min(deadline - now)).await;
             wait = (wait * 2).min(RETRY_MAX);
         }
-        Ok(Some(hold(claims, task_id, token)))
+        Ok(Some(hold(claims, task_id, token, started)))
     }
 
     /// One attempt at [`claim_turn`](Self::claim_turn), without waiting:
@@ -227,6 +250,7 @@ impl RequestHandler {
             return Ok(TurnAttempt::Off);
         };
         let token = uuid::Uuid::new_v4().to_string();
+        let started = Instant::now();
         if claims
             .store
             .claim(
@@ -238,7 +262,7 @@ impl RequestHandler {
             )
             .await?
         {
-            return Ok(TurnAttempt::Held(hold(claims, task_id, token)));
+            return Ok(TurnAttempt::Held(hold(claims, task_id, token, started)));
         }
         if self.cancellation_tokens.read().await.contains_key(task_id) {
             return Err(busy(task_id));
@@ -312,13 +336,17 @@ fn busy(task_id: &TaskId) -> ServerError {
 }
 
 /// Registers a claim just taken with the renewer, and fences the rest of
-/// the request's writes with it.
-fn hold(claims: &Arc<TurnClaims>, task_id: &TaskId, token: String) -> TurnClaim {
+/// the request's writes with it. `started` is when the attempt that won it
+/// began: the proof, from then, that this replica held it.
+fn hold(claims: &Arc<TurnClaims>, task_id: &TaskId, token: String, started: Instant) -> TurnClaim {
     claims.held().insert(
         token.clone(),
         Held {
             task_id: task_id.clone(),
             cancel: None,
+            turn: None,
+            fresh_at: started,
+            lapsed: false,
         },
     );
     claims.start_renewer();
@@ -359,91 +387,9 @@ impl RequestHandler {
     }
 }
 
-impl TurnClaims {
-    /// Starts the handler's renewer, once.
-    fn start_renewer(self: &Arc<Self>) {
-        if self.renewer_started.swap(true, Ordering::AcqRel) {
-            return;
-        }
-        tokio::spawn(renew_loop(Arc::downgrade(self), self.renew_every));
-    }
-}
-
-/// Renews every claim the handler holds each `every`, until the handler is
-/// dropped; see the module docs for what it does with the answer.
-async fn renew_loop(claims: Weak<TurnClaims>, every: Duration) {
-    let mut tick = tokio::time::interval(every);
-    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut renewals: u32 = 0;
-    loop {
-        tick.tick().await;
-        let Some(claims) = claims.upgrade() else {
-            return;
-        };
-        // Judged against the tokens held when the renewal was sent: a claim
-        // taken while it was in flight is not in its answer, and is not lost.
-        let sent: Vec<String> = claims.held().keys().cloned().collect();
-        if sent.is_empty() {
-            continue;
-        }
-        match claims.store.renew(&claims.owner, &sent, claims.ttl).await {
-            Ok(report) => act_on(&claims, &sent, &report),
-            Err(_e) => {
-                // An outage is not evidence that another replica took over:
-                // the fence decides that, write by write.
-                trace_warn!(error = %_e, "turn claims not renewed; retrying next interval");
-            }
-        }
-        renewals = renewals.wrapping_add(1);
-        if renewals.is_multiple_of(RENEWALS_PER_SWEEP)
-            && let Err(_e) = claims.store.sweep(SWEEP_AFTER).await
-        {
-            trace_warn!(error = %_e, "expired turn claims not swept");
-        }
-    }
-}
-
-/// Acts on a renewal of the tokens in `sent`: fires the cancel asked for
-/// elsewhere, and stops each turn whose claim is missing from `report`. A
-/// token released since is no longer held and is skipped; one claimed since
-/// is not in `sent` and is left for the next renewal.
-fn act_on(claims: &TurnClaims, sent: &[String], report: &[crate::store::HeldClaim]) {
-    let reported: HashMap<&str, bool> = report
-        .iter()
-        .map(|c| (c.token.as_str(), c.cancel_requested))
-        .collect();
-    let mut held = claims.held();
-    let mut lost = Vec::new();
-    for token in sent {
-        let Some(turn) = held.get(token) else {
-            continue;
-        };
-        match reported.get(token.as_str()) {
-            Some(true) => {
-                if let Some(cancel) = &turn.cancel
-                    && !cancel.is_cancelled()
-                {
-                    trace_info!(task_id = %turn.task_id, "cancelled on another replica; stopping it here");
-                    cancel.cancel();
-                }
-            }
-            Some(false) => {}
-            None => lost.push(token.clone()),
-        }
-    }
-    for token in lost {
-        if let Some(turn) = held.remove(&token) {
-            trace_warn!(
-                task_id = %turn.task_id,
-                "this replica's claim on the task was taken over; stopping its executor"
-            );
-            if let Some(cancel) = turn.cancel {
-                cancel.cancel();
-            }
-        }
-    }
-}
-
 mod reaper;
+mod renewal;
+#[cfg(test)]
+use renewal::{act_on, lapse_after};
 #[cfg(test)]
 mod tests;

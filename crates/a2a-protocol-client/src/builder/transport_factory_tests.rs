@@ -170,28 +170,15 @@ fn builder_jsonrpc_with_retry_policy() {
 fn builder_from_card_rejects_incompatible_binding() {
     use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
-    let card = AgentCard {
-        url: None,
-        name: "test".into(),
-        version: "1.0".into(),
-        description: "Test agent".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "http://localhost:9090".into(),
-            protocol_binding: "UNKNOWN".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        capabilities: AgentCapabilities::none(),
-        security_schemes: None,
-        security_requirements: None,
-        default_input_modes: vec![],
-        default_output_modes: vec![],
-        skills: vec![],
-        signatures: None,
-    };
+    let card = AgentCard::new(
+        "test",
+        "1.0",
+        AgentInterface::new("http://localhost:9090", "UNKNOWN").with_protocol_version("1.0.0"),
+    )
+    .with_description("Test agent")
+    .with_input_modes(Vec::<String>::new())
+    .with_output_modes(Vec::<String>::new())
+    .with_capabilities(AgentCapabilities::none());
 
     let result = ClientBuilder::from_card(&card).unwrap().build();
     assert!(result.is_err(), "unknown binding should fail");

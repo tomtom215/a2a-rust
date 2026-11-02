@@ -95,16 +95,11 @@ impl Turn {
                     .ids
                     .clone()
                     .unwrap_or_else(|| (TaskId::new(""), ContextId::new("")));
-                let update = TaskStatusUpdateEvent {
+                let update = TaskStatusUpdateEvent::new(
                     task_id,
                     context_id,
-                    status: TaskStatus {
-                        state,
-                        message: Some(message),
-                        timestamp: None,
-                    },
-                    metadata: None,
-                };
+                    TaskStatus::new(state).with_message(message),
+                );
                 (StreamResponse::StatusUpdate(update), true)
             }
             _ => (StreamResponse::Message(message), false),
@@ -183,23 +178,19 @@ mod tests {
     }
 
     fn status(state: TaskState) -> StreamResponse {
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
-            status: TaskStatus::new(state),
-            metadata: None,
-        })
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new("t"),
+            ContextId::new("c"),
+            TaskStatus::new(state),
+        ))
     }
 
     fn artifact() -> StreamResponse {
-        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
-            artifact: Artifact::new(ArtifactId::new("a"), vec![Part::text("x")]),
-            append: None,
-            last_chunk: None,
-            metadata: None,
-        })
+        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(
+            TaskId::new("t"),
+            ContextId::new("c"),
+            Artifact::new(ArtifactId::new("a"), vec![Part::text("x")]),
+        ))
     }
 
     /// The status a folded message was given, or `None` if it was not.
@@ -312,25 +303,23 @@ mod writer_tests {
         // is assigned ("no active receivers").
         drop(reader);
         let failed = writer
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: task_id.clone(),
-                context_id: context_id.clone(),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            }))
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                task_id.clone(),
+                context_id.clone(),
+                TaskStatus::new(TaskState::Working),
+            )))
             .await;
         assert!(failed.is_err(), "{failed:?}");
 
         let mut rx = writer.raw_subscribe();
         writer
-            .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id,
-                context_id,
-                artifact: Artifact::new("a", vec![Part::text("x")]),
-                append: None,
-                last_chunk: None,
-                metadata: None,
-            }))
+            .write(StreamResponse::ArtifactUpdate(
+                TaskArtifactUpdateEvent::new(
+                    task_id,
+                    context_id,
+                    Artifact::new("a", vec![Part::text("x")]),
+                ),
+            ))
             .await
             .expect("artifact");
         writer

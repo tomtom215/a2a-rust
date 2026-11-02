@@ -21,37 +21,17 @@ use a2a_protocol_server::agent_card::dynamic_handler::{
 
 /// Minimal agent card for tests.
 fn test_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Dynamic Agent".into(),
-        description: "A dynamically produced card".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "https://agent.example.com/rpc".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "test".into(),
-            name: "Test".into(),
-            description: "Test skill".into(),
-            tags: vec!["test".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "Dynamic Agent",
+        "1.0.0",
+        AgentInterface::new("https://agent.example.com/rpc", "JSONRPC")
+            .with_protocol_version("1.0.0"),
+    )
+    .with_description("A dynamically produced card")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("test", "Test", "Test skill").with_tags(vec!["test"]))
+    .with_capabilities(AgentCapabilities::none())
 }
 
 /// A simple producer that always returns the same card.

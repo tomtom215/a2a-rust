@@ -37,37 +37,16 @@ impl AgentExecutor for NoopExecutor {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn minimal_agent_card() -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "gRPC Test Agent".into(),
-        description: "A gRPC test agent".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "grpc://localhost:50051".into(),
-            protocol_binding: "gRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "noop".into(),
-            name: "Noop".into(),
-            description: "Does nothing".into(),
-            tags: vec!["test".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none(),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "gRPC Test Agent",
+        "1.0.0",
+        AgentInterface::new("grpc://localhost:50051", "gRPC").with_protocol_version("1.0.0"),
+    )
+    .with_description("A gRPC test agent")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("noop", "Noop", "Does nothing").with_tags(vec!["test"]))
+    .with_capabilities(AgentCapabilities::none())
 }
 
 fn build_handler() -> Arc<a2a_protocol_server::handler::RequestHandler> {

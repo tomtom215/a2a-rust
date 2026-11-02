@@ -16,22 +16,11 @@ The queue is your channel for sending events back to the client:
 # use a2a_protocol_sdk::prelude::*;
 # async fn f(ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
 // Write a status update
-queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-    task_id: ctx.task_id.clone(),
-    context_id: ContextId::new(ctx.context_id.clone()),
-    status: TaskStatus::new(TaskState::Working),
-    metadata: None,
-})).await?;
+queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), TaskStatus::new(TaskState::Working)))).await?;
 
 // Write an artifact
-queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-    task_id: ctx.task_id.clone(),
-    context_id: ContextId::new(ctx.context_id.clone()),
-    artifact: Artifact::new("result", vec![Part::text("output")]),
-    append: None,
-    last_chunk: Some(true),
-    metadata: None,
-})).await?;
+queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), Artifact::new("result", vec![Part::text("output")]))
+    .with_last_chunk(true))).await?;
 # Ok(())
 # }
 ```

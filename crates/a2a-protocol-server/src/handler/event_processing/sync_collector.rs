@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use a2a_protocol_types::events::StreamResponse;
+use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
@@ -208,6 +208,9 @@ impl SyncCollector {
             true,
         )
         .await?;
+        if !state.task.status.state.is_interrupted() {
+            self.close_out(&task_id, &mut state).await;
+        }
         Ok(self.answer(&task_id, &mut state))
     }
 
@@ -257,6 +260,9 @@ impl SyncCollector {
             return;
         }
         let interrupted = state.task.status.state.is_interrupted();
+        if !interrupted {
+            self.close_out(&task_id, &mut state).await;
+        }
         // The caller may have gone; what was collected is stored either way.
         let _ = answer.send(Ok(self.answer(&task_id, &mut state)));
         if !interrupted {
@@ -279,6 +285,7 @@ impl SyncCollector {
                 "storing a task's events after its interrupted state failed"
             );
         }
+        self.close_out(&task_id, &mut state).await;
         self.spawn_push_delivery(task_id, std::mem::take(&mut state.push_events));
     }
 
@@ -340,9 +347,12 @@ impl SyncCollector {
                 tokio::select! {
                     biased;
                     event = events.recv() => {
-                        match event.map(crate::streaming::event_queue::unshare) {
-                            Some(event) => self.fold(event, task_id, state).await?,
-                            None => break,
+                        if let Some(event) = event.map(crate::streaming::event_queue::unshare) {
+                            self.fold(event, task_id, state).await?;
+                        } else {
+                            self.on_queue_closed(task_id, executor, state, executor_done)
+                                .await?;
+                            break;
                         }
                     }
                     returned = &mut *executor => {
@@ -481,6 +491,72 @@ impl SyncCollector {
         Ok(())
     }
 
+    /// The collection is over and no terminal event reached it. A task that
+    /// is terminal in the store was ended by another writer — `CancelTask`
+    /// taken on another replica, whose throwaway writer has no queue to this
+    /// one — while the executor here stopped on its token and returned
+    /// without writing. The caller is answered with the task as stored, not
+    /// the stale state this collection held, and the ending is recorded in the
+    /// log and queued for the webhooks, as an ending the executor wrote would
+    /// be (audit E-F9). A task not terminal in the store is left as it is.
+    async fn close_out(&self, task_id: &TaskId, state: &mut CollectState) {
+        if state.task.status.state.is_terminal() {
+            return;
+        }
+        let Ok(Some(stored)) = self.task_store.get(task_id).await else {
+            return;
+        };
+        if !stored.status.state.is_terminal() {
+            return;
+        }
+        let ending = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            task_id.clone(),
+            stored.context_id.clone(),
+            stored.status.clone(),
+        ));
+        state.task = stored;
+        state.saw_task_shaped_event = true;
+        super::append_ending(
+            &*self.task_store,
+            task_id,
+            &ending,
+            &*self.metrics,
+            self.limits.store_write_retry,
+        )
+        .await;
+        state.record_for_push(self.push_sender.is_some(), &ending);
+    }
+
+    /// The queue closed before the executor was seen to end: learns how it
+    /// ended, within `executor_drain_timeout`, so a panic still fails the task.
+    ///
+    /// The queue closes inside the executor's cleanup, ahead of its task's
+    /// end, and a panic's unwind runs that cleanup first. On a multi-thread
+    /// runtime the collector can see the closed queue before the join result,
+    /// and stopping there left the task `working` for good (audit NEW-d-1).
+    /// Normally the wait is the few instructions left of the executor's
+    /// cleanup; the bound is for the executor that does not end.
+    async fn on_queue_closed(
+        &self,
+        task_id: &TaskId,
+        executor: &mut crate::handler::messaging::WatchedExecutor,
+        state: &mut CollectState,
+        executor_done: &mut bool,
+    ) -> ServerResult<()> {
+        // timeout-nesting: the other wait on this bound, the drain in `run`,
+        // happens only once the executor has ended, and this one only while it
+        // has not; a call takes one of them, then stops.
+        let Some(returned) = executor
+            .ended_within(self.limits.executor_drain_timeout)
+            .await
+        else {
+            return Ok(());
+        };
+        *executor_done = true;
+        let folded = self.on_executor_finished(returned, task_id, state).await;
+        self.unless_superseded(folded, task_id, state).await
+    }
+
     /// Handles the executor ending mid-collection; `returned` is false when
     /// it panicked or was aborted.
     ///
@@ -489,11 +565,11 @@ impl SyncCollector {
     async fn on_executor_finished(
         &self,
         returned: bool,
-        _task_id: &TaskId,
+        task_id: &TaskId,
         state: &mut CollectState,
     ) -> ServerResult<()> {
         if !returned {
-            trace_error!(task_id = %_task_id, "executor task panicked");
+            trace_error!(task_id = %task_id, "executor task panicked");
             if !state.task.status.state.is_terminal() {
                 let failed = super::panic_failure(&mut state.task);
                 state.saw_task_shaped_event = true;
@@ -504,7 +580,16 @@ impl SyncCollector {
                     || self.task_store.save(&state.task),
                 )
                 .await?;
-                // Saved, so the webhooks hear it too (audit D-03).
+                // Saved, so the webhooks hear it too and the log records it
+                // (audit D-03).
+                super::append_ending(
+                    &*self.task_store,
+                    task_id,
+                    &failed,
+                    &*self.metrics,
+                    self.limits.store_write_retry,
+                )
+                .await;
                 state.record_for_push(self.push_sender.is_some(), &failed);
             }
         }
@@ -559,10 +644,11 @@ impl SyncCollector {
                         to: next,
                     });
                 }
-                last_task.status = TaskStatus {
-                    state: next,
-                    message: update.status.message.clone(),
-                    timestamp: update.status.timestamp.clone(),
+                last_task.status = {
+                    let mut built = TaskStatus::new(next);
+                    built.message.clone_from(&update.status.message);
+                    built.timestamp.clone_from(&update.status.timestamp);
+                    built
                 };
                 super::persisting(
                     self.limits.store_write_retry,
@@ -976,24 +1062,16 @@ mod tests {
     agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
 
     fn make_task(id: &str, state: TaskState) -> Task {
-        Task {
-            id: id.into(),
-            context_id: ContextId::new("ctx-1"),
-            status: TaskStatus::new(state),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
+        Task::new(id, ContextId::new("ctx-1"), TaskStatus::new(state))
     }
 
     fn make_status_event(task_id: &str, state: TaskState) -> StreamResponse {
         use a2a_protocol_types::events::TaskStatusUpdateEvent;
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new(task_id),
-            context_id: ContextId::new("ctx-1"),
-            status: TaskStatus::new(state),
-            metadata: None,
-        })
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new(task_id),
+            ContextId::new("ctx-1"),
+            TaskStatus::new(state),
+        ))
     }
 
     // ── process_event (&self method) tests ───────────────────────────────
@@ -1019,16 +1097,11 @@ mod tests {
 
         let (writer, reader) = collected_queue();
         writer
-            .write(StreamResponse::Message(Message {
-                id: MessageId::new("agent-m1"),
-                role: MessageRole::Agent,
-                parts: vec![Part::text("hello from agent")],
-                context_id: None,
-                task_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            }))
+            .write(StreamResponse::Message(Message::new(
+                MessageId::new("agent-m1"),
+                MessageRole::Agent,
+                vec![Part::text("hello from agent")],
+            )))
             .await
             .unwrap();
         drop(writer);
@@ -1273,14 +1346,14 @@ mod tests {
             .unwrap();
 
         let (writer, reader) = collected_queue();
-        let artifact_event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: TaskId::new("t-art"),
-            context_id: a2a_protocol_types::task::ContextId::new("ctx-1"),
-            artifact: Artifact::new(ArtifactId::new("art-1"), vec![Part::text("output data")]),
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        });
+        let artifact_event = StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                TaskId::new("t-art"),
+                a2a_protocol_types::task::ContextId::new("ctx-1"),
+                Artifact::new(ArtifactId::new("art-1"), vec![Part::text("output data")]),
+            )
+            .with_last_chunk(true),
+        );
         writer.write(artifact_event).await.unwrap();
         drop(writer);
 
@@ -1398,26 +1471,14 @@ mod tests {
             .unwrap();
 
         let (tx, reader) = tokio::sync::mpsc::channel(1);
-        let event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: TaskId::new("t-empty"),
-            context_id: ContextId::new("ctx-1"),
-            // Built as a struct literal on purpose: `Artifact::new`
-            // debug_asserts on empty parts, so an empty artifact can only
-            // reach this code by deserialization — which is exactly the
-            // path the validation guards, and exactly what a buggy or
-            // hostile peer sends.
-            artifact: Artifact {
-                id: ArtifactId::new("art-empty"),
-                name: None,
-                description: None,
-                parts: vec![],
-                extensions: None,
-                metadata: None,
-            },
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        });
+        let event = StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                TaskId::new("t-empty"),
+                ContextId::new("ctx-1"),
+                Artifact::unchecked(ArtifactId::new("art-empty"), vec![]),
+            )
+            .with_last_chunk(true),
+        );
         tx.send(Arc::new(Ok(
             crate::streaming::event_queue::StreamEvent::at(1, event),
         )))
@@ -1460,21 +1521,15 @@ mod tests {
             .unwrap();
 
         let (tx, reader) = tokio::sync::mpsc::channel(1);
-        let event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: TaskId::new("t-empty-append"),
-            context_id: ContextId::new("ctx-1"),
-            artifact: Artifact {
-                id: ArtifactId::new("art-unknown"),
-                name: None,
-                description: None,
-                parts: vec![],
-                extensions: None,
-                metadata: None,
-            },
-            append: Some(true),
-            last_chunk: Some(true),
-            metadata: None,
-        });
+        let event = StreamResponse::ArtifactUpdate(
+            TaskArtifactUpdateEvent::new(
+                TaskId::new("t-empty-append"),
+                ContextId::new("ctx-1"),
+                Artifact::unchecked(ArtifactId::new("art-unknown"), vec![]),
+            )
+            .with_append(true)
+            .with_last_chunk(true),
+        );
         tx.send(Arc::new(Ok(
             crate::streaming::event_queue::StreamEvent::at(1, event),
         )))
@@ -1521,13 +1576,15 @@ mod tests {
             (vec![Part::text("second")], Some(true)),
         ] {
             writer
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: TaskId::new("t-merge"),
-                    context_id: ContextId::new("ctx-1"),
-                    artifact: Artifact::new(ArtifactId::new("art-1"), parts),
-                    append,
-                    last_chunk: Some(true),
-                    metadata: None,
+                .write(StreamResponse::ArtifactUpdate({
+                    let mut built = TaskArtifactUpdateEvent::new(
+                        TaskId::new("t-merge"),
+                        ContextId::new("ctx-1"),
+                        Artifact::new(ArtifactId::new("art-1"), parts),
+                    )
+                    .with_last_chunk(true);
+                    built.append = append;
+                    built
                 }))
                 .await
                 .unwrap();
@@ -1587,13 +1644,15 @@ mod tests {
             let mut artifact = Artifact::new(ArtifactId::new("art-1"), parts);
             artifact.metadata = Some(meta);
             writer
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: TaskId::new("t-meta"),
-                    context_id: ContextId::new("ctx-1"),
-                    artifact,
-                    append,
-                    last_chunk: Some(true),
-                    metadata: None,
+                .write(StreamResponse::ArtifactUpdate({
+                    let mut built = TaskArtifactUpdateEvent::new(
+                        TaskId::new("t-meta"),
+                        ContextId::new("ctx-1"),
+                        artifact,
+                    )
+                    .with_last_chunk(true);
+                    built.append = append;
+                    built
                 }))
                 .await
                 .unwrap();
@@ -1644,13 +1703,15 @@ mod tests {
         ];
         for (id, text, append) in events {
             writer
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: TaskId::new("t-target"),
-                    context_id: ContextId::new("ctx-1"),
-                    artifact: Artifact::new(ArtifactId::new(id), vec![Part::text(text)]),
-                    append,
-                    last_chunk: Some(true),
-                    metadata: None,
+                .write(StreamResponse::ArtifactUpdate({
+                    let mut built = TaskArtifactUpdateEvent::new(
+                        TaskId::new("t-target"),
+                        ContextId::new("ctx-1"),
+                        Artifact::new(ArtifactId::new(id), vec![Part::text(text)]),
+                    )
+                    .with_last_chunk(true);
+                    built.append = append;
+                    built
                 }))
                 .await
                 .unwrap();
@@ -1710,17 +1771,13 @@ mod tests {
         let (writer, events) = collected_queue_with_capacity(4);
         for i in 0..600 {
             writer
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: task_id.clone(),
-                    context_id: ContextId::new("ctx-1"),
-                    artifact: Artifact::new(
-                        ArtifactId::new(format!("a{i}")),
-                        vec![Part::text("x")],
+                .write(StreamResponse::ArtifactUpdate(
+                    TaskArtifactUpdateEvent::new(
+                        task_id.clone(),
+                        ContextId::new("ctx-1"),
+                        Artifact::new(ArtifactId::new(format!("a{i}")), vec![Part::text("x")]),
                     ),
-                    append: None,
-                    last_chunk: None,
-                    metadata: None,
-                }))
+                ))
                 .await
                 .unwrap();
         }
@@ -1798,16 +1855,11 @@ mod tests {
             .unwrap();
 
         let (writer, reader) = collected_queue();
-        let msg_event = StreamResponse::Message(Message {
-            id: MessageId::new("m1"),
-            role: MessageRole::Agent,
-            parts: vec![Part::text("hello")],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        });
+        let msg_event = StreamResponse::Message(Message::new(
+            MessageId::new("m1"),
+            MessageRole::Agent,
+            vec![Part::text("hello")],
+        ));
         writer.write(msg_event).await.unwrap();
         drop(writer);
 
@@ -1916,14 +1968,11 @@ mod tests {
             .unwrap();
 
         // Set a push config so deliver_push actually fires.
-        let config = TaskPushNotificationConfig {
-            tenant: None,
-            id: Some("cfg-1".to_owned()),
-            task_id: Some("t-push".to_owned()),
-            url: "https://example.com/webhook".to_owned(),
-            token: None,
-            authentication: None,
-        };
+        let config = TaskPushNotificationConfig::new(
+            "t-push".to_owned(),
+            "https://example.com/webhook".to_owned(),
+        )
+        .with_id("cfg-1".to_owned());
         handler.push_config_store.set(config).await.unwrap();
 
         let (writer, reader) = collected_queue();
@@ -2128,14 +2177,13 @@ mod tests {
         let store = InMemoryPushConfigStore::new();
         for i in 0..10 {
             store
-                .set(a2a_protocol_types::push::TaskPushNotificationConfig {
-                    tenant: None,
-                    id: Some(format!("cfg-{i}")),
-                    task_id: Some("t-budget".to_owned()),
-                    url: format!("https://example.com/hook{i}"),
-                    token: None,
-                    authentication: None,
-                })
+                .set(
+                    a2a_protocol_types::push::TaskPushNotificationConfig::new(
+                        "t-budget".to_owned(),
+                        format!("https://example.com/hook{i}"),
+                    )
+                    .with_id(format!("cfg-{i}")),
+                )
                 .await
                 .unwrap();
         }
@@ -2213,14 +2261,13 @@ mod tests {
         let store = InMemoryPushConfigStore::new();
         for i in 0..3 {
             store
-                .set(a2a_protocol_types::push::TaskPushNotificationConfig {
-                    tenant: None,
-                    id: Some(format!("cfg-{i}")),
-                    task_id: Some("t-outcomes".to_owned()),
-                    url: format!("https://example.com/hook{i}"),
-                    token: None,
-                    authentication: None,
-                })
+                .set(
+                    a2a_protocol_types::push::TaskPushNotificationConfig::new(
+                        "t-outcomes".to_owned(),
+                        format!("https://example.com/hook{i}"),
+                    )
+                    .with_id(format!("cfg-{i}")),
+                )
                 .await
                 .unwrap();
         }
@@ -2296,14 +2343,13 @@ mod tests {
         let store = InMemoryPushConfigStore::new();
         for i in 0..3 {
             store
-                .set(a2a_protocol_types::push::TaskPushNotificationConfig {
-                    tenant: None,
-                    id: Some(format!("cfg-{i}")),
-                    task_id: Some("t-order".to_owned()),
-                    url: format!("https://example.com/hook{i}"),
-                    token: None,
-                    authentication: None,
-                })
+                .set(
+                    a2a_protocol_types::push::TaskPushNotificationConfig::new(
+                        "t-order".to_owned(),
+                        format!("https://example.com/hook{i}"),
+                    )
+                    .with_id(format!("cfg-{i}")),
+                )
                 .await
                 .unwrap();
         }
@@ -2515,17 +2561,17 @@ mod tests {
 
         // Write two artifacts; only the first should be kept.
         for i in 0..2 {
-            let artifact_event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id: TaskId::new("t-art-limit"),
-                context_id: a2a_protocol_types::task::ContextId::new("ctx-1"),
-                artifact: Artifact::new(
-                    ArtifactId::new(format!("art-{i}")),
-                    vec![Part::text(format!("data {i}"))],
-                ),
-                append: None,
-                last_chunk: Some(true),
-                metadata: None,
-            });
+            let artifact_event = StreamResponse::ArtifactUpdate(
+                TaskArtifactUpdateEvent::new(
+                    TaskId::new("t-art-limit"),
+                    a2a_protocol_types::task::ContextId::new("ctx-1"),
+                    Artifact::new(
+                        ArtifactId::new(format!("art-{i}")),
+                        vec![Part::text(format!("data {i}"))],
+                    ),
+                )
+                .with_last_chunk(true),
+            );
             writer.write(artifact_event).await.unwrap();
         }
         drop(writer);
@@ -2594,14 +2640,11 @@ mod tests {
             .unwrap();
 
         // Register a push config.
-        let config = TaskPushNotificationConfig {
-            tenant: None,
-            id: Some("cfg-1".to_owned()),
-            task_id: Some("t-push-fail".to_owned()),
-            url: "https://example.com/webhook".to_owned(),
-            token: None,
-            authentication: None,
-        };
+        let config = TaskPushNotificationConfig::new(
+            "t-push-fail".to_owned(),
+            "https://example.com/webhook".to_owned(),
+        )
+        .with_id("cfg-1".to_owned());
         handler.push_config_store.set(config).await.unwrap();
 
         let (writer, reader) = collected_queue();
@@ -2680,14 +2723,13 @@ mod tests {
             .unwrap();
         handler
             .push_config_store
-            .set(TaskPushNotificationConfig {
-                tenant: None,
-                id: Some("cfg-1".to_owned()),
-                task_id: Some("t-hang".to_owned()),
-                url: "https://example.com/webhook".to_owned(),
-                token: None,
-                authentication: None,
-            })
+            .set(
+                TaskPushNotificationConfig::new(
+                    "t-hang".to_owned(),
+                    "https://example.com/webhook".to_owned(),
+                )
+                .with_id("cfg-1".to_owned()),
+            )
             .await
             .unwrap();
 

@@ -36,19 +36,18 @@ fn cipher() -> Arc<Aes256GcmCipher> {
 }
 
 fn task(parts: usize) -> Task {
-    Task {
-        id: TaskId::new("t-seal"),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(TaskState::Working),
-        history: Some(vec![Message::user_text("h", "a question with some text")]),
-        artifacts: Some(vec![Artifact::new(
-            "out",
-            (0..parts)
-                .map(|i| Part::text(format!("chunk {i}")))
-                .collect::<Vec<_>>(),
-        )]),
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new("t-seal"),
+        ContextId::new("ctx"),
+        TaskStatus::new(TaskState::Working),
+    )
+    .with_history(vec![Message::user_text("h", "a question with some text")])
+    .with_artifacts(vec![Artifact::new(
+        "out",
+        (0..parts)
+            .map(|i| Part::text(format!("chunk {i}")))
+            .collect::<Vec<_>>(),
+    )])
 }
 
 /// Streams `CHUNKS` one-part appends through `store` after a first write of

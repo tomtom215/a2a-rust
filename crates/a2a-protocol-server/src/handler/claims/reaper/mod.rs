@@ -19,8 +19,11 @@
 //! written for a time to live ([`TurnClaimStore::abandoned`]). For each it
 //! takes the claim (so two replicas never end one task, and a turn that
 //! comes back to life is fenced out), reads the task again under it, and
-//! ends it `failed` with failure class `transient` and a message saying the
-//! replica running it stopped before it finished, as the cancel path ends a
+//! ends it `failed` with failure class `transient` and a message saying no
+//! replica runs it: the one that did stopped, or its executor returned
+//! without ending the task (the reaper cannot tell which, and both leave the
+//! same task; the executor's case is logged where it happens, audit G-21), as
+//! the cancel path ends a
 //! task run elsewhere: the status is stored, a subscriber on another replica
 //! sees it at its next poll, and the task's webhooks are sent the event.
 //! Then it releases the claim.
@@ -47,9 +50,11 @@ use crate::store::{LeaseStore, TaskStore};
 const BATCH: usize = 32;
 
 /// What a task the reaper ends says, in its status message.
-pub const REASON: &str = "the replica running this task stopped before it finished \
-    (its turn claim expired with the task still running); the task did not complete, and \
-    sending it again may succeed";
+pub const REASON: &str = "no replica is running this task any more: the one that was \
+    stopped before it finished (its turn claim expired with the task still running), or its \
+    executor returned without ending the task in a terminal or interrupted state; the task \
+    did not complete. To try again, send it as a new request (a new message id and \
+    idempotency key): a retry with the same key is answered with this task";
 
 /// What the reaper needs from its handler, held apart from it so the loop
 /// does not keep the handler alive.
@@ -97,6 +102,18 @@ impl Reaper {
         };
         let mut ended = 0;
         for (scope, task_id) in found {
+            // A task this replica itself holds a claim on is not abandoned
+            // here, whatever the table says. After a database outage longer
+            // than the time to live every claim has expired and every quiet
+            // turn's row is older than one, so the owner's own reaper would
+            // race its own renewals and end a turn that is still running
+            // (audit NEW-e-1). If the claim has really lapsed, the turn stops
+            // itself and ends transient (`lapse_overdue`); once it ends the
+            // claim is released and the next look finds the task if nothing
+            // else has.
+            if claims.holds_task(&task_id) {
+                continue;
+            }
             if self.end(&claims, &scope, &task_id).await {
                 ended += 1;
             }
@@ -161,13 +178,19 @@ impl Reaper {
             "ended a task its replica left running: failed, failure class transient"
         );
         self.release_lease(task_id).await;
-        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: id.clone(),
-            context_id: task.context_id.clone(),
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            id.clone(),
+            task.context_id.clone(),
             status,
-            metadata: None,
-        });
-        self.log(&id, &event).await;
+        ));
+        crate::handler::event_processing::append_ending(
+            &*self.task_store,
+            &id,
+            &event,
+            &*self.metrics,
+            self.limits.store_write_retry,
+        )
+        .await;
         crate::handler::event_processing::deliver_push_bg(
             &id,
             &event,
@@ -182,36 +205,6 @@ impl Reaper {
 }
 
 impl Reaper {
-    /// Appends the ending to the task's event log, one position after the
-    /// last the dead replica wrote.
-    ///
-    /// Until 2026-10-31 a task the reaper ended had a stored `Failed` status
-    /// and nothing in its log: a client resuming from the log never saw it
-    /// end, and with the audit feature the chain had no `task.event` for it,
-    /// because that record is made by the append (audit N-E-2).
-    async fn log(&self, id: &TaskId, event: &StreamResponse) {
-        if !self.task_store.supports_event_log() {
-            return;
-        }
-        let appended = crate::handler::event_processing::persisting(
-            self.limits.store_write_retry,
-            &*self.metrics,
-            crate::metrics::persistence_operation::EVENT_APPEND,
-            || async {
-                let seq = self.task_store.last_event_seq(id).await?.saturating_add(1);
-                self.task_store.append_event(id, seq, event).await
-            },
-        )
-        .await;
-        if let Err(e) = appended {
-            trace_warn!(task_id = %id, error = %e, "the ending of an abandoned task is not in its event log");
-            self.metrics.on_persistence_error(
-                crate::metrics::persistence_operation::EVENT_APPEND,
-                e.metric_label(),
-            );
-        }
-    }
-
     /// Deletes the ended task's lease row. The only other caller of
     /// [`LeaseStore::release`] is the watcher task of the process that ran
     /// the turn (`handler::lease`), which is the process that died: without
@@ -225,5 +218,7 @@ impl Reaper {
     }
 }
 
+#[cfg(test)]
+mod start_tests;
 #[cfg(test)]
 mod tests;

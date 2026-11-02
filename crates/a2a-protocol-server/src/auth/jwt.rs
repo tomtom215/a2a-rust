@@ -307,6 +307,9 @@ pub struct JwtValidator {
     require_exp: bool,
     /// Scopes every token must grant; see [`JwtValidator::require_scope`].
     required_scopes: Vec<String>,
+    /// The `typ` header every token must carry, compared as a media type;
+    /// see [`JwtValidator::with_required_typ`]. `None`: `typ` is not looked at.
+    required_typ: Option<String>,
     /// Wiped on drop. `ring` copies it into each HMAC key it builds, and
     /// those copies are not; the long-lived one is.
     hs256_secret: Option<Arc<zeroize::Zeroizing<Vec<u8>>>>,
@@ -322,6 +325,7 @@ impl std::fmt::Debug for JwtValidator {
             .field("leeway", &self.leeway)
             .field("require_exp", &self.require_exp)
             .field("required_scopes", &self.required_scopes)
+            .field("required_typ", &self.required_typ)
             .field(
                 "hs256_secret",
                 &self.hs256_secret.as_ref().map(|_| "<redacted>"),
@@ -350,6 +354,7 @@ impl JwtValidator {
             leeway: DEFAULT_LEEWAY,
             require_exp: true,
             required_scopes: Vec::new(),
+            required_typ: None,
             hs256_secret: None,
         }
     }
@@ -388,6 +393,39 @@ impl JwtValidator {
     pub fn with_audience(mut self, audience: impl Into<String>) -> Self {
         self.audiences.insert(audience.into());
         self
+    }
+
+    /// Requires every token's `typ` header to be `typ`, so that a token issued
+    /// for another purpose (an ID token, say) cannot be presented as this
+    /// one (RFC 8725 section 3.11). For access tokens that is `at+jwt`
+    /// (RFC 9068 section 2.1).
+    ///
+    /// `typ` is a media type, so the comparison ignores ASCII case and an
+    /// `application/` prefix on either side (RFC 7515 section 4.1.9):
+    /// `at+jwt` admits `AT+JWT` and `application/at+jwt`. A token with no
+    /// `typ`, or one that is not a string, is refused. Without this call
+    /// `typ` is not looked at, as before, because many issuers still sign
+    /// access tokens with `typ: JWT` or none.
+    #[must_use]
+    pub fn with_required_typ(mut self, typ: impl AsRef<str>) -> Self {
+        self.required_typ = Some(normalise_typ(typ.as_ref()));
+        self
+    }
+
+    /// Whether the header's `typ` satisfies
+    /// [`with_required_typ`](Self::with_required_typ): always, when none is
+    /// required; otherwise only a string that names the same media type.
+    fn typ_accepted(&self, header: &JwtHeader) -> bool {
+        let Some(want) = &self.required_typ else {
+            return true;
+        };
+        header
+            .typ
+            .as_ref()
+            .and_then(serde_json::Value::as_str)
+            .map(normalise_typ)
+            .as_deref()
+            == Some(want.as_str())
     }
 
     /// Accepts a token whatever its `iss` when no issuer is set. For a key
@@ -513,7 +551,7 @@ impl JwtValidator {
         // does not know it must not accept the token (RFC 7515 4.1.11).
         // Ignoring the member, as this did until 2026-10-31, accepts tokens
         // the issuer meant to be refused (audit SEC-18 b).
-        if header.crit.is_some() {
+        if header.crit.is_some() || !self.typ_accepted(&header) {
             return Err(ValidateOutcome::Rejected);
         }
         let signature = URL_SAFE_NO_PAD
@@ -677,6 +715,21 @@ struct JwtHeader {
     /// validator understands none, so a token that lists any is refused.
     #[serde(default)]
     crit: Option<serde_json::Value>,
+    /// RFC 7515 section 4.1.9. Kept as a raw value: a `typ` that is not a
+    /// string must not start refusing tokens for a validator that never asked
+    /// for the check.
+    #[serde(default)]
+    typ: Option<serde_json::Value>,
+}
+
+/// A `typ` as it is compared: lower case, without the `application/` prefix
+/// that RFC 7515 section 4.1.9 lets a sender leave off.
+fn normalise_typ(typ: &str) -> String {
+    let lower = typ.to_ascii_lowercase();
+    lower
+        .strip_prefix("application/")
+        .unwrap_or(&lower)
+        .to_owned()
 }
 
 #[derive(serde::Deserialize)]
@@ -1161,8 +1214,10 @@ fn build_jwks_client() -> JwksHttpClient {
     #[cfg(not(feature = "tls-rustls"))]
     {
         let mut connector = HttpConnector::new();
-        connector.set_connect_timeout(Some(Duration::from_secs(10)));
-        Client::builder(TokioExecutor::new()).build(connector)
+        crate::tcp::tune(&mut connector);
+        Client::builder(TokioExecutor::new())
+            .pool_idle_timeout(crate::tcp::POOL_IDLE_TIMEOUT)
+            .build(connector)
     }
     #[cfg(feature = "tls-rustls")]
     {
@@ -1299,7 +1354,7 @@ fn trustworthy_url(url: &str) -> bool {
                 || host.to_ascii_lowercase().ends_with(".localhost")
                 || host
                     .parse::<std::net::IpAddr>()
-                    .is_ok_and(|ip| ip.is_loopback())
+                    .is_ok_and(|ip| ip.to_canonical().is_loopback())
         }),
         _ => false,
     }
@@ -1662,6 +1717,7 @@ mod tests {
             "https://idp.example.com/jwks",
             "http://127.0.0.1:8080/jwks",
             "http://[::1]/jwks",
+            "http://[::ffff:127.0.0.1]/jwks",
             "http://localhost/jwks",
             "http://idp.localhost/jwks",
         ] {
@@ -1669,6 +1725,7 @@ mod tests {
         }
         for bad in [
             "http://203.0.113.1/jwks",
+            "http://[::ffff:10.0.0.1]/jwks",
             "http://idp.example.com/jwks",
             "http://localhost.evil.example/jwks",
             "ftp://idp.example.com/jwks",
@@ -1868,6 +1925,62 @@ mod tests {
                 "crit {crit}"
             );
         }
+    }
+
+    /// RFC 8725 section 3.11 (audit SEC-18 b): a validator told what `typ` its
+    /// tokens carry refuses a token of another type presented in its place (an
+    /// ID token as an access token), and one told nothing still does not look.
+    #[tokio::test]
+    async fn a_required_typ_must_match_and_is_otherwise_not_checked() {
+        let secret = [9u8; MIN_HS256_SECRET_LEN];
+        let token = |typ: &str| {
+            let header = format!(r#"{{"alg":"HS256","typ":"{typ}"}}"#);
+            hs256_token_with_header(&secret, &header)
+        };
+        let without_typ = hs256_token_with_header(&secret, r#"{"alg":"HS256"}"#);
+        let numeric_typ = hs256_token_with_header(&secret, r#"{"alg":"HS256","typ":5}"#);
+
+        let open = JwtAuthInterceptor::new(base_validator().with_hs256_secret(secret), Jwks::new());
+        for t in [
+            token("JWT"),
+            token("at+jwt"),
+            without_typ.clone(),
+            numeric_typ.clone(),
+        ] {
+            assert!(
+                open.before(&ctx_bearer(&t)).await.is_ok(),
+                "no requirement: {t}"
+            );
+        }
+
+        let pinned = JwtAuthInterceptor::new(
+            base_validator()
+                .with_required_typ("at+jwt")
+                .with_hs256_secret(secret),
+            Jwks::new(),
+        );
+        for ok in [
+            "at+jwt",
+            "AT+JWT",
+            "application/at+jwt",
+            "Application/AT+JWT",
+        ] {
+            assert!(pinned.before(&ctx_bearer(&token(ok))).await.is_ok(), "{ok}");
+        }
+        for bad in ["JWT", "id+jwt", "at+jwt2", "xat+jwt", "application/jwt", ""] {
+            assert!(
+                pinned.before(&ctx_bearer(&token(bad))).await.is_err(),
+                "{bad:?}"
+            );
+        }
+        assert!(
+            pinned.before(&ctx_bearer(&without_typ)).await.is_err(),
+            "no typ"
+        );
+        assert!(
+            pinned.before(&ctx_bearer(&numeric_typ)).await.is_err(),
+            "typ is not a string"
+        );
     }
 
     /// An HS256 token for `base_validator`'s issuer and audience, valid for

@@ -108,16 +108,11 @@ pub fn params() -> a2a_protocol_types::MessageSendParams {
     use a2a_protocol_types::{Message, MessageId, MessageRole, MessageSendParams, Part};
     MessageSendParams {
         tenant: None,
-        message: Message {
-            id: MessageId::new("m1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("hi")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new("m1"),
+            MessageRole::User,
+            vec![Part::text("hi")],
+        ),
         configuration: None,
         metadata: None,
     }

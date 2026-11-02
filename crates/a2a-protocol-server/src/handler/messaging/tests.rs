@@ -38,15 +38,14 @@ fn make_handler() -> RequestHandler {
 
 fn make_params(context_id: Option<&str>) -> MessageSendParams {
     MessageSendParams {
-        message: Message {
-            id: MessageId::new("msg-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello")],
-            context_id: context_id.map(ContextId::new),
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
+        message: {
+            let mut built = Message::new(
+                MessageId::new("msg-1"),
+                MessageRole::User,
+                vec![Part::text("hello")],
+            );
+            built.context_id = context_id.map(ContextId::new);
+            built
         },
         configuration: None,
         metadata: None,
@@ -424,27 +423,22 @@ async fn metadata_exactly_at_limit_is_accepted_but_one_byte_over_is_not() {
 /// Builds a task carrying `len` history messages, oldest first, each
 /// individually identifiable as `h0`, `h1`, …
 fn task_with_history(len: usize) -> Task {
-    Task {
-        id: TaskId::new("t-hist"),
-        context_id: ContextId::new("ctx-hist"),
-        status: TaskStatus::new(TaskState::Submitted),
-        artifacts: None,
-        history: Some(
-            (0..len)
-                .map(|i| Message {
-                    id: MessageId::new(format!("h{i}")),
-                    role: MessageRole::User,
-                    parts: vec![Part::text("x")],
-                    context_id: None,
-                    task_id: None,
-                    reference_task_ids: None,
-                    extensions: None,
-                    metadata: None,
-                })
-                .collect(),
-        ),
-        metadata: None,
-    }
+    Task::new(
+        TaskId::new("t-hist"),
+        ContextId::new("ctx-hist"),
+        TaskStatus::new(TaskState::Submitted),
+    )
+    .with_history(
+        (0..len)
+            .map(|i| {
+                Message::new(
+                    MessageId::new(format!("h{i}")),
+                    MessageRole::User,
+                    vec![Part::text("x")],
+                )
+            })
+            .collect(),
+    )
 }
 
 /// Shapes a `len`-message history and returns the surviving message ids.
@@ -650,12 +644,11 @@ async fn return_immediately_returns_task() {
 struct CompletingExecutor;
 agent_executor!(CompletingExecutor, |ctx, queue| async {
     for state in [TaskState::Working, TaskState::Completed] {
-        let ev = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ContextId::new(ctx.context_id.clone()),
-            status: TaskStatus::with_timestamp(state),
-            metadata: None,
-        });
+        let ev = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            TaskStatus::with_timestamp(state),
+        ));
         let _ = queue.write(ev).await;
     }
     Ok(())
@@ -923,14 +916,11 @@ async fn whitespace_only_task_id_returns_invalid_params() {
 async fn seed_task(handler: &RequestHandler, id: &str, context: &str, state: TaskState) {
     use a2a_protocol_types::task::{Task, TaskStatus};
 
-    let task = Task {
-        id: TaskId::new(id),
-        context_id: ContextId::new(context),
-        status: TaskStatus::with_timestamp(state),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new(id),
+        ContextId::new(context),
+        TaskStatus::with_timestamp(state),
+    );
     handler.task_store.save(&task).await.unwrap();
 }
 
@@ -1077,23 +1067,18 @@ async fn continuation_appends_history_and_preserves_artifacts() {
     // forward and append the new message — not reset the task.
     use a2a_protocol_types::artifact::Artifact;
     let handler = make_handler();
-    let prior = Task {
-        id: TaskId::new("cont-task"),
-        context_id: ContextId::new("ctx-cont"),
-        status: TaskStatus::new(TaskState::InputRequired),
-        history: Some(vec![Message {
-            id: MessageId::new("m-prior"),
-            role: MessageRole::User,
-            parts: vec![Part::text("first turn")],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        }]),
-        artifacts: Some(vec![Artifact::new("a1", vec![Part::text("turn-1 output")])]),
-        metadata: Some(serde_json::json!({"k": "v"})),
-    };
+    let prior = Task::new(
+        TaskId::new("cont-task"),
+        ContextId::new("ctx-cont"),
+        TaskStatus::new(TaskState::InputRequired),
+    )
+    .with_history(vec![Message::new(
+        MessageId::new("m-prior"),
+        MessageRole::User,
+        vec![Part::text("first turn")],
+    )])
+    .with_artifacts(vec![Artifact::new("a1", vec![Part::text("turn-1 output")])])
+    .with_metadata(serde_json::json!({"k": "v"}));
     handler.task_store.save(&prior).await.unwrap();
 
     let mut params = make_params(Some("ctx-cont"));
@@ -1128,23 +1113,18 @@ async fn continuation_appends_history_and_preserves_artifacts() {
 /// an artifact, a history and metadata that are all its own.
 fn issue_130_completed_first_task() -> Task {
     use a2a_protocol_types::artifact::Artifact;
-    Task {
-        id: TaskId::new("T1"),
-        context_id: ContextId::new("ctx-130"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: Some(vec![Message {
-            id: MessageId::new("m-turn-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("yo")],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        }]),
-        artifacts: Some(vec![Artifact::new("A1", vec![Part::text("turn-1 output")])]),
-        metadata: Some(serde_json::json!({"belongs-to": "T1"})),
-    }
+    Task::new(
+        TaskId::new("T1"),
+        ContextId::new("ctx-130"),
+        TaskStatus::new(TaskState::Completed),
+    )
+    .with_history(vec![Message::new(
+        MessageId::new("m-turn-1"),
+        MessageRole::User,
+        vec![Part::text("yo")],
+    )])
+    .with_artifacts(vec![Artifact::new("A1", vec![Part::text("turn-1 output")])])
+    .with_metadata(serde_json::json!({"belongs-to": "T1"}))
 }
 
 /// The other half of `continuation_appends_history_and_preserves_artifacts`:
@@ -1236,26 +1216,21 @@ async fn history_is_capped_at_max_messages() {
     // The oldest messages are dropped once the cap is reached.
     let handler = make_handler();
     let mut long_history: Vec<Message> = (0..MAX_TASK_HISTORY_MESSAGES)
-        .map(|i| Message {
-            id: MessageId::new(format!("m-{i}")),
-            role: MessageRole::User,
-            parts: vec![Part::text(format!("msg {i}"))],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
+        .map(|i| {
+            Message::new(
+                MessageId::new(format!("m-{i}")),
+                MessageRole::User,
+                vec![Part::text(format!("msg {i}"))],
+            )
         })
         .collect();
     long_history[0].parts = vec![Part::text("OLDEST")];
-    let prior = Task {
-        id: TaskId::new("cap-task"),
-        context_id: ContextId::new("ctx-cap"),
-        status: TaskStatus::new(TaskState::InputRequired),
-        history: Some(long_history),
-        artifacts: None,
-        metadata: None,
-    };
+    let prior = Task::new(
+        TaskId::new("cap-task"),
+        ContextId::new("ctx-cap"),
+        TaskStatus::new(TaskState::InputRequired),
+    )
+    .with_history(long_history);
     handler.task_store.save(&prior).await.unwrap();
 
     let mut params = make_params(Some("ctx-cap"));
@@ -1299,14 +1274,14 @@ async fn history_is_capped_in_bytes() {
         .collect();
     handler
         .task_store
-        .save(&Task {
-            id: TaskId::new("bytes-task"),
-            context_id: ContextId::new("ctx-bytes"),
-            status: TaskStatus::new(TaskState::InputRequired),
-            history: Some(big),
-            artifacts: None,
-            metadata: None,
-        })
+        .save(
+            &Task::new(
+                TaskId::new("bytes-task"),
+                ContextId::new("ctx-bytes"),
+                TaskStatus::new(TaskState::InputRequired),
+            )
+            .with_history(big),
+        )
         .await
         .unwrap();
 
@@ -1532,14 +1507,11 @@ async fn send_message_with_stored_task_continuation() {
     let handler = make_handler();
 
     // Pre-save a non-terminal task with a known context_id.
-    let task = Task {
-        id: TaskId::new("existing-task"),
-        context_id: ContextId::new("continue-ctx"),
-        status: TaskStatus::new(TaskState::InputRequired),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("existing-task"),
+        ContextId::new("continue-ctx"),
+        TaskStatus::new(TaskState::InputRequired),
+    );
     handler.task_store.save(&task).await.unwrap();
 
     // Send message with the same context_id — should find the stored task.
@@ -1560,14 +1532,11 @@ async fn send_message_to_terminal_task_returns_unsupported_operation() {
     let handler = make_handler();
 
     // Pre-save a completed task.
-    let task = Task {
-        id: TaskId::new("done-task"),
-        context_id: ContextId::new("done-ctx"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("done-task"),
+        ContextId::new("done-ctx"),
+        TaskStatus::new(TaskState::Completed),
+    );
     handler.task_store.save(&task).await.unwrap();
 
     // Send message with explicit task_id targeting the terminal task.
@@ -1589,14 +1558,11 @@ async fn send_message_to_terminal_context_without_task_id_creates_new_task() {
     let handler = make_handler();
 
     // Pre-save a completed task.
-    let task = Task {
-        id: TaskId::new("old-task"),
-        context_id: ContextId::new("reuse-ctx"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TaskId::new("old-task"),
+        ContextId::new("reuse-ctx"),
+        TaskStatus::new(TaskState::Completed),
+    );
     handler.task_store.save(&task).await.unwrap();
 
     // Send message to the same context WITHOUT task_id — should succeed.
@@ -1635,14 +1601,11 @@ async fn duplicate_task_id_without_context_match_returns_error() {
     let handler = make_handler();
 
     // Pre-save a task with task_id "dup-task" but context "other-ctx".
-    let task = Task {
-        id: TId::new("dup-task"),
-        context_id: ContextId::new("other-ctx"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        TId::new("dup-task"),
+        ContextId::new("other-ctx"),
+        TaskStatus::new(TaskState::Completed),
+    );
     handler.task_store.save(&task).await.unwrap();
 
     // Send a message with a new context_id but the same task_id.
@@ -1989,14 +1952,11 @@ async fn input_required_continuation_reuses_task_id() {
 
     // Pre-save a task in InputRequired state (non-terminal).
     let existing_task_id = TaskId::new("input-required-task");
-    let task = Task {
-        id: existing_task_id.clone(),
-        context_id: ContextId::new("ctx-input"),
-        status: TaskStatus::new(TaskState::InputRequired),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let task = Task::new(
+        existing_task_id.clone(),
+        ContextId::new("ctx-input"),
+        TaskStatus::new(TaskState::InputRequired),
+    );
     handler.task_store.save(&task).await.unwrap();
 
     // Send a continuation message with the same context_id and task_id.
@@ -2029,14 +1989,11 @@ async fn a_live_token_alone_refuses_a_resend() {
     let task_id = TaskId::new("in-flight-by-token");
     handler
         .task_store
-        .save(&Task {
-            id: task_id.clone(),
-            context_id: ContextId::new("ctx-token-only"),
-            status: TaskStatus::new(TaskState::InputRequired),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        })
+        .save(&Task::new(
+            task_id.clone(),
+            ContextId::new("ctx-token-only"),
+            TaskStatus::new(TaskState::InputRequired),
+        ))
         .await
         .unwrap();
     handler.cancellation_tokens.write().await.insert(
@@ -2071,14 +2028,11 @@ async fn a_cancelled_token_alone_does_not_refuse_a_resend() {
     let task_id = TaskId::new("cancelled-token-only");
     handler
         .task_store
-        .save(&Task {
-            id: task_id.clone(),
-            context_id: ContextId::new("ctx-cancelled-token"),
-            status: TaskStatus::new(TaskState::InputRequired),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        })
+        .save(&Task::new(
+            task_id.clone(),
+            ContextId::new("ctx-cancelled-token"),
+            TaskStatus::new(TaskState::InputRequired),
+        ))
         .await
         .unwrap();
     let token = tokio_util::sync::CancellationToken::new();
@@ -2111,14 +2065,11 @@ async fn a_task_id_only_continuation_infers_the_context() {
     let task_id = TaskId::new("infer-my-context");
     handler
         .task_store
-        .save(&Task {
-            id: task_id.clone(),
-            context_id: ContextId::new("ctx-inferred"),
-            status: TaskStatus::new(TaskState::InputRequired),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        })
+        .save(&Task::new(
+            task_id.clone(),
+            ContextId::new("ctx-inferred"),
+            TaskStatus::new(TaskState::InputRequired),
+        ))
         .await
         .unwrap();
 
@@ -2145,14 +2096,11 @@ async fn a_refused_inline_push_config_releases_the_queue_and_token() {
     let mut params = make_params(Some("ctx-push"));
     params.configuration = Some(SendMessageConfiguration {
         accepted_output_modes: vec!["text/plain".into()],
-        task_push_notification_config: Some(a2a_protocol_types::push::TaskPushNotificationConfig {
-            tenant: None,
-            id: None,
-            task_id: None,
-            url: "https://example.com/hook".into(),
-            token: None,
-            authentication: None,
-        }),
+        task_push_notification_config: Some(
+            a2a_protocol_types::push::TaskPushNotificationConfig::for_url(
+                "https://example.com/hook",
+            ),
+        ),
         history_length: None,
         return_immediately: None,
     });
@@ -2561,30 +2509,24 @@ struct ReplyingExecutor;
 agent_executor!(ReplyingExecutor, |_ctx, queue| async {
     use a2a_protocol_types::events::StreamResponse;
     let _ = queue
-        .write(StreamResponse::Message(Message {
-            id: MessageId::new("agent-reply"),
-            role: MessageRole::Agent,
-            parts: vec![Part::text("ack")],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        }))
+        .write(StreamResponse::Message(Message::new(
+            MessageId::new("agent-reply"),
+            MessageRole::Agent,
+            vec![Part::text("ack")],
+        )))
         .await;
     // A message alone makes the handler answer with the message rather than
     // the task (the "direct message" path). A non-terminal status keeps the
     // channel continuable, which is what a multi-turn conversation needs.
     let _ = queue
         .write(a2a_protocol_types::events::StreamResponse::StatusUpdate(
-            a2a_protocol_types::events::TaskStatusUpdateEvent {
-                task_id: _ctx.task_id.clone(),
-                context_id: ContextId::new(_ctx.context_id.clone()),
-                status: a2a_protocol_types::task::TaskStatus::with_timestamp(
+            a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+                _ctx.task_id.clone(),
+                _ctx.context_id.clone(),
+                a2a_protocol_types::task::TaskStatus::with_timestamp(
                     a2a_protocol_types::task::TaskState::InputRequired,
                 ),
-                metadata: None,
-            },
+            ),
         ))
         .await;
     Ok(())
@@ -2607,14 +2549,14 @@ async fn a_collected_agent_message_is_trimmed_to_the_cap() {
         .collect();
     handler
         .task_store
-        .save(&Task {
-            id: TaskId::new("collected-cap"),
-            context_id: ContextId::new("ctx-collected-cap"),
-            status: TaskStatus::new(TaskState::InputRequired),
-            history: Some(seeded),
-            artifacts: None,
-            metadata: None,
-        })
+        .save(
+            &Task::new(
+                TaskId::new("collected-cap"),
+                ContextId::new("ctx-collected-cap"),
+                TaskStatus::new(TaskState::InputRequired),
+            )
+            .with_history(seeded),
+        )
         .await
         .unwrap();
 
@@ -2796,12 +2738,11 @@ impl crate::executor::AgentExecutor for LingeringExecutor {
                 TaskState::InputRequired
             };
             queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::with_timestamp(state),
-                    metadata: None,
-                }))
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::with_timestamp(state),
+                )))
                 .await?;
             if !continuing {
                 tokio::select! {
@@ -3107,14 +3048,11 @@ async fn a_send_dropped_mid_commit_releases_what_it_took() {
     let id = TaskId::new("t-dropped");
     crate::store::TaskStore::save(
         &store.inner,
-        &a2a_protocol_types::task::Task {
-            id: id.clone(),
-            context_id: ContextId::new("ctx-dropped"),
-            status: TaskStatus::new(TaskState::InputRequired),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        },
+        &a2a_protocol_types::task::Task::new(
+            id.clone(),
+            ContextId::new("ctx-dropped"),
+            TaskStatus::new(TaskState::InputRequired),
+        ),
     )
     .await
     .unwrap();
@@ -3285,12 +3223,11 @@ impl crate::executor::AgentExecutor for SlowCompletingExecutor {
     > {
         Box::pin(async move {
             let status = |state| {
-                StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::with_timestamp(state),
-                    metadata: None,
-                })
+                StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::with_timestamp(state),
+                ))
             };
             queue.write(status(TaskState::Working)).await?;
             tokio::time::sleep(self.delay).await;

@@ -64,7 +64,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskSt
 use a2a_protocol_types::failure::{FailureClass, set_class};
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::message::Part;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
 use crate::request_context::RequestContext;
 use crate::streaming::EventQueueWriter;
@@ -74,18 +74,38 @@ use crate::streaming::EventQueueWriter;
 /// This is the minimal helper for reducing [`AgentExecutor`](crate::AgentExecutor)
 /// boilerplate. Instead of:
 ///
-/// ```rust,ignore
-/// fn execute<'a>(...) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-///     Box::pin(async move { ... })
+/// ```rust
+/// # use std::{future::Future, pin::Pin};
+/// # use a2a_protocol_server::{AgentExecutor, RequestContext, streaming::EventQueueWriter};
+/// # use a2a_protocol_types::error::A2aResult;
+/// # struct MyAgent;
+/// # impl AgentExecutor for MyAgent {
+/// fn execute<'a>(
+///     &'a self,
+///     ctx: &'a RequestContext,
+///     queue: &'a dyn EventQueueWriter,
+/// ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+///     Box::pin(async move { /* ... */ Ok(()) })
 /// }
+/// # }
 /// ```
 ///
 /// You can write:
 ///
-/// ```rust,ignore
-/// fn execute<'a>(...) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-///     boxed_future(async move { ... })
+/// ```rust
+/// # use std::{future::Future, pin::Pin};
+/// # use a2a_protocol_server::{AgentExecutor, RequestContext, boxed_future, streaming::EventQueueWriter};
+/// # use a2a_protocol_types::error::A2aResult;
+/// # struct MyAgent;
+/// # impl AgentExecutor for MyAgent {
+/// fn execute<'a>(
+///     &'a self,
+///     ctx: &'a RequestContext,
+///     queue: &'a dyn EventQueueWriter,
+/// ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+///     boxed_future(async move { /* ... */ Ok(()) })
 /// }
+/// # }
 /// ```
 pub fn boxed_future<'a, T>(
     fut: impl Future<Output = T> + Send + 'a,
@@ -93,94 +113,8 @@ pub fn boxed_future<'a, T>(
     Box::pin(fut)
 }
 
-/// Generates an [`AgentExecutor`](crate::AgentExecutor) implementation from a
-/// closure-like syntax.
-///
-/// # Basic usage (execute only)
-///
-/// ```rust
-/// use a2a_protocol_server::agent_executor;
-///
-/// struct MyAgent;
-///
-/// agent_executor!(MyAgent, |ctx, queue| async {
-///     // ctx: &RequestContext, queue: &dyn EventQueueWriter
-///     Ok(())
-/// });
-/// ```
-///
-/// # With cancel handler
-///
-/// ```rust
-/// use a2a_protocol_server::agent_executor;
-///
-/// struct CancelableAgent;
-///
-/// agent_executor!(CancelableAgent,
-///     execute: |ctx, queue| async { Ok(()) },
-///     cancel: |ctx, queue| async { Ok(()) }
-/// );
-/// ```
-#[macro_export]
-macro_rules! agent_executor {
-    // Simple form: just execute
-    ($ty:ty, |$ctx:ident, $queue:ident| async $body:block) => {
-        impl $crate::executor::AgentExecutor for $ty {
-            fn execute<'a>(
-                &'a self,
-                $ctx: &'a $crate::request_context::RequestContext,
-                $queue: &'a dyn $crate::streaming::EventQueueWriter,
-            ) -> ::std::pin::Pin<
-                ::std::boxed::Box<
-                    dyn ::std::future::Future<
-                            Output = $crate::__types::error::A2aResult<()>,
-                        > + ::std::marker::Send
-                        + 'a,
-                >,
-            > {
-                ::std::boxed::Box::pin(async move $body)
-            }
-        }
-    };
-
-    // Full form: execute + cancel
-    ($ty:ty,
-        execute: |$ctx:ident, $queue:ident| async $exec_body:block,
-        cancel: |$cctx:ident, $cqueue:ident| async $cancel_body:block
-    ) => {
-        impl $crate::executor::AgentExecutor for $ty {
-            fn execute<'a>(
-                &'a self,
-                $ctx: &'a $crate::request_context::RequestContext,
-                $queue: &'a dyn $crate::streaming::EventQueueWriter,
-            ) -> ::std::pin::Pin<
-                ::std::boxed::Box<
-                    dyn ::std::future::Future<
-                            Output = $crate::__types::error::A2aResult<()>,
-                        > + ::std::marker::Send
-                        + 'a,
-                >,
-            > {
-                ::std::boxed::Box::pin(async move $exec_body)
-            }
-
-            fn cancel<'a>(
-                &'a self,
-                $cctx: &'a $crate::request_context::RequestContext,
-                $cqueue: &'a dyn $crate::streaming::EventQueueWriter,
-            ) -> ::std::pin::Pin<
-                ::std::boxed::Box<
-                    dyn ::std::future::Future<
-                            Output = $crate::__types::error::A2aResult<()>,
-                        > + ::std::marker::Send
-                        + 'a,
-                >,
-            > {
-                ::std::boxed::Box::pin(async move $cancel_body)
-            }
-        }
-    };
-}
+#[macro_use]
+mod agent_executor_macro;
 
 // ── EventEmitter ─────────────────────────────────────────────────────────────
 
@@ -191,21 +125,37 @@ macro_rules! agent_executor {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust
 /// use a2a_protocol_server::executor_helpers::EventEmitter;
 /// use a2a_protocol_types::task::TaskState;
 /// use a2a_protocol_types::message::Part;
+/// # use a2a_protocol_server::{RequestContext, streaming::EventQueueWriter};
+/// # use a2a_protocol_types::error::A2aResult;
+/// # async fn run(ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
 ///
 /// let emit = EventEmitter::new(ctx, queue);
 /// emit.status(TaskState::Working).await?;
 /// emit.artifact("result", vec![Part::text("hello")], None, Some(true)).await?;
 /// emit.status(TaskState::Completed).await?;
+/// # Ok(())
+/// # }
 /// ```
 pub struct EventEmitter<'a> {
     /// The request context for this execution.
     pub ctx: &'a RequestContext,
     /// The event queue writer for this execution.
     pub queue: &'a dyn EventQueueWriter,
+}
+
+/// Names the task and context, not the message: a `Debug` line in a log must
+/// not carry what the caller said (audit G-23).
+impl std::fmt::Debug for EventEmitter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EventEmitter")
+            .field("task_id", &self.ctx.task_id)
+            .field("context_id", &self.ctx.context_id)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a> EventEmitter<'a> {
@@ -222,12 +172,11 @@ impl<'a> EventEmitter<'a> {
     /// Returns an error if the event queue write fails.
     pub async fn status(&self, state: TaskState) -> A2aResult<()> {
         self.queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: self.ctx.task_id.clone(),
-                context_id: ContextId::new(self.ctx.context_id.clone()),
-                status: TaskStatus::new(state),
-                metadata: None,
-            }))
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                self.ctx.task_id.clone(),
+                self.ctx.context_id.clone(),
+                TaskStatus::new(state),
+            )))
             .await
     }
 
@@ -243,9 +192,14 @@ impl<'a> EventEmitter<'a> {
     /// safety rule, is the only thing that can say so; this is one way, and
     /// the one that lets it keep writing its own status text.
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// # use a2a_protocol_server::EventEmitter;
+    /// # use a2a_protocol_types::{error::A2aResult, failure::FailureClass};
+    /// # async fn run(emit: &EventEmitter<'_>) -> A2aResult<()> {
     /// // Retry me: the model was rate limited, not wrong.
     /// emit.fail(FailureClass::Transient, "upstream model returned 429").await?;
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// # Errors
@@ -257,19 +211,18 @@ impl<'a> EventEmitter<'a> {
             vec![Part::text(reason.into())],
         );
         note.task_id = Some(self.ctx.task_id.clone());
-        note.context_id = Some(ContextId::new(self.ctx.context_id.clone()));
+        note.context_id = Some(self.ctx.context_id.clone());
         set_class(&mut note, class);
 
         let mut status = TaskStatus::new(TaskState::Failed);
         status.message = Some(note);
 
         self.queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: self.ctx.task_id.clone(),
-                context_id: ContextId::new(self.ctx.context_id.clone()),
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                self.ctx.task_id.clone(),
+                self.ctx.context_id.clone(),
                 status,
-                metadata: None,
-            }))
+            )))
             .await
     }
 
@@ -283,13 +236,18 @@ impl<'a> EventEmitter<'a> {
     /// arrives as the next run of the task, at
     /// [`RequestContext::approval`](crate::RequestContext::approval).
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// # use a2a_protocol_server::EventEmitter;
+    /// # use a2a_protocol_types::{approval::ApprovalRequest, error::A2aResult};
+    /// # async fn run(emit: &EventEmitter<'_>) -> A2aResult<()> {
     /// let action = serde_json::json!({ "tool": "refund", "order": 1182, "amount": "40.00" });
     /// let digest = a2a_protocol_types::approval::action_digest(&action)?;
     /// emit.request_approval(
     ///     ApprovalRequest::new(uuid::Uuid::new_v4().to_string(), "Refund EUR 40 to order 1182", digest),
     ///     "May I issue this refund?",
     /// ).await?;
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// # Errors
@@ -306,18 +264,17 @@ impl<'a> EventEmitter<'a> {
             vec![Part::text(question.into())],
         );
         note.task_id = Some(self.ctx.task_id.clone());
-        note.context_id = Some(ContextId::new(self.ctx.context_id.clone()));
+        note.context_id = Some(self.ctx.context_id.clone());
         request.attach(&mut note);
 
         let mut status = TaskStatus::new(TaskState::InputRequired);
         status.message = Some(note);
         self.queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: self.ctx.task_id.clone(),
-                context_id: ContextId::new(self.ctx.context_id.clone()),
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                self.ctx.task_id.clone(),
+                self.ctx.context_id.clone(),
                 status,
-                metadata: None,
-            }))
+            )))
             .await?;
         Ok(request)
     }
@@ -335,13 +292,15 @@ impl<'a> EventEmitter<'a> {
         last_chunk: Option<bool>,
     ) -> A2aResult<()> {
         self.queue
-            .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id: self.ctx.task_id.clone(),
-                context_id: ContextId::new(self.ctx.context_id.clone()),
-                artifact: Artifact::new(id, parts),
-                append,
-                last_chunk,
-                metadata: None,
+            .write(StreamResponse::ArtifactUpdate({
+                let mut built = TaskArtifactUpdateEvent::new(
+                    self.ctx.task_id.clone(),
+                    self.ctx.context_id.clone(),
+                    Artifact::new(id, parts),
+                );
+                built.append = append;
+                built.last_chunk = last_chunk;
+                built
             }))
             .await
     }
@@ -356,8 +315,13 @@ impl<'a> EventEmitter<'a> {
     /// calling this, and the task continues when the client sends its next
     /// message once it has them.
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// # use a2a_protocol_server::EventEmitter;
+    /// # use a2a_protocol_types::error::A2aResult;
+    /// # async fn run(emit: &EventEmitter<'_>) -> A2aResult<()> {
     /// emit.auth_required("Sign in to the calendar service at https://cal.example/connect").await?;
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// # Errors
@@ -402,16 +366,15 @@ impl<'a> EventEmitter<'a> {
     async fn status_with_note(&self, state: TaskState, parts: Vec<Part>) -> A2aResult<()> {
         let mut note = Message::agent(uuid::Uuid::new_v4().to_string(), parts);
         note.task_id = Some(self.ctx.task_id.clone());
-        note.context_id = Some(ContextId::new(self.ctx.context_id.clone()));
+        note.context_id = Some(self.ctx.context_id.clone());
         let mut status = TaskStatus::new(state);
         status.message = Some(note);
         self.queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: self.ctx.task_id.clone(),
-                context_id: ContextId::new(self.ctx.context_id.clone()),
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                self.ctx.task_id.clone(),
+                self.ctx.context_id.clone(),
                 status,
-                metadata: None,
-            }))
+            )))
             .await
     }
 

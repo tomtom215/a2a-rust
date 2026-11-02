@@ -89,16 +89,11 @@ fn strict_handler() -> (RequestHandler, Arc<Calls>) {
 
 fn send_params() -> MessageSendParams {
     MessageSendParams {
-        message: Message {
-            id: MessageId::new("msg-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello")],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new("msg-1"),
+            MessageRole::User,
+            vec![Part::text("hello")],
+        ),
         configuration: None,
         metadata: None,
         tenant: None,
@@ -174,14 +169,7 @@ fn push_config_calls(handler: &RequestHandler) -> Vec<Call<'_>> {
         call(
             "CreateTaskPushNotificationConfig",
             handler.on_set_push_config(
-                TaskPushNotificationConfig {
-                    tenant: None,
-                    id: None,
-                    task_id: Some("t".into()),
-                    url: "https://example.invalid/hook".into(),
-                    token: None,
-                    authentication: None,
-                },
+                TaskPushNotificationConfig::new("t", "https://example.invalid/hook"),
                 none,
             ),
         ),

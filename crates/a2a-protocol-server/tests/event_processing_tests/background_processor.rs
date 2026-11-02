@@ -32,30 +32,28 @@ async fn streaming_mode_background_processor_updates_store() {
                 self.started.store(true, Ordering::SeqCst);
                 self.proceed.notified().await;
                 queue
-                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        status: TaskStatus::new(TaskState::Working),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        TaskStatus::new(TaskState::Working),
+                    )))
                     .await?;
                 queue
-                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        artifact: Artifact::new("art-bg", vec![Part::text("background")]),
-                        append: None,
-                        last_chunk: Some(true),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::ArtifactUpdate(
+                        TaskArtifactUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            ctx.context_id.clone(),
+                            Artifact::new("art-bg", vec![Part::text("background")]),
+                        )
+                        .with_last_chunk(true),
+                    ))
                     .await?;
                 queue
-                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        status: TaskStatus::new(TaskState::Completed),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        TaskStatus::new(TaskState::Completed),
+                    )))
                     .await?;
                 Ok(())
             })
@@ -169,30 +167,27 @@ async fn streaming_mode_push_delivery_with_cooperative_executor() {
                 self.started.store(true, Ordering::SeqCst);
                 self.proceed.notified().await;
                 queue
-                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        status: TaskStatus::new(TaskState::Working),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        TaskStatus::new(TaskState::Working),
+                    )))
                     .await?;
                 queue
-                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        artifact: Artifact::new("art-coop", vec![Part::text("coop")]),
-                        append: None,
-                        last_chunk: None,
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::ArtifactUpdate(
+                        TaskArtifactUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            ctx.context_id.clone(),
+                            Artifact::new("art-coop", vec![Part::text("coop")]),
+                        ),
+                    ))
                     .await?;
                 queue
-                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        status: TaskStatus::new(TaskState::Completed),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        TaskStatus::new(TaskState::Completed),
+                    )))
                     .await?;
                 Ok(())
             })
@@ -303,30 +298,28 @@ async fn streaming_mode_background_drains_after_executor_done() {
                 self.started.store(true, Ordering::SeqCst);
                 self.proceed.notified().await;
                 queue
-                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        status: TaskStatus::new(TaskState::Working),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        TaskStatus::new(TaskState::Working),
+                    )))
                     .await?;
                 queue
-                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        artifact: Artifact::new("art-1", vec![Part::text("artifact content")]),
-                        append: None,
-                        last_chunk: Some(true),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::ArtifactUpdate(
+                        TaskArtifactUpdateEvent::new(
+                            ctx.task_id.clone(),
+                            ctx.context_id.clone(),
+                            Artifact::new("art-1", vec![Part::text("artifact content")]),
+                        )
+                        .with_last_chunk(true),
+                    ))
                     .await?;
                 queue
-                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        status: TaskStatus::new(TaskState::Completed),
-                        metadata: None,
-                    }))
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        TaskStatus::new(TaskState::Completed),
+                    )))
                     .await?;
                 Ok(())
             })

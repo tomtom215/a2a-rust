@@ -97,14 +97,11 @@ async fn a_failing_store_is_reported_once_per_run_of_failures() {
         inner: InMemoryTaskStore::new(),
         failing: AtomicBool::new(false),
     });
-    let mut task = Task {
-        id: TaskId::new("t-flaky"),
-        context_id: ContextId::new("ctx-1"),
-        status: TaskStatus::new(TaskState::InputRequired),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    };
+    let mut task = Task::new(
+        TaskId::new("t-flaky"),
+        ContextId::new("ctx-1"),
+        TaskStatus::new(TaskState::InputRequired),
+    );
     store.save(&task).await.unwrap();
     let handler = RequestHandlerBuilder::new(Idle)
         .without_agent_card()

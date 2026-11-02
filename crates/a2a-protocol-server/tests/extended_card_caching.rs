@@ -31,37 +31,16 @@ agent_executor!(Done, |ctx, queue| async {
 });
 
 fn card(version: &str) -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Test Agent".into(),
-        description: "A test agent".into(),
-        version: version.into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "http://localhost".into(),
-            protocol_binding: "HTTP+JSON".into(),
-            protocol_version: "1.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "s".into(),
-            name: "S".into(),
-            description: "S".into(),
-            tags: vec!["s".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none().with_extended_agent_card(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new(
+        "Test Agent",
+        version,
+        AgentInterface::new("http://localhost", "HTTP+JSON").with_protocol_version("1.0"),
+    )
+    .with_description("A test agent")
+    .with_input_modes(vec!["text/plain"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(AgentSkill::new("s", "S", "S").with_tags(vec!["s"]))
+    .with_capabilities(AgentCapabilities::none().with_extended_agent_card(true))
 }
 
 fn handler(version: &str) -> Arc<RequestHandler> {

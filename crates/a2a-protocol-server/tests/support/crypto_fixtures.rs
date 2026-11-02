@@ -18,7 +18,7 @@ use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};
 use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent};
-use a2a_protocol_types::message::{Message, MessageRole, Part, PartContent};
+use a2a_protocol_types::message::{Message, MessageRole, Part};
 use a2a_protocol_types::push::{AuthenticationInfo, TaskPushNotificationConfig};
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 use serde_json::{Value, json};
@@ -78,14 +78,11 @@ impl Group {
     }
 
     fn task(&self, parts: Vec<Part>) -> Task {
-        let mut task = Task {
-            id: self.task.clone(),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(TaskState::Working),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        };
+        let mut task = Task::new(
+            self.task.clone(),
+            ContextId::new("ctx"),
+            TaskStatus::new(TaskState::Working),
+        );
         if self.seq.is_some() {
             return task;
         }
@@ -103,14 +100,11 @@ impl Group {
 
     fn event(&self, parts: Vec<Part>) -> StreamResponse {
         if self.artifact {
-            StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id: self.task.clone(),
-                context_id: ContextId::new("ctx"),
-                artifact: Artifact::new(self.id.as_str(), parts),
-                append: None,
-                last_chunk: None,
-                metadata: None,
-            })
+            StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent::new(
+                self.task.clone(),
+                ContextId::new("ctx"),
+                Artifact::new(self.id.as_str(), parts),
+            ))
         } else {
             StreamResponse::Message(Message::new(self.id.as_str(), MessageRole::Agent, parts))
         }
@@ -171,12 +165,10 @@ impl Group {
 }
 
 fn data_part() -> Part {
-    Part {
-        content: PartContent::Data(json!({"k": [1, 2], "nested": {"é": "ü"}})),
-        metadata: Some(json!({"m": true})),
-        filename: Some("data.json".into()),
-        media_type: Some("application/json".into()),
-    }
+    Part::data(json!({"k": [1, 2], "nested": {"é": "ü"}}))
+        .with_metadata(json!({"m": true}))
+        .with_filename("data.json")
+        .with_media_type("application/json")
 }
 
 /// The groups the generator seals: a message and an artifact in a record,

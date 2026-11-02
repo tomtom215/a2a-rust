@@ -39,9 +39,10 @@ a record whose export fails.
 
 `TelemetryBuilder::with_log_level(level)` sets the least severe event
 exported (default `INFO`; `tracing::Level::DEBUG` exports debug events too).
-It filters log records only: spans are not filtered by level here. A
-subscriber-wide filter, such as an `EnvFilter` added to the registry as a
-layer of its own, applies to both — see [below](#rust_log-and-your-own-subscriber).
+It filters log records only; `with_span_level(level)` does the same for spans
+(default `INFO`, the level of every span this SDK makes), and for the events
+recorded on them. A subscriber-wide filter, such as an `EnvFilter` added to the
+registry as a layer of its own, applies to both — see [below](#rust_log-and-your-own-subscriber).
 
 Task and context identifiers are on the executor's span (`a2a.task.id`,
 `a2a.context.id`), and an event inherits its span's context, so one request
@@ -60,9 +61,10 @@ syntax), and a value that is not understood is said, not ignored:
 RUST_LOG=my_agent=debug,warn my-agent
 ```
 
-That changes nothing about what is exported: with `install_subscriber`, every
-span is exported and events at the log level and above become log records,
-whatever `RUST_LOG` says. With the console log exporter on
+That changes nothing about what is exported: with `install_subscriber`, spans
+at `with_span_level` (default `INFO`) and above are exported and events at the
+log level and above become log records, whatever `RUST_LOG` says. To see
+`DEBUG` spans in an incident, raise `with_span_level`; `RUST_LOG` will not. With the console log exporter on
 (`OTEL_LOGS_EXPORTER=console`), events are not printed a second time on
 standard error. Colour is used only when standard error is a terminal, and
 never when `NO_COLOR` is set to a non-empty value.

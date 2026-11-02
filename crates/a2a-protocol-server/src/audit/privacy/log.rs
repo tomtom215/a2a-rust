@@ -126,8 +126,7 @@ impl AuditLog {
     /// Art. 17(3)(e)); otherwise when the store fails.
     pub async fn erase_subject(&self, chain: &str, subject: &str, by: &str) -> A2aResult<Erasure> {
         let privacy = self.privacy()?;
-        let lock = self.chain_lock(chain);
-        let _guard = lock.lock().await;
+        let _guard = self.lock_chain(chain).await;
         if self
             .store()
             .holds()
@@ -203,8 +202,7 @@ impl AuditLog {
     /// this process is between making a key and storing its record; another
     /// replica's can be, and loses that record's names to this.
     pub(in crate::audit) async fn drop_unreferenced_keys(&self, chain: &str) -> A2aResult<u64> {
-        let lock = self.chain_lock(chain);
-        let _guard = lock.lock().await;
+        let _guard = self.lock_chain(chain).await;
         let keys = self.store().subject_keys(chain).await?;
         if keys.is_empty() {
             return Ok(0);

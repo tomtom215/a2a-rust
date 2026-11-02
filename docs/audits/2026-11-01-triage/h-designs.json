@@ -1,0 +1,446 @@
+{
+ "slice": "h-designs",
+ "baseline": "4a8243c66df5ae07a54a69168ab419ac609b06e9",
+ "rows": [
+  {
+   "id": "H5",
+   "verdict": "needs_decision",
+   "severity_now": "S1 (S0 at 10^5-10^6 leased tasks); unchanged",
+   "evidence": [
+    "crates/a2a-protocol-client/src/delegation/renewal.rs:36-53 - one tokio task per leased child; sleeps ttl/3 (first tick at start+ttl/3, no jitter), TaskQueryParams::new(id) leaves history_length None, calls renew_lease; only status.state of the answer is used",
+    "crates/a2a-protocol-client/src/methods/tasks.rs:45-80 - renew_lease = a full GetTask with the A2A-Extensions header; the answer goes through self.content.task() (content verification) on the client",
+    "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:48-62,76-79 - server reads the whole task (task_store.get), renews (lease UPDATE), trims history only when asked, then sign_task signs the status message and every artifact (provenance.rs:98-109) when a content signer is set, which Profile::Production requires (profile.rs:62-66)",
+    "crates/a2a-protocol-server/src/handler/lease.rs:46,136-138,148-185 - one spawned watcher per running leased turn; interval min(ttl/4, 1 s), so one store.deadline() SELECT per second per running leased turn for any TTL >= 4 s",
+    "crates/a2a-protocol-server/src/store/lease/postgres.rs:89,112 - renew is an UPDATE, a watcher check is a SELECT",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:81-160 - an idle SubscribeToTask polls store.get every subscribe_reattach_interval and, when the store keeps an event log, store.last_event_seq too (line 141)",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:241,260,364-365 - reattach interval 250 ms, subscribe_max_idle None (no time bound); no max_subscribers field anywhere (rg 'max_subscri' over crates/: no hits)",
+    "git log 8dc4331..HEAD -- handler/lease.rs delegation/renewal.rs: no commits; subscribe.rs only 57f034e (log level)",
+    "RE-DERIVED: 1M leased children, TTL 30 s -> 100k renewals/s (ttl/3 = 10 s), each = 1 full task read + 1 lease UPDATE (+ signing every artifact under the production profile); watchers = 1M SELECT/s (1 per running leased turn per second). The report's lower bound '250k' is not derivable: for TTL >= 4 s the rate is exactly 1/s per running turn and shorter TTLs read more often, not less",
+    "RE-DERIVED: 10k parked tasks with one idle subscriber each = 40k task reads/s on a store without an event log, 80k/s on the SQL stores (get + last_event_seq per poll); the report's 40k is the in-memory figure"
+   ],
+   "test": "none - no test bounds renewal, watcher or idle-subscriber cost",
+   "summary": "Unchanged since the audit: per-child renewal tasks doing a full GetTask every ttl/3, a per-turn watcher reading the lease store every second, and unbounded, unthrottled 250 ms polling by idle subscribers with no subscriber cap.",
+   "remaining": "All of it. Cheap additive pieces (history_length=0, staggered first renewal, subscriber caps) are not done; lease groups / sweeper need a decision.",
+   "theme": "lease-control-plane",
+   "effort": "XS (history_length=0, stagger) / S (subscriber caps) / M (per-replica sweeper) / L (lease groups, wire)",
+   "breaking": "none for the XS/S pieces and the sweeper; wire (new extension method) for lease groups",
+   "probe": "PostgreSQL with pg_stat_statements; server with PostgresTaskStore + PostgresLeaseStore; N = 1,000 then 10,000 Delegation::start_leased(ttl = 30 s) children whose executor blocks (examples/swarm worker 'sleep:'); reset pg_stat_statements, wait 60 s, read calls/s for 'SELECT deadline_ms FROM a2a_leases' (expect ~N/s), 'UPDATE a2a_leases' (~N/10 /s) and the tasks SELECT (~N/10 /s). Subscribers: park N tasks at input-required with one SubscribeToTask each; expect ~4N task reads/s (8N with the event log). Decides how urgent the sweeper/groups are.",
+   "options": "(A) Per-replica lease sweeper instead of per-turn watchers: one statement per second per replica over the turns this replica runs (deadline_ms < now AND (tenant, task_id) in the running set), firing the tokens. Server-only, no wire change, M. Removes the 1 SELECT/s/turn. (B) Lease groups (the report's design): grant carries a group id; one renew call (new extension method on JSON-RPC/REST/gRPC) renews every child of the group in one UPDATE; one renewer per (client, peer). Wire change, amends ADR 0020, L; also removes the full-task read+sign per renewal. (C) Keep per-child GetTask renewals but make them cheaper: history_length=Some(0) and a random first-tick offset; note GetTask cannot omit artifacts, so renewal stays O(artifacts) under signing. Recommendation: ship C now, A next, subscriber caps now (HandlerLimits::max_subscribers{,_per_task}, default unbounded, Overloaded with Retry-After); B only via a NEW ADR after measuring A at 10^4-10^5 leased tasks per replica.",
+   "adr": "NEW ADR (amending ADR 0020, the lease): lease groups and the sweeper. ADR 0033 sec. 6 only staggers group renewals and says explicitly it does not reduce their cost.",
+   "ship_now": "XS: renewal.rs:44 query.history_length = Some(0). XS: random offset for the first renewal tick (ADR 0033 sec. 6 applies to single delegations too). S: HandlerLimits::max_subscribers + max_subscribers_per_task (default None). S: exponential backoff on the reattach poll with 250 ms as the floor (trade-off: worsens swarm-scale Finding 4 tail liveness, so keep it opt-in)."
+  },
+  {
+   "id": "H6",
+   "verdict": "needs_decision",
+   "severity_now": "S1; unchanged (amplification only for clients that opt in to retries)",
+   "evidence": [
+    "crates/a2a-protocol-client/src/retry.rs:91-113 - RetryPolicy is max_retries/initial_backoff/max_backoff/backoff_multiplier (defaults 3, 500 ms, 30 s, 2.0); rg 'breaker|hedg|retry.?budget' in client src: no hits",
+    "crates/a2a-protocol-client/src/builder/mod.rs:139,606-608 and builder/transport_factory.rs:74-76,233-235 - retries are opt-in: retry_policy is None by default and RetryTransport wraps only when set",
+    "crates/a2a-protocol-client/src/retry.rs:284-293,408-413 - a refusal carrying RetryInfo/429/503 is retried even for a non-idempotent SendMessage, so an opted-in client makes up to 4 attempts per refused send (RE-DERIVED: the report's 4x holds, but only for clients built with with_retry_policy)",
+    "crates/a2a-protocol-client/src/retry.rs:298-306 - a server-directed delay is followed exactly (min max_backoff) with no jitter; only the computed backoff is jittered (retry.rs:534-541)",
+    "crates/a2a-protocol-server/src/error/mod.rs:240,352,360-363 - every Overloaded refusal asks for the same constant 1 s (OVERLOAD_RETRY_AFTER), so refused callers return in lockstep (NEW-h-designs-1)",
+    "crates/a2a-protocol-client/src/retry.rs:60-81 - the doc tells callers to wrap the call in tokio::time::timeout; no deadline or BudgetHandle input (rg 'remaining_time' in client src: none)",
+    "crates/a2a-protocol-client/src/transport/websocket.rs:157-168,323 - only WebSocket caps calls in flight (64); rg 'Semaphore' in client non-test src: no hits, so HTTP transports have no cap",
+    "crates/a2a-protocol-client/src/delegation/resume.rs:105-117,241-283 - delegation resume adds a second, unjittered retry layer above RetryTransport (NEW-h-designs-2)",
+    "git log 8dc4331..HEAD -- retry.rs: only a579fee (error variant), nothing on budgets/breakers"
+   ],
+   "test": "none",
+   "summary": "No retry budget, no circuit breaker, no HTTP in-flight cap and no deadline-aware retries. Retries are off by default; when on, overload refusals are retried up to 3 times following the server's constant 1 s Retry-After without jitter.",
+   "remaining": "Everything in the row, plus jitter on server-directed delays.",
+   "theme": "client-resilience",
+   "effort": "XS (jitter, max-elapsed) / S (per-client in-flight cap, per-client budget) / M (pool-scoped breaker and budget per ADR 0032)",
+   "breaking": "none if every policy is opt-in; behaviour if jitter is added to Retry-After by default (delays become >= the server's value)",
+   "probe": "One worker with with_max_concurrent_streams(8) and a slow executor; 1,000 clients with RetryPolicy::default() each sending once; record request arrival times at the worker (access log, or a2a.server.errors{error_kind=\"overloaded\"} sampled every 100 ms). Decides whether refusals return in 1 s lockstep waves and whether total attempts reach ~4x sends.",
+   "options": "(A) Per-client, opt-in, now (the recorded H-D2 recommendation): RetryPolicy::with_budget(ratio, min_per_sec) as a token bucket in the RetryTransport, ClientBuilder::with_max_in_flight(n) returning the existing retryable TooManyPendingRequests, RetryPolicy::with_max_elapsed(Duration). S, no shared state; but 1,000 clients in one process each have their own budget, so amplification towards one peer across clients is not bounded. (B) ADR 0032 sec. 5: per-origin state in HttpPool (in-flight cap, breaker, retry budget) shared by every client on the pool. M, after the pool. (C) Nothing in the SDK; document mesh retry budgets and outlier detection. Recommendation: A now with types designed to move into the pool, B when ADR 0032 is built; deadline-aware retries via an explicit per-call deadline (or the BudgetHandle) decided in the same ADR.",
+   "adr": "ADR 0032 sec. 5 (breaker, retry budget, in-flight cap per origin). Deadline/budget-aware retries are covered by no ADR: amend 0032 (or 0023).",
+   "ship_now": "XS: jitter server-directed delays (client: after + U(0, after/2), still capped by max_backoff; server: OVERLOAD_RETRY_AFTER drawn from 1-2 s). XS: RetryPolicy::with_max_elapsed. S: per-client HTTP in-flight cap reusing TooManyPendingRequests."
+  },
+  {
+   "id": "H7",
+   "verdict": "needs_decision",
+   "severity_now": "S2/medium (lowered from S1: since H1 saturation refusals carry Retry-After and are retryable, and a halted replica must stay reachable for reads and cancels)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/handler/introspection.rs:102-111 - readiness() = not draining AND task_store_health() within READINESS_TIMEOUT; nothing about queues, halts, halt-store sync or the lease store",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:665-677 and dispatch/rest/mod.rs:156-158 - /ready answers readiness() only",
+    "commit 57f034e (2026-10-29, after the audit baseline 8dc4331) - added draining; crates/a2a-protocol-server/tests/rest_readiness.rs:132,144 cover draining only",
+    "crates/a2a-protocol-server/src/handler/halt.rs:227-247,263-267 - until the halt store has been read once, every send is refused as Halted while /ready answers 200 (NEW-h-designs-7)",
+    "crates/a2a-protocol-server/src/builder.rs:39 - DEFAULT_MAX_CONCURRENT_STREAMS = 1024; a2a.server.queue_depth is exported but the cap is not, so saturation cannot be computed from metrics",
+    "crates/a2a-protocol-server/src/serve/graceful/config.rs:85,171 - max_connections None by default",
+    "crates/a2a-protocol-server/src/serve/graceful/production.rs:22-51 - ServeConfig::production refuses only plaintext beyond loopback and an undeclared binding; no check or warning for max_connections",
+    "rg 'A2A-Load|endpoint-load' over crates/: no load header"
+   ],
+   "test": "tests/rest_readiness.rs:132 ready_answers_not_ready_while_draining (draining only); none for saturation, halt or halt-store sync",
+   "summary": "/ready means 'not draining and the task store answers'. A replica at its stream cap, halted, or unable to read its halt store still reports ready; there is no load signal; the production listener does not require or warn about max_connections.",
+   "remaining": "Saturation/load signal (decision), halt visibility (decision), halt-store sync in readiness (no decision needed), max_connections warning (no decision needed).",
+   "theme": "readiness-load",
+   "effort": "XS-S (ship-now pieces) / M (load header + consumer)",
+   "breaking": "behaviour if saturation ever drives /ready by default; none for the additive pieces",
+   "probe": "none (settled by reading). To prove a fix: a Kubernetes readinessProbe on /ready, saturate one replica, watch its Endpoints entry.",
+   "options": "(A) /ready 503 above a high-water mark with hysteresis (e.g. unready at >= 95% of the cap for 2 probes, ready again at <= 80%), opt-in. Pro: L4 balancers stop sending. Con: replicas saturate together, so readiness flaps fleet-wide and removes capacity when it is most needed; probe periods (1-10 s) are too slow to be a load signal; Endpoints churn. (B) A load signal that is not readiness: a response header (A2A-Load: queues=...;cap=..., or ORCA endpoint-load-metrics) plus a /load JSON endpoint and an exported cap gauge, consumed by Envoy least-request/ORCA or ADR 0032's EndpointResolver. (C) Status quo plus docs (Overloaded + Retry-After, Envoy least_request). For halts: stay ready (reads and cancels must stay reachable, halt.rs:14-16), expose 'halted' in the body and as a gauge. Recommendation: B plus halt in the body; A only opt-in, never default; a halt store that has never been read is a dependency failure and should make the replica not ready.",
+   "adr": "NEW ADR (readiness versus load signal). ADR 0032's H12 section would consume a load signal but does not define one.",
+   "ship_now": "S: readiness reports not_ready ('halts_unknown') until the halt store has been read once. XS: readiness body gains informational \"halted\": bool (additive JSON). XS: export the queue cap as a gauge beside a2a.server.queue_depth. XS: ServeConfig::production logs a warning when max_connections is None."
+  },
+  {
+   "id": "H8",
+   "verdict": "needs_decision",
+   "severity_now": "medium (lowered from S1: the root-store rebuild is gone; per-fetch pools, no single-flight and no stale-if-error remain)",
+   "evidence": [
+    "crates/a2a-protocol-client/src/discovery.rs:601-611 with 175-181 - fetch_inner gets options.https_client(), which builds a new HttpsClient (a new hyper pool) on every fetch; a CachingCardResolver revalidation therefore never reuses a keep-alive connection",
+    "crates/a2a-protocol-client/src/tls.rs:100-108 - commit c4404e8 (2026-10-31): default_tls_config() is built once per process (LazyLock), so the ~150-root store is no longer rebuilt per fetch; since rustls ClientConfig clones share the Arc'd resumption store (~/.cargo/registry rustls-0.23.46 src/client/client_conn.rs:479-487), default-config clients now also share the TLS session cache. No test pins this (rg 'N-B-6' finds only comments) - the sub-claim is changed in code, not proven",
+    "crates/a2a-protocol-client/src/discovery.rs:475-510 - resolve(): fresh -> cached; stale -> fetch, with no single-flight, so N concurrent callers holding a stale entry make N fetches",
+    "crates/a2a-protocol-client/src/discovery.rs:490-491 - a failed revalidation returns Err via '?' even when a usable stale card is held (no stale-if-error)",
+    "crates/a2a-protocol-client/src/discovery.rs:377-416 - one URL per resolver; no multi-agent cache",
+    "crates/a2a-protocol-discovery/src/{announce,browse,discovered,lib}.rs - only the mDNS of ADR 0029; ADR 0031's sources and Merged TTL cache are not built",
+    "crates/a2a-protocol-client/src/token_provider/flight.rs - a single-flight implementation already exists in the crate (token refresh) and could be reused",
+    "NOT RE-DERIVED: Finding 9's p95 of ~1.04 s for 512 simultaneous card fetches is a measurement; not re-run"
+   ],
+   "test": "none for single-flight, stale-if-error or connection reuse; none for the once-per-process TLS config (c4404e8)",
+   "summary": "Partly improved by c4404e8 (roots and TLS session cache shared), but every card fetch still builds a new connection pool, concurrent stale lookups stampede, a failed revalidation discards a usable card, and a resolver covers one URL.",
+   "remaining": "Single-flight, stale-if-error, one client per resolver, multi-URL cache; a test for the once-per-process TLS config.",
+   "theme": "card-discovery",
+   "effort": "XS (one client per resolver) / S (single-flight, stale-if-error) / M (URL-keyed CardCache on the pool)",
+   "breaking": "none (all additive; stale-if-error opt-in or per RFC 5861 directive)",
+   "probe": "To measure: the swarm_scale card arm (A2A_SWARM_MAX=512 cargo test -p a2a-protocol-server --release --test swarm_scale -- --ignored --nocapture --test-threads=1) p50/p95 before and after; and `ss -tan state established | wc -l` while 512 tasks call resolve() on one stale resolver (expect 1 fetch after single-flight).",
+   "options": "(A) Inside CachingCardResolver, now: hold one HttpsClient per resolver, single-flight per resolver (reuse token_provider/flight.rs), opt-in stale_if_error(Duration), jittered refresh. S, additive, no API decision. (B) ADR 0032 sec. 6: a URL-keyed bounded CardCache on the shared HttpPool with single-flight, stale-if-error, background refresh at ~80% of freshness and watch(). M, after the pool. (C) ADR 0031 Merged: TTL cache with jitter over discovery sources, for fleet cold start. Recommendation: A now, B when the pool lands, C with the discovery crate.",
+   "adr": "ADR 0032 sec. 6 (card discovery on the pool) and ADR 0031 (Merged cache with jitter).",
+   "ship_now": "XS: build the HttpsClient once per CachingCardResolver (store it in the struct). S: single-flight per resolver. S: opt-in stale_if_error. XS: a test that default_tls_config() returns configs sharing roots/resumption (pins c4404e8)."
+  },
+  {
+   "id": "H9",
+   "verdict": "needs_decision",
+   "severity_now": "S1 for multi-tenant deployments; medium for single-tenant swarms (refuse + retryable Overloaded is a defensible default since H1)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/handler/concurrency.rs:8-12,62-68 - per-tenant semaphore, try_acquire_owned -> Overloaded; refusal by documented design",
+    "crates/a2a-protocol-server/src/handler/messaging/admission.rs:228-236 and streaming/event_queue/manager.rs:198-215 - global queue cap -> CapacityExhausted -> Overloaded",
+    "crates/a2a-protocol-server/src/builder.rs:39 - DEFAULT_MAX_CONCURRENT_STREAMS = 1024, first come first served",
+    "crates/a2a-protocol-server/src/tenant_config/mod.rs:79-88 - documented: per-tenant limits bound use, do not reserve capacity; one tenant can exhaust the shared cap",
+    "rg -i 'priority' over server and types non-test src: no hits",
+    "crates/a2a-protocol-server/src/error/mod.rs:352,363 - every refusal asks for the same 1 s"
+   ],
+   "test": "none (nothing to test: the feature does not exist)",
+   "summary": "Admission is refuse-only with no reservation, queue, priority or fairness across tenants; one tenant inside its own limit can take the whole 1024-stream cap.",
+   "remaining": "All of it.",
+   "theme": "admission",
+   "effort": "S-M (reservations) / M (bounded wait + DRR) / L (authenticated priority classes)",
+   "breaking": "none if opt-in; behaviour if reservations become a default",
+   "probe": "none",
+   "options": "(A) Reserved shares, still refuse-only: a tenant configured with max_concurrent_tasks gets a guaranteed floor of the global cap that other tenants cannot take. S-M. Fixes the fairness hole without adding latency; unused reservations idle capacity. (B) Opt-in bounded wait: acquire with timeout = min(max_wait, budget remaining), bounded queue length, FIFO per tenant with deficit round robin across tenants; a send whose budget would expire in the queue is refused at once with BudgetExhausted. M. (C) Priority classes. The report takes priority from message metadata (a2a-rust.com/priority): that is self-asserted by the caller, so every caller would claim the top class; priority must come from server-side identity/tenant config (CallContext), not from the message. L. Recommendation: A first, B opt-in second, C only with an authenticated source.",
+   "adr": "NEW ADR (admission: reservation, bounded wait, priority source). None of 0030-0034 covers it.",
+   "ship_now": "XS: jitter the overload Retry-After (NEW-h-designs-1). XS: export the cap as a gauge. Everything else should wait for the ADR (a queue's interaction with budgets is the decision)."
+  },
+  {
+   "id": "H10",
+   "verdict": "needs_decision",
+   "severity_now": "S1; unchanged",
+   "evidence": [
+    "rg -i 'parent_task|parentTask|lineage|root_task|rootId|root_id' over crates/ bindings/ examples/: one hit, a test name (crates/a2a-protocol-client/tests/delegation_tests.rs:293); nothing in types, server or client",
+    "crates/a2a-protocol-server/src/handler/halt.rs:52-68 - HaltScope { All, Tenant(String) }, #[non_exhaustive]; covers() compares the tenant only",
+    "crates/a2a-protocol-server/src/store/halt/mod.rs:255-286 - halt-store keys are 'all' and 'tenant:<t>'; an unknown key makes from_row fail and with it the whole load (postgres.rs:237-248, sqlite.rs:78) - a mixed-version hazard for adding Root (NEW-h-designs-4)",
+    "crates/a2a-protocol-server/src/request_context.rs:45-60 - each turn knows its context_id, ADR 0034's default root, so the server side can be built without a wire change",
+    "docs/adr/0034-task-lineage.md (b66367d, 2026-10-31) - Proposed; nothing built (rg 'HaltScope::Root|Lineage' over crates/: none)"
+   ],
+   "test": "none",
+   "summary": "No lineage anywhere and HaltScope is still All|Tenant: a job can be stopped only by halting servers or tenants, or by every hop running Rust leases; trees are reconstructable only from trace ids.",
+   "remaining": "All of it.",
+   "theme": "lineage-halt",
+   "effort": "XS (halt-store forward compatibility) / M (ADR 0034 as written) / L (upstream parentTaskId)",
+   "breaking": "none (new extension, new HaltScope variant on a #[non_exhaustive] enum); mixed-version behaviour of the halt store must be fixed first",
+   "probe": "none",
+   "options": "(A) ADR 0034 as written: lineage extension in Message.metadata (root defaults to the contextId, depth capped, malformed -> InvalidParams), HaltScope::Root scoped (tenant, root) through the halt store, no stored index. M. No protocol change; stops at non-Rust hops; lineage is caller-asserted, which is acceptable because it only scopes halts. (B) Protocol-level parentTaskId proposed upstream with server-side cascade. L, outward-facing. (C) A tenant per job: rejected in ADR 0034 (isolation is not job identity; default store ignores tenants). Recommendation: A, with two additions the ADR does not make: ship forward-compatible halt-store parsing at least one release before any new scope kind (NEW-h-designs-4), and fix a scope-key encoding where a root or tenant containing ':' cannot collide with another kind's key.",
+   "adr": "ADR 0034.",
+   "ship_now": "XS: make the halt-store load tolerate an unknown scope key (decide: treat as All, fail-closed, or ignore with a warning) before Root exists. S, server-only, no wire: record context_id in the running-turn registry and add HaltScope::Root with root = contextId (testable with ADR 0034's two-handler test), but this commits public API before the ADR is accepted."
+  },
+  {
+   "id": "H11",
+   "verdict": "needs_decision",
+   "severity_now": "S2/medium (lowered from S1: part of the row was misread, see evidence)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/metrics/mod.rs:54-158 - hooks on_request/on_response/on_error/on_latency/on_queue_depth_change/on_connection_pool_stats/on_persistence_error/on_store_retry/on_push_delivery/on_rpc_call/on_executor_run; none takes a tenant, agent, principal or job",
+    "crates/a2a-protocol-server/src/metrics/mod.rs:183-212 - RpcCall carries only bounded fields",
+    "crates/a2a-protocol-server/src/rpc_span/a2a.rs - 'a2a.tenant' is a span attribute only",
+    "crates/a2a-protocol-server/src/rpc_span/tool_metrics.rs:139-154 - gen_ai metrics carry provider/model/server/tool name; no tenant, principal or root",
+    "rg 'metrics\\.' in handler/claims/*.rs, handler/lease.rs, handler/halt.rs, handler/budget.rs: no hits -> no instrument for lease lapses, claim takeovers, halts applied, budget settlement or spend by meter",
+    "REPORT MISREAD: metrics/mod.rs:163-178, otel/mod.rs:220-230, handler/messaging/execute/run_timer.rs:66 - a2a.server.executor.duration{outcome=budget_exhausted} exists and existed at 8dc4331 (git show 8dc4331:crates/a2a-protocol-server/src/otel/mod.rs lines 99, 222), so budget-exhausted endings ARE counted",
+    "REPORT MISREAD (partly): crates/a2a-protocol-server/src/error/mod.rs:174-175 - a2a.server.errors{error_kind=overloaded|halted} counts refusals by class per method; what is missing is the cause (stream cap, tenant cap, idempotency store down, push-config cap all report 'overloaded')"
+   ],
+   "test": "none",
+   "summary": "No tenant/agent/job dimension on any metric and no control-plane instruments (lease, claim, halt action, budget spend); but budget-exhausted endings and overload/halt refusals are already counted, contrary to the report.",
+   "remaining": "Tenant dimension (bounded), control-plane hooks, refusal cause.",
+   "theme": "otel-metrics",
+   "effort": "S (new default-no-op hooks) / S-M (bounded tenant attribute)",
+   "breaking": "none (new trait methods with default no-op bodies; new attributes opt-in)",
+   "probe": "none",
+   "options": "(A) A bounded tenant attribute inside the OTel Metrics implementation, read from TenantContext::current() (the task-local every handler entry already sets), opt-in, allow-list or top-N plus 'other'; no trait change. S. (B) New default-no-op hooks: on_refusal(cause), on_lease(event: granted|renewed|lapsed), on_halt(scope_kind, action), on_budget_settle(meter, granted, spent), on_claim_takeover(); bounded label sets. S-M, additive. (C) Leave per-tenant and per-job accounting to spans and audit records and derive metrics in the collector (spanmetrics). No in-process cardinality risk; needs a collector and sampling distorts counts. Recommendation: B now, A opt-in with an allow-list; never put root/job ids on metric labels (ADR 0034 sec. 4).",
+   "adr": "NEW ADR, or an amendment to ADR 0013 (observability), for the tenant-cardinality policy and the control-plane instruments.",
+   "ship_now": "XS: export the queue cap gauge. S: on_refusal(cause) with a bounded cause set (stream_cap, tenant_cap, idempotency_store, push_config_cap, rate_limit_cap). S: on_lease(lapsed) at handler/lease.rs:164-166."
+  },
+  {
+   "id": "H12",
+   "verdict": "needs_decision",
+   "severity_now": "S2; unchanged (HTTPS h2 pinning makes it more relevant than the report says)",
+   "evidence": [
+    "crates/a2a-protocol-client/src/builder/mod.rs:132 - ClientBuilder::new(endpoint): one URL per client",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:301 - one tonic Channel::from_shared(endpoint); no balance_list",
+    "crates/a2a-protocol-client/src/proxy.rs:252-257,272-277 - the HTTPS connector enables HTTP/2 via ALPN: over https a client's unary calls and SSE streams to one peer multiplex on one connection, so through an L4 balancer they all land on one replica; plain http:// is HTTP/1.1 (a connection per stream)",
+    "crates/a2a-protocol-client/src/transport/connector.rs - hyper HttpConnector (getaddrinfo on connect; no TTL-aware cache)",
+    "rg 'EndpointSet|EndpointResolver|hedge' in client src: none; ADR 0032 (H12 section) proposes a hook and defers it to a measurement"
+   ],
+   "test": "none",
+   "summary": "No client-side balancing, ejection or hedging; one URL per client, one gRPC channel, and over HTTPS one h2 connection per peer.",
+   "remaining": "Decision (ADR 0032 H12 section) and the measurement it asks for.",
+   "theme": "client-lb",
+   "effort": "XS (docs) / M (EndpointResolver hook on the pool)",
+   "breaking": "none (opt-in)",
+   "probe": "Three replicas behind an L4 balancer (Kubernetes ClusterIP Service or HAProxy 'mode tcp'), TLS on; one A2aClient fanning out 300 long-running streaming delegations; read active_queue_count (or a2a.server.queue_depth) per replica. Run again over plain http. Decision: if one replica holds most streams over https (expected from h2 multiplexing) and the spread is even over http, the hook is justified.",
+   "options": "(A) Decline in core (recorded H-D7): document L7 balancing (Envoy/mesh), headless Services + DNS, and the h2-pinning effect over HTTPS. (B) ADR 0032's EndpointResolver hook on the pool: a service name resolves to endpoints (ADR 0031 sources or DNS), power-of-two-choices by load, passive ejection; hedging only for calls marked idempotent (keyed SendMessage, GetTask, ListTasks), capped. Opt-in, M. (C) A full EndpointSet with active health checks. Recommendation: A now; B only after the probe above shows uneven load; C never in core.",
+   "adr": "ADR 0032 (H12 section), with ADR 0031 sources as resolver input.",
+   "ship_now": "XS: document the HTTPS h2 pinning behaviour and the L7/headless alternatives."
+  },
+  {
+   "id": "H13",
+   "verdict": "needs_decision",
+   "severity_now": "S1; unchanged",
+   "evidence": [
+    "crates/a2a-protocol-server/src/streaming/event_queue/mod.rs:92,95 - queues bounded at 256 events (count), events up to 16 MiB each",
+    "crates/a2a-protocol-server/src/handler/messaging/decisions.rs:25,34 - history caps 1024 messages / 16 MiB per task",
+    "rg 'max_buffered_bytes|offload|max_events_per_live' in server src: no hits -> no process-wide byte budget, no blob offload, no live-task log compaction",
+    "crates/a2a-protocol-types/src/generated/message.rs:62,71 - raw parts serialize as base64 in JSON; crates/a2a-protocol-server/src/store/postgres_store/mod.rs:33 stores tasks as JSONB",
+    "crates/a2a-protocol-server/src/store/task_store/mod.rs:645-660 - default save_appending_history = get + extend + save (O(history) twice); overridden only in task_store/in_memory/mod.rs:1133, encrypted/mod.rs:315, traced.rs:286, audit/task_store.rs:196 - not by postgres_store or sqlite_store (swarm-scale Finding 7 still holds)",
+    "crates/a2a-protocol-server/src/store/task_store/mod.rs:632-635 - the doc says the SQL stores 'splice the tail into the stored document'; they do not (NEW-h-designs-6)",
+    "crates/a2a-protocol-server/src/store/postgres_store/event_log.rs:55 and store/retention/mod.rs:128-160 - event rows are deleted only with their task; RetentionPolicy covers terminal tasks and idempotency keys only"
+   ],
+   "test": "none",
+   "summary": "All four sub-claims hold: count-bounded queues with no byte budget, base64 payloads inside the task row, SQL sends still O(history) twice, and an event log that grows without bound for a long-lived task.",
+   "remaining": "Byte budget, blob offload, live-log compaction (decisions); SQL save_appending_history overrides (no decision needed).",
+   "theme": "memory-payload",
+   "effort": "S (SQL overrides) / M (byte budget) / M-L (blob offload, compaction)",
+   "breaking": "none for the overrides and an opt-in byte budget; behaviour/wire for blob offload (readers receive url parts instead of raw)",
+   "probe": "none to settle. To size: swarm-scale Finding 7's ageing probe on PostgreSQL before and after the override.",
+   "options": "(A) HandlerLimits::max_buffered_bytes: a process-wide semaphore over in-flight event bytes, Overloaded when exceeded. Additive, M. (B) A BlobStore trait with ArtifactOffload { threshold } rewriting raw parts to url parts before persistence and broadcast. M-L; readers then need fetch + auth for the url, and provenance signatures must cover url + digest. (C) RetentionPolicy::max_events_per_live_task with compaction to a snapshot event. M; a resume from before the compaction point must get streamLagged/the snapshot, not a silent gap. Recommendation: ship the SQL overrides now, then A; B and C via a NEW ADR.",
+   "adr": "NEW ADR (memory and payload: byte budget, blob offload, live-log compaction). None of 0030-0034 covers it.",
+   "ship_now": "S, no decision: Postgres and SQLite save_appending_history overrides (append to the JSON history with the trim), honouring the contract at task_store/mod.rs:636-640. XS: correct the doc drift at task_store/mod.rs:632-635."
+  },
+  {
+   "id": "H14",
+   "verdict": "needs_decision",
+   "severity_now": "S2; unchanged",
+   "evidence": [
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/lanes.rs:6-25,55-77 - since 8f92b31 (2026-10-30) a delivery is queued in an in-memory per-task lane (Mutex<HashMap<Key, VecDeque<Waiting>>>) after its event is stored",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs (push_queue_capacity, default 1024) and metrics/mod.rs:377 push_outcome::DROPPED - a full lane drops deliveries that do not end a turn",
+    "rg -i 'outbox|dead.?letter|redeliver' in server/src/push and handler/event_processing: no hits",
+    "lanes.rs:20-22 - graceful shutdown waits for lane workers; a crash, OOM kill or kill -9 loses everything queued, and nothing records which deliveries never went out"
+   ],
+   "test": "none",
+   "summary": "Push delivery is best-effort and in-memory; a crash loses queued notifications, terminal ones included, with no record.",
+   "remaining": "All of it.",
+   "theme": "push-durability",
+   "effort": "XS (docs) / S-M (turn-end outbox) / M-L (full outbox)",
+   "breaking": "none (opt-in); delivery semantics change to at-least-once where enabled",
+   "probe": "none to settle. To prove a fix: a webhook receiver that delays 10 s, kill -9 the server after the terminal status is stored, restart; today no terminal webhook arrives.",
+   "options": "(A) Transactional outbox: a PushOutbox row written with the status delta, drained by a per-replica SKIP LOCKED worker, at-least-once with seq for receiver deduplication. M-L, SQL stores only, one row per event per config. (B) Durable only for turn-ending events (terminal or interrupted): one row per turn end. S-M; covers the 'silently miss the terminal event' case the report names. (C) Best-effort, documented: receivers reconcile on start and periodically with GetTask/ListTasks or SubscribeToTask from Last-Event-ID. Recommendation: C now, B next, A only if adopters need every intermediate event.",
+   "adr": "NEW ADR (push outbox).",
+   "ship_now": "XS: document push as best-effort across crashes, with the reconciliation recipe."
+  },
+  {
+   "id": "H16",
+   "verdict": "needs_decision",
+   "severity_now": "S2; unchanged (the lockout is worse than the report says: indefinite, not one window)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/rate_limit/config.rs:59-80 - DEFAULT_MAX_BUCKETS = 10_000; requests_per_window 100, window_secs 60 (RE-DERIVED)",
+    "crates/a2a-protocol-server/src/rate_limit/window.rs:146-157 - map full -> evict_stale -> still full -> a caller without a bucket is refused",
+    "crates/a2a-protocol-server/src/rate_limit/window.rs:52-56 - evict_stale keeps buckets of the current AND previous window, so a stable population of >= 10k callers active once per window keeps caller 10,001 out indefinitely (RE-DERIVED; the report says 'in one window')",
+    "crates/a2a-protocol-server/src/rate_limit/window.rs:36-43 - the refusal says to retry at the window end, when the previous window's buckets are still retained, so the retry is refused again",
+    "crates/a2a-protocol-server/src/rate_limit/window.rs:53 - every refused new-caller request runs an O(max_buckets) retain under the map's write lock; raising max_buckets (the report's first fix) makes each scan proportionally longer",
+    "crates/a2a-protocol-server/src/rate_limit/window.rs:190-205 - with a shared counter configured and answering, the local map is bypassed (no cap); the cap returns when the counter fails",
+    "crates/a2a-protocol-server/src/rate_limit/mod.rs:100-117 and book/src/reference/configuration.md:137 - documented as fail-closed; no distinct log or metric when the cap (not the rate) refuses",
+    "commit c76299c (after baseline) changed proxy trust and /64 keying, not the cap",
+    "NOT RE-DERIVED: '~64 B per bucket, 1M buckets ~64 MiB' - a String key plus a HashMap entry plus two AtomicU64 is likely more; not measured"
+   ],
+   "test": "none needed for the verdict",
+   "summary": "Still fail-closed at 10,000 tracked callers; an incumbent set of 10k callers active each window locks every new caller out for as long as they stay active, and the operator cannot tell this refusal from an ordinary rate limit.",
+   "remaining": "The policy decision, a distinct signal for cap refusals, and production docs.",
+   "theme": "rate-limit",
+   "effort": "XS-S (overflow bucket) / M (sketch limiter)",
+   "breaking": "behaviour (a documented fail-closed default changes)",
+   "probe": "none",
+   "options": "(A) Overflow bucket: when the map is full, a caller without a bucket is charged to a shared 'overflow' key with its own budget (like the existing 'anon' key) instead of being refused. Bounded memory, no lockout, coarser fairness for the overflow population. XS-S. (B) A sketch-based limiter (count-min or approximate sliding log): bounded memory, no cliff, approximate (collisions over-count and can refuse innocent callers at high load). M. (C) Raise or scale max_buckets with memory and document it, or point shared services at the shared counter: simple, keeps the cliff, and lengthens the O(n) eviction scan under the write lock. Recommendation: A, with a metric for overflow use; B only if A's shared budget proves too coarse.",
+   "adr": "No ADR needed: a decision recorded in the PR (it changes a documented default).",
+   "ship_now": "XS: a distinct warn log and metric label when the cap refuses. XS: a note in the book's production chapter (today only reference/configuration.md says it)."
+  },
+  {
+   "id": "H17",
+   "verdict": "needs_decision",
+   "severity_now": "S2; unchanged (mitigated: the failure is now retryable)",
+   "evidence": [
+    "crates/a2a-protocol-server/src/tool_loop/model.rs:217-243 - ModelError::Status { status, body } carries no Retry-After; the variant's fields are public and the variant is not #[non_exhaustive], so adding a field breaks integrators; the enum is #[non_exhaustive], so a new variant is additive",
+    "crates/a2a-protocol-server/src/tool_loop/openai.rs:133-167 - OpenAiChatModel setters: tls, api_key, timeout, max_response_bytes, extra_body; no concurrency or retry",
+    "rg 'Semaphore|retry_after|Retry-After|backoff' in tool_loop non-test src: no hits",
+    "commit 84e0dbe (2026-10-30, after baseline) - loop_error.rs:60-72 and executor.rs:174-183: 429/502/503/504, timeout and transport failures now end the task FailureClass::Transient (was Internal)",
+    "docs/swarm-orchestration.md:265-269 - model the bottleneck by three orders of magnitude (a measurement; not re-run)"
+   ],
+   "test": "Adjacent mitigation only: tool_loop/loop_error.rs a_provider_that_may_come_back_is_transient_and_nothing_else_is (unit, every status) and crates/a2a-protocol-server/tests/tool_loop/executor.rs:174,194 (end to end, 503 -> Transient) would fail if the classification were reverted (read, not run). No test for a limit or backoff, which do not exist.",
+   "summary": "No shared inference concurrency limit and no in-loop backoff; a 429 still fails the whole task, now as Transient, so the A2A caller retries the whole task and re-spends the tokens already used.",
+   "remaining": "Shared concurrency limit; Retry-After-aware retry inside the remaining budget.",
+   "theme": "tool-loop-inference",
+   "effort": "S (semaphore decorator) / S-M (retry with budget)",
+   "breaking": "none (new decorator, new ModelError variant on a #[non_exhaustive] enum)",
+   "probe": "none to settle. To prove a fix: llama-server --parallel 1 (or a mock answering 429 with Retry-After: 2) and 20 concurrent tool-loop tasks; count provider calls, waits and task outcomes.",
+   "options": "(A) OpenAiChatModel::with_concurrency(Arc<Semaphore>) and with_retry(policy): provider-specific. (B) A ToolModel decorator (e.g. Limited<M>) holding a shared semaphore and a retry policy that honours Retry-After from a new ModelError::RateLimited { retry_after, .. } variant and stops when the BudgetHandle's remaining time is shorter than the wait: works for every ToolModel, the wait is charged to the deadline automatically, and should be recorded as a span event. (C) Leave it to a gateway (LiteLLM, Envoy) and rely on Transient plus caller retry. Recommendation: B.",
+   "adr": "Amend ADR 0022 (tool-calling loop); no NEW ADR needed.",
+   "ship_now": "S: the decorator with only the shared semaphore (no policy questions). S: ModelError::RateLimited carrying the provider's Retry-After, produced by openai.rs."
+  },
+  {
+   "id": "H18",
+   "verdict": "needs_decision",
+   "severity_now": "S2; unchanged",
+   "evidence": [
+    "crates/a2a-protocol-sdk/src/lib.rs:47-131 - re-exports only; no delegate helper",
+    "crates/a2a-protocol-server/src/request_context.rs:60,169-176 - the parts exist on the context (cancellation_token, budget()), and nothing composes them with a Delegation",
+    "crates/a2a-protocol-client/src/delegation/mod.rs:159,213,245 and delegation/journal.rs:104-136 - four separate constructors: start, start_leased, start_budgeted (lease optional), start_journaled; start_journaled wraps only start, so a journaled delegation cannot be leased or budgeted through the API",
+    "crates/a2a-protocol-client/src/delegation/resume.rs:160-199 - reattach sets renewal None and budget None, so a leased child of a restarted supervisor is cancelled by its own lease within the TTL (NEW-h-designs-5; ADR 0030 records the reattach half as 'not decided')",
+    "examples/swarm/src/supervisor.rs:63-110,127-140 - semaphore, stop token and retry-by-class are still written by hand",
+    "RFC 8693 token exchange remains a separate interceptor/token-provider step"
+   ],
+   "test": "none",
+   "summary": "Wiring a child into the parent's context is still manual, and the start_* constructors do not compose: journal, lease and budget cannot be combined in one call.",
+   "remaining": "A single-child helper or options builder; the journal x lease x budget combinations; lease restoration on reattach.",
+   "theme": "delegation-ergonomics",
+   "effort": "S (combined constructor) / M (options builder + SDK helper)",
+   "breaking": "none if added; api if the start_* matrix is later deprecated",
+   "probe": "none",
+   "options": "(A) A context-level helper in a2a-protocol-sdk, which depends on client and server: ctx.delegate(&client, params).share(f).lease(ttl).on_behalf_of_caller().journal(j).start(), with wait() bound to ctx.cancellation_token. S-M. (B) A DelegationOptions builder in the client crate replacing the start_* matrix (lease, budget, journal, resume, id_wait), with A as SDK sugar over it. M; consolidates the API. (C) Docs and recipes only. Recommendation: B (it also closes the journal x lease x budget gap), then A; fan-out stays ADR 0033's DelegationGroup.",
+   "adr": "ADR 0033 covers fan-out only; the single-child helper/options builder is covered by no ADR (amend 0033 or NEW).",
+   "ship_now": "XS: document that a reattached delegation does not renew a lease, so a leased child of a restarted supervisor is cancelled within its TTL. S: a combined constructor (journal with optional lease and grant)."
+  },
+  {
+   "id": "H19",
+   "verdict": "needs_decision",
+   "severity_now": "S1 for polyglot fleets; unchanged",
+   "evidence": [
+    "crates/a2a-protocol-types/src/lease.rs:50-53,80-94; budget.rs:61-65,149-157; idempotency.rs:62-65; failure.rs:61-64; approval.rs:60-63; provenance.rs:63-66 - every swarm control travels as Message.metadata['a2a-rust.com/...'] plus the https://a2a-rust.com/extensions/.../v1 URI in Message.extensions: standard A2A slots, so a non-Rust peer receives them and ignores them",
+    "crates/a2a-protocol-client/src/methods/tasks.rs:58-74 - lease renewal is a GetTask with the A2A-Extensions header naming the lease URI; a non-Rust server ignores it, so its child is never stopped by lease expiry",
+    "crates/a2a-protocol-client/src/trace_propagation.rs:8,155-160 and config.rs:328 - W3C traceparent/tracestate headers, on by default: they cross to any peer whose stack extracts W3C context (not verified against a2a-python or a2a-go)",
+    "crates/a2a-protocol-server/src/handler/halt.rs and store/halt/* - a halt has no wire form; it reaches only replicas sharing the halt store. A cancel crosses one hop as a standard CancelTask, and a non-Rust child cascades no further unless its own code does",
+    "Failure class rides in status metadata (a2a-rust.com/failure): a non-Rust caller sees a failed task with no retryability; JSON-RPC/WebSocket RetryInfo (AIP-193) is read only by clients that parse it; REST 429/503 + Retry-After are universal",
+    "itk/interop/* (go-sdk-client, python_client_vs_rust.py): rg 'lease|budget|a2a-rust.com' over itk/ finds no extension coverage",
+    "rg 'pyo3|napi|uniffi' over Cargo.toml files: none",
+    "docs/upstream/a2a-deadline-budget-propagation-draft.md - the budget proposal is drafted and marked 'not sent'"
+   ],
+   "test": "none",
+   "summary": "Trace context crosses non-Rust hops by standard headers; lease, budget, idempotency, failure class and approval are ignored by non-Rust peers; halts never cross a process boundary outside a shared halt store; cancel crosses exactly one hop.",
+   "remaining": "Published extension specs, reference shims for other SDKs, interop tests.",
+   "theme": "polyglot-extensions",
+   "effort": "XS (docs) / S per extension spec / M (shims + ITK cases) / L (language bindings)",
+   "breaking": "none",
+   "probe": "Needs the Python a2a-sdk: a Rust supervisor Delegation::start_leased(ttl = 5 s) to an a2a-python agent that sleeps 60 s; kill -9 the supervisor; the Python task is still running at t = 15 s (lease ignored). With OTel on both sides, check that the Python span carries the Rust trace id.",
+   "options": "(A) Publish each extension as a stand-alone spec page with JSON Schema and conformance vectors, and send the upstream drafts (budget exists; lease and lineage to write). S per extension; outward-facing, needs the maintainer's say-so. (B) Reference middleware for a2a-python and a2a-go (~200 lines each: read the budget and cap the timeout, honour lease renewal, cascade cancel) plus ITK interop cases. M. (C) Language bindings (pyo3 wheel of Delegation and CardCache). L, a product of its own. Recommendation: A then B; C out of scope.",
+   "adr": "NEW ADR (extension publication and polyglot policy); docs/upstream drafts are the starting material.",
+   "ship_now": "XS: a docs page 'what crosses a non-Rust hop' (trace: yes if the peer extracts W3C; cancel: one hop; lease/budget/idempotency/failure/approval: ignored; halt: never). S: an ITK case Rust parent -> Python child asserting the metadata survives and recording that the lease does not stop the child."
+  }
+ ],
+ "new_findings": [
+  {
+   "id": "NEW-h-designs-1",
+   "severity": "medium",
+   "where": "crates/a2a-protocol-server/src/error/mod.rs:240,352,360-363; crates/a2a-protocol-client/src/retry.rs:298-306",
+   "finding": "Every Overloaded refusal asks for the same constant 1 s (OVERLOAD_RETRY_AFTER), and the client follows a server-directed delay exactly (min max_backoff) with no jitter; only its own computed backoff is jittered.",
+   "scenario": "1,000 supervisors with RetryPolicy::default() hit one saturated worker: all refused sends return at t+1 s, t+2 s, t+3 s in synchronized waves, re-saturating the worker each time instead of spreading out.",
+   "read_only": true,
+   "theme": "client-resilience"
+  },
+  {
+   "id": "NEW-h-designs-2",
+   "severity": "medium",
+   "where": "crates/a2a-protocol-client/src/delegation/resume.rs:105-117,241-283; crates/a2a-protocol-client/src/retry.rs:422-480",
+   "finding": "Delegation resume (ADR 0030, built) reopens immediately on the first attempt and then backs off deterministically (0, 200, 400, 800 ms ... no jitter, pinned exactly by the unit test at resume.rs:302-319). Each reopen is a SubscribeToTask, which RetryTransport also retries (idempotent method) when the client has a retry policy, and each failed reopen adds a GetTask: up to 5 x 4 subscribe attempts per loss.",
+   "scenario": "An L4 balancer or proxy rollout resets 10k delegation streams at once: 10k SubscribeToTask (each a task read plus a log replay on the server) arrive at the same instant, then again in lockstep waves.",
+   "read_only": true,
+   "theme": "delegation-resume"
+  },
+  {
+   "id": "NEW-h-designs-3",
+   "severity": "medium (S1 at swarm scale)",
+   "where": "crates/a2a-protocol-client/src/delegation/renewal.rs:36-53; crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:48-79; crates/a2a-protocol-server/src/provenance.rs:98-109; crates/a2a-protocol-server/src/profile.rs:62-66",
+   "finding": "A lease renewal is a full GetTask: the server reads the whole task row, renews, and, with a content signer (required by Profile::Production), signs the status message and every artifact before returning them all; the client then runs content verification over the answer. history_length=0 (the report's quick fix) trims history only; artifacts are always returned and signed.",
+   "scenario": "A production-profile worker holding children with large artifacts (up to 1000 artifacts x 10k parts) pays an Ed25519 signature and a full serialization per artifact per renewal, every ttl/3, per child.",
+   "read_only": true,
+   "theme": "lease-control-plane"
+  },
+  {
+   "id": "NEW-h-designs-4",
+   "severity": "medium (latent)",
+   "where": "crates/a2a-protocol-server/src/store/halt/mod.rs:255-286; store/halt/postgres.rs:237-248; store/halt/sqlite.rs:78; handler/halt/sync.rs:167-168; handler/halt.rs:227-247,263-267",
+   "finding": "A halt-store row whose scope key is unknown makes from_row fail, which fails the whole load. A running replica's poller then keeps the halts it last read (and stops seeing new halts and resumes of every scope); a replica that starts while such a row exists can never sync and refuses every send.",
+   "scenario": "ADR 0034 adds HaltScope::Root (or any new scope). During a rolling upgrade, or with one org-wide halt table shared by services on different SDK versions (which ADR 0034 proposes), one root halt freezes halts on every older replica and takes restarted older replicas out of service.",
+   "read_only": true,
+   "theme": "lineage-halt"
+  },
+  {
+   "id": "NEW-h-designs-5",
+   "severity": "low-medium",
+   "where": "crates/a2a-protocol-client/src/delegation/journal.rs:104-136; delegation/mod.rs:213-270; delegation/resume.rs:160-199",
+   "finding": "start_journaled wraps only Delegation::start, so a journaled delegation cannot also be leased or budgeted through the API (the private Renewal cannot be started afterwards); attaching a lease to the message by hand gives a child that nobody renews. reattach also leaves renewal None. Composing by hand (journal.begin, start_leased, with_journal) is possible but undocumented.",
+   "scenario": "A supervisor uses the journal (to survive restarts) and leases (to survive crashes). After a restart it reattaches its children, but nothing renews their leases, so the server cancels each leased child within its TTL: the restart the journal exists for kills the children it recorded.",
+   "read_only": true,
+   "theme": "delegation-ergonomics"
+  },
+  {
+   "id": "NEW-h-designs-6",
+   "severity": "low",
+   "where": "crates/a2a-protocol-server/src/store/task_store/mod.rs:632-635",
+   "finding": "TaskStore::save_appending_history's doc says 'the SQL stores splice the tail into the stored document'; neither PostgresTaskStore nor SqliteTaskStore overrides it (only in-memory, encrypted, traced and audit do), so SQL sends take the O(history)-twice default.",
+   "scenario": "An integrator reading the trait docs assumes SQL appends are O(1) and sizes a long-lived channel task accordingly; swarm-scale Finding 7 shows the ageing.",
+   "read_only": true,
+   "theme": "docs"
+  },
+  {
+   "id": "NEW-h-designs-7",
+   "severity": "medium",
+   "where": "crates/a2a-protocol-server/src/handler/halt.rs:227-247,263-267; crates/a2a-protocol-server/src/error/mod.rs:218,240,355; crates/a2a-protocol-server/src/handler/introspection.rs:102-111",
+   "finding": "Until the halt store has been read once, every send is refused as ServerError::Halted('the halt store could not be read'), which goes out as -32603 with no RetryInfo on JSON-RPC (non-retryable for the client) and 503 on REST, while /ready keeps answering 200. Each refused send retries the load under the sync lock (with the store's own retry), so sends also queue behind it.",
+   "scenario": "Production profile (halt store required) with the halt store on a database that is unreachable when a replica starts: the replica stays in the Service, every caller gets a final 'halted' error for an outage, and sends pile up on the lock.",
+   "read_only": true,
+   "theme": "readiness-load"
+  }
+ ],
+ "adr_status": {
+  "0030": "IMPLEMENTED (points 1-3 and the PostgreSQL journal): resume-then-cancel with ResumePolicy (660196e), Delegation::reattach and last_event_id (660196e), DelegationJournal trait + DelegationRecord + InMemoryDelegationJournal in a2a-protocol-types (49f5509), Delegation::start_journaled/with_journal, PostgresDelegationJournal in the server store (49f5509). Tests read, not run: crates/a2a-protocol-client/tests/delegation_resume/{resume,reattach}.rs (e.g. a_cut_stream_is_resumed_and_the_running_child_completes asserts the child ends Completed, which the old cancel-on-loss behaviour would fail), tests/delegation_journal/{lifecycle,records,progress}.rs, crates/a2a-protocol-server/src/store/delegation_journal/tests.rs (postgres_keeps_the_contract needs PostgreSQL). Not built, as the ADR says: SQLite journal, owner enforcement, lease/budget restoration on reattach; also no jitter (NEW-h-designs-2) and no journal x lease x budget constructor (NEW-h-designs-5).",
+  "0031": "NOT IMPLEMENTED. crates/a2a-protocol-discovery holds only ADR 0029's mDNS (announce, browse, discovered); no AgentSource, Merged, StaticSource, DnsSdSource or KubernetesSource; no hickory-resolver or kube dependency.",
+  "0032": "NOT IMPLEMENTED. No HttpPool, with_pool, shared() or per-origin state (rg over crates/: none). Adjacent progress only: default_tls_config built once per process (c4404e8, tls.rs:100-108) and ClientBuilder::with_tls_config for the HTTP bindings (builder/mod.rs:534); every ClientBuilder still builds its own hyper pool (tls.rs:300-313).",
+  "0033": "NOT IMPLEMENTED. No DelegationGroup/Join/MemberOutcome in the client (the only MemberOutcome is SLIMRPC multicast's, bindings/a2a-protocol-slimrpc/src/multicast/outcome.rs:19); examples/swarm still fans out with a Semaphore by hand.",
+  "0034": "NOT IMPLEMENTED. No lineage type, metadata key, HaltScope::Root or registry change; HaltScope is All|Tenant (handler/halt.rs:52-59)."
+ },
+ "numbers": {
+  "re_derived_from_code": [
+   "H5: 100k renewals/s at 1M children with TTL 30 s (renewal.rs: ttl/3)",
+   "H5: 1M lease SELECT/s at 1M running leased turns (lease.rs:136-138: min(ttl/4, 1 s) = 1 s for TTL >= 4 s); the report's lower bound of 250k/s is NOT derivable",
+   "H5: idle subscriber = 4 polls/s; 40k task reads/s for 10k subscribers on a store without an event log, 80k/s on the SQL stores (get + last_event_seq) - the report gives only 40k",
+   "H6: up to 4 attempts per refused send (max_retries 3) - true only for clients that set with_retry_policy; retries are off by default",
+   "H6: WebSocket DEFAULT_MAX_PENDING_REQUESTS = 64; no HTTP cap",
+   "H9: DEFAULT_MAX_CONCURRENT_STREAMS = 1024",
+   "H13: queue 256 events, 16 MiB max event, history 1024 messages / 16 MiB",
+   "H16: DEFAULT_MAX_BUCKETS = 10,000; default 100 requests per 60 s; the lockout lasts as long as the incumbents stay active (current + previous window retained), not one window",
+   "Server overload Retry-After = constant 1 s"
+  ],
+  "not_re_derived": [
+   "Finding 9: p95 ~1.04 s for 512 simultaneous card fetches (a measurement; not re-run)",
+   "H16: '~64 B per bucket, 1M buckets ~64 MiB' (memory not measured; likely an underestimate)",
+   "H17: model bottleneck by three orders of magnitude (swarm-orchestration measurement)",
+   "H2/H5: '10k plaintext SSE delegations hold 10k sockets' (plausible from HTTP/1.1-only plain http; not measured)",
+   "That rustls session resumption actually occurs across default clients after c4404e8 (Arc sharing read in rustls source; no handshake observed)"
+  ],
+  "report_claims_found_wrong_or_stale": [
+   "H11: 'no instrument for budget-exhausted endings' - wrong at 8dc4331: a2a.server.executor.duration{outcome=budget_exhausted}",
+   "H11: overload and halt refusals are counted (a2a.server.errors{error_kind=overloaded|halted}); only their cause is missing",
+   "H8: 'new root store on every card fetch' - true at 8dc4331, changed by c4404e8 (untested)",
+   "H7: readiness now also reports draining (57f034e), still not saturation or halt",
+   "H17: a model 429 no longer ends Internal: Transient since 84e0dbe"
+  ]
+ },
+ "not_checked": [
+  "Nothing was built or run (no cargo); every test verdict is from reading assertions.",
+  "No live probe was run; Finding 9, the swarm runs and the model measurements are taken as reported, not re-measured.",
+  "H1/H2/H3/H4/H15 were not audited (other slices); ADR 0030's tests were read only far enough to judge the ADR's implementation status.",
+  "Behaviour of a2a-python / a2a-go with W3C trace context and with the a2a-rust extensions was not verified."
+ ]
+}

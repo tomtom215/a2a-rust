@@ -240,22 +240,18 @@ async fn logged_after(fails: usize, error: fn() -> A2aError, retry: Duration) ->
     let task_id = TaskId::new("t-1");
     // The in-memory log keeps events only for a task it holds.
     store
-        .save(&a2a_protocol_types::task::Task {
-            id: task_id.clone(),
-            context_id: ContextId::new("c-1"),
-            status: TaskStatus::new(TaskState::Working),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        })
+        .save(&a2a_protocol_types::task::Task::new(
+            task_id.clone(),
+            ContextId::new("c-1"),
+            TaskStatus::new(TaskState::Working),
+        ))
         .await
         .expect("save");
-    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: task_id.clone(),
-        context_id: ContextId::new("c-1"),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    });
+    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        task_id.clone(),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::Working),
+    ));
     super::background::record_event(
         &store,
         &task_id,

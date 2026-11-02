@@ -35,16 +35,13 @@ fn deeply_nested_metadata_roundtrip() {
         nested = serde_json::json!({ "inner": nested });
     }
 
-    let msg = Message {
-        id: MessageId::new("msg-nested"),
-        role: MessageRole::User,
-        parts: vec![Part::text("test")],
-        task_id: None,
-        context_id: Some(ContextId::new("ctx-nested")),
-        reference_task_ids: None,
-        extensions: None,
-        metadata: Some(nested.clone()),
-    };
+    let msg = Message::new(
+        MessageId::new("msg-nested"),
+        MessageRole::User,
+        vec![Part::text("test")],
+    )
+    .with_context_id(ContextId::new("ctx-nested"))
+    .with_metadata(nested.clone());
 
     let json = serde_json::to_string(&msg).expect("serialize deeply nested");
     let back: Message = serde_json::from_str(&json).expect("deserialize deeply nested");
@@ -55,43 +52,30 @@ fn deeply_nested_metadata_roundtrip() {
 
 #[test]
 fn agent_card_full_roundtrip() {
-    let card = AgentCard {
-        url: None,
-        name: "Test Agent".into(),
-        description: "A test agent for validation".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: "http://localhost:8080".into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into(), "application/json".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "skill-1".into(),
-            name: "echo".into(),
-            description: "Echoes input".into(),
-            tags: vec!["demo".into()],
-            examples: Some(vec!["Hello!".into()]),
-            input_modes: Some(vec!["text/plain".into()]),
-            output_modes: Some(vec!["text/plain".into()]),
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none()
+    let card = AgentCard::new(
+        "Test Agent",
+        "1.0.0",
+        AgentInterface::new("http://localhost:8080", "JSONRPC").with_protocol_version("1.0.0"),
+    )
+    .with_description("A test agent for validation")
+    .with_input_modes(vec!["text/plain", "application/json"])
+    .with_output_modes(vec!["text/plain"])
+    .with_skill(
+        AgentSkill::new("skill-1", "echo", "Echoes input")
+            .with_tags(vec!["demo"])
+            .with_examples(vec!["Hello!"])
+            .with_input_modes(vec!["text/plain"])
+            .with_output_modes(vec!["text/plain"]),
+    )
+    .with_capabilities(
+        AgentCapabilities::none()
             .with_streaming(true)
             .with_push_notifications(true)
             .with_extended_agent_card(true),
-        provider: Some(AgentProvider {
-            organization: "Test Corp".into(),
-            url: "https://example.com".into(),
-        }),
-        icon_url: Some("https://example.com/icon.png".into()),
-        documentation_url: Some("https://example.com/docs".into()),
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    };
+    )
+    .with_provider(AgentProvider::new("Test Corp", "https://example.com"))
+    .with_icon_url("https://example.com/icon.png")
+    .with_documentation_url("https://example.com/docs");
 
     let json = serde_json::to_string_pretty(&card).expect("serialize agent card");
     let back: AgentCard = serde_json::from_str(&json).expect("deserialize agent card");
@@ -251,17 +235,13 @@ fn push_config_roundtrip() {
 
 #[test]
 fn push_config_with_auth_roundtrip() {
-    let config = TaskPushNotificationConfig {
-        tenant: None,
-        id: Some("config-1".into()),
-        task_id: Some("task-1".into()),
-        url: "https://example.com/webhook".into(),
-        token: Some("shared-secret".into()),
-        authentication: Some(AuthenticationInfo {
+    let config = TaskPushNotificationConfig::new("task-1", "https://example.com/webhook")
+        .with_id("config-1")
+        .with_token("shared-secret")
+        .with_authentication(AuthenticationInfo {
             scheme: "bearer".into(),
             credentials: Some("my-token".into()),
-        }),
-    };
+        });
 
     let json = serde_json::to_string(&config).expect("serialize");
     assert!(json.contains("\"authentication\""));
@@ -284,25 +264,17 @@ fn stream_response_status_update_roundtrip() {
     use a2a_protocol_types::events::*;
     use a2a_protocol_types::task::*;
 
-    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t1"),
-        context_id: ContextId::new("ctx1"),
-        status: TaskStatus {
-            state: TaskState::Working,
-            message: Some(Message {
-                id: MessageId::new("status-msg"),
-                role: message::MessageRole::Agent,
-                parts: vec![message::Part::text("Processing...")],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            }),
-            timestamp: Some("2026-01-01T00:00:00Z".into()),
-        },
-        metadata: None,
-    });
+    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t1"),
+        ContextId::new("ctx1"),
+        TaskStatus::new(TaskState::Working)
+            .with_message(Message::new(
+                MessageId::new("status-msg"),
+                message::MessageRole::Agent,
+                vec![message::Part::text("Processing...")],
+            ))
+            .at("2026-01-01T00:00:00Z"),
+    ));
 
     let json = serde_json::to_string(&event).expect("serialize");
     let back: StreamResponse = serde_json::from_str(&json).expect("deserialize");
@@ -323,21 +295,21 @@ fn stream_response_artifact_update_roundtrip() {
     use a2a_protocol_types::events::*;
     use a2a_protocol_types::task::*;
 
-    let event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-        task_id: TaskId::new("t1"),
-        context_id: ContextId::new("ctx1"),
-        artifact: Artifact {
-            id: ArtifactId::new("art-1"),
-            name: Some("output.txt".into()),
-            description: Some("The output file".into()),
-            parts: vec![message::Part::text("content")],
-            extensions: None,
-            metadata: None,
-        },
-        append: Some(true),
-        last_chunk: Some(false),
-        metadata: Some(serde_json::json!({"chunk": 1})),
-    });
+    let event = StreamResponse::ArtifactUpdate(
+        TaskArtifactUpdateEvent::new(
+            TaskId::new("t1"),
+            ContextId::new("ctx1"),
+            Artifact::new(
+                ArtifactId::new("art-1"),
+                vec![message::Part::text("content")],
+            )
+            .with_name("output.txt")
+            .with_description("The output file"),
+        )
+        .with_append(true)
+        .with_last_chunk(false)
+        .with_metadata(serde_json::json!({"chunk": 1})),
+    );
 
     let json = serde_json::to_string(&event).expect("serialize");
     assert!(json.contains("\"append\""));
@@ -360,14 +332,15 @@ fn stream_response_task_roundtrip() {
     use a2a_protocol_types::events::*;
     use a2a_protocol_types::task::*;
 
-    let event = StreamResponse::Task(Task {
-        id: TaskId::new("t1"),
-        context_id: ContextId::new("ctx1"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: Some(vec![]),
-        artifacts: Some(vec![]),
-        metadata: None,
-    });
+    let event = StreamResponse::Task(
+        Task::new(
+            TaskId::new("t1"),
+            ContextId::new("ctx1"),
+            TaskStatus::new(TaskState::Completed),
+        )
+        .with_history(vec![])
+        .with_artifacts(vec![]),
+    );
 
     let json = serde_json::to_string(&event).expect("serialize");
     let back: StreamResponse = serde_json::from_str(&json).expect("deserialize");
@@ -385,16 +358,11 @@ fn stream_response_task_roundtrip() {
 fn stream_response_message_roundtrip() {
     use a2a_protocol_types::events::*;
 
-    let event = StreamResponse::Message(message::Message {
-        id: MessageId::new("msg-1"),
-        role: message::MessageRole::Agent,
-        parts: vec![message::Part::text("hello")],
-        task_id: None,
-        context_id: None,
-        reference_task_ids: None,
-        extensions: None,
-        metadata: None,
-    });
+    let event = StreamResponse::Message(message::Message::new(
+        MessageId::new("msg-1"),
+        message::MessageRole::Agent,
+        vec![message::Part::text("hello")],
+    ));
 
     let json = serde_json::to_string(&event).expect("serialize");
     let back: StreamResponse = serde_json::from_str(&json).expect("deserialize");
@@ -538,14 +506,11 @@ fn send_message_response_task_variant() {
     use a2a_protocol_types::responses::SendMessageResponse;
     use a2a_protocol_types::task::*;
 
-    let resp = SendMessageResponse::Task(Task {
-        id: TaskId::new("t1"),
-        context_id: ContextId::new("ctx"),
-        status: TaskStatus::new(TaskState::Completed),
-        history: None,
-        artifacts: None,
-        metadata: None,
-    });
+    let resp = SendMessageResponse::Task(Task::new(
+        TaskId::new("t1"),
+        ContextId::new("ctx"),
+        TaskStatus::new(TaskState::Completed),
+    ));
 
     let json = serde_json::to_string(&resp).expect("serialize");
     let back: SendMessageResponse = serde_json::from_str(&json).expect("deserialize");
@@ -565,14 +530,11 @@ fn task_list_response_roundtrip() {
     use a2a_protocol_types::task::*;
 
     let resp = TaskListResponse {
-        tasks: vec![Task {
-            id: TaskId::new("t1"),
-            context_id: ContextId::new("ctx"),
-            status: TaskStatus::new(TaskState::Completed),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }],
+        tasks: vec![Task::new(
+            TaskId::new("t1"),
+            ContextId::new("ctx"),
+            TaskStatus::new(TaskState::Completed),
+        )],
         next_page_token: "next-page".into(),
         page_size: 50,
         total_size: 1,
@@ -627,12 +589,10 @@ fn utc_now_iso8601_produces_valid_format() {
 fn agent_extension_roundtrip() {
     use a2a_protocol_types::extensions::AgentExtension;
 
-    let ext = AgentExtension {
-        uri: "https://example.com/extensions/custom".into(),
-        description: Some("A custom extension".into()),
-        required: Some(true),
-        params: Some(serde_json::json!({"key": "value"})),
-    };
+    let ext = AgentExtension::new("https://example.com/extensions/custom")
+        .with_description("A custom extension")
+        .with_required(true)
+        .with_params(serde_json::json!({"key": "value"}));
 
     let json = serde_json::to_string(&ext).expect("serialize");
     let back: AgentExtension = serde_json::from_str(&json).expect("deserialize");

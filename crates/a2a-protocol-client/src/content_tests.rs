@@ -53,12 +53,7 @@ fn a_streamed_message_is_checked() {
 fn a_status_updates_message_is_checked() {
     let mut status = TaskStatus::new(TaskState::Working);
     status.message = Some(unsigned());
-    let update = TaskStatusUpdateEvent {
-        task_id: "t-1".into(),
-        context_id: "c-1".into(),
-        status,
-        metadata: None,
-    };
+    let update = TaskStatusUpdateEvent::new("t-1", "c-1", status);
     refused(
         requiring().event(&StreamResponse::StatusUpdate(update)),
         "status message",

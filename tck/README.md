@@ -119,10 +119,13 @@ between bindings, each trivially satisfied by any one of them:
 | `BIND-EQUIV-003` | All bindings map errors consistently, using §5.4's per-binding codes |
 | `BIND-EQUIV-004` | All bindings support the same authentication schemes declared in the AgentCard |
 
-`BIND-EQUIV-004` is graded **structurally only**, and the run says so: the card
-declares security once at card level and no interface may override it. Proving
-each binding *enforces* those schemes identically needs a target configured to
-require credentials.
+`BIND-EQUIV-004` is graded **structurally** against any target: the card
+declares security once at card level and no interface may override it. Against
+a target whose card declares `securityRequirements` the run also grades
+**enforcement**: every binding must refuse an uncredentialed request and, given
+`--auth-token`, serve a credentialed one (`SUT_PROFILE=secured` for the in-repo
+SUT). Against a target that declares none there is nothing to enforce, and the
+run says it graded structurally only.
 
 Requirement texts are quoted from `a2aproject/a2a-tck@5996b79` (2026-06-29),
 `tck/requirements/interop.py`. `official-tck.yml` runs the official suite at

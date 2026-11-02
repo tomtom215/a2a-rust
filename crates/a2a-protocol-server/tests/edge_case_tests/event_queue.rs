@@ -61,12 +61,11 @@ async fn event_queue_write_and_read() {
     let (writer, reader) = a2a_protocol_server::streaming::event_queue::new_in_memory_queue();
     let mut reader = reader;
 
-    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-        task_id: TaskId::new("t1"),
-        context_id: "ctx".into(),
-        status: TaskStatus::new(TaskState::Working),
-        metadata: None,
-    });
+    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        TaskId::new("t1"),
+        "ctx",
+        TaskStatus::new(TaskState::Working),
+    ));
 
     writer.write(event).await.unwrap();
     drop(writer); // Close the channel

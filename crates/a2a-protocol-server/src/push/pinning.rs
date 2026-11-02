@@ -3,7 +3,7 @@
 
 //! The pin half of the push sender's DNS-rebinding defence: the address a
 //! delivery connects to, and the `Host` it presents there. Moved out of
-//! `sender.rs` unchanged, which is over the 500-line limit.
+//! `sender.rs`, which is over the 500-line limit.
 
 use std::net::{IpAddr, SocketAddr};
 
@@ -64,15 +64,34 @@ pub(super) fn host_header_from_url(url: &str) -> A2aResult<String> {
         .map_or_else(|| host.to_string(), |port| format!("{host}:{port}")))
 }
 
-/// Decides whether to pin the pre-validated IP for this delivery.
+/// The bare host name of a webhook URL: no port, no brackets. What an
+/// `https://` delivery's pin is keyed by, as the connector asks the resolver
+/// for exactly this.
+#[cfg(feature = "tls-rustls")]
+pub(super) fn host_from_url(url: &str) -> A2aResult<String> {
+    let uri: hyper::Uri = url
+        .parse()
+        .map_err(|e| A2aError::invalid_params(format!("invalid webhook URL: {e}")))?;
+    uri.host()
+        .map(str::to_owned)
+        .ok_or_else(|| A2aError::invalid_params("webhook URL missing host"))
+}
+
+/// The address attempt `attempt` (counted from 0) uses, going round the
+/// validated addresses so that one that is down is followed by the next.
+/// `None` when there are none.
+pub(super) fn pick_addr(addrs: &[SocketAddr], attempt: usize) -> Option<SocketAddr> {
+    addrs.get(attempt.checked_rem(addrs.len())?).copied()
+}
+
+/// Decides whether the URI is rewritten to the validated IP for this delivery.
 ///
-/// `http://` requests pin (the caller rewrites the URI to the literal IP and
+/// `http://` requests are (the caller rewrites the URI to the literal IP and
 /// restores the original `Host` header) to close the DNS-rebinding TOCTOU
-/// window. `https://` requests must **not** pin — the connection has to present
-/// the original hostname for SNI and certificate verification, and TLS
-/// validation itself defeats a rebind to a private address (no valid cert for
-/// the hostname → handshake fails). A `None` address (IP literal, or SSRF
-/// validation skipped) is never pinned.
+/// window. `https://` requests must **not** be: the connection has to present
+/// the original hostname for SNI and certificate verification. They are
+/// pinned in the client's resolver instead (`net::resolver`). A `None`
+/// address (IP literal, or SSRF validation skipped) is never rewritten.
 pub(super) const fn pin_target(
     is_https: bool,
     pinned_addr: Option<SocketAddr>,
@@ -82,3 +101,6 @@ pub(super) const fn pin_target(
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

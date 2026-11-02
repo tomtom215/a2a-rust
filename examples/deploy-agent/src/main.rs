@@ -13,7 +13,7 @@
 //!
 //! | Concern | Here | Why an in-process example never shows it |
 //! |---|---|---|
-//! | Configuration | `PORT`, `AGENT_URL`, `DATABASE_URL`, `DRAIN_DELAY_SECONDS` from the environment, checked before anything binds | Examples hardcode `127.0.0.1:3000`; a scheduler assigns the port |
+//! | Configuration | `PORT`, `AGENT_URL`, `DATABASE_URL`, `DRAIN_DELAY_SECONDS`, `AGENT_VERSION` from the environment, checked before anything binds | Examples hardcode `127.0.0.1:3000`; a scheduler assigns the port |
 //! | Health checks | `GET /health` (liveness, a constant), `GET /ready` (readiness: the task store answers, and the process is not draining) | Nothing probes an example, so nothing notices it has no probe endpoint |
 //! | Graceful shutdown | `SIGTERM`: not ready at once, still serving for `DRAIN_DELAY_SECONDS`, then in-flight tasks end, then connections drain, each bounded | Examples are killed with Ctrl-C and nobody minds the truncated stream |
 //! | Bind address | every address, IPv6 and IPv4 (`[::]`, or `0.0.0.0` where the host has no IPv6) | A loopback bind is invisible locally and unreachable in a container |
@@ -43,6 +43,8 @@
 
 use std::sync::Arc;
 use std::time::Duration;
+
+mod retention;
 
 use a2a_protocol_sdk::prelude::*;
 use a2a_protocol_sdk::server::dispatch::CombinedDispatcher;
@@ -98,6 +100,27 @@ struct Config {
     /// replicas × (this + 2), with a surge pod during a rollout, must stay
     /// under PostgreSQL's `max_connections` (97 usable by default).
     pool_size: u32,
+    /// The version the card reports (`AGENT_VERSION`), so rollouts can be told
+    /// apart from the card alone. The image build sets it from the release
+    /// tag; unset (`cargo run`), it is this crate's own version.
+    agent_version: String,
+    /// How long a finished task is kept in PostgreSQL (`TASK_RETENTION_HOURS`),
+    /// or `None` to keep everything; see [`retention`].
+    retention: Option<Duration>,
+}
+
+/// The environment's values, as `from_env` read them. A struct with a default,
+/// not a positional list, because the list has grown past what a reader can
+/// match by position.
+#[derive(Default)]
+struct Vars {
+    port: Option<String>,
+    agent_url: Option<String>,
+    database_url: Option<String>,
+    drain_delay: Option<String>,
+    pool_size: Option<String>,
+    agent_version: Option<String>,
+    retention_hours: Option<String>,
 }
 
 /// The push-config store's pool: it reads a task's configs once per
@@ -107,26 +130,31 @@ const PUSH_POOL_SIZE: u32 = 2;
 impl Config {
     fn from_env() -> Result<Self, String> {
         let var = |name| std::env::var(name).ok().filter(|v: &String| !v.is_empty());
-        Self::from_vars(
-            var("PORT"),
-            var("AGENT_URL"),
-            var("DATABASE_URL"),
-            var("DRAIN_DELAY_SECONDS"),
-            var("DATABASE_POOL_SIZE"),
-        )
+        Self::from_vars(Vars {
+            port: var("PORT"),
+            agent_url: var("AGENT_URL"),
+            database_url: var("DATABASE_URL"),
+            drain_delay: var("DRAIN_DELAY_SECONDS"),
+            pool_size: var("DATABASE_POOL_SIZE"),
+            agent_version: var("AGENT_VERSION"),
+            retention_hours: var("TASK_RETENTION_HOURS"),
+        })
     }
 
     /// The parsing behind [`from_env`](Self::from_env), with the variables'
     /// values passed in so it can be tested without writing the process
     /// environment (which is `unsafe` in edition 2024: another test thread
     /// may be reading it).
-    fn from_vars(
-        port: Option<String>,
-        agent_url: Option<String>,
-        database_url: Option<String>,
-        drain_delay: Option<String>,
-        pool_size: Option<String>,
-    ) -> Result<Self, String> {
+    fn from_vars(vars: Vars) -> Result<Self, String> {
+        let Vars {
+            port,
+            agent_url,
+            database_url,
+            drain_delay,
+            pool_size,
+            agent_version,
+            retention_hours,
+        } = vars;
         let port = match port {
             Some(raw) => match raw.parse::<u16>() {
                 Ok(0) | Err(_) => return Err(format!("PORT is not a valid port number: {raw:?}")),
@@ -159,12 +187,21 @@ impl Config {
             },
             None => a2a_protocol_sdk::server::store::DEFAULT_POOL_SIZE,
         };
+        let agent_version = agent_version.unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned());
+        if agent_version.contains(char::is_whitespace) {
+            return Err(format!(
+                "AGENT_VERSION must be a version without whitespace: {agent_version:?}"
+            ));
+        }
+        let retention = retention::from_hours(retention_hours.as_deref())?;
         Ok(Self {
             port,
             public_url,
             database_url,
             drain_delay,
             pool_size,
+            agent_version,
+            retention,
         })
     }
 }
@@ -223,7 +260,7 @@ fn card(config: &Config) -> AgentCard {
     // HTTP+JSON on `/message:send`, `/tasks` and the rest.
     AgentCard::new(
         "deploy-agent",
-        env!("CARGO_PKG_VERSION"),
+        &config.agent_version,
         AgentInterface::rest(&config.public_url),
     )
     .with_interface(AgentInterface::jsonrpc(&config.public_url))
@@ -247,12 +284,14 @@ async fn handler(config: &Config) -> Result<Arc<RequestHandler>, Box<dyn std::er
                  must exceed that times the replicas, a surge pod included",
                 config.pool_size + PUSH_POOL_SIZE
             );
-            let tasks = a2a_protocol_sdk::server::store::PostgresTaskStore::new_with_pool_size(
-                url,
-                config.pool_size,
-            )
-            .await
-            .map_err(|e| format!("cannot open the task store at {}: {e}", redacted(url)))?;
+            let tasks = Arc::new(
+                a2a_protocol_sdk::server::store::PostgresTaskStore::new_with_pool_size(
+                    url,
+                    config.pool_size,
+                )
+                .await
+                .map_err(|e| format!("cannot open the task store at {}: {e}", redacted(url)))?,
+            );
             let push = a2a_protocol_sdk::server::push::PostgresPushConfigStore::new_with_pool_size(
                 url,
                 PUSH_POOL_SIZE,
@@ -265,7 +304,23 @@ async fn handler(config: &Config) -> Result<Arc<RequestHandler>, Box<dyn std::er
                 )
             })?;
             tracing::info!("tasks and push configs in PostgreSQL; replicas may share it");
-            builder = builder.with_task_store(tasks).with_push_config_store(push);
+            match config.retention {
+                Some(max_age) => {
+                    tracing::info!(
+                        hours = max_age.as_secs() / 3600,
+                        "finished tasks are deleted this long after their last update; \
+                         TASK_RETENTION_HOURS changes it, 0 keeps everything"
+                    );
+                    tokio::spawn(retention::run(Arc::clone(&tasks), max_age));
+                }
+                None => tracing::warn!(
+                    "TASK_RETENTION_HOURS=0: finished tasks are kept for ever, so schedule your \
+                     own purge (PostgresTaskStore::purge_expired) or the tables grow without bound"
+                ),
+            }
+            builder = builder
+                .with_task_store_arc(tasks)
+                .with_push_config_store(push);
         }
         None => tracing::warn!(
             "DATABASE_URL is unset: tasks are kept in this process's memory, so run one \

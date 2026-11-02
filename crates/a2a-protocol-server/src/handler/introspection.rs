@@ -89,25 +89,32 @@ impl RequestHandler {
 
     /// Whether this replica should be sent traffic: not while it is
     /// [draining](Self::begin_draining), nor while its task store fails
-    /// [`task_store_health`](Self::task_store_health). This is what `/ready`
-    /// answers on the HTTP+JSON dispatcher and the axum router.
+    /// [`task_store_health`](Self::task_store_health), nor while a halt store
+    /// it was given has not been read. This is what `/ready` answers on the
+    /// HTTP+JSON dispatcher and the axum router.
+    ///
+    /// The probe is what reads the halt store the first time, so a replica
+    /// becomes ready by having read it. Until 2026-11-01 it answered ready
+    /// while refusing every send for want of that read (audit
+    /// NEW-h-designs-7), and nothing read the store until a send arrived.
     ///
     /// # Errors
     ///
     /// A bounded reason: `"draining"`, `"timeout"` when the store has not
     /// answered within [`READINESS_TIMEOUT`](crate::handler::READINESS_TIMEOUT),
-    /// or the store error's
+    /// `"halt_store"` when the halt store cannot be read, or the store error's
     /// [`metric_label`](a2a_protocol_types::error::A2aError::metric_label),
     /// never its message, which may name a host or a connection string.
     pub async fn readiness(&self) -> Result<(), &'static str> {
         if self.is_draining() {
             return Err("draining");
         }
-        tokio::time::timeout(crate::handler::READINESS_TIMEOUT, self.task_store_health())
-            .await
-            .map_or(Err("timeout"), |health| {
-                health.map_err(|e| e.metric_label())
-            })
+        tokio::time::timeout(crate::handler::READINESS_TIMEOUT, async {
+            self.sync_halts().await.map_err(|_| "halt_store")?;
+            self.task_store_health().await.map_err(|e| e.metric_label())
+        })
+        .await
+        .unwrap_or(Err("timeout"))
     }
 
     /// Marks this replica as leaving: [`readiness`](Self::readiness) answers

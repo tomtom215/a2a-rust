@@ -501,16 +501,11 @@ mod tests {
 
     /// Helper: create a minimal `StreamResponse::StatusUpdate` for testing.
     fn make_status_event(task_id: &str, state: TaskState) -> StreamResponse {
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new(task_id),
-            context_id: ContextId::new("ctx-test"),
-            status: TaskStatus {
-                state,
-                message: None,
-                timestamp: None,
-            },
-            metadata: None,
-        })
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            TaskId::new(task_id),
+            ContextId::new("ctx-test"),
+            TaskStatus::new(state),
+        ))
     }
 
     // ── EventQueueManager ────────────────────────────────────────────────

@@ -49,16 +49,11 @@ impl AgentExecutor for SleepyExecutor {
 
 fn params_for(tenant: &str) -> MessageSendParams {
     MessageSendParams {
-        message: Message {
-            id: MessageId::new("msg-1"),
-            role: MessageRole::User,
-            parts: vec![Part::text("hello")],
-            context_id: None,
-            task_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
+        message: Message::new(
+            MessageId::new("msg-1"),
+            MessageRole::User,
+            vec![Part::text("hello")],
+        ),
         configuration: None,
         metadata: None,
         tenant: Some(tenant.to_owned()),

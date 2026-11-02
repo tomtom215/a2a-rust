@@ -53,12 +53,12 @@ fn public() -> AgentCard {
 /// The public card, plus the limits that apply to a caller.
 fn with_quotas() -> AgentCard {
     let mut card = public();
-    card.capabilities.extensions = Some(vec![AgentExtension {
-        uri: QUOTAS.into(),
-        description: Some("rate limits and quotas".into()),
-        required: Some(false),
-        params: Some(json!({"requestsPerMinute": 600, "monthlyTasks": 10_000})),
-    }]);
+    card.capabilities.extensions = Some(vec![
+        AgentExtension::new(QUOTAS)
+            .with_description("rate limits and quotas")
+            .with_required(false)
+            .with_params(json!({"requestsPerMinute": 600, "monthlyTasks": 10_000})),
+    ]);
     card
 }
 
@@ -120,12 +120,11 @@ impl ExtendedCardProvider for PerUser {
             card.capabilities
                 .extensions
                 .get_or_insert_with(Vec::new)
-                .push(AgentExtension {
-                    uri: WORKSPACE.into(),
-                    description: None,
-                    required: Some(false),
-                    params: Some(json!({ "workspaceOf": caller })),
-                });
+                .push(
+                    AgentExtension::new(WORKSPACE)
+                        .with_required(false)
+                        .with_params(json!({ "workspaceOf": caller })),
+                );
             Ok(card)
         })
     }
