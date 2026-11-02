@@ -190,10 +190,14 @@ fn x5c_malformed_chain_is_not_used() {
     let der = STANDARD.decode(&good).unwrap();
     let mut trailing = der.clone();
     trailing.push(0);
+    // The base64url case is made of a certificate that has a `+` or `/` to
+    // spell differently; `good` may not (see the helper).
+    let spelled = cert_that_needs_the_standard_alphabet(&es.pair);
+    let url_safe = URL_SAFE_NO_PAD.encode(STANDARD.decode(&spelled).unwrap());
     let cases: Vec<(&str, Vec<String>)> = vec![
         ("empty chain", vec![]),
         ("not base64", vec!["%%%".into()]),
-        ("base64url, not base64", vec![URL_SAFE_NO_PAD.encode(&der)]),
+        ("base64url, not base64", vec![url_safe]),
         (
             "garbage DER",
             vec![STANDARD.encode(b"\x30\x03\x02\x01\x01")],
@@ -211,6 +215,10 @@ fn x5c_malformed_chain_is_not_used() {
     ];
     // The good chain alone is used, so each refusal below is the defect's.
     assert_eq!(usable(jwk(&es.key, Some(vec![good])), "ES256", during()), 1);
+    assert_eq!(
+        usable(jwk(&es.key, Some(vec![spelled])), "ES256", during()),
+        1
+    );
     for (why, chain) in cases {
         assert_eq!(
             usable(jwk(&es.key, Some(chain)), "ES256", during()),
@@ -292,4 +300,47 @@ proptest! {
         der[i] ^= xor;
         let _ = admits(&[STANDARD.encode(&der)], &es.key, during());
     }
+}
+
+/// A certificate for `holder` whose standard base64 contains `+` or `/`, so
+/// that the same bytes spelled in the URL-safe alphabet are a different
+/// string. A certificate minted at random is not always one: roughly 1 in
+/// 2,000 has neither, and a length that needs no `=`, and then the two
+/// spellings are the same string and the alphabet is not what a test of it is
+/// testing.
+fn cert_that_needs_the_standard_alphabet(holder: &KeyPair) -> String {
+    (0..1_000)
+        .map(|_| cert_for(holder))
+        .find(|cert| cert.contains(['+', '/']))
+        .expect("1,000 certificates, none with a `+` or `/` in its base64")
+}
+
+/// `x5c` takes what decodes as standard base64, and a certificate with no `+`
+/// or `/` in it and no `=` is the same string in both alphabets, so it is used
+/// whichever the author meant. That is why the refusal of base64url above
+/// takes a certificate that has one: with one picked at random the case
+/// passed through (left 1, right 0) on roughly 1 run in 2,000, as it did on a
+/// Windows runner. This finds such a certificate and shows both halves.
+#[test]
+fn a_certificate_spelled_the_same_in_both_alphabets_is_used_in_either() {
+    let (es, same) = (0..100_000)
+        .find_map(|_| {
+            let es = Es::new();
+            let cert = cert_for(&es.pair);
+            let url = URL_SAFE_NO_PAD.encode(STANDARD.decode(&cert).unwrap());
+            (url == cert).then_some((es, cert))
+        })
+        .expect("100,000 certificates, none spelled the same in both alphabets");
+    let url_safe = URL_SAFE_NO_PAD.encode(STANDARD.decode(&same).unwrap());
+    assert_eq!(url_safe, same);
+    assert_eq!(
+        usable(jwk(&es.key, Some(vec![url_safe])), "ES256", during()),
+        1
+    );
+
+    // The one the refusal case uses is spelled differently, and so refused.
+    let needs = cert_that_needs_the_standard_alphabet(&es.pair);
+    let url = URL_SAFE_NO_PAD.encode(STANDARD.decode(&needs).unwrap());
+    assert_ne!(url, needs);
+    assert_eq!(usable(jwk(&es.key, Some(vec![url])), "ES256", during()), 0);
 }
