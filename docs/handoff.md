@@ -98,9 +98,17 @@ only: when something here is done, delete it rather than annotating it.
     are false positives (a notice holds only `VAR="value" why; instead` for a fixed list of
     non-secret `OTEL_*` variables), I could not dismiss them, so `d05a326` stops printing the
     notices; **whether CodeQL clears them is unconfirmed until its next run.** The other red
-    check, `Mutation Testing (incremental)`, fails by design until the PR carries the
-    `mutation-test` label (the job says so); adding it starts a long run over a ~600-file diff and
-    is the maintainer's call. **Run after the fixes:** the binding's
+    check, `Mutation Testing (incremental)`, failed by design until the PR carried the
+    `mutation-test` label. The maintainer chose to add it now and it was added on 2026-11-02
+    (about 30 shards: server 20, client 2, types 2, sdk, discovery); they queued behind the runner
+    backlog, and **a push cancels and restarts the run**, so hold pushes until it reports unless a
+    failing check needs one. Its result is not recorded here yet. (6) One failure of
+    `content_verification::unsigned_content_passes_unless_signatures_are_required` on `Test (1.94,
+    macos-latest)` at the stream assertion; that file, `tests/common` and the HTTP/1 path are
+    unchanged by the branch, and it did not reproduce on Linux (0 of 300 alone, 0 of 1200 with 24
+    copies on 4 cores, built with `--features signing`; a build without it holds no tests and
+    "passes" vacuously). The assertions now print what they got (`08c0b26`, local until the next
+    push); the cause is unknown. **Run after the fixes:** the binding's
     own fmt, clippy `--all-targets -D warnings`, 19 integration targets (3 `#[ignore]`d for SPIRE) and
     75 unit tests; `itk` and `scripts/live/replica` `cargo check --all-targets`; `fuzz` with
     `--cfg fuzzing`; the 36 gates; the cancel test under clippy with `sqlite,postgres`. **Not re-run
@@ -1470,6 +1478,12 @@ into this file: the commit that records it changes it.
   needs a binary the container lacks (`ssh-keygen`) as not run, not as passed.
   A new `if`/`run` step in a workflow that can decide to fail needs a Probe or
   an Exempt in `scripts/prove_workflow_gates_fail.py` (2026-11-02).
+- A feature-gated test file built without its feature holds no tests, and running
+  its binary by name exits 0: a repeat-run measurement of it "passes" every time.
+  Before counting failures, list the binary (`$BIN --list | grep -c ': test$'`) and
+  build with the feature the file is gated on (`content_verification` needs
+  `--features signing`); I reported 1,940 passing runs of a binary with 0 tests
+  before I checked (2026-11-02).
 - A test that forces an interleaving by firing on "the next read" breaks when
   production code gains a read. The in-memory store hid it (its reads never
   yield); SQLite showed it in 17 of 200 runs. Fire on the write that has one
