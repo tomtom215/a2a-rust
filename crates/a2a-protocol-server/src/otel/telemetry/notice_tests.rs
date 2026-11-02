@@ -126,12 +126,15 @@ fn an_exporter_this_crate_lacks_is_noted_and_the_build_goes_on() {
     let t = with_env(&[("OTEL_LOGS_EXPORTER", "zipkin")])
         .build()
         .expect("a name this SDK lacks is not fatal");
+    // The failure messages here and in the SDK_DISABLED test below name what
+    // was expected and do not print `t.notices()`: CodeQL
+    // (`rust/cleartext-logging`, alerts 187 to 189) follows the `Telemetry`'s
+    // TLS material into any message that prints a value read from it.
     assert!(
         t.notices()
             .iter()
             .any(|n| n.contains("OTEL_LOGS_EXPORTER") && n.contains("`zipkin`")),
-        "{:?}",
-        t.notices()
+        "no notice names OTEL_LOGS_EXPORTER and `zipkin`"
     );
     // Nothing usable was left, so the variable counts as unset and logs go
     // where they go by default.
@@ -193,13 +196,15 @@ fn a_sdk_disabled_that_is_not_true_or_false_is_noted_and_does_not_disable() {
             t.notices()
                 .iter()
                 .any(|n| n.contains("OTEL_SDK_DISABLED") && n.contains("the SDK is not disabled")),
-            "{value}: {:?}",
-            t.notices()
+            "{value}: no notice says OTEL_SDK_DISABLED is not understood and the SDK is not disabled"
         );
     }
     for value in ["true", "TRUE", "false", " False "] {
         let t = with_env(&[("OTEL_SDK_DISABLED", value)]).build().unwrap();
-        assert!(t.notices().is_empty(), "{value}: {:?}", t.notices());
+        assert!(
+            t.notices().is_empty(),
+            "{value}: a boolean OTEL_SDK_DISABLED must produce no notice"
+        );
     }
 }
 
