@@ -119,8 +119,13 @@ only: when something here is done, delete it rather than annotating it.
     `collect_then_follow`'s `!interrupted` (`sync_collector.rs:263`), whose conditional the unit
     tests never reached because they go through `collect_events`, a test-only copy of it. Killed
     by `0d4a4ce`; shard 14 had passed in the first run, so the mutant list shifted between runs
-    or something killed it by luck, and which one is not known. The push that carries `0d4a4ce`
-    starts the run a third time. (6) One failure of
+    or something killed it by luck, and which one is not known. **The third run (run
+    41462668225, head `89e27f0`, about 65 minutes) passed 27 of 28 shards, shard 14 among them, so
+    `0d4a4ce` is confirmed by the real run.** Its one failing shard, server 9, found a twelfth
+    survivor: `EventEmitter`'s `Debug` (`executor_helpers.rs:154`). This branch added four `Debug`
+    impls and the run reports them one at a time; `A2aRouter`'s, identical in kind and not yet
+    reported, is covered with it in `1ea639c`. The push that carries `1ea639c` starts a fourth
+    run, which is the check. (6) One failure of
     `content_verification::unsigned_content_passes_unless_signatures_are_required` on `Test (1.94,
     macos-latest)` at the stream assertion; that file, `tests/common` and the HTTP/1 path are
     unchanged by the branch, and it did not reproduce on Linux (0 of 300 alone, 0 of 1200 with 24
@@ -1509,6 +1514,11 @@ into this file: the commit that records it changes it.
   run's failed shards cheaply, ask `get_job_logs` for `failed_only` with
   `tail_lines: 1`; the verdict is the `MISSED` and `N mutants tested` lines of each
   shard's `cargo-mutants execution log` group (2026-11-02).
+- Every `Debug` impl a branch adds is a mutant (`replace fmt with
+  Ok(Default::default())`) that survives unless a test prints it, and a run reports
+  them one shard at a time. List them from the diff before the run
+  (`git diff origin/main...HEAD | grep -E '^\+.*impl.*Debug for'`) and test each,
+  asserting the exact string, including what it leaves out (2026-11-02).
 - A `#[cfg(test)]` function that repeats a production function's steps lets the
   tests pass while the production conditional goes unexercised:
   `SyncCollector::collect_events` (test-only) and `collect_then_follow` (what a
