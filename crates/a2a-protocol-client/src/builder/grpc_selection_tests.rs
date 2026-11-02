@@ -98,6 +98,33 @@ fn a_builder_not_from_a_card_dials_the_url_it_was_given() {
     assert_eq!(builder.endpoint, "http://example.test:9");
 }
 
+/// A caller who chose gRPC keeps the choice: the card is not consulted, so a
+/// card with no gRPC interface is no error here (the dial says what is wrong).
+/// The "already on its gRPC interface" test above cannot tell: there the card
+/// does offer gRPC, and choosing it again changes nothing. Only a card that
+/// offers none separates "returned early" from "looked and found nothing".
+#[test]
+fn a_builder_that_chose_grpc_is_not_held_to_the_card_offering_it() {
+    let only_jsonrpc = card(vec![interface(
+        BINDING_JSONRPC,
+        "1.0",
+        "http://localhost:1111",
+        Some("rpc"),
+    )]);
+    let mut builder = ClientBuilder::from_card(&only_jsonrpc)
+        .expect("from_card")
+        .with_protocol_binding(BINDING_GRPC);
+    assert_eq!(builder.preferred_binding.as_deref(), Some(BINDING_GRPC));
+    let tenant = builder.config.tenant.clone();
+
+    builder
+        .select_grpc_interface()
+        .expect("the caller chose gRPC, so the card is not asked for an interface");
+
+    assert_eq!(builder.endpoint, "http://localhost:1111");
+    assert_eq!(builder.config.tenant, tenant);
+}
+
 /// No gRPC interface for this protocol major: refused, saying what is offered,
 /// instead of dialling an interface of another binding.
 #[test]

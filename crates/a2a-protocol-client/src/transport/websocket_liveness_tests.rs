@@ -309,6 +309,70 @@ async fn queueing_to_a_writer_that_ended_says_so() {
     assert!(err.to_string().contains("writer task closed"), "{err}");
 }
 
+/// A transport whose only connection has a one-slot write queue that is full
+/// and never drained: a writer stuck behind a peer that stopped reading,
+/// without the megabytes of traffic it takes to stall a real socket.
+fn transport_with_a_full_write_queue(
+    request_timeout: Duration,
+) -> (WebSocketTransport, mpsc::Receiver<WriteCommand>) {
+    let (write_tx, undrained) = mpsc::channel::<WriteCommand>(1);
+    write_tx
+        .try_send(WriteCommand {
+            text: "stuck".into(),
+        })
+        .expect("room for one");
+    let inner = Inner {
+        write_tx,
+        pending: Arc::default(),
+        closed: Arc::new(AtomicBool::new(false)),
+        request_timeout,
+        send_timeout: request_timeout,
+        max_pending_requests: 8,
+        reader_handle: tokio::spawn(async {}),
+        writer_handle: tokio::spawn(async {}),
+        trace_drop_warned: AtomicBool::new(false),
+    };
+    let transport = WebSocketTransport {
+        endpoint: "ws://127.0.0.1:1".into(),
+        config: WebSocketTransportConfig::default(),
+        current: std::sync::Mutex::new(Arc::new(inner)),
+        reconnecting: std::panic::AssertUnwindSafe(tokio::sync::Mutex::new(())),
+    };
+    (transport, undrained)
+}
+
+/// Opening a stream behind a stuck writer waits out the request timeout for a
+/// slot, then says so; it does not give up at once. The bound is the request
+/// timeout counted from the call: a deadline computed the other way round is
+/// already past, and `timeout_at` lets a send with room through regardless,
+/// so only a full queue shows the difference.
+#[tokio::test]
+async fn a_stream_behind_a_stuck_writer_waits_out_the_request_timeout() {
+    let timeout = Duration::from_millis(600);
+    let (transport, _undrained) = transport_with_a_full_write_queue(timeout);
+
+    let started = Instant::now();
+    let err = transport
+        .execute_streaming_request(
+            "SendStreamingMessage",
+            serde_json::json!({}),
+            &HashMap::new(),
+        )
+        .await
+        .expect_err("the write queue is full");
+    let waited = started.elapsed();
+
+    assert!(
+        err.to_string().contains("could not be queued"),
+        "the queueing timeout, not another error: {err}"
+    );
+    assert!(
+        waited >= Duration::from_millis(500),
+        "gave up after {waited:?}, long before its {timeout:?} request timeout"
+    );
+    assert!(waited < Duration::from_secs(5), "{waited:?}");
+}
+
 /// `A2A-Extensions` is sent at connect, so it is not a header the binding
 /// drops, and the warning's advice (supply credentials at connect time) does
 /// not apply to it (audit C-17).
