@@ -113,11 +113,7 @@ as before. Where callers are meant to see each other's tasks, say so:
 #         .with_security_schemes(std::collections::HashMap::from([(
 #             "bearer".to_owned(),
 #             a2a_protocol_types::security::SecurityScheme::Http(
-#                 a2a_protocol_types::security::HttpAuthSecurityScheme {
-#                     scheme: "Bearer".to_owned(),
-#                     description: None,
-#                     bearer_format: None,
-#                 },
+#                 a2a_protocol_types::security::HttpAuthSecurityScheme::new("Bearer"),
 #             ),
 #         )]))
 # }
