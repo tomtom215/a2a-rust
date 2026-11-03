@@ -148,6 +148,8 @@ pub mod signing;
 pub mod task;
 pub mod trace_context;
 mod wire_builders;
+mod wire_builders_requests;
+mod wire_builders_security;
 
 #[cfg(kani)]
 mod kani_proofs;
