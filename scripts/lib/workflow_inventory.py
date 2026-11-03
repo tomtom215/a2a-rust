@@ -55,6 +55,14 @@ RUN: dict[tuple[str, str], list[str]] = {
     ("coverage.yml", "ignores-applied"): ["--event", "workflow_dispatch"],
 }
 
+# (workflow, job) -> scratch paths the job creates at a fixed place and cannot create twice. A hosted
+# runner starts empty; this machine does not, so preflight_all.py removes these before the job starts
+# (the second local run of official-tck failed on `git clone` into the first run's /tmp/a2a-tck).
+# Absolute paths under /tmp only, no globs: preflight_all.py refuses anything else.
+CLEAN: dict[tuple[str, str], list[str]] = {
+    ("official-tck.yml", "official-tck"): ["/tmp/a2a-tck"],
+}
+
 # (workflow, job) -> the command-line equivalent of a `uses:`-only job.
 LOCAL: dict[tuple[str, str], str] = {
     # ci.yml `deny`: cargo-deny-action with `command: check`.
@@ -131,6 +139,15 @@ def all_jobs() -> list[tuple[str, str]]:
     return out
 
 
+def clean_paths(key: tuple[str, str]) -> list[str]:
+    """The registered scratch paths of a job, refusing any that is not an absolute path under /tmp."""
+    paths = CLEAN.get(key, [])
+    for path in paths:
+        if not path.startswith("/tmp/") or ".." in path.split("/") or any(c in path for c in "*?[]"):
+            raise SystemExit(f"workflow_inventory: CLEAN path {path!r} must be an absolute path under /tmp, with no glob")
+    return paths
+
+
 def classify() -> tuple[dict[tuple[str, str], dict], list[str]]:
     """Return ({job: {mode, note, args}}, [problems])."""
     jobs = all_jobs()
@@ -138,6 +155,10 @@ def classify() -> tuple[dict[tuple[str, str], dict], list[str]]:
     pre = {("ci.yml", j) for j in gate_jobs()}
     registries = {"preflight": {k: "" for k in pre}, "run": RUN, "local": LOCAL, "ci-only": CI_ONLY}
     problems: list[str] = []
+    for key in CLEAN:
+        if key not in RUN:
+            problems.append(f"CLEAN: {key[0]}:{key[1]} is not a `run` job")
+        clean_paths(key)
     out: dict[tuple[str, str], dict] = {}
     for mode, reg in registries.items():
         for key, val in reg.items():

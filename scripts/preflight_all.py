@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -151,6 +152,10 @@ def main(argv: list[str]) -> int:
         if only and only not in name:
             continue
         args = [a.format(base=base, head=head) for a in v["args"]]
+        for path in workflow_inventory.clean_paths((wf, j)):
+            if os.path.lexists(path):
+                print(f"preflight_all: removing {path} (left by an earlier run; a hosted runner starts empty)")
+                shutil.rmtree(path) if os.path.isdir(path) and not os.path.islink(path) else os.unlink(path)
         out = logs / f"{wf[:-4]}-{j}.json"
         t0 = time.monotonic()
         code = stream([sys.executable, "-I", "scripts/run_workflow_job.py", "--log-dir", str(logs / f"{wf[:-4]}-{j}"),
