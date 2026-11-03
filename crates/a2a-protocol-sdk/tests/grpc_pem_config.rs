@@ -110,16 +110,11 @@ async fn send(addr: SocketAddr, tls: grpc::ClientTlsConfig) -> Result<(), String
         .build()
         .map_err(|e| format!("build: {e}"))?;
     client
-        .send_message(MessageSendParams {
-            tenant: None,
-            message: Message::new(
-                MessageId::new("m"),
-                MessageRole::User,
-                vec![Part::text("hi")],
-            ),
-            configuration: None,
-            metadata: None,
-        })
+        .send_message(MessageSendParams::new(Message::new(
+            MessageId::new("m"),
+            MessageRole::User,
+            vec![Part::text("hi")],
+        )))
         .await
         .map(|_| ())
         .map_err(|e| format!("send: {e}"))

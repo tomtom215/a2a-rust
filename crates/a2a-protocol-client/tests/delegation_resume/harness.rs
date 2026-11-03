@@ -180,11 +180,7 @@ pub fn key() -> String {
 
 pub async fn state_of(client: &A2aClient, id: &str) -> TaskState {
     client
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: id.to_owned(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new(id.to_owned()))
         .await
         .expect("get_task")
         .status

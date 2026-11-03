@@ -450,11 +450,7 @@ pub async fn test_grpc_get_task(ctx: &TestContext) -> TestResult {
     };
 
     // Now get the task by ID.
-    let query = a2a_protocol_types::params::TaskQueryParams {
-        tenant: None,
-        id: task_id.clone(),
-        history_length: None,
-    };
+    let query = a2a_protocol_types::params::TaskQueryParams::new(task_id.clone());
     match client.get_task(query).await {
         Ok(task) => {
             if task.id.to_string() == task_id {
@@ -510,11 +506,8 @@ pub async fn test_tenant_isolation(_ctx: &TestContext) -> TestResult {
     match client.send_message(params_a).await {
         Ok(a2a_protocol_types::responses::SendMessageResponse::Task(task)) => {
             // Now try to get this task as tenant-beta — should fail.
-            let query = a2a_protocol_types::params::TaskQueryParams {
-                tenant: Some("tenant-beta".into()),
-                id: task.id.to_string(),
-                history_length: None,
-            };
+            let query = a2a_protocol_types::params::TaskQueryParams::new(task.id.to_string())
+                .with_tenant("tenant-beta");
             match client.get_task(query).await {
                 Err(_) => TestResult::pass(
                     "53-tenant-isolation",

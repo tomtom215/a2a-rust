@@ -198,14 +198,7 @@ async fn a_task_created_on_one_replica_is_readable_on_the_other() {
     };
 
     let seen_by_b = b
-        .on_get_task(
-            TaskQueryParams {
-                id: task_id.0.clone(),
-                tenant: None,
-                history_length: None,
-            },
-            None,
-        )
+        .on_get_task(TaskQueryParams::new(task_id.0.clone()), None)
         .await
         .expect("replica B can read a task replica A created");
 
@@ -253,13 +246,7 @@ async fn a_subscriber_on_the_other_replica_still_sees_the_stream_end() {
 
     // B subscribes to a task whose executor is running on A.
     let mut stream_b = b
-        .on_resubscribe(
-            TaskIdParams {
-                id: task_id.0.clone(),
-                tenant: None,
-            },
-            None,
-        )
+        .on_resubscribe(TaskIdParams::new(task_id.0.clone()), None)
         .await
         .expect("replica B accepts the subscription");
 
@@ -353,13 +340,7 @@ async fn intermediate_events_cross_replicas_through_the_log() {
     let task_id = task_id_of(&first.event).expect("the first frame names its task");
 
     let mut stream_b = b
-        .on_resubscribe(
-            TaskIdParams {
-                id: task_id.0,
-                tenant: None,
-            },
-            None,
-        )
+        .on_resubscribe(TaskIdParams::new(task_id.0), None)
         .await
         .expect("replica B accepts the subscription");
 
@@ -565,12 +546,11 @@ async fn the_single_writer_refusal_crosses_replicas() {
     // both replicas would refuse for that reason instead, which measures
     // nothing about admission.
     let mut open = message("m-open");
-    open.configuration = Some(a2a_protocol_types::params::SendMessageConfiguration {
-        accepted_output_modes: vec![],
-        task_push_notification_config: None,
-        history_length: None,
-        return_immediately: Some(true),
-    });
+    open.configuration = Some(
+        a2a_protocol_types::params::SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec![])
+            .with_return_immediately(true),
+    );
     let opened = a
         .on_send_message(open, false, None)
         .await

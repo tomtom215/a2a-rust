@@ -239,10 +239,9 @@ async fn a_repeated_artifact_id_replaces_on_the_background_path() {
         .build()
         .expect("build handler");
     let mut params = make_send_params();
-    params.configuration = Some(a2a_protocol_types::params::SendMessageConfiguration {
-        return_immediately: Some(true),
-        ..Default::default()
-    });
+    params.configuration = Some(
+        a2a_protocol_types::params::SendMessageConfiguration::new().with_return_immediately(true),
+    );
     let id = match handler
         .on_send_message(params, false, None)
         .await

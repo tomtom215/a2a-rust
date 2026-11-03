@@ -94,11 +94,7 @@ async fn read(h: &RequestHandler, id: &str, renew: bool) -> TaskState {
     if renew {
         headers.insert("a2a-extensions".to_owned(), LEASE_EXTENSION_URI.to_owned());
     }
-    let q = TaskQueryParams {
-        tenant: None,
-        id: id.to_owned(),
-        history_length: None,
-    };
+    let q = TaskQueryParams::new(id.to_owned());
     h.on_get_task(q, Some(&headers))
         .await
         .expect("get")

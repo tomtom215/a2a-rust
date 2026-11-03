@@ -174,13 +174,7 @@ async fn run(positioned: bool) -> (Vec<String>, Vec<TaskState>, Vec<String>) {
     );
 
     let mut reader = handler
-        .on_resubscribe(
-            TaskIdParams {
-                tenant: None,
-                id: task.0.clone(),
-            },
-            None,
-        )
+        .on_resubscribe(TaskIdParams::new(task.0.clone()), None)
         .await
         .expect("subscribe");
     let first = reader.read().await.expect("frame").expect("ok");
@@ -263,13 +257,7 @@ async fn a_live_subscriber_gets_the_next_turns_first_event() {
         .id
         .clone();
     let mut reader = handler
-        .on_resubscribe(
-            TaskIdParams {
-                tenant: None,
-                id: task.0.clone(),
-            },
-            None,
-        )
+        .on_resubscribe(TaskIdParams::new(task.0.clone()), None)
         .await
         .expect("subscribe");
     RELEASE.notify_one();

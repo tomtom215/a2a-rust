@@ -87,11 +87,7 @@ async fn round_trip_through_sqlite(db_url: &str) -> Result<String, String> {
 
     let reader = endpoint(db_url, "Durable Agent B").await?;
     let found = reader
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: task_id.clone(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new(task_id.clone()))
         .await
         .map_err(|e| format!("task {task_id} did not survive the handler change: {e}"))?;
 
@@ -303,11 +299,7 @@ async fn postgres_round_trip(url: &str) -> Result<String, String> {
 
     let reader = endpoint(url, "Postgres Agent B").await?;
     let found = reader
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: task_id.clone(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new(task_id.clone()))
         .await
         .map_err(|e| format!("task {task_id} did not survive the handler change: {e}"))?;
 

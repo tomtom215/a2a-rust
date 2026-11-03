@@ -47,11 +47,9 @@ let by_name = MutualTlsAuthInterceptor::with_names(|der| {
 let card = card()
     .with_security_schemes(HashMap::from([(
         "mtls".to_owned(),
-        SecurityScheme::MutualTls(MutualTlsSecurityScheme { description: None }),
+        SecurityScheme::MutualTls(MutualTlsSecurityScheme::new()),
     )]))
-    .with_security_requirements(vec![SecurityRequirement {
-        schemes: HashMap::from([("mtls".to_owned(), StringList { list: vec![] })]),
-    }]);
+    .with_security_requirements(vec![SecurityRequirement::new(HashMap::from([("mtls".to_owned(), StringList::new(vec![]))]))]);
 let handler = RequestHandlerBuilder::new(MyAgent)
     .with_agent_card(card)
     .with_interceptor(by_name)

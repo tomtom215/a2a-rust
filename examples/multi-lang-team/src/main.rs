@@ -112,16 +112,11 @@ fn extract_text(parts: &[Part]) -> String {
 /// A one-part user message, as both the fan-out and the demo round-trip
 /// send it.
 fn user_message(text: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(uuid::Uuid::new_v4().to_string()),
-            MessageRole::User,
-            vec![Part::text(text)],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::User,
+        vec![Part::text(text)],
+    ))
 }
 
 /// Sends `user_text` to one worker agent and renders its reply (or the

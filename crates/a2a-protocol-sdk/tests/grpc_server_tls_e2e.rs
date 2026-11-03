@@ -147,16 +147,11 @@ fn pinned(pems: &Pems) -> ClientTlsConfig {
 }
 
 fn send_params() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("m-1"),
-            MessageRole::User,
-            vec![Part::text("hello over TLS")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("m-1"),
+        MessageRole::User,
+        vec![Part::text("hello over TLS")],
+    ))
 }
 
 async fn assert_round_trip(client: &A2aClient, what: &str) {

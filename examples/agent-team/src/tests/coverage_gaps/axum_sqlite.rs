@@ -273,11 +273,9 @@ pub async fn test_sqlite_task_store(ctx: &TestContext) -> TestResult {
 
     // 2. Get task — should be persisted in SQLite.
     let fetched = match client
-        .get_task(a2a_protocol_types::params::TaskQueryParams {
-            tenant: None,
-            id: task_id.clone(),
-            history_length: None,
-        })
+        .get_task(a2a_protocol_types::params::TaskQueryParams::new(
+            task_id.clone(),
+        ))
         .await
     {
         Ok(t) => t,
@@ -292,16 +290,7 @@ pub async fn test_sqlite_task_store(ctx: &TestContext) -> TestResult {
 
     // 3. List tasks — should include our task.
     let list = match client
-        .list_tasks(a2a_protocol_types::params::ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: Some(50),
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        })
+        .list_tasks(a2a_protocol_types::params::ListTasksParams::new().with_page_size(50))
         .await
     {
         Ok(l) => l,
@@ -421,12 +410,10 @@ pub async fn test_sqlite_push_config(ctx: &TestContext) -> TestResult {
 
     // List configs.
     let list = client
-        .list_push_configs(a2a_protocol_types::params::ListPushConfigsParams {
-            tenant: None,
-            task_id: task_id.clone(),
-            page_size: Some(10),
-            page_token: None,
-        })
+        .list_push_configs(
+            a2a_protocol_types::params::ListPushConfigsParams::new(task_id.clone())
+                .with_page_size(10),
+        )
         .await;
 
     let list_count = list.as_ref().map(|l| l.configs.len()).unwrap_or(0);
@@ -517,16 +504,7 @@ pub async fn test_axum_with_sqlite(ctx: &TestContext) -> TestResult {
 
     // List all — should have both persisted in SQLite.
     let list = client
-        .list_tasks(a2a_protocol_types::params::ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: Some(50),
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        })
+        .list_tasks(a2a_protocol_types::params::ListTasksParams::new().with_page_size(50))
         .await;
 
     match list {

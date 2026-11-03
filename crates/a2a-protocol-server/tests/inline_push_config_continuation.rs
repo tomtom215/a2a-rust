@@ -76,23 +76,18 @@ fn send(
     task: Option<&str>,
     inline: Option<TaskPushNotificationConfig>,
 ) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: {
-            let mut built =
-                Message::new(MessageId::new(id), MessageRole::User, vec![Part::text(id)])
-                    .with_context_id(ContextId::new("c-1"));
-            built.task_id = task.map(TaskId::new);
-            built
-        },
-        configuration: Some(SendMessageConfiguration {
-            accepted_output_modes: vec!["text/plain".to_owned()],
-            task_push_notification_config: inline,
-            history_length: None,
-            return_immediately: None,
-        }),
-        metadata: None,
-    }
+    MessageSendParams::new({
+        let mut built = Message::new(MessageId::new(id), MessageRole::User, vec![Part::text(id)])
+            .with_context_id(ContextId::new("c-1"));
+        built.task_id = task.map(TaskId::new);
+        built
+    })
+    .with_configuration({
+        let mut built = SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".to_owned()]);
+        built.task_push_notification_config = inline;
+        built
+    })
 }
 
 /// Runs a first turn to `input-required` and returns its task id.
@@ -113,14 +108,7 @@ async fn parked(handler: &RequestHandler) -> String {
 /// with the first turn's message only.
 async fn assert_untouched(handler: &RequestHandler, task_id: &str) {
     let task = handler
-        .on_get_task(
-            TaskQueryParams {
-                tenant: None,
-                id: task_id.to_owned(),
-                history_length: None,
-            },
-            None,
-        )
+        .on_get_task(TaskQueryParams::new(task_id.to_owned()), None)
         .await
         .expect("the continued task survives a refused inline config");
     assert_eq!(task.status.state, TaskState::InputRequired);

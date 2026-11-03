@@ -63,12 +63,7 @@ pub fn user_message(text: &str) -> Message {
 }
 
 pub fn send_params(text: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: user_message(text),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(user_message(text))
 }
 
 /// `send_params` carrying an inline push config for the task the server is
@@ -79,12 +74,11 @@ pub fn send_params(text: &str) -> MessageSendParams {
 /// registered before the first event fires.
 pub fn send_params_with_push(text: &str, webhook: &str) -> MessageSendParams {
     let mut params = send_params(text);
-    params.configuration = Some(SendMessageConfiguration {
-        task_push_notification_config: Some(TaskPushNotificationConfig::for_url(
-            webhook.to_owned(),
-        )),
-        ..SendMessageConfiguration::default()
-    });
+    params.configuration = Some(
+        SendMessageConfiguration::new().with_task_push_notification_config(
+            TaskPushNotificationConfig::for_url(webhook.to_owned()),
+        ),
+    );
     params
 }
 

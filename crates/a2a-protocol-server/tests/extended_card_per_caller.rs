@@ -37,11 +37,7 @@ fn public() -> AgentCard {
     .with_capabilities(AgentCapabilities::none().with_extended_agent_card(true))
     .with_security_schemes(HashMap::from([(
         "bearer".to_owned(),
-        SecurityScheme::Http(HttpAuthSecurityScheme {
-            scheme: "Bearer".to_owned(),
-            description: None,
-            bearer_format: None,
-        }),
+        SecurityScheme::Http(HttpAuthSecurityScheme::new("Bearer".to_owned())),
     )]))
 }
 

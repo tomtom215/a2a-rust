@@ -171,10 +171,7 @@ async fn drive(
     // `return_immediately` so the task id is in hand before the agent
     // finishes. Without it a cancel arriving mid-call would have nothing
     // to cancel.
-    .with_configuration(SendMessageConfiguration {
-        return_immediately: Some(true),
-        ..SendMessageConfiguration::default()
-    })
+    .with_configuration(SendMessageConfiguration::new().with_return_immediately(true))
     .with_metadata(serde_json::json!({ SKILL_METADATA_KEY: tool }));
 
     let task = match client.send_message(params).await {
@@ -258,11 +255,9 @@ async fn wait_for_settlement(
 
         tokio::time::sleep(POLL_INTERVAL).await;
         task = client
-            .get_task(a2a_protocol_types::params::TaskQueryParams {
-                tenant: None,
-                id: id.0.clone(),
-                history_length: None,
-            })
+            .get_task(a2a_protocol_types::params::TaskQueryParams::new(
+                id.0.clone(),
+            ))
             .await
             .map_err(|e| format!("A2A get_task failed: {e}"))?;
     }

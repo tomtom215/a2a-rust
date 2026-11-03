@@ -80,11 +80,7 @@ async fn start(h: &RequestHandler) -> String {
 }
 
 async fn state(h: &RequestHandler, id: &str) -> TaskState {
-    let q = TaskQueryParams {
-        tenant: None,
-        id: id.to_owned(),
-        history_length: None,
-    };
+    let q = TaskQueryParams::new(id.to_owned());
     h.on_get_task(q, None).await.expect("get").status.state
 }
 
@@ -139,14 +135,7 @@ async fn a_cancel_is_pushed_to_the_replica_running_the_task() {
     b.sync_halts().await.expect("b synced");
 
     let cancelled = b
-        .on_cancel_task(
-            CancelTaskParams {
-                tenant: None,
-                id: id.clone(),
-                metadata: None,
-            },
-            None,
-        )
+        .on_cancel_task(CancelTaskParams::new(id.clone()), None)
         .await
         .expect("cancel on b");
     assert_eq!(cancelled.status.state, TaskState::Canceled);

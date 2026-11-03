@@ -111,25 +111,14 @@ mod tests {
     /// (which has its own tests in `send_message.rs`) and returns what each
     /// put on the wire, keyed by method name.
     async fn drive_all(client: &A2aClient) -> HashMap<String, serde_json::Value> {
-        let _ = client
-            .get_task(TaskQueryParams {
-                tenant: None,
-                id: "task-1".into(),
-                history_length: None,
-            })
-            .await;
+        let _ = client.get_task(TaskQueryParams::new("task-1")).await;
         let _ = client.list_tasks(ListTasksParams::default()).await;
         let _ = client.cancel_task("task-1").await;
         let _ = client.subscribe_to_task("task-1").await;
         let _ = client.set_push_config(push_config(None)).await;
         let _ = client.get_push_config("task-1", "cfg-1").await;
         let _ = client
-            .list_push_configs(ListPushConfigsParams {
-                tenant: None,
-                task_id: "task-1".into(),
-                page_size: None,
-                page_token: None,
-            })
+            .list_push_configs(ListPushConfigsParams::new("task-1"))
             .await;
         let _ = client.delete_push_config("task-1", "cfg-1").await;
         let _ = client.get_extended_agent_card().await;
@@ -180,26 +169,14 @@ mod tests {
         let transport = CapturingTransport::default();
         let client = client_with(transport.clone(), Some("acme"));
         let _ = client
-            .get_task(TaskQueryParams {
-                tenant: Some("globex".into()),
-                id: "task-1".into(),
-                history_length: None,
-            })
+            .get_task(TaskQueryParams::new("task-1").with_tenant("globex"))
             .await;
         let _ = client
-            .list_tasks(ListTasksParams {
-                tenant: Some("globex".into()),
-                ..ListTasksParams::default()
-            })
+            .list_tasks(ListTasksParams::new().with_tenant("globex"))
             .await;
         let _ = client.set_push_config(push_config(Some("globex"))).await;
         let _ = client
-            .list_push_configs(ListPushConfigsParams {
-                tenant: Some("globex".into()),
-                task_id: "task-1".into(),
-                page_size: None,
-                page_token: None,
-            })
+            .list_push_configs(ListPushConfigsParams::new("task-1").with_tenant("globex"))
             .await;
 
         let calls = transport.calls.lock().expect("calls lock").clone();

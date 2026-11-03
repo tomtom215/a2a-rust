@@ -111,24 +111,14 @@ pub fn agent_card(url: &str) -> AgentCard {
 
 /// Creates `MessageSendParams` for a synchronous send.
 pub fn send_params(text: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: user_message(text),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(user_message(text))
 }
 
 /// Creates `MessageSendParams` targeting an existing context (for multi-turn).
 pub fn send_params_with_context(text: &str, context_id: &str) -> MessageSendParams {
     let mut msg = user_message(text);
     msg.context_id = Some(ContextId::new(context_id));
-    MessageSendParams {
-        tenant: None,
-        message: msg,
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(msg)
 }
 
 // ── Realistic payloads ──────────────────────────────────────────────────────

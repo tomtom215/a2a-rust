@@ -175,23 +175,22 @@ fn push_card() -> AgentCard {
 }
 
 fn send(msg_id: &str, ctx: &str, with_config: bool) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
+    MessageSendParams::new(
+        Message::new(
             MessageId::new(msg_id),
             MessageRole::User,
             vec![Part::text("hello")],
         )
         .with_context_id(ContextId::new(ctx)),
-        configuration: Some(SendMessageConfiguration {
-            accepted_output_modes: vec!["text/plain".to_owned()],
-            task_push_notification_config: with_config
-                .then(|| TaskPushNotificationConfig::for_url("http://127.0.0.1:9/hook".to_owned())),
-            history_length: None,
-            return_immediately: Some(true),
-        }),
-        metadata: None,
-    }
+    )
+    .with_configuration({
+        let mut built = SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".to_owned()])
+            .with_return_immediately(true);
+        built.task_push_notification_config = with_config
+            .then(|| TaskPushNotificationConfig::for_url("http://127.0.0.1:9/hook".to_owned()));
+        built
+    })
 }
 
 fn task_id_of(result: SendMessageResult) -> String {
@@ -297,11 +296,7 @@ async fn a_concurrent_send_cannot_see_a_task_the_push_config_is_about_to_withdra
     // And the withdrawn task really is gone.
     let err = handler
         .on_get_task(
-            TaskQueryParams {
-                tenant: None,
-                id: doomed_id.clone(),
-                history_length: None,
-            },
+            TaskQueryParams::new(doomed_id.clone()),
             None::<&HashMap<String, String>>,
         )
         .await;

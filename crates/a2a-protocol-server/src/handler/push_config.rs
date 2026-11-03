@@ -821,14 +821,7 @@ mod tests {
         save_task(&handler, "task-1").await;
 
         let get = handler
-            .on_get_push_config(
-                GetPushConfigParams {
-                    tenant: None,
-                    task_id: "task-1".into(),
-                    id: "cfg-1".into(),
-                },
-                None,
-            )
+            .on_get_push_config(GetPushConfigParams::new("task-1", "cfg-1"), None)
             .await;
         assert!(
             matches!(get, Err(crate::error::ServerError::PushNotSupported)),
@@ -840,14 +833,7 @@ mod tests {
             "list: {list:?}"
         );
         let delete = handler
-            .on_delete_push_config(
-                DeletePushConfigParams {
-                    tenant: None,
-                    task_id: "task-1".into(),
-                    id: "cfg-1".into(),
-                },
-                None,
-            )
+            .on_delete_push_config(DeletePushConfigParams::new("task-1", "cfg-1"), None)
             .await;
         assert!(
             matches!(delete, Err(crate::error::ServerError::PushNotSupported)),
@@ -1176,10 +1162,9 @@ mod tests {
         save_task(&handler, "t-1").await;
         let with_scheme = |scheme: &str| {
             let mut config = make_push_config("t-1");
-            config.authentication = Some(AuthenticationInfo {
-                scheme: scheme.to_owned(),
-                credentials: Some("secret".to_owned()),
-            });
+            config.authentication = Some(
+                AuthenticationInfo::new(scheme.to_owned()).with_credentials("secret".to_owned()),
+            );
             config
         };
         let refused = handler
@@ -1217,15 +1202,10 @@ mod tests {
             .build()
             .unwrap();
         save_task(&handler, "t-1").await;
-        let get = |task_id: &str, id: &str| GetPushConfigParams {
-            tenant: None,
-            task_id: task_id.to_owned(),
-            id: id.to_owned(),
-        };
-        let del = |task_id: &str, id: &str| DeletePushConfigParams {
-            tenant: None,
-            task_id: task_id.to_owned(),
-            id: id.to_owned(),
+        let get =
+            |task_id: &str, id: &str| GetPushConfigParams::new(task_id.to_owned(), id.to_owned());
+        let del = |task_id: &str, id: &str| {
+            DeletePushConfigParams::new(task_id.to_owned(), id.to_owned())
         };
         for (task_id, id) in [("", "cfg-1"), ("t-1", "")] {
             let r = handler.on_get_push_config(get(task_id, id), None).await;
@@ -1356,14 +1336,7 @@ mod tests {
         );
 
         let get = handler
-            .on_get_push_config(
-                GetPushConfigParams {
-                    tenant: None,
-                    task_id: "t1".into(),
-                    id: "cfg-1".into(),
-                },
-                None,
-            )
+            .on_get_push_config(GetPushConfigParams::new("t1", "cfg-1"), None)
             .await;
         assert!(
             matches!(get, Err(crate::error::ServerError::PushNotSupported)),
@@ -1377,14 +1350,7 @@ mod tests {
         );
 
         let delete = handler
-            .on_delete_push_config(
-                DeletePushConfigParams {
-                    tenant: None,
-                    task_id: "t1".into(),
-                    id: "cfg-1".into(),
-                },
-                None,
-            )
+            .on_delete_push_config(DeletePushConfigParams::new("t1", "cfg-1"), None)
             .await;
         assert!(
             matches!(delete, Err(crate::error::ServerError::PushNotSupported)),
@@ -1427,11 +1393,7 @@ mod tests {
         use a2a_protocol_types::params::GetPushConfigParams;
 
         let handler = make_push_handler();
-        let params = GetPushConfigParams {
-            tenant: None,
-            task_id: "no-task".to_owned(),
-            id: "no-id".to_owned(),
-        };
+        let params = GetPushConfigParams::new("no-task".to_owned(), "no-id".to_owned());
         let result = handler.on_get_push_config(params, None).await;
         assert!(
             matches!(result, Err(crate::error::ServerError::TaskNotFound(_))),
@@ -1474,11 +1436,7 @@ mod tests {
 
         let handler = make_push_handler();
         save_task(&handler, "t-del").await;
-        let params = DeletePushConfigParams {
-            tenant: None,
-            task_id: "t-del".to_owned(),
-            id: "no-id".to_owned(),
-        };
+        let params = DeletePushConfigParams::new("t-del".to_owned(), "no-id".to_owned());
         let result = handler.on_delete_push_config(params, None).await;
         assert!(
             result.is_ok(),
@@ -1492,11 +1450,7 @@ mod tests {
         use a2a_protocol_types::params::DeletePushConfigParams;
 
         let handler = make_push_handler();
-        let params = DeletePushConfigParams {
-            tenant: None,
-            task_id: "no-task".to_owned(),
-            id: "no-id".to_owned(),
-        };
+        let params = DeletePushConfigParams::new("no-task".to_owned(), "no-id".to_owned());
         let result = handler.on_delete_push_config(params, None).await;
         assert!(
             matches!(result, Err(crate::error::ServerError::TaskNotFound(_))),
@@ -1589,11 +1543,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let params = DeletePushConfigParams {
-            tenant: None,
-            task_id: "task-1".to_owned(),
-            id: "cfg-1".to_owned(),
-        };
+        let params = DeletePushConfigParams::new("task-1".to_owned(), "cfg-1".to_owned());
         let result = handler.on_delete_push_config(params, None).await;
         assert!(
             result.is_err(),
@@ -1621,11 +1571,7 @@ mod tests {
         use a2a_protocol_types::params::GetPushConfigParams;
 
         let handler = make_push_handler();
-        let params = GetPushConfigParams {
-            tenant: None,
-            task_id: "missing-task".to_owned(),
-            id: "missing-id".to_owned(),
-        };
+        let params = GetPushConfigParams::new("missing-task".to_owned(), "missing-id".to_owned());
         let result = handler.on_get_push_config(params, None).await;
         assert!(
             result.is_err(),

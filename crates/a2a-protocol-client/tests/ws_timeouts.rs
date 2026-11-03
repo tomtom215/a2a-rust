@@ -61,11 +61,7 @@ async fn each_call_runs_out_of_its_own_budget() {
     assert!(send.to_string().contains("with_send_timeout"), "{send}");
 
     let get = client
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: "t1".into(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new("t1"))
         .await
         .expect_err("nothing answers");
     assert!(matches!(get, ClientError::Timeout(_)), "{get:?}");

@@ -49,9 +49,10 @@ async fn handler_with_a_task() -> Arc<RequestHandler> {
 }
 
 fn listing(include_artifacts: Option<bool>) -> ListTasksParams {
-    ListTasksParams {
-        include_artifacts,
-        ..Default::default()
+    {
+        let mut built = ListTasksParams::new();
+        built.include_artifacts = include_artifacts;
+        built
     }
 }
 

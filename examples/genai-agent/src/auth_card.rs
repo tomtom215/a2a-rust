@@ -23,32 +23,27 @@ pub fn declare(card: &mut AgentCard) {
     {
         schemes.insert(
             "bearer".to_owned(),
-            SecurityScheme::Http(HttpAuthSecurityScheme {
-                scheme: "Bearer".to_owned(),
-                description: None,
-                bearer_format: None,
-            }),
+            SecurityScheme::Http(HttpAuthSecurityScheme::new("Bearer".to_owned())),
         );
     }
     if std::env::var_os("A2A_API_KEY").is_some() {
         schemes.insert(
             "apiKey".to_owned(),
-            SecurityScheme::ApiKey(ApiKeySecurityScheme {
-                location: ApiKeyLocation::Header,
-                name: "x-api-key".to_owned(),
-                description: None,
-            }),
+            SecurityScheme::ApiKey(ApiKeySecurityScheme::new(
+                ApiKeyLocation::Header,
+                "x-api-key".to_owned(),
+            )),
         );
     }
     if !schemes.is_empty() {
         // Interceptors compose with AND semantics: one requirement naming
         // every scheme set.
-        card.security_requirements = Some(vec![SecurityRequirement {
-            schemes: schemes
+        card.security_requirements = Some(vec![SecurityRequirement::new(
+            schemes
                 .keys()
-                .map(|name| (name.clone(), StringList { list: vec![] }))
+                .map(|name| (name.clone(), StringList::new(vec![])))
                 .collect(),
-        }]);
+        )]);
         card.security_schemes = Some(schemes);
     }
 }

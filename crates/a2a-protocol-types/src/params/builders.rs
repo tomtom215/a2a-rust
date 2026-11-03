@@ -57,10 +57,7 @@ impl MessageSendParams {
     /// use a2a_protocol_types::params::{MessageSendParams, SendMessageConfiguration};
     ///
     /// let params = MessageSendParams::new(Message::user_text("m1", "hello"))
-    ///     .with_configuration(SendMessageConfiguration {
-    ///         return_immediately: Some(true),
-    ///         ..SendMessageConfiguration::default()
-    ///     });
+    ///     .with_configuration(SendMessageConfiguration::new().with_return_immediately(true));
     /// assert_eq!(
     ///     params.configuration.and_then(|c| c.return_immediately),
     ///     Some(true)

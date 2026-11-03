@@ -120,11 +120,7 @@ async fn round_trip(rest: bool) {
     assert_eq!(chunks, 2);
 
     let task = c
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: task_id.expect("a task id"),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new(task_id.expect("a task id")))
         .await
         .expect("the stored task verifies");
     let report = &task.artifacts.as_ref().expect("artifacts")[0];

@@ -53,12 +53,7 @@ fn make_message(text: &str) -> Message {
 }
 
 fn make_send_params(text: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: make_message(text),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(make_message(text))
 }
 
 /// An executor that completes immediately with a Completed status.

@@ -54,11 +54,7 @@ pub async fn run() -> Vec<Check> {
 pub const POSTGRES_URL_ENV: &str = "A2A_TEST_POSTGRES_URL";
 
 fn query(id: &str) -> TaskQueryParams {
-    TaskQueryParams {
-        tenant: None,
-        id: id.to_owned(),
-        history_length: None,
-    }
+    TaskQueryParams::new(id.to_owned())
 }
 
 // ── 1. In-memory: not shared ────────────────────────────────────────────────

@@ -111,10 +111,7 @@ fn config(addr: SocketAddr, token: &str) -> TaskPushNotificationConfig {
     let mut c = TaskPushNotificationConfig::new("task-1", format!("http://{addr}/hook"));
     c.id = Some("cfg-1".into());
     c.token = Some(token.to_owned());
-    c.authentication = Some(AuthenticationInfo {
-        scheme: "bearer".into(),
-        credentials: Some("s3cret".into()),
-    });
+    c.authentication = Some(AuthenticationInfo::new("bearer").with_credentials("s3cret"));
     c
 }
 
@@ -179,10 +176,8 @@ async fn refusals_are_final_for_the_sender() {
     assert!(foreign.to_string().contains("403"), "{foreign}");
 
     let mut wrong_credentials = config.clone();
-    wrong_credentials.authentication = Some(AuthenticationInfo {
-        scheme: "Bearer".into(),
-        credentials: Some("guess".into()),
-    });
+    wrong_credentials.authentication =
+        Some(AuthenticationInfo::new("Bearer").with_credentials("guess"));
     let unauthorized = sender
         .send(
             &config.url,

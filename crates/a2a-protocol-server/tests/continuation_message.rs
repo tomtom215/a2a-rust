@@ -185,13 +185,7 @@ async fn a_subscriber_and_the_follow_up_s_stream_carry_the_same_payload() {
     let handler = handler();
     let id = parked(&handler).await;
     let mut subscriber = handler
-        .on_resubscribe(
-            TaskIdParams {
-                id: id.clone(),
-                tenant: None,
-            },
-            None,
-        )
+        .on_resubscribe(TaskIdParams::new(id.clone()), None)
         .await
         .expect("subscribe");
     let first = subscriber.read().await.expect("a frame").expect("no error");
@@ -327,14 +321,7 @@ async fn a_cancelled_follow_up_is_not_re_parked() {
         frames += 1;
     }
     let cancelled = handler
-        .on_cancel_task(
-            CancelTaskParams {
-                tenant: None,
-                id: id.clone(),
-                metadata: None,
-            },
-            None,
-        )
+        .on_cancel_task(CancelTaskParams::new(id.clone()), None)
         .await
         .expect("cancel");
     assert_eq!(cancelled.status.state, TaskState::Canceled);

@@ -180,10 +180,7 @@ async fn log(handler: &RequestHandler, id: &TaskId, positions: &[u64]) {
 }
 
 fn params(id: &TaskId) -> TaskIdParams {
-    TaskIdParams {
-        tenant: None,
-        id: id.0.clone(),
-    }
+    TaskIdParams::new(id.0.clone())
 }
 
 /// What a stream yields until it errors, ends, or goes quiet: each frame's

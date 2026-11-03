@@ -153,12 +153,8 @@ async fn a2a_routes_through_an_out_of_process_node() {
     let fetched = transport
         .send_request(
             method::GET_TASK,
-            serde_json::to_value(a2a_protocol_types::TaskQueryParams {
-                tenant: None,
-                id: task_id.clone(),
-                history_length: None,
-            })
-            .expect("serialisable"),
+            serde_json::to_value(a2a_protocol_types::TaskQueryParams::new(task_id.clone()))
+                .expect("serialisable"),
             &Default::default(),
         )
         .await

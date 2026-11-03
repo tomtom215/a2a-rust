@@ -407,15 +407,10 @@ fn bench_pagination_walk(c: &mut Criterion) {
                     let mut page_token: Option<String> = None;
                     let mut total = 0usize;
                     loop {
-                        let params = ListTasksParams {
-                            tenant: None,
-                            context_id: None,
-                            status: None,
-                            page_size: Some(page_size),
-                            page_token: page_token.clone(),
-                            status_timestamp_after: None,
-                            include_artifacts: None,
-                            history_length: None,
+                        let params = {
+                            let mut built = ListTasksParams::new().with_page_size(page_size);
+                            built.page_token = page_token.clone();
+                            built
                         };
                         let response = rt.block_on(store.list(&params)).unwrap();
                         total += response.tasks.len();
@@ -438,15 +433,12 @@ fn bench_pagination_walk(c: &mut Criterion) {
                     let mut page_token: Option<String> = None;
                     let mut total = 0usize;
                     loop {
-                        let params = ListTasksParams {
-                            tenant: None,
-                            context_id: Some("ctx-even".to_string()),
-                            status: None,
-                            page_size: Some(page_size),
-                            page_token: page_token.clone(),
-                            status_timestamp_after: None,
-                            include_artifacts: None,
-                            history_length: None,
+                        let params = {
+                            let mut built = ListTasksParams::new()
+                                .with_context_id("ctx-even".to_string())
+                                .with_page_size(page_size);
+                            built.page_token = page_token.clone();
+                            built
                         };
                         let response = rt.block_on(store.list(&params)).unwrap();
                         total += response.tasks.len();

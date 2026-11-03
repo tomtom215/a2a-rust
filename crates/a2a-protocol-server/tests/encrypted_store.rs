@@ -247,14 +247,7 @@ async fn a_handler_over_the_wrapper_stores_no_plaintext_and_serves_it_whole() {
     }
 
     let read = handler
-        .on_get_task(
-            TaskQueryParams {
-                tenant: None,
-                id: task.id.0.clone(),
-                history_length: None,
-            },
-            None,
-        )
+        .on_get_task(TaskQueryParams::new(task.id.0.clone()), None)
         .await
         .unwrap();
     let shown = json(&read);

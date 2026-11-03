@@ -79,11 +79,7 @@ async fn agent() -> (String, Seen) {
 }
 
 fn get_task() -> TaskQueryParams {
-    TaskQueryParams {
-        tenant: None,
-        id: "t-1".into(),
-        history_length: None,
-    }
+    TaskQueryParams::new("t-1")
 }
 
 #[tokio::test]
@@ -108,9 +104,10 @@ async fn http_json_sends_the_version_after_the_routes_own_query() {
         .with_interceptor(VersionQueryInterceptor::new())
         .build()
         .unwrap();
-    let params = TaskQueryParams {
-        history_length: Some(2),
-        ..get_task()
+    let params = {
+        let mut built = get_task();
+        built.history_length = Some(2);
+        built
     };
     client.get_task(params).await.expect("the task");
     assert_eq!(

@@ -98,30 +98,24 @@ pub async fn test_context_continuation(ctx: &TestContext) -> TestResult {
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
 
     let context_id = ContextId::new(uuid::Uuid::new_v4().to_string());
-    let params1 = MessageSendParams {
-        tenant: None,
-        message: Message::new(
+    let params1 = MessageSendParams::new(
+        Message::new(
             MessageId::new(uuid::Uuid::new_v4().to_string()),
             MessageRole::User,
             vec![Part::text("fn first() {}")],
         )
         .with_context_id(context_id.clone()),
-        configuration: None,
-        metadata: None,
-    };
+    );
     let resp1 = client.send_message(params1).await;
     let task1_ok = matches!(&resp1, Ok(SendMessageResponse::Task(t)) if t.status.state == TaskState::Completed);
-    let params2 = MessageSendParams {
-        tenant: None,
-        message: Message::new(
+    let params2 = MessageSendParams::new(
+        Message::new(
             MessageId::new(uuid::Uuid::new_v4().to_string()),
             MessageRole::User,
             vec![Part::text("fn second() {}")],
         )
         .with_context_id(context_id.clone()),
-        configuration: None,
-        metadata: None,
-    };
+    );
     let resp2 = client.send_message(params2).await;
     let task2_ok = matches!(&resp2, Ok(SendMessageResponse::Task(t)) if t.status.state == TaskState::Completed);
 
@@ -193,11 +187,7 @@ pub async fn test_stream_with_get_task(ctx: &TestContext) -> TestResult {
                     Ok(StreamResponse::StatusUpdate(ev)) => {
                         let tid = &ev.task_id.0;
                         if client
-                            .get_task(TaskQueryParams {
-                                tenant: None,
-                                id: tid.clone(),
-                                history_length: None,
-                            })
+                            .get_task(TaskQueryParams::new(tid.clone()))
                             .await
                             .is_ok()
                         {
@@ -245,10 +235,9 @@ pub async fn test_push_delivery_e2e(ctx: &TestContext) -> TestResult {
             if let Some(ref tid) = task_id {
                 let push_config = TaskPushNotificationConfig::new(tid.clone(), webhook_url.clone())
                     .with_token("e2e-push-token")
-                    .with_authentication(AuthenticationInfo {
-                        scheme: "bearer".into(),
-                        credentials: Some("push-secret".into()),
-                    });
+                    .with_authentication(
+                        AuthenticationInfo::new("bearer").with_credentials("push-secret"),
+                    );
                 if let Err(e) = client.set_push_config(push_config).await {
                     set_config_err = Some(format!("{e}"));
                 }
@@ -308,16 +297,11 @@ pub async fn test_list_tasks_status_filter(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
     match client
-        .list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: Some(TaskState::Completed),
-            page_size: Some(50),
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        })
+        .list_tasks(
+            ListTasksParams::new()
+                .with_status(TaskState::Completed)
+                .with_page_size(50),
+        )
         .await
     {
         Ok(resp) => {
@@ -368,11 +352,7 @@ pub async fn test_graceful_shutdown_semantics(ctx: &TestContext) -> TestResult {
     let mut found = 0;
     for tid in &task_ids {
         if client
-            .get_task(TaskQueryParams {
-                tenant: None,
-                id: tid.clone(),
-                history_length: None,
-            })
+            .get_task(TaskQueryParams::new(tid.clone()))
             .await
             .is_ok()
         {

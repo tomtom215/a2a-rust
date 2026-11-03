@@ -184,10 +184,10 @@ fn secret_push_config() -> TaskPushNotificationConfig {
     let mut config = make_push_config("task-1");
     config.id = Some("cfg-1".into());
     config.token = Some("client-token-s3cret".into());
-    config.authentication = Some(a2a_protocol_types::push::AuthenticationInfo {
-        scheme: "Bearer".into(),
-        credentials: Some("webhook-credential-s3cret".into()),
-    });
+    config.authentication = Some(
+        a2a_protocol_types::push::AuthenticationInfo::new("Bearer")
+            .with_credentials("webhook-credential-s3cret"),
+    );
     config
 }
 
@@ -431,10 +431,7 @@ async fn task_list_basic() -> A2aResult<()> {
     assert_eq!(all.tasks.len(), 3);
 
     let filtered = store
-        .list(&ListTasksParams {
-            context_id: Some("ctx1".into()),
-            ..Default::default()
-        })
+        .list(&ListTasksParams::new().with_context_id("ctx1"))
         .await?;
     assert_eq!(filtered.tasks.len(), 2);
 
@@ -471,10 +468,10 @@ async fn task_list_orders_most_recently_updated_first() -> A2aResult<()> {
     let mut token: Option<String> = None;
     loop {
         let page = store
-            .list(&ListTasksParams {
-                page_size: Some(2),
-                page_token: token.clone(),
-                ..Default::default()
+            .list(&{
+                let mut built = ListTasksParams::new().with_page_size(2);
+                built.page_token = token.clone();
+                built
             })
             .await?;
         for t in &page.tasks {
@@ -489,10 +486,7 @@ async fn task_list_orders_most_recently_updated_first() -> A2aResult<()> {
 
     // A forged cursor (no separator) yields an empty page.
     let forged = store
-        .list(&ListTasksParams {
-            page_token: Some("forged-no-separator".into()),
-            ..Default::default()
-        })
+        .list(&ListTasksParams::new().with_page_token("forged-no-separator"))
         .await?;
     assert!(forged.tasks.is_empty(), "forged cursor yields empty page");
 
@@ -554,10 +548,7 @@ async fn task_list_status_timestamp_ordering_and_filter() -> A2aResult<()> {
 
     // statusTimestampAfter includes the boundary.
     let filtered = store
-        .list(&ListTasksParams {
-            status_timestamp_after: Some("2026-01-02T00:00:00.000Z".into()),
-            ..Default::default()
-        })
+        .list(&ListTasksParams::new().with_status_timestamp_after("2026-01-02T00:00:00.000Z"))
         .await?;
     let ids: Vec<&str> = filtered.tasks.iter().map(|t| t.id.0.as_str()).collect();
     assert_eq!(
@@ -583,20 +574,17 @@ async fn task_list_pagination() -> A2aResult<()> {
     }
 
     let page1 = store
-        .list(&ListTasksParams {
-            page_size: Some(2),
-            ..Default::default()
-        })
+        .list(&ListTasksParams::new().with_page_size(2))
         .await?;
     assert_eq!(page1.tasks.len(), 2);
     assert!(!page1.next_page_token.is_empty());
 
     let page2 = store
-        .list(&ListTasksParams {
-            page_size: Some(2),
-            page_token: Some(page1.next_page_token),
-            ..Default::default()
-        })
+        .list(
+            &ListTasksParams::new()
+                .with_page_size(2)
+                .with_page_token(page1.next_page_token),
+        )
         .await?;
     assert_eq!(page2.tasks.len(), 2);
 
@@ -969,10 +957,7 @@ async fn tenant_task_store_filters_paginates_deletes_and_counts() -> A2aResult<(
 
         // context_id filter
         let by_ctx = store
-            .list(&ListTasksParams {
-                context_id: Some("ctx-a".into()),
-                ..ListTasksParams::default()
-            })
+            .list(&ListTasksParams::new().with_context_id("ctx-a"))
             .await?;
         let mut ids: Vec<&str> = by_ctx.tasks.iter().map(|t| t.id.0.as_str()).collect();
         ids.sort_unstable();
@@ -980,20 +965,14 @@ async fn tenant_task_store_filters_paginates_deletes_and_counts() -> A2aResult<(
 
         // status filter
         let by_status = store
-            .list(&ListTasksParams {
-                status: Some(TaskState::Working),
-                ..ListTasksParams::default()
-            })
+            .list(&ListTasksParams::new().with_status(TaskState::Working))
             .await?;
         let ids: Vec<&str> = by_status.tasks.iter().map(|t| t.id.0.as_str()).collect();
         assert_eq!(ids, vec!["b2"], "status filter");
 
         // statusTimestampAfter includes the bound
         let after = store
-            .list(&ListTasksParams {
-                status_timestamp_after: Some("2026-01-02T00:00:00.000Z".into()),
-                ..ListTasksParams::default()
-            })
+            .list(&ListTasksParams::new().with_status_timestamp_after("2026-01-02T00:00:00.000Z"))
             .await?;
         let mut ids: Vec<&str> = after.tasks.iter().map(|t| t.id.0.as_str()).collect();
         ids.sort_unstable();
@@ -1005,10 +984,7 @@ async fn tenant_task_store_filters_paginates_deletes_and_counts() -> A2aResult<(
 
         // An unparseable value matches nothing rather than everything.
         let garbage = store
-            .list(&ListTasksParams {
-                status_timestamp_after: Some("not-a-timestamp".into()),
-                ..ListTasksParams::default()
-            })
+            .list(&ListTasksParams::new().with_status_timestamp_after("not-a-timestamp"))
             .await?;
         assert!(
             garbage.tasks.is_empty(),
@@ -1021,10 +997,10 @@ async fn tenant_task_store_filters_paginates_deletes_and_counts() -> A2aResult<(
         let mut pages = 0;
         loop {
             let page = store
-                .list(&ListTasksParams {
-                    page_size: Some(3),
-                    page_token: token.clone(),
-                    ..ListTasksParams::default()
+                .list(&{
+                    let mut built = ListTasksParams::new().with_page_size(3);
+                    built.page_token = token.clone();
+                    built
                 })
                 .await?;
             pages += 1;
@@ -2988,10 +2964,7 @@ async fn status_delta_updates_the_state_column_list_filters_on() -> A2aResult<()
     // `state` is a column, not just a key inside `data`. A delta that rewrote
     // only the document would leave `list` filtering on the old value.
     let completed = store
-        .list(&ListTasksParams {
-            status: Some(TaskState::Completed),
-            ..Default::default()
-        })
+        .list(&ListTasksParams::new().with_status(TaskState::Completed))
         .await?;
     assert_eq!(
         completed.tasks.len(),
@@ -3210,10 +3183,7 @@ async fn caller_isolation_holds_on_the_tenant_postgres_stores() {
     };
 
     let params = MessageSendParams::new(a2a_protocol_types::Message::user_text("m-1", "work"))
-        .with_configuration(SendMessageConfiguration {
-            return_immediately: Some(true),
-            ..Default::default()
-        });
+        .with_configuration(SendMessageConfiguration::new().with_return_immediately(true));
     let id = match handler
         .on_send_message(params, false, Some(&as_caller("alice-token")))
         .await

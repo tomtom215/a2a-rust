@@ -207,16 +207,11 @@ impl AgentExecutor for IgnoresCancellation {
 
 fn streaming_send() -> a2a_protocol_types::params::MessageSendParams {
     use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
-    a2a_protocol_types::params::MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("warning-test-message"),
-            MessageRole::User,
-            vec![Part::text("go")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    a2a_protocol_types::params::MessageSendParams::new(Message::new(
+        MessageId::new("warning-test-message"),
+        MessageRole::User,
+        vec![Part::text("go")],
+    ))
 }
 
 /// `shutdown()` warns when it cuts a live stream, and only then.

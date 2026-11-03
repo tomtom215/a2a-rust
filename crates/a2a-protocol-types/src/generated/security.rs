@@ -29,6 +29,7 @@
 /// to accept them.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct StringList {
     /// The individual string values.
     ///
@@ -41,6 +42,7 @@ pub struct StringList {
 /// Defines the security requirements for an agent.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct SecurityRequirement {
     /// A map of security schemes to the required scopes.
     ///
@@ -95,6 +97,7 @@ pub enum SecurityScheme {
 /// Defines a security scheme using an API key.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct ApiKeySecurityScheme {
     /// An optional description for the security scheme.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -113,6 +116,7 @@ pub struct ApiKeySecurityScheme {
 /// Defines a security scheme using HTTP authentication.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct HttpAuthSecurityScheme {
     /// An optional description for the security scheme.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -130,6 +134,7 @@ pub struct HttpAuthSecurityScheme {
 /// Defines a security scheme using OAuth 2.0.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct OAuth2SecurityScheme {
     /// An optional description for the security scheme.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -145,6 +150,7 @@ pub struct OAuth2SecurityScheme {
 /// Defines a security scheme using `OpenID` Connect.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct OpenIdConnectSecurityScheme {
     /// An optional description for the security scheme.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -157,6 +163,7 @@ pub struct OpenIdConnectSecurityScheme {
 /// Defines a security scheme using `mTLS` authentication.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct MutualTlsSecurityScheme {
     /// An optional description for the security scheme.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -227,6 +234,7 @@ crate::oneof::oneof_deserialize!(
 /// Defines configuration details for the OAuth 2.0 Authorization Code flow.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct AuthorizationCodeFlow {
     /// The authorization URL to be used for this flow.
     #[serde(alias = "authorization_url")]
@@ -252,6 +260,7 @@ pub struct AuthorizationCodeFlow {
 /// Defines configuration details for the OAuth 2.0 Client Credentials flow.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct ClientCredentialsFlow {
     /// The token URL to be used for this flow.
     #[serde(alias = "token_url")]
@@ -270,6 +279,7 @@ pub struct ClientCredentialsFlow {
 /// Deprecated: Use Authorization Code + PKCE instead.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct ImplicitFlow {
     /// The authorization URL to be used for this flow. This MUST be in the
     /// form of a URL. The OAuth2 standard requires the use of TLS
@@ -291,6 +301,7 @@ pub struct ImplicitFlow {
 /// Deprecated: Use Authorization Code + PKCE or Device Code.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct PasswordOAuthFlow {
     /// The token URL to be used for this flow. This MUST be in the form of a URL.
     /// The OAuth2 standard requires the use of TLS.
@@ -315,6 +326,7 @@ pub struct PasswordOAuthFlow {
 /// and CLI tools where the user authenticates on a separate device.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct DeviceCodeFlow {
     /// The device authorization endpoint URL.
     #[serde(alias = "device_authorization_url")]

@@ -109,11 +109,9 @@ fn bench_task_not_found(c: &mut Criterion) {
     group.bench_function("get_nonexistent_task", |b| {
         b.to_async(&runtime).iter(|| async {
             let result = client
-                .get_task(TaskQueryParams {
-                    tenant: None,
-                    id: "task-does-not-exist-00000".to_string(),
-                    history_length: None,
-                })
+                .get_task(TaskQueryParams::new(
+                    "task-does-not-exist-00000".to_string(),
+                ))
                 .await;
             // Should return an error (task not found)
             assert!(result.is_err(), "expected error for nonexistent task");

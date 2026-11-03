@@ -190,26 +190,20 @@ async fn handle_call_agent(call: &pb::CallAgent) -> Result<Vec<String>, String> 
     let msg_id = format!("itk-{}", uuid_v4());
     let wrapped = wrap_instruction(nested, &msg_id);
 
-    let mut params = MessageSendParams {
-        tenant: None,
-        message: wrapped,
-        configuration: None,
-        metadata: None,
-    };
+    let mut params = MessageSendParams::new(wrapped);
 
     if let Some(pb::call_agent::Behavior::PushNotification(push)) = &call.behavior {
         if push.url.is_empty() {
             return Err("URL not specified in push_notification behavior".to_owned());
         }
-        params.configuration = Some(SendMessageConfiguration {
-            accepted_output_modes: Vec::new(),
-            task_push_notification_config: Some(
-                TaskPushNotificationConfig::for_url(format!("{}/notifications", push.url))
-                    .with_token("itk-token".to_owned()),
-            ),
-            history_length: None,
-            return_immediately: None,
-        });
+        params.configuration = Some(
+            SendMessageConfiguration::new()
+                .with_accepted_output_modes(Vec::new())
+                .with_task_push_notification_config(
+                    TaskPushNotificationConfig::for_url(format!("{}/notifications", push.url))
+                        .with_token("itk-token".to_owned()),
+                ),
+        );
     }
 
     if matches!(

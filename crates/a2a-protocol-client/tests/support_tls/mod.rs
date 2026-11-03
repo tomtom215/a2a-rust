@@ -108,14 +108,9 @@ pub async fn serve_tls(pki: &Pki, mutual: bool) -> u16 {
 }
 
 pub fn ping() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("m1"),
-            MessageRole::User,
-            vec![Part::text("ping")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("m1"),
+        MessageRole::User,
+        vec![Part::text("ping")],
+    ))
 }

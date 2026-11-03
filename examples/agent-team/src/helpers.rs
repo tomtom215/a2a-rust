@@ -8,16 +8,11 @@ use a2a_protocol_types::params::MessageSendParams;
 
 /// Creates a simple [`MessageSendParams`] with a single text part.
 pub fn make_send_params(text: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(uuid::Uuid::new_v4().to_string()),
-            MessageRole::User,
-            vec![Part::text(text)],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::User,
+        vec![Part::text(text)],
+    ))
 }
 
 /// Re-export [`EventEmitter`] from the SDK for backwards compatibility.

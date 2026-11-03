@@ -21,12 +21,9 @@ use crate::streaming::EventStream;
 fn apply_client_config(params: &mut MessageSendParams, config: &ClientConfig) {
     // Not `SendMessageConfiguration::default()`, whose `["text/plain"]` kept
     // the client's own modes off every request without a configuration.
-    let cfg = params
-        .configuration
-        .get_or_insert_with(|| SendMessageConfiguration {
-            accepted_output_modes: Vec::new(),
-            ..SendMessageConfiguration::default()
-        });
+    let cfg = params.configuration.get_or_insert_with(|| {
+        SendMessageConfiguration::new().with_accepted_output_modes(Vec::new())
+    });
 
     // Only apply client-level settings when the per-request value is absent.
     if cfg.return_immediately.is_none() && config.return_immediately {

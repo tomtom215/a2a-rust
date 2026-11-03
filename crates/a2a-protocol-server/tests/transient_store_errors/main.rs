@@ -123,14 +123,7 @@ async fn every_backend_ended_mid_turn_loses_no_event() {
         let ended = db.terminate_all().await;
         assert!(ended > 0, "no backend was connected to end");
         handler
-            .on_get_task(
-                TaskQueryParams {
-                    tenant: None,
-                    id: task.id.0.clone(),
-                    history_length: None,
-                },
-                None,
-            )
+            .on_get_task(TaskQueryParams::new(task.id.0.clone()), None)
             .await
             .expect("a read straight after its connection was ended is answered");
         // A statement met an ended connection and ran again on a new one.

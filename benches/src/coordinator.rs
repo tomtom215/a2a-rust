@@ -108,12 +108,7 @@ impl AgentExecutor for ChainHopExecutor {
                 MessageRole::Agent,
                 ctx.message.parts.clone(),
             );
-            let params = MessageSendParams {
-                tenant: None,
-                message: forwarded,
-                configuration: None,
-                metadata: None,
-            };
+            let params = MessageSendParams::new(forwarded);
 
             // 3. Call the next hop, retrying up to max_retries on retryable
             //    errors (e.g. the synthetic Timeout emitted by the fault

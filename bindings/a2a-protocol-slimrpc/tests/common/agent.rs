@@ -238,10 +238,8 @@ pub async fn send(client: &A2aClient, text: &str) -> Result<Task, ClientError> {
 
 /// Starts a task that stays `WORKING` until canceled.
 pub async fn hold(client: &A2aClient) -> Task {
-    let held = params(HOLD).with_configuration(SendMessageConfiguration {
-        return_immediately: Some(true),
-        ..Default::default()
-    });
+    let held = params(HOLD)
+        .with_configuration(SendMessageConfiguration::new().with_return_immediately(true));
     match client.send_message(held).await.expect("a held send") {
         SendMessageResponse::Task(t) => t,
         other => panic!("a held send answered {other:?}, not a task"),

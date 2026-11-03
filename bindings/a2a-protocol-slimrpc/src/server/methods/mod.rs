@@ -242,9 +242,10 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
             async move {
                 let headers = h.headers(&ctx)?;
                 let inner = req.into_inner();
-                let params = a2a_protocol_types::params::TaskIdParams {
-                    tenant: non_empty(inner.tenant),
-                    id: inner.id,
+                let params = {
+                    let mut built = a2a_protocol_types::params::TaskIdParams::new(inner.id);
+                    built.tenant = non_empty(inner.tenant);
+                    built
                 };
                 let (reader, end) = BindingSpan::open(
                     &h.handler,

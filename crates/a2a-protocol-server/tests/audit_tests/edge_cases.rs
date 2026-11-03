@@ -51,12 +51,7 @@ async fn unicode_in_context_id() {
     let mut msg = make_message("test");
     msg.context_id = Some(ContextId::new("ctx-\u{1F680}-rocket"));
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: msg,
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(msg);
 
     let result = handler.on_send_message(params, false, None).await;
     if let Err(ref e) = result {
@@ -75,16 +70,7 @@ async fn a_page_size_over_100_is_invalid_params() {
 
     // a2a.proto: page_size's maximum is 100. A larger one, u32::MAX
     // included, was clamped to 1000; it is refused, and nothing is listed.
-    let params = ListTasksParams {
-        tenant: None,
-        context_id: None,
-        status: None,
-        page_size: Some(u32::MAX),
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    };
+    let params = ListTasksParams::new().with_page_size(u32::MAX);
 
     let result = handler.on_list_tasks(params, None).await;
     assert!(
@@ -117,12 +103,7 @@ async fn duplicate_task_id_rejected() {
     let mut msg = make_message("duplicate");
     msg.task_id = Some(TaskId::new(&task_id));
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: msg,
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(msg);
 
     let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     let err_msg = format!("{err:?}");

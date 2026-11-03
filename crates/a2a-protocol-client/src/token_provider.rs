@@ -920,7 +920,6 @@ mod bearer_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Instant;
 
@@ -1114,11 +1113,9 @@ mod tests {
     fn a_card_that_names_a_plaintext_remote_token_url_is_refused() {
         use a2a_protocol_types::security::{ClientCredentialsFlow, OAuthFlows};
         let flow = |url: &str| {
-            card_with_oauth2(OAuthFlows::ClientCredentials(ClientCredentialsFlow {
-                token_url: url.into(),
-                refresh_url: None,
-                scopes: HashMap::new(),
-            }))
+            card_with_oauth2(OAuthFlows::ClientCredentials(ClientCredentialsFlow::new(
+                url,
+            )))
         };
         let err = OAuth2ClientCredentials::from_agent_card(
             &flow("http://idp.example/token"),
@@ -1215,11 +1212,7 @@ mod tests {
         let mut schemes = std::collections::HashMap::new();
         schemes.insert(
             "oauth".to_owned(),
-            SecurityScheme::OAuth2(Box::new(OAuth2SecurityScheme {
-                flows,
-                oauth2_metadata_url: None,
-                description: None,
-            })),
+            SecurityScheme::OAuth2(Box::new(OAuth2SecurityScheme::new(flows))),
         );
         {
             let mut built = AgentCard::new(
@@ -1247,11 +1240,9 @@ mod tests {
     #[test]
     fn from_agent_card_reads_token_url() {
         use a2a_protocol_types::security::{ClientCredentialsFlow, OAuthFlows};
-        let card = card_with_oauth2(OAuthFlows::ClientCredentials(ClientCredentialsFlow {
-            token_url: "https://auth.example.com/token".into(),
-            refresh_url: None,
-            scopes: HashMap::new(),
-        }));
+        let card = card_with_oauth2(OAuthFlows::ClientCredentials(ClientCredentialsFlow::new(
+            "https://auth.example.com/token",
+        )));
         let p = OAuth2ClientCredentials::from_agent_card(&card, "oauth", "id", "sec").unwrap();
         assert_eq!(p.token_url, "https://auth.example.com/token");
     }
@@ -1259,11 +1250,9 @@ mod tests {
     #[test]
     fn from_agent_card_missing_scheme_errors() {
         use a2a_protocol_types::security::{ClientCredentialsFlow, OAuthFlows};
-        let card = card_with_oauth2(OAuthFlows::ClientCredentials(ClientCredentialsFlow {
-            token_url: "https://auth.example.com/token".into(),
-            refresh_url: None,
-            scopes: HashMap::new(),
-        }));
+        let card = card_with_oauth2(OAuthFlows::ClientCredentials(ClientCredentialsFlow::new(
+            "https://auth.example.com/token",
+        )));
         let err = OAuth2ClientCredentials::from_agent_card(&card, "nope", "id", "sec")
             .expect_err("missing scheme");
         assert!(err.to_string().contains("no security scheme"));
@@ -1273,11 +1262,9 @@ mod tests {
     #[allow(deprecated)] // an implicit-flow card is still a card a client may meet
     fn from_agent_card_wrong_flow_errors() {
         use a2a_protocol_types::security::{ImplicitFlow, OAuthFlows};
-        let card = card_with_oauth2(OAuthFlows::Implicit(ImplicitFlow {
-            authorization_url: "https://auth.example.com/authz".into(),
-            refresh_url: None,
-            scopes: HashMap::new(),
-        }));
+        let card = card_with_oauth2(OAuthFlows::Implicit(ImplicitFlow::new(
+            "https://auth.example.com/authz",
+        )));
         let err = OAuth2ClientCredentials::from_agent_card(&card, "oauth", "id", "sec")
             .expect_err("implicit flow is not client-credentials");
         assert!(err.to_string().contains("client-credentials"));

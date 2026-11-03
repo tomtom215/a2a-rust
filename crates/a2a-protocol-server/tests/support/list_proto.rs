@@ -37,12 +37,10 @@ pub async fn list_follows_the_proto(store: &dyn TaskStore) {
     }
 
     // t2's timestamp is the bound itself, and is included.
-    let mut params = ListTasksParams {
-        context_id: Some("c".into()),
-        status_timestamp_after: Some("2026-10-13T10:01:00.000Z".into()),
-        page_size: Some(1),
-        ..Default::default()
-    };
+    let mut params = ListTasksParams::new()
+        .with_context_id("c")
+        .with_page_size(1)
+        .with_status_timestamp_after("2026-10-13T10:01:00.000Z");
     let first = store.list(&params).await.expect("first page");
     assert_eq!(ids(&first.tasks), ["t3"]);
     assert_eq!(first.total_size, 2, "t3 and t2 match, before pagination");
@@ -60,11 +58,11 @@ pub async fn list_follows_the_proto(store: &dyn TaskStore) {
     assert!(second.next_page_token.is_empty(), "nothing after t2");
 
     let completed = store
-        .list(&ListTasksParams {
-            status: Some(TaskState::Completed),
-            page_size: Some(2),
-            ..Default::default()
-        })
+        .list(
+            &ListTasksParams::new()
+                .with_status(TaskState::Completed)
+                .with_page_size(2),
+        )
         .await
         .expect("completed");
     assert_eq!(ids(&completed.tasks), ["t4", "t2"]);
@@ -72,20 +70,14 @@ pub async fn list_follows_the_proto(store: &dyn TaskStore) {
     assert_eq!(completed.page_size, 2);
 
     let in_c = store
-        .list(&ListTasksParams {
-            context_id: Some("c".into()),
-            ..Default::default()
-        })
+        .list(&ListTasksParams::new().with_context_id("c"))
         .await
         .expect("context c");
     assert_eq!(ids(&in_c.tasks), ["t3", "t2", "t1"]);
     assert_eq!(in_c.total_size, 3, "t4 is in another context");
 
     let in_none = store
-        .list(&ListTasksParams {
-            context_id: Some("none".into()),
-            ..Default::default()
-        })
+        .list(&ListTasksParams::new().with_context_id("none"))
         .await
         .expect("an empty context");
     assert!(in_none.tasks.is_empty());

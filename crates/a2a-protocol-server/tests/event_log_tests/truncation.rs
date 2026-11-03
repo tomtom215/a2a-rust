@@ -56,10 +56,7 @@ async fn a_resubscribe_past_the_end_of_a_truncated_log_gets_the_snapshot_only() 
     let handler = handler_with(&store);
     let reader = handler
         .on_resubscribe(
-            TaskIdParams {
-                id: task_id.0.clone(),
-                tenant: None,
-            },
+            TaskIdParams::new(task_id.0.clone()),
             // Asks to resume after 2, so it wants 3 — which is gone.
             Some(&header("last-event-id", "2")),
         )
@@ -86,10 +83,7 @@ async fn a_resubscribe_within_a_truncated_log_still_replays() {
 
     let reader = handler
         .on_resubscribe(
-            TaskIdParams {
-                id: task_id.0.clone(),
-                tenant: None,
-            },
+            TaskIdParams::new(task_id.0.clone()),
             // Asks to resume after 4, so it wants 5 — which the log holds.
             Some(&header("last-event-id", "4")),
         )
@@ -116,10 +110,7 @@ async fn a_resubscribe_from_exactly_the_truncation_boundary_is_complete() {
 
     let reader = handler
         .on_resubscribe(
-            TaskIdParams {
-                id: task_id.0.clone(),
-                tenant: None,
-            },
+            TaskIdParams::new(task_id.0.clone()),
             Some(&header("last-event-id", "3")),
         )
         .await

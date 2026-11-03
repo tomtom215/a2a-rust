@@ -13,6 +13,7 @@
 /// sent on the wire.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct AuthenticationInfo {
     /// HTTP Authentication Scheme from the \[IANA `registry](https://www.iana.org/assignments/http-authschemes/`).
     /// Examples: `Bearer`, `Basic`, `Digest`.

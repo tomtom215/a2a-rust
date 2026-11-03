@@ -174,6 +174,7 @@ aliases = ["security_requirements"]
 
 [messages.AgentCardSignature]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.AgentCard]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
@@ -395,6 +396,7 @@ aliases = ["last_chunk"]
 
 [messages.SendMessageConfiguration]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.SendMessageConfiguration.fields.accepted_output_modes]
 type = "Vec<String>"
@@ -419,10 +421,12 @@ aliases = ["return_immediately"]
 
 [messages.SendMessageRequest]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 doc_append = "Context is given by `message.context_id`, as the proto defines it."
 
 [messages.GetTaskRequest]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.GetTaskRequest.fields.history_length]
 type = "Option<u32>"
@@ -431,12 +435,15 @@ why = "a history length counts messages; u32 refuses a negative one at parse tim
 
 [messages.SubscribeToTaskRequest]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.CancelTaskRequest]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.ListTasksRequest]
 derives = ["Debug", "Clone", "Default", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 doc_append = """
 All fields are optional filters; omitting them returns all tasks visible to
 the caller (subject to the server's default page size)."""
@@ -468,18 +475,21 @@ aliases = ["include_artifacts"]
 
 [messages.GetTaskPushNotificationConfigRequest]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.GetTaskPushNotificationConfigRequest.fields.task_id]
 aliases = ["task_id"]
 
 [messages.DeleteTaskPushNotificationConfigRequest]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.DeleteTaskPushNotificationConfigRequest.fields.task_id]
 aliases = ["task_id"]
 
 [messages.ListTaskPushNotificationConfigsRequest]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.ListTaskPushNotificationConfigsRequest.fields.task_id]
 aliases = ["task_id"]
@@ -494,9 +504,11 @@ aliases = ["page_token"]
 
 [messages.GetExtendedAgentCardRequest]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.ListTasksResponse]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.ListTasksResponse.fields.tasks]
 serde = ["default"]
@@ -523,6 +535,7 @@ why = "a count of tasks; u32 refuses a negative one at parse time"
 
 [messages.ListTaskPushNotificationConfigsResponse]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.ListTaskPushNotificationConfigsResponse.fields.configs]
 type = "Vec<crate::push::TaskPushNotificationConfig>"
@@ -535,6 +548,7 @@ aliases = ["next_page_token"]
 
 [messages.AuthenticationInfo]
 derives = ["Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 doc_append = """
 `credentials` is a secret and is **redacted** in the [`Debug`]
 representation (its presence is shown, its value is not) so it cannot leak
@@ -563,6 +577,7 @@ rejects a missing task ID there with an invalid-params error."""
 
 [messages.StringList]
 derives = ["Debug", "Clone", "Serialize"]
+attrs = ["#[non_exhaustive]"]
 doc_append = """
 # Wire format
 
@@ -595,6 +610,7 @@ is common and valid)."""
 
 [messages.SecurityRequirement]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.SecurityRequirement.fields.schemes]
 type = "std::collections::HashMap<String, crate::security::StringList>"
@@ -604,6 +620,7 @@ doc_append = "`ProtoJSON` printers omit empty maps, so absence means empty."
 
 [messages.APIKeySecurityScheme]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.APIKeySecurityScheme.fields.location]
 type = "crate::security::ApiKeyLocation"
@@ -616,27 +633,32 @@ so a card from an older peer still parses."""
 
 [messages.HTTPAuthSecurityScheme]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.HTTPAuthSecurityScheme.fields.bearer_format]
 aliases = ["bearer_format"]
 
 [messages.OAuth2SecurityScheme]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.OAuth2SecurityScheme.fields.oauth2_metadata_url]
 aliases = ["oauth2_metadata_url"]
 
 [messages.OpenIdConnectSecurityScheme]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.OpenIdConnectSecurityScheme.fields.open_id_connect_url]
 aliases = ["open_id_connect_url"]
 
 [messages.MutualTlsSecurityScheme]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.AuthorizationCodeOAuthFlow]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.AuthorizationCodeOAuthFlow.fields.authorization_url]
 aliases = ["authorization_url"]
@@ -660,6 +682,7 @@ without the key; absence means empty, as for `StringList::list`."""
 
 [messages.ClientCredentialsOAuthFlow]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.ClientCredentialsOAuthFlow.fields.token_url]
 aliases = ["token_url"]
@@ -677,6 +700,7 @@ without the key; absence means empty, as for `StringList::list`."""
 
 [messages.DeviceCodeOAuthFlow]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.DeviceCodeOAuthFlow.fields.device_authorization_url]
 aliases = ["device_authorization_url"]
@@ -697,6 +721,7 @@ without the key; absence means empty, as for `StringList::list`."""
 
 [messages.ImplicitOAuthFlow]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.ImplicitOAuthFlow.fields.authorization_url]
 type = "String"
@@ -716,6 +741,7 @@ without the key; absence means empty, as for `StringList::list`."""
 
 [messages.PasswordOAuthFlow]
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
 
 [messages.PasswordOAuthFlow.fields.token_url]
 type = "String"

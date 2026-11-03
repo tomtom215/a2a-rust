@@ -10,16 +10,11 @@ use super::*;
 use a2a_protocol_types::{Message, MessageId, MessageRole, Part};
 
 fn make_params() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("msg-1"),
-            MessageRole::User,
-            vec![Part::text("test")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("msg-1"),
+        MessageRole::User,
+        vec![Part::text("test")],
+    ))
 }
 
 #[test]
@@ -44,10 +39,7 @@ fn apply_config_does_not_override_per_request_return_immediately() {
     };
 
     let mut params = make_params();
-    params.configuration = Some(SendMessageConfiguration {
-        return_immediately: Some(false),
-        ..Default::default()
-    });
+    params.configuration = Some(SendMessageConfiguration::new().with_return_immediately(false));
     apply_client_config(&mut params, &config);
 
     let cfg = params.configuration.unwrap();
@@ -94,10 +86,7 @@ fn apply_config_does_not_override_per_request_history_length() {
     };
 
     let mut params = make_params();
-    params.configuration = Some(SendMessageConfiguration {
-        history_length: Some(5),
-        ..Default::default()
-    });
+    params.configuration = Some(SendMessageConfiguration::new().with_history_length(5));
     apply_client_config(&mut params, &config);
 
     let cfg = params.configuration.unwrap();
@@ -128,10 +117,9 @@ fn apply_config_does_not_override_per_request_output_modes() {
     };
 
     let mut params = make_params();
-    params.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec!["application/json".into()],
-        ..Default::default()
-    });
+    params.configuration = Some(
+        SendMessageConfiguration::new().with_accepted_output_modes(vec!["application/json".into()]),
+    );
     apply_client_config(&mut params, &config);
 
     let cfg = params.configuration.unwrap();
@@ -298,12 +286,7 @@ fn apply_config_does_not_set_modes_when_config_modes_empty() {
 
     let mut params = make_params();
     // Pre-set with empty modes to test that config doesn't override.
-    params.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec![],
-        task_push_notification_config: None,
-        history_length: None,
-        return_immediately: None,
-    });
+    params.configuration = Some(SendMessageConfiguration::new().with_accepted_output_modes(vec![]));
     apply_client_config(&mut params, &config);
 
     let cfg = params.configuration.unwrap();

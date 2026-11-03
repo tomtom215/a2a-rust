@@ -44,10 +44,10 @@ async fn list_tasks_may_return_fewer_than_the_page_size_asked_for() {
     loop {
         let page = handler
             .on_list_tasks(
-                ListTasksParams {
-                    page_size: Some(4),
-                    page_token: token.clone(),
-                    ..Default::default()
+                {
+                    let mut built = ListTasksParams::new().with_page_size(4);
+                    built.page_token = token.clone();
+                    built
                 },
                 None,
             )

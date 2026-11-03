@@ -37,20 +37,15 @@ fn make_handler() -> RequestHandler {
 }
 
 fn make_params(context_id: Option<&str>) -> MessageSendParams {
-    MessageSendParams {
-        message: {
-            let mut built = Message::new(
-                MessageId::new("msg-1"),
-                MessageRole::User,
-                vec![Part::text("hello")],
-            );
-            built.context_id = context_id.map(ContextId::new);
-            built
-        },
-        configuration: None,
-        metadata: None,
-        tenant: None,
-    }
+    MessageSendParams::new({
+        let mut built = Message::new(
+            MessageId::new("msg-1"),
+            MessageRole::User,
+            vec![Part::text("hello")],
+        );
+        built.context_id = context_id.map(ContextId::new);
+        built
+    })
 }
 
 // ── CleanupGuard ─────────────────────────────────────────────────────────
@@ -622,12 +617,11 @@ async fn valid_message_returns_ok() {
 async fn return_immediately_returns_task() {
     let handler = make_handler();
     let mut params = make_params(None);
-    params.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec!["text/plain".into()],
-        task_push_notification_config: None,
-        history_length: None,
-        return_immediately: Some(true),
-    });
+    params.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".into()])
+            .with_return_immediately(true),
+    );
 
     let result = handler.on_send_message(params, false, None).await;
 
@@ -691,12 +685,11 @@ async fn return_immediately_persists_final_state() {
         .build()
         .unwrap();
     let mut params = make_params(Some("ctx-ri"));
-    params.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec!["text/plain".into()],
-        task_push_notification_config: None,
-        history_length: None,
-        return_immediately: Some(true),
-    });
+    params.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".into()])
+            .with_return_immediately(true),
+    );
 
     let SendMessageResult::Response(SendMessageResponse::Task(task)) =
         handler.on_send_message(params, false, None).await.unwrap()
@@ -729,12 +722,11 @@ async fn concurrent_send_to_in_flight_task_is_rejected() {
 
     // First send (fire-and-forget) leaves a live executor + token.
     let mut first = make_params(Some("ctx-dup"));
-    first.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec!["text/plain".into()],
-        task_push_notification_config: None,
-        history_length: None,
-        return_immediately: Some(true),
-    });
+    first.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".into()])
+            .with_return_immediately(true),
+    );
     let SendMessageResult::Response(SendMessageResponse::Task(task)) =
         handler.on_send_message(first, false, None).await.unwrap()
     else {
@@ -766,23 +758,21 @@ async fn stream_cap_exhaustion_returns_overloaded_without_orphan() {
     // First send consumes the single slot (its executor blocks, so the
     // queue stays alive).
     let mut first = make_params(Some("ctx-a"));
-    first.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec!["text/plain".into()],
-        task_push_notification_config: None,
-        history_length: None,
-        return_immediately: Some(true),
-    });
+    first.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".into()])
+            .with_return_immediately(true),
+    );
     handler.on_send_message(first, false, None).await.unwrap();
     assert_eq!(handler.event_queue_manager.active_count().await, 1);
 
     // Second send hits the cap.
     let mut second = make_params(Some("ctx-b"));
-    second.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec!["text/plain".into()],
-        task_push_notification_config: None,
-        history_length: None,
-        return_immediately: Some(true),
-    });
+    second.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".into()])
+            .with_return_immediately(true),
+    );
     let result = handler.on_send_message(second, false, None).await;
     assert!(
         matches!(result, Err(ServerError::Overloaded(_))),
@@ -1364,10 +1354,7 @@ async fn send_response_omits_history_by_default_and_honors_history_length() {
 
     let mut params = make_params(Some("ctx-resp"));
     params.message.task_id = Some(task.id.clone());
-    params.configuration = Some(SendMessageConfiguration {
-        history_length: Some(10),
-        ..Default::default()
-    });
+    params.configuration = Some(SendMessageConfiguration::new().with_history_length(10));
     let result = handler
         .on_send_message(params, false, None)
         .await
@@ -1759,11 +1746,7 @@ async fn executor_failure_writes_failed_event() {
     // And it is persisted, so `GetTask` after the fact says the same.
     let fetched = handler
         .on_get_task(
-            a2a_protocol_types::params::TaskQueryParams {
-                tenant: None,
-                id: task.id.0.clone(),
-                history_length: None,
-            },
+            a2a_protocol_types::params::TaskQueryParams::new(task.id.0.clone()),
             None,
         )
         .await
@@ -2094,16 +2077,15 @@ async fn a_task_id_only_continuation_infers_the_context() {
 async fn a_refused_inline_push_config_releases_the_queue_and_token() {
     let handler = make_handler();
     let mut params = make_params(Some("ctx-push"));
-    params.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec!["text/plain".into()],
-        task_push_notification_config: Some(
-            a2a_protocol_types::push::TaskPushNotificationConfig::for_url(
-                "https://example.com/hook",
+    params.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".into()])
+            .with_task_push_notification_config(
+                a2a_protocol_types::push::TaskPushNotificationConfig::for_url(
+                    "https://example.com/hook",
+                ),
             ),
-        ),
-        history_length: None,
-        return_immediately: None,
-    });
+    );
 
     let result = handler.on_send_message(params, false, None).await;
     assert!(
@@ -2673,12 +2655,12 @@ async fn a_send_asking_for_history_gets_the_whole_conversation() {
     let mut second = make_params(Some("ctx-histlen"));
     second.message.id = MessageId::new("user-1");
     second.message.task_id = Some(task_id.clone());
-    second.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec![],
-        task_push_notification_config: None,
-        history_length: Some(10),
-        return_immediately: Some(true),
-    });
+    second.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec![])
+            .with_history_length(10)
+            .with_return_immediately(true),
+    );
 
     let result = handler
         .on_send_message(second, false, None)
@@ -2885,12 +2867,11 @@ async fn a_send_into_a_working_task_is_refused_without_waiting() {
         .build()
         .unwrap();
     let mut first = make_params(Some("ctx-n21w"));
-    first.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec!["text/plain".into()],
-        task_push_notification_config: None,
-        history_length: None,
-        return_immediately: Some(true),
-    });
+    first.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".into()])
+            .with_return_immediately(true),
+    );
     let SendMessageResult::Response(SendMessageResponse::Task(task)) =
         handler.on_send_message(first, false, None).await.unwrap()
     else {

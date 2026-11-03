@@ -31,10 +31,10 @@ pub async fn deliver(client: &A2aClient) {
     let hits = Arc::new(AtomicUsize::new(0));
     let hook = webhook(Arc::clone(&hits)).await;
     let mut push = message("push", None);
-    push.configuration = Some(SendMessageConfiguration {
-        task_push_notification_config: Some(TaskPushNotificationConfig::new("", hook)),
-        ..SendMessageConfiguration::default()
-    });
+    push.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_task_push_notification_config(TaskPushNotificationConfig::new("", hook)),
+    );
     let mut stream = client.stream_message(push).await.expect("push stream");
     while tokio::time::timeout(Duration::from_secs(10), stream.next())
         .await

@@ -90,10 +90,8 @@ fn as_caller(token: &str) -> HashMap<String, String> {
 async fn alice_starts(h: &RequestHandler, text: &str) -> String {
     let mut params =
         MessageSendParams::new(Message::user_text(uuid::Uuid::new_v4().to_string(), text));
-    params = params.with_configuration(SendMessageConfiguration {
-        return_immediately: Some(true),
-        ..Default::default()
-    });
+    params =
+        params.with_configuration(SendMessageConfiguration::new().with_return_immediately(true));
     match h
         .on_send_message(params, false, Some(&as_caller("alice-token")))
         .await
@@ -155,35 +153,20 @@ async fn another_callers_task_is_not_found_by_any_operation(h: &RequestHandler) 
         "GetTask (unknown id, the control)",
     );
     not_found(
-        h.on_cancel_task(
-            CancelTaskParams {
-                tenant: None,
-                id: id.clone(),
-                metadata: None,
-            },
-            Some(&bob),
-        )
-        .await,
+        h.on_cancel_task(CancelTaskParams::new(id.clone()), Some(&bob))
+            .await,
         "CancelTask",
     );
     not_found(
-        h.on_resubscribe(
-            TaskIdParams {
-                tenant: None,
-                id: id.clone(),
-            },
-            Some(&bob),
-        )
-        .await,
+        h.on_resubscribe(TaskIdParams::new(id.clone()), Some(&bob))
+            .await,
         "SubscribeToTask",
     );
     let mut continuation = MessageSendParams::new(
         Message::user_text(uuid::Uuid::new_v4().to_string(), "more").with_task_id(id.as_str()),
     );
-    continuation = continuation.with_configuration(SendMessageConfiguration {
-        return_immediately: Some(true),
-        ..Default::default()
-    });
+    continuation = continuation
+        .with_configuration(SendMessageConfiguration::new().with_return_immediately(true));
     not_found(
         h.on_send_message(continuation, false, Some(&bob)).await,
         "SendMessage continuing another caller's task",
@@ -234,16 +217,9 @@ async fn another_callers_task_is_not_found_by_any_operation(h: &RequestHandler) 
         "Bob's cancel must not have ended Alice's task: {:?}",
         task.status.state
     );
-    h.on_cancel_task(
-        CancelTaskParams {
-            tenant: None,
-            id: id.clone(),
-            metadata: None,
-        },
-        Some(&alice),
-    )
-    .await
-    .expect("Alice cancels her own task");
+    h.on_cancel_task(CancelTaskParams::new(id.clone()), Some(&alice))
+        .await
+        .expect("Alice cancels her own task");
 }
 
 /// The executor, the background processor and push delivery run on spawned
@@ -416,11 +392,7 @@ async fn another_callers_push_config_cannot_be_read_or_deleted() {
         h.on_set_push_config(config, Some(&alice))
             .await
             .expect("Alice registers a webhook");
-        let get = || GetPushConfigParams {
-            tenant: None,
-            task_id: id.clone(),
-            id: "alices-hook".into(),
-        };
+        let get = || GetPushConfigParams::new(id.clone(), "alices-hook");
         h.on_get_push_config(get(), Some(&alice))
             .await
             .expect("Alice reads her config");
@@ -430,11 +402,7 @@ async fn another_callers_push_config_cannot_be_read_or_deleted() {
         );
         let _ = h
             .on_delete_push_config(
-                DeletePushConfigParams {
-                    tenant: None,
-                    task_id: id.clone(),
-                    id: "alices-hook".into(),
-                },
+                DeletePushConfigParams::new(id.clone(), "alices-hook"),
                 Some(&bob),
             )
             .await;

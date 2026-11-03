@@ -88,16 +88,11 @@ fn strict_handler() -> (RequestHandler, Arc<Calls>) {
 }
 
 fn send_params() -> MessageSendParams {
-    MessageSendParams {
-        message: Message::new(
-            MessageId::new("msg-1"),
-            MessageRole::User,
-            vec![Part::text("hello")],
-        ),
-        configuration: None,
-        metadata: None,
-        tenant: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("msg-1"),
+        MessageRole::User,
+        vec![Part::text("hello")],
+    ))
 }
 
 /// One method's call, answered with what the method returned.
@@ -126,14 +121,7 @@ fn task_calls(handler: &RequestHandler) -> Vec<Call<'_>> {
         ),
         call(
             "GetTask",
-            handler.on_get_task(
-                TaskQueryParams {
-                    tenant: None,
-                    id: "t".into(),
-                    history_length: None,
-                },
-                none,
-            ),
+            handler.on_get_task(TaskQueryParams::new("t"), none),
         ),
         call(
             "ListTasks",
@@ -141,24 +129,11 @@ fn task_calls(handler: &RequestHandler) -> Vec<Call<'_>> {
         ),
         call(
             "CancelTask",
-            handler.on_cancel_task(
-                CancelTaskParams {
-                    tenant: None,
-                    id: "t".into(),
-                    metadata: None,
-                },
-                none,
-            ),
+            handler.on_cancel_task(CancelTaskParams::new("t"), none),
         ),
         call(
             "SubscribeToTask",
-            handler.on_resubscribe(
-                TaskIdParams {
-                    tenant: None,
-                    id: "t".into(),
-                },
-                none,
-            ),
+            handler.on_resubscribe(TaskIdParams::new("t"), none),
         ),
     ]
 }
@@ -175,14 +150,7 @@ fn push_config_calls(handler: &RequestHandler) -> Vec<Call<'_>> {
         ),
         call(
             "GetTaskPushNotificationConfig",
-            handler.on_get_push_config(
-                GetPushConfigParams {
-                    tenant: None,
-                    task_id: "t".into(),
-                    id: "c".into(),
-                },
-                none,
-            ),
+            handler.on_get_push_config(GetPushConfigParams::new("t", "c"), none),
         ),
         call(
             "ListTaskPushNotificationConfigs",
@@ -190,14 +158,7 @@ fn push_config_calls(handler: &RequestHandler) -> Vec<Call<'_>> {
         ),
         call(
             "DeleteTaskPushNotificationConfig",
-            handler.on_delete_push_config(
-                DeletePushConfigParams {
-                    tenant: None,
-                    task_id: "t".into(),
-                    id: "c".into(),
-                },
-                none,
-            ),
+            handler.on_delete_push_config(DeletePushConfigParams::new("t", "c"), none),
         ),
     ]
 }
@@ -245,14 +206,7 @@ async fn an_admitted_request_is_not_counted_twice() {
         .expect("handler");
     let headers: HashMap<String, String> = [("x-tenant-id".to_owned(), "acme".to_owned())].into();
     let _ = handler
-        .on_get_task(
-            TaskQueryParams {
-                tenant: None,
-                id: "absent".into(),
-                history_length: None,
-            },
-            Some(&headers),
-        )
+        .on_get_task(TaskQueryParams::new("absent"), Some(&headers))
         .await;
     let kinds: Vec<_> = calls.of("GetTask").iter().map(|(c, _)| *c).collect();
     assert_eq!(kinds, ["request", "error", "latency"]);

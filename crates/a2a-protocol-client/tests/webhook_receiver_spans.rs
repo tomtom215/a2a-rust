@@ -51,10 +51,9 @@ fn receiver(token: &str, credentials: &str) -> WebhookReceiver {
     let mut config = TaskPushNotificationConfig::new(TASK, "https://hooks.example.com/a2a");
     config.id = Some("c1".to_owned());
     config.token = Some(token.to_owned());
-    config.authentication = Some(a2a_protocol_types::push::AuthenticationInfo {
-        scheme: "Bearer".into(),
-        credentials: Some(credentials.into()),
-    });
+    config.authentication = Some(
+        a2a_protocol_types::push::AuthenticationInfo::new("Bearer").with_credentials(credentials),
+    );
     let receiver = WebhookReceiver::new();
     receiver.register(&config).unwrap();
     receiver

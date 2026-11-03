@@ -120,12 +120,7 @@ fn continuation_of(task_id: &str) -> MessageSendParams {
         vec![Part::text("hi")],
     )
     .with_task_id(TaskId::new(task_id));
-    MessageSendParams {
-        tenant: None,
-        message,
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(message)
 }
 
 fn expect_code(err: &ClientError, want: ErrorCode) {

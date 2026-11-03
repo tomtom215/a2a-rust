@@ -192,12 +192,7 @@ async fn one_task_reads_the_same_through_slimrpc_and_jsonrpc() {
         let listed = client.list_tasks(ListTasksParams::default()).await;
         let fetched = client.get_push_config(&id, &config_id).await;
         let configs = client
-            .list_push_configs(ListPushConfigsParams {
-                task_id: id.clone(),
-                page_size: None,
-                page_token: None,
-                tenant: None,
-            })
+            .list_push_configs(ListPushConfigsParams::new(id.clone()))
             .await;
         let ok = |what: &str, answer: Result<Value, ClientError>| {
             answer.unwrap_or_else(|e| panic!("{binding} {what}: {e}"))
@@ -296,21 +291,13 @@ async fn every_fault_is_the_same_a2a_error_on_slimrpc_and_jsonrpc() {
             subscribe,
             a2a_code(
                 client
-                    .list_tasks(ListTasksParams {
-                        page_size: Some(150),
-                        ..Default::default()
-                    })
+                    .list_tasks(ListTasksParams::new().with_page_size(150))
                     .await,
             ),
             a2a_code(client.get_push_config(&done, "no-such-config").await),
             a2a_code(
                 client
-                    .list_push_configs(ListPushConfigsParams {
-                        task_id: "no-such-task".into(),
-                        page_size: None,
-                        page_token: None,
-                        tenant: None,
-                    })
+                    .list_push_configs(ListPushConfigsParams::new("no-such-task"))
                     .await,
             ),
             a2a_code(client.send_message(continuation).await),

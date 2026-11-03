@@ -81,11 +81,7 @@ fn client(endpoint: &str, cred: &Cred, refuse: bool, recorder: &Recorder) -> A2a
             store(),
             SessionId::new("s"),
             "key",
-            &ApiKeySecurityScheme {
-                location,
-                name: "X-Agent-Key".into(),
-                description: None,
-            },
+            &ApiKeySecurityScheme::new(location, "X-Agent-Key"),
         )
         .expect("api key")
     };
@@ -106,11 +102,7 @@ fn client(endpoint: &str, cred: &Cred, refuse: bool, recorder: &Recorder) -> A2a
 
 async fn get_task(client: &A2aClient) -> ClientResult<()> {
     client
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: "t1".into(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new("t1"))
         .await
         .map(|_| ())
 }

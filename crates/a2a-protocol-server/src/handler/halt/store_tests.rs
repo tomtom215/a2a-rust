@@ -122,11 +122,7 @@ async fn start(h: &RequestHandler) -> Result<String, ServerError> {
 async fn reaches(h: &RequestHandler, id: &str, want: TaskState) {
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let q = TaskQueryParams {
-                tenant: None,
-                id: id.to_owned(),
-                history_length: None,
-            };
+            let q = TaskQueryParams::new(id.to_owned());
             if h.on_get_task(q, None).await.expect("get").status.state == want {
                 return;
             }

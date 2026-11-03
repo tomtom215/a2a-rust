@@ -246,11 +246,7 @@ mod tests {
             .without_agent_card()
             .build()
             .unwrap();
-        let params = CancelTaskParams {
-            tenant: None,
-            id: "nonexistent-task".to_owned(),
-            metadata: None,
-        };
+        let params = CancelTaskParams::new("nonexistent-task".to_owned());
         let result = handler.on_cancel_task(params, None).await;
         assert!(
             matches!(result, Err(ServerError::TaskNotFound(_))),
@@ -267,11 +263,7 @@ mod tests {
         let task = make_completed_task("t-cancel-terminal");
         handler.task_store.save(&task).await.unwrap();
 
-        let params = CancelTaskParams {
-            tenant: None,
-            id: "t-cancel-terminal".to_owned(),
-            metadata: None,
-        };
+        let params = CancelTaskParams::new("t-cancel-terminal".to_owned());
         let result = handler.on_cancel_task(params, None).await;
         assert!(
             matches!(result, Err(ServerError::TaskNotCancelable(_))),
@@ -288,11 +280,7 @@ mod tests {
         let task = make_submitted_task("t-cancel-active");
         handler.task_store.save(&task).await.unwrap();
 
-        let params = CancelTaskParams {
-            tenant: None,
-            id: "t-cancel-active".to_owned(),
-            metadata: None,
-        };
+        let params = CancelTaskParams::new("t-cancel-active".to_owned());
         let result = handler.on_cancel_task(params, None).await;
         assert!(
             result.is_ok(),
@@ -327,11 +315,7 @@ mod tests {
             "precondition: no queue exists"
         );
 
-        let params = CancelTaskParams {
-            tenant: None,
-            id: "t-no-leak".to_owned(),
-            metadata: None,
-        };
+        let params = CancelTaskParams::new("t-no-leak".to_owned());
         let result = handler.on_cancel_task(params, None).await;
         assert!(result.is_ok(), "cancel should succeed, got {result:?}");
         assert_eq!(result.unwrap().status.state, TaskState::Canceled);
@@ -350,11 +334,7 @@ mod tests {
             .without_agent_card()
             .build()
             .unwrap();
-        let params = CancelTaskParams {
-            tenant: None,
-            id: "nonexistent-for-metrics".to_owned(),
-            metadata: None,
-        };
+        let params = CancelTaskParams::new("nonexistent-for-metrics".to_owned());
         let result = handler.on_cancel_task(params, None).await;
         assert!(
             matches!(result, Err(ServerError::TaskNotFound(_))),
@@ -378,14 +358,7 @@ mod tests {
         handler.task_store.save(&task).await.unwrap();
 
         let result = handler
-            .on_cancel_task(
-                CancelTaskParams {
-                    tenant: None,
-                    id: "cancel-default-1".to_owned(),
-                    metadata: None,
-                },
-                None,
-            )
+            .on_cancel_task(CancelTaskParams::new("cancel-default-1".to_owned()), None)
             .await
             .expect("cancel of a WORKING task must succeed with the default executor");
         assert_eq!(result.status.state, TaskState::Canceled);
@@ -446,14 +419,7 @@ mod tests {
             .unwrap();
 
         let result = handler
-            .on_cancel_task(
-                CancelTaskParams {
-                    tenant: None,
-                    id: "t-late-finish".to_owned(),
-                    metadata: None,
-                },
-                None,
-            )
+            .on_cancel_task(CancelTaskParams::new("t-late-finish".to_owned()), None)
             .await;
         assert!(
             matches!(result, Err(ServerError::TaskNotCancelable(_))),

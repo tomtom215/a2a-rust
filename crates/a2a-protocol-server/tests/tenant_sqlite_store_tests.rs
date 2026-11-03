@@ -212,10 +212,7 @@ async fn list_filters_by_context_id() {
             .await
             .unwrap();
 
-        let params = ListTasksParams {
-            context_id: Some("ctx-a".to_string()),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new().with_context_id("ctx-a".to_string());
         let resp = store.list(&params).await.unwrap();
         assert_eq!(resp.tasks.len(), 2);
         for task in &resp.tasks {
@@ -245,10 +242,7 @@ async fn list_filters_by_status() {
             .await
             .unwrap();
 
-        let params = ListTasksParams {
-            status: Some(TaskState::Working),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new().with_status(TaskState::Working);
         let resp = store.list(&params).await.unwrap();
         assert_eq!(resp.tasks.len(), 2);
         for task in &resp.tasks {
@@ -274,10 +268,7 @@ async fn list_paginates_with_page_size() {
         }
 
         // Request page 1 with page_size = 2.
-        let params = ListTasksParams {
-            page_size: Some(2),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new().with_page_size(2);
         let resp = store.list(&params).await.unwrap();
         assert_eq!(resp.tasks.len(), 2);
         assert!(
@@ -303,21 +294,16 @@ async fn list_paginates_with_page_token() {
         }
 
         // Get the first page.
-        let params = ListTasksParams {
-            page_size: Some(2),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new().with_page_size(2);
         let resp1 = store.list(&params).await.unwrap();
         assert_eq!(resp1.tasks.len(), 2);
         let token = resp1.next_page_token.clone();
         assert!(!token.is_empty(), "expected a next page token");
 
         // Get the second page using the token.
-        let params = ListTasksParams {
-            page_size: Some(2),
-            page_token: Some(token),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new()
+            .with_page_size(2)
+            .with_page_token(token);
         let resp2 = store.list(&params).await.unwrap();
         assert_eq!(resp2.tasks.len(), 2);
         assert!(!resp2.next_page_token.is_empty());
@@ -330,11 +316,9 @@ async fn list_paginates_with_page_token() {
         }
 
         // Get the third page (only 1 task remaining).
-        let params = ListTasksParams {
-            page_size: Some(2),
-            page_token: Some(resp2.next_page_token.clone()),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new()
+            .with_page_size(2)
+            .with_page_token(resp2.next_page_token.clone());
         let resp3 = store.list(&params).await.unwrap();
         assert_eq!(resp3.tasks.len(), 1);
         assert!(
@@ -361,10 +345,7 @@ async fn list_page_size_zero_uses_default() {
         }
 
         // page_size = 0 should fall back to default (50), returning all 3.
-        let params = ListTasksParams {
-            page_size: Some(0),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new().with_page_size(0);
         let resp = store.list(&params).await.unwrap();
         assert_eq!(resp.tasks.len(), 3);
         assert!(resp.next_page_token.is_empty());

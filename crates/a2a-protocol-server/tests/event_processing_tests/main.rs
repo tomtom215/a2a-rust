@@ -341,29 +341,15 @@ impl PushSender for SleepForeverPushSender {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn make_send_params() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("msg-1"),
-            MessageRole::User,
-            vec![Part::text("hello")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("msg-1"),
+        MessageRole::User,
+        vec![Part::text("hello")],
+    ))
 }
 
 fn default_list_params() -> a2a_protocol_types::params::ListTasksParams {
-    a2a_protocol_types::params::ListTasksParams {
-        tenant: None,
-        context_id: None,
-        status: None,
-        page_size: None,
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    }
+    a2a_protocol_types::params::ListTasksParams::new()
 }
 
 fn extract_task(result: SendMessageResult) -> Task {

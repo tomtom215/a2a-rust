@@ -456,15 +456,10 @@ fn make_agent_card(
                 [(
                     SECURED_PROFILE_SCHEME.to_string(),
                     a2a_protocol_types::SecurityScheme::Http(
-                        a2a_protocol_types::HttpAuthSecurityScheme {
-                            scheme: "bearer".into(),
-                            bearer_format: None,
-                            description: Some(
-                                "Static bearer token, for the TCK's BIND-EQUIV-004 \
-                                 enforcement probe. Not a credential scheme to copy."
-                                    .into(),
-                            ),
-                        },
+                        a2a_protocol_types::HttpAuthSecurityScheme::new("bearer").with_description(
+                            "Static bearer token, for the TCK's BIND-EQUIV-004 \
+                                 enforcement probe. Not a credential scheme to copy.",
+                        ),
                     ),
                 )]
                 .into_iter()
@@ -473,16 +468,16 @@ fn make_agent_card(
             _ => None,
         };
         card.security_requirements = match profile {
-            Profile::Secured => Some(vec![a2a_protocol_types::SecurityRequirement {
-                schemes: [(
+            Profile::Secured => Some(vec![a2a_protocol_types::SecurityRequirement::new(
+                [(
                     SECURED_PROFILE_SCHEME.to_string(),
                     // No scopes: a bearer token that grants everything. The
                     // requirement is about presenting a credential at all.
-                    a2a_protocol_types::StringList { list: Vec::new() },
+                    a2a_protocol_types::StringList::new(Vec::new()),
                 )]
                 .into_iter()
                 .collect(),
-            }]),
+            )]),
             _ => None,
         };
         card.signatures = None;

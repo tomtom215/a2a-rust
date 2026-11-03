@@ -104,11 +104,7 @@ async fn subscribe_404_decodes_like_get_task_404() {
     let client = rest_client(&url);
 
     let unary = client
-        .get_task(a2a_protocol_types::TaskQueryParams {
-            tenant: None,
-            id: "x".into(),
-            history_length: None,
-        })
+        .get_task(a2a_protocol_types::TaskQueryParams::new("x"))
         .await
         .expect_err("404");
     let stream = client.subscribe_to_task("x").await.expect_err("404");

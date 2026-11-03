@@ -118,16 +118,9 @@ fn bench_store_list(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("lifecycle/store/list");
 
-    let params = ListTasksParams {
-        tenant: None,
-        context_id: Some("ctx-even".into()),
-        status: None,
-        page_size: Some(50),
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    };
+    let params = ListTasksParams::new()
+        .with_context_id("ctx-even")
+        .with_page_size(50);
 
     group.bench_function("filtered_page_50_of_250", |b| {
         b.iter(|| {

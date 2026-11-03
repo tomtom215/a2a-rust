@@ -270,14 +270,7 @@ async fn a_cancel_between_a_continuations_read_and_its_save_is_kept() {
     // C cancels the task meanwhile; the cancel must answer before the save.
     let cancel = tokio::time::timeout(
         Duration::from_secs(10),
-        c.on_cancel_task(
-            CancelTaskParams {
-                tenant: None,
-                id: parked.id.0.clone(),
-                metadata: None,
-            },
-            None,
-        ),
+        c.on_cancel_task(CancelTaskParams::new(parked.id.0.clone()), None),
     )
     .await;
     paused.release.notify_one();

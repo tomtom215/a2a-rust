@@ -49,16 +49,11 @@ async fn serve() -> String {
 }
 
 fn send() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("m"),
-            MessageRole::User,
-            vec![Part::text("go")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("m"),
+        MessageRole::User,
+        vec![Part::text("go")],
+    ))
 }
 
 #[test]

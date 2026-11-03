@@ -27,6 +27,7 @@ pub struct AgentExtension {
 /// This follows the JSON format of an RFC 7515 JSON Web Signature (JWS).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct AgentCardSignature {
     /// Required. The protected JWS header for the signature. This is always a
     /// base64url-encoded JSON object.

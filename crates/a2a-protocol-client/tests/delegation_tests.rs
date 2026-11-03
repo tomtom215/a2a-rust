@@ -105,10 +105,10 @@ fn job(text: &str) -> MessageSendParams {
 }
 
 async fn state_of(client: &A2aClient, tenant: Option<&str>, id: &str) -> TaskState {
-    let q = TaskQueryParams {
-        tenant: tenant.map(str::to_owned),
-        id: id.to_owned(),
-        history_length: None,
+    let q = {
+        let mut built = TaskQueryParams::new(id.to_owned());
+        built.tenant = tenant.map(str::to_owned);
+        built
     };
     client.get_task(q).await.expect("get_task").status.state
 }

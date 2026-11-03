@@ -170,14 +170,7 @@ async fn cancel_keeps_the_concurrent_write(inner: Arc<dyn TaskStore>) {
     };
 
     let canceled = handler
-        .on_cancel_task(
-            CancelTaskParams {
-                tenant: None,
-                id: task_id.0.clone(),
-                metadata: None,
-            },
-            None,
-        )
+        .on_cancel_task(CancelTaskParams::new(task_id.0.clone()), None)
         .await
         .expect("cancel");
     assert_eq!(canceled.status.state, TaskState::Canceled);

@@ -44,11 +44,7 @@ fn credentials() -> (Arc<dyn CredentialsStore>, SessionId) {
 
 /// The agent's scheme, as its card would declare it.
 fn agents_scheme() -> ApiKeySecurityScheme {
-    ApiKeySecurityScheme {
-        location: ApiKeyLocation::Header,
-        name: "X-Company-Key".into(),
-        description: None,
-    }
+    ApiKeySecurityScheme::new(ApiKeyLocation::Header, "X-Company-Key")
 }
 
 /// The key in `Authorization` is refused; in the scheme's header it reaches

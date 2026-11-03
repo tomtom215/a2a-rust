@@ -81,12 +81,7 @@ sent. `http://localhost`, `127.0.0.0/8` and `[::1]` are allowed either way.
 # use a2a_protocol_sdk::types::params::ListPushConfigsParams;
 # async fn f(client: A2aClient) -> Result<(), ClientError> {
 // List all configs for a task
-let configs = client.list_push_configs(ListPushConfigsParams {
-    tenant: None,
-    task_id: "task-abc".into(),
-    page_size: None,
-    page_token: None,
-}).await?;
+let configs = client.list_push_configs(ListPushConfigsParams::new("task-abc")).await?;
 
 // Get a specific config
 let config = client.get_push_config("task-abc", "config-123").await?;

@@ -189,9 +189,10 @@ fn arb_push_config() -> impl Strategy<Value = TaskPushNotificationConfig> {
             built.id = id;
             built.task_id = task_id;
             built.token = token;
-            built.authentication = auth.map(|(scheme, credentials)| AuthenticationInfo {
-                scheme,
-                credentials,
+            built.authentication = auth.map(|(scheme, credentials)| {
+                let mut built = AuthenticationInfo::new(scheme);
+                built.credentials = credentials;
+                built
             });
             built
         })

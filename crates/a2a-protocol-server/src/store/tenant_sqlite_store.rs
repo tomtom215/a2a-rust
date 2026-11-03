@@ -1097,10 +1097,7 @@ mod tests {
                     .unwrap();
             }
 
-            let params = ListTasksParams {
-                page_size: Some(2),
-                ..Default::default()
-            };
+            let params = ListTasksParams::new().with_page_size(2);
             let response = store.list(&params).await.unwrap();
             assert_eq!(response.tasks.len(), 2, "first page should have 2 tasks");
             assert!(
@@ -1108,11 +1105,9 @@ mod tests {
                 "should have a next page token"
             );
 
-            let params2 = ListTasksParams {
-                page_size: Some(2),
-                page_token: Some(response.next_page_token),
-                ..Default::default()
-            };
+            let params2 = ListTasksParams::new()
+                .with_page_size(2)
+                .with_page_token(response.next_page_token);
             let response2 = store.list(&params2).await.unwrap();
             assert_eq!(response2.tasks.len(), 2, "second page should have 2 tasks");
         })

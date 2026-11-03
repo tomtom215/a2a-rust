@@ -120,11 +120,7 @@ mod tests {
             .without_agent_card()
             .build()
             .unwrap();
-        let params = TaskQueryParams {
-            tenant: None,
-            id: "nonexistent-task".to_owned(),
-            history_length: None,
-        };
+        let params = TaskQueryParams::new("nonexistent-task".to_owned());
         let result = handler.on_get_task(params, None).await;
         assert!(
             matches!(result, Err(ServerError::TaskNotFound(_))),
@@ -141,11 +137,7 @@ mod tests {
         let task = make_completed_task("t-get-1");
         handler.task_store.save(&task).await.unwrap();
 
-        let params = TaskQueryParams {
-            tenant: None,
-            id: "t-get-1".to_owned(),
-            history_length: None,
-        };
+        let params = TaskQueryParams::new("t-get-1".to_owned());
         let result = handler.on_get_task(params, None).await;
         assert!(
             result.is_ok(),
@@ -161,11 +153,7 @@ mod tests {
             .without_agent_card()
             .build()
             .unwrap();
-        let params = TaskQueryParams {
-            tenant: None,
-            id: "nonexistent-metrics".to_owned(),
-            history_length: None,
-        };
+        let params = TaskQueryParams::new("nonexistent-metrics".to_owned());
         let result = handler.on_get_task(params, None).await;
         assert!(
             matches!(result, Err(ServerError::TaskNotFound(_))),
@@ -213,11 +201,7 @@ mod tests {
             .await
             .unwrap();
 
-        let params = TaskQueryParams {
-            tenant: None,
-            id: "t-hl-0".to_owned(),
-            history_length: Some(0),
-        };
+        let params = TaskQueryParams::new("t-hl-0".to_owned()).with_history_length(0);
         let task = handler.on_get_task(params, None).await.unwrap();
         assert!(
             task.history.is_none(),
@@ -238,11 +222,7 @@ mod tests {
             .await
             .unwrap();
 
-        let params = TaskQueryParams {
-            tenant: None,
-            id: "t-hl-2".to_owned(),
-            history_length: Some(2),
-        };
+        let params = TaskQueryParams::new("t-hl-2".to_owned()).with_history_length(2);
         let task = handler.on_get_task(params, None).await.unwrap();
         let history = task.history.expect("should have history");
         assert_eq!(history.len(), 2, "historyLength=2 should return 2 messages");
@@ -277,11 +257,7 @@ mod tests {
             .await
             .unwrap();
 
-        let params = TaskQueryParams {
-            tenant: None,
-            id: "t-hl-big".to_owned(),
-            history_length: Some(100),
-        };
+        let params = TaskQueryParams::new("t-hl-big".to_owned()).with_history_length(100);
         let task = handler.on_get_task(params, None).await.unwrap();
         let history = task.history.expect("should have history");
         assert_eq!(
@@ -303,11 +279,7 @@ mod tests {
             .await
             .unwrap();
 
-        let params = TaskQueryParams {
-            tenant: None,
-            id: "t-hl-none".to_owned(),
-            history_length: None,
-        };
+        let params = TaskQueryParams::new("t-hl-none".to_owned());
         let task = handler.on_get_task(params, None).await.unwrap();
         let history = task.history.expect("should have history");
         assert_eq!(

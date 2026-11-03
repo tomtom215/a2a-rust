@@ -117,13 +117,13 @@ pub const SECURITY_SCHEME_NAME: &str = "slimMls";
 /// SLIM's.
 #[must_use]
 pub fn security_scheme() -> SecurityScheme {
-    SecurityScheme::MutualTls(MutualTlsSecurityScheme {
-        description: Some(
+    SecurityScheme::MutualTls(
+        MutualTlsSecurityScheme::new().with_description(
             "A SLIM session with MLS (SLIMRPC §8): the SLIM network authenticates both \
              peers, and the caller is the peer SLIM verified"
                 .to_owned(),
         ),
-    })
+    )
 }
 
 /// The identity [`SlimPeerAuthInterceptor`] records for a peer SLIM verified
@@ -280,12 +280,9 @@ impl SlimPeerAuthInterceptor {
                 r.schemes.len() == 1 && r.schemes.contains_key(SECURITY_SCHEME_NAME)
             };
             if !requirements.iter().any(named) {
-                requirements.push(SecurityRequirement {
-                    schemes: std::collections::HashMap::from([(
-                        SECURITY_SCHEME_NAME.to_owned(),
-                        StringList { list: Vec::new() },
-                    )]),
-                });
+                requirements.push(SecurityRequirement::new(std::collections::HashMap::from([
+                    (SECURITY_SCHEME_NAME.to_owned(), StringList::new(Vec::new())),
+                ])));
             }
         }
     }

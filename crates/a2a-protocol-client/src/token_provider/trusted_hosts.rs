@@ -90,19 +90,15 @@ fn host_is_trusted(url: &str, trusted: &[&str]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use a2a_protocol_types::security::{ClientCredentialsFlow, OAuthFlows};
 
     use super::super::tests::card_with_oauth2;
     use super::*;
 
     fn card_naming(token_url: &str) -> AgentCard {
-        card_with_oauth2(OAuthFlows::ClientCredentials(ClientCredentialsFlow {
-            token_url: token_url.into(),
-            refresh_url: None,
-            scopes: HashMap::new(),
-        }))
+        card_with_oauth2(OAuthFlows::ClientCredentials(ClientCredentialsFlow::new(
+            token_url,
+        )))
     }
 
     fn trusting(token_url: &str, hosts: &[&str]) -> ClientResult<OAuth2ClientCredentials> {

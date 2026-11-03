@@ -59,12 +59,11 @@ async fn one_more_turn(handler: &RequestHandler, history_length: u32) -> Task {
     let mut message = Message::user_text("newest", "one more turn");
     message.task_id = Some(TaskId::new("long"));
     let mut params = MessageSendParams::new(message);
-    params.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec![],
-        task_push_notification_config: None,
-        history_length: Some(history_length),
-        return_immediately: None,
-    });
+    params.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec![])
+            .with_history_length(history_length),
+    );
     match handler.on_send_message(params, false, None).await.unwrap() {
         SendMessageResult::Response(SendMessageResponse::Task(task)) => task,
         other => panic!("expected a task, got {other:?}"),
@@ -103,11 +102,7 @@ async fn get_task_history_length_is_capped_below_what_was_asked() {
     one_more_turn(&handler, 1).await;
 
     let asked = u32::try_from(MAX_TASK_HISTORY_MESSAGES).unwrap() * 2;
-    let get = |history_length| TaskQueryParams {
-        tenant: None,
-        id: "long".into(),
-        history_length: Some(history_length),
-    };
+    let get = |history_length| TaskQueryParams::new("long").with_history_length(history_length);
     let task = handler.on_get_task(get(asked), None).await.unwrap();
     let history = ids(&task);
     assert_eq!(history.len(), MAX_TASK_HISTORY_MESSAGES);

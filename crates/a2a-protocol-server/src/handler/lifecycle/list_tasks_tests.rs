@@ -104,10 +104,7 @@ async fn list_tasks_invalid_status_timestamp_after_is_invalid_params() {
         .without_agent_card()
         .build()
         .unwrap();
-    let params = ListTasksParams {
-        status_timestamp_after: Some("not-a-timestamp".into()),
-        ..Default::default()
-    };
+    let params = ListTasksParams::new().with_status_timestamp_after("not-a-timestamp");
     let err = handler
         .on_list_tasks(params, None)
         .await
@@ -131,10 +128,7 @@ async fn list_tasks_status_timestamp_after_filters_results() {
     handler.task_store.save(&old_task).await.unwrap();
     handler.task_store.save(&new_task).await.unwrap();
 
-    let params = ListTasksParams {
-        status_timestamp_after: Some("2026-01-02T00:00:00.000Z".into()),
-        ..Default::default()
-    };
+    let params = ListTasksParams::new().with_status_timestamp_after("2026-01-02T00:00:00.000Z");
     let result = handler
         .on_list_tasks(params, None)
         .await
@@ -155,10 +149,7 @@ async fn list_tasks_with_tenant() {
         .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
         .build()
         .unwrap();
-    let params = ListTasksParams {
-        tenant: Some("test-tenant".to_string()),
-        ..Default::default()
-    };
+    let params = ListTasksParams::new().with_tenant("test-tenant".to_string());
     let result = handler
         .on_list_tasks(params, None)
         .await
@@ -215,10 +206,7 @@ async fn list_tasks_history_length_zero_omits_history_from_every_task() {
         .await
         .unwrap();
 
-    let params = ListTasksParams {
-        history_length: Some(0),
-        ..Default::default()
-    };
+    let params = ListTasksParams::new().with_history_length(0);
     let resp = handler.on_list_tasks(params, None).await.unwrap();
 
     // Omitted, not emptied: `Some([])` would be a different wire payload.
@@ -243,10 +231,7 @@ async fn list_tasks_history_length_keeps_the_most_recent_for_every_task() {
         .await
         .unwrap();
 
-    let params = ListTasksParams {
-        history_length: Some(2),
-        ..Default::default()
-    };
+    let params = ListTasksParams::new().with_history_length(2);
     let resp = handler.on_list_tasks(params, None).await.unwrap();
 
     // The two *newest* of five. Asserting the texts rather than the count
@@ -273,10 +258,7 @@ async fn list_tasks_history_length_above_the_length_returns_all() {
         .await
         .unwrap();
 
-    let params = ListTasksParams {
-        history_length: Some(100),
-        ..Default::default()
-    };
+    let params = ListTasksParams::new().with_history_length(100);
     let resp = handler.on_list_tasks(params, None).await.unwrap();
 
     let all = Some(vec![

@@ -263,10 +263,7 @@ async fn list_honours_this_stores_own_page_size_cap() {
     }
 
     let page = store
-        .list(&ListTasksParams {
-            page_size: Some(ASKED),
-            ..Default::default()
-        })
+        .list(&ListTasksParams::new().with_page_size(ASKED))
         .await
         .expect("list");
 
@@ -474,10 +471,7 @@ async fn list_filter_by_context_id() {
         .await
         .unwrap();
 
-    let params = ListTasksParams {
-        context_id: Some("ctx-a".to_string()),
-        ..Default::default()
-    };
+    let params = ListTasksParams::new().with_context_id("ctx-a".to_string());
     let response = store.list(&params).await.unwrap();
     assert_eq!(
         response.tasks.len(),
@@ -502,10 +496,7 @@ async fn list_filter_by_status() {
         .await
         .unwrap();
 
-    let params = ListTasksParams {
-        status: Some(TaskState::Working),
-        ..Default::default()
-    };
+    let params = ListTasksParams::new().with_status(TaskState::Working);
     let response = store.list(&params).await.unwrap();
     assert_eq!(response.tasks.len(), 2, "should return only Working tasks");
 }
@@ -526,10 +517,7 @@ async fn list_pagination() {
     }
 
     // First page of 2
-    let params = ListTasksParams {
-        page_size: Some(2),
-        ..Default::default()
-    };
+    let params = ListTasksParams::new().with_page_size(2);
     let response = store.list(&params).await.unwrap();
     assert_eq!(response.tasks.len(), 2, "first page should have 2 tasks");
     assert!(
@@ -538,11 +526,9 @@ async fn list_pagination() {
     );
 
     // Second page using the token
-    let params2 = ListTasksParams {
-        page_size: Some(2),
-        page_token: Some(response.next_page_token),
-        ..Default::default()
-    };
+    let params2 = ListTasksParams::new()
+        .with_page_size(2)
+        .with_page_token(response.next_page_token);
     let response2 = store.list(&params2).await.unwrap();
     assert_eq!(response2.tasks.len(), 2, "second page should have 2 tasks");
     assert!(
@@ -551,11 +537,9 @@ async fn list_pagination() {
     );
 
     // Third page - only 1 remaining
-    let params3 = ListTasksParams {
-        page_size: Some(2),
-        page_token: Some(response2.next_page_token),
-        ..Default::default()
-    };
+    let params3 = ListTasksParams::new()
+        .with_page_size(2)
+        .with_page_token(response2.next_page_token);
     let response3 = store.list(&params3).await.unwrap();
     assert_eq!(response3.tasks.len(), 1, "last page should have 1 task");
     assert!(
@@ -679,10 +663,7 @@ async fn list_filters_by_status_timestamp_after() {
             .unwrap();
     }
 
-    let params = ListTasksParams {
-        status_timestamp_after: Some("2026-01-02T00:00:00.000Z".into()),
-        ..Default::default()
-    };
+    let params = ListTasksParams::new().with_status_timestamp_after("2026-01-02T00:00:00.000Z");
     let response = store.list(&params).await.unwrap();
     let ids: Vec<&str> = response.tasks.iter().map(|t| t.id.0.as_str()).collect();
     assert_eq!(ids, vec!["new", "boundary"], "the boundary is included");
@@ -734,10 +715,10 @@ async fn list_pagination_visits_every_task_once() {
     let mut seen = std::collections::HashSet::new();
     let mut token: Option<String> = None;
     loop {
-        let params = ListTasksParams {
-            page_size: Some(4),
-            page_token: token.clone(),
-            ..Default::default()
+        let params = {
+            let mut built = ListTasksParams::new().with_page_size(4);
+            built.page_token = token.clone();
+            built
         };
         let page = store.list(&params).await.unwrap();
         for t in &page.tasks {
@@ -761,10 +742,7 @@ async fn list_malformed_page_token_returns_empty() {
 
     // A token that was not produced by the store (no separator) must yield
     // an empty page, never a full table scan.
-    let params = ListTasksParams {
-        page_token: Some("forged-cursor-no-separator".to_string()),
-        ..Default::default()
-    };
+    let params = ListTasksParams::new().with_page_token("forged-cursor-no-separator".to_string());
     let response = store.list(&params).await.unwrap();
     assert!(
         response.tasks.is_empty(),

@@ -137,16 +137,11 @@ pub async fn test_empty_parts_rejected(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     println!("\nTest 24: Empty message parts rejected");
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
-    let params = MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(uuid::Uuid::new_v4().to_string()),
-            MessageRole::User,
-            vec![],
-        ),
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::User,
+        vec![],
+    ));
     match client.send_message(params).await {
         Ok(_) => TestResult::fail(
             "empty-parts-rejected",
@@ -177,14 +172,7 @@ pub async fn test_get_task_rest(ctx: &TestContext) -> TestResult {
     let resp = client.send_message(make_send_params("check")).await;
     if let Ok(SendMessageResponse::Task(task)) = resp {
         let tid = task.id.to_string();
-        match client
-            .get_task(TaskQueryParams {
-                tenant: None,
-                id: tid.clone(),
-                history_length: None,
-            })
-            .await
-        {
+        match client.get_task(TaskQueryParams::new(tid.clone())).await {
             Ok(fetched) => {
                 println!(
                     "  Fetched via REST: {} {:?}",
@@ -220,16 +208,7 @@ pub async fn test_list_tasks_rest(ctx: &TestContext) -> TestResult {
         .build()
         .unwrap();
     match client
-        .list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: Some(5),
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        })
+        .list_tasks(ListTasksParams::new().with_page_size(5))
         .await
     {
         Ok(resp) => {
@@ -271,12 +250,7 @@ pub async fn test_push_crud_jsonrpc(ctx: &TestContext) -> TestResult {
                 // List — this previously returned 0 due to a param type mismatch
                 // in the JSON-RPC dispatcher (TaskIdParams vs ListPushConfigsParams).
                 let list = client
-                    .list_push_configs(ListPushConfigsParams {
-                        tenant: None,
-                        task_id: tid.clone(),
-                        page_size: Some(10),
-                        page_token: None,
-                    })
+                    .list_push_configs(ListPushConfigsParams::new(tid.clone()).with_page_size(10))
                     .await;
                 let count = list.as_ref().map(|l| l.configs.len()).unwrap_or(0);
                 println!("  Listed {count} configs");
@@ -409,16 +383,11 @@ pub async fn test_error_metrics_tracked(ctx: &TestContext) -> TestResult {
     let err_before = ctx.analyzer_metrics.error_count();
     // Empty parts, which the server refuses. Sent raw: the client refuses
     // empty parts itself, before anything reaches the server.
-    let params = MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(uuid::Uuid::new_v4().to_string()),
-            MessageRole::User,
-            vec![],
-        ),
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::User,
+        vec![],
+    ));
     let body = super::coverage_gaps::jsonrpc_request(
         serde_json::json!(1),
         "SendMessage",

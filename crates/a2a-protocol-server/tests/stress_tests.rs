@@ -117,16 +117,11 @@ fn minimal_agent_card() -> AgentCard {
 }
 
 fn make_send_params(id: usize) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(format!("stress-msg-{id}")),
-            MessageRole::User,
-            vec![Part::text(format!("stress request {id}"))],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new(format!("stress-msg-{id}")),
+        MessageRole::User,
+        vec![Part::text(format!("stress request {id}"))],
+    ))
 }
 
 async fn start_stress_server(completed_count: Arc<AtomicUsize>) -> SocketAddr {

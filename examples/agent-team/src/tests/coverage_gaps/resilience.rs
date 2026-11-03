@@ -103,16 +103,11 @@ pub async fn test_stale_page_token(ctx: &TestContext) -> TestResult {
 
     // Use a fake page token that points to a non-existent task.
     let result = client
-        .list_tasks(a2a_protocol_types::ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: Some(10),
-            page_token: Some("totally-fake-page-token".into()),
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        })
+        .list_tasks(
+            a2a_protocol_types::ListTasksParams::new()
+                .with_page_size(10)
+                .with_page_token("totally-fake-page-token"),
+        )
         .await;
 
     // This is a resilience test: both Ok and Err are acceptable as long as

@@ -8,6 +8,7 @@
 /// Configuration of a send message request.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct SendMessageConfiguration {
     /// A list of media types the client is prepared to accept for response parts.
     /// Agents SHOULD use this to tailor their output.
@@ -44,6 +45,7 @@ pub struct SendMessageConfiguration {
 /// Context is given by `message.context_id`, as the proto defines it.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct MessageSendParams {
     /// Optional. Opaque routing identifier. Must match the `tenant` value from
     /// the selected `AgentInterface` in the Agent Card when that field is set.
@@ -62,6 +64,7 @@ pub struct MessageSendParams {
 /// Represents a request for the `GetTask` method.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct TaskQueryParams {
     /// Optional. Opaque routing identifier. Must match the `tenant` value from
     /// the selected `AgentInterface` in the Agent Card when that field is set.
@@ -83,6 +86,7 @@ pub struct TaskQueryParams {
 /// the caller (subject to the server's default page size).
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct ListTasksParams {
     /// Optional. Opaque routing identifier. Must match the `tenant` value from
     /// the selected `AgentInterface` in the Agent Card when that field is set.
@@ -127,6 +131,7 @@ pub struct ListTasksParams {
 /// Represents a request for the `CancelTask` method.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct CancelTaskParams {
     /// Optional. Opaque routing identifier. Must match the `tenant` value from
     /// the selected `AgentInterface` in the Agent Card when that field is set.
@@ -142,6 +147,7 @@ pub struct CancelTaskParams {
 /// Represents a request for the `GetTaskPushNotificationConfig` method.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct GetPushConfigParams {
     /// Optional. Opaque routing identifier. Must match the `tenant` value from
     /// the selected `AgentInterface` in the Agent Card when that field is set.
@@ -157,6 +163,7 @@ pub struct GetPushConfigParams {
 /// Represents a request for the `DeleteTaskPushNotificationConfig` method.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct DeletePushConfigParams {
     /// Optional. Opaque routing identifier. Must match the `tenant` value from
     /// the selected `AgentInterface` in the Agent Card when that field is set.
@@ -172,6 +179,7 @@ pub struct DeletePushConfigParams {
 /// Represents a request for the `SubscribeToTask` method.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct TaskIdParams {
     /// Optional. Opaque routing identifier. Must match the `tenant` value from
     /// the selected `AgentInterface` in the Agent Card when that field is set.
@@ -184,6 +192,7 @@ pub struct TaskIdParams {
 /// Represents a request for the `ListTaskPushNotificationConfigs` method.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct ListPushConfigsParams {
     /// The parent task resource ID.
     #[serde(alias = "task_id")]
@@ -203,6 +212,7 @@ pub struct ListPushConfigsParams {
 /// Represents a request for the `GetExtendedAgentCard` method.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct GetExtendedAgentCardParams {
     /// Optional. Opaque routing identifier. Must match the `tenant` value from
     /// the selected `AgentInterface` in the Agent Card when that field is set.

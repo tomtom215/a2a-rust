@@ -32,10 +32,7 @@ fn config(task: &str, id: &str, token: &str) -> TaskPushNotificationConfig {
 }
 
 fn with_bearer(mut c: TaskPushNotificationConfig, credentials: &str) -> TaskPushNotificationConfig {
-    c.authentication = Some(AuthenticationInfo {
-        scheme: "bearer".into(),
-        credentials: Some(credentials.into()),
-    });
+    c.authentication = Some(AuthenticationInfo::new("bearer").with_credentials(credentials));
     c
 }
 
@@ -382,10 +379,7 @@ fn register_refuses_configs_it_cannot_check() {
         Err(WebhookError::MissingTaskId)
     );
     let mut no_credentials = config(TASK, "cfg-1", TOKEN);
-    no_credentials.authentication = Some(AuthenticationInfo {
-        scheme: "Bearer".into(),
-        credentials: None,
-    });
+    no_credentials.authentication = Some(AuthenticationInfo::new("Bearer"));
     assert_eq!(
         r.register(&no_credentials),
         Err(WebhookError::MissingCredentials)

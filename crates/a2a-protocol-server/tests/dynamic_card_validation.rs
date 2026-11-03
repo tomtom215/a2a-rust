@@ -32,10 +32,7 @@ impl AgentCardProducer for OidcCard {
             .with_skill(AgentSkill::new("echo", "Echo", "Echoes").with_tags(["echo"]));
             card.security_schemes = Some(HashMap::from([(
                 "oidc".to_owned(),
-                SecurityScheme::OpenIdConnect(OpenIdConnectSecurityScheme {
-                    open_id_connect_url: self.0.to_owned(),
-                    description: None,
-                }),
+                SecurityScheme::OpenIdConnect(OpenIdConnectSecurityScheme::new(self.0.to_owned())),
             )]));
             Ok(card)
         })

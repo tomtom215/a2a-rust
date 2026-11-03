@@ -108,16 +108,11 @@ fn minimal_agent_card() -> AgentCard {
 }
 
 fn make_send_params() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("msg-ws-1"),
-            MessageRole::User,
-            vec![Part::text("hello via websocket")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("msg-ws-1"),
+        MessageRole::User,
+        vec![Part::text("hello via websocket")],
+    ))
 }
 
 async fn start_ws_server() -> std::net::SocketAddr {

@@ -209,14 +209,7 @@ async fn counted(
     counter.on.store(true, Ordering::SeqCst);
     let task = send(handler, "finish", parked).await;
     handler
-        .on_get_task(
-            TaskQueryParams {
-                tenant: None,
-                id: task.id.0.clone(),
-                history_length: None,
-            },
-            None,
-        )
+        .on_get_task(TaskQueryParams::new(task.id.0.clone()), None)
         .await
         .expect("get");
     claims_released(direct).await;

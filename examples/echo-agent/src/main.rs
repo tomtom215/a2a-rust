@@ -404,23 +404,22 @@ fn advertise_security(card: &mut a2a_protocol_types::agent_card::AgentCard) {
     use a2a_protocol_types::security::{
         ApiKeyLocation, ApiKeySecurityScheme, SecurityRequirement, SecurityScheme, StringList,
     };
-    let requirement = |scopes: &[&str]| SecurityRequirement {
-        schemes: std::iter::once((
-            "apiKey".to_owned(),
-            StringList {
-                list: scopes.iter().map(|s| (*s).to_owned()).collect(),
-            },
-        ))
-        .collect(),
+    let requirement = |scopes: &[&str]| {
+        SecurityRequirement::new(
+            std::iter::once((
+                "apiKey".to_owned(),
+                StringList::new(scopes.iter().map(|s| (*s).to_owned()).collect()),
+            ))
+            .collect(),
+        )
     };
     card.security_schemes = Some(
         std::iter::once((
             "apiKey".to_owned(),
-            SecurityScheme::ApiKey(ApiKeySecurityScheme {
-                location: ApiKeyLocation::Header,
-                name: "X-API-Key".to_owned(),
-                description: None,
-            }),
+            SecurityScheme::ApiKey(ApiKeySecurityScheme::new(
+                ApiKeyLocation::Header,
+                "X-API-Key".to_owned(),
+            )),
         ))
         .collect(),
     );

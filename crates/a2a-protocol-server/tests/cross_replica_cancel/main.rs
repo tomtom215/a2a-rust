@@ -209,14 +209,7 @@ async fn executor_started(
 async fn cancel_on_b(pair: &Pair, task_id: &TaskId) {
     let canceled = pair
         .b
-        .on_cancel_task(
-            CancelTaskParams {
-                tenant: None,
-                id: task_id.0.clone(),
-                metadata: None,
-            },
-            None,
-        )
+        .on_cancel_task(CancelTaskParams::new(task_id.0.clone()), None)
         .await
         .expect("replica B accepts the cancel");
     assert_eq!(

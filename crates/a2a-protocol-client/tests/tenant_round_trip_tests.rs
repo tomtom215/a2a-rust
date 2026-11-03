@@ -111,16 +111,11 @@ fn agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
 }
 
 fn send_params() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("msg-1"),
-            MessageRole::User,
-            vec![Part::text("hello")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("msg-1"),
+        MessageRole::User,
+        vec![Part::text("hello")],
+    ))
 }
 
 /// Serves the same handler over JSON-RPC and REST on two ephemeral ports and
@@ -183,11 +178,7 @@ async fn drive(client: &A2aClient, binding: &str) -> String {
     let task_id = task.id.0.clone();
 
     let fetched = client
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: task_id.clone(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new(task_id.clone()))
         .await
         .unwrap_or_else(|e| panic!("{binding}: GetTask under the card's tenant failed: {e}"));
     assert_eq!(
@@ -237,12 +228,7 @@ async fn drive(client: &A2aClient, binding: &str) -> String {
     );
 
     let listed = client
-        .list_push_configs(ListPushConfigsParams {
-            tenant: None,
-            task_id: task_id.clone(),
-            page_size: None,
-            page_token: None,
-        })
+        .list_push_configs(ListPushConfigsParams::new(task_id.clone()))
         .await
         .unwrap_or_else(|e| panic!("{binding}: ListTaskPushNotificationConfigs failed: {e}"));
     assert_eq!(
@@ -268,11 +254,7 @@ async fn assert_invisible_without_tenant(url: &str, binding: &str, task_id: &str
         .build()
         .expect("build untenanted client");
     let err = untenanted
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: task_id.to_owned(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new(task_id.to_owned()))
         .await
         .expect_err("a task created under `acme` must be invisible to the default partition");
     assert_eq!(

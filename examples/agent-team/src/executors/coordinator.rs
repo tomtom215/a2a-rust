@@ -190,16 +190,11 @@ impl CoordinatorExecutor {
             Part::text("coordinator-initiated health check"),
             Part::data(serde_json::json!(urls)),
         ];
-        let params = MessageSendParams {
-            tenant: None,
-            message: Message::new(
-                MessageId::new(uuid::Uuid::new_v4().to_string()),
-                MessageRole::User,
-                parts,
-            ),
-            configuration: None,
-            metadata: None,
-        };
+        let params = MessageSendParams::new(Message::new(
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            MessageRole::User,
+            parts,
+        ));
         match client.send_message(params).await {
             Ok(SendMessageResponse::Task(task)) => {
                 if let Some(artifacts) = &task.artifacts {

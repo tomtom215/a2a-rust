@@ -24,11 +24,7 @@ use crate::s3_agent::{immediately, send};
 use crate::stream_and_push::{Recorder, handler};
 
 fn cancel(id: &str) -> CancelTaskParams {
-    CancelTaskParams {
-        tenant: None,
-        id: id.to_owned(),
-        metadata: None,
-    }
+    CancelTaskParams::new(id.to_owned())
 }
 
 #[tokio::test]
@@ -95,11 +91,7 @@ async fn no_notification_reaches_a_webhook_after_its_config_is_deleted() {
     }
     handler
         .on_delete_push_config(
-            DeletePushConfigParams {
-                tenant: None,
-                task_id: id.clone(),
-                id: config_ids[0].clone(),
-            },
+            DeletePushConfigParams::new(id.clone(), config_ids[0].clone()),
             None,
         )
         .await

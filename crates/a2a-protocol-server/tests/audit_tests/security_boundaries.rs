@@ -23,12 +23,7 @@ async fn context_id_exactly_max_length_passes() {
     let mut msg = make_message("test");
     msg.context_id = Some(ContextId::new(&long_id));
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: msg,
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(msg);
 
     let result = handler.on_send_message(params, false, None).await;
     if let Err(ref e) = result {
@@ -47,12 +42,7 @@ async fn context_id_over_max_length_fails() {
     let mut msg = make_message("test");
     msg.context_id = Some(ContextId::new(&long_id));
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: msg,
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(msg);
 
     let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     let err_msg = format!("{err:?}");
@@ -73,12 +63,7 @@ async fn task_id_exactly_max_length_passes() {
     let mut msg = make_message("test");
     msg.task_id = Some(TaskId::new(&long_id));
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: msg,
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(msg);
 
     // This will either succeed (if no existing task with that ID) or fail
     // for a reason other than length validation.
@@ -104,12 +89,7 @@ async fn task_id_over_max_length_fails() {
     let mut msg = make_message("test");
     msg.task_id = Some(TaskId::new(&long_id));
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: msg,
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(msg);
 
     let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     let err_msg = format!("{err:?}");
@@ -135,12 +115,7 @@ async fn empty_context_id_is_unset_not_rejected() {
     let mut msg = make_message("test");
     msg.context_id = Some(ContextId::new(""));
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: msg,
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(msg);
 
     let result = handler.on_send_message(params, false, None).await;
     assert!(
@@ -159,12 +134,7 @@ async fn empty_task_id_is_unset_not_rejected() {
     let mut msg = make_message("test");
     msg.task_id = Some(TaskId::new(""));
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: msg,
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(msg);
 
     let result = handler.on_send_message(params, false, None).await;
     assert!(
@@ -185,12 +155,7 @@ async fn whitespace_only_context_id_rejected() {
     let mut msg = make_message("test");
     msg.context_id = Some(ContextId::new("   \t\n  "));
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: msg,
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(msg);
 
     let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     let err_msg = format!("{err:?}");
@@ -210,12 +175,7 @@ async fn whitespace_only_task_id_rejected() {
     let mut msg = make_message("test");
     msg.task_id = Some(TaskId::new("   "));
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: msg,
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(msg);
 
     let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     let err_msg = format!("{err:?}");

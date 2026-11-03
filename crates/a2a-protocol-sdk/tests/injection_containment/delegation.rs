@@ -129,11 +129,7 @@ fn read_task(records: Arc<A2aClient>) -> FnTool {
         async move {
             let id = args["id"].as_str().unwrap_or_default().to_owned();
             records
-                .get_task(TaskQueryParams {
-                    tenant: None,
-                    id,
-                    history_length: None,
-                })
+                .get_task(TaskQueryParams::new(id))
                 .await
                 .map(|t| answer(&t))
                 .map_err(|e| ToolError::Failed(e.to_string()))

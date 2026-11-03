@@ -42,11 +42,7 @@ fn public() -> AgentCard {
     // Spec §13.3: the scheme the bearer interceptor checks, in the public card.
     .with_security_schemes(std::collections::HashMap::from([(
         "bearer".to_owned(),
-        SecurityScheme::Http(HttpAuthSecurityScheme {
-            scheme: "Bearer".to_owned(),
-            description: None,
-            bearer_format: None,
-        }),
+        SecurityScheme::Http(HttpAuthSecurityScheme::new("Bearer".to_owned())),
     )]))
 }
 

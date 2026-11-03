@@ -92,11 +92,7 @@ fn client(url: &str, keys: Option<Jwks>, require: bool) -> a2a_protocol_client::
 }
 
 fn query() -> TaskQueryParams {
-    TaskQueryParams {
-        tenant: None,
-        id: "t".to_owned(),
-        history_length: None,
-    }
+    TaskQueryParams::new("t".to_owned())
 }
 
 /// Every event of a stream, or the first error.

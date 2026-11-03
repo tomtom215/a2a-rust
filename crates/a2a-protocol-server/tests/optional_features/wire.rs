@@ -55,15 +55,12 @@ async fn server() -> (std::net::SocketAddr, String) {
     // public card. Until 2026-10-23 this card declared none and still built.
     card.security_schemes = Some(HashMap::from([(
         "bearer".to_owned(),
-        SecurityScheme::Http(HttpAuthSecurityScheme {
-            scheme: "Bearer".to_owned(),
-            description: None,
-            bearer_format: None,
-        }),
+        SecurityScheme::Http(HttpAuthSecurityScheme::new("Bearer".to_owned())),
     )]));
-    card.security_requirements = Some(vec![SecurityRequirement {
-        schemes: HashMap::from([("bearer".to_owned(), StringList { list: vec![] })]),
-    }]);
+    card.security_requirements = Some(vec![SecurityRequirement::new(HashMap::from([(
+        "bearer".to_owned(),
+        StringList::new(vec![]),
+    )]))]);
     let handler = RequestHandlerBuilder::new(Done)
         .with_agent_card(card)
         .with_interceptor(BearerTokenAuthInterceptor::new(["tok"]))

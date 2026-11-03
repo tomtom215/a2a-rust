@@ -162,11 +162,7 @@ On the server, `with_approval_gate` decides which decisions reach the executor:
 #         .with_security_schemes(std::collections::HashMap::from([(
 #             "bearer".to_owned(),
 #             a2a_protocol_types::security::SecurityScheme::Http(
-#                 a2a_protocol_types::security::HttpAuthSecurityScheme {
-#                     scheme: "Bearer".to_owned(),
-#                     description: None,
-#                     bearer_format: None,
-#                 },
+#                 a2a_protocol_types::security::HttpAuthSecurityScheme::new("Bearer"),
 #             ),
 #         )]))
 # }

@@ -565,16 +565,7 @@ fn bench_list_tasks_roundtrip(c: &mut Criterion) {
             BenchmarkId::new("page_size", page_size),
             &page_size,
             |b, &page_size| {
-                let params = ListTasksParams {
-                    tenant: None,
-                    context_id: None,
-                    status: None,
-                    page_size: Some(page_size),
-                    page_token: None,
-                    status_timestamp_after: None,
-                    include_artifacts: None,
-                    history_length: None,
-                };
+                let params = ListTasksParams::new().with_page_size(page_size);
                 b.to_async(&runtime).iter(|| {
                     let client = &client;
                     let params = params.clone();
@@ -658,12 +649,7 @@ fn bench_handler_limits(c: &mut Criterion) {
             built
         };
         b.to_async(&runtime).iter(|| {
-            let params = a2a_protocol_types::params::MessageSendParams {
-                tenant: None,
-                message: oversized_msg.clone(),
-                configuration: None,
-                metadata: None,
-            };
+            let params = a2a_protocol_types::params::MessageSendParams::new(oversized_msg.clone());
             let client = &client_tight;
             async move {
                 // This should be rejected; we measure rejection throughput.

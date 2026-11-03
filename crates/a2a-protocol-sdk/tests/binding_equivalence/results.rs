@@ -208,12 +208,7 @@ async fn bind_equiv_002_one_push_config_reads_the_same_through_every_binding() {
         let config = client.get_push_config(&id, &config_id).await.unwrap();
         got.push((binding, serde_json::to_value(config).unwrap()));
         let page = client
-            .list_push_configs(ListPushConfigsParams {
-                task_id: id.clone(),
-                page_size: None,
-                page_token: None,
-                tenant: None,
-            })
+            .list_push_configs(ListPushConfigsParams::new(id.clone()))
             .await
             .unwrap();
         listed.push((binding, serde_json::to_value(page.configs).unwrap()));

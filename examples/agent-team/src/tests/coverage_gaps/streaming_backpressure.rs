@@ -143,11 +143,9 @@ pub async fn test_backpressure_lagged(_ctx: &TestContext) -> TestResult {
             }
             // Lagged: the store must still show the task finished.
             match client
-                .get_task(a2a_protocol_types::params::TaskQueryParams {
-                    tenant: None,
-                    id: tid.clone(),
-                    history_length: None,
-                })
+                .get_task(a2a_protocol_types::params::TaskQueryParams::new(
+                    tid.clone(),
+                ))
                 .await
             {
                 Ok(task) if task.status.state == a2a_protocol_types::task::TaskState::Completed => {

@@ -134,19 +134,15 @@ fn client(recorder: &Recorder, require_https: bool) -> A2aClient {
 }
 
 fn send_with_push(url: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("m-1"),
-            MessageRole::User,
-            vec![Part::text("hi")],
-        ),
-        configuration: Some(SendMessageConfiguration {
-            task_push_notification_config: Some(TaskPushNotificationConfig::new("t-1", url)),
-            ..SendMessageConfiguration::default()
-        }),
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("m-1"),
+        MessageRole::User,
+        vec![Part::text("hi")],
+    ))
+    .with_configuration(
+        SendMessageConfiguration::new()
+            .with_task_push_notification_config(TaskPushNotificationConfig::new("t-1", url)),
+    )
 }
 
 const REMOTE_HTTP: &str = "http://hooks.example.com:8080/a2a/SECRET-PATH?sig=SECRET";

@@ -40,10 +40,8 @@ async fn reply_to(params: MessageSendParams) -> String {
 #[tokio::test]
 async fn the_executor_sees_the_accepted_output_modes() {
     let params = MessageSendParams::new(Message::user_text("m-1", "hi")).with_configuration(
-        SendMessageConfiguration {
-            accepted_output_modes: vec!["text/plain".into(), "application/json".into()],
-            ..Default::default()
-        },
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".into(), "application/json".into()]),
     );
     assert_eq!(reply_to(params).await, "text/plain,application/json");
 }

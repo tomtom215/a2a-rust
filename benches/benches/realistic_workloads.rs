@@ -164,12 +164,7 @@ fn bench_payload_complexity(c: &mut Criterion) {
     let mixed_msg = fixtures::mixed_parts_message();
     group.bench_function("mixed_parts", |b| {
         b.to_async(&runtime).iter(|| async {
-            let params = a2a_protocol_types::params::MessageSendParams {
-                tenant: None,
-                message: mixed_msg.clone(),
-                configuration: None,
-                metadata: None,
-            };
+            let params = a2a_protocol_types::params::MessageSendParams::new(mixed_msg.clone());
             client.send_message(params).await.expect("send");
         });
     });
@@ -183,12 +178,7 @@ fn bench_payload_complexity(c: &mut Criterion) {
     };
     group.bench_function("nested_metadata_10", |b| {
         b.to_async(&runtime).iter(|| async {
-            let params = a2a_protocol_types::params::MessageSendParams {
-                tenant: None,
-                message: nested_msg.clone(),
-                configuration: None,
-                metadata: None,
-            };
+            let params = a2a_protocol_types::params::MessageSendParams::new(nested_msg.clone());
             client.send_message(params).await.expect("send");
         });
     });
@@ -197,12 +187,7 @@ fn bench_payload_complexity(c: &mut Criterion) {
     group.bench_function("large_metadata_10kb", |b| {
         let msg = fixtures::large_metadata_message(10);
         b.to_async(&runtime).iter(|| async {
-            let params = a2a_protocol_types::params::MessageSendParams {
-                tenant: None,
-                message: msg.clone(),
-                configuration: None,
-                metadata: None,
-            };
+            let params = a2a_protocol_types::params::MessageSendParams::new(msg.clone());
             client.send_message(params).await.expect("send");
         });
     });

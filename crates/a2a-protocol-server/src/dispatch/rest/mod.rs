@@ -547,10 +547,11 @@ impl RestDispatcher {
             Ok(history_length) => history_length,
             Err(e) => return self.refuse_unreadable("GetTask", headers, e).await,
         };
-        let params = a2a_protocol_types::params::TaskQueryParams {
-            tenant: tenant.map(str::to_owned),
-            id: id.to_owned(),
-            history_length,
+        let params = {
+            let mut built = a2a_protocol_types::params::TaskQueryParams::new(id.to_owned());
+            built.tenant = tenant.map(str::to_owned);
+            built.history_length = history_length;
+            built
         };
         match self.handler.on_get_task(params, Some(headers)).await {
             Ok(task) => json_ok_response(&task),
@@ -667,10 +668,13 @@ impl RestDispatcher {
         let task_id = task_id.as_str();
         let config_id = percent_decode_path(config_id);
         let config_id = config_id.as_str();
-        let params = a2a_protocol_types::params::GetPushConfigParams {
-            tenant: tenant.map(str::to_owned),
-            task_id: task_id.to_owned(),
-            id: config_id.to_owned(),
+        let params = {
+            let mut built = a2a_protocol_types::params::GetPushConfigParams::new(
+                task_id.to_owned(),
+                config_id.to_owned(),
+            );
+            built.tenant = tenant.map(str::to_owned);
+            built
         };
         match self.handler.on_get_push_config(params, Some(headers)).await {
             Ok(config) => json_ok_response(&config),
@@ -714,10 +718,13 @@ impl RestDispatcher {
         let task_id = task_id.as_str();
         let config_id = percent_decode_path(config_id);
         let config_id = config_id.as_str();
-        let params = a2a_protocol_types::params::DeletePushConfigParams {
-            tenant: tenant.map(str::to_owned),
-            task_id: task_id.to_owned(),
-            id: config_id.to_owned(),
+        let params = {
+            let mut built = a2a_protocol_types::params::DeletePushConfigParams::new(
+                task_id.to_owned(),
+                config_id.to_owned(),
+            );
+            built.tenant = tenant.map(str::to_owned);
+            built
         };
         match self
             .handler

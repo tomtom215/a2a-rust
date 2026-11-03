@@ -442,10 +442,8 @@ async fn bearer_auth_header_is_sent() {
     let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let mut config = base_config(&url);
-    config.authentication = Some(AuthenticationInfo {
-        scheme: "bearer".into(),
-        credentials: Some("my-secret-token".into()),
-    });
+    config.authentication =
+        Some(AuthenticationInfo::new("bearer").with_credentials("my-secret-token"));
 
     sender.send(&url, &status_event(), &config).await.unwrap();
     wait_for("the mock server to capture the request", || {
@@ -495,11 +493,7 @@ async fn refused_delivery(authentication: AuthenticationInfo) -> String {
 /// `Authorization` header.
 #[tokio::test]
 async fn scheme_without_credentials_is_not_delivered() {
-    let err = refused_delivery(AuthenticationInfo {
-        scheme: "bearer".into(),
-        credentials: None,
-    })
-    .await;
+    let err = refused_delivery(AuthenticationInfo::new("bearer")).await;
     assert!(
         err.contains("no credentials") && err.contains("§13.2"),
         "{err}"
@@ -511,11 +505,7 @@ async fn scheme_without_credentials_is_not_delivered() {
 /// with no `Authorization` header.
 #[tokio::test]
 async fn unknown_scheme_is_not_delivered() {
-    let err = refused_delivery(AuthenticationInfo {
-        scheme: "digest".into(),
-        credentials: Some("opaque".into()),
-    })
-    .await;
+    let err = refused_delivery(AuthenticationInfo::new("digest").with_credentials("opaque")).await;
     assert!(err.contains("\"digest\"") && err.contains("§13.2"), "{err}");
 }
 
@@ -527,10 +517,7 @@ async fn basic_auth_header_is_sent() {
     let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let mut config = base_config(&url);
-    config.authentication = Some(AuthenticationInfo {
-        scheme: "basic".into(),
-        credentials: Some("dXNlcjpwYXNz".into()),
-    });
+    config.authentication = Some(AuthenticationInfo::new("basic").with_credentials("dXNlcjpwYXNz"));
 
     sender.send(&url, &status_event(), &config).await.unwrap();
     wait_for("the mock server to capture the request", || {
@@ -559,10 +546,8 @@ async fn mixed_case_scheme_still_sends_auth_header() {
     let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let mut config = base_config(&url);
-    config.authentication = Some(AuthenticationInfo {
-        scheme: "Bearer".into(),
-        credentials: Some("my-secret-token".into()),
-    });
+    config.authentication =
+        Some(AuthenticationInfo::new("Bearer").with_credentials("my-secret-token"));
 
     sender.send(&url, &status_event(), &config).await.unwrap();
     wait_for("the mock server to capture the request", || {
@@ -590,10 +575,7 @@ async fn uppercase_basic_scheme_sends_canonical_header() {
     let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let mut config = base_config(&url);
-    config.authentication = Some(AuthenticationInfo {
-        scheme: "BASIC".into(),
-        credentials: Some("dXNlcjpwYXNz".into()),
-    });
+    config.authentication = Some(AuthenticationInfo::new("BASIC").with_credentials("dXNlcjpwYXNz"));
 
     sender.send(&url, &status_event(), &config).await.unwrap();
     wait_for("the mock server to capture the request", || {
@@ -657,10 +639,7 @@ async fn both_auth_and_token_headers_are_sent() {
     let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let mut config = base_config(&url);
-    config.authentication = Some(AuthenticationInfo {
-        scheme: "bearer".into(),
-        credentials: Some("token-123".into()),
-    });
+    config.authentication = Some(AuthenticationInfo::new("bearer").with_credentials("token-123"));
     config.token = Some("notif-456".into());
 
     sender.send(&url, &status_event(), &config).await.unwrap();
@@ -952,11 +931,7 @@ async fn a_flooding_response_body_is_not_read() {
 /// before that.
 #[tokio::test]
 async fn empty_credentials_are_not_delivered() {
-    let err = refused_delivery(AuthenticationInfo {
-        scheme: "Bearer".into(),
-        credentials: Some("  ".into()),
-    })
-    .await;
+    let err = refused_delivery(AuthenticationInfo::new("Bearer").with_credentials("  ")).await;
     assert!(err.contains("no credentials"), "{err}");
 }
 

@@ -111,16 +111,11 @@ fn minimal_agent_card() -> AgentCard {
 }
 
 fn make_send_params() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("msg-1"),
-            MessageRole::User,
-            vec![Part::text("hello")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("msg-1"),
+        MessageRole::User,
+        vec![Part::text("hello")],
+    ))
 }
 
 /// Start a JSON-RPC server on a random port and return the address.

@@ -93,14 +93,7 @@ async fn send(handler: &RequestHandler, streaming: bool) -> String {
 async fn stored(handler: &RequestHandler, id: &str) -> Artifact {
     for _ in 0..200 {
         let task = handler
-            .on_get_task(
-                TaskQueryParams {
-                    tenant: None,
-                    id: id.to_owned(),
-                    history_length: None,
-                },
-                None,
-            )
+            .on_get_task(TaskQueryParams::new(id.to_owned()), None)
             .await
             .expect("get");
         if task.status.state == TaskState::Completed {

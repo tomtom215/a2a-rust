@@ -151,11 +151,7 @@ mod tests {
     #[test]
     fn a_signed_card_missing_an_advertised_extension_is_refused() {
         let mut signed = card();
-        signed.signatures = Some(vec![AgentCardSignature {
-            protected: "e30".into(),
-            signature: "c2ln".into(),
-            header: None,
-        }]);
+        signed.signatures = Some(vec![AgentCardSignature::new("e30", "c2ln")]);
         let why = reason(checked(signed, false, &advertised()));
         assert!(why.contains("carries a signature"), "{why}");
     }

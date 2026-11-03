@@ -26,11 +26,9 @@ async fn list(peer: &Peer, rest: bool, after: &str) -> Result<(), ClientError> {
     } else {
         builder
     };
-    let params = ListTasksParams {
-        status: Some(TaskState::Working),
-        status_timestamp_after: Some(after.into()),
-        ..ListTasksParams::default()
-    };
+    let params = ListTasksParams::new()
+        .with_status(TaskState::Working)
+        .with_status_timestamp_after(after);
     builder
         .build()
         .expect("client")
@@ -70,10 +68,8 @@ async fn list_tasks_sends_status_timestamp_after_in_utc() {
         let transport = a2a_protocol_client::transport::WebSocketTransport::connect(&ws.url)
             .await
             .expect("ws connect");
-        let params = ListTasksParams {
-            status_timestamp_after: Some("2026-01-01T23:04:05-04:00".into()),
-            ..ListTasksParams::default()
-        };
+        let params =
+            ListTasksParams::new().with_status_timestamp_after("2026-01-01T23:04:05-04:00");
         ClientBuilder::new(&ws.url)
             .with_custom_transport(transport)
             .build()
@@ -123,13 +119,11 @@ async fn an_inline_push_configs_task_id_is_not_sent() {
     let rpc = peers::http(Http::JsonRpc, reply).await;
     let mut params =
         MessageSendParams::new(Message::new("m", MessageRole::User, vec![Part::text("hi")]));
-    params.configuration = Some(SendMessageConfiguration {
-        task_push_notification_config: Some(TaskPushNotificationConfig::new(
-            "some-other-task",
-            "https://hook.example/cb",
-        )),
-        ..SendMessageConfiguration::default()
-    });
+    params.configuration = Some(
+        SendMessageConfiguration::new().with_task_push_notification_config(
+            TaskPushNotificationConfig::new("some-other-task", "https://hook.example/cb"),
+        ),
+    );
     let client = ClientBuilder::new(&rpc.url).build().expect("client");
     client.send_message(params).await.expect("send");
     let body = rpc.last_request();

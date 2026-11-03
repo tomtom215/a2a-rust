@@ -129,13 +129,7 @@ async fn send(handler: &RequestHandler, text: &str, task: Option<&TaskId>) -> Ta
 
 async fn subscribe(handler: &RequestHandler, task: &TaskId) -> InMemoryQueueReader {
     let mut reader = handler
-        .on_resubscribe(
-            TaskIdParams {
-                tenant: None,
-                id: task.0.clone(),
-            },
-            None,
-        )
+        .on_resubscribe(TaskIdParams::new(task.0.clone()), None)
         .await
         .expect("subscribe");
     let first = reader.read().await.expect("a frame").expect("not an error");
@@ -346,13 +340,7 @@ async fn logged_and_stored_elsewhere(positioned: bool) {
     tokio::time::sleep(Duration::from_millis(200)).await;
     armed.store(true, Ordering::SeqCst);
     let mut reader = handler
-        .on_resubscribe(
-            TaskIdParams {
-                tenant: None,
-                id: task.0.clone(),
-            },
-            None,
-        )
+        .on_resubscribe(TaskIdParams::new(task.0.clone()), None)
         .await
         .expect("subscribe");
     assert!(!armed.load(Ordering::SeqCst), "the other writer ran");
@@ -394,13 +382,7 @@ async fn an_event_logged_before_the_read_and_stored_after_it_is_not_lost() {
     tokio::time::sleep(Duration::from_millis(200)).await;
     armed.store(true, Ordering::SeqCst);
     let mut reader = handler
-        .on_resubscribe(
-            TaskIdParams {
-                tenant: None,
-                id: task.0.clone(),
-            },
-            None,
-        )
+        .on_resubscribe(TaskIdParams::new(task.0.clone()), None)
         .await
         .expect("subscribe");
     assert!(!armed.load(Ordering::SeqCst), "the other writer ran");

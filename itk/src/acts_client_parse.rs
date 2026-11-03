@@ -104,12 +104,7 @@ async fn drive(operation: &str, base: &str) -> Result<Value, String> {
                     );
                     surfaced(
                         client
-                            .send_message(MessageSendParams {
-                                tenant: None,
-                                message,
-                                configuration: None,
-                                metadata: None,
-                            })
+                            .send_message(MessageSendParams::new(message))
                             .await
                             .map(|v| serde_json::to_value(&v)),
                     )

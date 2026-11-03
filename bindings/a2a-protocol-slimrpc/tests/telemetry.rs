@@ -117,12 +117,7 @@ async fn a_slimrpc_call_is_spanned_and_measured_with_its_status() {
         )
         .await
         .expect("send");
-    let missing = serde_json::to_value(TaskQueryParams {
-        tenant: None,
-        id: "no-such-task".into(),
-        history_length: None,
-    })
-    .unwrap();
+    let missing = serde_json::to_value(TaskQueryParams::new("no-such-task")).unwrap();
     transport
         .send_request(method::GET_TASK, missing, &Default::default())
         .await

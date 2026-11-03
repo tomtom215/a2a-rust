@@ -207,9 +207,9 @@ fn secured(
 ) -> AgentCard {
     use a2a_protocol_types::security::{SecurityRequirement, StringList};
     card.security_schemes = Some(std::iter::once((name.to_owned(), scheme)).collect());
-    card.security_requirements = Some(vec![SecurityRequirement {
-        schemes: std::iter::once((name.to_owned(), StringList { list: vec![] })).collect(),
-    }]);
+    card.security_requirements = Some(vec![SecurityRequirement::new(
+        std::iter::once((name.to_owned(), StringList::new(vec![]))).collect(),
+    )]);
     card
 }
 
@@ -220,11 +220,7 @@ fn bearer_card(url: &str, name: &str) -> AgentCard {
     secured(
         plain_card(url, name),
         "bearer",
-        SecurityScheme::Http(HttpAuthSecurityScheme {
-            scheme: "Bearer".to_owned(),
-            description: None,
-            bearer_format: None,
-        }),
+        SecurityScheme::Http(HttpAuthSecurityScheme::new("Bearer".to_owned())),
     )
 }
 
@@ -234,11 +230,10 @@ fn api_key_card(url: &str, name: &str, header: &str) -> AgentCard {
     secured(
         plain_card(url, name),
         "apiKey",
-        SecurityScheme::ApiKey(ApiKeySecurityScheme {
-            location: ApiKeyLocation::Header,
-            name: header.to_owned(),
-            description: None,
-        }),
+        SecurityScheme::ApiKey(ApiKeySecurityScheme::new(
+            ApiKeyLocation::Header,
+            header.to_owned(),
+        )),
     )
 }
 

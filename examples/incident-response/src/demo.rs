@@ -123,11 +123,9 @@ pub async fn run(
 
     // Fetch the finished task and print the report artifact.
     let task = client
-        .get_task(a2a_protocol_types::params::TaskQueryParams {
-            tenant: None,
-            id: task_id.clone(),
-            history_length: None,
-        })
+        .get_task(a2a_protocol_types::params::TaskQueryParams::new(
+            task_id.clone(),
+        ))
         .await?;
     if let Some(report) = task
         .artifacts

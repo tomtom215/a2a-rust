@@ -108,11 +108,10 @@ fn agent_card_full_roundtrip() {
 
 #[test]
 fn security_scheme_api_key_roundtrip() {
-    let scheme = SecurityScheme::ApiKey(ApiKeySecurityScheme {
-        location: ApiKeyLocation::Header,
-        name: "X-API-Key".into(),
-        description: None,
-    });
+    let scheme = SecurityScheme::ApiKey(ApiKeySecurityScheme::new(
+        ApiKeyLocation::Header,
+        "X-API-Key",
+    ));
 
     let json = serde_json::to_string(&scheme).expect("serialize");
     let back: SecurityScheme = serde_json::from_str(&json).expect("deserialize");
@@ -127,11 +126,8 @@ fn security_scheme_api_key_roundtrip() {
 
 #[test]
 fn security_scheme_http_bearer_roundtrip() {
-    let scheme = SecurityScheme::Http(HttpAuthSecurityScheme {
-        scheme: "bearer".into(),
-        bearer_format: Some("JWT".into()),
-        description: None,
-    });
+    let scheme =
+        SecurityScheme::Http(HttpAuthSecurityScheme::new("bearer").with_bearer_format("JWT"));
 
     let json = serde_json::to_string(&scheme).expect("serialize");
     assert!(json.contains("\"bearerFormat\""));
@@ -147,19 +143,17 @@ fn security_scheme_http_bearer_roundtrip() {
 
 #[test]
 fn security_scheme_oauth2_roundtrip() {
-    let scheme = SecurityScheme::OAuth2(Box::new(OAuth2SecurityScheme {
-        flows: OAuthFlows::AuthorizationCode(AuthorizationCodeFlow {
-            authorization_url: "https://example.com/auth".into(),
-            token_url: "https://example.com/token".into(),
-            refresh_url: None,
-            scopes: [("read".to_owned(), "Read access".to_owned())]
-                .into_iter()
-                .collect(),
-            pkce_required: Some(true),
-        }),
-        oauth2_metadata_url: None,
-        description: None,
-    }));
+    let scheme = SecurityScheme::OAuth2(Box::new(OAuth2SecurityScheme::new(
+        OAuthFlows::AuthorizationCode(
+            AuthorizationCodeFlow::new("https://example.com/auth", "https://example.com/token")
+                .with_scopes(
+                    [("read".to_owned(), "Read access".to_owned())]
+                        .into_iter()
+                        .collect(),
+                )
+                .with_pkce_required(true),
+        ),
+    )));
 
     let json = serde_json::to_string(&scheme).expect("serialize");
     assert!(json.contains("\"authorizationCode\""));
@@ -186,10 +180,9 @@ fn security_scheme_oauth2_roundtrip() {
 
 #[test]
 fn security_scheme_openid_connect_roundtrip() {
-    let scheme = SecurityScheme::OpenIdConnect(OpenIdConnectSecurityScheme {
-        open_id_connect_url: "https://example.com/.well-known/openid-configuration".into(),
-        description: None,
-    });
+    let scheme = SecurityScheme::OpenIdConnect(OpenIdConnectSecurityScheme::new(
+        "https://example.com/.well-known/openid-configuration",
+    ));
 
     let json = serde_json::to_string(&scheme).expect("serialize");
     assert!(json.contains("\"openIdConnectUrl\""));
@@ -207,7 +200,7 @@ fn security_scheme_openid_connect_roundtrip() {
 
 #[test]
 fn security_scheme_mutual_tls_roundtrip() {
-    let scheme = SecurityScheme::MutualTls(MutualTlsSecurityScheme { description: None });
+    let scheme = SecurityScheme::MutualTls(MutualTlsSecurityScheme::new());
 
     let json = serde_json::to_string(&scheme).expect("serialize");
     let back: SecurityScheme = serde_json::from_str(&json).expect("deserialize");
@@ -238,10 +231,7 @@ fn push_config_with_auth_roundtrip() {
     let config = TaskPushNotificationConfig::new("task-1", "https://example.com/webhook")
         .with_id("config-1")
         .with_token("shared-secret")
-        .with_authentication(AuthenticationInfo {
-            scheme: "bearer".into(),
-            credentials: Some("my-token".into()),
-        });
+        .with_authentication(AuthenticationInfo::new("bearer").with_credentials("my-token"));
 
     let json = serde_json::to_string(&config).expect("serialize");
     assert!(json.contains("\"authentication\""));
@@ -435,16 +425,15 @@ fn jsonrpc_error_response_roundtrip() {
 fn list_tasks_params_all_fields() {
     use a2a_protocol_types::params::ListTasksParams;
 
-    let params = ListTasksParams {
-        tenant: Some("tenant-1".into()),
-        context_id: Some("ctx-1".into()),
-        status: Some(a2a_protocol_types::task::TaskState::Working),
-        page_size: Some(25),
-        page_token: Some("page-2".into()),
-        status_timestamp_after: Some("2026-01-01T00:00:00Z".into()),
-        include_artifacts: Some(true),
-        history_length: Some(10),
-    };
+    let params = ListTasksParams::new()
+        .with_tenant("tenant-1")
+        .with_context_id("ctx-1")
+        .with_status(a2a_protocol_types::task::TaskState::Working)
+        .with_page_size(25)
+        .with_page_token("page-2")
+        .with_history_length(10)
+        .with_status_timestamp_after("2026-01-01T00:00:00Z")
+        .with_include_artifacts(true);
 
     let json = serde_json::to_string(&params).expect("serialize");
     assert!(json.contains("\"tenant\""));
@@ -529,16 +518,14 @@ fn task_list_response_roundtrip() {
     use a2a_protocol_types::responses::TaskListResponse;
     use a2a_protocol_types::task::*;
 
-    let resp = TaskListResponse {
-        tasks: vec![Task::new(
-            TaskId::new("t1"),
-            ContextId::new("ctx"),
-            TaskStatus::new(TaskState::Completed),
-        )],
-        next_page_token: "next-page".into(),
-        page_size: 50,
-        total_size: 1,
-    };
+    let resp = TaskListResponse::new(vec![Task::new(
+        TaskId::new("t1"),
+        ContextId::new("ctx"),
+        TaskStatus::new(TaskState::Completed),
+    )])
+    .with_next_page_token("next-page")
+    .with_page_size(50)
+    .with_total_size(1);
 
     let json = serde_json::to_string(&resp).expect("serialize");
     assert!(json.contains("\"nextPageToken\""));

@@ -106,14 +106,9 @@ pub async fn write(stream: &mut TcpStream, bytes: &str) {
 /// A minimal `SendStreamingMessage` parameter set.
 pub fn params() -> a2a_protocol_types::MessageSendParams {
     use a2a_protocol_types::{Message, MessageId, MessageRole, MessageSendParams, Part};
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("m1"),
-            MessageRole::User,
-            vec![Part::text("hi")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("m1"),
+        MessageRole::User,
+        vec![Part::text("hi")],
+    ))
 }

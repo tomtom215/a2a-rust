@@ -64,11 +64,7 @@ fn implicit_flow_scopes_may_be_empty_or_omitted() {
         assert_eq!(flow.authorization_url, "https://id.example.com/authorize");
     }
     // An empty map survives the round trip as an empty map.
-    let flow = ImplicitFlow {
-        authorization_url: "https://id.example.com/authorize".into(),
-        refresh_url: None,
-        scopes: std::collections::HashMap::new(),
-    };
+    let flow = ImplicitFlow::new("https://id.example.com/authorize");
     let back: OAuthFlows =
         serde_json::from_value(serde_json::to_value(OAuthFlows::Implicit(flow)).unwrap()).unwrap();
     assert!(matches!(back, OAuthFlows::Implicit(ref f) if f.scopes.is_empty()));
@@ -88,11 +84,7 @@ fn password_flow_scopes_may_be_empty_or_omitted() {
         assert!(flow.scopes.is_empty(), "{wire}");
         assert_eq!(flow.token_url, "https://id.example.com/token");
     }
-    let flow = PasswordOAuthFlow {
-        token_url: "https://id.example.com/token".into(),
-        refresh_url: None,
-        scopes: std::collections::HashMap::new(),
-    };
+    let flow = PasswordOAuthFlow::new("https://id.example.com/token");
     let back: OAuthFlows =
         serde_json::from_value(serde_json::to_value(OAuthFlows::Password(flow)).unwrap()).unwrap();
     assert!(matches!(back, OAuthFlows::Password(ref f) if f.scopes.is_empty()));

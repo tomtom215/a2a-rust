@@ -64,11 +64,11 @@ async fn task_with_configs(h: &RequestHandler, n: usize) -> String {
 }
 
 fn params(task: &str, page_size: Option<u32>, page_token: Option<String>) -> ListPushConfigsParams {
-    ListPushConfigsParams {
-        tenant: None,
-        task_id: task.to_owned(),
-        page_size,
-        page_token,
+    {
+        let mut built = ListPushConfigsParams::new(task.to_owned());
+        built.page_size = page_size;
+        built.page_token = page_token;
+        built
     }
 }
 

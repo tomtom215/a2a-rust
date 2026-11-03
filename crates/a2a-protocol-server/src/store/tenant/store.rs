@@ -759,10 +759,7 @@ mod tests {
             }
 
             let listed = store
-                .list(&ListTasksParams {
-                    page_size: Some(100),
-                    ..Default::default()
-                })
+                .list(&ListTasksParams::new().with_page_size(100))
                 .await
                 .expect("list");
 
@@ -796,10 +793,7 @@ mod tests {
                         .expect("save");
                 }
                 store
-                    .list(&ListTasksParams {
-                        page_size: Some(100),
-                        ..Default::default()
-                    })
+                    .list(&ListTasksParams::new().with_page_size(100))
                     .await
                     .expect("list")
                     .tasks

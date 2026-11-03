@@ -83,10 +83,7 @@ fn handler(runs: &Arc<Runs>, timeout: Option<Duration>) -> RequestHandler {
 fn send(text: &str, return_immediately: bool) -> MessageSendParams {
     let params = MessageSendParams::new(Message::user_text(format!("m-{text}"), text));
     if return_immediately {
-        params.with_configuration(SendMessageConfiguration {
-            return_immediately: Some(true),
-            ..Default::default()
-        })
+        params.with_configuration(SendMessageConfiguration::new().with_return_immediately(true))
     } else {
         params
     }
@@ -169,14 +166,7 @@ async fn a_run_that_ends_because_its_task_was_canceled_is_canceled() {
     };
     assert!(outcomes(&runs, 0).await.is_empty(), "still running");
     handler
-        .on_cancel_task(
-            CancelTaskParams {
-                tenant: None,
-                id: task.id.0.clone(),
-                metadata: None,
-            },
-            None,
-        )
+        .on_cancel_task(CancelTaskParams::new(task.id.0.clone()), None)
         .await
         .expect("cancel");
     assert_eq!(outcomes(&runs, 1).await, [executor_outcome::CANCELED]);

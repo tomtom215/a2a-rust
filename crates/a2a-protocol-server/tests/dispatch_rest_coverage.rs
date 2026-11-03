@@ -131,16 +131,11 @@ fn make_handler_no_push() -> Arc<a2a_protocol_server::RequestHandler> {
 }
 
 fn make_send_params() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("msg-1"),
-            MessageRole::User,
-            vec![Part::text("hello")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("msg-1"),
+        MessageRole::User,
+        vec![Part::text("hello")],
+    ))
 }
 
 /// Start a REST server with optional CORS, returning the address.

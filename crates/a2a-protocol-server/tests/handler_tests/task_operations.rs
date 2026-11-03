@@ -27,11 +27,7 @@ async fn get_task_returns_stored_task() {
     };
 
     // Now get the task.
-    let params = TaskQueryParams {
-        tenant: None,
-        id: task_id.0.clone(),
-        history_length: None,
-    };
+    let params = TaskQueryParams::new(task_id.0.clone());
     let task = handler.on_get_task(params, None).await.expect("get task");
     assert_eq!(task.id, task_id, "retrieved task id must match");
     assert_eq!(
@@ -48,11 +44,7 @@ async fn get_task_not_found() {
         .build()
         .expect("build handler");
 
-    let params = TaskQueryParams {
-        tenant: None,
-        id: "nonexistent".into(),
-        history_length: None,
-    };
+    let params = TaskQueryParams::new("nonexistent");
     let err = handler.on_get_task(params, None).await.unwrap_err();
     assert!(
         matches!(err, a2a_protocol_server::ServerError::TaskNotFound(ref id) if id.0.as_str() == "nonexistent"),
@@ -77,16 +69,7 @@ async fn list_tasks_returns_created_tasks() {
         .await
         .expect("send second");
 
-    let params = ListTasksParams {
-        tenant: None,
-        context_id: None,
-        status: None,
-        page_size: None,
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    };
+    let params = ListTasksParams::new();
     let result = handler
         .on_list_tasks(params, None)
         .await
@@ -116,19 +99,7 @@ async fn cancel_task_on_working_task() {
 
     // Get the task ID from the store (list all tasks).
     let list = handler
-        .on_list_tasks(
-            ListTasksParams {
-                tenant: None,
-                context_id: None,
-                status: None,
-                page_size: None,
-                page_token: None,
-                status_timestamp_after: None,
-                include_artifacts: None,
-                history_length: None,
-            },
-            None,
-        )
+        .on_list_tasks(ListTasksParams::new(), None)
         .await
         .expect("list tasks");
 
@@ -139,11 +110,7 @@ async fn cancel_task_on_working_task() {
     let task = &list.tasks[0];
 
     // Cancel the task (it should be in Pending or Working state).
-    let cancel_params = CancelTaskParams {
-        tenant: None,
-        id: task.id.0.clone(),
-        metadata: None,
-    };
+    let cancel_params = CancelTaskParams::new(task.id.0.clone());
     let canceled = handler
         .on_cancel_task(cancel_params, None)
         .await
@@ -177,11 +144,7 @@ async fn cancel_terminal_task_fails() {
     };
 
     // Try to cancel the completed task.
-    let cancel_params = CancelTaskParams {
-        tenant: None,
-        id: task_id,
-        metadata: None,
-    };
+    let cancel_params = CancelTaskParams::new(task_id);
     let err = handler
         .on_cancel_task(cancel_params, None)
         .await
@@ -199,11 +162,7 @@ async fn cancel_nonexistent_task_fails() {
         .build()
         .expect("build handler");
 
-    let cancel_params = CancelTaskParams {
-        tenant: None,
-        id: "does-not-exist".into(),
-        metadata: None,
-    };
+    let cancel_params = CancelTaskParams::new("does-not-exist");
     let err = handler
         .on_cancel_task(cancel_params, None)
         .await

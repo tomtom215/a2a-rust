@@ -229,10 +229,10 @@ impl Delegation {
     async fn state_of(&self, id: &str) -> Option<Outcome> {
         let task = self
             .client
-            .get_task(TaskQueryParams {
-                tenant: self.tenant.clone(),
-                id: id.to_owned(),
-                history_length: Some(0),
+            .get_task({
+                let mut built = TaskQueryParams::new(id.to_owned()).with_history_length(0);
+                built.tenant = self.tenant.clone();
+                built
             })
             .await
             .ok()?;

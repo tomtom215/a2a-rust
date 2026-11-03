@@ -1366,14 +1366,10 @@ fn tck_full_round_trip_agent_card_with_security() {
         AgentSkill::new("secure-op", "Secure Operation", "Requires auth")
             .with_tags(vec!["secure"])
             .with_examples(vec!["Do something secure"])
-            .with_security_requirements(vec![SecurityRequirement {
-                schemes: HashMap::from([(
-                    "oauth2".into(),
-                    StringList {
-                        list: vec!["admin".into()],
-                    },
-                )]),
-            }]),
+            .with_security_requirements(vec![SecurityRequirement::new(HashMap::from([(
+                "oauth2".into(),
+                StringList::new(vec!["admin".into()]),
+            )]))]),
     )
     .with_capabilities(
         AgentCapabilities::none()
@@ -1390,24 +1386,20 @@ fn tck_full_round_trip_agent_card_with_security() {
     .with_security_schemes(HashMap::from([
         (
             "bearer".into(),
-            SecurityScheme::Http(HttpAuthSecurityScheme {
-                scheme: "bearer".into(),
-                bearer_format: Some("JWT".into()),
-                description: None,
-            }),
+            SecurityScheme::Http(HttpAuthSecurityScheme::new("bearer").with_bearer_format("JWT")),
         ),
         (
             "api_key".into(),
-            SecurityScheme::ApiKey(ApiKeySecurityScheme {
-                location: ApiKeyLocation::Header,
-                name: "X-API-Key".into(),
-                description: Some("API key for access".into()),
-            }),
+            SecurityScheme::ApiKey(
+                ApiKeySecurityScheme::new(ApiKeyLocation::Header, "X-API-Key")
+                    .with_description("API key for access"),
+            ),
         ),
     ]))
-    .with_security_requirements(vec![SecurityRequirement {
-        schemes: HashMap::from([("bearer".into(), StringList { list: vec![] })]),
-    }]);
+    .with_security_requirements(vec![SecurityRequirement::new(HashMap::from([(
+        "bearer".into(),
+        StringList::new(vec![]),
+    )]))]);
 
     let json_str = serde_json::to_string_pretty(&original).unwrap();
     let deserialized: AgentCard = serde_json::from_str(&json_str).unwrap();

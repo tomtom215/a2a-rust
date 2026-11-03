@@ -131,16 +131,11 @@ fn handler_with(
 }
 
 fn params() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(uuid_like()),
-            MessageRole::User,
-            vec![Part::text("go")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new(uuid_like()),
+        MessageRole::User,
+        vec![Part::text("go")],
+    ))
 }
 
 fn uuid_like() -> String {
@@ -186,14 +181,7 @@ async fn stored_state(handler: &RequestHandler, id: &str) -> TaskState {
 
 async fn stored(handler: &RequestHandler, id: &str) -> a2a_protocol_types::task::Task {
     handler
-        .on_get_task(
-            TaskQueryParams {
-                tenant: None,
-                id: id.to_owned(),
-                history_length: None,
-            },
-            None,
-        )
+        .on_get_task(TaskQueryParams::new(id.to_owned()), None)
         .await
         .unwrap()
 }
@@ -349,11 +337,7 @@ async fn cancel_task_is_not_mistaken_for_shutdown() {
 
     let task = handler
         .on_cancel_task(
-            a2a_protocol_types::params::CancelTaskParams {
-                tenant: None,
-                id: id.clone(),
-                metadata: None,
-            },
+            a2a_protocol_types::params::CancelTaskParams::new(id.clone()),
             None,
         )
         .await
