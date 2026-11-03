@@ -92,6 +92,8 @@ mod outcome;
 mod policy;
 mod renewal;
 mod resume;
+#[cfg(test)]
+mod testing;
 pub use options::DelegationOptions;
 use origin::Origin;
 pub use outcome::{Delegated, Outcome};

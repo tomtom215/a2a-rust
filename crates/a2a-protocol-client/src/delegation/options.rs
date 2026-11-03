@@ -371,9 +371,6 @@ async fn begin_record(
         .flatten()
         .map(str::to_owned);
     let record = journal::new_record(owner, agent, params.tenant.clone(), key);
-    journal
-        .begin(&record)
-        .await
-        .map_err(ClientError::Protocol)?;
+    journal::begin(&*journal, &record).await?;
     Ok(Some((journal, record.id)))
 }

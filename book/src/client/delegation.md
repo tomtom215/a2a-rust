@@ -95,10 +95,16 @@ child still running after the policy is spent is cancelled.
 
 - An attempt that gets a stream and loses it again without the position
   moving counts as spent, so a server that accepts and drops a subscription
-  is not asked for ever. A stream that delivered events starts the count
-  again.
-- Positions come from the agent's event ids. gRPC and WebSocket streams carry
-  none, so every loss there costs an attempt.
+  is not asked for ever. A stream that worked starts the count again.
+- A stream has worked when its position advanced, or when it delivered an
+  event and stayed open for `healthy_after` (five seconds by default). The
+  second rule is for gRPC and WebSocket streams, which carry no event ids: a
+  long, quiet child that an idle timeout cuts every minute is followed for as
+  long as it lives, while a server that sends its snapshot and drops the
+  stream at once still exhausts the policy.
+- The waits are shortened by up to half, at random, so that a fleet whose
+  streams a rollout cut in the same instant does not come back in the same
+  instant. `ResumePolicy::with_jitter(false)` pins them.
 - `with_resume(ResumePolicy::none())` restores the old behaviour: the first
   loss cancels the child.
 
@@ -126,9 +132,10 @@ if let Some(id) = id {
 # }
 ```
 
-A child that settled in the meantime comes back already settled. A lease or a
-budget grant is not restored; a supervisor that needs them records the grant
-itself (ADR 0030).
+A child that settled in the meantime comes back already settled. A budget
+grant is not restored: the parent's meter died with the process, and the
+reservation stays spent. A lease is renewed again if `reattach_with` is given
+one (below).
 
 ## Remembering children across restarts: the journal
 
@@ -142,7 +149,7 @@ delegation ends.
 
 ```rust,no_run
 use std::sync::Arc;
-use a2a_protocol_client::{A2aClient, delegation::Delegation};
+use a2a_protocol_client::{A2aClient, delegation::{Delegation, DelegationOptions}};
 use a2a_protocol_types::delegation_journal::{DelegationJournal, InMemoryDelegationJournal};
 use a2a_protocol_types::{Message, MessageSendParams, Part};
 # async fn run(client: Arc<A2aClient>) -> Result<(), Box<dyn std::error::Error>> {
@@ -158,11 +165,11 @@ let child = Delegation::start_journaled(
 // After a restart: pick up what is still open.
 for record in journal.open("orchestrator-1").await? {
     if let Some(task_id) = record.task_id.clone() {
-        let child = Delegation::reattach(
+        let child = Delegation::reattach_with(
             Arc::clone(&client), record.tenant.clone(), task_id, record.last_event_id.clone(),
+            DelegationOptions::new().with_journal_record(Arc::clone(&journal), &record.id),
         )
-        .await?
-        .with_journal(Arc::clone(&journal), &record.id);
+        .await?;
         let done = child.wait(std::future::pending()).await;
         println!("{:?}", done.outcome);
     }
@@ -176,12 +183,83 @@ for record in journal.open("orchestrator-1").await? {
 
 A record holds ids, keys, positions and an outcome label: no message text and
 no credentials. A write that fails after the start is logged and does not stop
-the delegation. The position can lag the stream by up to two seconds, so a
-reattach may replay a few events. Settled records stay until
+the delegation, and neither does one that does not answer: each write is given
+five seconds, then dropped, and none is tried again for two, so a journal
+database that stops responding slows each delegation by that much and no more.
+(The record is written before the first send within the same five seconds;
+past it nothing is sent and the call returns a timeout.) The position can lag
+the stream by up to two seconds, so a reattach may replay a few events. Settled records stay until
 `purge_settled` removes them. `InMemoryDelegationJournal` serves one process; for a supervisor that must
 survive its own death use `PostgresDelegationJournal` (the server crate's
 `postgres` feature, table `a2a_delegations`), or implement the trait over a
 store of your own. There is no SQLite journal.
+
+### Shutting down on purpose: hand the children over
+
+A parent that is stopped for a redeploy fires its cancellation token, and a
+`wait` that is given that token as its cancel signal cancels the child. For a
+child with a journal record that throws away what the record exists for.
+`wait_or_hand_off` takes a second future, the supervisor's own shutdown signal:
+
+```rust,no_run
+use std::sync::Arc;
+use a2a_protocol_client::delegation::{Delegation, Outcome};
+# async fn run(
+#     child: Delegation,
+#     cancelled: impl std::future::Future<Output = ()>,
+#     shutting_down: impl std::future::Future<Output = ()>,
+# ) {
+let done = child.wait_or_hand_off(cancelled, shutting_down).await;
+if matches!(done.outcome, Outcome::HandedOff) {
+    // The child still runs and its record is still open: the next supervisor
+    // finds it with `journal.open(owner)` and follows it with `reattach_with`.
+}
+# }
+```
+
+When the hand-off future fires first and the delegation has a journal record,
+the child is left running, the record is left open, and the outcome is
+`Outcome::HandedOff`. Without a record nothing could find the child again, so
+the hand-off cancels it as `wait` would. A cancel that is not a hand-off
+still cancels and settles the record. `wait` is `wait_or_hand_off` with a
+future that never fires.
+
+### One value for what a delegation is given
+
+A journal, a lease, a budget and a resume policy each had a constructor, and
+no two of them could be asked for together. `DelegationOptions` holds them:
+
+```rust,no_run
+use std::sync::Arc;
+use std::time::Duration;
+use a2a_protocol_client::{A2aClient, delegation::{Delegation, DelegationOptions}};
+use a2a_protocol_types::delegation_journal::DelegationJournal;
+use a2a_protocol_types::MessageSendParams;
+# async fn run(
+#     client: Arc<A2aClient>,
+#     params: MessageSendParams,
+#     journal: Arc<dyn DelegationJournal>,
+# ) -> Result<(), Box<dyn std::error::Error>> {
+let child = Delegation::start_with(
+    client,
+    params,
+    DelegationOptions::new()
+        .with_journal(journal, "orchestrator-1", "http://worker:8080")
+        .with_lease(Duration::from_secs(60)),
+)
+.await?;
+# let _ = child;
+# Ok(())
+# }
+```
+
+`start_with` and `reattach_with` take the same value; `start_leased`,
+`start_budgeted` and `start_journaled` call it. A reattach cannot restore a
+budget grant and cannot write a new record, and says so with a configuration
+error before anything is sent. A supervisor that restarts must give
+`reattach_with` the lease (`.with_lease(ttl)`) of a child it started with one:
+renewal restarts from the moment the handle exists, and the lease the child
+was granted lapses after its time to live without it.
 
 ## A crashed parent: leases
 

@@ -219,38 +219,11 @@ impl Delegation {
 
 #[cfg(test)]
 mod tests {
+    use super::super::testing::parked;
     use super::*;
 
     fn ms(n: u64) -> Duration {
         Duration::from_millis(n)
-    }
-
-    fn parked() -> Delegation {
-        let client = std::sync::Arc::new(
-            crate::ClientBuilder::new("http://127.0.0.1:9")
-                .build()
-                .expect("a client"),
-        );
-        Delegation {
-            client,
-            tenant: None,
-            stream: None,
-            task_id: Some("child".into()),
-            settled: None,
-            armed: false,
-            id_wait: DEFAULT_ID_WAIT,
-            renewal: None,
-            budget: None,
-            idempotency_key: None,
-            origin: Origin::current(),
-            resume_policy: ResumePolicy::default(),
-            last_event_id: None,
-            streak: 0,
-            resumed_at: None,
-            opened_at: None,
-            events_since_open: 0,
-            journal: None,
-        }
     }
 
     #[tokio::test(start_paused = true)]
