@@ -183,6 +183,12 @@ impl Delegation {
     /// [`PROGRESS_EVERY`] unless `force`: the delegation matters more than
     /// its record.
     pub(super) async fn note_progress(&mut self, force: bool) {
+        self.write_progress(force, Instant::now() + WRITE_BOUND)
+            .await;
+    }
+
+    /// [`note_progress`](Self::note_progress), given up on at `deadline`.
+    async fn write_progress(&mut self, force: bool, deadline: Instant) {
         let Some(j) = self.journal.as_mut() else {
             return;
         };
@@ -196,8 +202,8 @@ impl Delegation {
         if !force && (!ripe || waiting) {
             return;
         }
-        let written = tokio::time::timeout(
-            WRITE_BOUND,
+        let written = tokio::time::timeout_at(
+            deadline,
             j.journal.progress(
                 &j.id,
                 self.task_id.as_deref(),
@@ -224,20 +230,20 @@ impl Delegation {
     }
 
     /// Settles the record with `outcome`. A write that fails or does not
-    /// answer within [`WRITE_BOUND`] is logged: the record stays open, and a
-    /// restarted supervisor will find the child already settled when it
-    /// reattaches. The two writes at the end, the last position and the
-    /// outcome, hold the delegation up for twice the bound at most.
+    /// answer is logged: the record stays open, and a restarted supervisor
+    /// will find the child already settled when it reattaches. The two writes
+    /// at the end, the last position and the outcome, share one deadline of
+    /// [`WRITE_BOUND`] from the start, so a journal that has stopped answering
+    /// holds the delegation up for that long and no longer; a journal that
+    /// answers the outcome after a position that timed out still settles.
     pub(super) async fn note_settled(&mut self, outcome: &Outcome) {
-        self.note_progress(true).await;
+        let deadline = Instant::now() + WRITE_BOUND;
+        self.write_progress(true, deadline).await;
         let Some(j) = self.journal.take() else {
             return;
         };
-        match tokio::time::timeout(
-            WRITE_BOUND,
-            j.journal.settle(&j.id, label(outcome), now_ms()),
-        )
-        .await
+        match tokio::time::timeout_at(deadline, j.journal.settle(&j.id, label(outcome), now_ms()))
+            .await
         {
             Ok(Ok(())) => {}
             Ok(Err(_e)) => {

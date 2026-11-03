@@ -1363,8 +1363,9 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   again for the 2 s progress interval unless it is the one at the end; the
   record written before the first send fails the start with
   `ClientError::Timeout` and sends nothing. The two writes at the end of a
-  delegation hold it up for twice the bound at most. Seven tests in paused
-  time pin each bound to the millisecond.
+  delegation share one deadline of that bound, so a journal that has stopped
+  answering holds the delegation up for 5 s there and no longer. The tests run
+  in paused time and pin each bound to the millisecond.
 - **`AuthFailureThrottle`'s per-replica budget is documented** (audit E-F15,
   interim): the counts are per process, so N replicas behind a balancer give a
   peer up to N times `max_failures` guesses a window. The throttling page and
