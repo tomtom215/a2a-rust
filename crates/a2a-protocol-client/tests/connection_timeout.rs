@@ -65,11 +65,7 @@ async fn a_connect_that_never_completes_fails_at_the_connection_timeout() {
         let started = Instant::now();
         let result = tokio::time::timeout(
             Duration::from_secs(20),
-            client.get_task(TaskQueryParams {
-                tenant: None,
-                id: "t".into(),
-                history_length: None,
-            }),
+            client.get_task(TaskQueryParams::new("t")),
         )
         .await
         .expect("the call ended on its own, well before the 30 s request timeout");

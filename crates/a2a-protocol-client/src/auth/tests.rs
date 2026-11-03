@@ -239,11 +239,7 @@ async fn an_api_key_goes_where_the_scheme_says() {
     let store: Arc<dyn CredentialsStore> = Arc::new(InMemoryCredentialsStore::new());
     let session = SessionId::new("s");
     store.set(session.clone(), "api-key", "k-1".into());
-    let scheme = |location, name: &str| ApiKeySecurityScheme {
-        location,
-        name: name.into(),
-        description: None,
-    };
+    let scheme = |location, name: &str| ApiKeySecurityScheme::new(location, name);
 
     let header = AuthInterceptor::api_key(
         Arc::clone(&store),
@@ -310,11 +306,7 @@ async fn a_query_api_key_is_one_query_parameter() {
         store,
         session,
         "api-key",
-        &ApiKeySecurityScheme {
-            location: ApiKeyLocation::Query,
-            name: "key".into(),
-            description: None,
-        },
+        &ApiKeySecurityScheme::new(ApiKeyLocation::Query, "key"),
     )
     .expect("a query key");
     let mut req = ClientRequest::new("GetTask", serde_json::Value::Null);

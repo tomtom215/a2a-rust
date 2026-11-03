@@ -171,15 +171,14 @@ fn served(sign: bool) -> Served {
 
 fn send(text: &str) -> MessageSendParams {
     let mut params = MessageSendParams::new(Message::user_text("u-1", text));
-    params.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: Vec::new(),
-        task_push_notification_config: Some(TaskPushNotificationConfig::new(
-            "",
-            "https://hooks.example/push",
-        )),
-        history_length: None,
-        return_immediately: None,
-    });
+    params.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(Vec::new())
+            .with_task_push_notification_config(TaskPushNotificationConfig::new(
+                "",
+                "https://hooks.example/push",
+            )),
+    );
     params
 }
 
@@ -298,14 +297,7 @@ async fn what_unary_calls_return_verifies_and_the_stored_artifact_verifies_whole
 
     let got = s
         .handler
-        .on_get_task(
-            TaskQueryParams {
-                tenant: None,
-                id: task.id.0.clone(),
-                history_length: None,
-            },
-            None,
-        )
+        .on_get_task(TaskQueryParams::new(task.id.0.clone()), None)
         .await
         .expect("get");
     let got = wire(&got);
@@ -321,13 +313,7 @@ async fn what_unary_calls_return_verifies_and_the_stored_artifact_verifies_whole
 
     let page = s
         .handler
-        .on_list_tasks(
-            ListTasksParams {
-                include_artifacts: Some(true),
-                ..ListTasksParams::default()
-            },
-            None,
-        )
+        .on_list_tasks(ListTasksParams::new().with_include_artifacts(true), None)
         .await
         .expect("list");
     let page = wire(&page);
@@ -348,13 +334,7 @@ async fn a_cancel_and_a_subscription_verify() {
 
     let mut reader = s
         .handler
-        .on_resubscribe(
-            TaskIdParams {
-                tenant: None,
-                id: parked.id.0.clone(),
-            },
-            None,
-        )
+        .on_resubscribe(TaskIdParams::new(parked.id.0.clone()), None)
         .await
         .expect("subscribe");
     // The snapshot is the first frame; the task waits, so read just that.
@@ -367,14 +347,7 @@ async fn a_cancel_and_a_subscription_verify() {
 
     let canceled = s
         .handler
-        .on_cancel_task(
-            CancelTaskParams {
-                tenant: None,
-                id: parked.id.0.clone(),
-                metadata: None,
-            },
-            None,
-        )
+        .on_cancel_task(CancelTaskParams::new(parked.id.0.clone()), None)
         .await
         .expect("cancel");
     assert_eq!(canceled.status.state, TaskState::Canceled);

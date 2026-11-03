@@ -44,11 +44,7 @@ async fn push_config_crud_lifecycle() {
     let config_id = created.id.clone().unwrap();
 
     // Get push config.
-    let get_params = GetPushConfigParams {
-        tenant: None,
-        task_id: task_id.clone(),
-        id: config_id.clone(),
-    };
+    let get_params = GetPushConfigParams::new(task_id.clone(), config_id.clone());
     let fetched = handler
         .on_get_push_config(get_params, None)
         .await
@@ -71,11 +67,7 @@ async fn push_config_crud_lifecycle() {
     );
 
     // Delete push config.
-    let delete_params = DeletePushConfigParams {
-        tenant: None,
-        task_id: task_id.clone(),
-        id: config_id,
-    };
+    let delete_params = DeletePushConfigParams::new(task_id.clone(), config_id);
     handler
         .on_delete_push_config(delete_params, None)
         .await
@@ -117,11 +109,7 @@ async fn get_push_config_not_found() {
         .build()
         .expect("build handler");
 
-    let params = GetPushConfigParams {
-        tenant: None,
-        task_id: "task-1".into(),
-        id: "nonexistent".into(),
-    };
+    let params = GetPushConfigParams::new("task-1", "nonexistent");
     let err = handler.on_get_push_config(params, None).await.unwrap_err();
     assert!(
         matches!(err, a2a_protocol_server::ServerError::TaskNotFound(_)),

@@ -332,11 +332,9 @@ fn bench_full_e2e_orchestration(c: &mut Criterion) {
 
                 // Step 5: Get specific task by ID
                 let _ = client
-                    .get_task(a2a_protocol_types::params::TaskQueryParams {
-                        tenant: None,
-                        id: task_id_a.clone(),
-                        history_length: None,
-                    })
+                    .get_task(a2a_protocol_types::params::TaskQueryParams::new(
+                        task_id_a.clone(),
+                    ))
                     .await
                     .expect("step 5: get_task");
 
@@ -445,12 +443,8 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
             let client = &client;
             let task_id = &task_id;
             async move {
-                let params = a2a_protocol_types::params::ListPushConfigsParams {
-                    tenant: None,
-                    task_id: task_id.to_string(),
-                    page_size: None,
-                    page_token: None,
-                };
+                let params =
+                    a2a_protocol_types::params::ListPushConfigsParams::new(task_id.to_string());
                 client
                     .list_push_configs(params)
                     .await
@@ -533,11 +527,9 @@ fn bench_agent_burst(c: &mut Criterion) {
                             // Get
                             if let SendMessageResponse::Task(task) = &resp {
                                 let _ = client
-                                    .get_task(a2a_protocol_types::params::TaskQueryParams {
-                                        tenant: None,
-                                        id: task.id.to_string(),
-                                        history_length: None,
-                                    })
+                                    .get_task(a2a_protocol_types::params::TaskQueryParams::new(
+                                        task.id.to_string(),
+                                    ))
                                     .await;
                             }
                             // List
@@ -650,11 +642,9 @@ fn bench_agent_burst_client_sharing(c: &mut Criterion) {
                                     .expect("send");
                                 if let SendMessageResponse::Task(task) = &resp {
                                     let _ = client
-                                        .get_task(a2a_protocol_types::params::TaskQueryParams {
-                                            tenant: None,
-                                            id: task.id.to_string(),
-                                            history_length: None,
-                                        })
+                                        .get_task(a2a_protocol_types::params::TaskQueryParams::new(
+                                            task.id.to_string(),
+                                        ))
                                         .await;
                                 }
                                 let _ = client

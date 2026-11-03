@@ -106,14 +106,7 @@ async fn a_cancel_the_hook_does_not_write_still_ends_the_stream() {
     let (task_id, stream) = working_stream(&handler).await;
 
     let task = handler
-        .on_cancel_task(
-            CancelTaskParams {
-                tenant: None,
-                id: task_id.0.clone(),
-                metadata: None,
-            },
-            None,
-        )
+        .on_cancel_task(CancelTaskParams::new(task_id.0.clone()), None)
         .await
         .expect("cancel");
     assert_eq!(task.status.state, TaskState::Canceled);
@@ -126,25 +119,12 @@ async fn a_cancel_the_hook_does_not_write_ends_a_subscription() {
     let handler = handler();
     let (task_id, stream) = working_stream(&handler).await;
     let subscription = handler
-        .on_resubscribe(
-            TaskIdParams {
-                tenant: None,
-                id: task_id.0.clone(),
-            },
-            None,
-        )
+        .on_resubscribe(TaskIdParams::new(task_id.0.clone()), None)
         .await
         .expect("subscribe");
 
     handler
-        .on_cancel_task(
-            CancelTaskParams {
-                tenant: None,
-                id: task_id.0.clone(),
-                metadata: None,
-            },
-            None,
-        )
+        .on_cancel_task(CancelTaskParams::new(task_id.0.clone()), None)
         .await
         .expect("cancel");
     assert_eq!(last_state(subscription).await, Some(TaskState::Canceled));

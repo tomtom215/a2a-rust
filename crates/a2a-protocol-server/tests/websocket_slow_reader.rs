@@ -97,16 +97,11 @@ impl AgentExecutor for FloodExecutor {
 }
 
 fn request(id: &str, method: &str) -> WsMessage {
-    let params = MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(format!("msg-{id}")),
-            MessageRole::User,
-            vec![Part::text("go")],
-        ),
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(Message::new(
+        MessageId::new(format!("msg-{id}")),
+        MessageRole::User,
+        vec![Part::text("go")],
+    ));
     let rpc = JsonRpcRequest::with_params(
         serde_json::json!(id),
         method,

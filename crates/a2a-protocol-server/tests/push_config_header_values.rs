@@ -68,10 +68,8 @@ fn config(
 ) -> TaskPushNotificationConfig {
     let mut config = TaskPushNotificationConfig::new(task, "http://127.0.0.1:9/hook");
     config.token = token.map(str::to_owned);
-    config.authentication = credentials.map(|c| AuthenticationInfo {
-        scheme: "Bearer".into(),
-        credentials: Some(c.to_owned()),
-    });
+    config.authentication =
+        credentials.map(|c| AuthenticationInfo::new("Bearer").with_credentials(c.to_owned()));
     config
 }
 

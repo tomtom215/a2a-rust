@@ -96,10 +96,7 @@ async fn task_list_basic() -> A2aResult<()> {
     assert_eq!(all.tasks.len(), 3);
 
     let filtered = store
-        .list(&ListTasksParams {
-            context_id: Some("ctx1".into()),
-            ..Default::default()
-        })
+        .list(&ListTasksParams::new().with_context_id("ctx1"))
         .await?;
     assert_eq!(filtered.tasks.len(), 2);
     Ok(())
@@ -113,20 +110,17 @@ async fn task_list_pagination() -> A2aResult<()> {
     }
 
     let page1 = store
-        .list(&ListTasksParams {
-            page_size: Some(2),
-            ..Default::default()
-        })
+        .list(&ListTasksParams::new().with_page_size(2))
         .await?;
     assert_eq!(page1.tasks.len(), 2);
     assert!(!page1.next_page_token.is_empty());
 
     let page2 = store
-        .list(&ListTasksParams {
-            page_size: Some(2),
-            page_token: Some(page1.next_page_token),
-            ..Default::default()
-        })
+        .list(
+            &ListTasksParams::new()
+                .with_page_size(2)
+                .with_page_token(page1.next_page_token),
+        )
         .await?;
     assert_eq!(page2.tasks.len(), 2);
     Ok(())
@@ -266,10 +260,7 @@ async fn a_status_delta_updates_the_state_column_list_filters_on() -> A2aResult<
     // `state` is a column, not just a field inside `data`. A delta that
     // rewrote only the document would leave `list` filtering on the old value.
     let completed = store
-        .list(&ListTasksParams {
-            status: Some(TaskState::Completed),
-            ..Default::default()
-        })
+        .list(&ListTasksParams::new().with_status(TaskState::Completed))
         .await?;
     assert_eq!(
         completed.tasks.len(),

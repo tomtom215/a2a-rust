@@ -170,10 +170,7 @@ async fn cancel_run(swarm: &Swarm, jobs: usize) -> serde_json::Value {
     let mut roots = Vec::new();
     for sup in &swarm.supervisors {
         let mut p = batch(&vec!["sleep:20000".to_owned(); per]);
-        p.configuration = Some(SendMessageConfiguration {
-            return_immediately: Some(true),
-            ..Default::default()
-        });
+        p.configuration = Some(SendMessageConfiguration::new().with_return_immediately(true));
         match sup.send_message(p).await.expect("submit") {
             SendMessageResponse::Task(t) => roots.push((sup.clone(), t.id.to_string())),
             other => panic!("expected a task, got {other:?}"),

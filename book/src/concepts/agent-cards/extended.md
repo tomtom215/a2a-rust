@@ -31,11 +31,7 @@ let public = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http:/
     .with_security_schemes(std::collections::HashMap::from([(
         "bearer".to_owned(),
         a2a_protocol_types::security::SecurityScheme::Http(
-            a2a_protocol_types::security::HttpAuthSecurityScheme {
-                scheme: "Bearer".to_owned(),
-                description: None,
-                bearer_format: None,
-            },
+            a2a_protocol_types::security::HttpAuthSecurityScheme::new("Bearer".to_owned()),
         ),
     )]));
 let extended = public
@@ -126,11 +122,7 @@ let public = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http:/
     .with_security_schemes(std::collections::HashMap::from([(
         "bearer".to_owned(),
         a2a_protocol_types::security::SecurityScheme::Http(
-            a2a_protocol_types::security::HttpAuthSecurityScheme {
-                scheme: "Bearer".to_owned(),
-                description: None,
-                bearer_format: None,
-            },
+            a2a_protocol_types::security::HttpAuthSecurityScheme::new("Bearer".to_owned()),
         ),
     )]));
 let extended = public

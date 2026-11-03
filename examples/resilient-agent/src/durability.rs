@@ -118,11 +118,7 @@ mod sqlite {
 
     async fn get(client: &A2aClient, id: &str) -> Result<Task, String> {
         client
-            .get_task(TaskQueryParams {
-                tenant: None,
-                id: id.to_owned(),
-                history_length: None,
-            })
+            .get_task(TaskQueryParams::new(id.to_owned()))
             .await
             .map_err(|e| format!("GetTask {id}: {e}"))
     }
@@ -256,12 +252,7 @@ mod sqlite {
         }
 
         let configs = client_b
-            .list_push_configs(ListPushConfigsParams {
-                tenant: None,
-                task_id: task_id.clone(),
-                page_size: None,
-                page_token: None,
-            })
+            .list_push_configs(ListPushConfigsParams::new(task_id.clone()))
             .await
             .map_err(|e| format!("B: ListTaskPushNotificationConfigs: {e}"))?;
         let urls: Vec<&str> = configs.configs.iter().map(|c| c.url.as_str()).collect();

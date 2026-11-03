@@ -142,11 +142,10 @@ pub fn send(
 
 /// `params`, answered as soon as the task exists (`returnImmediately`).
 pub fn immediately(mut params: MessageSendParams) -> MessageSendParams {
-    params.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: Vec::new(),
-        task_push_notification_config: None,
-        history_length: None,
-        return_immediately: Some(true),
-    });
+    params.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(Vec::new())
+            .with_return_immediately(true),
+    );
     params
 }

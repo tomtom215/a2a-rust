@@ -41,11 +41,7 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
     // Step 2: Get the task by ID.
     let fetched = handler
         .on_get_task(
-            a2a_protocol_types::params::TaskQueryParams {
-                tenant: None,
-                id: task_id.0.clone(),
-                history_length: None,
-            },
+            a2a_protocol_types::params::TaskQueryParams::new(task_id.0.clone()),
             None,
         )
         .await
@@ -59,19 +55,7 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
 
     // Step 3: List tasks -- should include our task.
     let list = handler
-        .on_list_tasks(
-            ListTasksParams {
-                tenant: None,
-                context_id: None,
-                status: None,
-                page_size: None,
-                page_token: None,
-                status_timestamp_after: None,
-                include_artifacts: None,
-                history_length: None,
-            },
-            None,
-        )
+        .on_list_tasks(ListTasksParams::new(), None)
         .await
         .expect("list tasks");
     assert!(
@@ -83,11 +67,7 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
     // Step 4: Cancel a completed task -- should fail with TaskNotCancelable.
     let cancel_err = handler
         .on_cancel_task(
-            a2a_protocol_types::params::CancelTaskParams {
-                tenant: None,
-                id: task_id.0.clone(),
-                metadata: None,
-            },
+            a2a_protocol_types::params::CancelTaskParams::new(task_id.0.clone()),
             None,
         )
         .await
@@ -144,19 +124,7 @@ async fn full_handler_lifecycle_with_streaming() {
 
     // After the stream is exhausted, list tasks to verify the task was stored.
     let list = handler
-        .on_list_tasks(
-            ListTasksParams {
-                tenant: None,
-                context_id: None,
-                status: None,
-                page_size: None,
-                page_token: None,
-                status_timestamp_after: None,
-                include_artifacts: None,
-                history_length: None,
-            },
-            None,
-        )
+        .on_list_tasks(ListTasksParams::new(), None)
         .await
         .expect("list tasks");
     assert!(

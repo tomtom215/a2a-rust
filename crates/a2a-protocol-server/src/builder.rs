@@ -2039,11 +2039,7 @@ mod tests {
             let mut card = crate::agent_card::caching::tests::minimal_agent_card();
             card.security_schemes = Some(std::collections::HashMap::from([(
                 "bearer".to_owned(),
-                SecurityScheme::Http(HttpAuthSecurityScheme {
-                    scheme: scheme.to_owned(),
-                    bearer_format: None,
-                    description: None,
-                }),
+                SecurityScheme::Http(HttpAuthSecurityScheme::new(scheme.to_owned())),
             )]));
             card
         };
@@ -2340,11 +2336,10 @@ mod tests {
     }
 
     fn a_signature() -> a2a_protocol_types::extensions::AgentCardSignature {
-        a2a_protocol_types::extensions::AgentCardSignature {
-            protected: "eyJhbGciOiJFUzI1NiJ9".to_owned(),
-            signature: "c2ln".to_owned(),
-            header: None,
-        }
+        a2a_protocol_types::extensions::AgentCardSignature::new(
+            "eyJhbGciOiJFUzI1NiJ9".to_owned(),
+            "c2ln".to_owned(),
+        )
     }
 
     /// The defect this guards: `build()` used to append its advertisements to

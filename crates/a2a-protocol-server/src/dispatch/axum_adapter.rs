@@ -738,10 +738,11 @@ async fn handle_get_task_inner(
     history_length: Option<u32>,
     hdrs: &HashMap<String, String>,
 ) -> axum::response::Response {
-    let params = a2a_protocol_types::params::TaskQueryParams {
-        tenant,
-        id: id.to_owned(),
-        history_length,
+    let params = {
+        let mut built = a2a_protocol_types::params::TaskQueryParams::new(id.to_owned());
+        built.tenant = tenant;
+        built.history_length = history_length;
+        built
     };
     match state.handler.on_get_task(params, Some(hdrs)).await {
         Ok(task) => a2a_json(&task),
@@ -849,10 +850,13 @@ async fn handle_get_push_config_inner(
     tenant: Option<String>,
     hdrs: &HashMap<String, String>,
 ) -> axum::response::Response {
-    let params = a2a_protocol_types::params::GetPushConfigParams {
-        tenant,
-        task_id: task_id.to_owned(),
-        id: config_id.to_owned(),
+    let params = {
+        let mut built = a2a_protocol_types::params::GetPushConfigParams::new(
+            task_id.to_owned(),
+            config_id.to_owned(),
+        );
+        built.tenant = tenant;
+        built
     };
     match state.handler.on_get_push_config(params, Some(hdrs)).await {
         Ok(config) => a2a_json(&config),
@@ -891,10 +895,13 @@ async fn handle_delete_push_config_inner(
     tenant: Option<String>,
     hdrs: &HashMap<String, String>,
 ) -> axum::response::Response {
-    let params = a2a_protocol_types::params::DeletePushConfigParams {
-        tenant,
-        task_id: task_id.to_owned(),
-        id: config_id.to_owned(),
+    let params = {
+        let mut built = a2a_protocol_types::params::DeletePushConfigParams::new(
+            task_id.to_owned(),
+            config_id.to_owned(),
+        );
+        built.tenant = tenant;
+        built
     };
     match state
         .handler

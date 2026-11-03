@@ -58,10 +58,7 @@ fn page(
     // proto3 reads 0 as unset; the gRPC conversion already does.
     let page_size = page_size.filter(|&n| n > 0);
     if page_size.is_none() && after.is_none() {
-        return ListPushConfigsResponse {
-            configs,
-            next_page_token: None,
-        };
+        return ListPushConfigsResponse::new(configs);
     }
     configs.sort_by(|a, b| a.id.cmp(&b.id));
     if let Some(after) = after {
@@ -72,9 +69,10 @@ fn page(
         .then(|| configs[size - 1].id.as_deref().map(encode_token))
         .flatten();
     configs.truncate(size);
-    ListPushConfigsResponse {
-        configs,
-        next_page_token,
+    {
+        let mut built = ListPushConfigsResponse::new(configs);
+        built.next_page_token = next_page_token;
+        built
     }
 }
 

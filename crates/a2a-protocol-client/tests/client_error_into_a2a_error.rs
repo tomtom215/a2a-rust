@@ -185,13 +185,7 @@ impl AgentExecutor for DelegatingExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let client = ClientBuilder::new(self.downstream.as_str()).build()?;
-            let _task = client
-                .get_task(TaskQueryParams {
-                    tenant: None,
-                    id: "t-1".into(),
-                    history_length: None,
-                })
-                .await?;
+            let _task = client.get_task(TaskQueryParams::new("t-1")).await?;
             Ok(())
         })
     }

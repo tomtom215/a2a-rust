@@ -41,10 +41,7 @@ async fn a_replay_longer_than_the_limit_is_read_in_pages() {
 
     let reader = handler
         .on_resubscribe(
-            TaskIdParams {
-                id: task_id.0.clone(),
-                tenant: None,
-            },
+            TaskIdParams::new(task_id.0.clone()),
             Some(&header("last-event-id", "0")),
         )
         .await

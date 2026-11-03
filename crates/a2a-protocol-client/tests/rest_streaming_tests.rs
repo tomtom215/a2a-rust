@@ -103,16 +103,11 @@ fn agent_card(url: &str) -> AgentCard {
 }
 
 fn send_params() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("msg-1"),
-            MessageRole::User,
-            vec![Part::text("hello")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("msg-1"),
+        MessageRole::User,
+        vec![Part::text("hello")],
+    ))
 }
 
 async fn start_rest_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {
@@ -257,11 +252,7 @@ async fn rest_get_task_roundtrip() {
     };
 
     // Fetch it back via get_task.
-    let params = a2a_protocol_types::TaskQueryParams {
-        tenant: None,
-        id: task_id.0.clone(),
-        history_length: None,
-    };
+    let params = a2a_protocol_types::TaskQueryParams::new(task_id.0.clone());
     let fetched = tokio::time::timeout(TEST_TIMEOUT, client.get_task(params))
         .await
         .expect("timed out")

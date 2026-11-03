@@ -50,16 +50,11 @@ async fn serve() -> String {
 }
 
 fn send(id: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(id),
-            MessageRole::User,
-            vec![Part::text("go")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new(id),
+        MessageRole::User,
+        vec![Part::text("go")],
+    ))
 }
 
 #[tokio::test]
@@ -75,13 +70,7 @@ async fn a_blocking_send_outlives_the_request_timeout() {
         assert!(answered.is_ok(), "{binding}: {answered:?}");
 
         // Every other call keeps the request timeout.
-        let missing = client
-            .get_task(TaskQueryParams {
-                tenant: None,
-                id: "nope".into(),
-                history_length: None,
-            })
-            .await;
+        let missing = client.get_task(TaskQueryParams::new("nope")).await;
         assert!(
             !matches!(missing, Err(ClientError::Timeout(_))),
             "{missing:?}"

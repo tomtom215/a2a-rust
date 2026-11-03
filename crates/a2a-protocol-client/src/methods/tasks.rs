@@ -147,10 +147,10 @@ impl A2aClient {
     ) -> ClientResult<Task> {
         const METHOD: &str = "CancelTask";
 
-        let params = CancelTaskParams {
-            tenant: self.tenant_or_default(tenant),
-            id,
-            metadata: None,
+        let params = {
+            let mut built = CancelTaskParams::new(id);
+            built.tenant = self.tenant_or_default(tenant);
+            built
         };
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
 
@@ -247,9 +247,10 @@ impl A2aClient {
         const METHOD: &str = "SubscribeToTask";
         self.require_declared(crate::declared::Capability::Streaming, METHOD)?;
 
-        let params = TaskIdParams {
-            tenant: self.tenant_or_default(tenant),
-            id,
+        let params = {
+            let mut built = TaskIdParams::new(id);
+            built.tenant = self.tenant_or_default(tenant);
+            built
         };
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
 
@@ -355,11 +356,7 @@ mod tests {
         let transport = MockTransport::new(task_json());
         let client = make_client(transport);
 
-        let params = TaskQueryParams {
-            tenant: None,
-            id: "task-1".into(),
-            history_length: None,
-        };
+        let params = TaskQueryParams::new("task-1");
         let task = client.get_task(params).await.unwrap();
         assert_eq!(task.id.as_ref(), "task-1");
     }

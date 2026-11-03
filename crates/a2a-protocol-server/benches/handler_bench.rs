@@ -94,16 +94,9 @@ fn bench_task_store_list(c: &mut Criterion) {
         rt.block_on(store.save(&task)).unwrap();
     }
 
-    let params = ListTasksParams {
-        tenant: None,
-        context_id: Some("ctx-even".into()),
-        status: None,
-        page_size: Some(50),
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    };
+    let params = ListTasksParams::new()
+        .with_context_id("ctx-even")
+        .with_page_size(50);
 
     c.bench_function("task_store_list_filtered", |b| {
         b.iter(|| {

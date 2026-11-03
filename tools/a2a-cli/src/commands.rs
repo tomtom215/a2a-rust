@@ -64,9 +64,8 @@ pub async fn card(opts: &GlobalOpts, url: &str) -> Result<(), CliError> {
 /// The `SendMessage` parameters for `args`: one user message with a single
 /// text part and a fresh id.
 fn send_params(args: &SendArgs) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: {
+    {
+        let mut built = MessageSendParams::new({
             let mut built = Message::new(
                 MessageId::new(uuid::Uuid::new_v4().to_string()),
                 MessageRole::User,
@@ -75,12 +74,11 @@ fn send_params(args: &SendArgs) -> MessageSendParams {
             built.task_id = args.task_id.clone().map(TaskId::new);
             built.context_id = args.context_id.clone().map(ContextId::new);
             built
-        },
-        configuration: args.no_wait.then(|| SendMessageConfiguration {
-            return_immediately: Some(true),
-            ..SendMessageConfiguration::default()
-        }),
-        metadata: None,
+        });
+        built.configuration = args
+            .no_wait
+            .then(|| SendMessageConfiguration::new().with_return_immediately(true));
+        built
     }
 }
 
@@ -164,11 +162,7 @@ pub async fn task_subscribe(
 pub async fn task_get(opts: &GlobalOpts, url: &str, task_id: &str) -> Result<(), CliError> {
     let client = connect(url, opts).await?;
     let task = client
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: task_id.to_owned(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new(task_id.to_owned()))
         .await?;
     print_pretty(&task)
 }
@@ -183,14 +177,11 @@ pub async fn task_cancel(opts: &GlobalOpts, url: &str, task_id: &str) -> Result<
 /// `a2a task list <url>`
 pub async fn task_list(opts: &GlobalOpts, args: &ListArgs) -> Result<(), CliError> {
     let client = connect(&args.url, opts).await?;
-    let page = client
-        .list_tasks(ListTasksParams {
-            context_id: args.context_id.clone(),
-            page_size: args.page_size,
-            page_token: args.page_token.clone(),
-            ..ListTasksParams::default()
-        })
-        .await?;
+    let mut params = ListTasksParams::new();
+    params.context_id.clone_from(&args.context_id);
+    params.page_size = args.page_size;
+    params.page_token.clone_from(&args.page_token);
+    let page = client.list_tasks(params).await?;
     print_pretty(&page)
 }
 

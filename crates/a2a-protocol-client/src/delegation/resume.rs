@@ -227,15 +227,9 @@ impl Delegation {
     /// terminal task cannot be subscribed to makes this the usual reason a
     /// resubscription is refused.
     async fn state_of(&self, id: &str) -> Option<Outcome> {
-        let task = self
-            .client
-            .get_task(TaskQueryParams {
-                tenant: self.tenant.clone(),
-                id: id.to_owned(),
-                history_length: Some(0),
-            })
-            .await
-            .ok()?;
+        let mut query = TaskQueryParams::new(id).with_history_length(0);
+        query.tenant.clone_from(&self.tenant);
+        let task = self.client.get_task(query).await.ok()?;
         Outcome::of(task.status)
     }
 

@@ -112,16 +112,11 @@ fn local_non_loopback_ip() -> std::net::Ipv4Addr {
 }
 
 fn send_params() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("m-1"),
-            MessageRole::User,
-            vec![Part::text("hello")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("m-1"),
+        MessageRole::User,
+        vec![Part::text("hello")],
+    ))
 }
 
 async fn assert_round_trip(client: &A2aClient, what: &str) {

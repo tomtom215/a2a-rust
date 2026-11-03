@@ -150,12 +150,12 @@ fn arb_scopes() -> impl Strategy<Value = Scopes> {
 }
 
 fn to_requirement(scopes: &Scopes) -> SecurityRequirement {
-    SecurityRequirement {
-        schemes: scopes
+    SecurityRequirement::new(
+        scopes
             .iter()
-            .map(|(k, v)| (k.clone(), StringList { list: v.clone() }))
+            .map(|(k, v)| (k.clone(), StringList::new(v.clone())))
             .collect(),
-    }
+    )
 }
 
 fn from_requirement(req: &SecurityRequirement) -> Scopes {

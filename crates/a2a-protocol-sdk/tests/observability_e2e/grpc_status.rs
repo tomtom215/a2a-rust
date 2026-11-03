@@ -24,11 +24,7 @@ use crate::fixtures::{STORE_DOWN, attr};
 pub async fn run(client: &A2aClient) {
     for id in ["no-such-task", STORE_DOWN] {
         let _ = client
-            .get_task(TaskQueryParams {
-                tenant: None,
-                id: id.to_owned(),
-                history_length: None,
-            })
+            .get_task(TaskQueryParams::new(id.to_owned()))
             .await
             .expect_err("both fail");
     }

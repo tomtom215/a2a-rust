@@ -65,10 +65,8 @@ pub async fn send(client: &A2aClient, text: &str) -> Result<Task, String> {
 
 /// Starts a task that stays `WORKING` until canceled.
 pub async fn hold(client: &A2aClient) -> Result<Task, String> {
-    let held = params(HOLD).with_configuration(SendMessageConfiguration {
-        return_immediately: Some(true),
-        ..Default::default()
-    });
+    let held = params(HOLD)
+        .with_configuration(SendMessageConfiguration::new().with_return_immediately(true));
     match client
         .send_message(held)
         .await
@@ -134,12 +132,7 @@ pub async fn sweep(client: &A2aClient) -> Result<(), String> {
         .await
         .map_err(fail("GetTaskPushNotificationConfig"))?;
     let configs = client
-        .list_push_configs(ListPushConfigsParams {
-            task_id: id.clone(),
-            page_size: None,
-            page_token: None,
-            tenant: None,
-        })
+        .list_push_configs(ListPushConfigsParams::new(id.clone()))
         .await
         .map_err(fail("ListTaskPushNotificationConfigs"))?;
     if configs.configs.len() != 1 {

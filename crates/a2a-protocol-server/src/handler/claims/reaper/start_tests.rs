@@ -89,11 +89,7 @@ async fn a_request_starts_the_handlers_reaper() {
         .join()
         .unwrap()
     };
-    let query = a2a_protocol_types::params::TaskQueryParams {
-        tenant: None,
-        id: "anything".into(),
-        history_length: None,
-    };
+    let query = a2a_protocol_types::params::TaskQueryParams::new("anything");
     let _ = handler.on_get_task(query, None).await;
 
     until_reaped(&store, &orphan, "no reaper ran").await;

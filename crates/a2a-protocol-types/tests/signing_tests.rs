@@ -318,11 +318,7 @@ fn sign_and_verify_without_key_id() {
         .unwrap()
         .sign(&rng, format!("{protected}.{payload}").as_bytes());
     let signature = URL_SAFE_NO_PAD.encode(signed.unwrap().as_ref());
-    let sig = AgentCardSignature {
-        protected,
-        signature,
-        header: None,
-    };
+    let sig = AgentCardSignature::new(protected, signature);
     verify_agent_card(&card, &sig, &pub_key).unwrap();
 }
 
@@ -447,11 +443,7 @@ fn verify_rejects_empty_signature() {
     let header_bytes = serde_json::to_vec(&header).unwrap();
     let protected = URL_SAFE_NO_PAD.encode(&header_bytes);
 
-    let sig = AgentCardSignature {
-        protected,
-        signature: String::new(),
-        header: None,
-    };
+    let sig = AgentCardSignature::new(protected, String::new());
 
     let result = verify_agent_card(&card, &sig, &pub_key);
     assert!(

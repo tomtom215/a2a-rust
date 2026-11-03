@@ -67,29 +67,28 @@ fn handler_with_push() -> RequestHandler {
 fn inline_config(url: &str) -> TaskPushNotificationConfig {
     TaskPushNotificationConfig::for_url(url.to_owned())
         .with_token("validation-token".to_owned())
-        .with_authentication(AuthenticationInfo {
-            scheme: "Bearer".to_owned(),
-            credentials: Some("tck-test-token".to_owned()),
-        })
+        .with_authentication(
+            AuthenticationInfo::new("Bearer".to_owned())
+                .with_credentials("tck-test-token".to_owned()),
+        )
 }
 
 fn send_with(config: Option<TaskPushNotificationConfig>, ctx: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
+    MessageSendParams::new(
+        Message::new(
             MessageId::new(format!("msg-{ctx}")),
             MessageRole::User,
             vec![Part::text("hello")],
         )
         .with_context_id(ContextId::new(ctx)),
-        configuration: Some(SendMessageConfiguration {
-            accepted_output_modes: vec!["text/plain".to_owned()],
-            task_push_notification_config: config,
-            history_length: None,
-            return_immediately: Some(true),
-        }),
-        metadata: None,
-    }
+    )
+    .with_configuration({
+        let mut built = SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".to_owned()])
+            .with_return_immediately(true);
+        built.task_push_notification_config = config;
+        built
+    })
 }
 
 /// Extracts the task id from a `SendMessage` result.
@@ -371,10 +370,7 @@ async fn a_refused_send_leaves_nothing_findable_by_its_context() {
 
     let listed = handler
         .on_list_tasks(
-            ListTasksParams {
-                context_id: Some("ctx-orphan".to_owned()),
-                ..ListTasksParams::default()
-            },
+            ListTasksParams::new().with_context_id("ctx-orphan".to_owned()),
             None,
         )
         .await

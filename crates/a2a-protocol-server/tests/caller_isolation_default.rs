@@ -88,10 +88,7 @@ fn bearer(token: &str) -> HashMap<String, String> {
 async fn start(h: &RequestHandler, headers: &HashMap<String, String>) -> ServerResult<String> {
     let params =
         MessageSendParams::new(Message::user_text(uuid::Uuid::new_v4().to_string(), "work"))
-            .with_configuration(SendMessageConfiguration {
-                return_immediately: Some(true),
-                ..Default::default()
-            });
+            .with_configuration(SendMessageConfiguration::new().with_return_immediately(true));
     match h.on_send_message(params, false, Some(headers)).await? {
         SendMessageResult::Response(SendMessageResponse::Task(t)) => Ok(t.id.0),
         other => panic!("expected a task, got {other:?}"),

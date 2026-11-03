@@ -30,10 +30,7 @@ async fn a_resubscribe_with_last_event_id_replays_exactly_what_was_missed() {
 
     let reader = handler
         .on_resubscribe(
-            TaskIdParams {
-                id: task_id.0.clone(),
-                tenant: None,
-            },
+            TaskIdParams::new(task_id.0.clone()),
             Some(&header("last-event-id", "2")),
         )
         .await
@@ -57,10 +54,7 @@ async fn an_offset_of_zero_replays_the_whole_log() {
 
     let reader = handler
         .on_resubscribe(
-            TaskIdParams {
-                id: task_id.0.clone(),
-                tenant: None,
-            },
+            TaskIdParams::new(task_id.0.clone()),
             Some(&header("last-event-id", "0")),
         )
         .await
@@ -83,13 +77,7 @@ async fn a_resubscribe_without_the_header_replays_nothing() {
     let task_id = parked_task_with_log(&store, 3).await;
 
     let reader = handler
-        .on_resubscribe(
-            TaskIdParams {
-                id: task_id.0.clone(),
-                tenant: None,
-            },
-            None,
-        )
+        .on_resubscribe(TaskIdParams::new(task_id.0.clone()), None)
         .await
         .expect("resubscribe");
 
@@ -109,10 +97,7 @@ async fn an_unparseable_last_event_id_is_ignored_rather_than_refused() {
     for bad in ["not-a-number", "-1", "", "3.5", "99999999999999999999999"] {
         let reader = handler
             .on_resubscribe(
-                TaskIdParams {
-                    id: task_id.0.clone(),
-                    tenant: None,
-                },
+                TaskIdParams::new(task_id.0.clone()),
                 Some(&header("last-event-id", bad)),
             )
             .await
@@ -147,10 +132,7 @@ async fn a_store_without_a_log_subscribes_instead_of_failing() {
 
     let reader = handler
         .on_resubscribe(
-            TaskIdParams {
-                id: task.id.0.clone(),
-                tenant: None,
-            },
+            TaskIdParams::new(task.id.0.clone()),
             Some(&header("last-event-id", "2")),
         )
         .await
@@ -342,10 +324,7 @@ async fn a_replay_never_crosses_the_tenant_boundary() {
     // tenant-b resubscribes with an offset that would match tenant-a's log.
     let reader = handler
         .on_resubscribe(
-            TaskIdParams {
-                id: "shared-id".to_owned(),
-                tenant: Some("tenant-b".to_owned()),
-            },
+            TaskIdParams::new("shared-id".to_owned()).with_tenant("tenant-b".to_owned()),
             Some(&header("last-event-id", "0")),
         )
         .await
@@ -360,10 +339,7 @@ async fn a_replay_never_crosses_the_tenant_boundary() {
     // And the control: tenant-a asking the same thing does get its own.
     let reader = handler
         .on_resubscribe(
-            TaskIdParams {
-                id: "shared-id".to_owned(),
-                tenant: Some("tenant-a".to_owned()),
-            },
+            TaskIdParams::new("shared-id".to_owned()).with_tenant("tenant-a".to_owned()),
             Some(&header("last-event-id", "0")),
         )
         .await

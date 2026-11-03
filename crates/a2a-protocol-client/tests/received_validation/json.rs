@@ -50,11 +50,7 @@ async fn client(binding: Binding, url: &str) -> A2aClient {
 }
 
 fn query() -> TaskQueryParams {
-    TaskQueryParams {
-        tenant: None,
-        id: "t-1".into(),
-        history_length: None,
-    }
+    TaskQueryParams::new("t-1")
 }
 
 fn send() -> MessageSendParams {

@@ -354,11 +354,10 @@ pub async fn test_get_task_history_content(ctx: &TestContext) -> TestResult {
         let task_id = task.id.to_string();
         // Fetch with history.
         match client
-            .get_task(a2a_protocol_types::params::TaskQueryParams {
-                tenant: None,
-                id: task_id.clone(),
-                history_length: Some(10),
-            })
+            .get_task(
+                a2a_protocol_types::params::TaskQueryParams::new(task_id.clone())
+                    .with_history_length(10),
+            )
             .await
         {
             Ok(fetched) => {
@@ -583,11 +582,9 @@ pub async fn test_get_task_after_stream(ctx: &TestContext) -> TestResult {
                 for attempt in 0..10 {
                     tokio::time::sleep(std::time::Duration::from_millis(50 * (attempt + 1))).await;
                     if let Ok(fetched) = client
-                        .get_task(a2a_protocol_types::params::TaskQueryParams {
-                            tenant: None,
-                            id: tid.clone(),
-                            history_length: None,
-                        })
+                        .get_task(a2a_protocol_types::params::TaskQueryParams::new(
+                            tid.clone(),
+                        ))
                         .await
                     {
                         fetched_state = Some(fetched.status.state);
@@ -888,10 +885,7 @@ pub async fn test_include_artifacts_parameter(ctx: &TestContext) -> TestResult {
     }
 
     // ListTasks without includeArtifacts (default false) - artifacts should be omitted.
-    let list_params_no_artifacts = a2a_protocol_types::params::ListTasksParams {
-        include_artifacts: None, // defaults to false
-        ..Default::default()
-    };
+    let list_params_no_artifacts = a2a_protocol_types::params::ListTasksParams::new();
     let list_result = client.list_tasks(list_params_no_artifacts).await;
     match list_result {
         Ok(resp) => {
@@ -916,10 +910,8 @@ pub async fn test_include_artifacts_parameter(ctx: &TestContext) -> TestResult {
             }
 
             // ListTasks WITH includeArtifacts=true - artifacts should be present.
-            let list_params_with = a2a_protocol_types::params::ListTasksParams {
-                include_artifacts: Some(true),
-                ..Default::default()
-            };
+            let list_params_with =
+                a2a_protocol_types::params::ListTasksParams::new().with_include_artifacts(true);
             match client.list_tasks(list_params_with).await {
                 Ok(resp2) => {
                     let any_has_artifacts = resp2.tasks.iter().any(|t| t.artifacts.is_some());

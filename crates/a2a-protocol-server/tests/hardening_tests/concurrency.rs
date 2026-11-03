@@ -69,16 +69,7 @@ async fn concurrency_reads_while_writing_to_task_store() {
     for i in 0..10 {
         let s = Arc::clone(&store);
         handles.push(tokio::spawn(async move {
-            let params = ListTasksParams {
-                tenant: None,
-                context_id: None,
-                status: None,
-                page_size: Some(50),
-                page_token: None,
-                status_timestamp_after: None,
-                include_artifacts: None,
-                history_length: None,
-            };
+            let params = ListTasksParams::new().with_page_size(50);
             let result = s.list(&params).await.expect("concurrent list");
             // Should always return at least the pre-populated tasks.
             assert!(
@@ -93,16 +84,7 @@ async fn concurrency_reads_while_writing_to_task_store() {
     }
 
     // After all writes, verify total count.
-    let params = ListTasksParams {
-        tenant: None,
-        context_id: None,
-        status: None,
-        page_size: Some(50),
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    };
+    let params = ListTasksParams::new().with_page_size(50);
     let final_result = store.list(&params).await.unwrap();
     assert_eq!(
         final_result.tasks.len(),

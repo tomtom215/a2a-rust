@@ -1457,10 +1457,7 @@ mod tests {
             .await
             .expect("seed newer");
 
-        let params = ListTasksParams {
-            context_id: Some("ctx-order".to_owned()),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new().with_context_id("ctx-order".to_owned());
         let before = store.list(&params).await.expect("list");
         assert_eq!(
             before.tasks.first().map(|t| t.id.0.as_str()),
@@ -1810,10 +1807,10 @@ mod tests {
         let mut seen: Vec<String> = Vec::new();
         let mut token: Option<String> = None;
         loop {
-            let params = ListTasksParams {
-                page_size: Some(3),
-                page_token: token.clone(),
-                ..Default::default()
+            let params = {
+                let mut built = ListTasksParams::new().with_page_size(3);
+                built.page_token = token.clone();
+                built
             };
             let page = store.list(&params).await.unwrap();
             for t in &page.tasks {
@@ -1850,10 +1847,10 @@ mod tests {
         let mut token: Option<String> = None;
         let mut last_key: Option<super::OrderKey> = None;
         loop {
-            let params = ListTasksParams {
-                page_size: Some(7),
-                page_token: token.clone(),
-                ..Default::default()
+            let params = {
+                let mut built = ListTasksParams::new().with_page_size(7);
+                built.page_token = token.clone();
+                built
             };
             let page = store.list(&params).await.unwrap();
             for t in &page.tasks {
@@ -1995,20 +1992,15 @@ mod tests {
             .await
             .unwrap();
 
-        let params = ListTasksParams {
-            status_timestamp_after: Some("2026-01-02T00:00:00.000Z".into()),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new().with_status_timestamp_after("2026-01-02T00:00:00.000Z");
         let page = store.list(&params).await.unwrap();
         let ids: Vec<&str> = page.tasks.iter().map(|t| t.id.0.as_str()).collect();
         assert_eq!(ids, vec!["new", "boundary"], "the boundary is included");
 
         // Filter combined with context filter.
-        let params = ListTasksParams {
-            context_id: Some("ctx-default".into()),
-            status_timestamp_after: Some("2025-12-31T00:00:00.000Z".into()),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new()
+            .with_context_id("ctx-default")
+            .with_status_timestamp_after("2025-12-31T00:00:00.000Z");
         let page = store.list(&params).await.unwrap();
         assert_eq!(page.tasks.len(), 3, "all three are after 2025-12-31");
     }
@@ -2032,11 +2024,12 @@ mod tests {
         let mut seen = Vec::new();
         let mut token: Option<String> = None;
         loop {
-            let params = ListTasksParams {
-                status_timestamp_after: Some("2026-01-01T00:00:04.000Z".into()),
-                page_size: Some(2),
-                page_token: token,
-                ..Default::default()
+            let params = {
+                let mut built = ListTasksParams::new()
+                    .with_page_size(2)
+                    .with_status_timestamp_after("2026-01-01T00:00:04.000Z");
+                built.page_token = token;
+                built
             };
             let page = store.list(&params).await.unwrap();
             seen.extend(page.tasks.iter().map(|t| t.id.0.clone()));
@@ -2068,10 +2061,7 @@ mod tests {
             .await
             .unwrap();
 
-        let params = ListTasksParams {
-            context_id: Some("ctx-a".to_string()),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new().with_context_id("ctx-a".to_string());
         let response = store.list(&params).await.unwrap();
         assert_eq!(response.tasks.len(), 2);
         assert!(response.tasks.iter().all(|t| t.context_id.0 == "ctx-a"));
@@ -2093,10 +2083,7 @@ mod tests {
             .await
             .unwrap();
 
-        let params = ListTasksParams {
-            status: Some(TaskState::Submitted),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new().with_status(TaskState::Submitted);
         let response = store.list(&params).await.unwrap();
         assert_eq!(response.tasks.len(), 2);
     }
@@ -2111,10 +2098,7 @@ mod tests {
                 .unwrap();
         }
 
-        let params = ListTasksParams {
-            page_size: Some(2),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new().with_page_size(2);
         let page1 = store.list(&params).await.unwrap();
         assert_eq!(page1.tasks.len(), 2, "first page should have 2 tasks");
         assert!(
@@ -2123,20 +2107,16 @@ mod tests {
         );
 
         // Fetch second page using the cursor.
-        let params2 = ListTasksParams {
-            page_size: Some(2),
-            page_token: Some(page1.next_page_token),
-            ..Default::default()
-        };
+        let params2 = ListTasksParams::new()
+            .with_page_size(2)
+            .with_page_token(page1.next_page_token);
         let page2 = store.list(&params2).await.unwrap();
         assert_eq!(page2.tasks.len(), 2, "second page should have 2 tasks");
 
         // Fetch third page (should have 1 remaining task).
-        let params3 = ListTasksParams {
-            page_size: Some(2),
-            page_token: Some(page2.next_page_token),
-            ..Default::default()
-        };
+        let params3 = ListTasksParams::new()
+            .with_page_size(2)
+            .with_page_token(page2.next_page_token);
         let page3 = store.list(&params3).await.unwrap();
         assert_eq!(page3.tasks.len(), 1, "third page should have 1 task");
         assert!(
@@ -2153,10 +2133,7 @@ mod tests {
             .await
             .unwrap();
 
-        let params = ListTasksParams {
-            page_token: Some("nonexistent-cursor".to_string()),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new().with_page_token("nonexistent-cursor".to_string());
         let response = store.list(&params).await.unwrap();
         assert!(
             response.tasks.is_empty(),
@@ -2174,10 +2151,7 @@ mod tests {
                 .unwrap();
         }
 
-        let params = ListTasksParams {
-            page_size: Some(0),
-            ..Default::default()
-        };
+        let params = ListTasksParams::new().with_page_size(0);
         let response = store.list(&params).await.unwrap();
         // Default page size is 50.
         assert_eq!(

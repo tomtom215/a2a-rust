@@ -70,11 +70,7 @@ fn client(url: &str, binding: &str) -> a2a_protocol_client::A2aClient {
 }
 
 fn get_task_params() -> TaskQueryParams {
-    TaskQueryParams {
-        tenant: None,
-        id: "t-1".into(),
-        history_length: None,
-    }
+    TaskQueryParams::new("t-1")
 }
 
 /// a2a-go's exact JSON-RPC answer to a successful delete.

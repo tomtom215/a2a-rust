@@ -171,11 +171,7 @@ async fn each_call_records_its_duration_with_the_conventions_attributes() {
     let (client, reader, _provider, port) = client().await;
     let port = port.to_string();
     client.send_message(send()).await.expect("send");
-    let missing = TaskQueryParams {
-        tenant: None,
-        id: "no-such-task".into(),
-        history_length: None,
-    };
+    let missing = TaskQueryParams::new("no-such-task");
     client.get_task(missing).await.expect_err("unknown task");
 
     let mut seen: Vec<_> = points(&reader)
@@ -413,11 +409,7 @@ impl crate::transport::Transport for Garbage {
 async fn a_response_that_does_not_decode_is_recorded_as_failed() {
     let (client, reader, _provider) =
         instrumented(ClientBuilder::new("http://127.0.0.1:9").with_custom_transport(Garbage));
-    let missing = TaskQueryParams {
-        tenant: None,
-        id: "t".into(),
-        history_length: None,
-    };
+    let missing = TaskQueryParams::new("t");
     client.get_task(missing).await.expect_err("does not decode");
     assert_eq!(only_error_type(&reader).as_deref(), Some("serialization"));
 }

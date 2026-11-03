@@ -48,16 +48,12 @@ impl AgentExecutor for SleepyExecutor {
 }
 
 fn params_for(tenant: &str) -> MessageSendParams {
-    MessageSendParams {
-        message: Message::new(
-            MessageId::new("msg-1"),
-            MessageRole::User,
-            vec![Part::text("hello")],
-        ),
-        configuration: None,
-        metadata: None,
-        tenant: Some(tenant.to_owned()),
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("msg-1"),
+        MessageRole::User,
+        vec![Part::text("hello")],
+    ))
+    .with_tenant(tenant.to_owned())
 }
 
 fn config_with(tenant: &str, limits: TenantLimits) -> PerTenantConfig {

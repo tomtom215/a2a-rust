@@ -80,11 +80,7 @@ async fn refused(h: &RequestHandler, tenant: &str) -> bool {
 }
 
 async fn state(h: &RequestHandler, tenant: &str, id: &str) -> Option<TaskState> {
-    let q = TaskQueryParams {
-        tenant: Some(tenant.to_owned()),
-        id: id.to_owned(),
-        history_length: None,
-    };
+    let q = TaskQueryParams::new(id.to_owned()).with_tenant(tenant.to_owned());
     h.on_get_task(q, None).await.ok().map(|t| t.status.state)
 }
 

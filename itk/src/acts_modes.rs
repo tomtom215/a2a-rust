@@ -79,18 +79,19 @@ pub(crate) fn security() -> (
     Option<NamedSecuritySchemes>,
     Option<Vec<SecurityRequirement>>,
 ) {
-    let scheme = SecurityScheme::Http(HttpAuthSecurityScheme {
-        scheme: "Bearer".into(),
-        bearer_format: Some("opaque".into()),
-        description: Some("Bearer token presented by the ACTS runner.".into()),
-    });
+    let scheme = SecurityScheme::Http(
+        HttpAuthSecurityScheme::new("Bearer")
+            .with_description("Bearer token presented by the ACTS runner.")
+            .with_bearer_format("opaque"),
+    );
     let schemes = Some(HashMap::from([(SCHEME_ID.to_owned(), scheme)]));
     if !auth_enforced() {
         return (schemes, None);
     }
-    let requirement = SecurityRequirement {
-        schemes: HashMap::from([(SCHEME_ID.to_owned(), StringList { list: Vec::new() })]),
-    };
+    let requirement = SecurityRequirement::new(HashMap::from([(
+        SCHEME_ID.to_owned(),
+        StringList::new(Vec::new()),
+    )]));
     (schemes, Some(vec![requirement]))
 }
 

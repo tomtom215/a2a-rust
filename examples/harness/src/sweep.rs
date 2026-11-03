@@ -37,16 +37,11 @@ mod tests;
 
 /// Builds a single-text-part send.
 pub fn make_send_params(text: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(uuid::Uuid::new_v4().to_string()),
-            MessageRole::User,
-            vec![Part::text(text)],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::User,
+        vec![Part::text(text)],
+    ))
 }
 
 /// What one binding's sweep found, for the caller to print.
@@ -181,14 +176,7 @@ pub async fn sweep(
 
     // ── GetTask ──────────────────────────────────────────────────────────
     if let Some(id) = &task_id {
-        match client
-            .get_task(TaskQueryParams {
-                tenant: None,
-                id: id.clone(),
-                history_length: None,
-            })
-            .await
-        {
+        match client.get_task(TaskQueryParams::new(id.clone())).await {
             Ok(t) => ok!(Method::GetTask, format!("state {:?}", t.status.state)),
             Err(e) => bad!(Method::GetTask, e),
         }
@@ -296,12 +284,7 @@ pub async fn sweep(
     }
 
     match client
-        .list_push_configs(ListPushConfigsParams {
-            tenant: None,
-            task_id: push_task_id.clone(),
-            page_size: None,
-            page_token: None,
-        })
+        .list_push_configs(ListPushConfigsParams::new(push_task_id.clone()))
         .await
     {
         Ok(list) => ok!(

@@ -110,11 +110,7 @@ async fn grpc_agent(code: u16, seen: Seen) -> std::net::SocketAddr {
 }
 
 fn query() -> TaskQueryParams {
-    TaskQueryParams {
-        tenant: None,
-        id: "t-1".into(),
-        history_length: None,
-    }
+    TaskQueryParams::new("t-1")
 }
 
 /// Two `GetTask` calls through a bearer-authenticated gRPC client against an

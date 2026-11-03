@@ -123,16 +123,11 @@ fn make_client_with_interceptor(
 }
 
 fn make_send_params(text: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("msg-1"),
-            MessageRole::User,
-            vec![Part::text(text)],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("msg-1"),
+        MessageRole::User,
+        vec![Part::text(text)],
+    ))
 }
 
 fn raw_task_json(id: &str, state: &str) -> serde_json::Value {
@@ -215,11 +210,7 @@ async fn get_task_returns_task() {
     let transport = MockTransport::new(resp);
     let client = make_client(transport);
 
-    let params = TaskQueryParams {
-        tenant: None,
-        id: "task-42".into(),
-        history_length: None,
-    };
+    let params = TaskQueryParams::new("task-42");
     let task = client.get_task(params).await.unwrap();
     assert_eq!(task.id.0, "task-42");
     assert_eq!(task.status.state, TaskState::Working);
@@ -236,11 +227,7 @@ async fn a_context_id_reaches_the_caller_unaltered() {
     resp["contextId"] = serde_json::Value::String(opaque.to_owned());
     let client = make_client(MockTransport::new(resp));
     let task = client
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: "task-42".into(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new("task-42"))
         .await
         .unwrap();
     assert_eq!(task.context_id.0, opaque);
@@ -252,11 +239,7 @@ async fn get_task_calls_correct_method() {
     let method = Arc::clone(&transport.last_method);
     let client = make_client(transport);
 
-    let params = TaskQueryParams {
-        tenant: None,
-        id: "t".into(),
-        history_length: None,
-    };
+    let params = TaskQueryParams::new("t");
     let _ = client.get_task(params).await;
     assert_eq!(method.lock().unwrap().as_deref(), Some("GetTask"));
 }
@@ -265,11 +248,7 @@ async fn get_task_calls_correct_method() {
 async fn get_task_transport_error_propagates() {
     let client = make_client(ErrorTransport::new("timeout"));
 
-    let params = TaskQueryParams {
-        tenant: None,
-        id: "t".into(),
-        history_length: None,
-    };
+    let params = TaskQueryParams::new("t");
     let err = client.get_task(params).await.unwrap_err();
     assert!(matches!(err, ClientError::Transport(_)));
 }
@@ -287,16 +266,7 @@ async fn list_tasks_returns_task_list() {
     let transport = MockTransport::new(resp);
     let client = make_client(transport);
 
-    let params = ListTasksParams {
-        tenant: None,
-        context_id: None,
-        status: None,
-        page_size: None,
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    };
+    let params = ListTasksParams::new();
     let result = client.list_tasks(params).await.unwrap();
     assert_eq!(result.tasks.len(), 2);
     assert_eq!(result.tasks[0].id.0, "task-1");
@@ -312,16 +282,7 @@ async fn list_tasks_calls_correct_method() {
     let method = Arc::clone(&transport.last_method);
     let client = make_client(transport);
 
-    let params = ListTasksParams {
-        tenant: None,
-        context_id: None,
-        status: None,
-        page_size: None,
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    };
+    let params = ListTasksParams::new();
     let _ = client.list_tasks(params).await;
     assert_eq!(method.lock().unwrap().as_deref(), Some("ListTasks"));
 }
@@ -440,12 +401,7 @@ async fn list_push_configs_returns_list() {
     let transport = MockTransport::new(resp);
     let client = make_client(transport);
 
-    let params = ListPushConfigsParams {
-        tenant: None,
-        task_id: "t".into(),
-        page_size: None,
-        page_token: None,
-    };
+    let params = ListPushConfigsParams::new("t");
     let result = client.list_push_configs(params).await.unwrap();
     assert_eq!(result.configs.len(), 2);
     assert_eq!(result.configs[0].url, "https://a.example.com/hook");
@@ -535,11 +491,7 @@ async fn interceptor_headers_are_passed_to_transport() {
     let headers = Arc::clone(&transport.captured_headers);
     let client = make_client_with_interceptor(transport, HeaderInjectingInterceptor);
 
-    let params = TaskQueryParams {
-        tenant: None,
-        id: "t".into(),
-        history_length: None,
-    };
+    let params = TaskQueryParams::new("t");
     let _ = client.get_task(params).await;
 
     let captured = headers.lock().unwrap();

@@ -21,7 +21,7 @@ this page links there rather than repeating them.
 #     // Spec §3.3.4: the push sender below needs a card that declares push.
 #     .with_capabilities(a2a_protocol_types::agent_card::AgentCapabilities::none().with_push_notifications(true))
 #     // Spec §13.3: the scheme the bearer interceptor below checks.
-#     .with_security_schemes(std::collections::HashMap::from([("bearer".to_owned(), a2a_protocol_types::security::SecurityScheme::Http(a2a_protocol_types::security::HttpAuthSecurityScheme { scheme: "Bearer".to_owned(), description: None, bearer_format: None }))])) }
+#     .with_security_schemes(std::collections::HashMap::from([("bearer".to_owned(), a2a_protocol_types::security::SecurityScheme::Http(a2a_protocol_types::security::HttpAuthSecurityScheme::new("Bearer".to_owned())))])) }
 use a2a_protocol_sdk::server::RequestHandlerBuilder;
 use std::time::Duration;
 

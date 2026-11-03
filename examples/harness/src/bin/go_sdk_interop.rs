@@ -207,11 +207,7 @@ async fn check_default_selection(tally: &mut Tally, card: &AgentCard) {
 /// C8 and friends: a missing task must come back as a typed `TaskNotFound`
 /// on every method that can name one, streaming included.
 async fn check_errors(tally: &mut Tally, client: &A2aClient) {
-    let missing = || TaskQueryParams {
-        tenant: None,
-        id: "does-not-exist".into(),
-        history_length: None,
-    };
+    let missing = || TaskQueryParams::new("does-not-exist");
     let get = tokio::time::timeout(CALL_BUDGET, client.get_task(missing())).await;
     expect_not_found(tally, "GetTask(missing) -> TaskNotFound", flatten(get));
 

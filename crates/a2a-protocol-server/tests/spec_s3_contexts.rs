@@ -137,13 +137,7 @@ async fn outlive_ttl() {
 
 async fn in_context(handler: &RequestHandler, ctx: &str) -> usize {
     handler
-        .on_list_tasks(
-            ListTasksParams {
-                context_id: Some(ctx.to_owned()),
-                ..ListTasksParams::default()
-            },
-            None,
-        )
+        .on_list_tasks(ListTasksParams::new().with_context_id(ctx.to_owned()), None)
         .await
         .expect("list")
         .tasks
@@ -182,16 +176,7 @@ async fn context_expiration_removes_finished_tasks_after_ttl() {
 async fn duplicate_cancel_after_purge_returns_task_not_found() {
     let (handler, store) = expiring(TTL);
     let task = task_of(&handler, send("m-1", "ask", None, None)).await;
-    let cancel = || {
-        handler.on_cancel_task(
-            CancelTaskParams {
-                tenant: None,
-                id: task.id.0.clone(),
-                metadata: None,
-            },
-            None,
-        )
-    };
+    let cancel = || handler.on_cancel_task(CancelTaskParams::new(task.id.0.clone()), None);
     assert_eq!(
         cancel().await.expect("first cancel").status.state,
         TaskState::Canceled

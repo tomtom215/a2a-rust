@@ -69,12 +69,10 @@ Customize the send with `SendMessageConfiguration`:
 use a2a_protocol_sdk::types::params::SendMessageConfiguration;
 
 let params = MessageSendParams::new(make_message("Translate to French")).with_configuration(
-    SendMessageConfiguration {
-        accepted_output_modes: vec!["text/plain".into()],
-        task_push_notification_config: None,
-        history_length: Some(5),       // Include last 5 messages
-        return_immediately: Some(false), // Wait for completion
-    },
+    SendMessageConfiguration::new()
+        .with_accepted_output_modes(vec!["text/plain".into()])
+        .with_history_length(5)             // Include last 5 messages
+        .with_return_immediately(false),    // Wait for completion
 );
 ```
 

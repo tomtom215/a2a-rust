@@ -87,11 +87,7 @@ pub async fn run(client: &A2aClient, restricted: &A2aClient) -> CounterOutcome {
     expect_code!(
         "GetTask on an unknown id",
         ErrorCode::TaskNotFound,
-        client.get_task(TaskQueryParams {
-            tenant: None,
-            id: "definitely-not-a-real-task-id".into(),
-            history_length: None,
-        })
+        client.get_task(TaskQueryParams::new("definitely-not-a-real-task-id"))
     );
 
     expect_code!(

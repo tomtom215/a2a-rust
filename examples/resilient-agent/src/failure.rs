@@ -169,11 +169,7 @@ async fn executor_failures_inner() -> Result<String, String> {
     // The same text, read back through GetTask after the fact: the status
     // message is persisted with the task, not only returned from the send.
     let fetched = client
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: failed_id.clone(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new(failed_id.clone()))
         .await
         .map_err(|e| format!("GetTask on the Failed task: {e}"))?;
     let fetched_text = fetched
@@ -385,11 +381,7 @@ async fn client_retry_inner() -> Result<String, String> {
     )?
     .id
     .0;
-    let query = || TaskQueryParams {
-        tenant: None,
-        id: task_id.clone(),
-        history_length: None,
-    };
+    let query = || TaskQueryParams::new(task_id.clone());
     let policy = || {
         RetryPolicy::default()
             .with_max_retries(PROXY_FAULTS + 1)

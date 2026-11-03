@@ -45,16 +45,11 @@ impl Metrics for Sends {
 }
 
 fn send(id: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(id),
-            MessageRole::User,
-            vec![Part::text("go")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new(id),
+        MessageRole::User,
+        vec![Part::text("go")],
+    ))
 }
 
 /// A handler that has begun shutting down, and what counts its sends.

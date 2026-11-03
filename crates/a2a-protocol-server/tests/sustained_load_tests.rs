@@ -86,16 +86,11 @@ fn handler_with_capacity(max_tasks: usize) -> Arc<RequestHandler> {
 }
 
 fn params(seq: usize) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(format!("m{seq}")),
-            MessageRole::User,
-            vec![Part::text("ping")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new(format!("m{seq}")),
+        MessageRole::User,
+        vec![Part::text("ping")],
+    ))
 }
 
 /// Drives `on_send` continuously for [`LOAD_DURATION`], sampling `probe` after

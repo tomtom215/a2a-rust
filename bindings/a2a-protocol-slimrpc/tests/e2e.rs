@@ -182,12 +182,7 @@ async fn get_task_returns_a_task_created_over_the_fabric() {
         .expect("the created task has an id")
         .to_string();
 
-    let params = serde_json::to_value(TaskQueryParams {
-        tenant: None,
-        id: task_id.clone(),
-        history_length: None,
-    })
-    .unwrap();
+    let params = serde_json::to_value(TaskQueryParams::new(task_id.clone())).unwrap();
 
     let fetched = fabric
         .transport
@@ -213,12 +208,8 @@ async fn get_task_returns_a_task_created_over_the_fabric() {
 async fn a2a_errors_keep_their_identity_across_the_fabric() {
     let fabric = Fabric::new("errors").await;
 
-    let params = serde_json::to_value(TaskQueryParams {
-        tenant: None,
-        id: "task-that-does-not-exist".to_string(),
-        history_length: None,
-    })
-    .unwrap();
+    let params =
+        serde_json::to_value(TaskQueryParams::new("task-that-does-not-exist".to_string())).unwrap();
 
     let err = fabric
         .transport
@@ -345,12 +336,8 @@ async fn an_unknown_method_is_reported() {
 /// out as written.
 #[tokio::test]
 async fn an_empty_version_is_refused_unless_none_is_required() {
-    let params = serde_json::to_value(TaskQueryParams {
-        tenant: None,
-        id: "task-that-does-not-exist".to_string(),
-        history_length: None,
-    })
-    .unwrap();
+    let params =
+        serde_json::to_value(TaskQueryParams::new("task-that-does-not-exist".to_string())).unwrap();
     let empty_version = [("a2a-version".to_string(), String::new())].into();
 
     for (require, expected) in [

@@ -68,16 +68,11 @@ async fn build_grpc_dials_the_cards_grpc_interface_not_its_first() {
         .expect("dialled the gRPC interface, not the JSON-RPC one at port 1");
 
     let sent = client
-        .send_message(MessageSendParams {
-            tenant: None,
-            message: Message::new(
-                MessageId::new("m"),
-                MessageRole::User,
-                vec![Part::text("hi")],
-            ),
-            configuration: None,
-            metadata: None,
-        })
+        .send_message(MessageSendParams::new(Message::new(
+            MessageId::new("m"),
+            MessageRole::User,
+            vec![Part::text("hi")],
+        )))
         .await
         .expect("sent");
     assert!(

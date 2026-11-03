@@ -330,15 +330,13 @@ impl RequestHandler {
         // No history: the listing is to pick one task, and a store that
         // honours `history_length` then copies none of the candidates'
         // conversations (ADR 0017).
-        let params = ListTasksParams {
-            tenant: tenant_param,
-            context_id: Some(context_id.to_owned()),
-            status: None,
-            page_size: Some(Self::CONTEXT_LOOKUP_PAGE_SIZE),
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: Some(0),
+        let params = {
+            let mut built = ListTasksParams::new()
+                .with_context_id(context_id.to_owned())
+                .with_page_size(Self::CONTEXT_LOOKUP_PAGE_SIZE)
+                .with_history_length(0);
+            built.tenant = tenant_param;
+            built
         };
         let resp = self.task_store.list(&params).await?;
 

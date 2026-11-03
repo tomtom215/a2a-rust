@@ -8,6 +8,7 @@
 /// Result object for `ListTasks` method containing an array of tasks and pagination information.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct TaskListResponse {
     /// Array of tasks matching the specified criteria.
     ///
@@ -54,6 +55,7 @@ crate::oneof::oneof_deserialize!(
 /// method.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct ListPushConfigsResponse {
     /// The list of push notification configurations.
     ///

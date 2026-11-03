@@ -88,27 +88,20 @@ fn client_for(card: &AgentCard, recorder: &Recorder) -> A2aClient {
 }
 
 fn message() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("m-1"),
-            MessageRole::User,
-            vec![Part::text("hello")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("m-1"),
+        MessageRole::User,
+        vec![Part::text("hello")],
+    ))
 }
 
 fn message_with_inline_push() -> MessageSendParams {
     let mut params = message();
-    params.configuration = Some(SendMessageConfiguration {
-        task_push_notification_config: Some(TaskPushNotificationConfig::new(
-            "",
-            "https://hooks.example.com/a2a",
-        )),
-        ..SendMessageConfiguration::default()
-    });
+    params.configuration = Some(
+        SendMessageConfiguration::new().with_task_push_notification_config(
+            TaskPushNotificationConfig::new("", "https://hooks.example.com/a2a"),
+        ),
+    );
     params
 }
 
@@ -157,12 +150,7 @@ async fn run_every_dependent_call(client: &A2aClient) -> Vec<(&'static str, Opti
             "list_push_configs",
             refusal(
                 client
-                    .list_push_configs(ListPushConfigsParams {
-                        tenant: None,
-                        task_id: "t-1".into(),
-                        page_size: None,
-                        page_token: None,
-                    })
+                    .list_push_configs(ListPushConfigsParams::new("t-1"))
                     .await,
             ),
         ),

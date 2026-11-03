@@ -136,10 +136,7 @@ fn params(tool: &str, message: String) -> MessageSendParams {
     // `return_immediately` so the task id is in hand before the agent
     // finishes. Without it a cancel arriving mid-call would have nothing
     // to cancel.
-    .with_configuration(SendMessageConfiguration {
-        return_immediately: Some(true),
-        ..SendMessageConfiguration::default()
-    })
+    .with_configuration(SendMessageConfiguration::new().with_return_immediately(true))
     .with_metadata(serde_json::json!({ SKILL_METADATA_KEY: tool }))
 }
 ```

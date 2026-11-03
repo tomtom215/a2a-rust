@@ -18,11 +18,10 @@ Retrieve a task by ID:
 # let task_id = "task-abc";
 use a2a_protocol_sdk::types::params::TaskQueryParams;
 
-let task = client.get_task(TaskQueryParams {
-    tenant: None,
-    id: "task-abc".into(),
-    history_length: Some(10),  // Include last 10 messages
-}).await?;
+let task = client.get_task(
+    TaskQueryParams::new("task-abc")
+        .with_history_length(10),  // Include last 10 messages
+).await?;
 
 println!("Task: {} ({:?})", task.id, task.status.state);
 
@@ -53,16 +52,13 @@ Query tasks with filtering and pagination:
 # let task_id = "task-abc";
 use a2a_protocol_sdk::types::params::ListTasksParams;
 
-let response = client.list_tasks(ListTasksParams {
-    tenant: None,
-    context_id: Some("ctx-123".into()),       // Filter by context
-    status: Some(TaskState::Completed),         // Filter by state
-    page_size: Some(20),                        // 20 per page
-    page_token: None,                           // First page
-    status_timestamp_after: None,
-    include_artifacts: Some(true),
-    history_length: None,
-}).await?;
+let response = client.list_tasks(
+    ListTasksParams::new()
+        .with_context_id("ctx-123")             // Filter by context
+        .with_status(TaskState::Completed)      // Filter by state
+        .with_page_size(20)                     // 20 per page (no page token: the first page)
+        .with_include_artifacts(true),
+).await?;
 
 for task in &response.tasks {
     println!("{}: {:?}", task.id, task.status.state);
@@ -70,10 +66,8 @@ for task in &response.tasks {
 
 // Paginate (next_page_token is empty string when no more pages)
 if !response.next_page_token.is_empty() {
-    let next_page = client.list_tasks(ListTasksParams {
-        page_token: Some(response.next_page_token.clone()),
-        ..Default::default()
-    }).await?;
+    let next_page = client.list_tasks(ListTasksParams::new()
+        .with_page_token(response.next_page_token.clone())).await?;
 }
 # Ok(())
 # }

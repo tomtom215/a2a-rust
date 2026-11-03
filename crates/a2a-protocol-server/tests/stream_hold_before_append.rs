@@ -157,11 +157,10 @@ async fn run(history_length: Option<u32>) -> (usize, Option<String>) {
         .build()
         .expect("handler builds");
     let mut params = MessageSendParams::new(Message::user_text("m-1", "go"));
-    params.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec![],
-        task_push_notification_config: None,
-        history_length,
-        return_immediately: None,
+    params.configuration = Some({
+        let mut built = SendMessageConfiguration::new().with_accepted_output_modes(vec![]);
+        built.history_length = history_length;
+        built
     });
     let Ok(SendMessageResult::Stream(mut reader)) = SLOW_GET
         .scope(true, handler.on_send_message(params, true, None))

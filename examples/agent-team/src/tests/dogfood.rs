@@ -113,12 +113,7 @@ pub async fn test_push_list_jsonrpc_regression(ctx: &TestContext) -> TestResult 
         client.set_push_config(config).await.unwrap();
     }
     match client
-        .list_push_configs(ListPushConfigsParams {
-            tenant: None,
-            task_id: tid.clone(),
-            page_size: Some(10),
-            page_token: None,
-        })
+        .list_push_configs(ListPushConfigsParams::new(tid.clone()).with_page_size(10))
         .await
     {
         Ok(list) => {
@@ -159,10 +154,9 @@ pub async fn test_push_event_classification(ctx: &TestContext) -> TestResult {
                 let push_config =
                     TaskPushNotificationConfig::new(ev.task_id.0.clone(), webhook_url)
                         .with_token("classify-test")
-                        .with_authentication(AuthenticationInfo {
-                            scheme: "bearer".into(),
-                            credentials: Some("test-cred".into()),
-                        });
+                        .with_authentication(
+                            AuthenticationInfo::new("bearer").with_credentials("test-cred"),
+                        );
                 let _ = client.set_push_config(push_config).await;
             }
             while stream.next().await.is_some() {}
@@ -330,17 +324,14 @@ pub async fn test_list_tasks_context_filter(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
     let context_id = uuid::Uuid::new_v4().to_string();
-    let params = MessageSendParams {
-        tenant: None,
-        message: Message::new(
+    let params = MessageSendParams::new(
+        Message::new(
             MessageId::new(uuid::Uuid::new_v4().to_string()),
             MessageRole::User,
             vec![Part::text("fn ctx_filter() {}")],
         )
         .with_context_id(a2a_protocol_types::task::ContextId::new(context_id.clone())),
-        configuration: None,
-        metadata: None,
-    };
+    );
     if let Err(e) = client.send_message(params).await {
         return TestResult::fail(
             "list-context-filter",
@@ -349,16 +340,11 @@ pub async fn test_list_tasks_context_filter(ctx: &TestContext) -> TestResult {
         );
     }
     match client
-        .list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: Some(context_id.clone()),
-            status: None,
-            page_size: Some(50),
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        })
+        .list_tasks(
+            ListTasksParams::new()
+                .with_context_id(context_id.clone())
+                .with_page_size(50),
+        )
         .await
     {
         Ok(resp) => {
@@ -390,19 +376,14 @@ pub async fn test_list_tasks_context_filter(ctx: &TestContext) -> TestResult {
 pub async fn test_file_parts(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
-    let params = MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(uuid::Uuid::new_v4().to_string()),
-            MessageRole::User,
-            vec![
-                Part::text("fn with_file() {}"),
-                Part::file_bytes("YmluYXJ5IGRhdGEgaGVyZQ=="),
-            ],
-        ),
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::User,
+        vec![
+            Part::text("fn with_file() {}"),
+            Part::file_bytes("YmluYXJ5IGRhdGEgaGVyZQ=="),
+        ],
+    ));
 
     match client.send_message(params).await {
         Ok(SendMessageResponse::Task(task)) => {
@@ -434,16 +415,11 @@ pub async fn test_history_length(ctx: &TestContext) -> TestResult {
             .await;
     }
     match client
-        .list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: Some(1),
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: Some(5),
-        })
+        .list_tasks(
+            ListTasksParams::new()
+                .with_page_size(1)
+                .with_history_length(5),
+        )
         .await
     {
         Ok(resp) => {

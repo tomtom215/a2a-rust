@@ -204,11 +204,7 @@ async fn one_server_three_bindings_what_an_operator_sees() {
     // delivery instruments record only when those happen.
     let jsonrpc_client = &clients["JSONRPC"];
     let _ = jsonrpc_client
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: "no-such-task".to_owned(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new("no-such-task".to_owned()))
         .await
         .expect_err("an unknown task is an error");
     for context in ["persist-fail", "persist-retry"] {

@@ -46,12 +46,7 @@ async fn stream_refused(result: Result<EventStream, ClientError>) -> Result<(), 
 /// Every operation, with placeholder arguments, and whether it was refused
 /// with `401`.
 async fn every_operation(client: &A2aClient) -> Vec<(&'static str, Result<(), String>)> {
-    let configs = ListPushConfigsParams {
-        task_id: "t1".into(),
-        page_size: None,
-        page_token: None,
-        tenant: None,
-    };
+    let configs = ListPushConfigsParams::new("t1");
     vec![
         (
             "SendMessage",

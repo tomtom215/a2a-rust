@@ -146,12 +146,7 @@ fn user_message(text: &str) -> Message {
 }
 
 fn send_params(text: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: user_message(text),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(user_message(text))
 }
 
 /// Polls `GetTask` until the task reaches a terminal state (executors run
@@ -159,11 +154,7 @@ fn send_params(text: &str) -> MessageSendParams {
 async fn await_terminal(client: &A2aClient, id: &str) -> a2a_protocol_types::task::Task {
     for _ in 0..50 {
         let task = client
-            .get_task(TaskQueryParams {
-                tenant: None,
-                id: id.to_owned(),
-                history_length: None,
-            })
+            .get_task(TaskQueryParams::new(id.to_owned()))
             .await
             .expect("get_task while polling");
         if task.status.state.is_terminal() {
@@ -206,11 +197,7 @@ async fn get_task_unknown_id_maps_to_task_not_found() {
     let client = start().await;
 
     let err = client
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: "no-such-task".into(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new("no-such-task"))
         .await
         .expect_err("unknown task must error");
     match err {
@@ -279,12 +266,9 @@ async fn push_config_crud_roundtrip() {
     assert_eq!(fetched.token.as_deref(), Some("tok-1"));
 
     let listed = client
-        .list_push_configs(a2a_protocol_types::params::ListPushConfigsParams {
-            tenant: None,
-            task_id: task.id.0.clone(),
-            page_size: None,
-            page_token: None,
-        })
+        .list_push_configs(a2a_protocol_types::params::ListPushConfigsParams::new(
+            task.id.0.clone(),
+        ))
         .await
         .expect("list push configs");
     assert!(
@@ -362,10 +346,10 @@ async fn list_tasks_over_grpc_returns_the_sent_task() {
     );
 
     let filtered = client
-        .list_tasks(a2a_protocol_types::params::ListTasksParams {
-            context_id: Some(task.context_id.0.clone()),
-            ..Default::default()
-        })
+        .list_tasks(
+            a2a_protocol_types::params::ListTasksParams::new()
+                .with_context_id(task.context_id.0.clone()),
+        )
         .await
         .expect("filtered list_tasks over gRPC");
     assert!(
@@ -376,10 +360,9 @@ async fn list_tasks_over_grpc_returns_the_sent_task() {
         "context filter must be applied: {filtered:?}"
     );
     let missing = client
-        .list_tasks(a2a_protocol_types::params::ListTasksParams {
-            context_id: Some("no-such-context".into()),
-            ..Default::default()
-        })
+        .list_tasks(
+            a2a_protocol_types::params::ListTasksParams::new().with_context_id("no-such-context"),
+        )
         .await
         .expect("list_tasks with an unknown context");
     assert!(missing.tasks.is_empty(), "an unknown context lists nothing");

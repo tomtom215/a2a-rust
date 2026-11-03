@@ -284,10 +284,8 @@ async fn a_streaming_retry_of_a_running_send_trims_its_first_event() {
     drop(first);
 
     let mut retry = keyed_params("msg-1", Some(KEY));
-    retry.configuration = Some(a2a_protocol_types::params::SendMessageConfiguration {
-        history_length: Some(0),
-        ..Default::default()
-    });
+    retry.configuration =
+        Some(a2a_protocol_types::params::SendMessageConfiguration::new().with_history_length(0));
     let SendMessageResult::Stream(mut reader) = handler
         .on_send_message(retry, true, None)
         .await

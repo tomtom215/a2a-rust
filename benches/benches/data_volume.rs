@@ -139,16 +139,9 @@ fn bench_list_at_scale(c: &mut Criterion) {
         populate_store(&rt, &store, n);
 
         // List with context_id filter, page_size=50
-        let params = ListTasksParams {
-            tenant: None,
-            context_id: Some("ctx-even".into()),
-            status: None,
-            page_size: Some(50),
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        };
+        let params = ListTasksParams::new()
+            .with_context_id("ctx-even")
+            .with_page_size(50);
 
         group.throughput(Throughput::Elements(50));
         group.bench_with_input(BenchmarkId::new("filtered_page_50", n), &(), |b, _| {

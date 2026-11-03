@@ -106,19 +106,15 @@ pub async fn test_message_metadata(ctx: &TestContext) -> TestResult {
         .build()
         .expect("build client");
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(uuid::Uuid::new_v4().to_string()),
-            MessageRole::User,
-            vec![Part::text("fn test() {}")],
-        ),
-        configuration: None,
-        metadata: Some(serde_json::json!({
-            "source": "agent-team-test",
-            "priority": "high",
-        })),
-    };
+    let params = MessageSendParams::new(Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::User,
+        vec![Part::text("fn test() {}")],
+    ))
+    .with_metadata(serde_json::json!({
+        "source": "agent-team-test",
+        "priority": "high",
+    }));
 
     match client.send_message(params).await {
         Ok(SendMessageResponse::Task(task)) => {
@@ -204,11 +200,7 @@ pub async fn test_cancel_task(ctx: &TestContext) -> TestResult {
 
             // Verify via GetTask that the task is canceled.
             if let Some(tid) = task_id {
-                let query = TaskQueryParams {
-                    tenant: None,
-                    id: tid.clone(),
-                    history_length: None,
-                };
+                let query = TaskQueryParams::new(tid.clone());
                 match client.get_task(query).await {
                     Ok(task) => {
                         if task.status.state == TaskState::Canceled {
@@ -255,11 +247,7 @@ pub async fn test_get_nonexistent_task(ctx: &TestContext) -> TestResult {
     println!("\nTest 15: GetTask for nonexistent ID");
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
     match client
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: "nonexistent-task-id-12345".to_owned(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new("nonexistent-task-id-12345".to_owned()))
         .await
     {
         Ok(_) => TestResult::fail(
@@ -290,15 +278,11 @@ pub async fn test_pagination_walk(ctx: &TestContext) -> TestResult {
     let mut pages = 0;
     loop {
         let resp = client
-            .list_tasks(a2a_protocol_types::params::ListTasksParams {
-                tenant: None,
-                context_id: None,
-                status: None,
-                page_size: Some(1),
-                page_token: page_token.clone(),
-                status_timestamp_after: None,
-                include_artifacts: None,
-                history_length: None,
+            .list_tasks({
+                let mut built =
+                    a2a_protocol_types::params::ListTasksParams::new().with_page_size(1);
+                built.page_token = page_token.clone();
+                built
             })
             .await
             .unwrap();

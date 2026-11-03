@@ -17,12 +17,7 @@
 //! # async fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
 //! let client = ClientBuilder::new("http://localhost:8080").build()?;
 //!
-//! let params = MessageSendParams {
-//!     tenant: None,
-//!     message: Message::new(MessageId::new("msg-1"), MessageRole::User, vec![Part::text("Hello, agent!")]),
-//!     configuration: None,
-//!     metadata: None,
-//! };
+//! let params = MessageSendParams::new(Message::new(MessageId::new("msg-1"), MessageRole::User, vec![Part::text("Hello, agent!")]));
 //!
 //! let response = client.send_message(params).await?;
 //! println!("{response:?}");
@@ -37,11 +32,7 @@
 //! # use a2a_protocol_types::{MessageSendParams, Message, MessageRole, Part, MessageId, StreamResponse};
 //! # async fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
 //! # let client = ClientBuilder::new("http://localhost:8080").build()?;
-//! # let params = MessageSendParams {
-//! #     tenant: None,
-//! #     message: Message::new(MessageId::new("m"), MessageRole::User, vec![]),
-//! #     configuration: None, metadata: None,
-//! # };
+//! # let params = MessageSendParams::new(Message::new(MessageId::new("m"), MessageRole::User, vec![]));
 //! let mut stream = client.stream_message(params).await?;
 //! while let Some(event) = stream.next().await {
 //!     match event? {

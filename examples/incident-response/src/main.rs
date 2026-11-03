@@ -125,12 +125,7 @@ fn user_message(text: &str) -> Message {
 }
 
 fn send_params(message: Message) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message,
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(message)
 }
 
 /// Emits a Working status carrying a human-readable progress note.

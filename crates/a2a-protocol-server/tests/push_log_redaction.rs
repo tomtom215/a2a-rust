@@ -185,10 +185,10 @@ fn the_token_and_credentials_are_never_logged() {
     for serve in [true, false] {
         let events = logged_while_sending_config(&sender, "http://{addr}/hook", serve, |c| {
             c.token = Some(TOKEN.to_owned());
-            c.authentication = Some(AuthenticationInfo {
-                scheme: "Bearer".to_owned(),
-                credentials: Some(CREDENTIAL.to_owned()),
-            });
+            c.authentication = Some(
+                AuthenticationInfo::new("Bearer".to_owned())
+                    .with_credentials(CREDENTIAL.to_owned()),
+            );
         });
         assert!(
             events

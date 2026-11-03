@@ -327,11 +327,7 @@ async fn cancelling_the_task_abandons_the_turn_and_ends_canceled() {
     }
     let task = handler
         .on_cancel_task(
-            CancelTaskParams {
-                tenant: None,
-                id: task_id.expect("the task comes first").0,
-                metadata: None,
-            },
+            CancelTaskParams::new(task_id.expect("the task comes first").0),
             None,
         )
         .await

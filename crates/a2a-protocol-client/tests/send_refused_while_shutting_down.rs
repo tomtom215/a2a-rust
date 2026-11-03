@@ -63,16 +63,11 @@ async fn leaving() -> (String, Sends) {
 }
 
 fn send(id: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(id),
-            MessageRole::User,
-            vec![Part::text("go")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new(id),
+        MessageRole::User,
+        vec![Part::text("go")],
+    ))
 }
 
 /// On each binding the refusal is retryable and names its delay, which is

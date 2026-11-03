@@ -130,17 +130,14 @@ mod direct_message_response {
     });
 
     fn params(ctx: &str) -> MessageSendParams {
-        MessageSendParams {
-            tenant: None,
-            message: Message::new(
+        MessageSendParams::new(
+            Message::new(
                 MessageId::new(format!("msg-{ctx}")),
                 MessageRole::User,
                 vec![Part::text("hello")],
             )
             .with_context_id(ContextId::new(ctx)),
-            configuration: None,
-            metadata: None,
-        }
+        )
     }
 
     async fn send(handler: &RequestHandler, ctx: &str) -> SendMessageResult {
@@ -197,11 +194,8 @@ mod direct_message_response {
         // Responses omit history unless the client asks for it, so ask.
         let fetched = handler
             .on_get_task(
-                a2a_protocol_types::params::TaskQueryParams {
-                    tenant: None,
-                    id: task_id.0.clone(),
-                    history_length: Some(10),
-                },
+                a2a_protocol_types::params::TaskQueryParams::new(task_id.0.clone())
+                    .with_history_length(10),
                 None,
             )
             .await

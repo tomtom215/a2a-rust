@@ -20,16 +20,7 @@ fn make_task(id: &str, ctx: &str, state: TaskState) -> Task {
 }
 
 fn default_list_params() -> ListTasksParams {
-    ListTasksParams {
-        tenant: None,
-        context_id: None,
-        status: None,
-        page_size: None,
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    }
+    ListTasksParams::new()
 }
 
 // ── Pagination tests ──────────────────────────────────────────────────────────
@@ -48,9 +39,10 @@ async fn list_with_page_size_truncates() {
             .unwrap();
     }
 
-    let params = ListTasksParams {
-        page_size: Some(3),
-        ..default_list_params()
+    let params = {
+        let mut built = default_list_params();
+        built.page_size = Some(3);
+        built
     };
     let result = store.list(&params).await.unwrap();
     assert_eq!(result.tasks.len(), 3);
@@ -81,19 +73,21 @@ async fn list_with_page_token_returns_next_page() {
     }
 
     // Get first page.
-    let params = ListTasksParams {
-        page_size: Some(3),
-        ..default_list_params()
+    let params = {
+        let mut built = default_list_params();
+        built.page_size = Some(3);
+        built
     };
     let page1 = store.list(&params).await.unwrap();
     assert_eq!(page1.tasks.len(), 3);
     let token = page1.next_page_token.clone();
 
     // Get second page using the token.
-    let params2 = ListTasksParams {
-        page_size: Some(3),
-        page_token: Some(token),
-        ..default_list_params()
+    let params2 = {
+        let mut built = default_list_params();
+        built.page_size = Some(3);
+        built.page_token = Some(token);
+        built
     };
     let page2 = store.list(&params2).await.unwrap();
     assert_eq!(page2.tasks.len(), 3);
@@ -114,9 +108,10 @@ async fn list_with_invalid_page_token_returns_empty() {
         .await
         .unwrap();
 
-    let params = ListTasksParams {
-        page_token: Some("nonexistent-token".into()),
-        ..default_list_params()
+    let params = {
+        let mut built = default_list_params();
+        built.page_token = Some("nonexistent-token".into());
+        built
     };
     let result = store.list(&params).await.unwrap();
     assert!(result.tasks.is_empty());
@@ -132,9 +127,10 @@ async fn list_last_page_has_no_next_token() {
             .unwrap();
     }
 
-    let params = ListTasksParams {
-        page_size: Some(10),
-        ..default_list_params()
+    let params = {
+        let mut built = default_list_params();
+        built.page_size = Some(10);
+        built
     };
     let result = store.list(&params).await.unwrap();
     assert_eq!(result.tasks.len(), 3);
@@ -159,9 +155,10 @@ async fn list_filters_by_context_id() {
         .await
         .unwrap();
 
-    let params = ListTasksParams {
-        context_id: Some("ctx-a".into()),
-        ..default_list_params()
+    let params = {
+        let mut built = default_list_params();
+        built.context_id = Some("ctx-a".into());
+        built
     };
     let result = store.list(&params).await.unwrap();
     assert_eq!(result.tasks.len(), 2);
@@ -186,9 +183,10 @@ async fn list_filters_by_status() {
         .await
         .unwrap();
 
-    let params = ListTasksParams {
-        status: Some(TaskState::Working),
-        ..default_list_params()
+    let params = {
+        let mut built = default_list_params();
+        built.status = Some(TaskState::Working);
+        built
     };
     let result = store.list(&params).await.unwrap();
     assert_eq!(result.tasks.len(), 2);
@@ -210,10 +208,11 @@ async fn list_filters_by_context_and_status() {
         .await
         .unwrap();
 
-    let params = ListTasksParams {
-        context_id: Some("ctx-a".into()),
-        status: Some(TaskState::Working),
-        ..default_list_params()
+    let params = {
+        let mut built = default_list_params();
+        built.context_id = Some("ctx-a".into());
+        built.status = Some(TaskState::Working);
+        built
     };
     let result = store.list(&params).await.unwrap();
     assert_eq!(result.tasks.len(), 1);
@@ -289,9 +288,10 @@ async fn very_large_page_size_returns_all_tasks() {
             .unwrap();
     }
 
-    let params = ListTasksParams {
-        page_size: Some(u32::MAX),
-        ..default_list_params()
+    let params = {
+        let mut built = default_list_params();
+        built.page_size = Some(u32::MAX);
+        built
     };
     let result = store.list(&params).await.unwrap();
     assert_eq!(result.tasks.len(), 5);
@@ -399,18 +399,20 @@ async fn multi_tenant_context_isolation() {
         .unwrap();
 
     // Listing with tenant-a context should only return tenant-a tasks.
-    let params_a = ListTasksParams {
-        context_id: Some("tenant-a".into()),
-        ..default_list_params()
+    let params_a = {
+        let mut built = default_list_params();
+        built.context_id = Some("tenant-a".into());
+        built
     };
     let result_a = store.list(&params_a).await.unwrap();
     assert_eq!(result_a.tasks.len(), 2);
     assert!(result_a.tasks.iter().all(|t| t.context_id.0 == "tenant-a"));
 
     // Listing with tenant-b context should only return tenant-b tasks.
-    let params_b = ListTasksParams {
-        context_id: Some("tenant-b".into()),
-        ..default_list_params()
+    let params_b = {
+        let mut built = default_list_params();
+        built.context_id = Some("tenant-b".into());
+        built
     };
     let result_b = store.list(&params_b).await.unwrap();
     assert_eq!(result_b.tasks.len(), 1);

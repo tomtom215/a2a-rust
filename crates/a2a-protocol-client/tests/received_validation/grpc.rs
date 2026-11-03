@@ -27,11 +27,7 @@ fn pb_task() -> pb::Task {
 }
 
 fn query() -> a2a_protocol_types::TaskQueryParams {
-    a2a_protocol_types::TaskQueryParams {
-        tenant: None,
-        id: "t-1".into(),
-        history_length: None,
-    }
+    a2a_protocol_types::TaskQueryParams::new("t-1")
 }
 
 #[tokio::test]

@@ -248,13 +248,7 @@ pub async fn a_stale_continuation_save_loses_no_event(stores: Stores) {
     // C has no queue for the task: its stream starts from the stored task
     // and replays the log after the stored position.
     let mut stream_c = c
-        .on_resubscribe(
-            TaskIdParams {
-                id: task_id.0.clone(),
-                tenant: None,
-            },
-            None,
-        )
+        .on_resubscribe(TaskIdParams::new(task_id.0.clone()), None)
         .await
         .expect("C accepts the subscription");
     let mut seen = Vec::new();

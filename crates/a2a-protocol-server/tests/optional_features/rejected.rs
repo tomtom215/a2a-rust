@@ -42,14 +42,7 @@ async fn final_states(handler: RequestHandler) -> (TaskState, TaskState) {
         panic!("expected a task, got {sent:?}");
     };
     let stored = handler
-        .on_get_task(
-            TaskQueryParams {
-                tenant: None,
-                id: task.id.0.clone(),
-                history_length: None,
-            },
-            None,
-        )
+        .on_get_task(TaskQueryParams::new(task.id.0.clone()), None)
         .await
         .unwrap();
     (task.status.state, stored.status.state)

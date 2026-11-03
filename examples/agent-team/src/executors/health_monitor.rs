@@ -130,16 +130,7 @@ impl AgentExecutor for HealthMonitorExecutor {
 
 /// Checks an individual agent's health by resolving its card and listing tasks.
 async fn check_agent_health(url: &str) -> &'static str {
-    let list_params = ListTasksParams {
-        tenant: None,
-        context_id: None,
-        status: None,
-        page_size: Some(1),
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    };
+    let list_params = ListTasksParams::new().with_page_size(1);
 
     match resolve_agent_card(url).await {
         Ok(card) => {

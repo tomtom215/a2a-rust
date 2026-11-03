@@ -120,16 +120,10 @@ pub async fn test_combined_status_context_filter(ctx: &TestContext) -> TestResul
     match client.send_message(params).await {
         Ok(a2a_protocol_types::responses::SendMessageResponse::Task(task)) => {
             // Now list with both status=Completed and context_id filter.
-            let list_params = a2a_protocol_types::params::ListTasksParams {
-                tenant: None,
-                context_id: Some(unique_ctx.clone()),
-                status: Some(task.status.state),
-                page_size: Some(10),
-                page_token: None,
-                status_timestamp_after: None,
-                include_artifacts: None,
-                history_length: None,
-            };
+            let list_params = a2a_protocol_types::params::ListTasksParams::new()
+                .with_context_id(unique_ctx.clone())
+                .with_status(task.status.state)
+                .with_page_size(10);
             match client.list_tasks(list_params).await {
                 Ok(resp) => {
                     if resp.tasks.len() == 1 && resp.tasks[0].id == task.id {

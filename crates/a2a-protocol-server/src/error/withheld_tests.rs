@@ -67,16 +67,11 @@ crate::agent_executor!(Leaky, |_ctx, _queue| async {
 });
 
 fn params() -> MessageSendParams {
-    MessageSendParams {
-        message: Message::new(
-            MessageId::new(uuid::Uuid::new_v4().to_string()),
-            MessageRole::User,
-            vec![Part::text("hello")],
-        ),
-        configuration: None,
-        metadata: None,
-        tenant: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::User,
+        vec![Part::text("hello")],
+    ))
 }
 
 /// The text of a task's status message.
@@ -103,14 +98,7 @@ async fn failed_task(expose: bool) -> (Task, Task) {
         panic!("a task");
     };
     let read = handler
-        .on_get_task(
-            TaskQueryParams {
-                tenant: None,
-                id: answered.id.0.clone(),
-                history_length: None,
-            },
-            None,
-        )
+        .on_get_task(TaskQueryParams::new(answered.id.0.clone()), None)
         .await
         .expect("read");
     (answered, read)
@@ -187,14 +175,7 @@ async fn a_calls_internal_error_is_withheld_from_the_caller_not_the_chain() {
         .build()
         .expect("builds");
     let error = handler
-        .on_get_task(
-            TaskQueryParams {
-                tenant: None,
-                id: "t".into(),
-                history_length: None,
-            },
-            None,
-        )
+        .on_get_task(TaskQueryParams::new("t"), None)
         .await
         .expect_err("refused");
     let wire = error.to_a2a_error();

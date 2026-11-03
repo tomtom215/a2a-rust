@@ -30,7 +30,7 @@ assert_eq!(e.code, ErrorCode::TaskNotFound);
 # use a2a_protocol_sdk::prelude::*;
 # use a2a_protocol_sdk::types::error::ErrorCode;
 # async fn f(client: A2aClient) {
-# let params = TaskQueryParams { tenant: None, id: "task-abc".into(), history_length: None };
+# let params = TaskQueryParams::new("task-abc");
 match client.get_task(params).await {
     Ok(task) => println!("Got task: {}", task.id),
     Err(ClientError::Protocol(e)) if e.code == ErrorCode::TaskNotFound => {

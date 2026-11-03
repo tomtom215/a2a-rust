@@ -122,16 +122,11 @@ fn grpc_goes_through_the_proxy_the_environment_names() {
                 .await
                 .expect("connect through the proxy");
             let sent = client
-                .send_message(MessageSendParams {
-                    tenant: None,
-                    message: Message::new(
-                        MessageId::new("g1"),
-                        MessageRole::User,
-                        vec![Part::text("hi")],
-                    ),
-                    configuration: None,
-                    metadata: None,
-                })
+                .send_message(MessageSendParams::new(Message::new(
+                    MessageId::new("g1"),
+                    MessageRole::User,
+                    vec![Part::text("hi")],
+                )))
                 .await;
             assert!(sent.is_ok(), "{sent:?}");
             assert!(

@@ -59,11 +59,7 @@ async fn start(h: &RequestHandler, tenant: &str) -> Result<String, ServerError> 
 }
 
 async fn state(h: &RequestHandler, tenant: &str, id: &str) -> TaskState {
-    let q = TaskQueryParams {
-        tenant: Some(tenant.to_owned()),
-        id: id.to_owned(),
-        history_length: None,
-    };
+    let q = TaskQueryParams::new(id.to_owned()).with_tenant(tenant.to_owned());
     h.on_get_task(q, None).await.expect("get").status.state
 }
 

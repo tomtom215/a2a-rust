@@ -39,9 +39,10 @@ async fn task(handler: &RequestHandler) -> String {
 
 fn with_auth(task: &str, credentials: Option<&str>) -> TaskPushNotificationConfig {
     let mut c = TaskPushNotificationConfig::new(task, "https://hooks.example/h");
-    c.authentication = Some(AuthenticationInfo {
-        scheme: "Bearer".into(),
-        credentials: credentials.map(str::to_owned),
+    c.authentication = Some({
+        let mut built = AuthenticationInfo::new("Bearer");
+        built.credentials = credentials.map(str::to_owned);
+        built
     });
     c
 }

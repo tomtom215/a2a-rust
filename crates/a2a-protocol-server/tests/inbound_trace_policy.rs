@@ -86,16 +86,11 @@ fn traced_headers() -> HashMap<String, String> {
 }
 
 fn params(msg_id: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(msg_id),
-            MessageRole::User,
-            vec![Part::text("hello")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new(msg_id),
+        MessageRole::User,
+        vec![Part::text("hello")],
+    ))
 }
 
 /// Drives one policy end to end and returns what the interceptor saw.

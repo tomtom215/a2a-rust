@@ -198,12 +198,7 @@ async fn task_state_survives_a_round_trip_through_the_node() {
         .expect("the created task has an id")
         .to_string();
 
-    let params = serde_json::to_value(TaskQueryParams {
-        tenant: None,
-        id: task_id.clone(),
-        history_length: None,
-    })
-    .expect("serialisable");
+    let params = serde_json::to_value(TaskQueryParams::new(task_id.clone())).expect("serialisable");
 
     let fetched = fabric
         .transport
@@ -279,12 +274,8 @@ async fn streaming_send_delivers_events_through_the_node() {
 async fn a2a_errors_keep_their_identity_through_the_node() {
     let fabric = Fabric::new("remote-errors").await;
 
-    let params = serde_json::to_value(TaskQueryParams {
-        tenant: None,
-        id: "task-that-does-not-exist".to_string(),
-        history_length: None,
-    })
-    .expect("serialisable");
+    let params = serde_json::to_value(TaskQueryParams::new("task-that-does-not-exist".to_string()))
+        .expect("serialisable");
 
     let err = fabric
         .transport

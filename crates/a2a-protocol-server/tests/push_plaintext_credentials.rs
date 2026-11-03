@@ -63,16 +63,11 @@ fn warnings_storing(mut config: TaskPushNotificationConfig) -> Vec<String> {
                 .with_push_sender(HttpPushSender::new())
                 .build()
                 .expect("handler");
-            let params = MessageSendParams {
-                tenant: None,
-                message: Message::new(
-                    MessageId::new("m1"),
-                    MessageRole::User,
-                    vec![Part::text("hi")],
-                ),
-                configuration: None,
-                metadata: None,
-            };
+            let params = MessageSendParams::new(Message::new(
+                MessageId::new("m1"),
+                MessageRole::User,
+                vec![Part::text("hi")],
+            ));
             let task = match handler.on_send_message(params, false, None).await {
                 Ok(a2a_protocol_server::SendMessageResult::Response(
                     SendMessageResponse::Task(t),
@@ -93,10 +88,8 @@ fn warnings_storing(mut config: TaskPushNotificationConfig) -> Vec<String> {
 fn config(url: &str, token: Option<&str>, credentials: Option<&str>) -> TaskPushNotificationConfig {
     let mut c = TaskPushNotificationConfig::new("set-later", url);
     c.token = token.map(str::to_owned);
-    c.authentication = credentials.map(|cred| AuthenticationInfo {
-        scheme: "Bearer".into(),
-        credentials: Some(cred.into()),
-    });
+    c.authentication =
+        credentials.map(|cred| AuthenticationInfo::new("Bearer").with_credentials(cred));
     c
 }
 

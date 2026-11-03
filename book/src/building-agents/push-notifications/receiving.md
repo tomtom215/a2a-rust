@@ -13,11 +13,8 @@ Push configs support authentication for the webhook endpoint:
 use a2a_protocol_sdk::types::push::{TaskPushNotificationConfig, AuthenticationInfo};
 
 let mut config = TaskPushNotificationConfig::new("task-abc", "https://webhook.example.com");
-config.authentication = Some(AuthenticationInfo {
-    scheme: "bearer".into(),
-    // `credentials` is `Option<String>`.
-    credentials: Some("my-secret-token".into()),
-});
+// `with_credentials` sets `credentials`, which is an `Option<String>` on the wire.
+config.authentication = Some(AuthenticationInfo::new("bearer").with_credentials("my-secret-token"));
 ```
 
 For scheme `Bearer` or `Basic` (any case) the server sends `Authorization: <Scheme> <credentials>` when POSTing to the webhook. Any other scheme, and a scheme with absent or blank `credentials`, is refused when the config is created (`InvalidParams` naming `authentication.scheme` or `authentication.credentials`), and a stored config that slipped past that is not delivered. Leave `authentication` out for an unauthenticated webhook; the token header below is separate.

@@ -442,11 +442,9 @@ mod tests {
         );
 
         let mut signed = extended();
-        signed.signatures = Some(vec![a2a_protocol_types::extensions::AgentCardSignature {
-            protected: "e30".into(),
-            signature: "c2ln".into(),
-            header: None,
-        }]);
+        signed.signatures = Some(vec![
+            a2a_protocol_types::extensions::AgentCardSignature::new("e30", "c2ln"),
+        ]);
         let why = refusal(with(signed));
         assert!(
             why.starts_with("the extended agent card carries a signature"),

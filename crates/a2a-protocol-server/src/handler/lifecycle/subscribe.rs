@@ -822,10 +822,7 @@ mod tests {
             .without_agent_card()
             .build()
             .unwrap();
-        let params = TaskIdParams {
-            tenant: None,
-            id: "nonexistent-task".to_owned(),
-        };
+        let params = TaskIdParams::new("nonexistent-task".to_owned());
         let result = handler.on_resubscribe(params, None).await;
         assert!(
             matches!(result, Err(ServerError::TaskNotFound(_))),
@@ -849,10 +846,7 @@ mod tests {
         );
         handler.task_store.save(&task).await.unwrap();
 
-        let params = TaskIdParams {
-            tenant: None,
-            id: "t-resub-1".to_owned(),
-        };
+        let params = TaskIdParams::new("t-resub-1".to_owned());
         let result = handler.on_resubscribe(params, None).await;
         assert!(
             matches!(result, Err(ServerError::UnsupportedOperation(ref msg)) if msg.contains("terminal")),
@@ -894,10 +888,7 @@ mod tests {
         );
         handler.task_store.save(&task).await.unwrap();
 
-        let params = TaskIdParams {
-            tenant: None,
-            id: "t-resub-nonterminal".to_owned(),
-        };
+        let params = TaskIdParams::new("t-resub-nonterminal".to_owned());
         let mut reader = handler
             .on_resubscribe(params, None)
             .await
@@ -984,10 +975,8 @@ mod tests {
             .await
             .unwrap();
 
-        let params = TaskIdParams {
-            tenant: Some("acme".to_owned()),
-            id: "t-tenant-reattach".to_owned(),
-        };
+        let params =
+            TaskIdParams::new("t-tenant-reattach".to_owned()).with_tenant("acme".to_owned());
         let mut reader = handler.on_resubscribe(params, None).await.unwrap();
         let first = reader.read().await.unwrap().unwrap();
         assert!(matches!(
@@ -1041,13 +1030,7 @@ mod tests {
         handler.task_store.save(&task).await.unwrap();
 
         let mut reader = handler
-            .on_resubscribe(
-                TaskIdParams {
-                    tenant: None,
-                    id: "t-parked".to_owned(),
-                },
-                None,
-            )
+            .on_resubscribe(TaskIdParams::new("t-parked".to_owned()), None)
             .await
             .expect("resubscribe must succeed");
         let _snapshot = reader.read().await.expect("snapshot");
@@ -1091,13 +1074,7 @@ mod tests {
             .await
             .unwrap();
         let mut reader = handler
-            .on_resubscribe(
-                TaskIdParams {
-                    tenant: None,
-                    id: "t-parked".to_owned(),
-                },
-                None,
-            )
+            .on_resubscribe(TaskIdParams::new("t-parked".to_owned()), None)
             .await
             .expect("resubscribe must succeed");
         let _snapshot = reader.read().await.expect("snapshot");
@@ -1165,13 +1142,7 @@ mod tests {
         }
 
         let mut reader = handler
-            .on_resubscribe(
-                TaskIdParams {
-                    tenant: None,
-                    id: id.0.clone(),
-                },
-                None,
-            )
+            .on_resubscribe(TaskIdParams::new(id.0.clone()), None)
             .await
             .expect("subscribed");
         let mut positions = Vec::new();
@@ -1214,13 +1185,7 @@ mod tests {
         writer.applied_mark().seed(3);
 
         let mut reader = handler
-            .on_resubscribe(
-                TaskIdParams {
-                    tenant: None,
-                    id: id.0.clone(),
-                },
-                None,
-            )
+            .on_resubscribe(TaskIdParams::new(id.0.clone()), None)
             .await
             .expect("subscribed");
         for _ in 0..4 {
@@ -1259,17 +1224,14 @@ mod tests {
             .unwrap();
 
         // Send a streaming message to create a task with an active event queue.
-        let params = MessageSendParams {
-            message: Message::new(
+        let params = MessageSendParams::new(
+            Message::new(
                 MessageId::new("msg-resub"),
                 MessageRole::User,
                 vec![Part::text("hello")],
             )
             .with_context_id(ContextId::new("ctx-resub")),
-            configuration: None,
-            metadata: None,
-            tenant: None,
-        };
+        );
 
         let result = handler.on_send_message(params, true, None).await;
         assert!(matches!(result, Ok(SendMessageResult::Stream(_))));
@@ -1285,10 +1247,7 @@ mod tests {
         let task_id = tasks.tasks[0].id.0.clone();
 
         // Now try to resubscribe to this task.
-        let sub_params = TaskIdParams {
-            tenant: None,
-            id: task_id,
-        };
+        let sub_params = TaskIdParams::new(task_id);
         let sub_result = handler.on_resubscribe(sub_params, None).await;
         // The result may succeed (if queue still active) or fail with Internal
         // (if executor already completed and queue was destroyed). Both are valid.
@@ -1306,10 +1265,8 @@ mod tests {
             .without_agent_card()
             .build()
             .unwrap();
-        let params = TaskIdParams {
-            tenant: Some("test-tenant".to_string()),
-            id: "nonexistent-task".to_owned(),
-        };
+        let params =
+            TaskIdParams::new("nonexistent-task".to_owned()).with_tenant("test-tenant".to_string());
         let result = handler.on_resubscribe(params, None).await;
         assert!(result.is_err(), "resubscribe for missing task should fail");
     }
@@ -1321,10 +1278,7 @@ mod tests {
             .without_agent_card()
             .build()
             .unwrap();
-        let params = TaskIdParams {
-            tenant: None,
-            id: "nonexistent-task".to_owned(),
-        };
+        let params = TaskIdParams::new("nonexistent-task".to_owned());
         let mut headers = std::collections::HashMap::new();
         headers.insert("authorization".to_string(), "Bearer tok".to_string());
         let result = handler.on_resubscribe(params, Some(&headers)).await;
@@ -1366,10 +1320,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let params = TaskIdParams {
-            tenant: None,
-            id: "t-resub-fail".to_owned(),
-        };
+        let params = TaskIdParams::new("t-resub-fail".to_owned());
         let result = handler.on_resubscribe(params, None).await;
         assert!(
             result.is_err(),

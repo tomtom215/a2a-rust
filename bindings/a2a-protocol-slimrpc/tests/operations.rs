@@ -84,10 +84,7 @@ async fn list_tasks_lists_the_tasks_made_over_the_fabric() {
     assert_eq!(page.total_size, 2, "{page:?}");
 
     let one = client
-        .list_tasks(ListTasksParams {
-            page_size: Some(1),
-            ..Default::default()
-        })
+        .list_tasks(ListTasksParams::new().with_page_size(1))
         .await
         .expect("a page of one");
     assert_eq!(one.tasks.len(), 1, "{one:?}");
@@ -227,10 +224,8 @@ async fn push_configs_round_trip_over_the_fabric() {
 
     let mut config = TaskPushNotificationConfig::new(id.as_str(), HOOK);
     config.token = Some("push-token".into());
-    config.authentication = Some(AuthenticationInfo {
-        scheme: "Bearer".into(),
-        credentials: Some("hook-credential".into()),
-    });
+    config.authentication =
+        Some(AuthenticationInfo::new("Bearer").with_credentials("hook-credential"));
     let created = client
         .set_push_config(config.clone())
         .await
@@ -247,12 +242,7 @@ async fn push_configs_round_trip_over_the_fabric() {
     assert_eq!(json(&fetched), json(&created));
 
     let page = client
-        .list_push_configs(ListPushConfigsParams {
-            task_id: id.clone(),
-            page_size: None,
-            page_token: None,
-            tenant: None,
-        })
+        .list_push_configs(ListPushConfigsParams::new(id.clone()))
         .await
         .expect("list");
     assert_eq!(json(&page.configs), json(&[&created]));
@@ -267,12 +257,7 @@ async fn push_configs_round_trip_over_the_fabric() {
         "a deleted config is gone"
     );
     let page = client
-        .list_push_configs(ListPushConfigsParams {
-            task_id: id.clone(),
-            page_size: None,
-            page_token: None,
-            tenant: None,
-        })
+        .list_push_configs(ListPushConfigsParams::new(id.clone()))
         .await
         .expect("list");
     assert!(page.configs.is_empty(), "{page:?}");

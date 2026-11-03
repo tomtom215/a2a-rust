@@ -207,11 +207,9 @@ fn bench_mixed_workload(c: &mut Criterion) {
 
                 if let a2a_protocol_types::responses::SendMessageResponse::Task(task) = resp {
                     let _ = client
-                        .get_task(a2a_protocol_types::params::TaskQueryParams {
-                            tenant: None,
-                            id: task.id.to_string(),
-                            history_length: None,
-                        })
+                        .get_task(a2a_protocol_types::params::TaskQueryParams::new(
+                            task.id.to_string(),
+                        ))
                         .await
                         .expect("get_task");
                 }

@@ -63,12 +63,7 @@ pub(super) fn keyed_params(msg_id: &str, key: Option<&str>) -> MessageSendParams
     if let Some(key) = key {
         set_key(&mut message, key).expect("test key must be valid");
     }
-    MessageSendParams {
-        message,
-        configuration: None,
-        metadata: None,
-        tenant: None,
-    }
+    MessageSendParams::new(message)
 }
 
 pub(super) fn task_of(result: &SendMessageResult) -> &Task {

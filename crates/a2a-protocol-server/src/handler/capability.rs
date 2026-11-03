@@ -442,11 +442,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let params = a2a_protocol_types::params::TaskQueryParams {
-            tenant: None,
-            id: "missing-task".into(),
-            history_length: None,
-        };
+        let params = a2a_protocol_types::params::TaskQueryParams::new("missing-task");
 
         // Without the required extension: ExtensionSupportRequired.
         let err = handler

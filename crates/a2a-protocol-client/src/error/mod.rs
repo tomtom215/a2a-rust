@@ -352,11 +352,7 @@ impl From<A2aError> for ClientError {
 /// async fn delegate(downstream: &str, task_id: &str) -> A2aResult<String> {
 ///     let client = ClientBuilder::new(downstream).build()?;
 ///     let task = client
-///         .get_task(TaskQueryParams {
-///             tenant: None,
-///             id: task_id.to_owned(),
-///             history_length: None,
-///         })
+///         .get_task(TaskQueryParams::new(task_id))
 ///         .await?; // a timeout here fails the task as `Transient`
 ///     Ok(task.text().unwrap_or_default().to_owned())
 /// }

@@ -97,30 +97,22 @@ impl AgentExecutor for ArtifactExecutor {
 }
 
 fn make_params(text: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(uuid::Uuid::new_v4().to_string()),
-            MessageRole::User,
-            vec![Part::text(text)],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::User,
+        vec![Part::text(text)],
+    ))
 }
 
 fn make_params_with_context(text: &str, ctx_id: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
+    MessageSendParams::new(
+        Message::new(
             MessageId::new(uuid::Uuid::new_v4().to_string()),
             MessageRole::User,
             vec![Part::text(text)],
         )
         .with_context_id(ContextId::new(ctx_id)),
-        configuration: None,
-        metadata: None,
-    }
+    )
 }
 
 // ── ID Validation Tests ──────────────────────────────────────────────────────
@@ -223,12 +215,11 @@ async fn reject_empty_parts() {
         .build()
         .unwrap();
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: Message::new(MessageId::new("msg-1"), MessageRole::User, vec![]),
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(Message::new(
+        MessageId::new("msg-1"),
+        MessageRole::User,
+        vec![],
+    ));
 
     let result = handler.on_send_message(params, false, None).await;
     assert!(result.is_err(), "empty parts should be rejected");
@@ -325,12 +316,11 @@ async fn return_immediately_returns_submitted_task() {
         .unwrap();
 
     let mut params = make_params("hello");
-    params.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec!["text/plain".into()],
-        task_push_notification_config: None,
-        history_length: None,
-        return_immediately: Some(true),
-    });
+    params.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".into()])
+            .with_return_immediately(true),
+    );
 
     let result = handler.on_send_message(params, false, None).await;
     match result.unwrap() {
@@ -578,21 +568,9 @@ async fn concurrent_list_and_send() {
     for _ in 0..5 {
         let h = Arc::clone(&handler);
         handles.push(tokio::spawn(async move {
-            h.on_list_tasks(
-                ListTasksParams {
-                    tenant: None,
-                    context_id: None,
-                    status: None,
-                    page_size: Some(50),
-                    page_token: None,
-                    status_timestamp_after: None,
-                    include_artifacts: None,
-                    history_length: None,
-                },
-                None,
-            )
-            .await
-            .ok();
+            h.on_list_tasks(ListTasksParams::new().with_page_size(50), None)
+                .await
+                .ok();
         }));
     }
 
@@ -602,19 +580,7 @@ async fn concurrent_list_and_send() {
 
     // After all concurrent operations, the handler should have some tasks.
     let list = handler
-        .on_list_tasks(
-            ListTasksParams {
-                tenant: None,
-                context_id: None,
-                status: None,
-                page_size: Some(50),
-                page_token: None,
-                status_timestamp_after: None,
-                include_artifacts: None,
-                history_length: None,
-            },
-            None,
-        )
+        .on_list_tasks(ListTasksParams::new().with_page_size(50), None)
         .await
         .expect("list should succeed after concurrent ops");
     assert!(
@@ -647,19 +613,7 @@ async fn task_store_config_both_ttl_and_capacity() {
 
     // List tasks - should be capped at capacity
     let list = handler
-        .on_list_tasks(
-            ListTasksParams {
-                tenant: None,
-                context_id: None,
-                status: None,
-                page_size: Some(50),
-                page_token: None,
-                status_timestamp_after: None,
-                include_artifacts: None,
-                history_length: None,
-            },
-            None,
-        )
+        .on_list_tasks(ListTasksParams::new().with_page_size(50), None)
         .await
         .unwrap();
     assert!(

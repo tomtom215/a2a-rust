@@ -98,15 +98,14 @@ fn keyed_with_push(tenant: Option<&str>) -> MessageSendParams {
     set_key(&mut message, "dropped-key-0123456789").expect("key");
     let mut params = MessageSendParams::new(message);
     params.tenant = tenant.map(str::to_owned);
-    params.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: vec!["text/plain".into()],
-        task_push_notification_config: Some(TaskPushNotificationConfig::new(
-            "",
-            "https://hooks.example/a2a",
-        )),
-        history_length: None,
-        return_immediately: None,
-    });
+    params.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".into()])
+            .with_task_push_notification_config(TaskPushNotificationConfig::new(
+                "",
+                "https://hooks.example/a2a",
+            )),
+    );
     params
 }
 

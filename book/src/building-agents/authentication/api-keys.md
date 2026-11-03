@@ -33,15 +33,9 @@ use std::collections::HashMap;
 let card = card()
     .with_security_schemes(HashMap::from([(
         "bearer".to_owned(),
-        SecurityScheme::Http(HttpAuthSecurityScheme {
-            scheme: "Bearer".to_owned(),
-            description: None,
-            bearer_format: None,
-        }),
+        SecurityScheme::Http(HttpAuthSecurityScheme::new("Bearer".to_owned())),
     )]))
-    .with_security_requirements(vec![SecurityRequirement {
-        schemes: HashMap::from([("bearer".to_owned(), StringList { list: vec![] })]),
-    }]);
+    .with_security_requirements(vec![SecurityRequirement::new(HashMap::from([("bearer".to_owned(), StringList::new(vec![]))]))]);
 
 let handler = RequestHandlerBuilder::new(my_executor)
     .with_agent_card(card)

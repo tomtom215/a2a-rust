@@ -207,14 +207,7 @@ pub async fn test_get_task(ctx: &TestContext) -> TestResult {
 
     if let SendMessageResponse::Task(task) = resp {
         let task_id = task.id.to_string();
-        match client
-            .get_task(TaskQueryParams {
-                tenant: None,
-                id: task_id.clone(),
-                history_length: None,
-            })
-            .await
-        {
+        match client.get_task(TaskQueryParams::new(task_id.clone())).await {
             Ok(_fetched) => TestResult::pass(
                 "get-task",
                 start.elapsed().as_millis(),
@@ -241,16 +234,11 @@ pub async fn test_list_tasks(ctx: &TestContext) -> TestResult {
         .build()
         .expect("build client");
     match client
-        .list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: Some(2),
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: Some(true),
-            history_length: None,
-        })
+        .list_tasks(
+            ListTasksParams::new()
+                .with_page_size(2)
+                .with_include_artifacts(true),
+        )
         .await
     {
         Ok(resp) => TestResult::pass(
@@ -285,10 +273,9 @@ pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
     let webhook_url = format!("http://{}/webhook", ctx.webhook_addr);
     let push_config = TaskPushNotificationConfig::new(task_id.clone(), webhook_url.clone())
         .with_token("test-token-123")
-        .with_authentication(AuthenticationInfo {
-            scheme: "bearer".into(),
-            credentials: Some("my-secret-bearer".into()),
-        });
+        .with_authentication(
+            AuthenticationInfo::new("bearer").with_credentials("my-secret-bearer"),
+        );
 
     let stored = match client.set_push_config(push_config).await {
         Ok(s) => s,
@@ -304,12 +291,7 @@ pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
     let _ = client
         .get_push_config(task_id.clone(), config_id.clone())
         .await;
-    let list_params = || ListPushConfigsParams {
-        tenant: None,
-        task_id: task_id.clone(),
-        page_size: Some(10),
-        page_token: None,
-    };
+    let list_params = || ListPushConfigsParams::new(task_id.clone()).with_page_size(10);
     match client.list_push_configs(list_params()).await {
         Ok(list) => println!("  LIST:   {} configs", list.configs.len()),
         Err(e) => println!("  LIST:   error: {e}"),
@@ -363,16 +345,11 @@ pub async fn test_multi_part_message(ctx: &TestContext) -> TestResult {
             ctx.build_url.clone()
         ])),
     ];
-    let params = MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new(uuid::Uuid::new_v4().to_string()),
-            MessageRole::User,
-            parts,
-        ),
-        configuration: None,
-        metadata: None,
-    };
+    let params = MessageSendParams::new(Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::User,
+        parts,
+    ));
 
     match client.send_message(params).await {
         Ok(SendMessageResponse::Task(task)) => {

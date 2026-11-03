@@ -53,16 +53,7 @@ async fn task_store_list_with_context_id_filter() {
         .await
         .unwrap();
 
-    let params = ListTasksParams {
-        tenant: None,
-        context_id: Some("ctx-a".into()),
-        status: None,
-        page_size: None,
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    };
+    let params = ListTasksParams::new().with_context_id("ctx-a");
     let result = store.list(&params).await.expect("list");
     assert_eq!(result.tasks.len(), 2, "should return 2 tasks for ctx-a");
     assert!(result.tasks.iter().all(|t| t.context_id.0 == "ctx-a"));
@@ -85,16 +76,7 @@ async fn task_store_list_with_status_filter() {
         .await
         .unwrap();
 
-    let params = ListTasksParams {
-        tenant: None,
-        context_id: None,
-        status: Some(TaskState::Completed),
-        page_size: None,
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    };
+    let params = ListTasksParams::new().with_status(TaskState::Completed);
     let result = store.list(&params).await.expect("list");
     assert_eq!(result.tasks.len(), 2, "should return 2 completed tasks");
     assert!(
@@ -116,16 +98,7 @@ async fn task_store_list_with_page_size_limit() {
             .unwrap();
     }
 
-    let params = ListTasksParams {
-        tenant: None,
-        context_id: None,
-        status: None,
-        page_size: Some(3),
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    };
+    let params = ListTasksParams::new().with_page_size(3);
     let result = store.list(&params).await.expect("list");
     assert_eq!(
         result.tasks.len(),
@@ -254,16 +227,7 @@ async fn task_store_capacity_eviction_removes_oldest_terminal_tasks() {
         .unwrap();
 
     // We should have at most 3 tasks now.
-    let params = ListTasksParams {
-        tenant: None,
-        context_id: None,
-        status: None,
-        page_size: Some(50),
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    };
+    let params = ListTasksParams::new().with_page_size(50);
     let result = store.list(&params).await.unwrap();
     assert!(
         result.tasks.len() <= 3,

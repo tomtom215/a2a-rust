@@ -105,11 +105,7 @@ async fn cancel_task_signals_cancellation_token() {
 
     let cancelled = handler
         .on_cancel_task(
-            a2a_protocol_types::params::CancelTaskParams {
-                tenant: None,
-                id: task_id.to_string(),
-                metadata: None,
-            },
+            a2a_protocol_types::params::CancelTaskParams::new(task_id.to_string()),
             None,
         )
         .await
@@ -130,14 +126,7 @@ async fn get_task_not_found() {
         .build()
         .unwrap();
     let result = handler
-        .on_get_task(
-            TaskQueryParams {
-                tenant: None,
-                id: "nonexistent-task".into(),
-                history_length: None,
-            },
-            None,
-        )
+        .on_get_task(TaskQueryParams::new("nonexistent-task"), None)
         .await;
     let err = result.expect_err("should return TaskNotFound");
     assert!(
@@ -154,11 +143,7 @@ async fn cancel_task_not_found() {
         .unwrap();
     let result = handler
         .on_cancel_task(
-            a2a_protocol_types::params::CancelTaskParams {
-                tenant: None,
-                id: "nonexistent".into(),
-                metadata: None,
-            },
+            a2a_protocol_types::params::CancelTaskParams::new("nonexistent"),
             None,
         )
         .await;
@@ -191,11 +176,7 @@ async fn cancel_completed_task_returns_not_cancelable() {
     // Now try to cancel it
     let cancel_result = handler
         .on_cancel_task(
-            a2a_protocol_types::params::CancelTaskParams {
-                tenant: None,
-                id: task_id.to_string(),
-                metadata: None,
-            },
+            a2a_protocol_types::params::CancelTaskParams::new(task_id.to_string()),
             None,
         )
         .await;
@@ -222,19 +203,7 @@ async fn list_tasks_page_size_zero_is_invalid_params() {
     // a2a.proto: page_size's minimum is 1. Zero read as the default of 50;
     // it is refused.
     let result = handler
-        .on_list_tasks(
-            ListTasksParams {
-                tenant: None,
-                context_id: None,
-                status: None,
-                page_size: Some(0),
-                page_token: None,
-                status_timestamp_after: None,
-                include_artifacts: None,
-                history_length: None,
-            },
-            None,
-        )
+        .on_list_tasks(ListTasksParams::new().with_page_size(0), None)
         .await;
     assert!(
         matches!(&result, Err(a2a_protocol_server::error::ServerError::InvalidField { message: m, .. }) if m.contains("pageSize")),

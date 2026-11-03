@@ -84,11 +84,13 @@ pub fn list_push_configs_params(
     query: &str,
     tenant: Option<&str>,
 ) -> Result<a2a_protocol_types::params::ListPushConfigsParams, ServerError> {
-    Ok(a2a_protocol_types::params::ListPushConfigsParams {
-        tenant: tenant.map(str::to_owned),
-        task_id: percent_decode_path(task_id),
-        page_size: parse_query_param_u32(query, "pageSize")?,
-        page_token: parse_query_param(query, "pageToken").filter(|t| !t.is_empty()),
+    Ok({
+        let mut built =
+            a2a_protocol_types::params::ListPushConfigsParams::new(percent_decode_path(task_id));
+        built.page_size = parse_query_param_u32(query, "pageSize")?;
+        built.page_token = parse_query_param(query, "pageToken").filter(|t| !t.is_empty());
+        built.tenant = tenant.map(str::to_owned);
+        built
     })
 }
 
@@ -254,15 +256,17 @@ pub fn parse_list_tasks_query(
             })
         })
         .transpose()?;
-    Ok(a2a_protocol_types::params::ListTasksParams {
-        tenant: tenant.map(str::to_owned),
-        context_id: parse_query_param(query, "contextId"),
-        status,
-        page_size: parse_query_param_u32(query, "pageSize")?,
-        page_token: parse_query_param(query, "pageToken"),
-        status_timestamp_after: parse_query_param(query, "statusTimestampAfter"),
-        include_artifacts: parse_query_param_bool(query, "includeArtifacts")?,
-        history_length: parse_query_param_u32(query, "historyLength")?,
+    Ok({
+        let mut built = a2a_protocol_types::params::ListTasksParams::new();
+        built.tenant = tenant.map(str::to_owned);
+        built.context_id = parse_query_param(query, "contextId");
+        built.status = status;
+        built.page_size = parse_query_param_u32(query, "pageSize")?;
+        built.page_token = parse_query_param(query, "pageToken");
+        built.history_length = parse_query_param_u32(query, "historyLength")?;
+        built.status_timestamp_after = parse_query_param(query, "statusTimestampAfter");
+        built.include_artifacts = parse_query_param_bool(query, "includeArtifacts")?;
+        built
     })
 }
 

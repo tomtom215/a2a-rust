@@ -39,21 +39,13 @@ fn interceptor() -> AuthInterceptor {
         store,
         session,
         "api-key",
-        &ApiKeySecurityScheme {
-            location: ApiKeyLocation::Query,
-            name: "key".into(),
-            description: None,
-        },
+        &ApiKeySecurityScheme::new(ApiKeyLocation::Query, "key"),
     )
     .expect("a query key is accepted")
 }
 
 fn get_task() -> TaskQueryParams {
-    TaskQueryParams {
-        tenant: None,
-        id: "t-1".into(),
-        history_length: None,
-    }
+    TaskQueryParams::new("t-1")
 }
 
 const TASK: &str = r#"{"id":"t-1","contextId":"c-1","status":{"state":"TASK_STATE_WORKING"}}"#;
@@ -135,9 +127,10 @@ async fn http_json_puts_the_key_after_the_routes_own_query() {
         .with_interceptor(interceptor())
         .build()
         .unwrap();
-    let params = TaskQueryParams {
-        history_length: Some(2),
-        ..get_task()
+    let params = {
+        let mut built = get_task();
+        built.history_length = Some(2);
+        built
     };
     client.get_task(params).await.expect("the task");
     let seen = seen.lock().unwrap();

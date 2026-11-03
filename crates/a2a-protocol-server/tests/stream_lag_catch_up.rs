@@ -77,9 +77,10 @@ async fn wait_until_completed(handler: &RequestHandler, task: &TaskId) {
 /// The first completed task the handler lists in `tenant`.
 async fn wait_for_completed_task(handler: &RequestHandler, tenant: Option<&str>) -> TaskId {
     for _ in 0..200 {
-        let params = ListTasksParams {
-            tenant: tenant.map(str::to_owned),
-            ..ListTasksParams::default()
+        let params = {
+            let mut built = ListTasksParams::new();
+            built.tenant = tenant.map(str::to_owned);
+            built
         };
         if let Ok(listed) = handler.on_list_tasks(params, None).await
             && let Some(task) = listed
@@ -381,13 +382,7 @@ async fn a_lagged_subscription_catches_up_from_where_it_attached() {
     }
 
     let mut subscriber = handler
-        .on_resubscribe(
-            TaskIdParams {
-                tenant: None,
-                id: task.id.0.clone(),
-            },
-            None,
-        )
+        .on_resubscribe(TaskIdParams::new(task.id.0.clone()), None)
         .await
         .expect("subscribe");
     let snapshot = subscriber.read().await.unwrap().unwrap();

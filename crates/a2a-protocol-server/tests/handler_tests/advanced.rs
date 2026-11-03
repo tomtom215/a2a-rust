@@ -18,10 +18,7 @@ async fn resubscribe_nonexistent_task_fails() {
         .build()
         .expect("build handler");
 
-    let params = TaskIdParams {
-        tenant: None,
-        id: "nonexistent".into(),
-    };
+    let params = TaskIdParams::new("nonexistent");
     let err = handler.on_resubscribe(params, None).await.unwrap_err();
     assert!(
         matches!(err, a2a_protocol_server::ServerError::TaskNotFound(ref id) if id.0.as_str() == "nonexistent"),
@@ -38,17 +35,11 @@ async fn return_immediately_returns_pending_task() {
         .build()
         .expect("build handler");
 
-    let params = MessageSendParams {
-        tenant: None,
-        message: make_message("hello"),
-        configuration: Some(a2a_protocol_types::params::SendMessageConfiguration {
-            accepted_output_modes: vec!["text/plain".into()],
-            task_push_notification_config: None,
-            history_length: None,
-            return_immediately: Some(true),
-        }),
-        metadata: None,
-    };
+    let params = MessageSendParams::new(make_message("hello")).with_configuration(
+        a2a_protocol_types::params::SendMessageConfiguration::new()
+            .with_accepted_output_modes(vec!["text/plain".into()])
+            .with_return_immediately(true),
+    );
 
     let result = handler
         .on_send_message(params, false, None)
@@ -80,16 +71,7 @@ async fn task_continuation_same_context_finds_stored_task() {
     msg1.context_id = Some(a2a_protocol_types::task::ContextId::new("ctx-continuation"));
 
     let result1 = handler
-        .on_send_message(
-            MessageSendParams {
-                tenant: None,
-                message: msg1,
-                configuration: None,
-                metadata: None,
-            },
-            false,
-            None,
-        )
+        .on_send_message(MessageSendParams::new(msg1), false, None)
         .await
         .expect("first send");
 
@@ -104,16 +86,7 @@ async fn task_continuation_same_context_finds_stored_task() {
     msg2.context_id = Some(a2a_protocol_types::task::ContextId::new("ctx-continuation"));
 
     let result2 = handler
-        .on_send_message(
-            MessageSendParams {
-                tenant: None,
-                message: msg2,
-                configuration: None,
-                metadata: None,
-            },
-            false,
-            None,
-        )
+        .on_send_message(MessageSendParams::new(msg2), false, None)
         .await
         .expect("second send");
 
@@ -128,16 +101,7 @@ async fn task_continuation_same_context_finds_stored_task() {
     // Both tasks should be in the store.
     let list = handler
         .on_list_tasks(
-            ListTasksParams {
-                tenant: None,
-                context_id: Some("ctx-continuation".into()),
-                status: None,
-                page_size: None,
-                page_token: None,
-                status_timestamp_after: None,
-                include_artifacts: None,
-                history_length: None,
-            },
+            ListTasksParams::new().with_context_id("ctx-continuation"),
             None,
         )
         .await
@@ -191,16 +155,7 @@ async fn task_id_only_continuation_infers_context_from_task() {
     let mut msg1 = make_message("first");
     msg1.context_id = Some(a2a_protocol_types::task::ContextId::new("ctx-infer"));
     let result1 = handler
-        .on_send_message(
-            MessageSendParams {
-                tenant: None,
-                message: msg1,
-                configuration: None,
-                metadata: None,
-            },
-            false,
-            None,
-        )
+        .on_send_message(MessageSendParams::new(msg1), false, None)
         .await
         .expect("first send");
     let task1 = match result1 {
@@ -213,16 +168,7 @@ async fn task_id_only_continuation_infers_context_from_task() {
     let mut msg2 = make_message("second");
     msg2.task_id = Some(task1.id.clone());
     let result2 = handler
-        .on_send_message(
-            MessageSendParams {
-                tenant: None,
-                message: msg2,
-                configuration: None,
-                metadata: None,
-            },
-            false,
-            None,
-        )
+        .on_send_message(MessageSendParams::new(msg2), false, None)
         .await
         .expect("taskId-only continuation must succeed");
     let task2 = match result2 {
@@ -249,16 +195,7 @@ async fn task_id_only_unknown_task_returns_task_not_found() {
     let mut msg = make_message("hello");
     msg.task_id = Some(TaskId::new("no-such-task"));
     let err = handler
-        .on_send_message(
-            MessageSendParams {
-                tenant: None,
-                message: msg,
-                configuration: None,
-                metadata: None,
-            },
-            false,
-            None,
-        )
+        .on_send_message(MessageSendParams::new(msg), false, None)
         .await
         .expect_err("unknown taskId must fail");
     assert!(
@@ -288,16 +225,7 @@ async fn context_task_id_naming_no_existing_task_rejected() {
     msg1.context_id = Some(a2a_protocol_types::task::ContextId::new("ctx-mismatch"));
 
     handler
-        .on_send_message(
-            MessageSendParams {
-                tenant: None,
-                message: msg1,
-                configuration: None,
-                metadata: None,
-            },
-            false,
-            None,
-        )
+        .on_send_message(MessageSendParams::new(msg1), false, None)
         .await
         .expect("first send");
 
@@ -307,16 +235,7 @@ async fn context_task_id_naming_no_existing_task_rejected() {
     msg2.task_id = Some(TaskId::new("wrong-task-id"));
 
     let result = handler
-        .on_send_message(
-            MessageSendParams {
-                tenant: None,
-                message: msg2,
-                configuration: None,
-                metadata: None,
-            },
-            false,
-            None,
-        )
+        .on_send_message(MessageSendParams::new(msg2), false, None)
         .await;
     let err = result.expect_err("expected error for a taskId that names nothing");
 
@@ -335,18 +254,7 @@ async fn task_id_from_another_context_rejected() {
         .build()
         .expect("build handler");
 
-    let send = |msg| {
-        handler.on_send_message(
-            MessageSendParams {
-                tenant: None,
-                message: msg,
-                configuration: None,
-                metadata: None,
-            },
-            false,
-            None,
-        )
-    };
+    let send = |msg| handler.on_send_message(MessageSendParams::new(msg), false, None);
 
     let mut theirs = make_message("theirs");
     theirs.context_id = Some(a2a_protocol_types::task::ContextId::new("ctx-theirs"));

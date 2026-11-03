@@ -26,10 +26,7 @@ fn task(id: &str, at: &str) -> Task {
 }
 
 fn after(at: &str) -> ListTasksParams {
-    ListTasksParams {
-        status_timestamp_after: Some(at.to_owned()),
-        ..Default::default()
-    }
+    ListTasksParams::new().with_status_timestamp_after(at.to_owned())
 }
 
 /// Lists in each store: the filter is applied after a 1969 status as it is

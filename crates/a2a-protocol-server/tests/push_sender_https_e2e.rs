@@ -170,10 +170,10 @@ fn config_with_auth(url: &str) -> TaskPushNotificationConfig {
     TaskPushNotificationConfig::new("task-e2e".to_owned(), url.to_owned())
         .with_id("cfg-e2e".to_owned())
         .with_token("notif-token-xyz".to_owned())
-        .with_authentication(AuthenticationInfo {
-            scheme: "bearer".to_owned(),
-            credentials: Some("secret-bearer-abc".to_owned()),
-        })
+        .with_authentication(
+            AuthenticationInfo::new("bearer".to_owned())
+                .with_credentials("secret-bearer-abc".to_owned()),
+        )
 }
 
 fn client_config_trusting(ca: &rustls_pki_types::CertificateDer<'static>) -> rustls::ClientConfig {

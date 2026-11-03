@@ -26,12 +26,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Highlights
 
-- **Action required if you build against the SDK (eleven breaking items, each with its migration in `book/src/reference/upgrading/0.15-to-0.16.md`):** `RequestContext.context_id` is a `ContextId`; thirteen protocol structs (`Task`, `Message`, `Part`, `AgentCard`, the update events and others) are `#[non_exhaustive]`, built with `new` and `with_*`; `AgentCard::new` declares streaming; `a2a-protocol-server` enables `tls-rustls` by default; `sign_agent_card` is removed; configuration errors are `ServerError::Config`/`ClientError::Config`; internal error text is withheld from callers; `JwtValidator` checks `iss` and `aud`; the WebSocket listener refuses browsers unless allowed; `ServeReport` is `#[must_use]`; `tls::HttpsClient` is a struct.
+- **Action required if you build against the SDK (eleven breaking items, each with its migration in `book/src/reference/upgrading/0.15-to-0.16.md`):** `RequestContext.context_id` is a `ContextId`; forty wire structs (`Task`, `Message`, `Part`, `AgentCard`, the update events, the method parameters and responses, the security schemes and flows) are `#[non_exhaustive]`, built with `new` and `with_*`; `AgentCard::new` declares streaming; `a2a-protocol-server` enables `tls-rustls` by default; `sign_agent_card` is removed; configuration errors are `ServerError::Config`/`ClientError::Config`; internal error text is withheld from callers; `JwtValidator` checks `iss` and `aud`; the WebSocket listener refuses browsers unless allowed; `ServeReport` is `#[must_use]`; `tls::HttpsClient` is a struct.
 - **Action required if you deploy it:** loopback is never sent to a proxy (`A2A_PROXY_LOOPBACK=1` restores it); `Profile::Production` refuses an in-memory halt, lease, push-config or audit store over a shared task store (`allow_process_local_stores()` opts out); a wrong `OTEL_*` value is noted instead of stopping the process; an exporter named `zipkin` no longer takes a fleet down.
 - **Several replicas on one PostgreSQL database need no session affinity:** each turn claims its task, a cancel reaches the executor on another replica within about a second, a dead replica's tasks are handed over, and a replica that stalls past its claim writes nothing more.
 - **A task's ending always reaches its webhooks, its log and its caller;** an executor that panics leaves the task `failed`; a blocking send over gRPC is no longer cut at the request timeout; credentials go only to the host the caller named; a private CA and mutual TLS reach every binding, the token provider included.
 - **Shipping:** a signed `deploy-agent` image on GHCR with build provenance, a card that reports its version, and retention of finished tasks; OpenTelemetry export through proxies with gzip, console and Prometheus exporters, resource detection and lost-export warnings; WebSocket connections that detect a dead peer.
-- **Not in this release:** `#[non_exhaustive]` on the other 26 wire structs (parameters, responses, security schemes), the swarm designs beyond the four fixes, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
+- **Not in this release:** the swarm designs beyond the four fixes, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
 
 ### Added
 
@@ -562,6 +562,31 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   and all of it compiles with `--all-targets --all-features`. Where a field
   had a computed value or a comment, the result assigns the field after `new`
   (assignment is not restricted).
+
+- **The other 26 wire structs are `#[non_exhaustive]` too** (types; audit
+  G-10): the method parameters `SendMessageConfiguration`, `MessageSendParams`,
+  `TaskQueryParams`, `ListTasksParams`, `CancelTaskParams`, `TaskIdParams`,
+  `GetPushConfigParams`, `DeletePushConfigParams`, `ListPushConfigsParams` and
+  `GetExtendedAgentCardParams`; the responses `TaskListResponse` and
+  `ListPushConfigsResponse`; `AuthenticationInfo` and `AgentCardSignature`;
+  and the security types `StringList`, `SecurityRequirement`,
+  `ApiKeySecurityScheme`, `HttpAuthSecurityScheme`, `OAuth2SecurityScheme`,
+  `OpenIdConnectSecurityScheme`, `MutualTlsSecurityScheme`,
+  `AuthorizationCodeFlow`, `ClientCredentialsFlow`, `ImplicitFlow`,
+  `PasswordOAuthFlow` and `DeviceCodeFlow`. With the fourteen above, every
+  struct the specification can add a field to is marked, so a field it adds is
+  a minor-version addition for callers that build these with `new` and `with_*`.
+  The struct update form `Type { field, ..Default::default() }` is no longer
+  accepted outside the crate either. Each type has a constructor for its
+  required fields and a `with_*` setter for each optional one
+  (`SendMessageConfiguration::new()` is its default; `TaskListResponse::new`
+  and `with_page_size`, `with_total_size`, `with_next_page_token`). The
+  migration, with a before and after for each, is in
+  `book/src/reference/upgrading/0.15-to-0.16.md`. The literals in this
+  repository were converted by a script that reads Rust the way the compiler
+  tokenises it (strings, comments, `pb::` protobuf types of the same name
+  left alone); what it declined, and every compiler error after it, was fixed
+  by hand.
 
 - **Configuration errors have a variant of their own** (server, client;
   audit G-11). Every `RequestHandlerBuilder::build()` refusal was

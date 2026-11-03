@@ -81,11 +81,7 @@ fn a_custom_transport_names_its_system_and_keeps_the_agent() {
             tokio::runtime::Builder::new_current_thread()
                 .build()
                 .unwrap()
-                .block_on(client.get_task(a2a_protocol_types::TaskQueryParams {
-                    tenant: None,
-                    id: "t1".into(),
-                    history_length: None,
-                }))
+                .block_on(client.get_task(a2a_protocol_types::TaskQueryParams::new("t1")))
                 .unwrap();
         })
     };
@@ -124,11 +120,7 @@ fn a_custom_transport_given_to_build_grpc_names_its_system_and_address() {
         .unwrap();
     let fields = recorded(|| {
         runtime
-            .block_on(client.get_task(a2a_protocol_types::TaskQueryParams {
-                tenant: None,
-                id: "t1".into(),
-                history_length: None,
-            }))
+            .block_on(client.get_task(a2a_protocol_types::TaskQueryParams::new("t1")))
             .unwrap();
     });
     let field = |k: &str| fields.get(k).map(String::as_str);

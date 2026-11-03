@@ -84,11 +84,7 @@ async fn agent() -> (String, Arc<AtomicUsize>) {
 
 /// The API-key scheme the API-key cards declare.
 fn x_api_key() -> ApiKeySecurityScheme {
-    ApiKeySecurityScheme {
-        location: ApiKeyLocation::Header,
-        name: "X-API-Key".into(),
-        description: None,
-    }
+    ApiKeySecurityScheme::new(ApiKeyLocation::Header, "X-API-Key")
 }
 
 /// A card served at `url` over `binding`, declaring `schemes` and requiring
@@ -174,26 +170,17 @@ fn build(
 
 async fn get_task(client: &A2aClient) -> ClientResult<()> {
     client
-        .get_task(TaskQueryParams {
-            tenant: None,
-            id: "t-1".into(),
-            history_length: None,
-        })
+        .get_task(TaskQueryParams::new("t-1"))
         .await
         .map(|_| ())
 }
 
 fn message() -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message::new(
-            MessageId::new("m-1"),
-            MessageRole::User,
-            vec![Part::text("hi")],
-        ),
-        configuration: None,
-        metadata: None,
-    }
+    MessageSendParams::new(Message::new(
+        MessageId::new("m-1"),
+        MessageRole::User,
+        vec![Part::text("hi")],
+    ))
 }
 
 /// The refusal's message, after checking that it is the preflight's and

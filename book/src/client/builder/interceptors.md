@@ -50,11 +50,7 @@ use a2a_protocol_client::auth::{
 use a2a_protocol_types::security::{ApiKeyLocation, ApiKeySecurityScheme};
 
 // As the agent's card declares it in `securitySchemes`.
-let scheme = ApiKeySecurityScheme {
-    location: ApiKeyLocation::Header,
-    name: "X-API-Key".into(),
-    description: None,
-};
+let scheme = ApiKeySecurityScheme::new(ApiKeyLocation::Header, "X-API-Key");
 let store = Arc::new(InMemoryCredentialsStore::new());
 let session = SessionId::new("me");
 store.set(session.clone(), "api-key", "my-key".into());

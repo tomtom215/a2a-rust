@@ -94,11 +94,8 @@ async fn finds(h: &RequestHandler, token: &str, tenant: &str, id: &str) -> (bool
         matches!(task, Ok(_) | Err(ServerError::TaskNotFound(_))),
         "{task:?}"
     );
-    let get = GetPushConfigParams {
-        tenant: Some(tenant.to_owned()),
-        task_id: id.to_owned(),
-        id: "c1".to_owned(),
-    };
+    let get =
+        GetPushConfigParams::new(id.to_owned(), "c1".to_owned()).with_tenant(tenant.to_owned());
     let webhook = h.on_get_push_config(get, Some(&as_caller(token))).await;
     (task.is_ok(), webhook.is_ok())
 }
@@ -128,10 +125,7 @@ async fn alice_is_erased_and_bob_is_not(h: &RequestHandler, erase: Erase<'_>) {
     assert_eq!(finds(h, "bob-token", "acme", &bob).await, (true, true));
     let listed = h
         .on_list_tasks(
-            ListTasksParams {
-                tenant: Some("acme".into()),
-                ..ListTasksParams::default()
-            },
+            ListTasksParams::new().with_tenant("acme"),
             Some(&as_caller("alice-token")),
         )
         .await

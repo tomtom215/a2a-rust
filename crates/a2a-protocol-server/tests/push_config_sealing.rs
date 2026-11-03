@@ -30,10 +30,7 @@ fn config() -> TaskPushNotificationConfig {
     let mut config = TaskPushNotificationConfig::new("task-1", "https://hooks.example.com/a2a");
     config.id = Some("cfg-1".into());
     config.token = Some(SECRETS[0].into());
-    config.authentication = Some(AuthenticationInfo {
-        scheme: "Bearer".into(),
-        credentials: Some(SECRETS[1].into()),
-    });
+    config.authentication = Some(AuthenticationInfo::new("Bearer").with_credentials(SECRETS[1]));
     config
 }
 

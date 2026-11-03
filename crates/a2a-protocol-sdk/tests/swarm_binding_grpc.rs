@@ -160,9 +160,8 @@ async fn the_uncontended_send_over_grpc() {
                     .expect("client builds");
                 let context = format!("grpc-ctx-{agent}");
 
-                let params = |task: Option<TaskId>, seq: u64| MessageSendParams {
-                    tenant: None,
-                    message: {
+                let params = |task: Option<TaskId>, seq: u64| {
+                    MessageSendParams::new({
                         let mut built = Message::new(
                             MessageId::new(format!("grpc-{agent}-{seq}")),
                             MessageRole::User,
@@ -171,9 +170,7 @@ async fn the_uncontended_send_over_grpc() {
                         .with_context_id(ContextId::new(context.clone()));
                         built.task_id = task;
                         built
-                    },
-                    configuration: None,
-                    metadata: None,
+                    })
                 };
 
                 // Open the channel first, same as the WebSocket arm, so the

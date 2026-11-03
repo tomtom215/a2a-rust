@@ -92,11 +92,7 @@ async fn grpc_server() -> std::net::SocketAddr {
 }
 
 fn query(id: &str) -> TaskQueryParams {
-    TaskQueryParams {
-        tenant: None,
-        id: id.into(),
-        history_length: None,
-    }
+    TaskQueryParams::new(id)
 }
 
 #[tokio::test]

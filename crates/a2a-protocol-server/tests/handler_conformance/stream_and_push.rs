@@ -214,14 +214,7 @@ async fn a_push_config_reads_back_whole_and_lasts_through_completion() {
 
     // §3.1.8: the whole config, notification settings included.
     let fetched = handler
-        .on_get_push_config(
-            GetPushConfigParams {
-                tenant: None,
-                task_id: task.clone(),
-                id,
-            },
-            None,
-        )
+        .on_get_push_config(GetPushConfigParams::new(task.clone(), id), None)
         .await
         .expect("get");
     let fetched = serde_json::to_value(&fetched).expect("json");
@@ -263,12 +256,11 @@ async fn a_streaming_send_s_task_events_carry_at_most_history_length_messages() 
         other => panic!("expected a task, got {other:?}"),
     };
     let mut params = send("m-2", "answer", None, Some(&task));
-    params.configuration = Some(SendMessageConfiguration {
-        accepted_output_modes: Vec::new(),
-        task_push_notification_config: None,
-        history_length: Some(1),
-        return_immediately: None,
-    });
+    params.configuration = Some(
+        SendMessageConfiguration::new()
+            .with_accepted_output_modes(Vec::new())
+            .with_history_length(1),
+    );
     let Ok(SendMessageResult::Stream(mut reader)) =
         handler.on_send_message(params, true, None).await
     else {

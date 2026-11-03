@@ -32,21 +32,10 @@ async fn task_store_eviction_on_write() {
     }
 
     // The oldest completed task should have been evicted
-    let list = a2a_protocol_server::TaskStore::list(
-        &store,
-        &ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: Some(50),
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        },
-    )
-    .await
-    .unwrap();
+    let list =
+        a2a_protocol_server::TaskStore::list(&store, &ListTasksParams::new().with_page_size(50))
+            .await
+            .unwrap();
     assert_eq!(list.tasks.len(), 2, "should have evicted one task");
 }
 

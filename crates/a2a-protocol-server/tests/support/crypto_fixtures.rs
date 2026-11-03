@@ -319,10 +319,8 @@ async fn push_fixture(keys: &Value) -> Value {
     let mut config = TaskPushNotificationConfig::new("task-9", "https://hooks.example.com/a2a");
     config.id = Some("cfg-1".into());
     config.token = Some("client-token".into());
-    config.authentication = Some(AuthenticationInfo {
-        scheme: "Bearer".into(),
-        credentials: Some("webhook-credential".into()),
-    });
+    config.authentication =
+        Some(AuthenticationInfo::new("Bearer").with_credentials("webhook-credential"));
     store.set(config.clone()).await.expect("set");
     let (stored,): (String,) = sqlx::query_as("SELECT data FROM push_configs")
         .fetch_one(&pool)

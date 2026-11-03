@@ -77,11 +77,7 @@ fn token_endpoint(n: usize) -> (u16, String) {
 }
 
 fn query() -> TaskQueryParams {
-    TaskQueryParams {
-        tenant: None,
-        id: "t-1".into(),
-        history_length: None,
-    }
+    TaskQueryParams::new("t-1")
 }
 
 /// Returns the `Authorization` headers the agent saw over two calls.
