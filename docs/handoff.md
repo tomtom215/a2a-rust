@@ -44,20 +44,21 @@ command is named so the next session re-runs it instead of copying the number.
 - **Pull requests, as a batch.** The maintainer asked for a batch done correctly, with no piecemeal CI
   iteration: a pull request is pushed when its local gates, mutation work and live probes are done, and
   its fixes go in together. State on 2026-11-03, evening:
-  1. CI hygiene: **#191**, open. All 13 workflow runs on its head `65adf836` completed; 12 succeeded and
-     Mutation Testing run 448 failed in 7 s because the label was added after the PR opened, and run 449
-     on the same commit succeeded (Actions API).
-  2. The other 26 wire structs: **#192**, open, branch `claude/inspiring-mccarthy-rgpntj-wire-structs`,
-     head `bb82bce7`, labelled `mutation-test`. Local evidence is in its description; CI had not reported
-     when this was written.
-  3. The client crate, **not yet opened**: branch `claude/inspiring-mccarthy-rgpntj-client`, 8 local
-     commits on top of #192's head, so it **cannot be opened until #192 merges** (it uses #192's
-     constructors; the workflows run only on pull requests to `main`). After the merge: `git rebase
-     --onto origin/main <#192 head>` on that branch, then open. Contents: delegation hand-off on shutdown
+  1. CI hygiene: **#191**, merged by the maintainer on 2026-11-03 (merge commit `67a7413f`). All 13
+     workflow runs on its head `65adf836` completed before the merge; 12 succeeded and Mutation Testing run
+     448 failed in 7 s because the label was added after the PR opened, and run 449 on the same commit
+     succeeded (Actions API).
+  2. The other 26 wire structs: **#192**, merged on 2026-11-03 (merge commit `045146ec`), after every job
+     on its head `bb82bce7` was green; one job (`example-surface`, see First, next 6) hit its 20-minute
+     limit while compiling and passed on its single re-run.
+  3. The client crate: branch `claude/inspiring-mccarthy-rgpntj-client`, rebased onto `main` at `67a7413f`
+     with the three handoff commits that were waiting on #191; the pull request from it is the one that
+     carries this note. Contents: delegation hand-off on shutdown
      (`wait_or_hand_off`, `Outcome::HandedOff`), `DelegationOptions` with `start_with`/`reattach_with`,
      the stream health rule and jitter, bounded journal writes (M); a retry budget, `max_elapsed`, a cap
      on calls in flight, the `Retry-After` fail-fast rule and its HTTP-date form (O, audit D-10);
-     `follow_task` resume (D-11); opt-in gRPC HTTP/2 keep-alive (B-10, D-12 in part). Local evidence, on head `ffcc846f`:
+     `follow_task` resume (D-11); opt-in gRPC HTTP/2 keep-alive (B-10, D-12 in part). Local evidence, on the
+     tree before the rebase (it differed from the rebased one only by #192's `scripts/codemod/`):
      `cargo test -p a2a-protocol-client --all-features` exit 0 (1303 passed, 0 failed), clippy under four
      feature sets, 40 of 40 script and clippy gates (1 to 9, 11 to 27, 30 to 43) exit 0; not run: the book
      build, the two pip-hash gates, gates 44 to 101. `cargo mutants --in-diff` on the 156 mutants of the
@@ -65,14 +66,15 @@ command is named so the next session re-runs it instead of copying the number.
      missed: three in `TaskFollow` (killed by four new unit tests, each mutant applied by hand and the
      intended test failing) and one equivalent mutant in `RetryBudget`'s rate clamp (refactored away). A
      second run on `follow.rs` and `budget.rs` at the final head: 39 mutants, 33 caught, 6 unviable, 0
-     missed. The scratchpad logs (`mut-pr3-client*.log`) do not survive the container. **Not in it, deliberately:** `HttpPool` (ADR 0032), HTTP/2 PING and a
-     connection lifetime for the HTTP bindings (D-12), B-11, and the live proof of M (kill -9 a supervisor
-     with a PostgreSQL journal and 50 children). Those are the next client pull request.
+     missed. The scratchpad logs (`mut-pr3-client*.log`) do not survive the container. **Not in it,
+     deliberately:** `HttpPool` (ADR 0032), HTTP/2 PING and a connection lifetime for the HTTP bindings
+     (D-12), B-11, and the live proof of M (kill -9 a supervisor with a PostgreSQL journal and 50
+     children). Those are the next client pull request.
   4. The server crate (groups B, C, L, B2's E-F12, D-05, E-F18, E-F25, D-18, K's remainder) and
   5. observability, deploy and docs (the rest of I, group J with `promtool` in CI, G, H, N): not started.
-  After the tag: ADR 0035 and ADR 0036, each its own pull request. The earlier plan said pull requests
-  cannot be stacked and each is branched from `main`; item 3 is the exception, and the reason is that it
-  uses #192's constructors.
+  After the tag: ADR 0035 and ADR 0036, each its own pull request. The workflows run only on pull
+  requests to `main`, so a pull request that needs an earlier one waits for its merge and is rebased
+  (`git rebase --onto origin/main <the earlier head>`), as the client branch was after #192.
   **How the time went, so the next session spends it differently:** a full `cargo mutants --in-diff` on the
   server crate took 88 minutes for 24 mutants (16 unviable, 8 `TIMEOUT`) and decided nothing, because
   other builds shared the 4 cores and a mutant run that exceeds `--timeout` is `TIMEOUT`, which CI's
@@ -83,10 +85,9 @@ command is named so the next session re-runs it instead of copying the number.
 
 ### First, next
 
-1. Read the CI of #191 and #192 before building on either; fix only what a failing check needs, in one
-   push each (`ci-failure-triage`). Do not merge or tag: the maintainer's go is required.
-2. When #192 merges: rebase and open the client pull request (item 3 above), after reading its
-   mutation run. Then the server pull request, with `--list` and hand-tests, not a full local run.
+1. Read the CI of the client pull request before building on it; fix only what a failing check needs, in
+   one push (`ci-failure-triage`). Do not merge or tag: the maintainer's go is required.
+2. Then the server pull request, with `--list` and hand-tests, not a full local run, branched from `main`.
 3. Per pull request, before its first push: the diff's new and changed functions and every new `Debug`
    impl; `cargo mutants --in-diff` on types and client; the kill-proof protocol for each test (it passes
    on the real code; the exact mutant applied by hand makes it fail; restore; re-run); the script gates
