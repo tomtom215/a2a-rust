@@ -93,7 +93,11 @@ command is named so the next session re-runs it instead of copying the number.
 5. `cargo semver-checks` passes today only because the version already reads 0.16.0 (a 0.x minor bump
    skips the checks). To list the breaks against the last release, run it with `--release-type patch
    --baseline-rev v0.15.0 --all-features`: not run yet.
-6. Unrelated to these pull requests: `scripts/live/replica` fails `-D warnings` on `main`
+6. `ci.yml`'s `example-surface` job ("all methods x all bindings") has `timeout-minutes: 20` and ran 18.9
+   minutes on `main` at `542250c8` (Actions API, run 1786); on #192 it hit 20.4 and was cancelled while
+   compiling `rig-agent`, before any test, and was re-run once. Raise its limit to 30 in the next push that
+   touches `ci.yml` anyway; a push of its own restarts every workflow.
+7. Unrelated to these pull requests: `scripts/live/replica` fails `-D warnings` on `main`
    (`unused ServeReport`, `src/main.rs:128`) and `scripts/live/replica/v015` cannot load its dependency
    manifest. The `/st2.out` file the maintainer asked to have deleted does not exist in this container.
 
