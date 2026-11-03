@@ -27,7 +27,17 @@ decision (about 100 rows and 51 new findings) proceeds in the order in `PLAN.md`
 | F9, F10 | ADRs now, build later | ADRs 0035 and 0036 written (`50242e0`); not built |
 | F11, changelog shape | Highlights block; Internal moved out | built (`0b06ec2`, `d75efc9`) |
 | F12, the swarm designs | the four fixes only | built (`a8bf45e`) |
-| F13 to F16 | never asked | not built; positions are in their entries below |
+| F13 | accepted 2026-11-03: the position below, (c) accept the window and document it | not built |
+| F14 | accepted 2026-11-03: the position below, (a) the stream reader waits for the stored terminal task | not built |
+| F15 | accepted 2026-11-03: the position below, (c) deprecate `tls_config_with_extra_roots` now, (a) a reloading resolver after 0.16.0 | not built |
+| F16 | not chosen 2026-11-03: stays deferred and documented | not built |
+| D-05, E-F18, E-F25, D-18 | accepted 2026-11-03: each row's recommendation (see its entry) | D-05's delivery id only; the rest not built |
+| G-10, the other 26 wire structs | decided 2026-11-03: they go into 0.16.0, as a pull request of their own | not built |
+| ADR 0035 (agent skills), ADR 0036 (steering) | decided 2026-11-03: implemented, and merged after the 0.16.0 tag | not built |
+
+The 2026-11-03 rows are the maintainer's, relayed in a message at the start of the session that wrote this
+table; "accepted" is read as accepting the position written in the entry, so a different intent is a
+one-line edit here.
 
 ## Forks that gate work
 

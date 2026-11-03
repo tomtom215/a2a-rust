@@ -52,9 +52,12 @@ survivors. Live runs are listed per group and are in addition to, not instead of
 
 ## Status when the pull request was opened (2026-11-02)
 
-97 of the 191 items have at least one commit on the branch; 94 do not. (Counted by script: an item is
-counted when its ID is named in section O of `../2026-10-29/README.md`, which is written from the commit
-messages. Some of the 97 are done only in part, as the last column says.) The bar above was **not**
+96 of the 191 items have at least one commit on the branch; 95 do not. (Counted by
+`scripts/audit/plan_status.py`: an item is counted when its ID is named in section O of
+`../2026-10-29/README.md`, which is written from the commit messages, and not when section O names it only
+to say it is not done. Some of the 96 are done only in part, as the last column says. The first count, 97
+and 94, included `NEW-g-docs-8`, which section O mentions only to say it is not done; the pull request's
+title still says 97.) The bar above was **not**
 fully met: the PostgreSQL suites, the per-feature clippy matrix and every script gate ran on the tip, but
 `cargo mutants --in-diff`, `cargo-semver-checks`, the official TCK and the live matrix did not, and group
 J's proof needs `promtool`, which could not be run here. The pull request was opened at the maintainer's

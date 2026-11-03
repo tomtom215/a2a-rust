@@ -10,7 +10,8 @@
 > done, a count may have moved, a line citation may point elsewhere. For what
 > holds now, read [`handoff.md`](handoff.md); for what shipped, `CHANGELOG.md`.
 > The section headings are unchanged, so links to a section of the old handoff
-> resolve here.
+> resolve here. One section is appended at the end, after a rule: the "Now"
+> section as it stood on 2026-11-03, moved verbatim.
 
 Working state between sessions: which branches exist and why, what is in flight
 outside this repository, and what the next session should pick up.
@@ -4758,3 +4759,705 @@ only. Keep it that way in anything new.
 **What the next session should do first:** decide which `docs/upstream/`
 drafts to send, and run the example against Langfuse Cloud before the
 Langfuse docs draft goes anywhere.
+
+
+---
+
+## Superseded: the "Now" section of `handoff.md` as it stood on 2026-11-03
+
+> Moved here verbatim, byte for byte, when the section was rewritten to the state after pull request
+> #186 merged (`main` at `542250c8`). It holds the entries for the branches `claude/pensive-bardeen-c6ofm8`
+> (2026-11-01) and `claude/intelligent-bohr-9qraxk` (2026-10-28). The same caveat as above applies.
+
+### Now (as it stood)
+
+- **Branch `claude/pensive-bardeen-c6ofm8` (2026-11-01), from `main` at `4a8243c`
+  (the merge of pull request #185): the 149 open audit rows are triaged and most fix groups are
+  committed (below). One pull request, opened only when the groups the maintainer wants pass the bar;
+  the pull request is tomtom215/a2a-rust#186, opened on 2026-11-02 at the maintainer's request.**
+  - **First, next session.** (1) What waits on the maintainer: permission to run `promtool` (group J);
+    forks F13 to F16, never asked, with positions in `docs/audits/2026-11-01-triage/DECISIONS.md`;
+    whether the other 26 wire structs (G-10 option A) go into 0.16.0; the D-05 dead-webhook policy; the
+    options for E-F18, E-F25 and D-18. (2) Then build, in this order: M (delegation hand-off on shutdown,
+    F5), O and the HttpPool (F7, ADR 0032), the contained rows of L (E-F14, E-F22, E-F21, E-F16, E-F17;
+    D-19 is done and E-F15 is documented only), the rest of I and G. The per-group status, with the rows
+    left open, is the table in `PLAN.md` ("Status when the pull request was opened"). (3) Read what the
+    pull request's CI says first: it runs `cargo mutants --in-diff`, `cargo-semver-checks`, and the jobs
+    this session could not run; fix what it finds before building anything new. Release prep is in
+    `PLAN.md`, "Before 0.16.0 is tagged".
+  - **Fix work, `git log 4a8243c..` (oldest first; every commit is `Tom F.`, signed off, no other
+    trailer, for DCO):**
+      - `4a3cbe1` docs(audit): triage the 149 open rows of the 2026-10-29 audit against main@4a8243c
+      - `a3a5dde` fix(client,cli): --header goes only to the interface that was checked (audit SEC-09, NEW-f-1)
+      - `78fcd2c` fix: credentials go only to the host the caller named (audit SEC-08, SEC-09, SEC-18, NEW-f-5, NEW-f-6, G/D-05)
+      - `c902c46` fix(server): a replica that cannot renew a claim stops the turn before anyone can take the task (audit E-F7, NEW-e-1, NEW-h-s0-1, NEW-h-s0-5, NEW-h-s0
+      - `aa6e4ff` fix(server): a task's ending always reaches its webhooks, its log and its caller (audit NEW-d-1, D-03, E-F9, NEW-e-2, E-F20, D-16, D-23, G-21, NEW-g-a
+      - `6d746dd` fix(client,server,cli): gRPC honours its send timeout, its card and the process's roots; one TLS identity reaches every path (audit NEW-g-api-1, G-20,
+      - `065f0a0` docs: documentation that disagreed with the code, the book's ignore ratchet, and thirteen rustdoc blocks nothing compiled (audit G/D-02 to G/D-11, G/C
+      - `50242e0` docs(adr): Agent Skills and steering a running task, proposed (triage forks F9, F10)
+      - `4b6b382` fix(client,server): loopback is never sent to a proxy, NO_PROXY is read as Go reads it, the WebSocket dials like the HTTP transports (audit NEW-b-2, B
+      - `9c69ef6` feat(server): the production profile refuses process-local stores over a shared task store (audit E-F13; amends ADR 0025)
+      - `4fd80d0` fix(server): a wrong OTEL_* value is noted and the process starts, as the specification asks (audit C-08, NEW-c-5)
+      - `636eaf0` feat(deploy-agent): a signed image from the release workflow, a version on the card, retention in PostgreSQL (audit A13, A27, NEW-a-l-1, NEW-a-l-3, NE
+      - `41756f1` feat!: RequestContext.context_id is a ContextId, AgentCard::new declares streaming, the server crate defaults to tls-rustls, sign_agent_card is remove
+      - `0b06ec2` docs: 0.15.1 was never released, so its notes are 0.16.0's; the release notes open with a Highlights block (audit G/C-01, G/C-02, NEW-t-1; forks F6, F
+      - `7b36d51` feat: SendMessageResponse accessors, build_arc, agent_executor! with a receiver, new_message_id, Debug for EventEmitter and A2aRouter (audit G-22, G-1
+      - `4ec89f3` fix(client): a tenant the caller set is kept in whichever order the builder is called (audit G-19)
+      - `a8bf45e` fix: Retry-After is spread, the rate limiter overflows to one bucket, an unread halt store is retryable and not ready, an unknown halt row halts every
+      - `e2712ec` fix(client,server): a WebSocket peer that stopped reading is dropped, one that went silent is found out, a failed handshake says whether to retry (aud
+      - `43e5d94` docs(handoff): the branch's commits, what is verified and what is not, two lessons from the WebSocket keepalive and the mutant runner
+      - `2b83f88` fix(server): an https webhook is connected to the address that was checked, a host's other addresses are tried, DNS lookups cannot fill the blocking p
+      - `b9c1304` feat!(types): thirteen protocol structs are #[non_exhaustive], built with new and with_* (audit G-10; fork F1)
+      - `3c3bac5` docs(handoff): group K and G-10 committed, group J blocked on promtool, what was and was not run on the tip
+      - `c4c5c29` fix(examples): agents are served with Server, the health monitor probes its roster, the bridge quotes the remote card (audit G-05, SEC-15, SEC-16)
+      - `da797f5` docs: the audit register's fix status after K, G-10 and Q, and what was run on the tip (PostgreSQL suites, feature matrix, 6055 tests)
+      - `2f35951` docs(handoff): the branch is pushed; what waits on the maintainer and what the next session builds first
+      - `93dbb05` fix(server): the audit log's per-chain locks are released when unused, and a tenant name is bounded (audit D-19)
+      - `af747a4` docs(server): AuthFailureThrottle's counts are per replica, and the book and rustdoc say how to size it for a fleet (audit E-F15, interim)
+      - `edd8ac2` docs: the audit register and handoff list D-19 and the E-F15 interim fix
+      - `d75efc9` docs(changelog): the 0.16.0 Internal section moves to docs/changelog-internal/ (audit G/C-01; fork F11)
+      - `a27676e` docs(audit): per-group status of the plan and the forks at the pull request; the cadence-exception text corrected (a November 0.16.0 needs no line)
+      - `95c9fb2` docs(audit): SPDX headers on the triage reports
+      - `0820857` docs(handoff): the pull request is #186
+      - `9e6d495` test(server): the push pin tests use ::1 for "an address that is down" (the macOS jobs)
+      - `aeb4cfb` test(server): the cancel test appends before cancel's own write, not on the next read
+      - `46b425f` style(slimrpc): rustfmt the five binding files the 0.16.0 codemods left unformatted
+      - `1ac2dbe` test(slimrpc): the slim-node OTEL test follows the warn-and-fall-back decision (F3, C-08)
+      - `3d671eb` style(itk): rustfmt the two files the constructor codemod left unformatted
+      - `b8199b8` docs(handoff): what the pull request's first CI run found, and two lessons
+      - `62989d9` ci: the release Highlights gate has a probe that proves it can fail
+      - `d05a326` test(server): the notice tests' failure messages no longer print the notices (CodeQL 187 to 189)
+    Each fix has a regression test that failed before it (the commit messages say how each was
+    shown, and which hand-applied mutants each test kills).
+  - **What the pull request's first CI run found (2026-11-02): five failures, all of this branch's
+    making, fixed in the commits above from `9e6d495` on.** (1) macOS `pin_tests`: `127.0.0.2` is not
+    loopback on macOS, so "an address that is down" hung instead of refusing (`9e6d495`; fixed by
+    `::1`; not reproducible on Linux). (2) `cancel_keeps_concurrent_writes::sqlite`: this branch's
+    `SyncCollector::close_out` adds a read to the tail of `SendMessage`, which on SQLite can take the
+    test's "append on the next read" trigger; 17 of 200 runs failed on the branch and 0 of 300 on
+    main, 600 of 600 pass after the trigger moved to cancel's own write, and reverting cancel's fix
+    still fails the test on both stores (`aeb4cfb`). (3) The SLIMRPC binding's `slim-node` test still
+    asserted the pre-F3 exit; it is outside the workspace and behind `otlp`, so no workspace run
+    reached it (`1ac2dbe`: two tests, both fail when the node ignores `OTEL_*`). (4) `cargo fmt` of
+    the binding and `itk`, same cause (`46b425f`, `3d671eb`). (5) "Static checks" stopped at
+    `scripts/prove_workflow_gates_fail.py`: the `release.yml` step "The release notes open with a
+    Highlights block" had no Probe, so nothing proved it could fail. The 14 steps after it in that
+    job had not run on CI; all 14 pass locally (`62989d9`; the new probe has a healthy control and
+    three defects, all PROVEN; the full script cannot finish in this container because it has no
+    `ssh-keygen`, and reaches 24 PROVEN, 0 UNPROVEN before that probe). Not a failure of the
+    code but red all the same: CodeQL's three "cleartext logging" alerts (code-scanning 187 to
+    189) on assertion messages that print `t.notices()` in `otel/telemetry/notice_tests.rs`. They
+    are false positives (a notice holds only `VAR="value" why; instead` for a fixed list of
+    non-secret `OTEL_*` variables), I could not dismiss them, so `d05a326` stops printing the
+    notices; **whether CodeQL clears them is unconfirmed until its next run.** The other red
+    check, `Mutation Testing (incremental)`, failed by design until the PR carried the
+    `mutation-test` label. The maintainer chose to add it now and it was added on 2026-11-02.
+    **The first full run (run 41439026142, head `2d9fbe3`: 28 shards, about 85 minutes behind
+    the runner backlog) found ten survivors in nine shards and one shard that did not finish.**
+    Client shard 0: `enqueue`'s guard `waits` (`3a2f729`). Client shard 1: `select_grpc_interface`
+    `||` and `execute_streaming_request`'s deadline `+` (`dae87b7`). Server: `finished`'s `<`
+    (shard 15, `bb4a284`); `delivery_id` as `Some("")` (shard 0), `None` (shard 19) and its guard
+    (shard 3), all killed by `c40ce47`; `charge_overflow`'s `==` (shard 9) and `PinResolver`'s
+    `Debug` (shard 12, `f0193ef`); `WebSocketDispatcher`'s `Debug` (shard 13, `5919e66`). Each kill
+    was shown by applying the exact mutant by hand. **Server shard 16 ran out of runner disk**
+    (35 MB free, 17 of 18 mutants graded): not a survivor, and the ungraded mutant is unknown.
+    The causes were two: assertions loose enough for the mutant to fit inside them (a `Timeout`
+    checked as any `Timeout`; `< 200 ms` of a 100 ms bound), and public helpers tested only by a
+    doctest, which nextest does not run. **A push cancels and restarts the run**, so the fixes
+    were held until it finished. **The second run (run 41452549529, head `fec9af2`, about 70
+    minutes) passed 26 of 28 shards, including all nine that failed before and server shard 16,
+    which this time graded every mutant: the fixes above are confirmed by the real run.** Its one
+    failing shard, server 14, found an eleventh survivor in code this branch did not touch:
+    `collect_then_follow`'s `!interrupted` (`sync_collector.rs:263`), whose conditional the unit
+    tests never reached because they go through `collect_events`, a test-only copy of it. Killed
+    by `0d4a4ce`; shard 14 had passed in the first run, so the mutant list shifted between runs
+    or something killed it by luck, and which one is not known. **The third run (run
+    41462668225, head `89e27f0`, about 65 minutes) passed 27 of 28 shards, shard 14 among them, so
+    `0d4a4ce` is confirmed by the real run.** Its one failing shard, server 9, found a twelfth
+    survivor: `EventEmitter`'s `Debug` (`executor_helpers.rs:154`). This branch added four `Debug`
+    impls and the run reports them one at a time; `A2aRouter`'s, identical in kind and not yet
+    reported, is covered with it in `1ea639c`. The push that carries `1ea639c` starts a fourth
+    run, which is the check. (6) One failure of
+    `content_verification::unsigned_content_passes_unless_signatures_are_required` on `Test (1.94,
+    macos-latest)` at the stream assertion; that file, `tests/common` and the HTTP/1 path are
+    unchanged by the branch, and it did not reproduce on Linux (0 of 300 alone, 0 of 1200 with 24
+    copies on 4 cores, built with `--features signing`; a build without it holds no tests and
+    "passes" vacuously). The assertions now print what they got (`08c0b26`); the cause is
+    unknown. (7) `cargo-deny` failed on RUSTSEC-2026-0433 (`pulldown-cmark` 0.13.5, a build
+    dependency of `prost-build`; quadratic parsing with `ENABLE_WIKILINKS`, off by default). Not
+    the branch's making: main locks the same version and the advisory is newer than main's last
+    green run. Bumped to 0.13.6 in the four lockfiles that carry it (`bc1abfe`); `cargo-deny` is
+    not installed here, and CI's `cargo-deny` passed on `e60108d`. (8) `Test (1.94,
+    windows-latest)` on `e60108d` failed one test of 6364,
+    `signing::keys::x5c::tests::x5c_malformed_chain_is_not_used` ("base64url, not base64", left 1,
+    right 0). **A test defect already on main, not a Windows difference and not this branch's
+    code:** the case spelled a randomly drawn certificate in the URL-safe alphabet and expected
+    `x5c` to refuse it, but a certificate whose standard base64 has no `+` or `/` and needs no `=`
+    is the same string in both alphabets, and `x5c` rightly accepts it. 99 of 200,000 freshly
+    keyed certificates are such; the unmodified test failed 65 of 100,000 in-process runs, every
+    time with that message; with the fix 0 of 200,000 (`98b121e`, test-only). A grep of the
+    workspace's Rust tests for "not base64" and "alphabet" found only fixed invalid strings
+    elsewhere (`%%%`, `not base64!`); the tests were not read one by one. CodeQL's check is green
+    on `e60108d`, which carries `d05a326`; the alert list itself was not read. (9) **The fourth
+    mutation run (run 41475178068, head `e60108d`): all 26 shards finished, 25 passed with no
+    missed mutant, and server shard 13 ran out of runner disk again** (the runner warned "Free
+    space left: 61 MB" at 16:09 UTC, then `No space left on device`; 15 of its 18 mutants were
+    graded: 1 caught, 14 unviable, 0 missed; the other 3 are unknown, and which they are cannot be
+    told because the mutant-to-shard assignment shifts between runs). Counting from the job list,
+    28 jobs are 26 shards and 2 skipped placeholders, so the "28 shards" and "N of 28" figures
+    earlier in this entry are job counts and were not re-derived. Disk exhaustion has now hit one
+    server shard in two of four runs (16 in run 1, 13 in run 4) and none in runs 2 and 3. A
+    cleanup step in `mutants.yml` was offered to the maintainer and not added. Run 4's aggregator
+    finished at 16:55 UTC with "Aggregated surviving mutants: 0" and a failed shard matrix, and
+    the `CI` run on `e60108d` finished at 17:00 UTC (both before the push that carries this
+    entry): 20 of its 22 jobs passed and 1 was skipped; the one failure is the x5c test in (8).
+    `Test (stable, windows-latest)` and `Test (1.94, macos-latest)` passed in it, so the macOS
+    `content_verification` failure in (6) did not recur in that run, which settles nothing about
+    its cause. **Run after the fixes:** the
+    binding's
+    own fmt, clippy `--all-targets -D warnings`, 19 integration targets (3 `#[ignore]`d for SPIRE) and
+    75 unit tests; `itk` and `scripts/live/replica` `cargo check --all-targets`; `fuzz` with
+    `--cfg fuzzing`; the 36 gates; the cancel test under clippy with `sqlite,postgres`. **Not re-run
+    locally:** the full workspace nextest suite on the new tip (CI is the check), the `wasm-spike`
+    crates, and the fmt diffs in `fuzz`, `benches/sdk-comparison` and `scripts/live/replica/v015`,
+    which are in files this branch did not touch and which no CI job checks.
+  - **Verified, and what was not.** On the Q commit (`c4c5c29`): `cargo nextest run -p a2a-protocol-types -p a2a-protocol-client -p
+    a2a-protocol-server -p a2a-protocol-sdk --all-features --profile ci` 6055 passed, 177 skipped; the
+    other 24 workspace members 319 passed; doctests types 54, client 31, server 75, sdk 2, book 316;
+    `cargo hack clippy -p <the four crates> --all-targets --each-feature -- -D warnings` 59 of 59, no
+    warnings; `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean; 36 of 36
+    script gates; `cargo fmt --check`; the PostgreSQL suites against the local PostgreSQL 16
+    (`scripts/run_postgres_suites.py`: 12 test targets and 11 library modules, then the named CI suites:
+    `postgres_store_tests` 72, `multi_replica` 7, `turn_claims` + `replica_processes` +
+    `cross_replica_cancel` + `stale_write_position` 22, `encrypted_store` 1). After D-19 (`93dbb05`, the last code commit) only the server
+    crate's suite (3941 passed), its clippy and the gates were re-run: nothing in the other crates changed.
+    Hand-applied mutants: 14 in
+    B2, 2 in I, 12 in F (after its keepalive was rewritten), 19 in K, 16 in G-10's builders, 10 in Q, 4 in D-19;
+    `cargo mutants` cannot build 23 of the builders' 24 mutants (the types have no `Default`). **Not
+    run:** `cargo mutants --in-diff` on the server and client crates (a client run on A to E: 70 mutants,
+    48 caught, 21 unviable, 1 missed and killed afterwards; the server run was stopped at 20 of 168; the
+    G-10 conversion makes the diff ~330 files, so CI's shards are the way to run it,
+    `.github/workflows/mutants.yml` has the command); `cargo-semver-checks` against v0.15.0 (not
+    installed here; needed to confirm the breaking list); the official TCK; the toxiproxy partition run
+    for group B; Kubernetes; the fuzz targets (compiled only); a live pass of the Squid, private-CA and
+    model probes after the fixes; the sdk crate under `--no-default-features`. Live: the `deploy-agent`
+    image was built from this tree and run (it found that the build fails behind a TLS-inspecting proxy;
+    fixed with a BuildKit secret), and the retention sweep ran against the local PostgreSQL. Each
+    intermediate commit was not built on its own; only the tips were.
+  - **Not built (open), by the plan's group** (`docs/audits/2026-11-01-triage/PLAN.md`):
+    **J (observability stack) is blocked**: its proof is `promtool test rules` and a live stack, and the
+    auto-mode classifier refused to run a `promtool` I had downloaded (the 111 MB
+    `prometheus-3.15.1.linux-amd64.tar.gz`, no checksum check; deleted, never run). Needs the maintainer to
+    allow `promtool` (or the pinned `prom/prometheus:v3.15.1` image). No workflow runs
+    `deploy/observability/prometheus/tests/a2a-alerts.test.yml` today. **G-10 option A remainder**: the
+    other 26 wire structs (params, responses, security) are still exhaustive, about 600 literal sites, same
+    codemod (`STABILITY.md` section 4 says so). G-12, G-16, G-09/G-14/G-15 (undecided), the rest of I
+    (C-06, C-09, C-10, C-12, C-13, C-16, C-22, C-23, NEW-c-3/-4), K's NEW-d-3 (per-address bound),
+    NEW-f-2 (fairness between callers: the sender is not told who registered a config), SEC-14's
+    per-caller quota, per-destination rate and verification handshake, D-05's dead-webhook policy and
+    outbox, L (fleet correctness), M (delegation hand-off on shutdown, F5), O and the HttpPool (F7,
+    ADR 0032), the swarm designs beyond the four fixes, Q, most of G (A14, A15, A19, A21-A23, A25, A26,
+    NEW-a-l-2, -4a, -5), B-10/B-11/D-20 (gRPC and idle defaults), D-03(d), E-F8 (F13), B-14 cert reload
+    (F15), NEW-b-1/-5 and the proxy boundary for https pinning (F16). Nothing built forecloses any of them.
+    The maintainer's brief: find every way the SDK fails a real deployment (local, Docker, Kubernetes,
+  proxy or none, public/private/self-signed CA, mDNS, replicas, outages, disconnects), with live runs
+  against llama.cpp and small Qwen and Gemma models, A2A v1.0.1 conformance, OpenTelemetry, the EU AI
+  Act and GDPR; consider Agent Skills (agentskills.io); support sub-agents, fan-out and messaging a
+  running agent; and ship 0.16.0 only when it is checked, never on assumption.
+  - **The record is `docs/audits/2026-11-01-triage/`**: `README.md` (method, what was and was not
+    checked, corrections), `PLAN.md` (191 items in 19 commit groups, each item in exactly one),
+    `DECISIONS.md` (12 forks and 46 per-row option sets), ten `<slice>.json` with `file:line` evidence,
+    `live-results.md` and `probes/`. `docs/audits/2026-10-29/README.md`'s `Status` column is updated
+    for all 149 rows and has a new section N for what the triage found. Counted with the
+    findings-triage skill's counter on 2026-11-01: 283 rows; confirmed (read) 125, fixed 66, needs
+    decision 46, fixed (part) 25, verified live 7, not a defect 5, duplicate 5, confirmed (live) 2,
+    refuted 1, cannot check 1; **none `open`**. Of the 149: 71 confirmed, 46 need a decision, 21 fixed
+    in part, 7 already fixed, 3 not defects, 1 cannot be checked by reading. The previous figure here
+    (149 `open`, "some likely stale") is withdrawn: 7 were already fixed, and of the 3 not-defects C-20 was
+    a misreading while D-24 and D-25 record areas found sound.
+  - **The three S0 rows are all `fixed (part)`.** H2 (private CA and mTLS) is S1: every binding can
+    trust a private CA, except the token provider and gRPC's use of `SSL_CERT_FILE`; one pool per
+    client remains. H3 (orphaned tasks) is medium: the reaper fixes the default SQL configuration, but a
+    reaper that ends a live task whose owner merely failed to renew is a new risk (NEW-h-s0-1,
+    NEW-e-1; a probe is written, not run). H4 (delegation) is high: resume, `reattach` and a
+    journal exist, but nothing drives recovery, a graceful supervisor redeploy still cancels its
+    children, and gRPC/WebSocket delegations are cancelled when idle.
+  - **Found by running it (this session):** the CLI's `--header` guard (SEC-09, merged in #185) was
+    bypassed when the card's first interface is on the typed host but cannot be built (binding
+    `NOPE`, or `ftp://`) and a later one is on another host (NEW-f-1; fixed in A). A blanket
+    `HTTP_PROXY` sends loopback traffic to the proxy (NEW-b-2; not fixed, F2). `live-results.md`.
+    A blocking send over gRPC was cut at the request timeout by tonic's channel timeout
+    (NEW-g-api-1): reproduced and fixed in D at a small scale (a 3 s turn, a 1 s request timeout), not
+    with a 40 s executor. A blocking send to a task another replica had cancelled was answered
+    `working` (found while fixing E-F9; fixed in C).
+  - **Not release-ready.** `docs/readiness-bar.md` still records no measurement for R1 to R7, C1 to C5
+    and F1 to F5. No Kubernetes, IPv6-on-the-wire, public-CA collector or official-TCK run has been made
+    since #185.
+  - **How #184 was verified, the bar for what follows.** Before a push:
+    `scripts/preflight.sh --force`; every script gate (the list is in the
+    workflow's Static checks job); `cargo hack clippy -p a2a-protocol-types
+    -p a2a-protocol-client -p a2a-protocol-server -p a2a-protocol-sdk
+    --all-targets --each-feature -- -D warnings`, exactly as CI runs it
+    (one crate is not enough: 3dac520 failed the matrix that way);
+    `scripts/run_postgres_suites.py` against PostgreSQL; and, for each
+    crate a change touches, `cargo mutants --in-diff` on its diff from
+    `main` (the command is in `.github/workflows/mutants.yml`). Hand-picked
+    mutants are not that check: two CI mutation runs (on df86307 and
+    8ec32f4) found 47 survivors that hand-picking had missed (10 client,
+    10 discovery, 27 server). The
+    server's full run is 20 shards of about 50 minutes; locally, apply its
+    survivors by hand (scratchpad script pattern: replace, run the one
+    test, restore) and let CI's run be the full one. macOS and Windows
+    cannot be run here; CI is their check.
+  - **Pull requests [#184](https://github.com/tomtom215/a2a-rust/pull/184) and
+    [#185](https://github.com/tomtom215/a2a-rust/pull/185) are merged** (`a0e6673`, `4a8243c`). The
+    workspace reads **0.16.0**, bumped at the maintainer's choice because `cargo-semver-checks` blocks
+    the branch's deliberate breaks under 0.15.x. It is a version bump, not a release: no tag.
+    **0.15.1 was never tagged or published** (checked 2026-11-01: crates.io, the GitHub latest release
+    and the remote tags all end at 0.15.0), yet `CITATION.cff` still says 0.15.1, released 2026-10-26
+    (NEW-t-1). The `0.15 → 0.16` upgrade guide is `book/src/reference/upgrading/0.15-to-0.16.md`. Before
+    tagging 0.16.0: RELEASING.md's checklist, and STABILITY.md's cadence, since 0.15.0 was a breaking
+    release in October 2026 (a second one that month needs a `**Cadence exception:**`). The SLIMRPC
+    binding's requirements read `0.16`; its own version (0.7.0) moves at its own release (RELEASING.md,
+    "releases separately").
+  - **mDNS discovery is built, not released:** `crates/a2a-protocol-discovery`
+    (ADR 0029, proposed) is `publish = false`. Publishing it needs its
+    crates.io name set up for trusted publishing and a place in
+    `.github/workflows/release.yml` (packaging steps, SBOM and attestation
+    lists); then `a2a discover` can join the CLI. Its round-trip tests need
+    multicast looped back on the CI runner. First run in CI on pull request
+    #184: on macOS the browse heard the agent only over loopback, and
+    `card_urls` left loopback out, so the card fetch had no URL; it now
+    falls back to loopback when that is all there is.
+  - **Run live 2026-10-30:** `live-model` 10 of 10 against Qwen3.5-4B and
+    against Gemma 4 E2B (task list L13 to L15); with the drafts check, 11
+    of 11 twice against Qwen3.5-2B (`examples/live-model/README.md`); every
+    server PostgreSQL test through PgBouncer 1.26.1, 147 of 151, which found the halt store's
+    `LISTEN` broken behind it (L16, fixed; L17).
+    `deploy-agent` as two hardened containers on PostgreSQL (L18); its Dockerfile's build stages ran on 2026-11-01 (see above).
+    `promtool test rules` (Prometheus 3.15.1, from its image) on
+    `deploy/observability/prometheus/tests/`: passes. CI does not run it.
+  - **Not yet run live:** the client dashboard with a
+    long-lived client (L11: short-lived CLI processes never export); the
+    (the `deploy-agent` Dockerfile's build stages ran on 2026-11-01.)
+  - **First, next (2026-11-01).** The maintainer chose **one large pull request**, built as the
+    19 commit groups of `docs/audits/2026-11-01-triage/PLAN.md`; open it only when the groups meant for
+    0.16.0 pass the bar above (a pushed branch starts no CI; the workflows run on `pull_request`).
+    1. Groups A to D of `PLAN.md`, in that order. Each regression test first, seen to fail on the
+       unfixed code. A and the NEW-d-1 test of C are reproducible now: `probes/` holds the two live runs.
+    2. Put the twelve forks of `docs/audits/2026-11-01-triage/DECISIONS.md` to the maintainer; none of
+       groups A to D waits on one.
+    3. Run the baseline suites on `4a8243c` in this environment (they were not run: only the 36 script
+       gates, each exit 0, and a dev build of `deploy-agent`, `a2a`, `live-model` and `hello-agent`).
+    4. `main`'s own `CI` run on `4a8243c` had not finished when it was last read (13 other push
+       workflows were `success`); read it before building on `main`.
+  - **Environment for live runs, as stood up 2026-11-01** (4 vCPU, 15 GB, about 22 GB of disk free after
+    the build; the Docker daemon, PostgreSQL and the services below are *not* running at session start):
+    `dockerd >/tmp/dockerd.log 2>&1 &` (the CLI is installed, the daemon is not); `pg_ctlcluster 16 main
+    start` then `su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'postgres'\""`, giving
+    `postgres://postgres:postgres@localhost:5432/postgres` (PostgreSQL 16.15). llama.cpp: `docker pull
+    ghcr.io/ggml-org/llama.cpp:server` works (build 12030, commit `a91eab67d`); models come from Hugging
+    Face, which is reachable: `unsloth/Qwen3.5-2B-GGUF` `Qwen3.5-2B-Q4_K_M.gguf` (SHA-256 `aaf42c8b…9223`,
+    the file of the 2026-10-28 run) and `unsloth/gemma-4-E2B-it-GGUF` `gemma-4-E2B-it-Q4_0.gguf`
+    (`31d3a3c6…0132`, **not** the 2026-10-28 Gemma file `8e30dff3…6a52`, so Gemma results are not
+    byte-comparable with that run). Serve with `docker run -d --name llama -p 127.0.0.1:8080:8080 -v
+    /home/user/models:/models:ro ghcr.io/ggml-org/llama.cpp:server -m /models/<file> --host 0.0.0.0
+    --port 8080 --jinja -c 16384 -np 2 -t 4`; a smoke prompt answered. `scripts/install_cargo_mutants.sh`
+    (about 5 minutes) installs the patched `cargo-mutants` 27.1.0 and `cargo-nextest` 0.9.146. Not
+    installed and not run: `cargo-hack`, `cargo-deny`, `cargo-semver-checks`, `mdbook`, `kind`,
+    `kubectl`, `promtool`, the Collector, Squid, HAProxy, toxiproxy (pull images where a run needs
+    them). Build with CI's flags (`RUSTFLAGS=-D warnings CARGO_PROFILE_DEV_DEBUG=0`) so `preflight.sh`
+    reuses the artifacts. `pkill -f <text>` kills your own shell when the text is in its command line;
+    use `pkill -x <name>`. Git here is configured as `Claude <noreply@anthropic.com>`, which `dco.yml`
+    rejects; commit with `git -c user.name='Tom F.' -c user.email=tomf@tomtomtech.net commit -s`, as
+    the merged commits are. The maintainer confirmed on 2026-11-01 that he signs off every commit as
+    Tom F. with no other trailer, so that DCO passes.
+  - **Toolchain: run `rustup update stable` first.** This image shipped Rust 1.97.0; CI's
+    `toolchain: stable` was 1.99.1 (2026-10-15). Clippy 1.97 failed `doc_markdown` and
+    `duration_suboptimal_units` on files nobody had touched, which looks like a defect in `main` and
+    is not; under 1.99.1 clippy is clean on the crates checked. Clear `target/` after the update.
+  - **Dependencies (maintainer, 2026-11-01):** the repository does not ban new dependencies. Avoid one
+    where pure Rust can do the job to production grade; do not reinvent a vetted solution to avoid
+    one, above all for anything security-sensitive. `CONTRIBUTING.md` (Dependency Policy) and ADR
+    0002 (amendment) say so; the first use is `subtle` for constant-time comparison.
+- **Branch `claude/intelligent-bohr-9qraxk` (2026-10-28), on `main` at
+  `568fc6c1` (pull request #182, the 0.15.1 preparation, merged; no tag).**
+  The maintainer judged 0.15.0 not ready in practice and asked for everything
+  to be run live before another release. Done here, each item verified by the
+  run named in `CHANGELOG.md` `[Unreleased]`, where every change is listed:
+  - **Merged as pull request
+    [#183](https://github.com/tomtom215/a2a-rust/pull/183)** (`8dc4331`).
+    Run `scripts/preflight.sh` (CONTRIBUTING) before each push.
+  - **The review's follow-ups (2026-10-29)**, each in `CHANGELOG.md` or a
+    commit message with its evidence: retry metrics
+    (`a2a.server.store_retries`); the queue's write wait tied to
+    `store_write_retry` (a chatty turn during an outage was failed and left
+    `Submitted`); startup under a short `statement_timeout`; the release of
+    an idempotency key or lease pinged rather than retried; every retried
+    write run twice on all six stores; round trips per send pinned
+    (`tests/statement_count.rs`); a cancel forced between a continuation's
+    read and save; the fence scoped to its task; every PostgreSQL suite run
+    in CI, found rather than listed; PgBouncer in transaction mode run;
+    `scripts/live/` committed.
+  - **Replicas work without session affinity**: turn claims
+    (`store::claim`, `handler::claims`), tested on SQLite and PostgreSQL in
+    process (`tests/turn_claims/`) and as separate OS processes, one killed
+    mid-turn (`tests/replica_processes.rs`), and live as two `deploy-agent`
+    processes behind HAProxy on PostgreSQL 17 (6 of 6 `GetTask`s through the
+    balancer answered, against every second one `TaskNotFound` before).
+    Mutation-checked: claims off, all 10 claim tests fail; fence condition
+    replaced by `TRUE`, exactly the 2 fence tests fail; the claim released
+    at the old point, the terminal-event test fails 5 of 6 runs.
+  - **An independent review of turn claims** (a read-only agent, given the
+    commit and not this session's conclusions) reported 2 high, 4 medium and
+    5 low findings. Six were confirmed and fixed (`fa2785eb`), each with a
+    test that fails when the fix is reverted: a renewal racing a new claim
+    cancelled it; renewal by owner kept forgotten claims alive; foreign
+    claims over a fenced store refused every write; the PostgreSQL fence read
+    a stale snapshot under READ COMMITTED (reproduced with two `psql`
+    sessions; now `FOR KEY SHARE`); the quorum count was unfenced (two
+    approvals on two replicas lost one, 3 of 3 runs); a waiting send held its
+    idempotency key, so a retry elsewhere was told "accepted" for a send then
+    refused. Also fixed: shutdown now releases claims, and (2026-10-29) the
+    fence names the task written. Not changed, with the reason in *Open
+    engineering*: a send to a task whose cancelled executor still winds down
+    is refused at once.
+  - **Claims under load and their cost**: `tests/soak_multi_replica.rs`, now
+    with `A2A_SOAK_TURN_CLAIMS=off` and a check that no claim outlives a run,
+    three 60 s runs each way, alternating, release build, PostgreSQL 17 on
+    the same 4-vCPU host: 360 ± 17 pairs/s with claims, 423 ± 14 without
+    (15% fewer), median 21.4 ms against 18.6 ms; 0 failures, 0 cross-replica
+    misses, 0 claims left, in all six.
+  - **OTLP over TLS and through proxies, live**: otelcol-contrib 0.163.2 with
+    TLS from a private CA, mutual TLS, a self-signed certificate marked CA and
+    one `CA:FALSE`, an expired one, a wrong host name and an IP SAN, over
+    OTLP/HTTP and OTLP/gRPC; Squid 6.13 open, denying and requiring a login.
+    Everything that should work delivered all three signals. Of the warnings
+    for what should not, five had no hint and three hints never fired (they
+    matched error names rustls does not print); all fixed, tested on the
+    failures' own text. `NO_PROXY=[::1]` exempted nothing; fixed. IPv6 could
+    not be dialled (no IPv6 in this kernel), so its URL and `NO_PROXY`
+    handling is unit-tested only.
+  - **Collector hardening**: `memory_limiter` and `health_check` in both
+    Collector configurations, and `docker-compose.prod.yml` (Grafana login,
+    only Grafana and OTLP published, a memory limit), each run live.
+  - **Every example run against llama.cpp `llama-server` b11913**
+    (`ghcr.io/ggml-org/llama.cpp:server`, commit `7aca0d2ea`) with Qwen3.5-2B
+    Q4_K_M (SHA-256 `aaf42c8b…9223`): all exit 0, after fixing four that sent
+    no token cap (a reasoning model ran past every timeout). `live-model` 10
+    of 10 with Qwen3.5-2B and with Gemma 4 E2B Q4_0 (`8e30dff3…6a52`);
+    `tool-loop-agent`, `genai-agent`, `rig-agent`, `mcp-agent` and
+    `incident-response` also on Gemma 4 E2B, each exit 0 with its model leg
+    exercised. The examples print the model name they ask for, not the one
+    llama-server serves (it serves its one model whatever the name).
+  - **Observability out of the box**: `deploy/observability/docker-compose.yml`
+    (Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
+    13.2.4); `check_dashboards.py` ok through it (21 rules, 45 panel queries,
+    only "Persistence errors" empty, as no store failed); the three
+    dashboards, a Tempo trace and a Loki line's link to it looked at as
+    screenshots, which found three panel defects the query check had passed
+    (fixed). Export run live four ways: through the Collector over OTLP/HTTP
+    and OTLP/gRPC, straight to Prometheus's OTLP receiver, and to the console.
+  - **Docker**: `examples/deploy-agent/Dockerfile` built (140 MB) and run as
+    two containers on the compose network, sharing a PostgreSQL on the host
+    through `--add-host=host.docker.internal:host-gateway`; `docker stop`
+    drained and exited 0. Built from the pinned digests pulled through
+    `mirror.gcr.io` (Docker Hub answered 429) and with this sandbox's proxy CA
+    added in a scratch copy of the Dockerfile (*Environment*); the repository's
+    Dockerfile is unchanged.
+  **Not run, and so not claimed:** Kubernetes (kind could not start a pod
+  sandbox here: nested `runc` fails, "can't get final child's PID from
+  pipe"; Kubernetes 1.35's kubelet also refuses this host's cgroup v1), IPv6
+  on the wire, a public-CA collector, a network between replicas
+  and database other than a local proxy adding latency, `cargo-semver-checks`,
+  `cargo deny`, `promtool` (the
+  rules were exercised live by Prometheus, not unit-tested), the official
+  TCK. **For the maintainer:** (1) the release number, now 0.16.0 by the
+  book's own definition (public API added, which sends are refused changed;
+  `CHANGELOG.md` `[Unreleased]` holds it, and the `[0.15.1]` section above it
+  was never tagged); (2) sign-off: the commits are authored as the session's
+  identity and signed off by it alone, so `scripts/check_dco.sh` will want
+  them re-authored and signed off by you, as with the 0.15.1 branch; (3) the
+  release notes should say that a 0.15 replica's write to a task a newer
+  replica runs is now refused (`A2A01`), which is what makes the rolling
+  upgrade safe, and that SQL of an operator's own against the task tables is
+  treated the same way unless it sets `a2a.claims`.
+- **Rolling upgrades from 0.15, safe without affinity (PostgreSQL)**
+  (`store::claim::upgrade`, pg migration 9): every write this release makes
+  marks itself; triggers refuse an unmarked (0.15) write to a task a newer
+  replica holds, let a 0.15 cancel through and forward it to the claim, and
+  turn a 0.15 write into a claim newer replicas wait for. Verified against a
+  real 0.15.0 replica built from the tag (`scripts/live/upgrade_live.py`,
+  with `scripts/live/replica` built against both trees): 4 of 4
+  scenarios, 1 of 4 with the triggers disabled. `tests/turn_claims/upgrade.rs`
+  replays 0.15.0's own SQL; five mutants of the guard are each caught. All
+  database-gated tests pass on PostgreSQL 16.15 and 17.11 (2,478 each).
+- **Replicas over a network** (toxiproxy 2.12.0 between each replica and the
+  database): the claim costs one or two round trips a turn, 8% to 12% of
+  throughput at round trips from 1.0 to 11.2 ms; a 5 s cut, a 20 s
+  cut (taken over at 16.1 s, the cut-off writer fenced and stopped 2.5 s after
+  its link returned) and a database restart mid-turn all behaved as the book
+  says (*What it costs*, *When the network fails*).
+- **cargo-chef and nextest**: the `deploy-agent` image caches dependencies
+  (rebuild after a source change 221 s against 428 s); CI's test matrix runs
+  nextest with doctests in their own steps. Neither the image build in CI nor
+  the edited `ci.yml` has run on GitHub yet.
+  ADR 0028 (Proposed) and `docs/adr/0028-wasm-spike/` are unchanged from the
+  previous session; its `reproduce.sh` was not re-run.
+- **Released:** 0.15.0 (tag `v0.15.0` on merge commit `e4fc3bc1`, 2026-10-25) is
+  the newest release; 0.14.1 (2026-09-30) is the one before. It is the first
+  signed tag: SSH-signed by the key in `.github/release-signers/`, and
+  `scripts/verify_tag_signature.sh` accepts it against the keys on `main`.
+  Release run 40196985363: attempt 1 failed `test · Windows` on
+  `lease_renewals_are_in_the_parents_trace` ("1 renewals"; it needs 2), a
+  re-run of that job passed, and the run finished green at 14:25 UTC.
+  crates.io lists all four crates at 0.15.0 (published 14:24 to 14:25 UTC;
+  each checksum equals the release's `SHA256SUMS`), docs.rs built all four,
+  and GitHub accepted the shortened release body (40,600 characters). The
+  release has no CLI binaries: `PUBLISH_CLI_BINARIES` is unset
+  (`packaging/README.md`). **The Windows failure's cause is not
+  established.** The same tree passed Windows twice in the pull request and
+  150 of 150 times in a probe on `windows-latest` (renewal 2 started at 679 to
+  707 ms; the test's window closed at about 1,022 ms, so a stall of over
+  ~315 ms would explain it, and nothing showed one). The test now waits for
+  two recorded renewals, with a 10 s deadline and the span names in its
+  failure message, instead of sleeping a fixed second.
+- **Book audit (2026-10-25):** 13 readers checked every book page against
+  the code, the specification and the changelog, and 13 editors applied what
+  held up. Checked mechanically afterwards: the book's doctests (281 passed,
+  0 failed, 5 ignored, the baseline), `rustdoc -D warnings` on the four
+  crates, the CI gates that need no build, `promtool` on the alert rules, and
+  the two generated benchmark pages (each regenerates byte-identical from its
+  generator). The harness does not compile the bodies of `#[test]` and
+  `#[tokio::test]` functions (rustdoc strips them), so `testing.md`'s seven
+  were compiled and run by hand against a working executor: 7 of 7 pass; the
+  page's hidden stub executor does nothing, so they fail against it, which is
+  why the page now says `CalcExecutor` is not shown. The book's type face was
+  11.9 px in a 560 px column (mdBook's 62.5 % root made `1rem` 10 px);
+  `book/theme/custom.css` now sets 17 px in a 720 px column. The banner cards'
+  subtitle and the code card's footer said v1.0.0; they say v1.0.1 now (only
+  that text band was re-rendered; `book/static/brand/README.md`). Left open:
+  `book/src/images/dashboards/a2a-server.png` predates the Agent executor row
+  (the page says so; retaking it needs the live stack);
+  `examples/deploy-agent/Dockerfile` was one Rust minor behind the MSRV and
+  is now on 1.94, with no gate that keeps it there; `docs/official-tck-
+  findings.md` §1 says 87 passing and 5 failing "cannot be reconciled" with
+  114, and an editor's arithmetic suggests it can (87 + 5 + 1 + 21), which
+  nobody has resolved.
+- **Book restructure (2026-10-29):** split into landing pages and
+  sub-pages (78 to 210 pages; paths kept, so outside links hold), with 38
+  diagrams. Diagrams: edit `book/diagrams/<name>.mmd`, run
+  `scripts/render_book_diagrams.sh <name>` (Node and a Chromium; pinned
+  mermaid-cli 11.4.2), commit both SVGs; pages use the `figure.diagram`
+  markup documented in `book/theme/custom.css`. A new page needs a SUMMARY
+  entry, a `book-tests/src/lib.rs` registration and `scripts/gen_sitemap.py`;
+  moving a cited sentence needs `scripts/check_spec_ledger.py --fix-lines`.
+  `scripts/check_book_links.py` (CI) checks links, anchors and images in the
+  built book. Checked mechanically: doctests 302 passed, 0 failed, 5 ignored
+  (up from 281: new blocks, and `tool-loop` added to book-tests' features);
+  `upgrading_guide`, `book_defaults` and the observability catalogue test
+  pass; every book gate passes; 0 broken links over 215 built pages; every
+  diagram looked at in light and dark at 1280 and 390 px. Left open: no
+  shipped alert or panel reads `a2a_server_store_retries_total`
+  (observability/dashboards.md says so and suggests a query); READMEs outside
+  the book with stale claims (`tools/a2a-cli` exit codes and `--header` on
+  `card`, `tck/README.md` on BIND-EQUIV-004, `packaging/README.md` on the
+  signing key).
+- **Working branch:** `claude/pensive-bardeen-c6ofm8`, from `main` at `4a8243c`. `git log origin/main..`
+  lists what it holds that `main` lacks.
+- **Merged in #179** (branch `claude/zealous-fermat-f4kg9z`, 2026-10-23 to
+  2026-10-24; merged 2026-10-24 13:23 UTC as `2781bb69`). The PR head
+  `6707f4d` had 104 check runs, 98 success and 6 skipped by their own
+  workflows' conditions (`repos/tomtom215/a2a-rust/commits/6707f4d/
+  check-runs`, `total_count`, counted 2026-10-24), the labelled mutation
+  gate among them. `git log 4cadc2af..2781bb69` lists the commits; each
+  message says what it changed and how it was verified. In sum:
+  - the tool-calling study scored, audited by reading every answer, and
+    published (`docs/tool-calling-study.md`, `34f579d`);
+  - every dependency refreshed in all nine lockfiles, the Python
+    requirements, Actions, Go, npm and Maven pins; MSRV 1.94, which sqlx
+    0.9 requires (`7a73bdc`; `STABILITY.md` §5 allows the raise);
+  - Prometheus recording and alerting rules (with `promtool` tests) and
+    three Grafana dashboards (server, client, GenAI), built from a live
+    Prometheus 3.15.1 fed by the repository's own binaries, directly over
+    OTLP and through an OpenTelemetry Collector (`deploy/observability/`,
+    `c372919`; GenAI and task-store panels, with screenshots in the README
+    and the book, 2026-10-24);
+  - a database `CLIENT` span and `db.client.operation.duration` for each
+    operation of a store that names its database (`TaskStore::database`;
+    the SQLite and PostgreSQL stores do), and `server.address` on a
+    WebSocket client's spans (`Transport::server_url`), 2026-10-24;
+  - OpenTelemetry: a `service.instance.id` per process (`755b121`), export
+    wherever an endpoint is configured in every binary (`988fb69`), the
+    tool loop's `GenAI` metrics and the rest of its `chat` span
+    (`d118aaf`);
+  - the spec ledger cites code by symbol at its definition line, and the
+    checker verifies it (`6202a56`);
+  - a re-audit of all 510 ledger entries against the v1.0.1 text found
+    273 confirmed as written; its defects are being fixed in work
+    packages. WP-A (server security: §13.3 schemes on the public card,
+    §13.2 push credentials, push config `Debug`, the kid-optional signers
+    removed, card `max-age` on WebSocket and gRPC, eleven security tests
+    that now test what they are cited for) and WP-B (the client validates
+    every object and card it receives against a2a.proto's REQUIRED
+    fields; the gRPC conversion refuses absent ones; wire forms) are
+    merged. So are WP-C (handler-wide conformance: the executor sees only
+    card-declared extensions, `BadRequest` names the missing field, an
+    empty push url is `InvalidParams`) and WP-D (SLIMRPC: every operation
+    tested over the fabric, an equivalence suite against JSON-RPC, the
+    push-config list fixed, retryable errors prefixed, the server's
+    default telemetry, an `otlp` feature, on by default since the TLS
+    conflicts below were fixed);
+  - `examples/live-model` (2026-10-23): the SDK end to end against a real
+    model through llama-server, ten checks (the tool loop streamed and
+    signature-verified on all four bindings, provenance refusal,
+    idempotency, budget exhaustion, delegation under a budget, halt,
+    quorum). Its README records the runs, the model, the quantization and
+    the llama.cpp build. The other model-backed examples were run the same
+    day against the same llama-server (b11836, Qwen3-1.7B Q4_K_M, alias
+    `qwen3:1.7b` on port 11434, release builds): `tool-loop-agent` (billing
+    question: right, two rounds), `incident-response` (exit 0, Act 4 44 of
+    44 cells, Act 5 16 of 16 with `A2A_TEST_POSTGRES_URL`), `genai-agent`
+    (44 of 44, LLM leg exercised), `mcp-agent` (exit 0; 1 of 2 answers
+    used the MCP tools, and the billing answer, which called none, is
+    invented), `swarm` (`llm` scenario 32 of 32 jobs completed) and
+    `rig-agent` (44 of 44 on its second run; its first lost SendMessage over
+    WebSocket to the clients' 30 s default timeout, which `84d37e1` replaced
+    with one 300 s `MODEL_CALL_TIMEOUT` per example on every binding).
+    Logs were not committed.
+  - §3.1.2 (2026-10-23): a `Message` an executor writes once its task
+    stream has begun is sent as a status update carrying it, folded once
+    at the queue's writer (`streaming/event_queue/message_fold.rs`),
+    reviewed independently; a follow-up to an existing task folds its
+    first `Message` too (the maintainer's decision, reviewed again).
+- **`sign_agent_card` is deprecated, not removed** (2026-10-23): it shipped
+  in 0.14.1, so `STABILITY.md` §3 keeps it for one minor release. It now
+  refuses `key_id: None`, which wrote a header without the `kid` §8.4.2
+  requires (a specification correction, §2), and goes in 0.16.0.
+  `sign_agent_card_ed25519` never shipped and stays removed. No §3 waiver
+  remains.
+- **Built on this branch (2026-10-20):** ADR 0022's tool loop
+  (`server::tool_loop`, feature `tool-loop`; `examples/tool-loop-agent`,
+  whose README records the live run); the §3.5.2 holds, with the
+  independent review's findings fixed (`store/holds`); a fix for the idle
+  timeout cutting a blocking request still being answered
+  (`serve::graceful::idle::Serving`); the dependency refresh (genai 0.7,
+  tokio 1.54, no `deny.toml` waiver left at the root).
+- **Encryption, verified three ways (2026-10-21):** the sealed formats
+  read by Python's `cryptography` in both directions
+  (`scripts/crypto_interop/check.py`, `tests/crypto_interop.rs`, a CI
+  step); 37 NIST CAVP AES-256-GCM cases (the zip's SHA-256 and every case
+  re-checked against the download, and every case re-decrypted
+  independently); four fuzz targets on the unseal parsers, 600 s each, which
+  found that a keyed audit digest accepted uppercase hex (fixed); and a
+  mutation sweep of the crypto modules (210 mutants, the 2 missed rewritten
+  so they are killed). `book/src/deployment/security.md`, "How this is
+  verified".
+- **Control map (2026-10-23):** 88 rows, every one citing a test or CI step
+  that proves the row's `sdk` text; `check_compliance_map.py --check` fails
+  on a row that cites nothing (`UNCITED` is empty: AIA-6 cites the book's
+  "Is Your Agent High-Risk?" through `DOC_CLAIMS`, AIA-53 cites
+  `check_no_model_artifacts.py`) and on a document that stops saying what
+  `DOC_CLAIMS` quotes. All 187 cited tests were run 2026-10-23,
+  PostgreSQL-ignored ones included, all passing. The checker verifies that
+  a cited test exists, not that it passes: rerun them after editing a cited
+  file. On 2026-10-23 the requirement text of every AI Act row claiming SDK
+  support (12-1, 12-2, 12-3, 13-3f, 14-1-3, 14-4a, 14-4d, 14-4e, 14-5,
+  15-4, 15-5, 19-26-6, and the unamended parts of 50-2 and 72-2) was
+  compared with Regulation (EU) 2024/1689 as published (OJ PDF, SHA-256
+  `bba63044…`, the same file as 2026-10-15, fetched with `curl -H 'Accept:
+  application/pdf' -H 'Accept-Language: eng'
+  http://publications.europa.eu/resource/celex/32024R1689`; EUR-Lex
+  answers 202): all consistent, Art. 14(5)'s two-person verification and
+  its law-enforcement exception included. What the rows say Regulation
+  (EU) 2026/1744 changed was not re-checked: that text is not fetchable
+  here.
+- **Built on this branch (2026-10-22):** kill-switch conformance,
+  `conformance::halt::{check_store, check_handlers}` (feature
+  `conformance`): 8 store checks and 9 end-to-end replica checks, tested
+  against deliberately broken stores; the in-memory, SQLite and PostgreSQL
+  stores pass (`tests/kill_switch_conformance.rs`). This completes the
+  2026-10-21 safety list except the upstream drafts, which wait on the
+  maintainer.
+- **Built on this branch (2026-10-22):** the prompt-injection containment
+  harness (`crates/a2a-protocol-sdk/tests/injection_containment/`,
+  `docs/injection-containment.md`): a model that obeys every instruction
+  it reads, 8 scenarios a control contains and 3 limits asserted as limits;
+  cited by the control map's ASI-MODEL row. Chosen by the maintainer over a
+  live-model susceptibility study (2026-10-22).
+- **Built on this branch (2026-10-22):** ADR 0027's provenance wiring:
+  `with_content_signer` signs what the server serves (`src/provenance.rs`,
+  the stream reader, push, the unary handlers), `with_content_keys` on the
+  server (`RequestContext::content_check`) and the client
+  (`src/content.rs`, `ClientError::ContentNotVerified`), and
+  `Profile::Production` requiring a signer. An independent review found 12
+  problems; the 9 fixed and the limits left are in ADR 0027 (including an
+  unreleased flaw in `verify_content`). Verified at `69163dec`: all 169
+  server test targets with all features (1,221 passed, 114 ignored), run 5
+  at a time because 15 at a time filled the disk at link time. That
+  commit's message says 22 hand mutants and 170 citations; recounted, they
+  are 21 and 169. Found on the way, and fixed
+  2026-10-22: metadata on an appended artifact chunk was dropped by the
+  SQLite and PostgreSQL stores (`tests/artifact_append_metadata.rs`).
+- **Built on this branch (2026-10-22):** ADR 0026's tool-call idempotency:
+  `ToolInvocation::idempotency_key`, `Tool::read_only`, and a repeated call
+  to a side-effecting tool answered from the first
+  (`tool_loop/idempotency.rs`); `Delegation::start` keys the child's
+  message when the agent's card honours keys.
+- **Built on this branch (2026-10-21):** ADR 0025's production profile:
+  `Profile::Production` (`profile.rs`) and `ServeConfig::production()`
+  (`serve/graceful/production.rs`, `ServeReport::refused`). Not covered:
+  the gRPC and WebSocket listeners. Since ADR 0027 the profile also
+  requires a content signer.
+- **Built on this branch (2026-10-21):** ADR 0024's pushed halts and
+  cancels (`store/halt/postgres.rs`, `handler/halt/sync.rs`).
+- **Built on this branch (2026-10-21):** ADR 0023's budget, G5 in
+  `docs/swarm-orchestration.md`: `a2a_protocol_types::budget` (`Budget`,
+  `BudgetStatus`, `BudgetHandle`), every server holding a turn to the
+  caller's deadline (`handler/budget.rs`), `Delegation::start_budgeted`,
+  and the tool loop charging the `tokens` meter. The 0.10/0.12
+  `max_stored_tasks` deprecations are removed. `webpki-roots` requires
+  1.0.10 (RUSTSEC-2026-0381).
+- **Trailers on `main` (for the maintainer):** 36 of the 86 non-merge
+  commits pull request #173 merged (`86c8fac..6c90d0b^2`) carry
+  `Co-Authored-By` and `Claude-Session` trailers, against `CONTRIBUTING.md`'s
+  "no other trailer" rule, and the `Co-Authored-By` line names a model.
+  Counted 2026-10-20 with `git log -1 --format=%B` per commit. `main` is not
+  rewritten; whether to leave it is the maintainer's call.
+- **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
+  authority on the counts (2026-10-24: TESTED 455, APPLICATION 32,
+  NOT_APPLICABLE 19, PARTIAL 4; 510 entries). Re-audited 2026-10-24: the 20
+  NOT_APPLICABLE entries were read again against the v1.0.1 text by an
+  independent reader (18 agreed; §1.4's migration-guidance MUST at line 112
+  moved to TESTED, with a drift test; Appendix A's note rewritten). The four PARTIAL entries, each short for
+  a stated reason: §3.5.2, a stream lagging
+  past the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
+  default) ends with `streamLagged`; §5.7, the specification contradicts
+  itself on an empty `ListTasksResponse.tasks`; §12.4, agntcy-slim-rpc
+  carries no error details (maintainer: stays PARTIAL until it does);
+  §7.6.1,
+  a message to a task in AUTH_REQUIRED is refused while its executor still
+  runs (recommended: document that the executor returns, PARTIAL naming
+  the conflict between the section's two SHOULDs). The APPLICATION and
+  NOT_APPLICABLE entries were reviewed on 2026-10-20 (*Next*, item 1).
+- **Ledger citations:** since `6202a56` every Rust citation is
+  `path:line Symbol` at the symbol's definition line (non-Rust:
+  `path:line "fragment"`), and the checker verifies that the symbol is
+  defined at that line. After a code move, `check_spec_ledger.py
+  --fix-lines` re-points the citations it can; where a symbol is defined
+  twice in a file (`TryFrom` both ways) it cannot, and each must be
+  re-pointed by hand to the same impl it named before (2026-10-23: 23
+  after WP-B, each checked against the old file).
+- **CI on `main` at `2781bb69`** (the fifteen push workflows, read with
+  `gh api repos/tomtom215/a2a-rust/actions/runs?head_sha=…`, 2026-10-24
+  13:40 UTC): DCO, Scorecard, ITK, OSV-Scanner, Verification, Deploy
+  Documentation, Official TCK, Soak, ACTS, Fuzz, TCK and CodeQL passed; CI,
+  Coverage and Benchmarks were still running. The scheduled OSV-Scanner
+  runs failed on 10-21, 10-22 and 10-23 at head `6c90d0b`
+  (RUSTSEC-2026-0381/0382/0383: rustls-webpki 0.103.15, webpki-roots and
+  webpki-root-certs 1.0.9, in four lockfiles) and on 10-24 at head
+  `4cadc2a` (RUSTSEC-2026-0387: crypto-bigint 0.7.5 in the SLIMRPC
+  lockfile). Each cause was read in the job log; #179 fixed all of them
+  (`8d7e878` the last) and OSV-Scanner passed on the merge.
+- **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
+  no other trailers (`CONTRIBUTING.md`, `PROVENANCE.md` §3.2).
