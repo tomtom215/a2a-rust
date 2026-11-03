@@ -81,6 +81,35 @@ let client = ClientBuilder::from_card(&card)?
 # }
 ```
 
+### Long, quiet streams behind a load balancer
+
+A stream that carries no traffic for longer than a load balancer's idle timeout
+(often 60 s) is closed by it. The client sends no HTTP/2 PINGs unless asked:
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::AgentCard;
+# async fn f(card: AgentCard) -> Result<(), Box<dyn std::error::Error>> {
+use std::time::Duration;
+use a2a_protocol_client::ClientBuilder;
+
+let client = ClientBuilder::from_card(&card)?
+    .with_grpc_keep_alive(Duration::from_secs(30), Duration::from_secs(10))
+    .build_grpc()
+    .await?;
+# Ok(())
+# }
+```
+
+That is a PING every 30 s, quiet or not, and the connection dropped when none
+is answered within 10 s. It is off by default because a PING is hop-by-hop: it
+keeps open only the hop to the nearest proxy, which on a path that terminates
+HTTP/2 is not the hop that times out, and a server that limits PINGs (grpc-go
+answers a client that pings more often than every 5 minutes with `GOAWAY`)
+refuses a short interval. Set it to what the whole path allows. A `Delegation`
+does not depend on it: a stream the balancer cut is reopened from the child's
+state, and one that delivered an event and stayed open for five seconds gets
+its attempts back.
+
 ### Which roots, and what a configuration you give replaces
 
 Without `with_grpc_tls_config` the client trusts Mozilla's roots plus the

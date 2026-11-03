@@ -160,6 +160,19 @@ pub struct GrpcTransportConfig {
     pub max_message_size: usize,
     /// Channel capacity for streaming responses. Default: 64.
     pub stream_channel_capacity: usize,
+    /// How often an HTTP/2 PING is sent on the connection, quiet or not, so
+    /// that a load balancer's idle timeout does not close a long, silent
+    /// stream and a peer that vanished is found out (audit B-10, D-12).
+    /// `None`, the default, sends none: a PING is hop-by-hop, so it keeps
+    /// only the hop to the nearest proxy open, and a server that limits PINGs
+    /// (grpc-go answers a client that pings more often than every 5 minutes
+    /// with `GOAWAY`) refuses a short interval. Set it to what the path allows.
+    pub http2_keep_alive_interval: Option<Duration>,
+    /// How long to wait for the answer to such a PING before the connection
+    /// is dropped. Used only with
+    /// [`http2_keep_alive_interval`](Self::http2_keep_alive_interval).
+    /// Default: 20 seconds.
+    pub http2_keep_alive_timeout: Duration,
     /// How a bare `host[:port]` address is connected. See
     /// [`GrpcBareAddressScheme`].
     pub bare_address_scheme: GrpcBareAddressScheme,
@@ -179,6 +192,8 @@ impl Default for GrpcTransportConfig {
             connect_timeout: Duration::from_secs(10),
             max_message_size: 4 * 1024 * 1024,
             stream_channel_capacity: 64,
+            http2_keep_alive_interval: None,
+            http2_keep_alive_timeout: Duration::from_secs(20),
             bare_address_scheme: GrpcBareAddressScheme::default(),
             #[cfg(feature = "grpc-tls")]
             tls_config: None,
@@ -187,6 +202,16 @@ impl Default for GrpcTransportConfig {
 }
 
 impl GrpcTransportConfig {
+    /// Sends an HTTP/2 PING every `interval` and drops the connection if
+    /// none is answered within `timeout` (see
+    /// [`http2_keep_alive_interval`](Self::http2_keep_alive_interval)).
+    #[must_use]
+    pub const fn with_http2_keep_alive(mut self, interval: Duration, timeout: Duration) -> Self {
+        self.http2_keep_alive_interval = Some(interval);
+        self.http2_keep_alive_timeout = timeout;
+        self
+    }
+
     /// Sets the unary request timeout.
     #[must_use]
     pub const fn with_timeout(mut self, timeout: Duration) -> Self {
@@ -373,6 +398,13 @@ impl GrpcTransport {
             .tcp_keepalive(Some(super::connector::TCP_KEEPALIVE_TIME))
             .tcp_keepalive_interval(Some(super::connector::TCP_KEEPALIVE_INTERVAL))
             .tcp_keepalive_retries(Some(super::connector::TCP_KEEPALIVE_RETRIES));
+        let endpoint = match config.http2_keep_alive_interval {
+            Some(every) => endpoint
+                .http2_keep_alive_interval(every)
+                .keep_alive_timeout(config.http2_keep_alive_timeout)
+                .keep_alive_while_idle(true),
+            None => endpoint,
+        };
         let endpoint = Self::apply_tls(endpoint, &endpoint_str, &config)?;
         let channel = Self::dial(&endpoint, &endpoint_str, &config)
             .await

@@ -51,7 +51,11 @@ return, then is refused with `UnsupportedOperation` ("already being
 processed"). An executor that should accept the client's next message,
 the credential included, returns after `auth_required`. On the client side,
 `A2aClient::follow_task(id, poll_every)` follows such a task, by subscription
-when the agent can stream and by polling when it cannot (spec §7.6.2).
+when the agent can stream and by polling when it cannot (spec §7.6.2). A
+subscription that is cut is reopened from the last event id under a
+`ResumePolicy` (five attempts by default; `TaskFollow::with_resume` sets it),
+and when that does not work, or the task has ended meanwhile, following goes
+on by polling, so a follow ends when the task does.
 
 ```rust
 # use a2a_protocol_sdk::prelude::*;

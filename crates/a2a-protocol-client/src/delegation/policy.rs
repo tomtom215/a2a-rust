@@ -102,7 +102,7 @@ impl ResumePolicy {
     /// shortened by `spread` when the policy asks for jitter. The shortening
     /// is passed in so that a test can pin it; the delegation passes the
     /// client's own jitter.
-    pub(super) fn attempt_wait(
+    pub(crate) fn attempt_wait(
         &self,
         streak: u32,
         spread: impl FnOnce(Duration) -> Duration,
@@ -133,7 +133,7 @@ impl ResumePolicy {
     /// never more than [`max_backoff`](Self::max_backoff). Pure, so that its
     /// arithmetic is pinned exactly by the tests and not by how long a loop
     /// happened to take.
-    pub(super) fn wait_before(&self, streak: u32) -> Duration {
+    pub(crate) fn wait_before(&self, streak: u32) -> Duration {
         let Some(doublings) = streak.checked_sub(1) else {
             return Duration::ZERO;
         };

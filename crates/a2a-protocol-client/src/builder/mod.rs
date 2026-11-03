@@ -115,6 +115,10 @@ pub struct ClientBuilder {
     ///
     /// [`build_grpc`]: ClientBuilder::build_grpc
     pub(super) grpc_bare_address_scheme: crate::config::GrpcBareAddressScheme,
+    /// HTTP/2 PING interval and timeout for [`build_grpc`]; `None` sends none.
+    ///
+    /// [`build_grpc`]: ClientBuilder::build_grpc
+    pub(super) grpc_keep_alive: Option<(std::time::Duration, std::time::Duration)>,
     /// TLS settings for [`build_grpc`]; `None` verifies against the bundled
     /// Mozilla roots.
     ///
@@ -155,6 +159,7 @@ impl ClientBuilder {
             peer_honours_idempotency: false,
             content: crate::content::ContentKeys::default(),
             grpc_bare_address_scheme: crate::config::GrpcBareAddressScheme::default(),
+            grpc_keep_alive: None,
             #[cfg(feature = "grpc-tls")]
             grpc_tls_config: None,
             card_interfaces: Vec::new(),
@@ -272,6 +277,7 @@ impl ClientBuilder {
             retry_policy: None,
             max_in_flight: None,
             grpc_bare_address_scheme: crate::config::GrpcBareAddressScheme::default(),
+            grpc_keep_alive: None,
             #[cfg(feature = "grpc-tls")]
             grpc_tls_config: None,
             card_interfaces: card.supported_interfaces.clone(),
@@ -498,6 +504,23 @@ impl ClientBuilder {
         scheme: crate::config::GrpcBareAddressScheme,
     ) -> Self {
         self.grpc_bare_address_scheme = scheme;
+        self
+    }
+
+    /// Has [`build_grpc`](Self::build_grpc) send an HTTP/2 PING every
+    /// `interval`, and drop the connection when none is answered within
+    /// `timeout` (audit B-10, D-12). Off by default: a PING is hop-by-hop,
+    /// keeps only the hop to the nearest proxy open, and a server that limits
+    /// PINGs (grpc-go answers a client that pings more often than every 5
+    /// minutes with `GOAWAY`) refuses a short interval. See
+    /// [`GrpcTransportConfig::http2_keep_alive_interval`](crate::transport::grpc::GrpcTransportConfig::http2_keep_alive_interval).
+    #[must_use]
+    pub const fn with_grpc_keep_alive(
+        mut self,
+        interval: std::time::Duration,
+        timeout: std::time::Duration,
+    ) -> Self {
+        self.grpc_keep_alive = Some((interval, timeout));
         self
     }
 

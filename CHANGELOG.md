@@ -35,6 +35,17 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`ClientBuilder::with_grpc_keep_alive`, `GrpcTransportConfig::with_http2_keep_alive`**
+  (client; audit B-10, D-12). An opt-in HTTP/2 PING interval and timeout for
+  gRPC: a quiet stream is not closed by a load balancer's idle timeout when
+  the hop that times out is the one the PING crosses, and a peer that
+  vanished is found out. Off by default, because a PING is hop-by-hop and a
+  server that limits them (grpc-go) refuses a short interval. Tested on the
+  wire through a proxy that reads the client's bytes as HTTP/2 frames: PINGs
+  at the interval on an idle connection, none by default, and a connection
+  whose PINGs nobody answers dropped after the timeout. HTTP/2 PINGs for the
+  HTTP bindings, a maximum connection lifetime and a per-host cap are ADR
+  0032's pool.
 - **Retries that cannot multiply an overload: a retry budget, a bound on
   elapsed time, and a cap on calls in flight** (client; audit H6, per client
   and opt-in, fork F7). A client that retries sends a saturated worker up to
@@ -725,6 +736,22 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **`follow_task` reopens a cut subscription and goes on to the task's end**
+  (client; audit D-11). A subscription cut by a reset connection or a proxy
+  rollout returned the stream error to the caller, who had to resubscribe
+  and miss what was sent between. `TaskFollow::next` now reopens it from the
+  last event id under a `ResumePolicy` (the delegation's: five attempts, 200
+  ms doubling to 5 s, 30 s in all; `TaskFollow::with_resume` sets it; a
+  stream that delivered events starts the count again), and the events it
+  missed are replayed where the agent keeps a log. When the policy is spent,
+  the agent cannot stream, or it refuses the subscription as it does for a task
+  that has ended, following goes on by polling, whose first update is the
+  task as it now stands. An error that retrying would not change is still
+  returned. Tested against this repository's server through a proxy that
+  severs and refuses connections: reopened and followed to the end, a policy
+  that never resumes, a task that ended while the link was down, a link that
+  stays down (bounded), and a stream that keeps delivering reopened past the
+  attempt limit.
 - **A server-directed delay longer than `max_backoff` ends the retrying, and
   the HTTP-date form of `Retry-After` is read** (client; audit D-10,
   NEW-h-designs-1). A `Retry-After` of 45 s with the default `max_backoff` of
