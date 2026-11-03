@@ -602,6 +602,21 @@ silently; see `SKIP_STEPS` in that script.
 Every gate runs even after one fails, so a single run tells you everything that
 is broken rather than only the first thing.
 
+`preflight.sh` reads `ci.yml` only; the other 18 workflows carry jobs that block
+a merge too. One command runs both and prints each gate's own exit code:
+
+```bash
+scripts/preflight_all.py          # every ci.yml gate, then the other workflows' jobs this machine can run
+scripts/preflight_all.py --list   # what it would run, and the jobs only CI can run, each with its reason
+```
+
+A job it cannot fully run (an action it has no way to execute, an expression it
+cannot evaluate, a service that is not up) is reported `INCOMPLETE` and the
+command exits 3; it is never a pass. `scripts/lib/workflow_inventory.py` files
+every job of every workflow under one heading, and `preflight_all.py` refuses to
+run while a job is filed under none. That check runs on a developer's machine,
+not in CI.
+
 This used to be a numbered list of commands in this document. It was wrong in
 two ways at once — it named nine gates where CI runs twenty-seven, and its
 feature flags (`--features a2a-protocol-sdk/signing`) were not the ones CI

@@ -21,6 +21,7 @@
 #   scripts/preflight.sh              # default tier: fmt + clippy + tests
 #   scripts/preflight.sh --fmt        # formatting only (seconds; used by the hook)
 #   scripts/preflight.sh --full       # every gate in the fmt/clippy/test/doc jobs
+#   scripts/preflight.sh --full --jobs static-checks,doc   # only those jobs' gates
 #   scripts/preflight.sh --list       # show the CI gate inventory and exit
 #   scripts/preflight.sh --fail-fast  # stop at the first failing gate
 #   scripts/preflight.sh --force      # skip the free-space precheck
@@ -82,6 +83,7 @@ LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/a2a-preflight.XXXXXX")
 TIER=default
 FAIL_FAST=0
 FORCE=0
+JOBS_ONLY=""
 
 # ── CI workflow parsing ──────────────────────────────────────────────────────
 
@@ -232,15 +234,23 @@ run_gate() {
     fi
     local elapsed=$((SECONDS - start))
 
+    # One line per gate, written as the gate finishes, for a wrapper that wants
+    # every gate's own exit status (scripts/preflight_all.sh). Appended rather
+    # than written at the end so that a run that is killed still leaves what it
+    # got through.
+    if [ -n "${PREFLIGHT_RESULTS:-}" ]; then
+        printf '%s\t%s\t%s\n' "$status" "$elapsed" "$cmd" >>"$PREFLIGHT_RESULTS"
+    fi
+
     if [ "$status" -eq 0 ]; then
         printf '  \033[32mPASS\033[0m  (%ss)\n' "$elapsed"
-        RESULTS+=("PASS|${elapsed}s|$cmd")
+        RESULTS+=("PASS|${status}|${elapsed}s|$cmd")
     else
         printf '  \033[31mFAIL\033[0m  (%ss, exit %s)\n' "$elapsed" "$status"
         printf '  ── output ──\n'
         sed 's/^/  /' "$log" | tail -40
         printf '  ── full log: %s ──\n' "$log"
-        RESULTS+=("FAIL|${elapsed}s|$cmd")
+        RESULTS+=("FAIL|${status}|${elapsed}s|$cmd")
         FAILED=$((FAILED + 1))
         if [ "$FAIL_FAST" -eq 1 ]; then
             summarise
@@ -251,16 +261,16 @@ run_gate() {
 
 summarise() {
     printf '\n\033[1m── preflight summary (%s tier) ──\033[0m\n' "$TIER"
-    local row verdict timing cmd
+    # Each gate's own exit status is in its row: a summary that shows only
+    # PASS or FAIL cannot tell a gate that failed from one that was killed.
+    local row verdict code timing cmd
     for row in "${RESULTS[@]-}"; do
         [ -n "$row" ] || continue
-        verdict=${row%%|*}
-        timing=${row#*|}; timing=${timing%%|*}
-        cmd=${row#*|*|}
+        IFS='|' read -r verdict code timing cmd <<<"$row"
         if [ "$verdict" = PASS ]; then
-            printf '  \033[32m%-4s\033[0m %6s  %s\n' "$verdict" "$timing" "$cmd"
+            printf '  \033[32m%-4s\033[0m exit %3s %6s  %s\n' "$verdict" "$code" "$timing" "$cmd"
         else
-            printf '  \033[31m%-4s\033[0m %6s  %s\n' "$verdict" "$timing" "$cmd"
+            printf '  \033[31m%-4s\033[0m exit %3s %6s  %s\n' "$verdict" "$code" "$timing" "$cmd"
         fi
     done
 
@@ -268,6 +278,9 @@ summarise() {
     total=$(printf '%s\n' "$ALL_GATES" | grep -c . || true)
     covered=${#RESULTS[@]}
     uncovered=$((total - covered))
+    if [ -n "$JOBS_ONLY" ]; then
+        printf '\n  Restricted to the jobs: %s. The gates of the other jobs were not run.' "$JOBS_ONLY"
+    fi
     printf '\n  %s of %s CI gate commands run locally' "$covered" "$total"
     if [ "$uncovered" -gt 0 ]; then
         printf ' — %s still only checked in CI (see --full / --list)' "$uncovered"
@@ -336,7 +349,20 @@ tier_default() {
 }
 
 tier_full() {
-    printf '%s\n' "$ALL_GATES"
+    if [ -z "$JOBS_ONLY" ]; then
+        printf '%s\n' "$ALL_GATES"
+        return
+    fi
+    # --jobs a,b: only those jobs' gates. Each name must be a gate job, because
+    # a name that matches nothing would otherwise be an empty run.
+    local job
+    for job in $(printf '%s' "$JOBS_ONLY" | tr ',' ' '); do
+        if ! printf '%s' "$GATE_JOBS" | tr -d '^$()' | tr '|' '\n' | grep -Fxq -- "$job"; then
+            printf 'preflight: --jobs %s: not a gate job (see --list for the jobs)\n' "$job" >&2
+            exit 2
+        fi
+    done
+    gates_for_jobs "^($(printf '%s' "$JOBS_ONLY" | tr ',' '|'))\$" | sed $'s/\t//'
 }
 
 # ── Prechecks ────────────────────────────────────────────────────────────────
@@ -354,6 +380,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --fmt)       TIER=fmt ;;
         --full)      TIER=full ;;
+        --jobs)      shift; JOBS_ONLY=${1:-}; [ -n "$JOBS_ONLY" ] || { printf 'preflight: --jobs needs a comma-separated list\n' >&2; exit 2; } ;;
         --fail-fast) FAIL_FAST=1 ;;
         --force)     FORCE=1 ;;
         --list)

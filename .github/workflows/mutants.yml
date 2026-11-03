@@ -1388,6 +1388,20 @@ jobs:
             echo "::endgroup::"
           fi
 
+      # Server shards have run out of runner disk during full runs ("Free space
+      # left: 35-61 MB", then "No space left on device", 15 or 17 of 18 mutants
+      # graded, and the gate fails as designed). That the parallel builds are
+      # what fill the disk is inferred, not measured; this prints `df` before
+      # and after, so the first run shows what the removal frees. It renders no
+      # verdict and has no `exit`, so scripts/prove_workflow_gates_fail.py needs
+      # no probe for it.
+      - name: Free runner disk space
+        if: steps.diff.outputs.skip == 'false'
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
       # Setup only once the diff says there is something to mutate: on a
       # narrow PR most crates' shards have nothing, and installing
       # cargo-mutants (a source build) cost them 1 to 5 minutes each.
