@@ -95,7 +95,10 @@ command is named so the next session re-runs it instead of copying the number.
    touched, and `cargo doc` of each crate on its own default features (gate 82): a doc link to an item
    behind a feature (`crate::transport::grpc::...`) resolves under `--all-features` and under a
    `--workspace` build, where another crate switches the feature on, and fails there; #193 hit it. The
-   heavy matrix gates are CI's, but run the local workspace tests with at least 15 GB of free disk: the
+   heavy matrix gates are CI's. Run `cargo test -p a2a-protocol-sdk --all-features` too: `book_defaults` is
+   compiled only with `grpc` and `grpc-tls`, checks every public field of `RetryPolicy` and
+   `GrpcTransportConfig` against `book/src/reference/configuration.md`, and ran 0 tests in a client-only
+   run; #193 added four fields without rows. Run the local workspace tests with at least 15 GB of free disk: the
    link of hundreds of test binaries fills a smaller allowance and dies with `ld ... Bus error`.
 4. The adversarial campaign (the matrix in the maintainer's brief) is not started. It is scripts with
    recorded output, one brief per area, in the style of `docs/audits/2026-11-01-triage/BRIEF.md`.

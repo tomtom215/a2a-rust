@@ -221,6 +221,8 @@ and the `with_*` setters.
 | `connect_timeout` | `Duration` | 10s | Connection timeout |
 | `max_message_size` | `usize` | 4 MiB | Maximum message size |
 | `stream_channel_capacity` | `usize` | 64 | Streaming response buffer |
+| `http2_keep_alive_interval` | `Option<Duration>` | None (off) | Interval of an HTTP/2 PING on the connection, quiet or not, so a load balancer's idle timeout does not close a long silent stream (`with_http2_keep_alive`, or `ClientBuilder::with_grpc_keep_alive`); off because a PING is hop-by-hop and grpc-go refuses a short interval |
+| `http2_keep_alive_timeout` | `Duration` | 20s | How long to wait for the answer to such a PING before the connection is dropped; read only with the interval |
 | `bare_address_scheme` | `GrpcBareAddressScheme` | `HttpsExceptLoopback` | Scheme used for a bare `host:port` target (an `http://`/`https://` URL is used as-is) |
 | `tls_config` | `Option<ClientTlsConfig>` | None (bundled Mozilla roots) | `grpc-tls` feature: pin a private CA or present a client certificate for `https://` endpoints |
 
@@ -232,6 +234,8 @@ and the `with_*` setters.
 | `initial_backoff` | `Duration` | 500ms | Backoff before first retry |
 | `max_backoff` | `Duration` | 30s | Caps exponential growth |
 | `backoff_multiplier` | `f64` | 2.0 | Multiplier per retry |
+| `budget` | `Option<RetryBudget>` | None (off) | Retries as a bounded fraction of calls, so retries cannot multiply an overload (`with_budget`); a retry the budget cannot pay for is not made |
+| `max_elapsed` | `Option<Duration>` | None (off) | Longest from a call's first attempt to the start of its last retry, backoffs included (`with_max_elapsed`) |
 
 ### SSE Parser Limits
 
