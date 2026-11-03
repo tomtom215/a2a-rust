@@ -507,13 +507,15 @@ impl ClientBuilder {
         self
     }
 
-    /// Has [`build_grpc`](Self::build_grpc) send an HTTP/2 PING every
+    /// Has `build_grpc` (behind the `grpc` feature) send an HTTP/2 PING every
     /// `interval`, and drop the connection when none is answered within
     /// `timeout` (audit B-10, D-12). Off by default: a PING is hop-by-hop,
     /// keeps only the hop to the nearest proxy open, and a server that limits
     /// PINGs (grpc-go answers a client that pings more often than every 5
     /// minutes with `GOAWAY`) refuses a short interval. See
-    /// [`GrpcTransportConfig::http2_keep_alive_interval`](crate::transport::grpc::GrpcTransportConfig::http2_keep_alive_interval).
+    /// `GrpcTransportConfig::http2_keep_alive_interval`. (These are plain
+    /// code, not links: the method exists in every build and the gRPC items
+    /// only with the feature.)
     #[must_use]
     pub const fn with_grpc_keep_alive(
         mut self,

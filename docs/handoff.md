@@ -92,7 +92,11 @@ command is named so the next session re-runs it instead of copying the number.
    impl; `cargo mutants --in-diff` on types and client; the kill-proof protocol for each test (it passes
    on the real code; the exact mutant applied by hand makes it fail; restore; re-run); the script gates
    of `ci.yml` (`rest_gates.sh`-style, reading each gate's own exit code) and clippy on the crates
-   touched. The heavy matrix gates are CI's.
+   touched, and `cargo doc` of each crate on its own default features (gate 82): a doc link to an item
+   behind a feature (`crate::transport::grpc::...`) resolves under `--all-features` and under a
+   `--workspace` build, where another crate switches the feature on, and fails there; #193 hit it. The
+   heavy matrix gates are CI's, but run the local workspace tests with at least 15 GB of free disk: the
+   link of hundreds of test binaries fills a smaller allowance and dies with `ld ... Bus error`.
 4. The adversarial campaign (the matrix in the maintainer's brief) is not started. It is scripts with
    recorded output, one brief per area, in the style of `docs/audits/2026-11-01-triage/BRIEF.md`.
 5. `cargo semver-checks` passes today only because the version already reads 0.16.0 (a 0.x minor bump
