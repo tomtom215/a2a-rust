@@ -125,18 +125,17 @@ removing an unsafe surface; those are documented as such.
   with default implementations so external implementations keep compiling; the
   rules for doing that are in
   [CONTRIBUTING.md](CONTRIBUTING.md#extending-a-public-trait).
-- **Protocol enums, and the fourteen protocol structs that can grow with the
-  A2A specification,** are `#[non_exhaustive]`, so a new variant or field from
-  a specification revision is a patch-level addition. The structs are
-  `AgentCard`, `AgentSkill`, `AgentInterface`, `AgentProvider`,
-  `AgentExtension`, `AgentCapabilities`, `Message`, `Part`, `Task`,
-  `TaskStatus`, `Artifact`, `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`
-  and `TaskPushNotificationConfig`; each is built with `new` and `with_*`.
-  The other 26 wire structs (the method parameters and responses, the
-  security schemes and flows, `AuthenticationInfo`, `StringList`,
-  `SecurityRequirement`, `AgentCardSignature`) are exhaustive, and a field
-  added to one is a breaking change under §2. Until 0.16.0 this paragraph
-  said all of them were marked, and 13 of the 14 were not (audit G-10).
+- **Protocol enums, and the forty wire structs,** are `#[non_exhaustive]`, so
+  a new variant or field from a specification revision is a patch-level
+  addition. The forty are the fourteen protocol objects (`AgentCard`,
+  `AgentSkill`, `AgentInterface`, `AgentProvider`, `AgentExtension`,
+  `AgentCapabilities`, `Message`, `Part`, `Task`, `TaskStatus`, `Artifact`,
+  `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`,
+  `TaskPushNotificationConfig`) and the other 26 (the method parameters and
+  responses, the security schemes and flows, `AuthenticationInfo`,
+  `StringList`, `SecurityRequirement`, `AgentCardSignature`); each is built
+  with `new` and `with_*`. Until 0.16.0 this paragraph said all of them were
+  marked, and 39 of the 40 were not (audit G-10).
   The three deliberate exceptions among the enums and result types are
   closed sets fixed by their underlying standards — `ApiKeyLocation` (OpenAPI's
   header/query/cookie), `JsonRpcResponse` (JSON-RPC 2.0's result/error) and
