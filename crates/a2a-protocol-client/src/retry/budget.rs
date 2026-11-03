@@ -45,10 +45,12 @@ pub struct RetryBudget {
 /// The default [`RetryBudget::reserve`].
 pub const DEFAULT_RESERVE: f64 = 10.0;
 
-/// A rate that is not a finite, positive number earns nothing.
-fn rate(value: f64) -> f64 {
-    if value.is_finite() && value > 0.0 {
-        value
+/// A rate that is not a finite, positive number earns nothing. (`max` and not a
+/// comparison: zero is zero either way, so a `>` against zero has no behaviour
+/// for a test to tell from `>=`.)
+const fn rate(value: f64) -> f64 {
+    if value.is_finite() {
+        value.max(0.0)
     } else {
         0.0
     }
@@ -59,7 +61,7 @@ impl RetryBudget {
     /// with a reserve of 10. A rate that is negative,
     /// infinite or not a number earns nothing.
     #[must_use]
-    pub fn new(ratio: f64, min_per_sec: f64) -> Self {
+    pub const fn new(ratio: f64, min_per_sec: f64) -> Self {
         Self {
             ratio: rate(ratio),
             min_per_sec: rate(min_per_sec),
