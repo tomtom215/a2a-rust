@@ -47,12 +47,20 @@ pub async fn purge(
     let interval = format!("{} seconds", policy.terminal_max_age.as_secs());
     let batch = i64::from(policy.effective_batch_size());
 
+    // `FOR UPDATE SKIP LOCKED`: two sweeps that start together would otherwise
+    // pick the same rows from the same snapshot. The second `DELETE` then waits
+    // for the first to commit, finds its rows gone, deletes nothing, and reads
+    // as "no more work" while eligible rows remain. Skipping a row another
+    // sweep has locked makes it take the next ones instead; a sweep that finds
+    // only locked rows deletes nothing and stops, which is right, because the
+    // sweep holding them is deleting them.
     let sql = format!(
         "DELETE FROM {table} WHERE ctid IN ( \
              SELECT ctid FROM {table} \
               WHERE state = ANY($1) \
                 AND updated_at < now() - $2::interval \
               LIMIT $3 \
+                FOR UPDATE SKIP LOCKED \
          )"
     );
 

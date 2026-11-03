@@ -313,9 +313,11 @@ impl SqliteTaskStore {
     /// eligible. A task still `Working`, or parked in `InputRequired` waiting
     /// on a human, is never deleted however old it is.
     ///
-    /// Safe to run from several replicas at once: each batch is a single
-    /// `DELETE` whose subquery picks the rows, so two sweeps racing delete
-    /// disjoint sets rather than colliding.
+    /// Safe to run from several threads or processes sharing the file: each
+    /// batch is a single `DELETE`, and `SQLite` lets one write statement run
+    /// at a time, so a second sweep's batch is picked after the first one's
+    /// rows are gone rather than alongside them. That holds only where
+    /// `SQLite`'s file locking does, which is local storage.
     ///
     /// # Errors
     ///

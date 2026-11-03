@@ -1472,6 +1472,23 @@ async fn backdate(url: &str, table: &str, seconds: i64, tenant: Option<&str>) {
     pool.close().await;
 }
 
+/// Backdates every key in `table` by two hours.
+async fn backdate_keys(url: &str, table: &str, tenant: Option<&str>) {
+    let pool = sqlx::PgPool::connect(url).await.expect("connect");
+    let sql = match tenant {
+        Some(_) => format!(
+            "UPDATE {table} SET created_at = now() - interval '2 hours' WHERE tenant_id = $1"
+        ),
+        None => format!("UPDATE {table} SET created_at = now() - interval '2 hours'"),
+    };
+    let mut q = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
+    if let Some(t) = tenant {
+        q = q.bind(t);
+    }
+    q.execute(&pool).await.expect("backdate keys");
+    pool.close().await;
+}
+
 #[tokio::test]
 #[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
 async fn retention_deletes_only_aged_terminal_tasks() -> A2aResult<()> {
@@ -2892,6 +2909,164 @@ async fn tenant_postgres_key_expiry_is_scoped_to_age_not_tenant() {
     );
 
     pool.close().await;
+    db.drop_db().await;
+}
+
+// ── Sweeps racing each other (E-F21) ─────────────────────────────────────────
+//
+// Two replicas sweeping at once pick their batches from the same snapshot. The
+// race is made deterministic by playing the other replica: a transaction that
+// holds a `SELECT ... FOR UPDATE` lock on one aged row, which is what a
+// `DELETE` that has picked that row holds until it commits. Without `FOR UPDATE
+// SKIP LOCKED` the sweep's own `DELETE` picks the held row too and waits for
+// it; with it the sweep takes the other rows and leaves the held one.
+
+/// Long enough for a sweep over five rows on a loaded CI runner, short enough
+/// that a sweep waiting on a held row fails the test rather than the job.
+const SWEEP_BOUND: Duration = Duration::from_secs(20);
+
+/// Opens a transaction on its own connection and locks the row `lock_sql`
+/// selects, the way a sweep on another replica holds a row it is deleting.
+/// The lock is released when the returned transaction is rolled back.
+async fn hold_row_locks(
+    url: &str,
+    lock_sql: &[(&'static str, &str)],
+) -> sqlx::Transaction<'static, sqlx::Postgres> {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(url)
+        .await
+        .expect("connect the holder");
+    let mut tx = pool.begin().await.expect("begin");
+    for (sql, bind) in lock_sql {
+        let locked = sqlx::query(*sql)
+            .bind(*bind)
+            .fetch_all(&mut *tx)
+            .await
+            .expect("lock");
+        assert_eq!(locked.len(), 1, "{sql} must lock exactly the held row");
+    }
+    tx
+}
+
+fn aged_policy() -> RetentionPolicy {
+    // One second of task age so the clamp does not raise the key age above
+    // the two hours the rows are backdated by.
+    RetentionPolicy::new(Duration::from_secs(1))
+        .with_idempotency_key_max_age(Some(Duration::from_secs(3600)))
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_sweep_skips_rows_another_sweep_holds() {
+    let db = TestDb::create("sweep_skips_locked").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+    for i in 0..5 {
+        let mut t = make_task(&format!("t{i}"), "ctx");
+        t.status = TaskStatus::new(TaskState::Completed);
+        store.save(&t).await.expect("save");
+        store
+            .claim_idempotency_key(&format!("key-{i}"), &MessageId::new("m"), &t.id)
+            .await
+            .expect("claim");
+    }
+    backdate(&db.url, "tasks", 7_200, None).await;
+    backdate_keys(&db.url, "idempotency_keys", None).await;
+
+    let holder = hold_row_locks(
+        &db.url,
+        &[
+            ("SELECT 1 FROM tasks WHERE id = $1 FOR UPDATE", "t2"),
+            (
+                "SELECT 1 FROM idempotency_keys WHERE key = $1 FOR UPDATE",
+                "key-2",
+            ),
+        ],
+    )
+    .await;
+
+    let report = tokio::time::timeout(SWEEP_BOUND, store.purge_expired(&aged_policy()))
+        .await
+        .expect("a sweep must not wait for a row another sweep holds")
+        .expect("purge");
+    assert_eq!(report.tasks_deleted, 4, "every task but the held one");
+    assert_eq!(
+        report.idempotency_keys_deleted, 4,
+        "every key but the held one"
+    );
+    assert!(
+        report.complete,
+        "a sweep that finds only held rows is done: the holder is deleting them"
+    );
+    assert!(
+        store
+            .get(&TaskId("t2".into()))
+            .await
+            .expect("get")
+            .is_some()
+    );
+
+    holder.rollback().await.expect("release");
+    let rest = store.purge_expired(&aged_policy()).await.expect("purge");
+    assert_eq!(rest.tasks_deleted, 1, "the row it had to leave");
+    assert_eq!(rest.idempotency_keys_deleted, 1);
+    assert!(rest.complete);
+
+    db.drop_db().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_postgres_sweep_skips_rows_another_sweep_holds() {
+    let db = TestDb::create("tenant_sweep_skips_locked").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant postgres store");
+    for i in 0..5 {
+        TenantContext::scope("alpha", async {
+            let mut t = make_task(&format!("t{i}"), "ctx");
+            t.status = TaskStatus::new(TaskState::Completed);
+            store.save(&t).await.expect("save");
+            store
+                .claim_idempotency_key(&format!("key-{i}"), &MessageId::new("m"), &t.id)
+                .await
+                .expect("claim");
+        })
+        .await;
+    }
+    backdate(&db.url, "tenant_tasks", 7_200, None).await;
+    backdate_keys(&db.url, "tenant_idempotency_keys", None).await;
+
+    let holder = hold_row_locks(
+        &db.url,
+        &[
+            ("SELECT 1 FROM tenant_tasks WHERE id = $1 FOR UPDATE", "t2"),
+            (
+                "SELECT 1 FROM tenant_idempotency_keys WHERE key = $1 FOR UPDATE",
+                "key-2",
+            ),
+        ],
+    )
+    .await;
+
+    let report = tokio::time::timeout(SWEEP_BOUND, store.purge_expired(&aged_policy()))
+        .await
+        .expect("a sweep must not wait for a row another sweep holds")
+        .expect("purge");
+    assert_eq!(report.tasks_deleted, 4, "every task but the held one");
+    assert_eq!(
+        report.idempotency_keys_deleted, 4,
+        "every key but the held one"
+    );
+    assert!(report.complete);
+
+    holder.rollback().await.expect("release");
+    let rest = store.purge_expired(&aged_policy()).await.expect("purge");
+    assert_eq!(rest.tasks_deleted, 1);
+    assert_eq!(rest.idempotency_keys_deleted, 1);
+
     db.drop_db().await;
 }
 

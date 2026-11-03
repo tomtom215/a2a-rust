@@ -101,7 +101,10 @@ clients may reasonably poll for a task after it finishes.
 Three details worth knowing rather than discovering:
 
 * **It is safe from several replicas at once.** Each batch is one `DELETE`
-  whose subquery picks its own rows, so two sweeps racing delete disjoint sets.
+  whose subquery locks the rows it picks with `FOR UPDATE SKIP LOCKED`, so two
+  sweeps racing take different rows and neither waits for the other. A sweep
+  that finds only rows the other has locked deletes nothing and reports
+  `complete`: the other sweep is deleting them.
 * **Batching is about locks, not throughput.** One `DELETE` covering years of
   backlog holds locks and keeps a transaction open for its whole run. The
   default 1,000-row batches let everything else through in between.
