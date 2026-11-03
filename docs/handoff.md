@@ -57,11 +57,15 @@ command is named so the next session re-runs it instead of copying the number.
      (`wait_or_hand_off`, `Outcome::HandedOff`), `DelegationOptions` with `start_with`/`reattach_with`,
      the stream health rule and jitter, bounded journal writes (M); a retry budget, `max_elapsed`, a cap
      on calls in flight, the `Retry-After` fail-fast rule and its HTTP-date form (O, audit D-10);
-     `follow_task` resume (D-11); opt-in gRPC HTTP/2 keep-alive (B-10, D-12 in part). Local evidence: the
-     client crate's tests, clippy under four feature sets, 39 script gates; `cargo mutants --in-diff` on
-     its 156 mutants was started at 17:00 (restricted to the test binaries that touch the code; log
-     `mut-pr3-client.log` in the session's scratchpad, which does not survive the container) and had not
-     finished when this was written. **Not in it, deliberately:** `HttpPool` (ADR 0032), HTTP/2 PING and a
+     `follow_task` resume (D-11); opt-in gRPC HTTP/2 keep-alive (B-10, D-12 in part). Local evidence, on head `ffcc846f`:
+     `cargo test -p a2a-protocol-client --all-features` exit 0 (1303 passed, 0 failed), clippy under four
+     feature sets, 40 of 40 script and clippy gates (1 to 9, 11 to 27, 30 to 43) exit 0; not run: the book
+     build, the two pip-hash gates, gates 44 to 101. `cargo mutants --in-diff` on the 156 mutants of the
+     client diff (restricted to the test binaries that touch the code, 3 h): 102 caught, 50 unviable, 4
+     missed: three in `TaskFollow` (killed by four new unit tests, each mutant applied by hand and the
+     intended test failing) and one equivalent mutant in `RetryBudget`'s rate clamp (refactored away). A
+     second run on `follow.rs` and `budget.rs` at the final head: 39 mutants, 33 caught, 6 unviable, 0
+     missed. The scratchpad logs (`mut-pr3-client*.log`) do not survive the container. **Not in it, deliberately:** `HttpPool` (ADR 0032), HTTP/2 PING and a
      connection lifetime for the HTTP bindings (D-12), B-11, and the live proof of M (kill -9 a supervisor
      with a PostgreSQL journal and 50 children). Those are the next client pull request.
   4. The server crate (groups B, C, L, B2's E-F12, D-05, E-F18, E-F25, D-18, K's remainder) and
