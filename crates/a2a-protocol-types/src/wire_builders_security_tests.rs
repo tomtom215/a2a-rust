@@ -15,8 +15,10 @@ fn json_of<T: serde::Serialize>(value: &T) -> Value {
     serde_json::to_value(value).expect("serializes")
 }
 
-/// `got` equals `base` with `key` set to `want` and nothing else changed.
+/// `got` equals `base` with `key` set to `want` and nothing else changed. (`got` and `want` are
+/// taken by value because every caller hands over a temporary it has just built.)
 #[track_caller]
+#[allow(clippy::needless_pass_by_value)]
 fn only_sets(base: &Value, got: Value, key: &str, want: Value) {
     let mut expected = base.clone();
     expected
@@ -187,7 +189,7 @@ fn authorization_code_flow_takes_authorization_url_then_token_url() {
 }
 
 #[test]
-fn the_other_flows_each_take_their_required_urls_and_set_their_own_fields() {
+fn client_credentials_and_password_flows_take_a_token_url_and_set_their_own_fields() {
     let cc = || ClientCredentialsFlow::new("https://idp.test/token");
     let base = json_of(&cc());
     assert_eq!(
@@ -203,25 +205,6 @@ fn the_other_flows_each_take_their_required_urls_and_set_their_own_fields() {
     only_sets(
         &base,
         json_of(&cc().with_scopes(scopes())),
-        "scopes",
-        json!({"read": "Read access"}),
-    );
-
-    let imp = || ImplicitFlow::new("https://idp.test/auth");
-    let base = json_of(&imp());
-    assert_eq!(
-        base,
-        json!({"authorizationUrl": "https://idp.test/auth", "scopes": {}})
-    );
-    only_sets(
-        &base,
-        json_of(&imp().with_refresh_url("r")),
-        "refreshUrl",
-        json!("r"),
-    );
-    only_sets(
-        &base,
-        json_of(&imp().with_scopes(scopes())),
         "scopes",
         json!({"read": "Read access"}),
     );
@@ -244,7 +227,32 @@ fn the_other_flows_each_take_their_required_urls_and_set_their_own_fields() {
         "scopes",
         json!({"read": "Read access"}),
     );
+}
 
+#[test]
+fn implicit_flow_takes_an_authorization_url_and_sets_its_own_fields() {
+    let imp = || ImplicitFlow::new("https://idp.test/auth");
+    let base = json_of(&imp());
+    assert_eq!(
+        base,
+        json!({"authorizationUrl": "https://idp.test/auth", "scopes": {}})
+    );
+    only_sets(
+        &base,
+        json_of(&imp().with_refresh_url("r")),
+        "refreshUrl",
+        json!("r"),
+    );
+    only_sets(
+        &base,
+        json_of(&imp().with_scopes(scopes())),
+        "scopes",
+        json!({"read": "Read access"}),
+    );
+}
+
+#[test]
+fn device_code_flow_takes_the_device_url_then_the_token_url() {
     let dc = || DeviceCodeFlow::new("https://idp.test/device", "https://idp.test/token");
     let base = json_of(&dc());
     assert_eq!(

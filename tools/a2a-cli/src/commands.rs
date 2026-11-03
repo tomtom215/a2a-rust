@@ -177,15 +177,11 @@ pub async fn task_cancel(opts: &GlobalOpts, url: &str, task_id: &str) -> Result<
 /// `a2a task list <url>`
 pub async fn task_list(opts: &GlobalOpts, args: &ListArgs) -> Result<(), CliError> {
     let client = connect(&args.url, opts).await?;
-    let page = client
-        .list_tasks({
-            let mut built = ListTasksParams::new();
-            built.context_id = args.context_id.clone();
-            built.page_size = args.page_size;
-            built.page_token = args.page_token.clone();
-            built
-        })
-        .await?;
+    let mut params = ListTasksParams::new();
+    params.context_id.clone_from(&args.context_id);
+    params.page_size = args.page_size;
+    params.page_token.clone_from(&args.page_token);
+    let page = client.list_tasks(params).await?;
     print_pretty(&page)
 }
 

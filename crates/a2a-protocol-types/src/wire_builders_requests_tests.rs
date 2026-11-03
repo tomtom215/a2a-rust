@@ -15,8 +15,10 @@ fn json_of<T: serde::Serialize>(value: &T) -> Value {
     serde_json::to_value(value).expect("serializes")
 }
 
-/// `got` equals `base` with `key` set to `want` and nothing else changed.
+/// `got` equals `base` with `key` set to `want` and nothing else changed. (`got` and `want` are
+/// taken by value because every caller hands over a temporary it has just built.)
 #[track_caller]
+#[allow(clippy::needless_pass_by_value)]
 fn only_sets(base: &Value, got: Value, key: &str, want: Value) {
     let mut expected = base.clone();
     expected
