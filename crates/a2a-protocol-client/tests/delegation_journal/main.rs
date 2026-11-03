@@ -7,6 +7,7 @@
 //!
 //! The server is this repository's, over real sockets.
 
+mod hand_off;
 mod harness;
 mod lifecycle;
 mod progress;

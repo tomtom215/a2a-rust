@@ -556,7 +556,7 @@ fn apply_jitter(backoff: Duration, factor: f64) -> Duration {
 /// Uses `std::hash::RandomState` for cheap, no-dependency randomness. This
 /// prevents thundering-herd retry storms where all clients experiencing the
 /// same transient failure retry at identical intervals.
-fn jittered(backoff: Duration) -> Duration {
+pub(crate) fn jittered(backoff: Duration) -> Duration {
     use std::hash::{BuildHasher, Hasher};
     let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
     // Mix in the backoff value for extra entropy.

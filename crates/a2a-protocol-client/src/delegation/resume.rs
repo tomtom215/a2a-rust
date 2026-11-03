@@ -18,100 +18,10 @@ use std::time::Duration;
 use a2a_protocol_types::TaskQueryParams;
 
 use super::origin::Origin;
-use super::{DEFAULT_ID_WAIT, Delegation, Outcome};
+use super::{DEFAULT_ID_WAIT, Delegation, Outcome, ResumePolicy};
 use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
-
-/// How a [`Delegation`] tries to get its stream back before it gives up on
-/// the child. The default is five attempts, 200 ms apart at first and
-/// doubling to 5 s, inside 30 s in all.
-///
-/// An attempt that gets a stream and then loses it without the position
-/// moving counts as spent: a server that accepts a subscription and drops it
-/// at once exhausts the policy rather than being asked for ever. A stream
-/// that delivered events (the position advanced) starts the count again.
-///
-/// Positions come from the agent's event ids. An agent that sends none (gRPC
-/// and WebSocket streams carry none) never shows progress, so every loss
-/// costs an attempt and the policy bounds the whole delegation.
-///
-/// [`ResumePolicy::none`] restores the behaviour before 2026-10-31: the first
-/// loss cancels the child.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct ResumePolicy {
-    /// How many times in a row to reopen the stream. Zero never resumes.
-    pub attempts: u32,
-    /// The wait before the second attempt; each later wait doubles.
-    pub backoff: Duration,
-    /// The longest a wait between attempts grows to.
-    pub max_backoff: Duration,
-    /// The longest one loss is worked on, from the loss to giving up.
-    pub deadline: Duration,
-}
-
-impl Default for ResumePolicy {
-    fn default() -> Self {
-        Self {
-            attempts: 5,
-            backoff: Duration::from_millis(200),
-            max_backoff: Duration::from_secs(5),
-            deadline: Duration::from_secs(30),
-        }
-    }
-}
-
-impl ResumePolicy {
-    /// Never resumes: the first lost stream cancels the child.
-    #[must_use]
-    pub const fn none() -> Self {
-        Self {
-            attempts: 0,
-            backoff: Duration::ZERO,
-            max_backoff: Duration::ZERO,
-            deadline: Duration::ZERO,
-        }
-    }
-
-    /// Sets how many times in a row the stream is reopened.
-    #[must_use]
-    pub const fn with_attempts(mut self, attempts: u32) -> Self {
-        self.attempts = attempts;
-        self
-    }
-
-    /// Sets the first wait between attempts and the longest one.
-    #[must_use]
-    pub const fn with_backoff(mut self, first: Duration, longest: Duration) -> Self {
-        self.backoff = first;
-        self.max_backoff = longest;
-        self
-    }
-
-    /// Sets how long one loss is worked on.
-    #[must_use]
-    pub const fn with_deadline(mut self, deadline: Duration) -> Self {
-        self.deadline = deadline;
-        self
-    }
-
-    /// How long to wait before reopening attempt number `streak + 1`: nothing
-    /// before the first, then [`backoff`](Self::backoff), doubling each time,
-    /// never more than [`max_backoff`](Self::max_backoff). Pure, so that its
-    /// arithmetic is pinned exactly by the tests and not by how long a loop
-    /// happened to take.
-    pub(super) fn wait_before(&self, streak: u32) -> Duration {
-        let Some(doublings) = streak.checked_sub(1) else {
-            return Duration::ZERO;
-        };
-        // The clamp keeps the shift in range for a long streak; the cap below
-        // is what bounds the wait.
-        self.backoff
-            .saturating_mul(1_u32 << doublings.min(16))
-            .min(self.max_backoff)
-    }
-}
 
 /// What a lost stream came to.
 pub(super) enum Resumed {
@@ -180,10 +90,15 @@ impl Delegation {
             last_event_id,
             streak: 0,
             resumed_at: None,
+            opened_at: None,
+            events_since_open: 0,
             journal: None,
         };
         match this.reopen(&id).await {
-            Ok(stream) => this.stream = Some(stream),
+            Ok(stream) => {
+                this.stream = Some(stream);
+                this.stream_opened();
+            }
             Err(e) => {
                 if let Some(outcome) = this.state_of(&id).await {
                     this.settled = Some(outcome);
@@ -210,6 +125,22 @@ impl Delegation {
         } else if let Some(id) = self.stream.as_ref().and_then(EventStream::last_event_id) {
             self.last_event_id = Some(id.to_owned());
         }
+    }
+
+    /// Notes that a stream has just been opened: the clock a later loss is
+    /// judged by starts here, with no event seen on it yet.
+    pub(super) fn stream_opened(&mut self) {
+        self.opened_at = Some(tokio::time::Instant::now());
+        self.events_since_open = 0;
+    }
+
+    /// Whether the stream that was lost delivered at least one event and had
+    /// been open for `healthy_after`.
+    fn stream_worked(&self, healthy_after: Duration) -> bool {
+        self.events_since_open > 0
+            && self
+                .opened_at
+                .is_some_and(|at| at.elapsed() >= healthy_after)
     }
 
     /// Opens the child's stream again from the recorded position.
@@ -240,8 +171,9 @@ impl Delegation {
             return Resumed::GaveUp;
         };
         let policy = self.resume_policy;
-        if self.last_event_id != self.resumed_at {
-            // The position moved since the last loss: that stream worked.
+        if self.last_event_id != self.resumed_at || self.stream_worked(policy.healthy_after) {
+            // The position moved since the last loss, or the stream stayed up
+            // and delivered: that stream worked.
             self.streak = 0;
         }
         let started = tokio::time::Instant::now();
@@ -249,7 +181,7 @@ impl Delegation {
             if self.streak >= policy.attempts {
                 break;
             }
-            let wait = policy.wait_before(self.streak);
+            let wait = policy.attempt_wait(self.streak, crate::retry::jittered);
             if !wait.is_zero() {
                 let left = policy.deadline.saturating_sub(started.elapsed());
                 if left.is_zero() {
@@ -266,6 +198,7 @@ impl Delegation {
                 Ok(Ok(stream)) => {
                     trace_debug!(task_id = %id, "delegation: stream reopened");
                     self.stream = Some(stream);
+                    self.stream_opened();
                     self.resumed_at.clone_from(&self.last_event_id);
                     return Resumed::Streaming;
                 }
@@ -292,48 +225,130 @@ mod tests {
         Duration::from_millis(n)
     }
 
-    #[test]
-    fn there_is_no_wait_before_the_first_attempt_and_it_doubles_after() {
-        let p = ResumePolicy::default(); // 200 ms, doubling, capped at 5 s
-        let waits: Vec<_> = (0..=7).map(|streak| p.wait_before(streak)).collect();
-        assert_eq!(
-            waits,
-            [
-                Duration::ZERO,
-                ms(200),
-                ms(400),
-                ms(800),
-                ms(1_600),
-                ms(3_200),
-                ms(5_000), // 6,400 capped
-                ms(5_000),
-            ]
+    fn parked() -> Delegation {
+        let client = std::sync::Arc::new(
+            crate::ClientBuilder::new("http://127.0.0.1:9")
+                .build()
+                .expect("a client"),
+        );
+        Delegation {
+            client,
+            tenant: None,
+            stream: None,
+            task_id: Some("child".into()),
+            settled: None,
+            armed: false,
+            id_wait: DEFAULT_ID_WAIT,
+            renewal: None,
+            budget: None,
+            idempotency_key: None,
+            origin: Origin::current(),
+            resume_policy: ResumePolicy::default(),
+            last_event_id: None,
+            streak: 0,
+            resumed_at: None,
+            opened_at: None,
+            events_since_open: 0,
+            journal: None,
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_stream_has_worked_only_with_an_event_and_once_it_was_open_long_enough() {
+        let five = Duration::from_secs(5);
+        let mut d = parked();
+        assert!(!d.stream_worked(five), "never opened");
+        d.stream_opened();
+        tokio::time::advance(Duration::from_secs(600)).await;
+        assert!(!d.stream_worked(five), "open for ten minutes with no event");
+
+        d.stream_opened();
+        d.events_since_open = 1;
+        tokio::time::advance(ms(4_999)).await;
+        assert!(!d.stream_worked(five), "one millisecond short");
+        tokio::time::advance(ms(1)).await;
+        assert!(d.stream_worked(five), "exactly the healthy time counts");
+        assert!(d.stream_worked(Duration::ZERO));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn opening_a_stream_forgets_the_events_of_the_one_before() {
+        let mut d = parked();
+        d.stream_opened();
+        d.events_since_open = 9;
+        tokio::time::advance(Duration::from_secs(60)).await;
+        assert!(d.stream_worked(Duration::from_secs(5)));
+        d.stream_opened();
+        assert_eq!(d.events_since_open, 0);
+        assert!(
+            !d.stream_worked(Duration::ZERO),
+            "a new stream has no events"
         );
     }
 
-    #[test]
-    fn the_cap_holds_for_any_streak_and_the_shift_cannot_overflow() {
-        let p = ResumePolicy::default().with_backoff(ms(7), Duration::from_secs(3_600));
-        assert_eq!(p.wait_before(1), ms(7));
-        assert_eq!(p.wait_before(2), ms(14));
-        assert_eq!(p.wait_before(3), ms(28));
-        // Far past the clamp: the cap, not a panic and not a wrapped shift.
-        assert_eq!(p.wait_before(17), ms(7 * 65_536));
-        assert_eq!(p.wait_before(18), ms(7 * 65_536));
-        assert_eq!(p.wait_before(u32::MAX), ms(7 * 65_536));
-        let capped = p.with_backoff(ms(300), ms(100));
-        assert_eq!(
-            capped.wait_before(1),
-            ms(100),
-            "the cap wins over the first wait"
-        );
+    /// A listener that counts connections and closes each at once.
+    async fn counting_listener() -> (
+        std::net::SocketAddr,
+        std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let count = std::sync::Arc::new(AtomicUsize::new(0));
+        let seen = std::sync::Arc::clone(&count);
+        tokio::spawn(async move {
+            while let Ok((_socket, _)) = listener.accept().await {
+                seen.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+        (addr, count)
     }
 
-    #[test]
-    fn a_zero_backoff_never_waits() {
-        let p = ResumePolicy::none();
-        assert!((0..40).all(|s| p.wait_before(s).is_zero()));
-        let p = ResumePolicy::default().with_backoff(Duration::ZERO, Duration::from_secs(5));
-        assert!((0..40).all(|s| p.wait_before(s).is_zero()));
+    async fn resume_against(
+        addr: std::net::SocketAddr,
+        worked: bool,
+    ) -> (usize, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        let client = std::sync::Arc::new(
+            crate::ClientBuilder::new(format!("http://{addr}"))
+                .build()
+                .expect("a client"),
+        );
+        let mut d = parked();
+        d.client = client;
+        d.resume_policy = ResumePolicy::default()
+            .with_attempts(2)
+            .with_backoff(Duration::ZERO, Duration::ZERO)
+            .with_jitter(false)
+            .with_healthy_after(Duration::ZERO);
+        // The count is spent: without a reason to start it again nothing is tried.
+        d.streak = 2;
+        d.stream_opened();
+        d.events_since_open = u32::from(worked);
+        let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let _ = &count;
+        let outcome = d.resume().await;
+        assert!(matches!(outcome, Resumed::GaveUp), "nothing answers");
+        (d.streak as usize, count)
+    }
+
+    #[tokio::test]
+    async fn a_stream_that_worked_gets_its_attempts_back_and_one_that_did_not_does_not() {
+        use std::sync::atomic::Ordering;
+        let (addr, hits) = counting_listener().await;
+        let (streak, _) = resume_against(addr, false).await;
+        assert_eq!(
+            streak, 2,
+            "a spent count with no healthy stream tries nothing"
+        );
+        assert_eq!(hits.load(Ordering::SeqCst), 0);
+
+        let (streak, _) = resume_against(addr, true).await;
+        assert_eq!(streak, 2, "the two attempts were made again");
+        assert!(
+            hits.load(Ordering::SeqCst) >= 2,
+            "the agent was asked again after a stream that worked"
+        );
     }
 }

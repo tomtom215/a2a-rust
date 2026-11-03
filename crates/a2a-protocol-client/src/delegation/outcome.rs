@@ -43,6 +43,12 @@ pub enum Outcome {
     CancelRequested(TaskStatus),
     /// `CancelTask` was sent and refused or failed.
     CancelFailed(ClientError),
+    /// The supervisor was shut down and handed the child over: the child was
+    /// left running and its journal record left open, at the position the
+    /// stream had reached, for the next supervisor to find with
+    /// `DelegationJournal::open` and [`Delegation::reattach`](super::Delegation::reattach).
+    /// See [`Delegation::wait_or_hand_off`](super::Delegation::wait_or_hand_off).
+    HandedOff,
 }
 
 impl Outcome {

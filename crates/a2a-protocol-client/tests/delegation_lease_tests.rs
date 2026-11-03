@@ -10,7 +10,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use a2a_protocol_client::delegation::Delegation;
+use a2a_protocol_client::delegation::{Delegation, DelegationOptions};
 use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
@@ -65,9 +65,16 @@ async fn state(client: &A2aClient, id: &str) -> TaskState {
 
 /// Starts a leased child and waits for its id.
 async fn leased(client: &Arc<A2aClient>) -> (Delegation, String) {
-    let mut child = Delegation::start_leased(Arc::clone(client), job(), TTL)
-        .await
-        .expect("start");
+    named(
+        Delegation::start_leased(Arc::clone(client), job(), TTL)
+            .await
+            .expect("start"),
+    )
+    .await
+}
+
+/// Reads `child` until it is named.
+async fn named(mut child: Delegation) -> (Delegation, String) {
     tokio::time::timeout(Duration::from_secs(10), async {
         while child.task_id().is_none() {
             child.next_event().await.expect("an event").expect("ok");
@@ -111,6 +118,78 @@ async fn a_child_whose_parent_goes_quiet_stops() {
         took <= TTL * 3,
         "stopped {took:?} after its parent went quiet"
     );
+}
+
+/// Waits for the server to cancel `id`, which only a lapsed lease does here.
+async fn until_cancelled(client: &A2aClient, id: &str) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while state(client, id).await != TaskState::Canceled {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the child stopped");
+}
+
+/// A lease asked for in the options is granted and renewed as
+/// `start_leased`'s is: it outlives its time to live while held, and lapses
+/// once the handle lets go.
+#[tokio::test]
+async fn a_lease_in_the_options_is_renewed_while_held_and_lapses_when_it_is_not() {
+    let client = worker(true).await;
+    let (child, id) = named(
+        Delegation::start_with(
+            Arc::clone(&client),
+            job(),
+            DelegationOptions::new().with_lease(TTL),
+        )
+        .await
+        .expect("start"),
+    )
+    .await;
+    tokio::time::sleep(TTL * 3).await;
+    assert_eq!(state(&client, &id).await, TaskState::Working);
+    assert_eq!(child.detach().as_deref(), Some(id.as_str()));
+    until_cancelled(&client, &id).await;
+}
+
+/// A supervisor that restarts and picks a child up again keeps its lease
+/// alive from the moment the handle exists (ADR 0030): without that the
+/// restart a journal exists for would be the end of the children it recorded.
+#[tokio::test]
+async fn a_reattach_with_a_lease_keeps_the_child_alive_past_its_ttl() {
+    let client = worker(true).await;
+    let (child, id) = leased(&client).await;
+    // The first supervisor goes away: its renewals stop.
+    assert_eq!(child.detach().as_deref(), Some(id.as_str()));
+
+    let again = Delegation::reattach_with(
+        Arc::clone(&client),
+        None,
+        id.clone(),
+        None,
+        DelegationOptions::new().with_lease(TTL),
+    )
+    .await
+    .expect("reattach");
+    tokio::time::sleep(TTL * 3).await;
+    assert_eq!(state(&client, &id).await, TaskState::Working);
+    let done = again.cancel().await;
+    assert_eq!(done.task_id.as_deref(), Some(id.as_str()));
+}
+
+/// The control for the test above: a plain reattach renews nothing, so the
+/// lease the child was granted lapses.
+#[tokio::test]
+async fn a_plain_reattach_does_not_renew_the_lease() {
+    let client = worker(true).await;
+    let (child, id) = leased(&client).await;
+    assert_eq!(child.detach().as_deref(), Some(id.as_str()));
+    let again = Delegation::reattach(Arc::clone(&client), None, id.clone(), None)
+        .await
+        .expect("reattach");
+    until_cancelled(&client, &id).await;
+    drop(again);
 }
 
 /// An agent that grants no leases ignores the grant: the detached child

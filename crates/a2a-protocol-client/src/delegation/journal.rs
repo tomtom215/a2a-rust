@@ -13,11 +13,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use a2a_protocol_types::MessageSendParams;
 use a2a_protocol_types::delegation_journal::{DelegationJournal, DelegationRecord};
-use a2a_protocol_types::idempotency;
 
-use super::{Delegation, Outcome};
+use super::{Delegation, DelegationOptions, Outcome};
 use crate::client::A2aClient;
-use crate::error::{ClientError, ClientResult};
+use crate::error::ClientResult;
 
 /// The longest a recorded position lags the stream, apart from the moment the
 /// child is first named and the moment the stream is lost, which are written
@@ -54,7 +53,7 @@ impl Journaled {
 }
 
 /// Unix milliseconds now; `0` if the clock is before the epoch.
-fn now_ms() -> i64 {
+pub(super) fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .ok()
@@ -74,7 +73,21 @@ pub(super) const fn label(outcome: &Outcome) -> &'static str {
         Outcome::Unreachable => "unreachable",
         Outcome::CancelRequested(_) => "cancel_requested",
         Outcome::CancelFailed(_) => "cancel_failed",
+        Outcome::HandedOff => "handed_off",
     }
+}
+
+/// A new record for a delegation about to be sent: owned by `owner`, naming
+/// `agent`, with the message's tenant and idempotency key.
+pub(super) fn new_record(
+    owner: impl Into<String>,
+    agent: impl Into<String>,
+    tenant: Option<String>,
+    key: Option<String>,
+) -> DelegationRecord {
+    DelegationRecord::new(uuid::Uuid::new_v4().to_string(), owner, agent, now_ms())
+        .with_tenant(tenant)
+        .with_idempotency_key(key)
 }
 
 impl Delegation {
@@ -98,42 +111,18 @@ impl Delegation {
     /// # Errors
     ///
     /// As [`start`](Self::start); also the journal's error, as
-    /// [`ClientError::Protocol`], when the record cannot be written. When the
+    /// [`ClientError::Protocol`](crate::error::ClientError::Protocol), when the record cannot be written. When the
     /// agent refuses the request the record is settled `not_started`: no
     /// child exists.
     pub async fn start_journaled(
         client: Arc<A2aClient>,
-        mut params: MessageSendParams,
+        params: MessageSendParams,
         journal: Arc<dyn DelegationJournal>,
         owner: impl Into<String> + Send,
         agent: impl Into<String> + Send,
     ) -> ClientResult<Self> {
-        if client.honours_idempotency() && matches!(idempotency::key_of(&params.message), Ok(None))
-        {
-            // A fresh key is 64 hex digits, always valid, so this cannot fail.
-            let _ = idempotency::set_key(&mut params.message, &super::fresh_key());
-        }
-        let key = idempotency::key_of(&params.message)
-            .ok()
-            .flatten()
-            .map(str::to_owned);
-        let record =
-            DelegationRecord::new(uuid::Uuid::new_v4().to_string(), owner, agent, now_ms())
-                .with_tenant(params.tenant.clone())
-                .with_idempotency_key(key);
-        journal
-            .begin(&record)
-            .await
-            .map_err(ClientError::Protocol)?;
-        match Self::start(client, params).await {
-            Ok(this) => Ok(this.with_journal(journal, record.id)),
-            Err(e) => {
-                if super::refused(&e) {
-                    let _ = journal.settle(&record.id, "not_started", now_ms()).await;
-                }
-                Err(e)
-            }
-        }
+        let options = DelegationOptions::new().with_journal(journal, owner, agent);
+        Self::start_with(client, params, options).await
     }
 
     /// Keeps `record_id`, a record in `journal`, up to date from here on:

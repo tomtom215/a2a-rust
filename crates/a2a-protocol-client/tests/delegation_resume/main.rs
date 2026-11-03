@@ -11,5 +11,6 @@
 //! only what the delegation reported.
 
 mod harness;
+mod options;
 mod reattach;
 mod resume;
