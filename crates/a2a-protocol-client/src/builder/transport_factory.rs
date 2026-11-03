@@ -19,6 +19,28 @@ use super::ClientBuilder;
 use super::selection::canonical_binding;
 
 impl ClientBuilder {
+    /// A cap of zero would refuse every call: refused here, before anything
+    /// is dialled.
+    fn check_max_in_flight(&self) -> ClientResult<()> {
+        if self.max_in_flight == Some(0) {
+            return Err(ClientError::Config(
+                "max_in_flight must be at least 1".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Puts the in-flight cap, if one was asked for, under the retry layer, so
+    /// that a call it refuses is retried like any other transient failure.
+    fn limit_in_flight(max: Option<usize>, transport: Box<dyn Transport>) -> Box<dyn Transport> {
+        match max {
+            Some(limit) => Box::new(crate::transport::in_flight::InFlightTransport::new(
+                transport, limit,
+            )),
+            None => transport,
+        }
+    }
+
     /// Validates configuration and constructs the [`A2aClient`].
     ///
     /// Binding names are matched ignoring ASCII case, as card selection
@@ -52,6 +74,7 @@ impl ClientBuilder {
                 "connection_timeout must be non-zero".into(),
             ));
         }
+        self.check_max_in_flight()?;
         self.send_extensions()?;
 
         let custom = self.transport_override.as_ref().map(|t| {
@@ -71,6 +94,7 @@ impl ClientBuilder {
         };
 
         // Wrap with retry transport if a policy is configured.
+        let transport = Self::limit_in_flight(self.max_in_flight, transport);
         let transport: Box<dyn Transport> = if let Some(policy) = self.retry_policy {
             Box::new(
                 RetryTransport::new(transport, policy)
@@ -258,6 +282,7 @@ impl ClientBuilder {
                 "stream_connect_timeout must be non-zero".into(),
             ));
         }
+        self.check_max_in_flight()?;
         self.send_extensions()?;
 
         let peer = if let Some(t) = &self.transport_override {
@@ -294,6 +319,7 @@ impl ClientBuilder {
             Box::new(t)
         };
 
+        let transport = Self::limit_in_flight(self.max_in_flight, transport);
         let transport: Box<dyn Transport> = if let Some(policy) = self.retry_policy {
             Box::new(
                 RetryTransport::new(transport, policy)

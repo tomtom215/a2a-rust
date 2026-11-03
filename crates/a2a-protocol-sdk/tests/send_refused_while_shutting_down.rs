@@ -66,11 +66,13 @@ async fn leaving() -> (Arc<a2a_protocol_server::RequestHandler>, Sends) {
     (handler, sends)
 }
 
+/// The refusal names one second and a client waits out what the server asked
+/// for (audit D-10), so `max_backoff` has to admit it.
 fn retry() -> RetryPolicy {
     RetryPolicy::default()
         .with_max_retries(2)
         .with_initial_backoff(Duration::from_millis(10))
-        .with_max_backoff(Duration::from_millis(20))
+        .with_max_backoff(Duration::from_secs(1))
 }
 
 #[cfg(feature = "websocket")]

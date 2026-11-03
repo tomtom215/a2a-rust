@@ -27,6 +27,7 @@ pub(crate) mod connector;
 mod empty_result;
 #[cfg(feature = "grpc")]
 pub mod grpc;
+pub(crate) mod in_flight;
 pub mod jsonrpc;
 pub mod rest;
 #[cfg(feature = "websocket")]

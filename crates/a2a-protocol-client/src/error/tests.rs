@@ -447,17 +447,86 @@ fn retry_after_absent_is_none() {
     assert_eq!(parse_retry_after(&hyper::HeaderMap::new()), None);
 }
 
-/// The HTTP-date form is documented as unparsed; it must yield `None` rather
-/// than a wrong duration.
+/// A value that is neither delta-seconds nor a date yields no delay rather
+/// than a wrong one.
 #[test]
-fn retry_after_http_date_form_is_none() {
-    assert_eq!(
-        parse_retry_after(&retry_after_header("Wed, 21 Oct 2026 07:28:00 GMT")),
-        None
-    );
+fn retry_after_that_is_neither_seconds_nor_a_date_is_none() {
     assert_eq!(parse_retry_after(&retry_after_header("not-a-number")), None);
     // Negative values are not delta-seconds either.
     assert_eq!(parse_retry_after(&retry_after_header("-5")), None);
+    // A date that is not one: no thirty-second of October.
+    assert_eq!(
+        parse_retry_after(&retry_after_header("Wed, 32 Oct 2026 07:28:00 GMT")),
+        None
+    );
+    assert_eq!(parse_retry_after(&retry_after_header("")), None);
+}
+
+const DATE: &str = "Wed, 21 Oct 2026 07:28:00 GMT";
+
+fn at(date: &str) -> std::time::SystemTime {
+    httpdate::parse_http_date(date).expect("a valid date")
+}
+
+/// The date form is the time left until it, to the second.
+#[test]
+fn retry_after_http_date_is_the_time_left_until_it() {
+    let secs = std::time::Duration::from_secs;
+    for before in [1, 90, 3599, 3600] {
+        let now = at(DATE) - secs(before);
+        assert_eq!(
+            parse_retry_after_at(&retry_after_header(DATE), now),
+            Some(secs(before)),
+            "{before} s before the date"
+        );
+    }
+    // Delta-seconds ignore the clock.
+    assert_eq!(
+        parse_retry_after_at(&retry_after_header("45"), at(DATE)),
+        Some(secs(45))
+    );
+}
+
+#[test]
+fn retry_after_http_date_that_has_passed_is_zero_and_one_far_off_is_clamped() {
+    let secs = std::time::Duration::from_secs;
+    assert_eq!(
+        parse_retry_after_at(&retry_after_header(DATE), at(DATE)),
+        Some(secs(0)),
+        "now is the date"
+    );
+    assert_eq!(
+        parse_retry_after_at(&retry_after_header(DATE), at(DATE) + secs(1)),
+        Some(secs(0)),
+        "a second after"
+    );
+    assert_eq!(
+        parse_retry_after_at(&retry_after_header(DATE), at(DATE) - secs(3601)),
+        Some(secs(3600)),
+        "a second over the hour"
+    );
+    assert_eq!(
+        parse_retry_after_at(&retry_after_header(DATE), at(DATE) - secs(86_400)),
+        Some(secs(3600)),
+        "a day away"
+    );
+}
+
+/// HTTP allows three date formats; a sender may use any of them.
+#[test]
+fn retry_after_http_date_is_read_in_all_three_formats() {
+    let now = at(DATE) - std::time::Duration::from_secs(60);
+    for form in [
+        DATE,
+        "Wednesday, 21-Oct-26 07:28:00 GMT",
+        "Wed Oct 21 07:28:00 2026",
+    ] {
+        assert_eq!(
+            parse_retry_after_at(&retry_after_header(form), now),
+            Some(std::time::Duration::from_secs(60)),
+            "{form}"
+        );
+    }
 }
 
 /// Surrounding whitespace is trimmed before parsing.

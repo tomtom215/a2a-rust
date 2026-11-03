@@ -303,16 +303,37 @@ impl ClientError {
 
 /// Parses a `Retry-After` header value into a delay.
 ///
-/// Supports the delta-seconds form (`Retry-After: 120`). The HTTP-date form is
-/// not parsed (it would require a date-parsing dependency); such headers yield
-/// `None` and the client falls back to its computed backoff.
+/// Both forms of RFC 9110 section 10.2.3 are read: delta-seconds
+/// (`Retry-After: 120`) and an HTTP-date (`Retry-After: Wed, 21 Oct 2026
+/// 07:28:00 GMT`, in any of the three date formats HTTP allows), which is
+/// the time left until that date, and zero if it has passed. Anything else
+/// yields `None` and the client falls back to its computed backoff. The delay
+/// is clamped to an hour so that a hostile or misconfigured header cannot park
+/// a retry for as long as it likes.
 #[must_use]
 pub(crate) fn parse_retry_after(headers: &hyper::HeaderMap) -> Option<std::time::Duration> {
-    let raw = headers.get(hyper::header::RETRY_AFTER)?.to_str().ok()?;
-    let secs: u64 = raw.trim().parse().ok()?;
-    // Clamp to a sane ceiling so a hostile/misconfigured header can't park a
-    // retry for an absurd duration.
-    Some(std::time::Duration::from_secs(secs.min(3600)))
+    parse_retry_after_at(headers, std::time::SystemTime::now())
+}
+
+/// [`parse_retry_after`] with the current time given, so that the date form
+/// is tested against a fixed clock.
+fn parse_retry_after_at(
+    headers: &hyper::HeaderMap,
+    now: std::time::SystemTime,
+) -> Option<std::time::Duration> {
+    let raw = headers
+        .get(hyper::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim();
+    let delay = match raw.parse::<u64>() {
+        Ok(secs) => std::time::Duration::from_secs(secs),
+        Err(_) => httpdate::parse_http_date(raw)
+            .ok()?
+            .duration_since(now)
+            .unwrap_or(std::time::Duration::ZERO),
+    };
+    Some(delay.min(std::time::Duration::from_secs(3600)))
 }
 
 impl From<A2aError> for ClientError {
