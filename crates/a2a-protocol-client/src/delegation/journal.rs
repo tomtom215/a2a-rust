@@ -143,7 +143,7 @@ impl Delegation {
     /// # Errors
     ///
     /// As [`start`](Self::start); also the journal's error, as
-    /// [`ClientError::Protocol`](crate::error::ClientError::Protocol), when the record cannot be written. When the
+    /// [`ClientError::Protocol`], when the record cannot be written. When the
     /// agent refuses the request the record is settled `not_started`: no
     /// child exists.
     pub async fn start_journaled(

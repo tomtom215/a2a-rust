@@ -35,6 +35,44 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **Retries that cannot multiply an overload: a retry budget, a bound on
+  elapsed time, and a cap on calls in flight** (client; audit H6, per client
+  and opt-in, fork F7). A client that retries sends a saturated worker up to
+  four times the calls it was given. `RetryPolicy::with_budget(RetryBudget::new(ratio,
+  min_per_sec))` earns each call a fraction of a retry, adds `min_per_sec`
+  a second so that a client that makes few calls can still retry, saves up to
+  a reserve of ten (`with_reserve`), and spends one per retry; a retry the budget cannot
+  pay for is not made and the error that called for it is returned.
+  `RetryPolicy::with_max_elapsed` bounds the time from a call's first attempt to the start
+  of its last retry. `ClientBuilder::with_max_in_flight(n)` refuses a call that
+  finds `n` waiting for a response with the retryable `TooManyPendingRequests`,
+  on JSON-RPC, REST and gRPC; a streaming call counts until its stream opens,
+  and `0` is refused at `build()`. The three are per client; a bound shared
+  by every client on a pool is ADR 0032's. Tests: the budget's arithmetic to
+  the millisecond in paused time, each stop through the transport on a unary
+  and a streaming call, a retry another limit stopped costing the budget
+  nothing, the cap against a held call on the JSON-RPC server and on a gRPC
+  server, a permit given back by a finished, failed and abandoned call.
+- **One value for what a delegation is given, and a reattach that renews its
+  lease** (client; audit H18, NEW-h-designs-5). A journal, a lease and a budget
+  each had a constructor, and no two could be asked for together; after a
+  restart nothing renewed the leases of the children it picked up again, so
+  the restart a journal exists for killed the children it had recorded.
+  `DelegationOptions` holds a lease, a budget grant, a journal record, a
+  `ResumePolicy` and an id wait; `Delegation::start_with` and
+  `Delegation::reattach_with` take it, and `start_leased`, `start_budgeted` and
+  `start_journaled` now call `start_with`. A reattach with `.with_lease(ttl)`
+  renews from the moment the handle exists. A reattach given a budget or a
+  new journal record, and a start given an existing record, return
+  `ClientError::Config` before anything is sent. Tests: a lease on a fresh
+  start outlives its time to live and lapses when the handle lets go; a
+  reattach with a lease keeps a detached child alive, and a plain reattach
+  does not (the control); the resume policy in the options is the one used on
+  a start and on a reattach, told apart by the connections made after a cut;
+  the id wait; the idempotency key `start_with` adds or keeps; every
+  configuration error; the `Debug` output.
+- **`Delegation::wait_or_hand_off`, `Outcome::HandedOff`** (client; audit
+  NEW-h-s0-2, fork F5). See Behaviour Changes.
 - **`Arc<D>` is a `Dispatcher` when `D` is** (server; audit G-05): code that
   keeps an `Arc<JsonRpcDispatcher>` to hand clones to other tasks can give it
   to `Server::serve_with_shutdown` as it is. It forwards `request_handler` and
@@ -687,6 +725,47 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **A server-directed delay longer than `max_backoff` ends the retrying, and
+  the HTTP-date form of `Retry-After` is read** (client; audit D-10,
+  NEW-h-designs-1). A `Retry-After` of 45 s with the default `max_backoff` of
+  30 s was cut to 30 s and the call retried 15 s inside the penalty window the
+  server asked for, and an HTTP-date `Retry-After` was ignored. A delay up to
+  `max_backoff` is still waited out in full, lengthened at random by up to a
+  quarter; a longer one now returns the error at once, whose `retry_after()`
+  carries it for the caller to act on, with no token of a retry budget
+  spent. The date form (all three formats HTTP allows) is the time left until
+  it, zero if it has passed, and never more than an hour. **Action required:**
+  a client that retried against a server's long `Retry-After` by relying on
+  the clamp must raise `max_backoff` to the longest wait it accepts; two tests that
+  did (`send_refused_while_shutting_down`, in the client and the SDK crate) did.
+- **A supervisor shut down on purpose can hand its journaled children over
+  instead of cancelling them** (client; audit NEW-h-s0-2, fork F5). The
+  documented pattern passes the executor's cancellation token to `wait`, and a
+  graceful redeploy fires every token, so every child was cancelled and every
+  journal record settled `canceled`: the journal helped only after a hard
+  kill. `Delegation::wait_or_hand_off(cancel, hand_off)` takes the
+  supervisor's own shutdown signal as a second future. When it fires first and
+  the delegation has a journal record, the child keeps running, the record
+  stays open at the position the stream reached, and the outcome is
+  `Outcome::HandedOff`; the next supervisor finds the record with
+  `DelegationJournal::open` and follows the child with `reattach_with`. With
+  no record nothing could find the child again, so a hand-off cancels it, as
+  does a cancel that is not a hand-off. `wait` is unchanged. Tested against
+  this repository's server: a journaled child is left `Working` with its
+  record open, a new handle completes it and settles the record `completed`;
+  an unjournaled child is cancelled; a plain cancel still cancels and settles.
+- **A long quiet child on gRPC or WebSocket is no longer given up on after six
+  idle cuts, and a fleet's resumes are spread** (client; audit H4, NEW-h-designs-2,
+  fork F5). Those streams carry no event ids, so the position never advanced and
+  every loss cost an attempt. A stream now also counts as having worked when it
+  delivered an event and stayed open for `ResumePolicy::healthy_after` (5 s by
+  default); a server that sends its snapshot and drops the stream at once
+  still exhausts the policy. The waits between attempts are shortened by up to
+  half at random (`ResumePolicy::jitter`, on by default), so that streams a
+  proxy rollout cut in the same instant do not return in the same instant.
+  `with_jitter(false)` pins the waits, and `with_healthy_after(Duration::MAX)`
+  turns the second rule off, which restores the earlier counting. `ResumePolicy` gains two fields; it was already
+  `#[non_exhaustive]`, so its setters are the way to build one.
 - **An `https://` webhook is connected to the address that was checked**
   (server; audit D-13, SEC-13; direct connections only). The delivery
   resolved the host, refused a private answer, and then let the client resolve
@@ -1248,6 +1327,17 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A journal database that stopped answering stopped every delegation of
+  the supervisor** (client; audit NEW-h-s0-3). Journal writes are awaited on
+  the path the stream's events are read from, so a failover on the journal's
+  database stalled each running delegation for as long as the call took, and
+  the children's servers saw slow consumers. Each write is now given 5 s
+  (`WRITE_BOUND`) and then dropped, as a failed one is, and none is tried
+  again for the 2 s progress interval unless it is the one at the end; the
+  record written before the first send fails the start with
+  `ClientError::Timeout` and sends nothing. The two writes at the end of a
+  delegation hold it up for twice the bound at most. Seven tests in paused
+  time pin each bound to the millisecond.
 - **`AuthFailureThrottle`'s per-replica budget is documented** (audit E-F15,
   interim): the counts are per process, so N replicas behind a balancer give a
   peer up to N times `max_failures` guesses a window. The throttling page and

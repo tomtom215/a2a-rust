@@ -49,7 +49,8 @@ impl Scripted {
     }
 
     fn answer(&self) -> Fut<'_, ()> {
-        match *self.mode.lock().unwrap() {
+        let mode = *self.mode.lock().unwrap();
+        match mode {
             Mode::Hang => Box::pin(std::future::pending()),
             Mode::Fail => Box::pin(async { Err(A2aError::internal("the journal is down")) }),
             Mode::Accept => Box::pin(async { Ok(()) }),
@@ -119,7 +120,7 @@ async fn a_write_that_timed_out_is_not_tried_again_until_the_progress_interval_h
     assert_eq!(again.elapsed(), Duration::ZERO, "held off, not waited for");
     assert_eq!(calls(&journal.progress), 1);
 
-    tokio::time::advance(PROGRESS_EVERY - Duration::from_millis(1)).await;
+    tokio::time::advance(PROGRESS_EVERY.saturating_sub(Duration::from_millis(1))).await;
     d.note_progress(false).await;
     assert_eq!(calls(&journal.progress), 1, "a millisecond early");
 
@@ -172,7 +173,7 @@ async fn a_recorded_position_is_rewritten_only_after_the_progress_interval() {
     assert_eq!(calls(&journal.progress), 1);
 
     d.last_event_id = Some("e-2".to_owned());
-    tokio::time::advance(PROGRESS_EVERY - Duration::from_millis(1)).await;
+    tokio::time::advance(PROGRESS_EVERY.saturating_sub(Duration::from_millis(1))).await;
     d.note_progress(false).await;
     assert_eq!(calls(&journal.progress), 1, "a millisecond early");
     tokio::time::advance(Duration::from_millis(1)).await;
