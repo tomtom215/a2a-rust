@@ -161,7 +161,36 @@ impl RequestHandler {
             )));
         }
 
-        Ok(self.push_config_store.set(config).await?)
+        let stored = self.push_config_store.set(config).await?;
+        if is_update {
+            return Ok(stored);
+        }
+
+        // The lock above is this process's. Another replica sharing the store
+        // can have read the same count under the cap and stored its own config
+        // meanwhile, and nothing re-checks a config once stored, so the
+        // overshoot would be permanent (audit E-F14). Count again now that this
+        // one is in, and take it back out if the task is over the cap.
+        //
+        // Every create that is over the cap on this recount withdraws its own
+        // config, so the creates that stay are ones that saw at most the cap
+        // with their own included: the last of them to store found every other
+        // survivor already present, so the survivors cannot exceed the cap. When
+        // several replicas create at once, more than the excess can withdraw
+        // (all of them, if each recounts before any withdraws); the caller gets
+        // the same "maximum" refusal and may retry. A refusal leaves nothing
+        // stored.
+        let total = self.push_config_store.list(&task_key).await?.len();
+        if total > self.limits.max_push_configs_per_task {
+            if let Some(id) = stored.id.as_deref() {
+                self.push_config_store.delete(&task_key, id).await?;
+            }
+            return Err(ServerError::InvalidParams(format!(
+                "task {task_key} already has the maximum of {} push notification configs",
+                self.limits.max_push_configs_per_task
+            )));
+        }
+        Ok(stored)
     }
 
     /// Handles `CreateTaskPushNotificationConfig`.

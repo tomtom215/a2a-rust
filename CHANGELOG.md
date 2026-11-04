@@ -1451,6 +1451,24 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   over an earlier one; the warning once per file; the whole open path against a
   table that puts the temp directory on NFS).
 
+- **The per-task push-config cap holds across replicas** (server; audit
+  E-F14). The handler serialised creates with a lock it keeps per task, which
+  is one process's: two replicas sharing a store each read a count under the cap
+  and each stored, exceeding it by up to the replica count, permanently, since
+  nothing re-checked a config once stored. After storing a new config the
+  handler now counts the task's configs again and, if over the cap, deletes the
+  one it just stored and answers the usual "maximum" `InvalidParams`. The
+  configs that stay are ones that, at the moment they recounted, saw at most the
+  cap with their own included, and the last of them to store saw every other
+  survivor, so they cannot exceed it. Creates that race at the cap can all be
+  refused (a retry succeeds) but cannot all be admitted. An update of an
+  existing config is not recounted, so one on a task that is already over the
+  cap is not withdrawn. Costs one extra `list` per new config. The global
+  (per-tenant) ceiling stays approximate under concurrent creates for different
+  tasks, as before (backlog B20). Tests: `handler/push_config_race_tests.rs`
+  (two handlers over one store, the read-before-store interleaving forced with a
+  barrier, 20 rounds; the update path).
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a
