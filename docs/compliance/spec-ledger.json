@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:12150 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:12194 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -669,13 +669,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1192 InMemoryTaskStore::list",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1233 InMemoryTaskStore::list",
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1025 SqliteTaskStore::list"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1725 list_empty_store_returns_empty (asserts next_page_token == \"\")",
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1796 list_pagination_is_stable_across_pages",
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:2092 list_pagination_page_size",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1770 list_empty_store_returns_empty (asserts next_page_token == \"\")",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1841 list_pagination_is_stable_across_pages",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:2137 list_pagination_page_size",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:505 list_pagination"
    ],
    "notes": "",
@@ -712,13 +712,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1192 InMemoryTaskStore::list",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1233 InMemoryTaskStore::list",
     "crates/a2a-protocol-server/src/store/cursor.rs:23 encode",
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1025 SqliteTaskStore::list",
     "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:407 PostgresTaskStore::list"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1796 list_pagination_is_stable_across_pages",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1841 list_pagination_is_stable_across_pages",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:699 list_pagination_visits_every_task_once"
    ],
    "notes": "",
@@ -734,13 +734,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1192 InMemoryTaskStore::list",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1233 InMemoryTaskStore::list",
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1025 SqliteTaskStore::list",
     "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:407 PostgresTaskStore::list",
     "crates/a2a-protocol-server/src/store/tenant_sqlite_store.rs:474 TenantAwareSqliteTaskStore::list"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1734 list_returns_all_tasks_most_recently_updated_first",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1779 list_returns_all_tasks_most_recently_updated_first",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:552 list_orders_most_recently_updated_first",
     "crates/a2a-protocol-server/tests/postgres_store_tests.rs:444 task_list_orders_most_recently_updated_first (ignored without PG)"
    ],
@@ -777,12 +777,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:233 StoreData::insert",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:261 StoreData::insert",
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:689 SqliteTaskStore::save",
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1025 SqliteTaskStore::list"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1886 list_orders_by_status_timestamp_not_write_order",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1931 list_orders_by_status_timestamp_not_write_order",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:583 list_orders_by_status_timestamp_not_write_order",
     "crates/a2a-protocol-server/tests/postgres_store_tests.rs:510 task_list_status_timestamp_ordering_and_filter (ignored without PG)"
    ],
@@ -2808,9 +2808,9 @@
     "crates/a2a-protocol-server/src/store/holds/mod.rs:189 EventHolds::lock",
     "crates/a2a-protocol-server/src/store/holds/mod.rs:213 EventHold::advance",
     "crates/a2a-protocol-server/src/store/task_store/in_memory/log_bound.rs:33 InMemoryTaskStore::bound_log",
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:827 InMemoryTaskStore::append_event",
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:887 InMemoryTaskStore::hold_events",
-    "crates/a2a-protocol-server/src/store/task_store/config.rs:353 TaskStoreConfig::with_max_held_events_factor",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:864 InMemoryTaskStore::append_event",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:924 InMemoryTaskStore::hold_events",
+    "crates/a2a-protocol-server/src/store/task_store/config.rs:362 TaskStoreConfig::with_max_held_events_factor",
     "crates/a2a-protocol-server/src/store/task_store/mod.rs:822 TaskStore::hold_events",
     "crates/a2a-protocol-server/src/store/tenant/store.rs:611 TenantAwareInMemoryTaskStore::hold_events",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1299 InMemoryQueueReader::read",
@@ -5506,7 +5506,7 @@
     "crates/a2a-protocol-types/tests/rfc8785_vectors.rs:85 rfc8785_appendix_b_from_json_text",
     "crates/a2a-protocol-types/tests/rfc8785_vectors.rs:167 rfc8785_section_3_2_3_sort_order",
     "crates/a2a-protocol-types/tests/signing_tests.rs:295 sign_and_verify_roundtrip",
-    "crates/a2a-protocol-types/src/signing.rs:997 a_signature_with_crit_is_refused"
+    "crates/a2a-protocol-types/src/signing.rs:1024 a_signature_with_crit_is_refused"
    ],
    "notes": "JCS itself is implemented and vector-tested; see 2012/2016 for the pre-canonicalization default-stripping it is fed without.",
    "auditor": "D",
@@ -5654,7 +5654,7 @@
     "crates/a2a-protocol-types/src/signing.rs:90 canonicalize_card_json"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:882 sign_and_verify_card_in_wire_shape"
+    "crates/a2a-protocol-types/src/signing.rs:909 sign_and_verify_card_in_wire_shape"
    ],
    "notes": "",
    "auditor": "D",
@@ -5737,7 +5737,7 @@
     "crates/a2a-protocol-types/src/signing.rs:316 protected_header"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:1072 signature_header_reads_jku_from_a_foreign_signer",
+    "crates/a2a-protocol-types/src/signing.rs:1099 signature_header_reads_jku_from_a_foreign_signer",
     "crates/a2a-protocol-types/tests/signing_jku.rs:46 the_jku_is_in_the_signed_header_and_the_card_still_verifies",
     "crates/a2a-protocol-types/tests/signing_jku.rs:85 a_jku_that_is_not_https_is_refused",
     "crates/a2a-protocol-types/tests/signing_jku.rs:76 ed25519_carries_the_jku_too"
@@ -5823,7 +5823,7 @@
     "crates/a2a-protocol-types/src/signing.rs:90 canonicalize_card_json"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:882 sign_and_verify_card_in_wire_shape"
+    "crates/a2a-protocol-types/src/signing.rs:909 sign_and_verify_card_in_wire_shape"
    ],
    "notes": "",
    "auditor": "D",
@@ -5863,7 +5863,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/tests/signing_tests.rs:388 verify_rejects_tampered_card",
     "crates/a2a-protocol-types/tests/signing_tests.rs:421 verify_rejects_wrong_public_key",
-    "crates/a2a-protocol-types/src/signing.rs:997 a_signature_with_crit_is_refused"
+    "crates/a2a-protocol-types/src/signing.rs:1024 a_signature_with_crit_is_refused"
    ],
    "notes": "The signature is JWS (RFC 7515), whose §4.1.11 makes a JWS naming in crit an extension the recipient does not understand invalid. This verifier understands none, so since 2026-10-13 any crit, in the protected header or the unprotected one (where it may not appear), is refused; it was ignored, and a signature with crit [\"exp\"] verified forever.",
    "auditor": "D",
@@ -5990,7 +5990,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:475 CachingCardResolver::resolve",
     "crates/a2a-protocol-client/src/discovery/freshness.rs:75 Freshness::of",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:92 StaticAgentCardHandler::full_response",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:133 StaticAgentCardHandler::full_response",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:295 card_handler",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:37 extended_card_response"
    ],
@@ -6038,14 +6038,14 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/caching.rs:42 card_body_and_etag",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:46 StaticAgentCardHandler::new",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:71 StaticAgentCardHandler::new",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:87 DynamicAgentCardHandler::handle",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:37 extended_card_response",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:295 card_handler",
     "crates/a2a-protocol-server/src/agent_card/caching.rs:141 check_conditional"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:163 static_handler_304_on_matching_etag",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:285 static_handler_304_on_matching_etag",
     "crates/a2a-protocol-server/tests/agent_card_caching.rs:80 the_axum_agent_card_is_cacheable_like_the_rest_one",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:359 same_card_produces_same_etag",
     "crates/a2a-protocol-server/tests/card_etag_determinism.rs:81 the_same_card_parsed_twice_has_one_static_etag",
@@ -6072,12 +6072,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:46 StaticAgentCardHandler::new",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:92 StaticAgentCardHandler::full_response",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:71 StaticAgentCardHandler::new",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:133 StaticAgentCardHandler::full_response",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:87 DynamicAgentCardHandler::handle"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:147 static_handler_returns_etag_and_cache_headers",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:269 static_handler_returns_etag_and_cache_headers",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:134 handle_sends_no_last_modified",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:240 if_modified_since_is_ignored",
     "crates/a2a-protocol-server/src/agent_card/caching.rs:399 an_unreadable_if_none_match_still_hides_if_modified_since"
@@ -10115,7 +10115,7 @@
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:124 a_card_that_does_not_validate_is_refused",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:165 a_card_that_does_not_validate_is_refused",
     "crates/a2a-protocol-types/src/agent_card/tests.rs:285 validate_refuses_each_empty_required_array",
     "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused",
     "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
@@ -10493,7 +10493,7 @@
     "crates/a2a-protocol-server/src/builder.rs:2035 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:43 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:124 a_card_that_does_not_validate_is_refused",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:165 a_card_that_does_not_validate_is_refused",
     "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
     "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
    ],
@@ -11165,7 +11165,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:115 refuse_unlistable",
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1192 InMemoryTaskStore::list"
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1233 InMemoryTaskStore::list"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/http_query_validation.rs:77 a_malformed_query_value_is_refused_naming_its_parameter",
@@ -11566,8 +11566,8 @@
     "crates/a2a-protocol-types/src/signing.rs:51 canonicalize"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:1171 canonicalize_sorts_keys_by_utf16_code_units",
-    "crates/a2a-protocol-types/src/signing.rs:1198 canonicalize_numbers_use_ecmascript_formatting"
+    "crates/a2a-protocol-types/src/signing.rs:1198 canonicalize_sorts_keys_by_utf16_code_units",
+    "crates/a2a-protocol-types/src/signing.rs:1225 canonicalize_numbers_use_ecmascript_formatting"
    ],
    "notes": "Added 2026-10-10: the auditors left this line without an entry.",
    "auditor": "M",
