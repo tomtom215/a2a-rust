@@ -1469,6 +1469,22 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   (two handlers over one store, the read-before-store interleaving forced with a
   barrier, 20 rounds; the update path).
 
+- **A parked task's run no longer lingers in the audit log's run registry**
+  (server; audit E-F19). An event's `runSeq` names the `run.started` record of
+  the run that emitted it; the registry that finds it is per process and was
+  emptied only when a task ended terminal. A turn that parked in `input-required`
+  on one replica and continued on another left the first replica's entry, so a
+  record that replica later wrote for the task (a reaper's `failed`, a supersede
+  record) carried the first turn's `runSeq`. `AuditedTaskStore` now drops the
+  entry when the turn ends by parking as well as by finishing. **Behaviour
+  change:** a record written for a task between turns (the `canceled` event of a
+  cancel on a parked task, for one) now carries no `runSeq` where on a single
+  process it carried the parked turn's; the event that ends a turn is still
+  attributed to it. `book/src/deployment/audit.md` says so under Limits. (The
+  audit's second claim, that `task.cancel_requested` carries no `runSeq` on any
+  replica, is not replica-specific and is unchanged.) Test:
+  `audit/task_store/tests.rs`, for every task state.
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a

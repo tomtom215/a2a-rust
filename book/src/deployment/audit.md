@@ -403,7 +403,13 @@ names no caller; the `call` record after it does.
 - Record times come from the server's clock, not a trusted time source.
 - A run's link from its events to its caller is kept in memory; a restart
   while a task runs leaves that task's later events without a `runSeq`, and so
-  does a run forgotten because more than 65,536 runs were tracked at once.
+  does a run forgotten because more than 65,536 runs were tracked at once. The
+  link lasts for the turn: it is dropped when the task finishes or parks in
+  `input-required` or `auth-required`, so a record this replica writes for the
+  task between turns (a reaper's `failed`, a supersede record, the `canceled`
+  event of a cancel on a parked task) carries no `runSeq`. It would otherwise
+  name the caller of a turn that is over, and on a fleet, of a turn that is not
+  the task's last. The event that ends a turn is still attributed to it.
 - Appends to one tenant's chain are serialised. ADR 0015 gives the measured
   cost: about 9 µs per record in memory and 270 µs on a SQLite file on the
   machine measured.

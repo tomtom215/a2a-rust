@@ -236,3 +236,72 @@ async fn deleting_a_task_is_a_chain_record_and_deleting_nothing_is_not() {
         "the record names the task, not what it held"
     );
 }
+
+/// The run's entry in the registry lasts for the turn: it is gone once the task
+/// finishes or parks, and stays while the task works (audit E-F19). The event
+/// that ends the turn is still attributed to the run it ended.
+#[tokio::test]
+async fn a_turn_ends_its_run_when_the_task_finishes_or_parks_and_not_before() {
+    use a2a_protocol_types::events::TaskStatusUpdateEvent;
+
+    for (state, ends_the_turn) in [
+        (TaskState::Submitted, false),
+        (TaskState::Working, false),
+        (TaskState::InputRequired, true),
+        (TaskState::AuthRequired, true),
+        (TaskState::Completed, true),
+        (TaskState::Failed, true),
+        (TaskState::Canceled, true),
+        (TaskState::Rejected, true),
+    ] {
+        let log = Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new())));
+        let store = AuditedTaskStore {
+            inner: Arc::new(InMemoryTaskStore::new()),
+            log: Arc::clone(&log),
+            metrics: Arc::new(NoopMetrics),
+        };
+        let task = Task::new(
+            TaskId::new("t-1"),
+            ContextId::new("c-1"),
+            TaskStatus::new(TaskState::Working),
+        );
+        store.save(&task).await.unwrap();
+        log.begin_run("", "t-1", 7);
+
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            task.id.clone(),
+            ContextId::new("c-1"),
+            TaskStatus::new(state),
+        ));
+        store.append_event(&task.id, 1, &event).await.unwrap();
+
+        let records = log.export("").await.unwrap();
+        assert_eq!(
+            records[0].run_seq,
+            Some(7),
+            "{state:?}: the event is attributed to the run that emitted it"
+        );
+        assert_eq!(
+            log.run_of("", "t-1"),
+            if ends_the_turn { None } else { Some(7) },
+            "{state:?}"
+        );
+        assert_eq!(log.tracked_runs(), usize::from(!ends_the_turn), "{state:?}");
+
+        // What this replica writes for the task after the turn: attributed to
+        // the run while it lasts, to none once it has ended, and never to a
+        // turn that is over.
+        let later = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            task.id.clone(),
+            ContextId::new("c-1"),
+            TaskStatus::new(TaskState::Failed),
+        ));
+        store.append_event(&task.id, 2, &later).await.unwrap();
+        let records = log.export("").await.unwrap();
+        assert_eq!(
+            records[1].run_seq,
+            if ends_the_turn { None } else { Some(7) },
+            "{state:?}: a later record"
+        );
+    }
+}
