@@ -71,7 +71,7 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `max_capacity` | `Option<usize>` | 10,000 | Maximum stored tasks; oldest terminal tasks are evicted on overflow, then, as a last resort, the oldest non-terminal ones (size it above your concurrent in-flight task count) |
+| `max_capacity` | `Option<usize>` | 10,000 | Maximum stored tasks; oldest terminal tasks are evicted on overflow, then, as a last resort, the oldest *working* ones (counted: `InMemoryTaskStore::live_evictions`); a task waiting for input or authorization is never evicted, and a full store of them refuses a new task with `503` (size it above your concurrent in-flight and parked task count) |
 | `task_ttl` | `Option<Duration>` | 1 hour | TTL for completed/failed tasks |
 | `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps |
 | `max_page_size` | `u32` | 1,000 | Cap a store applies to the page size of a `list` call. The `ListTasks` method itself refuses a `pageSize` outside 1 to 100 (`InvalidParams`) and lists 50 when none is given, so this matters for direct `TaskStore::list` callers and when set below 100 |

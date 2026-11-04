@@ -158,6 +158,10 @@ pub(super) struct StoreData {
     /// ([`admit`](Self::admit)) and given back in [`remove`](Self::remove),
     /// which every eviction, expiry and delete goes through.
     pub(super) budget: Option<std::sync::Arc<TaskBudget>>,
+    /// How many tasks capacity eviction has removed while they were still
+    /// working, over this store's life. Guarded by the write lock with the
+    /// maps. See [`InMemoryTaskStore::live_evictions`].
+    pub(super) live_evictions: u64,
 }
 
 impl StoreData {
@@ -171,7 +175,31 @@ impl StoreData {
             next_seq: 0,
             idempotency_index: HashMap::new(),
             budget: None,
+            live_evictions: 0,
         }
+    }
+
+    /// Whether a write of `id` must be refused because the store is at
+    /// `max_capacity` and holds nothing that eviction may remove: `id` is new,
+    /// the store is full, and every task in it is parked waiting for input or
+    /// authorization (audit D-18). A parked task is a person's pending
+    /// decision, and capacity eviction never removes one.
+    ///
+    /// The scan stops at the first task that is not parked, so a store with
+    /// almost any other task in it answers at once; it walks the whole store
+    /// only in the state where it must refuse.
+    pub(super) fn refuses_for_parked_tasks(
+        &self,
+        id: &TaskId,
+        max_capacity: Option<usize>,
+    ) -> bool {
+        max_capacity.is_some_and(|max| self.len() >= max)
+            && !self.entries.is_empty()
+            && !self.entries.contains_key(id)
+            && self
+                .entries
+                .values()
+                .all(|entry| entry.task.status.state.is_interrupted())
     }
 
     /// Whether a write of `id` may go ahead under the shared budget: always
@@ -511,6 +539,15 @@ const DEFAULT_INITIAL_CAPACITY: usize = 256;
 fn budget_exhausted() -> a2a_protocol_types::error::A2aError {
     a2a_protocol_types::error::A2aError::unavailable(
         "task store full: the total task cap across tenants is reached",
+    )
+}
+
+/// The refusal of a new task when the store is at `max_capacity` and every task
+/// in it is parked waiting for input or authorization, which capacity eviction
+/// never removes: temporary, so HTTP `503` and gRPC `UNAVAILABLE`.
+fn full_of_parked_tasks() -> a2a_protocol_types::error::A2aError {
+    a2a_protocol_types::error::A2aError::unavailable(
+        "task store full: every task is waiting for input or authorization and none may be evicted",
     )
 }
 
@@ -957,6 +994,10 @@ impl TaskStore for InMemoryTaskStore {
                     drop(store);
                     return Err(conflict.into_error());
                 }
+                if store.refuses_for_parked_tasks(&task.id, self.config.max_capacity) {
+                    drop(store);
+                    return Err(full_of_parked_tasks());
+                }
                 if !store.admit(&task.id) {
                     drop(store);
                     return Err(budget_exhausted());
@@ -1322,6 +1363,10 @@ impl TaskStore for InMemoryTaskStore {
                 let mut store = self.data.write().await;
                 if store.entries.contains_key(&task.id) {
                     return Ok(false);
+                }
+                if store.refuses_for_parked_tasks(&task.id, self.config.max_capacity) {
+                    drop(store);
+                    return Err(full_of_parked_tasks());
                 }
                 if !store.admit(&task.id) {
                     drop(store);

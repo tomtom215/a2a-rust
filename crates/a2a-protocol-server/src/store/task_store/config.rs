@@ -80,13 +80,22 @@ pub struct TaskStoreConfig {
     /// `None` means no limit.
     ///
     /// **Overload behavior:** if the overflow cannot be covered by terminal
-    /// tasks alone, the oldest *non-terminal* tasks are evicted as a last
-    /// resort — bounded memory is prioritized over retaining in-flight rows.
-    /// An evicted in-flight task answers `GetTask` with task-not-found until
-    /// its next event is persisted (the background processor re-saves it),
-    /// so under sustained over-capacity write pressure the cap is a strong
-    /// bound on steady-state size, not an absolute invariant. Size
-    /// `max_capacity` above the realistic concurrent in-flight task count.
+    /// tasks alone, the oldest *working* tasks are evicted as a last resort —
+    /// bounded memory is prioritized over retaining in-flight rows. An evicted
+    /// working task answers `GetTask` with task-not-found until its next event
+    /// is persisted (the background processor re-saves it), so under sustained
+    /// over-capacity write pressure the cap is a strong bound on steady-state
+    /// size, not an absolute invariant. Each such eviction is logged and
+    /// counted ([`InMemoryTaskStore::live_evictions`](crate::store::InMemoryTaskStore::live_evictions)).
+    ///
+    /// **A parked task is never evicted** (audit D-18): one in `input-required`
+    /// or `auth-required` is a person's pending decision. When the store is at
+    /// the cap and *every* task in it is parked, a new task is refused with a
+    /// temporary error (HTTP `503`) instead. [`task_ttl`](Self::task_ttl)
+    /// expires only terminal tasks, so a parked task whose client never comes
+    /// back stays until it is answered, cancelled or deleted. Size
+    /// `max_capacity` above the realistic number of tasks in flight *and*
+    /// parked at once.
     pub max_capacity: Option<usize>,
 
     /// Time-to-live for completed or failed tasks. Tasks in terminal states

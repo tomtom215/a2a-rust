@@ -1544,6 +1544,34 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `If-Modified-Since` `304`), and `signing.rs` (ES256 signatures of one card differ,
   Ed25519 signatures are equal).
 
+- **The in-memory store no longer evicts a task that is waiting for a person**
+  (server; audit D-18, the maintainer's recommendation 2 with the metric).
+  Capacity eviction took finished tasks first and then the oldest unfinished
+  ones, silently, so under load a task parked in `input-required` or
+  `auth-required` could vanish and its caller answer a `GetTask` with
+  task-not-found. It now takes finished tasks, then the oldest **working** ones,
+  and never a parked one. **Behaviour change, and action required:** a task that
+  is parked stays in an `InMemoryTaskStore` until it is answered, cancelled or
+  deleted, because `task_ttl` expires only terminal tasks; when the store is at
+  `max_capacity` and every task in it is parked, a **new** task is refused with a
+  temporary error (HTTP `503`, gRPC `UNAVAILABLE`, "task store full: every task is
+  waiting for input or authorization") where an old one used to be evicted. A
+  store that fills with abandoned parked tasks therefore stops taking work until
+  they are cleared; size `max_capacity` above the tasks in flight and parked at
+  once, cancel or delete abandoned ones, or use `SqliteTaskStore` or
+  `PostgresTaskStore`. **Additive:** `InMemoryTaskStore::live_evictions()` counts
+  the working tasks capacity eviction removed, and each such sweep logs a warning
+  (with the `tracing` feature). **That count is a store accessor and a log line,
+  not an OpenTelemetry instrument**: the store holds no metrics handle, and
+  plumbing one through the handler is a larger change than this row; say if you
+  want it. Whether to expire parked tasks after a long idle time (a
+  `parked_task_ttl`) is not decided here and is the maintainer's. Tests:
+  `in_memory/eviction/parked_tests.rs` (a sweep takes finished then working and
+  never parked tasks, including working tasks behind a window of parked ones; the
+  refusal's truth table; a full store of parked tasks refuses `save` and
+  `insert_if_absent`, accepts an update, and recovers when one finishes; the
+  count) and the existing capacity tests.
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a
