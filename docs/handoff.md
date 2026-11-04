@@ -111,13 +111,27 @@ command is named so the next session re-runs it instead of copying the number.
      takes the child's id now); and the corrected loop's `?` cancelled every child already held when one
      record could not be reattached (26 of 26; the book matches now). A restart after the agent has noticed
      the lapse still loses the child: 15 s leases kept 50 of 50 at 9.5 s (6 of 6) and none at 12 s (3 of 3),
-     in memory only (`PostgresLeaseStore` not run). **Local evidence on the head `0247db0c`**, each read from a
-     gate's own exit status (numbers as `preflight.sh --list` prints them): gates 1 to 45 (formatting, the documentation and repository-rule scripts, the spec ledger, the file-length ratchet, clippy with default features and with `signing`) and 84 (`cargo package`) exit 0 on the commit that adds this note, which differs from `0247db0c` only in documentation; gates 46 to 57 (the rest of clippy, `cargo hack clippy --each-feature` included), 58 (nextest, default features: **6607 passed, 192 skipped**), 61 (the client crate with `tls-rustls`), 71 (`--all-features`: **6623 passed, 192 skipped**), 72 (`--no-default-features`: 6602 passed, 192 skipped), 73 to 75 (doc tests: 485, 486, 485 passed, 0 failed, 4 ignored in each), 76 to 81 (PostgreSQL 16.15, `ssl = off`: 76, 7, 19, 23, 1 and 6 tests passed) and 82 and 83 (`cargo doc`, `-D warnings`) exit 0 on `0247db0c`. Workspace nextest was 6600 and 6616 before the seven renewal tests. Hand mutants, 0 missed: 49
-     for the first version of the pool, 19 after the client moved to `https_client.rs`, 12 for the renewal;
-     `cargo mutants --in-diff` on the client crate on an earlier head: 58 mutants, 14 caught, 44 unviable,
-     0 missed (`crates/` has changed since only in `pool/mod.rs` doc comments; not re-run). **Not run
-     locally:** gates 59, 60, 62 to 70 (nextest one feature set at a time) and 85 to 102 (the examples, the slimrpc binding and its packaging, the Go interop), the Windows and macOS jobs, the TCK, ITK and ACTS workflows, Kubernetes, the
-     sharded mutation job. **Not in it:** the per-origin in-flight cap, circuit breaker and retry budget
+     in memory only (`PostgresLeaseStore` not run). **Local evidence on the head `a3696155`**, each read from a
+     gate's own exit status (numbers as `preflight.sh --list` prints them): gates 1 to 45 (formatting, the
+     documentation and repository-rule scripts, the spec ledger, the file-length ratchet, clippy with default
+     features and with `signing`) and 84 (`cargo package`, all four crates verified) exit 0 on a clean tree at
+     `a3696155`; on its parent gates 15 (a CHANGELOG line the ledger cites had moved) and 18 (the OTel wiring
+     check found the three new live-harness binaries) failed, both caused by this branch, and `a3696155`
+     is their fix. Gates 46 to 57 (the rest of clippy, `cargo hack clippy --each-feature` included), 58
+     (nextest, default features: **6607 passed, 192 skipped**), 61 (the client crate with `tls-rustls`), 71
+     (`--all-features`: **6623 passed, 192 skipped**), 72 (`--no-default-features`: 6602 passed, 192 skipped),
+     73 to 75 (doc tests: 485, 486, 485 passed, 0 failed, 4 ignored in each), 76 to 81 (PostgreSQL 16.15,
+     `ssl = off`: 76, 7, 19, 23, 1 and 6 tests passed) and 82 and 83 (`cargo doc`, `-D warnings`) exit 0 on
+     `0247db0c`; `crates/` and `book/` do not differ between it and `a3696155` (`git diff --stat`). Workspace
+     nextest was 6600 and 6616 before the seven renewal tests. `scripts/check_dco.sh origin/main HEAD`: all
+     ok. Kill-proof: hand mutants, 0 missed (49 for the first version of the pool, 19 after the client moved
+     to `https_client.rs`, 12 for the renewal), and `cargo mutants --in-diff` on the client crate at
+     `a3696155`: 58 mutants, 14 caught, 44 unviable, 0 missed, 0 timed out, in 19 minutes. The pool's flaky
+     idle test, fixed with a key per test: 0 failures in 300 runs of `idle::` and 100 of the whole
+     `http_pool` binary. **Not run locally:** gates 59, 60, 62 to 70 (nextest one feature set at a time) and
+     85 to 102 (the examples, the slimrpc binding and its packaging, the Go interop), the Windows and macOS
+     jobs, the TCK, ITK and ACTS workflows, Kubernetes, the sharded mutation job.
+     **Not in it:** the per-origin in-flight cap, circuit breaker and retry budget
      (ADR 0032 decision 5), the card resolver sharing the pool (decision 6), client-side balancing (H12), B-11's
      option 2 (the client folding a blocking send into a stream: the maintainer's call), E-F15, F14, E-F25
      (b) and (c), and the observability, deploy and docs group.
