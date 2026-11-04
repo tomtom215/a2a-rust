@@ -23,7 +23,9 @@ use super::pool::to_a2a_error;
 use crate::store::event_log_sql::{
     decode_json_row, encode_json, limit_to_i64, report_no_op_append, seq_from_i64, seq_to_i64,
 };
-use crate::store::task_store::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore};
+use crate::store::task_store::{
+    ArtifactDelta, IdempotencyClaim, IdempotencyHolder, RecordedEvent, TaskStore,
+};
 use a2a_protocol_types::message::MessageId;
 use sqlx::Row as _;
 
@@ -122,6 +124,30 @@ impl TaskStore for PostgresTaskStore {
             .await
             .map_err(to_a2a_error)?;
             Ok(())
+        })
+    }
+
+    fn idempotency_holder<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<IdempotencyHolder>>> + Send + 'a>> {
+        Box::pin(async move {
+            let row = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query(idempotency::PEEK_SQL)
+                    .bind(key)
+                    .fetch_optional(&self.pool)
+            })
+            .await
+            .map_err(to_a2a_error)?;
+            row.map(|row| {
+                let message: String = row.try_get("message_id").map_err(to_a2a_error)?;
+                let task: String = row.try_get("task_id").map_err(to_a2a_error)?;
+                Ok(IdempotencyHolder::new(
+                    MessageId::new(message),
+                    TaskId::new(task),
+                ))
+            })
+            .transpose()
         })
     }
 

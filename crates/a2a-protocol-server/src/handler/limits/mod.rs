@@ -133,6 +133,38 @@ pub struct HandlerLimits {
     /// waiting deliveries rather than failures, since a lane only fills
     /// behind a webhook that is slower than the agent. Zero is read as one.
     pub push_queue_capacity: usize,
+    /// How many deliveries to a webhook may fail in a row before it is
+    /// suspended. Default: 5. **Zero turns suspension off.**
+    ///
+    /// Each failed delivery has already had the sender's retries (three
+    /// attempts, up to 38 s at the defaults), so five is five events a
+    /// webhook did not take. A suspended webhook is not sent the events that
+    /// follow, for [`push_suspend_for`](Self::push_suspend_for), then one
+    /// event is tried again: a success ends the suspension, a failure
+    /// doubles the next (up to 32 times as long). The events that end a turn
+    /// (a terminal or interrupted status) are always attempted, so a webhook
+    /// that comes back is told how a task ended. The config is kept, and
+    /// each skipped delivery is counted as
+    /// [`push_outcome::SUSPENDED`](crate::metrics::push_outcome::SUSPENDED).
+    /// Spec §4.3.3 allows an agent to stop attempting delivery after a
+    /// configured number of consecutive failures (audit D-05). The count is
+    /// per replica and held in memory, as delivery is.
+    pub push_suspend_after: usize,
+    /// How long a suspended webhook is left alone before one event is
+    /// tried again. Default: 30 s; see
+    /// [`push_suspend_after`](Self::push_suspend_after).
+    pub push_suspend_for: Duration,
+    /// Whether a webhook that answers `410 Gone` has its config removed.
+    /// Default: `true`.
+    ///
+    /// `410` is the receiver saying the address is permanently gone, so the
+    /// config would only be tried, and answered `410`, on every later event.
+    /// Removing it is the store's `delete`: the client sees it as the config
+    /// no longer listed. Only `410`: a `404` can be a deploy in progress and
+    /// counts as any other failure. A sender other than `HttpPushSender`
+    /// reports a status in its error's `data` as `{"httpStatus": 410}` to
+    /// get the same.
+    pub push_remove_gone: bool,
     /// The most webhook deliveries in flight at once, across every task.
     /// Default: 512. Zero is read as one.
     ///
@@ -229,8 +261,9 @@ pub struct HandlerLimits {
     /// reports a count (see [`PushConfigStore::count`](crate::push::PushConfigStore::count));
     /// stores that do not report one are unaffected.
     pub max_total_push_configs: usize,
-    /// How often a `SubscribeToTask` stream re-checks whether its task has
-    /// finished, once the current turn's event queue has closed. Default: 250ms.
+    /// How often a `SubscribeToTask` stream first re-checks whether its task
+    /// has finished, once the current turn's event queue has closed. Default:
+    /// 250ms.
     ///
     /// A task's queue lives only as long as one executor invocation, so an
     /// agent that parks a task in `input_required` closes the queue at every
@@ -238,7 +271,25 @@ pub struct HandlerLimits {
     /// **terminal** state, so it waits here for the next turn rather than
     /// ending. Only an idle stream pays this cost — a live queue delivers
     /// events immediately.
+    ///
+    /// This is the *first* wait: while nothing changes it doubles each poll up
+    /// to [`subscribe_reattach_max_interval`](Self::subscribe_reattach_max_interval),
+    /// and a change (a queue to attach to, events in the log, a terminal
+    /// state) ends the wait and the next one starts here again.
     pub subscribe_reattach_interval: Duration,
+    /// The longest wait between two re-checks of an idle `SubscribeToTask`
+    /// stream. Default: 4s. A value below
+    /// [`subscribe_reattach_interval`](Self::subscribe_reattach_interval) means no
+    /// back-off: the stream polls at that interval throughout.
+    ///
+    /// Without it an idle subscriber of a task parked on another replica read
+    /// the store about eight times a second for as long as its client stayed
+    /// (audit E-F25), on the pool that also keeps the replica's claims alive.
+    /// Backing off costs latency only after a long idle: the first event of the
+    /// next turn, run on another replica, reaches the subscriber up to this long
+    /// after it was logged. Raise it to cut idle load further; lower it, or set
+    /// it equal to the interval, to keep cross-replica latency at the interval.
+    pub subscribe_reattach_max_interval: Duration,
     /// How long a `SubscribeToTask` stream waits for a parked task to make
     /// progress before ending, if at all. Default: `None`, no bound.
     ///
@@ -353,6 +404,9 @@ impl Default for HandlerLimits {
             push_delivery_timeout: Duration::from_secs(30),
             push_delivery_budget: Duration::from_secs(30),
             push_queue_capacity: 1024,
+            push_suspend_after: 5,
+            push_suspend_for: Duration::from_secs(30),
+            push_remove_gone: true,
             push_max_in_flight: 512,
             push_max_in_flight_per_host: 64,
             executor_drain_timeout: Duration::from_secs(5),
@@ -362,6 +416,7 @@ impl Default for HandlerLimits {
             max_parts_per_artifact: 10_000,
             max_total_push_configs: 100_000,
             subscribe_reattach_interval: Duration::from_millis(250),
+            subscribe_reattach_max_interval: Duration::from_secs(4),
             subscribe_max_idle: None,
             subscribe_replay_limit: 1_000,
             subscribe_replay_catchup: Duration::from_secs(2),

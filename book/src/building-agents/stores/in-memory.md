@@ -43,6 +43,13 @@ Features:
 - Cursor-based pagination, most-recently-updated first
 - Filtering by `context_id` (index-accelerated) and `status`
 
+### What capacity eviction will and will not take
+
+In order: terminal tasks, oldest first; then, if that is not enough, the oldest tasks that are **working**. A task in `input-required` or `auth-required` is a person's pending decision and is **never** evicted, however old. Two things follow, and the second is the one to plan for:
+
+- A working task evicted for room answers `GetTask` with task-not-found until its next event is saved. Each such eviction logs a warning (with the `tracing` feature) and is counted by `InMemoryTaskStore::live_evictions()`; a non-zero count means `max_capacity` is below the number of tasks in flight at once.
+- When the store is at `max_capacity` and **every** task in it is parked, a new task is refused with a temporary error (HTTP `503`, gRPC `UNAVAILABLE`, "task store full: every task is waiting for input or authorization") instead of an old one being evicted. `task_ttl` expires only terminal tasks, so a parked task whose client never comes back stays until it is answered, cancelled or deleted, and enough of them stop the store taking work until they are. Size `max_capacity` above the number of tasks that can be parked at once, cancel or delete tasks that were abandoned, or use `SqliteTaskStore` or `PostgresTaskStore`, which hold what is written to them.
+
 ## `TaskStoreConfig` fields
 
 **`TaskStoreConfig` configures `InMemoryTaskStore` only.** The SQL stores take
@@ -59,7 +66,7 @@ returned all 60 rows it held.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `max_capacity` | `Option<usize>` | `Some(10_000)` | Max tasks in store; oldest evicted when exceeded |
+| `max_capacity` | `Option<usize>` | `Some(10_000)` | Max tasks in store; oldest terminal, then oldest working, evicted when exceeded; parked tasks never are (see above) |
 | `task_ttl` | `Option<Duration>` | `Some(1 hour)` | TTL for terminal-state tasks; `None` disables eviction |
 | `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps (amortizes the sweep's cost) — see the note below |
 | `max_page_size` | `u32` | 1000 | Maximum allowed page size for list queries |

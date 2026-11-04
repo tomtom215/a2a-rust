@@ -35,8 +35,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use a2a_protocol_server::store::{
-    ArtifactDelta, EventHold, HistoryLimit, IdempotencyClaim, PostgresTaskStore, RecordedEvent,
-    StoreDatabase, TaskStore, TurnClaimStore,
+    ArtifactDelta, EventHold, HistoryLimit, IdempotencyClaim, IdempotencyHolder, PostgresTaskStore,
+    RecordedEvent, StoreDatabase, TaskStore, TurnClaimStore,
 };
 use a2a_protocol_server::{EventEmitter, RequestHandler, RequestHandlerBuilder, SendMessageResult};
 use a2a_protocol_types::error::A2aResult;
@@ -134,6 +134,9 @@ impl TaskStore for PausedSave {
     }
     fn release_idempotency_key<'a>(&'a self, key: &'a str) -> Fut<'a, ()> {
         self.inner.release_idempotency_key(key)
+    }
+    fn idempotency_holder<'a>(&'a self, key: &'a str) -> Fut<'a, Option<IdempotencyHolder>> {
+        self.inner.idempotency_holder(key)
     }
     fn save_artifact_delta<'a>(&'a self, task: &'a Task, delta: ArtifactDelta) -> Fut<'a, ()> {
         self.inner.save_artifact_delta(task, delta)

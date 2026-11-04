@@ -180,6 +180,34 @@ async fn the_wrapper_hands_on_the_wrapped_stores_turn_claims() {
     );
 }
 
+/// A key held in the wrapped store is read through the audit wrapper: the
+/// default answer, "free", would have a retry of a running send wait for a
+/// turn it will not get.
+#[tokio::test]
+async fn a_key_is_read_from_the_wrapped_store() {
+    use crate::store::IdempotencyHolder;
+    use a2a_protocol_types::message::MessageId;
+
+    let inner = Arc::new(InMemoryTaskStore::new());
+    let store = AuditedTaskStore {
+        inner: Arc::clone(&inner) as Arc<dyn TaskStore>,
+        log: Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new()))),
+        metrics: Arc::new(NoopMetrics),
+    };
+    assert_eq!(store.idempotency_holder("k").await.unwrap(), None);
+    inner
+        .claim_idempotency_key("k", &MessageId::new("m-1"), &TaskId::new("t-1"))
+        .await
+        .unwrap();
+    assert_eq!(
+        store.idempotency_holder("k").await.unwrap(),
+        Some(IdempotencyHolder::new(
+            MessageId::new("m-1"),
+            TaskId::new("t-1")
+        ))
+    );
+}
+
 /// A stream reading through the audit wrapper holds the wrapped store's log.
 /// The mutation gate found the forwarding untested: `None` survived.
 #[test]

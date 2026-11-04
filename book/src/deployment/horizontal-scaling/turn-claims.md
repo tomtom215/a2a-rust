@@ -21,20 +21,26 @@ executor, and B's save replaced what A stored after B read the task.
 tenant-aware) keep a table, `a2a_task_claims`, in the same database as the
 tasks, and the handler takes a row in it for each turn:
 
-1. **A send claims its task** once it knows which task that is, after an
-   idempotent replay has been answered (so a retried send replays rather than
-   waits). The row names this replica (`HOSTNAME`, the process id and a random
+1. **A send claims its task** once it knows which task that is, and then its
+   idempotency key if it carries one. The row names this replica (`HOSTNAME`, the process id and a random
    suffix; `with_replica_name` overrides the first) and a random token for the
    turn.
 2. **A claim another turn holds is waited for**, for up to
    `executor_drain_timeout` (5 s by default), the same bound the in-process
    wait for a parked turn has. If it is still held then, the send is refused
    exactly as on the replica running the task: `UnsupportedOperation`, "task …
-   is already being processed". A send that waits gives up its idempotency
-   key for the wait and claims it again once it holds the turn, so a retry of
-   it that reaches a third replica meanwhile is not answered "accepted" for a
-   send that is then refused: the retry claims the key and waits its own turn,
-   and the first of the two to hold the turn runs while the other replays it.
+   is already being processed". A send takes its idempotency key only once it
+   holds the turn, so a send that waits holds none, at any moment of the wait:
+   a retry of it that reaches a third replica meanwhile is not answered
+   "accepted" for a send that is then refused. The retry waits its own turn,
+   and the first of the two to hold the turn takes the key and runs; the other
+   reads the key before each attempt and is answered with the first one's
+   task. A retry of a send that is *running* is answered at once: it finds the
+   task claimed, reads who holds the key (a read that takes nothing, on every
+   bundled store) and replays.
+   The wait is not under the lock that serialises the sends of one context on
+   this replica, so a send to another task of the same context goes on
+   meanwhile.
 3. **A continuation reads the task again** once it holds the claim, and starts
    from that read, so it keeps everything the last turn stored, wherever that
    turn ran.
@@ -163,6 +169,35 @@ Verified in process, with a claim store whose renewals can be made to fail
 nothing), and against PostgreSQL for the pool (`postgres_renews_while_the_task_pool_is_exhausted`).
 The live partition run above has not been repeated through toxiproxy since the
 change, so the timings in this page are the 2026-10-28 ones, not these.
+
+### A known window: a killed owner and event positions
+
+An event is numbered when it enters the owner's queue and is broadcast to the
+subscribers attached to that replica at once; the background processor writes it
+to the event log, under the same number, a moment later. A turn taken over after
+its owner was **killed** (`SIGKILL`, out of memory, the node lost) numbers its
+events from the end of the log, or from the position stored with the task if that
+is later. So events the owner had broadcast but not yet logged, a window the
+size of the persistence backlog at that moment, have positions the new turn
+numbers again. A subscriber that saw them, or that resumes with `Last-Event-ID`
+at one of them, can skip the new turn's first events as already delivered. The
+stored task is not affected: `GetTask` always reads what was written.
+
+This is a window, not a loop: it needs a kill during a store stall. The
+watchdog above removes the other way into it, an owner cut off from the store,
+because that owner stops at four fifths of the claim's life and writes a terminal
+event through its own queue before anyone can take over. The reaper, the close-out
+of a finished task and a continuation already number from the later of the log's
+end and the stored position.
+
+It is accepted and documented, not fixed (audit F13, the maintainer's position
+2026-11-03): closing it means the claim carrying the owner's broadcast
+high-water mark in a schema change to two stores, or a takeover that jumps the
+numbering and shows every client a hole after every takeover, and neither is
+worth that for a window that needs a kill during a stall. It was read from the
+code, not reproduced by a test. A client whose stream ends without a terminal
+event should read the task with `GetTask` before it trusts a resumed stream, and
+resubscribe from the state that returns.
 
 ## Cancelling a task that runs elsewhere
 

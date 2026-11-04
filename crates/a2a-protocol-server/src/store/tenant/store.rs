@@ -439,6 +439,27 @@ impl TaskStore for TenantAwareInMemoryTaskStore {
         })
     }
 
+    fn idempotency_holder<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = A2aResult<Option<super::super::task_store::IdempotencyHolder>>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            // No store for this tenant means no key was ever claimed under it.
+            // `get_existing_store`, as the release below: a read must not
+            // create a tenant partition either.
+            match self.get_existing_store().await {
+                Some(store) => store.idempotency_holder(key).await,
+                None => Ok(None),
+            }
+        })
+    }
+
     fn release_idempotency_key<'a>(
         &'a self,
         key: &'a str,
@@ -1256,6 +1277,47 @@ mod tests {
 
     /// A partition still holding idempotency keys is not empty.
     ///
+    /// A key is read in the tenant that holds it and in no other, and reading
+    /// one under a tenant with no partition makes none: a read must not be the
+    /// thing that counts against the tenant cap.
+    #[tokio::test]
+    async fn a_key_is_read_in_its_own_tenant_and_reading_makes_no_partition() {
+        use crate::store::task_store::IdempotencyHolder;
+        use a2a_protocol_types::message::MessageId;
+
+        const KEY: &str = "8f14e45fceea167a5a36dedd4bea2543";
+        let store = TenantAwareInMemoryTaskStore::new();
+        TenantContext::scope("acme", async {
+            store
+                .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("t1"))
+                .await
+                .unwrap();
+        })
+        .await;
+
+        let in_acme = TenantContext::scope("acme", async {
+            store.idempotency_holder(KEY).await.unwrap()
+        })
+        .await;
+        assert_eq!(
+            in_acme,
+            Some(IdempotencyHolder::new(
+                MessageId::new("m1"),
+                TaskId::new("t1")
+            ))
+        );
+        let in_globex = TenantContext::scope("globex", async {
+            store.idempotency_holder(KEY).await.unwrap()
+        })
+        .await;
+        assert_eq!(in_globex, None, "another tenant's key is not visible");
+        assert_eq!(
+            store.tenant_count().await,
+            1,
+            "reading under a tenant with no partition made none"
+        );
+    }
+
     /// It decided on `count()`, which counts tasks. A key deliberately
     /// outlives the task it names, so a partition whose tasks had all been
     /// swept still held a live index — and pruning it destroyed that index.

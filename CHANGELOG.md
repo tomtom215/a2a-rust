@@ -1528,6 +1528,182 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   claim. A count across replicas is not built, and there is no warning at build
   when the limit is set over a store that hands out turn claims; both are open.
 
+- **A card's `Last-Modified` is the same on every replica of one build** (server;
+  audit E-F22). `StaticAgentCardHandler` sent the time each process started, so
+  replicas behind a balancer disagreed and an `If-Modified-Since` revalidation
+  missed on every replica but the one that issued the date (`If-None-Match`, which
+  decides when present, was never affected). It now sends the running executable's
+  modification time, so replicas of one build agree, and the time of construction
+  where that cannot be read or lies ahead of the clock. **Additive:**
+  `StaticAgentCardHandler::with_last_modified(SystemTime)` sets it explicitly. The
+  caching page also says what the audit found about the other validator: a card
+  signed with ES256 at start-up has a different signature, bytes and `ETag` on every
+  replica (ES256 draws a fresh nonce; Ed25519 does not), so sign once offline or
+  with Ed25519 for a fleet. Tests: `agent_card/static_handler.rs` (the clamp, the
+  executable's time, two replicas started a day apart, the setter and an
+  `If-Modified-Since` `304`), and `signing.rs` (ES256 signatures of one card differ,
+  Ed25519 signatures are equal).
+
+- **The in-memory store no longer evicts a task that is waiting for a person**
+  (server; audit D-18, the maintainer's recommendation 2 with the metric).
+  Capacity eviction took finished tasks first and then the oldest unfinished
+  ones, silently, so under load a task parked in `input-required` or
+  `auth-required` could vanish and its caller answer a `GetTask` with
+  task-not-found. It now takes finished tasks, then the oldest **working** ones,
+  and never a parked one. **Behaviour change, and action required:** a task that
+  is parked stays in an `InMemoryTaskStore` until it is answered, cancelled or
+  deleted, because `task_ttl` expires only terminal tasks; when the store is at
+  `max_capacity` and every task in it is parked, a **new** task is refused with a
+  temporary error (HTTP `503`, gRPC `UNAVAILABLE`, "task store full: every task is
+  waiting for input or authorization") where an old one used to be evicted. A
+  store that fills with abandoned parked tasks therefore stops taking work until
+  they are cleared; size `max_capacity` above the tasks in flight and parked at
+  once, cancel or delete abandoned ones, or use `SqliteTaskStore` or
+  `PostgresTaskStore`. **Additive:** `InMemoryTaskStore::live_evictions()` counts
+  the working tasks capacity eviction removed, and each such sweep logs a warning
+  (with the `tracing` feature). **That count is a store accessor and a log line,
+  not an OpenTelemetry instrument**: the store holds no metrics handle, and
+  plumbing one through the handler is a larger change than this row; say if you
+  want it. Whether to expire parked tasks after a long idle time (a
+  `parked_task_ttl`) is not decided here and is the maintainer's. Tests:
+  `in_memory/eviction/parked_tests.rs` (a sweep takes finished then working and
+  never parked tasks, including working tasks behind a window of parked ones; the
+  refusal's truth table; a full store of parked tasks refuses `save` and
+  `insert_if_absent`, accepts an update, and recovers when one finishes; the
+  count) and the existing capacity tests.
+
+- **The event-position window after a killed owner is documented** (server; audit
+  F13, E-F8, the maintainer's position: accept it and document it). Events are
+  numbered and broadcast before the background processor logs them, and a takeover
+  numbers from the log's end, so an owner killed with broadcast-but-unlogged events
+  leaves positions the new turn reuses; a subscriber that saw them, or resumes with
+  `Last-Event-ID` at one, can skip the new turn's first events. `GetTask` is
+  unaffected. The turn-claims page now says so, says what removes the partition
+  case (the lease watchdog) and what the window needs (a kill during a store
+  stall), and tells a client whose stream ended without a terminal event to read the
+  task before trusting a resumed stream. Read from the code, not reproduced by a
+  test; nothing changes in behaviour.
+
+- **An idle subscription backs off its polling** (server; audit E-F25 (a), the
+  maintainer's recommendation). A `SubscribeToTask` stream between turns read the
+  store every `subscribe_reattach_interval` (250 ms), about eight statements a
+  second per idle subscriber of a task parked or running on another replica, for as
+  long as its client stayed, on the pool that also keeps the replica's claims alive
+  (the cost grows with idle subscribers; none was measured here). The wait now
+  doubles while nothing changes, up to the new
+  `HandlerLimits::subscribe_reattach_max_interval` (default 4 s;
+  `with_subscribe_reattach_max_interval`; below the interval it means no back-off),
+  and any change (a queue to attach to, events in the log, a terminal state) ends
+  the wait and the next one starts at the interval again, so a stream that is
+  receiving frames keeps its cadence. **Behaviour change (latency):** the first
+  frame after a long quiet can reach a cross-replica subscriber up to the ceiling
+  after it was logged, where it was up to one interval. An operator's
+  `subscribe_max_idle` is still met at its own time: each sleep is cut at the
+  deadline (without that, found by an existing test, a grown wait ended the stream up
+  to a ceiling late). Not done: a separate small read pool for subscriber polls (E-F25
+  (c)), deferred; `LISTEN`/`NOTIFY` (b) later. Tests:
+  `handler/lifecycle/subscribe/idle_backoff_tests.rs` (the poll times at 0, 250, 750,
+  1,750, 3,750 and 5,750 ms on a paused clock; a ceiling below the interval; the
+  bound met at 1,000 ms though the wait had grown) and
+  `tests/subscribe_no_idle_bound.rs`.
+
+- **A send waiting for another replica's turn holds no idempotency key**
+  (server; audit E-F24). A keyed send claimed its key first, then asked for the
+  task's turn, and released the key if the turn was held elsewhere. In the two or
+  three database round trips between, a retry routed to another replica found the
+  key and was answered "accepted" with the task as it then stood; the send it
+  repeated could then wait out `executor_drain_timeout` and be refused, and the
+  message never ran. The turn is now claimed first and the key once the turn is
+  held, so a waiting send holds no key at any instant. A retry of a send that is
+  *running* is still answered at once: it finds the task claimed, reads who holds
+  the key and replays (before, the key itself said so); and a waiting send reads
+  the key before each attempt, so one whose retry took the turn first is answered
+  with the retry's task and runs nothing. New, additive and defaulted:
+  `TaskStore::idempotency_holder(key)` and `IdempotencyHolder`, a read of a key
+  that takes nothing, implemented by every bundled store (in-memory, SQLite,
+  PostgreSQL, and the tenant-aware ones) and forwarded by the audit, traced and
+  encrypted wrappers. **A store that returns turn claims and keeps keys outside
+  this crate should implement it:** the default answers "free", which makes a
+  retry of a running send wait for a turn it will not get and be refused as busy
+  (a refusal, never a lost message). **Behaviour changes (latency):** the retry
+  of a send that already finished is answered after it has taken and released the
+  turn it did not need (one more round trip than before); and when two copies of
+  one message arrive together while the turn is free, the one that does not get it
+  is answered with the other's task at its next poll of the key (20 ms later),
+  where the key used to answer it at once. A malformed key is still refused first,
+  before anything is claimed. Tests:
+  `handler/messaging/idempotency_tests/turn_first.rs` (the key is free while the
+  first claim is in flight; a retry of a running send is replayed, on another
+  replica and in this process; a waiting send answered by its retry; a refused
+  send releases its key; the read's errors), a store test per backend, one per
+  wrapper, and `tests/turn_claims/lifecycle.rs` on SQLite and PostgreSQL.
+  Hand mutants: 29, all caught (the handler's order and the key reads 16; the
+  lookup in the in-memory, SQLite, PostgreSQL and tenant-aware stores and the
+  audit, traced and encrypted wrappers 13). The first run left one: a message with
+  no key read the store for the key `""`, a round trip per attempt that nothing
+  noticed; `only_a_message_with_a_key_reads_the_store` closes it.
+
+- **A send waiting for another replica's turn no longer holds up its context**
+  (server; audit E-F23). A continuation that found its task's turn held on another
+  replica waited for it, up to `executor_drain_timeout` (5 s by default), while
+  holding the per-context lock, so every other send in that context on the same
+  replica waited behind it: a supervisor fanning out over many tasks in one
+  context ran at one busy task's pace, though nothing in those sends depended on
+  it. The lock is now given up for the wait and taken again, waiting for it, once
+  the wait has ended; the task is read again under the claim, as it already was,
+  and that read is what the lock's find and save need of it. New (internal):
+  `ContextLock`, whose `unlocked_during` takes the lock back before it returns
+  whatever the wait came to, so no caller can leave without it. Nothing changes
+  for a send that does not wait. Tests: `a_send_waiting_for_a_turn_does_not_hold_up_its_context`
+  (a send to a sibling task of the same context completes in under a second
+  while the first waits five), three on the lock alone, and the existing
+  `send_dropped_mid_commit` (the commit guard keeps the lock through a dropped
+  send's rollback). Hand mutants: 6, all caught; the first run showed one
+  "missed" that only the integration test kills (it had been run against the
+  library tests alone).
+
+- **A webhook that is gone, or down for good, stops costing a delivery on every
+  event** (server; audit D-05, the maintainer's accepted position: the delivery
+  id first, this next, an ADR for the outbox). A `410 Gone` was "final for that
+  event" and the config was kept and tried, with its retries, on the next; a
+  webhook that failed for a day was tried on every event of it. Two rules now
+  apply to the handler's push sender, so every path that delivers (the task
+  lanes, a blocking send's batch, the reaper) has them:
+  * **A `410` removes the config** (`HandlerLimits::push_remove_gone`, on by
+    default; `with_push_remove_gone`), counted as the new outcome `gone`. Only
+    `410`: a `404` can be a deploy in progress and counts as any other failure.
+    `HttpPushSender` now reports the status of a refusal in its error's `data`
+    (`{"httpStatus": 410}`); a sender of your own gets the `410` rule by doing
+    the same.
+  * **Failures in a row suspend the config** (`push_suspend_after`, default 5,
+    zero turns it off; `push_suspend_for`, default 30 s). A suspended webhook
+    is skipped, counted as the new outcome `suspended`, until its pause is
+    over; then one event is tried, a success ends the suspension, and a failure
+    doubles the pause, up to 32 times as long. **An event that ends a turn (a
+    terminal or interrupted status) is always attempted**, so a webhook that
+    comes back is told how a task ended, and spec §4.3.3's "attempt delivery at
+    least once for each configured webhook" holds for the events that matter;
+    the skipping rests on its MAY ("stop attempting delivery after a configured
+    number of consecutive failures"). The config is kept.
+  **Behaviour changes, each a choice of mine for the maintainer to veto:**
+  both rules are on by default; suspension is not the config's removal, so a
+  receiver down for an hour loses the events in between and not its
+  subscription; the counts are per replica and in memory (a restart starts from
+  none, two replicas count apart), as delivery is; `suspended` and `gone` are in
+  the delivery failure ratio (`a2a:push_delivery_failure_ratio:rate5m`) with
+  `failed`, as `dropped` is, so a suspended webhook keeps the failing-pushes
+  alert firing, which is what it is. A delivery that `push_delivery_timeout` cuts off before the webhook answers counts as failed too: at the defaults the sender's own schedule (38 s) is longer than that bound (30 s), so a webhook that never answers is always cut off and never returns an error, and would otherwise never have been suspended. A blocking send's batch reads its configs once, so after a `410` its later events still reach the webhook once each and are counted `gone`; the next batch finds no config. **Not done:** a durable
+  outbox that would survive a restart and share the counts, written down as
+  ADR 0037 (Proposed, not built). Tests: `push/health/tests.rs` (suspension,
+  the probe, the doubling and its ceiling, ending events, per-config and
+  per-tenant counts, the bound on what is kept, `410`, the config that cannot
+  be removed, the wrapper's forwarding); `push_delivery/tests/dead_webhook.rs`
+  (the real sender against real sockets, through the path that lists configs
+  afresh for each event: a `410` and the next event reaching nobody; five events
+  and a turn-ending one against a webhook that answers `500`); and
+  `builder/dead_webhook_tests.rs` (the handler's own sender is wrapped, and is
+  not when both rules are off). Hand mutants: 25, all caught (the policy 20, the outcome mapping in the delivery path 2, the status the sender and its request carry 2, the builder's wiring 1); three of them were written after planning showed a gap (a config with no id, an address watched on its own, a delivery cut off before it was answered), and one first written did not compile and was rewritten.
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a

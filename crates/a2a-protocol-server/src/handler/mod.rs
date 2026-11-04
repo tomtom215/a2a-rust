@@ -24,7 +24,7 @@ mod capability;
 pub(crate) mod claims;
 mod concurrency;
 mod event_processing;
-pub(crate) use event_processing::PushLanes;
+pub(crate) use event_processing::{PushLanes, ends_turn};
 pub(crate) mod halt;
 pub(crate) mod helpers;
 mod ids;

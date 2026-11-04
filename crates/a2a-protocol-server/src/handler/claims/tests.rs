@@ -308,7 +308,12 @@ async fn a_send_waiting_on_another_replica_backs_off() {
         )
         .build()
         .expect("handler");
-    let refused = handler.claim_turn(&TaskId::new("held-elsewhere")).await;
+    let refused = handler
+        .claim_turn(
+            &TaskId::new("held-elsewhere"),
+            &a2a_protocol_types::message::Message::user_text("m", "x"),
+        )
+        .await;
     assert!(
         refused.is_err(),
         "the turn is never granted, so the wait ends refused"

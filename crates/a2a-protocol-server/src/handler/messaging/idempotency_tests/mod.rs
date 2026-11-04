@@ -18,6 +18,7 @@ use super::*;
 mod claim_errors;
 mod fixtures;
 mod replay_wait;
+mod turn_first;
 use crate::builder::RequestHandlerBuilder;
 use crate::error::ServerError;
 use crate::streaming::EventQueueReader as _;

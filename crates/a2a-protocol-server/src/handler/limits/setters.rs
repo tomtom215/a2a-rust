@@ -57,6 +57,15 @@ impl HandlerLimits {
         self
     }
 
+    /// Sets the longest wait between two re-checks of an idle `SubscribeToTask`
+    /// stream. See
+    /// [`subscribe_reattach_max_interval`](Self::subscribe_reattach_max_interval).
+    #[must_use]
+    pub const fn with_subscribe_reattach_max_interval(mut self, interval: Duration) -> Self {
+        self.subscribe_reattach_max_interval = interval;
+        self
+    }
+
     /// Sets how long a `SubscribeToTask` stream waits on a parked task before
     /// ending without a terminal state. See
     /// [`subscribe_max_idle`](Self::subscribe_max_idle) for what that costs.
@@ -162,6 +171,30 @@ impl HandlerLimits {
     #[must_use]
     pub const fn with_push_queue_capacity(mut self, capacity: usize) -> Self {
         self.push_queue_capacity = capacity;
+        self
+    }
+
+    /// Sets how many failed deliveries in a row suspend a webhook, zero for
+    /// never; see [`push_suspend_after`](Self::push_suspend_after).
+    #[must_use]
+    pub const fn with_push_suspend_after(mut self, failures: usize) -> Self {
+        self.push_suspend_after = failures;
+        self
+    }
+
+    /// Sets how long a suspended webhook is left alone; see
+    /// [`push_suspend_for`](Self::push_suspend_for).
+    #[must_use]
+    pub const fn with_push_suspend_for(mut self, pause: Duration) -> Self {
+        self.push_suspend_for = pause;
+        self
+    }
+
+    /// Sets whether a webhook answering `410 Gone` has its config removed;
+    /// see [`push_remove_gone`](Self::push_remove_gone).
+    #[must_use]
+    pub const fn with_push_remove_gone(mut self, remove: bool) -> Self {
+        self.push_remove_gone = remove;
         self
     }
 

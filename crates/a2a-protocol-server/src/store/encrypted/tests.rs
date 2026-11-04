@@ -432,6 +432,12 @@ async fn the_capabilities_are_the_wrapped_stores() {
         store.claim_idempotency_key("k", &m, &id).await.unwrap(),
         IdempotencyClaim::Claimed
     );
+    // The key just claimed is read through the wrapper, which a store taking
+    // the default answer ("free") would not show.
+    assert_eq!(
+        store.idempotency_holder("k").await.unwrap(),
+        Some(crate::store::IdempotencyHolder::new(m.clone(), id.clone()))
+    );
     store.delete(&id).await.unwrap();
     assert_eq!(store.get(&id).await.unwrap().map(|_| ()), None);
 }

@@ -10,10 +10,11 @@
 //! [`TaskStore`](crate::store::TaskStore). This module is what connects them
 //! to a send.
 
+use a2a_protocol_types::error::A2aError;
 use a2a_protocol_types::idempotency::{
     IDEMPOTENCY_EXTENSION_URI, IDEMPOTENCY_METADATA_KEY, key_of,
 };
-use a2a_protocol_types::message::Message;
+use a2a_protocol_types::message::{Message, MessageId};
 use a2a_protocol_types::task::{Task, TaskId};
 
 use crate::error::{ServerError, ServerResult};
@@ -32,12 +33,37 @@ pub(super) enum SendKey {
     Replay(Box<Task>),
 }
 
+/// A store's refusal of a key operation, as the send answers it.
+///
+/// A temporary refusal (an index at `max_idempotency_keys`, a database that
+/// cannot answer) ran nothing and holds no key: retrying is safe.
+/// `Overloaded` says so on the wire (503, gRPC `RESOURCE_EXHAUSTED`) and is
+/// not rewritten to `INTERNAL` by `not_retry_safe`, which applies to failures
+/// after work began (release audit F8).
+fn unavailable_or(e: A2aError) -> ServerError {
+    if e.is_unavailable() {
+        ServerError::Overloaded(e.message)
+    } else {
+        e.into()
+    }
+}
+
+/// The refusal of a key held by a message other than this send's.
+fn key_reused(held_by: &MessageId) -> ServerError {
+    ServerError::InvalidParams(format!(
+        "idempotency key is already held by message `{held_by}`. A retry resends the \
+         identical message, so a different message id means the key was reused across \
+         two distinct sends. Returning the first task here would answer a message that \
+         was never sent."
+    ))
+}
+
 impl RequestHandler {
     /// Reads the send's idempotency key, if any, and claims it.
     ///
-    /// Called under the per-context lock, after the task id is resolved and
-    /// before the first side effect of the send, so that two racing
-    /// duplicates cannot both get past it.
+    /// Called under the per-context lock, once the send holds its turn (see
+    /// `claimed_view`) and before the send's first side effect, so that two
+    /// racing duplicates cannot both get past it.
     ///
     /// # Errors
     ///
@@ -55,12 +81,40 @@ impl RequestHandler {
         message: &Message,
         task_id: &TaskId,
     ) -> ServerResult<SendKey> {
+        let Some(key) = self.send_key_of(message)? else {
+            return Ok(SendKey::Absent);
+        };
+
+        let claim = self
+            .task_store
+            .claim_idempotency_key(key, &message.id, task_id)
+            .await
+            .map_err(unavailable_or)?;
+        match claim {
+            IdempotencyClaim::Claimed => Ok(SendKey::Claimed(key.to_owned())),
+            IdempotencyClaim::Replay(existing) => {
+                let task = self.await_claimed_task(&existing).await?;
+                Ok(SendKey::Replay(Box::new(task)))
+            }
+            IdempotencyClaim::Conflict { held_by } => Err(key_reused(&held_by)),
+        }
+    }
+
+    /// The idempotency key the send carries, if it carries one this server
+    /// can honour. Reads nothing from the store, so it can run before
+    /// anything is claimed and refuse a send that never could be.
+    ///
+    /// # Errors
+    ///
+    /// [`ServerError::InvalidParams`] when the key is malformed;
+    /// [`ServerError::UnsupportedOperation`] when the configured store
+    /// cannot honour keys (see [`claim_send_key`](Self::claim_send_key)).
+    pub(super) fn send_key_of<'m>(&self, message: &'m Message) -> ServerResult<Option<&'m str>> {
         let key = match key_of(message) {
-            Ok(None) => return Ok(SendKey::Absent),
+            Ok(None) => return Ok(None),
             Ok(Some(key)) => key,
             Err(err) => return Err(ServerError::InvalidParams(err.to_string())),
         };
-
         if !self.task_store.supports_idempotency() {
             return Err(ServerError::UnsupportedOperation(format!(
                 "this server's task store cannot honour `{IDEMPOTENCY_METADATA_KEY}`, so the \
@@ -68,35 +122,42 @@ impl RequestHandler {
                  does not advertise `{IDEMPOTENCY_EXTENSION_URI}`"
             )));
         }
+        Ok(Some(key))
+    }
 
-        let claim = match self
-            .task_store
-            .claim_idempotency_key(key, &message.id, task_id)
-            .await
-        {
-            Ok(claim) => claim,
-            // The claim is the send's first side effect, so a temporary
-            // refusal here (an index at `max_idempotency_keys`, a database
-            // that cannot answer) ran nothing and holds no key: retrying is
-            // safe. `Overloaded` says so on the wire (503, gRPC
-            // `RESOURCE_EXHAUSTED`) and is not rewritten to `INTERNAL` by
-            // `not_retry_safe`, which applies to failures after work began
-            // (release audit F8).
-            Err(e) if e.is_unavailable() => return Err(ServerError::Overloaded(e.message)),
-            Err(e) => return Err(e.into()),
+    /// The task a retry is answered with when the send's key is already held
+    /// by this very message, without claiming the key: `None` when the send
+    /// carries no key or the key is free.
+    ///
+    /// A send waits for another turn without holding its key, so a retry of
+    /// a send that is *running* has to be recognised by reading the key:
+    /// this is that read. The answer can be stale, which is the safe way
+    /// round: a key taken a moment later is found by the claim, which is
+    /// atomic.
+    ///
+    /// # Errors
+    ///
+    /// As [`claim_send_key`](Self::claim_send_key), minus the store's
+    /// refusal of a new key.
+    pub(in crate::handler) async fn replay_of_held_key(
+        &self,
+        message: &Message,
+    ) -> ServerResult<Option<Box<Task>>> {
+        let Some(key) = self.send_key_of(message)? else {
+            return Ok(None);
         };
-        match claim {
-            IdempotencyClaim::Claimed => Ok(SendKey::Claimed(key.to_owned())),
-            IdempotencyClaim::Replay(existing) => {
-                let task = self.await_claimed_task(&existing).await?;
-                Ok(SendKey::Replay(Box::new(task)))
+        let holder = self
+            .task_store
+            .idempotency_holder(key)
+            .await
+            .map_err(unavailable_or)?;
+        match holder {
+            None => Ok(None),
+            Some(holder) if holder.message_id == message.id => {
+                let task = self.await_claimed_task(&holder.task_id).await?;
+                Ok(Some(Box::new(task)))
             }
-            IdempotencyClaim::Conflict { held_by } => Err(ServerError::InvalidParams(format!(
-                "idempotency key is already held by message `{held_by}`. A retry resends the \
-                 identical message, so a different message id means the key was reused across \
-                 two distinct sends. Returning the first task here would answer a message that \
-                 was never sent."
-            ))),
+            Some(holder) => Err(key_reused(&holder.message_id)),
         }
     }
 

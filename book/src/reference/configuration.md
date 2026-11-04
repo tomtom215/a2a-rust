@@ -46,6 +46,9 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 | `push_delivery_timeout` | `Duration` | 30s | Per-webhook delivery timeout, retries included (the sender's own request timeout is 10s) |
 | `push_delivery_budget` | `Duration` | 30s | Time one event's deliveries are budgeted across all configs. Every config is attempted; the budget sets how many deliveries of an event run at once (`ceil(configs / (budget / push_delivery_timeout))`) |
 | `push_queue_capacity` | `usize` | 1024 | Deliveries that may wait behind the one under way for one task. A full lane drops the oldest that does not end a turn (`dropped`); a terminal or interrupted status is never dropped. Zero is read as one |
+| `push_suspend_after` | `usize` | 5 | Failed deliveries to one webhook in a row before it is suspended; zero turns suspension off. A suspended webhook is skipped (`suspended`) for `push_suspend_for`, then one event is tried; the events that end a turn are always tried. Per replica, in memory |
+| `push_suspend_for` | `Duration` | 30s | How long a suspended webhook is left alone before one event is tried again; each failed probe doubles it, up to 32 times as long |
+| `push_remove_gone` | `bool` | `true` | Remove the config of a webhook that answers `410 Gone` (`gone`). Only `410`: a `404` counts as any other failure |
 | `push_max_in_flight` | `usize` | 512 | Webhook deliveries in flight at once across every task. A delivery over the bound waits, so every config is still attempted; the wait counts against `push_delivery_timeout`, and each delivery that waited is counted once as the error `push_throttled` on method `PushDelivery`. Covers any sender behind the handler, a custom one included. Zero is read as one. A choice, not a measurement |
 | `push_max_in_flight_per_host` | `usize` | 64 | Deliveries in flight at once to one destination (host and port). Bounds how many requests a third party sees from this agent when a caller registers many webhooks at its address; not a rate limit. Raise it for one receiver that takes every agent's callbacks. Zero is read as one |
 | `executor_drain_timeout` | `Duration` | 5s | Bound on the blocking path's wait for the queue to close after the executor finished; also how long a continuation waits for a parked (`input-required`/`auth-required`) turn to finish: its executor to return and its events to be stored |
@@ -54,7 +57,8 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 | `max_push_configs_per_task` | `usize` | 100 | Maximum push configs per task (uniform across store backends) |
 | `max_parts_per_artifact` | `usize` | 10,000 | Maximum parts a single artifact may accumulate |
 | `max_total_push_configs` | `usize` | 100,000 | Global push-config ceiling across all tasks |
-| `subscribe_reattach_interval` | `Duration` | 250ms | How often a `SubscribeToTask` stream between turns checks the store: for the task finishing, the next turn's queue, or events logged meanwhile, which it replays |
+| `subscribe_reattach_interval` | `Duration` | 250ms | The first wait of a `SubscribeToTask` stream between turns before it checks the store: for the task finishing, the next turn's queue, or events logged meanwhile, which it replays. It doubles while nothing changes, up to the next row, and starts over at any change |
+| `subscribe_reattach_max_interval` | `Duration` | 4s | The longest wait between two checks of an idle `SubscribeToTask` stream (audit E-F25); below the interval, no back-off. The first frame after a long quiet can be this late. `subscribe_max_idle`, when set, is still met at its own time |
 | `subscribe_max_idle` | `Option<Duration>` | none | If set, how long a `SubscribeToTask` stream waits on a parked task before ending without a terminal state; the client resubscribes. Unset, the stream ends at the terminal state or when the client goes (§3.1.6) |
 | `subscribe_replay_limit` | `usize` | 1,000 | Maximum logged events one read of the event log returns, for a lag's catch-up, a missed turn or a `Last-Event-ID` resumption. The offset is client-supplied, so the cap bounds each read; a longer replay is read a page at a time |
 | `final_task_snapshot` | `bool` | `false` | Whether a stream sends the finished task once more, as a final `Task`, after its terminal state (§11.7); sent only when the store shows the finished task within `subscribe_replay_catchup` |
@@ -71,7 +75,7 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `max_capacity` | `Option<usize>` | 10,000 | Maximum stored tasks; oldest terminal tasks are evicted on overflow, then, as a last resort, the oldest non-terminal ones (size it above your concurrent in-flight task count) |
+| `max_capacity` | `Option<usize>` | 10,000 | Maximum stored tasks; oldest terminal tasks are evicted on overflow, then, as a last resort, the oldest *working* ones (counted: `InMemoryTaskStore::live_evictions`); a task waiting for input or authorization is never evicted, and a full store of them refuses a new task with `503` (size it above your concurrent in-flight and parked task count) |
 | `task_ttl` | `Option<Duration>` | 1 hour | TTL for completed/failed tasks |
 | `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps |
 | `max_page_size` | `u32` | 1,000 | Cap a store applies to the page size of a `list` call. The `ListTasks` method itself refuses a `pageSize` outside 1 to 100 (`InvalidParams`) and lists 50 when none is given, so this matters for direct `TaskStore::list` callers and when set below 100 |
@@ -250,7 +254,7 @@ and the `with_*` setters.
 |--------|---------|-------------|
 | `Cache-Control` | `public, max-age=3600` | Configurable max-age (default 1 hour) |
 | `ETag` | Auto-computed | Content hash |
-| `Last-Modified` | Static handler: when it loaded the card | Not sent by the dynamic handler, which has no modification date |
+| `Last-Modified` | Static handler: the running executable's modification time (replicas of one build agree); `with_last_modified` sets it | Not sent by the dynamic handler, which has no modification date |
 
 ## Feature Flags
 

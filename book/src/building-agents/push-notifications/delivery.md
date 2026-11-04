@@ -61,14 +61,36 @@ needs up to 38 s at the defaults, so the third attempt can be cut short (the
 `timeout_truncated` outcome of `a2a.server.push_deliveries`). A failed delivery
 is counted (and logged, with the `tracing` feature) and does not fail the task.
 
-**Delivery is at most that many tries, held in memory.** Nothing is written
-down: an event still being retried when the process stops, or dropped from a
-full lane (below), is not delivered later, by this replica or another, and a
-webhook the agent has given up on is tried again for the next event. A
-`404` or `410` is final for that event, and the config is kept and tried for
-the next one. A receiver that must not miss an event reads the task (`GetTask`,
+**Delivery is at most that many tries, held in memory.** Nothing is written down: an event still being retried when the process stops, or dropped from a full lane (below), is not delivered later, by this replica or another. A `404` is final for that event, and the config is kept and tried for the next one; what a webhook that is gone or down for good costs is in the next section. A receiver that must not miss an event reads the task (`GetTask`,
 or `ListTasks` for what it missed) after a gap; the push is a prompt to look,
 not a log.
+
+## A webhook that is gone, or down for good
+
+A webhook that answers `410 Gone` has said its address is permanently gone.
+Its config is removed (`HandlerLimits::push_remove_gone`, on by default), the
+delivery is counted `gone`, and the client's list of its configs no longer
+shows it. Only `410`: a `404` can be a deploy in progress and counts as any
+other failure.
+
+A webhook that fails `push_suspend_after` deliveries in a row (5 by default;
+each of them has had the sender's retries) is **suspended**. The events after
+that are not sent to it, each counted `suspended`, for `push_suspend_for`
+(30 s); then one is tried. A success ends the suspension, and a failure doubles
+the next pause, up to 32 times as long. A delivery that `push_delivery_timeout` cuts off before the webhook answers counts as failed: that is what a webhook that never answers looks like. An event that ends a turn (a terminal
+or interrupted status) is always tried, so a webhook that comes back is told
+how a task ended. The config is kept. Spec §4.3.3 allows an agent to stop
+attempting delivery after a number of consecutive failures; this is that
+number, and the pause is how a webhook that recovers is found again.
+
+The counts are per replica and held in memory, as delivery is: a replica that
+restarts starts from none, and two replicas count apart. `push_suspend_after`
+of 0 turns suspension off, and `push_remove_gone(false)` keeps the config of a
+webhook that answered `410`. A sender of your own gets both rules; it asks for
+the `410` one by putting `{"httpStatus": 410}` in its error's `data`. A durable
+outbox, which would survive a restart and share the counts, is proposed in
+[ADR 0037](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0037-push-outbox.md)
+and not built.
 
 ## Order, and a webhook slower than the agent
 
@@ -109,6 +131,12 @@ its outcome:
 | `timeout` | `push_delivery_timeout` expired before the sender finished. |
 | `dropped` | Never started: the task's lane was full (`push_queue_capacity`), because the webhook is slower than the agent. Counted once per dropped event (or blocking request), not per webhook. |
 | `timeout_truncated` | The same, for a sender whose own schedule (`PushSender::max_delivery_duration`) is longer than `push_delivery_timeout`, so its last attempts could never run in full. At the defaults (38 s against 30 s) every timeout is this one; the fix is to lengthen the timeout or shorten the schedule. |
+| `suspended` | Not attempted: the webhook failed `push_suspend_after` deliveries in a row and is inside its pause. Counted once per skipped delivery. |
+| `gone` | The webhook answered `410 Gone` and its config was removed (`push_remove_gone`). Counted for each delivery that learned it: a blocking send's batch reads its configs once, so the rest of that batch's events also reach the webhook and are counted. |
+
+`suspended` and `gone` are in `a2a:push_delivery_failure_ratio:rate5m` with
+`failed`, as `dropped` is: it is the share of deliveries that did not reach a
+webhook, and a suspended webhook is one that is not being reached.
 
 ## Security considerations
 

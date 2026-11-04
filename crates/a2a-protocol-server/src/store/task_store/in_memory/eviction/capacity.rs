@@ -22,9 +22,11 @@ use super::{InMemoryTaskStore, StoreData};
 /// Searching the whole index for one would put an O(n) scan on every write
 /// past `max_capacity` — and since the store stays at capacity once it fills,
 /// that is every write from then on. Bounding the search keeps a sweep O(1) in
-/// the store size. If the oldest `EVICTION_SCAN_WINDOW` tasks are all still
-/// running, the sweep evicts the oldest of them, which is what an unbounded
-/// search did anyway whenever the store held no terminal task at all.
+/// the store size. If the oldest `EVICTION_SCAN_WINDOW` tasks are not enough
+/// finished work, the sweep tops up with the oldest tasks that are neither
+/// finished nor parked (see [`InMemoryTaskStore::evict_over_capacity`]); that
+/// second walk stops at the first such task, so it is as cheap as the first in
+/// every store that has one near the front.
 pub(super) const EVICTION_SCAN_WINDOW: usize = 1_024;
 
 impl InMemoryTaskStore {
@@ -45,15 +47,38 @@ impl InMemoryTaskStore {
             // every id below came from `store.order_index`, so every removal
             // lands, and `len` is `max + overflow` on entry. That makes
             // `removed < overflow` and `store.len() > max` the same predicate,
-            // and the counter dead weight.
-            for id in Self::capacity_victims(store, overflow) {
-                store.remove(&id);
+            // and the counter dead weight. The one count kept is of the victims
+            // that were still working, which is a different quantity: it is the
+            // number of tasks a caller lost, and it is reported.
+            let victims = Self::capacity_victims(store, overflow);
+            let working = victims
+                .iter()
+                .filter(|id| !Self::is_terminal(store, id))
+                .count();
+            for id in &victims {
+                store.remove(id);
+            }
+            if working != 0 {
+                store.live_evictions += working as u64;
+                trace_warn!(
+                    working,
+                    max_capacity = max,
+                    "capacity eviction removed tasks that were still working: the \
+                     oldest tasks were all unfinished; raise max_capacity above the \
+                     number of tasks in flight at once"
+                );
             }
         }
     }
 
     /// Chooses up to `overflow` tasks to evict, oldest first, preferring
-    /// terminal ones over still-running ones.
+    /// terminal ones over still-running ones, and **never a parked one**: a
+    /// task in `input-required` or `auth-required` is a person's pending
+    /// decision (audit D-18). When the store holds too few tasks of the other
+    /// kinds, the result is shorter than `overflow` and the store stays over
+    /// `max`; [`StoreData::refuses_for_parked_tasks`] is what keeps a store full
+    /// of parked tasks from growing, by refusing the new task before it is
+    /// inserted.
     ///
     /// Walks `order_index`, which is already sorted oldest-first, and stops as
     /// soon as it has enough victims. The previous implementation cloned every
@@ -96,19 +121,32 @@ impl InMemoryTaskStore {
         }
 
         // Not enough finished work in the window — top up with the oldest
-        // in-flight tasks so the hard cap is enforced anyway. The two passes
-        // select on opposite sides of `is_terminal`, so nothing can be picked
-        // twice however far the first pass got.
-        for id in store.order_index.values().take(window) {
+        // tasks that are still working, so the hard cap is enforced anyway. Not
+        // bounded by the window: parked tasks are skipped, and a window of them
+        // would otherwise end the walk with nothing to evict while working
+        // tasks sit behind it. It stops at the first working task it finds, so
+        // it walks far only when parked tasks lead the store. The passes select
+        // on disjoint sets (finished here, working there), so nothing is
+        // picked twice however far the first pass got.
+        for id in store.order_index.values() {
             if victims.len() == overflow {
                 break;
             }
-            if !Self::is_terminal(store, id) {
+            if Self::is_working(store, id) {
                 victims.push(id.clone());
             }
         }
 
         victims
+    }
+
+    /// Whether `id` names a task that is neither finished nor parked: still
+    /// being worked on, and so the only kind a capacity sweep may take beyond
+    /// finished work. An id with no entry is not.
+    fn is_working(store: &StoreData, id: &TaskId) -> bool {
+        store.entries.get(id).is_some_and(|e| {
+            !e.task.status.state.is_terminal() && !e.task.status.state.is_interrupted()
+        })
     }
 
     /// Whether `id` names a task that has reached a terminal state.

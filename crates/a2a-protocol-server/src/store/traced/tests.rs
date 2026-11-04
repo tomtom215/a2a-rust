@@ -109,6 +109,30 @@ async fn an_idempotency_key_is_claimed_and_released_in_the_wrapped_store() {
     assert_eq!(again, crate::store::IdempotencyClaim::Claimed, "released");
 }
 
+/// A key held in the wrapped store is read through the wrapper: the default
+/// answer, "free", would have a retry of a running send wait for a turn it
+/// will not get.
+#[tokio::test]
+async fn a_key_is_read_from_the_wrapped_store() {
+    use a2a_protocol_types::message::MessageId;
+    use a2a_protocol_types::task::TaskId;
+
+    let inner = Arc::new(InMemoryTaskStore::new());
+    let store = traced(Arc::clone(&inner) as Arc<dyn TaskStore>);
+    assert_eq!(store.idempotency_holder("k").await.unwrap(), None);
+    inner
+        .claim_idempotency_key("k", &MessageId::new("m-1"), &TaskId::new("t-1"))
+        .await
+        .unwrap();
+    assert_eq!(
+        store.idempotency_holder("k").await.unwrap(),
+        Some(crate::store::IdempotencyHolder::new(
+            MessageId::new("m-1"),
+            TaskId::new("t-1")
+        ))
+    );
+}
+
 /// Each operation answers what the wrapped store answers.
 #[tokio::test]
 async fn each_operation_answers_as_the_wrapped_store() {

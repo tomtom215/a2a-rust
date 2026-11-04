@@ -51,7 +51,9 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId, TaskStatus};
 use tokio::sync::RwLock;
 
-use super::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore, TaskStoreConfig};
+use super::{
+    ArtifactDelta, IdempotencyClaim, IdempotencyHolder, RecordedEvent, TaskStore, TaskStoreConfig,
+};
 use crate::metrics::{self, MetricsHandle};
 use crate::store::AppliedPosition;
 use crate::store::terminal::{TerminalStateConflict, refuses_write};
@@ -158,6 +160,10 @@ pub(super) struct StoreData {
     /// ([`admit`](Self::admit)) and given back in [`remove`](Self::remove),
     /// which every eviction, expiry and delete goes through.
     pub(super) budget: Option<std::sync::Arc<TaskBudget>>,
+    /// How many tasks capacity eviction has removed while they were still
+    /// working, over this store's life. Guarded by the write lock with the
+    /// maps. See [`InMemoryTaskStore::live_evictions`].
+    pub(super) live_evictions: u64,
 }
 
 impl StoreData {
@@ -171,7 +177,31 @@ impl StoreData {
             next_seq: 0,
             idempotency_index: HashMap::new(),
             budget: None,
+            live_evictions: 0,
         }
+    }
+
+    /// Whether a write of `id` must be refused because the store is at
+    /// `max_capacity` and holds nothing that eviction may remove: `id` is new,
+    /// the store is full, and every task in it is parked waiting for input or
+    /// authorization (audit D-18). A parked task is a person's pending
+    /// decision, and capacity eviction never removes one.
+    ///
+    /// The scan stops at the first task that is not parked, so a store with
+    /// almost any other task in it answers at once; it walks the whole store
+    /// only in the state where it must refuse.
+    pub(super) fn refuses_for_parked_tasks(
+        &self,
+        id: &TaskId,
+        max_capacity: Option<usize>,
+    ) -> bool {
+        max_capacity.is_some_and(|max| self.len() >= max)
+            && !self.entries.is_empty()
+            && !self.entries.contains_key(id)
+            && self
+                .entries
+                .values()
+                .all(|entry| entry.task.status.state.is_interrupted())
     }
 
     /// Whether a write of `id` may go ahead under the shared budget: always
@@ -514,6 +544,15 @@ fn budget_exhausted() -> a2a_protocol_types::error::A2aError {
     )
 }
 
+/// The refusal of a new task when the store is at `max_capacity` and every task
+/// in it is parked waiting for input or authorization, which capacity eviction
+/// never removes: temporary, so HTTP `503` and gRPC `UNAVAILABLE`.
+fn full_of_parked_tasks() -> a2a_protocol_types::error::A2aError {
+    a2a_protocol_types::error::A2aError::unavailable(
+        "task store full: every task is waiting for input or authorization and none may be evicted",
+    )
+}
+
 /// The refusal of a new idempotency key when the index is at
 /// [`TaskStoreConfig::max_idempotency_keys`] after expiring what it could:
 /// temporary, so HTTP `503` and gRPC `RESOURCE_EXHAUSTED` (the send path
@@ -820,6 +859,21 @@ impl TaskStore for InMemoryTaskStore {
         })
     }
 
+    fn idempotency_holder<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<IdempotencyHolder>>> + Send + 'a>> {
+        Box::pin(async move {
+            let data = self.data.read().await;
+            let holder = data
+                .idempotency_index
+                .get(key)
+                .map(|(message, task, _)| IdempotencyHolder::new(message.clone(), task.clone()));
+            drop(data);
+            Ok(holder)
+        })
+    }
+
     fn supports_event_log(&self) -> bool {
         true
     }
@@ -956,6 +1010,10 @@ impl TaskStore for InMemoryTaskStore {
                 if let Some(conflict) = store.refusal(&task) {
                     drop(store);
                     return Err(conflict.into_error());
+                }
+                if store.refuses_for_parked_tasks(&task.id, self.config.max_capacity) {
+                    drop(store);
+                    return Err(full_of_parked_tasks());
                 }
                 if !store.admit(&task.id) {
                     drop(store);
@@ -1322,6 +1380,10 @@ impl TaskStore for InMemoryTaskStore {
                 let mut store = self.data.write().await;
                 if store.entries.contains_key(&task.id) {
                     return Ok(false);
+                }
+                if store.refuses_for_parked_tasks(&task.id, self.config.max_capacity) {
+                    drop(store);
+                    return Err(full_of_parked_tasks());
                 }
                 if !store.admit(&task.id) {
                     drop(store);
@@ -2864,6 +2926,43 @@ mod idempotency_tests {
     #[tokio::test]
     async fn the_default_store_supports_idempotency() {
         assert!(InMemoryTaskStore::new().supports_idempotency());
+    }
+
+    #[tokio::test]
+    async fn reading_a_key_names_its_holder_and_takes_nothing() {
+        let store = InMemoryTaskStore::new();
+        assert_eq!(
+            store.idempotency_holder(KEY).await.unwrap(),
+            None,
+            "a free key has no holder"
+        );
+        // Reading did not claim it: a claim still finds it free.
+        assert_eq!(
+            store
+                .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("t1"))
+                .await
+                .unwrap(),
+            IdempotencyClaim::Claimed
+        );
+        assert_eq!(
+            store.idempotency_holder(KEY).await.unwrap(),
+            Some(IdempotencyHolder::new(
+                MessageId::new("m1"),
+                TaskId::new("t1")
+            )),
+            "the holder is the message that claimed the key and the task it named"
+        );
+        assert_eq!(
+            store.idempotency_holder(OTHER_KEY).await.unwrap(),
+            None,
+            "another key is not held"
+        );
+        store.release_idempotency_key(KEY).await.unwrap();
+        assert_eq!(
+            store.idempotency_holder(KEY).await.unwrap(),
+            None,
+            "a released key has no holder"
+        );
     }
 
     #[tokio::test]

@@ -23,7 +23,7 @@
 use a2a_protocol_types::message::MessageId;
 use a2a_protocol_types::task::TaskId;
 
-use super::task_store::IdempotencyClaim;
+use super::task_store::{IdempotencyClaim, IdempotencyHolder};
 
 /// `SQLite`'s tenant-scoped key table.
 #[cfg(feature = "sqlite")]
@@ -65,6 +65,12 @@ pub(super) const SQLITE_HOLDER: &str = "SELECT message_id, task_id FROM tenant_i
 pub(super) const PG_HOLDER: &str = "SELECT message_id, task_id FROM tenant_idempotency_keys \
      WHERE tenant_id = $1 AND key = $2 FOR UPDATE";
 
+/// [`PG_HOLDER`] without the lock, for `TaskStore::idempotency_holder`: a
+/// read that takes nothing, whose answer the caller treats as a hint.
+#[cfg(feature = "postgres")]
+pub(super) const PG_PEEK: &str = "SELECT message_id, task_id FROM tenant_idempotency_keys \
+     WHERE tenant_id = $1 AND key = $2";
+
 #[cfg(feature = "sqlite")]
 pub(super) const SQLITE_RELEASE: &str =
     "DELETE FROM tenant_idempotency_keys WHERE tenant_id = ?1 AND key = ?2";
@@ -103,6 +109,37 @@ pub(super) const PG_EXPIRE: &str = "DELETE FROM tenant_idempotency_keys WHERE ct
           LIMIT $2 \
             FOR UPDATE SKIP LOCKED \
      )";
+
+/// What `TaskStore::idempotency_holder` returns, for the tenant stores.
+pub(super) type HolderFuture<'a> = std::pin::Pin<
+    Box<
+        dyn std::future::Future<
+                Output = a2a_protocol_types::error::A2aResult<Option<IdempotencyHolder>>,
+            > + Send
+            + 'a,
+    >,
+>;
+
+/// The holder a row read by `TaskStore::idempotency_holder` names.
+fn holder(held_by: String, held_task: String) -> IdempotencyHolder {
+    IdempotencyHolder::new(MessageId::new(held_by), TaskId::new(held_task))
+}
+
+/// The holder a `SQLite` row names.
+#[cfg(feature = "sqlite")]
+pub(super) fn sqlite_holder(
+    row: &sqlx::sqlite::SqliteRow,
+) -> Result<IdempotencyHolder, sqlx::Error> {
+    use sqlx::Row as _;
+    Ok(holder(row.try_get("message_id")?, row.try_get("task_id")?))
+}
+
+/// The holder a `PostgreSQL` row names.
+#[cfg(feature = "postgres")]
+pub(super) fn pg_holder(row: &sqlx::postgres::PgRow) -> Result<IdempotencyHolder, sqlx::Error> {
+    use sqlx::Row as _;
+    Ok(holder(row.try_get("message_id")?, row.try_get("task_id")?))
+}
 
 /// Turns the row a losing claim read into its outcome.
 ///

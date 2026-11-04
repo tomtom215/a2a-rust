@@ -50,8 +50,8 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 
 use super::{
-    ArtifactDelta, EventHold, HistoryLimit, IdempotencyClaim, RecordedEvent, StoreDatabase,
-    TaskStore,
+    ArtifactDelta, EventHold, HistoryLimit, IdempotencyClaim, IdempotencyHolder, RecordedEvent,
+    StoreDatabase, TaskStore,
 };
 
 type Fut<'a, T> = Pin<Box<dyn Future<Output = A2aResult<T>> + Send + 'a>>;
@@ -252,6 +252,10 @@ impl TaskStore for TracedTaskStore {
             "release_idempotency_key",
             self.inner.release_idempotency_key(key),
         )
+    }
+
+    fn idempotency_holder<'a>(&'a self, key: &'a str) -> Fut<'a, Option<IdempotencyHolder>> {
+        self.run("idempotency_holder", self.inner.idempotency_holder(key))
     }
 
     fn save_artifact_delta<'a>(&'a self, task: &'a Task, delta: ArtifactDelta) -> Fut<'a, ()> {

@@ -408,3 +408,23 @@ Read nothing here as released: no tag, and no pull request is open.
 | `c4c5c29` | fixed | G-05, SEC-15, SEC-16 |
 | `93dbb05` | fixed | D-19 |
 | `af747a4` | fixed (part) | E-F15 (documented; no shared counter) |
+| `70fdf52c` `ba01ce60` | fixed | G-10 (the other 26 wire structs, #192: with `b9c1304` all forty are `#[non_exhaustive]`) |
+| `61b5555b` | fixed | H4, H18, NEW-h-s0-2, NEW-h-designs-2, NEW-h-designs-5 (#193: hand-off on shutdown, one options value, the resume policy's health rule and jitter) |
+| `ae5d774e` | fixed | NEW-h-s0-3 (#193: journal writes are bounded) |
+| `0a8038cb` | fixed (part) | H6 (a retry budget, per client and opt-in), D-10 (a `Retry-After` longer than `max_backoff` ends the retrying) |
+| `f532f245` | fixed (part) | D-11 (`follow_task` reopens a cut subscription), B-10 and D-12 (opt-in gRPC HTTP/2 keep-alive only: the HTTP bindings' PING, a connection lifetime and `HttpPool` are not done) |
+| `7bdf55b2` | fixed | E-F21 (#194) |
+| `f9a4b347` | fixed | E-F16 |
+| `7e3a995d` | fixed | E-F17 |
+| `30e017be` `004f2ece` | fixed (part) | E-F26 (a warning on Linux; not a refusal) |
+| `459b9d23` | fixed | E-F14 |
+| `6cc38533` | fixed | E-F19 |
+| `021408e7` | fixed (part) | E-F18 (the maintainer's recommendation (a); throughput at several replicas not measured) |
+| `10333c48` | fixed (part) | E-F12 (documented: `max_concurrent_tasks` is per replica; nothing is counted across replicas) |
+| `` | fixed | E-F22 (the second server branch) |
+| `7efcdee1` | fixed (part) | D-18 (a task waiting for a person is never evicted; an abandoned one never expires, which is the maintainer's call) |
+| `6355a0c5` | fixed (part) | E-F8 (documented, fork F13; the window is not closed) |
+| `e9799881` | fixed (part) | E-F25 (a), the idle subscribe back-off; (b) `LISTEN`/`NOTIFY` and (c) a read pool are not done |
+| `4d4ad27e` | fixed | E-F24 |
+| `673c2b18` | fixed | E-F23 |
+| `be7ff31e` | fixed (part) | D-05 (the dead-webhook policy; with `2b83f88`'s delivery id, only the durable outbox is left, written down as ADR 0037 and not built) |

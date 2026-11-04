@@ -35,6 +35,8 @@ mod fixtures;
 mod key_cap_tests;
 #[cfg(test)]
 mod key_expiry_tests;
+#[cfg(test)]
+mod parked_tests;
 
 use std::time::{Duration, Instant};
 
@@ -123,6 +125,20 @@ impl InMemoryTaskStore {
         Self::evict(&mut store, &self.config, EvictionPasses::all());
         drop(store);
         self.shrink_held_logs().await;
+    }
+
+    /// How many tasks capacity eviction has removed while they were still
+    /// working, since this store was created.
+    ///
+    /// A finished task evicted for room is not counted: it was done. A working
+    /// one is a task its caller loses, answering task-not-found until its next
+    /// event is saved, so this is the number to alert on; each such sweep also
+    /// logs a warning (with the `tracing` feature). Non-zero means `max_capacity`
+    /// is below the number of tasks in flight at once. Parked tasks (waiting for
+    /// input or authorization) are never evicted and never counted; a store full
+    /// of them refuses a new task instead (audit D-18).
+    pub async fn live_evictions(&self) -> u64 {
+        self.data.read().await.live_evictions
     }
 
     /// Returns which eviction passes this write has earned.

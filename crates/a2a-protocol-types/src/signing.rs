@@ -878,6 +878,33 @@ mod tests {
         verify_agent_card(&card, &sig, pub_key).unwrap();
     }
 
+    /// Signing one card twice: ES256 draws a fresh nonce each time, so the two
+    /// signatures differ, and with them the card's bytes and `ETag`; Ed25519 is
+    /// deterministic, so they are equal. Both verify. The agent-card caching
+    /// page tells a fleet to sign once offline or with Ed25519 for this reason
+    /// (audit E-F22), so the claim is pinned here.
+    #[test]
+    fn es256_signatures_of_one_card_differ_and_ed25519_signatures_do_not() {
+        let card = minimal_card();
+        let rng = SystemRandom::new();
+
+        let es256 = EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
+            .unwrap();
+        let first = sign_card_es256(&card, es256.as_ref(), "k").unwrap();
+        let second = sign_card_es256(&card, es256.as_ref(), "k").unwrap();
+        assert_eq!(first.protected, second.protected, "the header is the same");
+        assert_ne!(first.signature, second.signature, "the nonce is not");
+
+        let ed25519 = signature::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
+        let first = sign_card_ed25519(&card, ed25519.as_ref(), "k").unwrap();
+        let second = sign_card_ed25519(&card, ed25519.as_ref(), "k").unwrap();
+        assert_eq!(first.protected, second.protected);
+        assert_eq!(
+            first.signature, second.signature,
+            "no nonce, so the same bytes"
+        );
+    }
+
     #[test]
     fn sign_and_verify_card_in_wire_shape() {
         // A signed card is served on the wire with its `signatures` array

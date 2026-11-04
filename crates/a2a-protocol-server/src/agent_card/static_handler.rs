@@ -10,6 +10,8 @@
 //! on every request. Supports HTTP caching via `ETag`, `Last-Modified`,
 //! `Cache-Control`, and conditional request headers (spec §8.6).
 
+use std::time::SystemTime;
+
 use a2a_protocol_types::agent_card::AgentCard;
 use bytes::Bytes;
 use http_body_util::Full;
@@ -29,11 +31,34 @@ pub struct StaticAgentCardHandler {
     cache_config: CacheConfig,
 }
 
+/// What `Last-Modified` says when the application has not set it: the time the
+/// running executable was last modified, so that replicas of one build, which
+/// start at different times, send the same date; and `now` where the executable's
+/// time cannot be read, or lies in the future (a clock stepped back, a file
+/// restored from the future), which `Last-Modified` must not.
+fn modified_at(executable: Option<SystemTime>, now: SystemTime) -> SystemTime {
+    executable.map_or(now, |time| time.min(now))
+}
+
+/// The running executable's modification time, if the file system gives it.
+fn executable_modified() -> Option<SystemTime> {
+    std::fs::metadata(std::env::current_exe().ok()?)
+        .ok()?
+        .modified()
+        .ok()
+}
+
 impl StaticAgentCardHandler {
     /// Creates a new handler by serializing the given [`AgentCard`] to JSON.
     ///
-    /// Computes an `ETag` from the serialized content and records the current
-    /// time as `Last-Modified`.
+    /// Computes an `ETag` from the serialized content and sets `Last-Modified`
+    /// to the time the running executable was last modified, so every replica
+    /// of one build sends the same date (audit E-F22: it was the time each
+    /// process started, so a fleet's replicas disagreed and an
+    /// `If-Modified-Since` revalidation missed on all but the replica that
+    /// issued the date). Where that time cannot be read, or is in the future, it
+    /// is the time of construction. [`with_last_modified`](Self::with_last_modified)
+    /// sets it explicitly, for instance to the card file's own modification time.
     ///
     /// # Errors
     ///
@@ -45,13 +70,29 @@ impl StaticAgentCardHandler {
     /// [`ServerError`](crate::error::ServerError) if serialization fails.
     pub fn new(card: &AgentCard) -> ServerResult<Self> {
         super::lint::publishable(card).map_err(crate::error::ServerError::InvalidParams)?;
+        Self::built_at(card, SystemTime::now())
+    }
+
+    /// [`new`](Self::new) as of `now`, so a test can place the executable's
+    /// time and the clock apart.
+    fn built_at(card: &AgentCard, now: SystemTime) -> ServerResult<Self> {
         let (json, etag) = card_body_and_etag(card)?;
         Ok(Self {
             card_json: Bytes::from(json),
             etag,
-            last_modified: format_http_date(std::time::SystemTime::now()),
+            last_modified: format_http_date(modified_at(executable_modified(), now)),
             cache_config: CacheConfig::default(),
         })
+    }
+
+    /// Sets `Last-Modified` to `time` instead of the executable's modification
+    /// time, for a card whose real modification date is known (its file's, or
+    /// the release's). A `time` in the future is sent as given: this does not
+    /// second-guess the caller.
+    #[must_use]
+    pub fn with_last_modified(mut self, time: SystemTime) -> Self {
+        self.last_modified = format_http_date(time);
+        self
     }
 
     /// Sets the `Cache-Control` max-age in seconds.
@@ -141,6 +182,87 @@ mod tests {
                 "{err:?}"
             );
         }
+    }
+
+    fn at(secs: u64) -> SystemTime {
+        SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs)
+    }
+
+    fn last_modified_of(handler: &StaticAgentCardHandler) -> String {
+        let req = hyper::Request::builder()
+            .method("GET")
+            .uri("/.well-known/agent-card.json")
+            .body(Full::new(Bytes::new()))
+            .unwrap();
+        handler
+            .handle(&req)
+            .headers()
+            .get("last-modified")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    /// The executable's time is used when it is not in the future, and `now`
+    /// otherwise: where the time cannot be read, and where it lies ahead of the
+    /// clock. An executable modified at `now` itself is its own time.
+    #[test]
+    fn last_modified_is_the_executables_time_unless_that_is_missing_or_ahead() {
+        assert_eq!(modified_at(Some(at(100)), at(200)), at(100));
+        assert_eq!(modified_at(Some(at(200)), at(200)), at(200));
+        assert_eq!(
+            modified_at(Some(at(300)), at(200)),
+            at(200),
+            "ahead of the clock"
+        );
+        assert_eq!(modified_at(None, at(200)), at(200), "unreadable");
+    }
+
+    /// Two replicas of one build, started a day apart, send the same date
+    /// (audit E-F22): the date is the executable's, not the moment of start.
+    #[test]
+    fn replicas_started_at_different_times_send_the_same_last_modified() {
+        let card = minimal_agent_card();
+        let executable = executable_modified().expect("the test executable has a time");
+        let one = StaticAgentCardHandler::built_at(
+            &card,
+            executable + std::time::Duration::from_hours(24),
+        )
+        .unwrap();
+        let other = StaticAgentCardHandler::built_at(
+            &card,
+            executable + std::time::Duration::from_hours(48),
+        )
+        .unwrap();
+        assert_eq!(last_modified_of(&one), format_http_date(executable));
+        assert_eq!(last_modified_of(&one), last_modified_of(&other));
+    }
+
+    /// `new` uses the real executable: the test executable was built before it
+    /// ran, so its time is not ahead of the clock, and it is what is sent.
+    #[test]
+    fn new_sends_the_running_executables_time() {
+        let handler = StaticAgentCardHandler::new(&minimal_agent_card()).unwrap();
+        let executable = executable_modified().expect("the test executable has a time");
+        assert_eq!(last_modified_of(&handler), format_http_date(executable));
+    }
+
+    /// An explicit date is sent as given, and an `If-Modified-Since` equal to it
+    /// is `304`.
+    #[test]
+    fn an_explicit_last_modified_is_sent_and_revalidates() {
+        let handler = StaticAgentCardHandler::new(&minimal_agent_card())
+            .unwrap()
+            .with_last_modified(at(1_700_000_000));
+        assert_eq!(last_modified_of(&handler), "Tue, 14 Nov 2023 22:13:20 GMT");
+        let req = hyper::Request::builder()
+            .method("GET")
+            .uri("/.well-known/agent-card.json")
+            .header("if-modified-since", "Tue, 14 Nov 2023 22:13:20 GMT")
+            .body(Full::new(Bytes::new()))
+            .unwrap();
+        assert_eq!(handler.handle(&req).status(), 304);
     }
 
     #[test]

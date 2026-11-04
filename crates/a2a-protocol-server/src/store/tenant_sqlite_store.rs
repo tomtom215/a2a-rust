@@ -345,6 +345,20 @@ impl TaskStore for TenantAwareSqliteTaskStore {
         })
     }
 
+    fn idempotency_holder<'a>(&'a self, key: &'a str) -> idem::HolderFuture<'a> {
+        Box::pin(async move {
+            let tenant = TenantContext::partition();
+            let row = sqlx::query(idem::SQLITE_HOLDER)
+                .bind(&tenant)
+                .bind(key)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+            row.map(|row| idem::sqlite_holder(&row).map_err(|e| to_a2a_error(&e)))
+                .transpose()
+        })
+    }
+
     fn save<'a>(
         &'a self,
         task: &'a Task,
@@ -809,6 +823,47 @@ mod tests {
             "the tenant-aware SQLite store implements claim_idempotency_key; \
              it must advertise support"
         );
+    }
+
+    /// A key is read in the tenant that holds it and in no other, and reading
+    /// takes nothing.
+    #[tokio::test]
+    async fn a_key_is_read_in_its_own_tenant_and_reading_takes_nothing() {
+        use crate::store::task_store::{IdempotencyClaim, IdempotencyHolder};
+        use a2a_protocol_types::message::MessageId;
+
+        const KEY: &str = "8f14e45fceea167a5a36dedd4bea2543";
+        let store = make_store().await;
+        let free = TenantContext::scope("acme", async {
+            store.idempotency_holder(KEY).await.unwrap()
+        })
+        .await;
+        assert_eq!(free, None, "a free key has no holder");
+        let claimed = TenantContext::scope("acme", async {
+            store
+                .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("t1"))
+                .await
+                .unwrap()
+        })
+        .await;
+        assert_eq!(claimed, IdempotencyClaim::Claimed, "reading took nothing");
+
+        let in_acme = TenantContext::scope("acme", async {
+            store.idempotency_holder(KEY).await.unwrap()
+        })
+        .await;
+        assert_eq!(
+            in_acme,
+            Some(IdempotencyHolder::new(
+                MessageId::new("m1"),
+                TaskId::new("t1")
+            ))
+        );
+        let in_globex = TenantContext::scope("globex", async {
+            store.idempotency_holder(KEY).await.unwrap()
+        })
+        .await;
+        assert_eq!(in_globex, None, "another tenant's key is not visible");
     }
 
     /// The reason the sweep deletes by `rowid` and not by `id`.

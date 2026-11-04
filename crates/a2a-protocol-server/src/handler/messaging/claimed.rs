@@ -20,7 +20,8 @@ use a2a_protocol_types::message::Message;
 use a2a_protocol_types::task::{Task, TaskId};
 
 use super::super::RequestHandler;
-use super::super::claims::{TurnAttempt, TurnClaim};
+use super::super::claims::{TurnAttempt, TurnClaim, Waited};
+use super::super::locks::ContextLock;
 use super::idempotency::SendKey;
 use super::quorum::Gated;
 use crate::approval::VerifiedApproval;
@@ -34,8 +35,8 @@ pub(super) enum Claimed {
     /// The gate, run again on the task as it now is, recorded an approval
     /// toward a quorum that is still short.
     Waiting(Box<Task>),
-    /// The send waited for another replica's turn, and a retry of it took
-    /// its idempotency key meanwhile: the retry's task, executing nothing.
+    /// The send's idempotency key is held by this same message, which has
+    /// the turn or has had it: that message's task, executing nothing.
     Replay(Box<Task>),
 }
 
@@ -43,6 +44,9 @@ pub(super) enum Claimed {
 pub(super) struct ClaimedTurn {
     /// The claim; `None` without claims.
     pub(super) claim: Option<TurnClaim>,
+    /// The idempotency key the send claimed once it held the turn: released
+    /// if the send goes on to fail. `None` when the send carries no key.
+    pub(super) key: Option<String>,
     /// The task the send goes on from.
     pub(super) stored: Option<Task>,
     /// The approval gate's verdict again, when the read under the claim
@@ -74,6 +78,7 @@ fn turn_read_at(
 ) -> Claimed {
     Claimed::Turn(Box::new(ClaimedTurn {
         claim,
+        key: None,
         stored,
         regated,
         read_at,
@@ -81,80 +86,79 @@ fn turn_read_at(
 }
 
 impl RequestHandler {
-    /// Claims `task_id`, and when the send continues it, reads it again
-    /// under the claim. See the module docs. A send that does not go on to
-    /// run releases `send_key`, the idempotency key it claimed, so the
-    /// caller's retry is not answered with a task that was never created.
+    /// Claims `task_id`, then the send's idempotency key, and when the send
+    /// continues the task, reads it again under the claim. See the module
+    /// docs. A send that does not go on to run releases the key it claimed,
+    /// so the caller's retry is not answered with a task that was never
+    /// created.
     ///
-    /// A send that has to wait for another replica's turn waits without its
-    /// key, and claims it again once it holds the turn: a retry routed to
-    /// another replica meanwhile would otherwise be answered "accepted" by
-    /// the key while this send could still be refused when its wait ran
-    /// out. Without the key, the retry claims it and waits its own turn; the
-    /// first of the two to hold the turn runs, and the other replays it.
+    /// The turn comes first, and the key only once the turn is held: a send
+    /// that has to wait for another replica's turn holds no key while it
+    /// waits. A retry routed to another replica meanwhile would otherwise be
+    /// answered "accepted" by the key while this send could still be refused
+    /// when its wait ran out, and the message would never run (audit E-F24).
+    /// What a retry of a send that *is running* finds instead is the key's
+    /// holder, read without claiming it (`replay_of_held_key`), and it is
+    /// answered with that send's task at once, as it is when the first
+    /// attempt ran in this process. A retry that wins the turn while the
+    /// first send waits takes the key, and the first send, reading it on
+    /// its next attempt, is answered with the retry's task and runs
+    /// nothing: of the two, one runs and the other replays it.
+    ///
+    /// A malformed key, or a store that cannot honour one, is refused before
+    /// anything is claimed, as it was when the key came first.
     ///
     /// # Errors
     ///
     /// `claim_turn`'s; [`ServerError::UnsupportedOperation`] when the task
     /// reached a terminal state before the claim was taken (spec
     /// CORE-SEND-002, as when it was terminal at the first read); the
-    /// store's.
+    /// key's, as `claim_send_key` reports them; the store's.
     pub(super) async fn claimed_view(
         &self,
         task_id: &TaskId,
         stored: Option<Task>,
         message: &Message,
         call_ctx: &CallContext,
-        send_key: Option<&str>,
+        context_lock: &mut ContextLock,
     ) -> ServerResult<Claimed> {
-        let claim = match self.try_claim_turn(task_id).await {
-            Ok(TurnAttempt::Off) => None,
-            Ok(TurnAttempt::Held(claim)) => Some(claim),
-            // Holds no key from here on, whatever the wait comes to: a
-            // release now could free a retry's.
-            Ok(TurnAttempt::Busy) => match self.wait_for_turn(task_id, message, send_key).await? {
+        self.send_key_of(message)?;
+        let claim = match self.try_claim_turn(task_id).await? {
+            TurnAttempt::Off => None,
+            TurnAttempt::Held(claim) => Some(claim),
+            // Another replica's turn: waited for without the per-context
+            // lock, so the other sends in this context go on meanwhile
+            // (audit E-F23). The task is read again under the claim below,
+            // which is what the lock's find and save need of it.
+            TurnAttempt::Busy => match context_lock
+                .unlocked_during(self.claim_turn(task_id, message))
+                .await?
+            {
                 Waited::Turn(claim) => claim,
                 Waited::Replay(task) => return Ok(Claimed::Replay(task)),
             },
-            Err(e) => {
-                if let Some(key) = send_key {
-                    self.release_send_key(key).await;
-                }
-                return Err(e);
-            }
         };
-        let claimed = self
+        // Held, so a retry that took the key meanwhile is a replay, and
+        // dropping the claim releases the turn this send no longer needs.
+        let key = match Box::pin(self.claim_send_key(message, task_id)).await? {
+            SendKey::Replay(task) => return Ok(Claimed::Replay(task)),
+            SendKey::Claimed(key) => Some(key),
+            SendKey::Absent => None,
+        };
+        match self
             .read_under_claim(task_id, claim, stored, message, call_ctx)
-            .await;
-        if !matches!(claimed, Ok(Claimed::Turn(_)))
-            && let Some(key) = send_key
+            .await
         {
-            self.release_send_key(key).await;
-        }
-        claimed
-    }
-
-    /// Waits for the turn another replica holds, without `send_key` (see
-    /// `claimed_view`), and claims the key again once the turn is held.
-    async fn wait_for_turn(
-        &self,
-        task_id: &TaskId,
-        message: &Message,
-        send_key: Option<&str>,
-    ) -> ServerResult<Waited> {
-        if let Some(key) = send_key {
-            self.release_send_key(key).await;
-        }
-        let claim = self.claim_turn(task_id).await?;
-        if send_key.is_none() {
-            return Ok(Waited::Turn(claim));
-        }
-        match self.claim_send_key(message, task_id).await? {
-            SendKey::Claimed(_) | SendKey::Absent => Ok(Waited::Turn(claim)),
-            // The send holding the key has had its turn: a waiting send
-            // holds none, so it took the key with its turn. This one runs
-            // nothing, and dropping the claim releases the turn.
-            SendKey::Replay(task) => Ok(Waited::Replay(task)),
+            Ok(Claimed::Turn(mut turn)) => {
+                turn.key = key;
+                Ok(Claimed::Turn(turn))
+            }
+            other => {
+                if let Some(key) = key {
+                    self.release_send_key(&key).await;
+                }
+                other
+            }
         }
     }
 
@@ -205,14 +209,6 @@ impl RequestHandler {
             Gated::Waiting(task) => Ok(Claimed::Waiting(task)),
         }
     }
-}
-
-/// How a wait for another replica's turn ended.
-enum Waited {
-    /// The turn is this send's, and so is its key again.
-    Turn(Option<TurnClaim>),
-    /// A retry holds the key: its task.
-    Replay(Box<Task>),
 }
 
 /// Whether two reads of one task show the same turn's result: the state and

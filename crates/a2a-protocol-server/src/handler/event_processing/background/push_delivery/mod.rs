@@ -236,6 +236,19 @@ async fn deliver_once(
     .await
     {
         Ok(Ok(())) => push_outcome::DELIVERED,
+        // Skipped, not failed: the webhook is suspended, and says so once
+        // when it is (`push::health`), not on every event it skips.
+        Ok(Err(err)) if crate::push::health::outcome_of(&err) == Some(push_outcome::SUSPENDED) => {
+            push_outcome::SUSPENDED
+        }
+        Ok(Err(err)) if crate::push::health::outcome_of(&err) == Some(push_outcome::GONE) => {
+            trace_warn!(
+                task_id = %task_id,
+                url = %crate::push::webhook::origin_for_log(&config.url),
+                "push webhook answered 410 Gone; its config was removed"
+            );
+            push_outcome::GONE
+        }
         Ok(Err(_err)) => {
             trace_warn!(
                 task_id = %task_id,

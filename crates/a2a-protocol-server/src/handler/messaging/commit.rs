@@ -9,10 +9,11 @@ use a2a_protocol_types::params::MessageSendParams;
 use tokio::sync::OwnedSemaphorePermit;
 
 use super::super::RequestHandler;
+use super::super::locks::ContextLock;
 use super::claimed::{Claimed, Regated};
 use super::mode::SendMode;
 use super::start::{Committed, ExecutorStart, Started, runtime_has_one_worker};
-use super::{basis, commit_guard, create, idempotency, quorum};
+use super::{basis, commit_guard, create, quorum};
 use crate::call_context::CallContext;
 use crate::error::ServerResult;
 
@@ -87,10 +88,10 @@ impl RequestHandler {
         // The per-context lock serializes the find + save sequence for one
         // context_id, so two concurrent sends cannot both create a new task
         // for it. Held until the task is saved.
-        let context_lock = self.keyed_lock(&context_id).await;
         // Owned, so a send dropped mid-commit can hold it until its rollback
-        // is done (see `commit_guard`).
-        let context_guard = context_lock.lock_owned().await;
+        // is done (see `commit_guard`). A send that has to wait for another
+        // replica's turn gives it up for the wait (`claimed_view`).
+        let mut context_lock = ContextLock::take(self.keyed_lock(&context_id).await).await;
 
         let stored_task = self
             .stored_for(&context_id, minted, &params.message)
@@ -116,38 +117,29 @@ impl RequestHandler {
             quorum::Gated::Waiting(task) => return Ok(Committed::Waiting(task)),
         };
 
-        // An idempotency key, if the send carries one, is claimed here: after
-        // everything that can reject the request on its own terms, and before
-        // the send's first side effect. Both halves matter. Claiming later
-        // would let two racing duplicates each lease a queue before either
-        // noticed the other; claiming earlier would burn a key on a request
-        // that was never going to run. Every failure below releases it, the
-        // same discipline the queue lease and cancellation token follow.
+        // Across replicas sharing the store, one turn of a task at a time
+        // (`claims`), and then the send's idempotency key, if it carries one:
+        // after everything that can reject the request on its own terms, and
+        // before the send's first side effect. Both halves matter. Claiming
+        // later would let two racing duplicates each lease a queue before
+        // either noticed the other; claiming earlier would burn a key on a
+        // request that was never going to run. The key comes after the turn
+        // so that a send waiting on another replica holds none (audit E-F24;
+        // `claimed_view`). Every failure below releases it, the same
+        // discipline the queue lease and cancellation token follow.
         // Boxed for the same reason the inline push-config branch below is: a
         // cold branch inlined here enlarges the send future for every send,
         // and all three dispatch futures sit just under clippy's
         // `large_futures` threshold.
-        let claimed_key = match Box::pin(self.claim_send_key(&params.message, &task_id)).await? {
-            idempotency::SendKey::Replay(task) => return Ok(Committed::Replay(task)),
-            idempotency::SendKey::Claimed(key) => Some(key),
-            idempotency::SendKey::Absent => None,
-        };
-        // Across replicas sharing the store, one turn of a task at a time
-        // (`claims`): taken after a replay is answered, so a retried send
-        // whose first attempt still runs replays rather than waits.
         let message = &params.message;
-        let claimed = self.claimed_view(
-            &task_id,
-            stored_task,
-            message,
-            call_ctx,
-            claimed_key.as_deref(),
-        );
+        let claimed =
+            self.claimed_view(&task_id, stored_task, message, call_ctx, &mut context_lock);
         let turn = match Box::pin(claimed).await? {
             Claimed::Turn(turn) => turn,
             Claimed::Waiting(task) => return Ok(Committed::Waiting(task)),
             Claimed::Replay(task) => return Ok(Committed::Replay(task)),
         };
+        let claimed_key = turn.key;
         if let Regated::Yes(regated) = turn.regated {
             approval = *regated;
         }
@@ -160,7 +152,7 @@ impl RequestHandler {
             std::sync::Arc::clone(&self.task_store),
             std::sync::Arc::clone(&self.push_config_store),
             claimed_key.clone(),
-            context_guard,
+            context_lock.into_guard(),
         );
         let guard_ref = &mut guard;
 
