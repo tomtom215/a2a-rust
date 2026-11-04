@@ -671,9 +671,20 @@ pub trait TaskStore: Send + Sync + 'static {
     /// The default reads the record, appends, trims and writes the whole thing
     /// back through `save`, which is always correct and is what the send path
     /// did before this method existed — so a store that does not override it
-    /// is no worse off than it was. Overriding is worthwhile for any store
-    /// that can append without rewriting: the in-memory one extends a `Vec` in
-    /// place, and the SQL stores splice the tail into the stored document.
+    /// is no worse off than it was. Overriding is worthwhile for a store that
+    /// can append without rewriting: the in-memory one extends a `Vec` in
+    /// place.
+    ///
+    /// The SQL stores take this default: a read and a write of the whole
+    /// document, so an append costs in proportion to the history kept, which
+    /// `limit` bounds. They do not splice the tail in the database, because a
+    /// JSON column is rewritten whole by any update: measured on PostgreSQL
+    /// 16.15 with a task holding 1.04 MB of history (91 KB stored, TOAST
+    /// compressed), appending one message with `jsonb_set` in the database
+    /// wrote 200,712 bytes of WAL and replacing the whole document 190,448,
+    /// three runs alike (audit NEW-h-designs-6, ADR 0044). A splice would save
+    /// the read and the transfer of the history, not the write, and would have
+    /// to repeat the byte trim and the write rules of `save` in SQL.
     ///
     /// An override **must** leave the store holding exactly what the default
     /// would have left it holding, including the trim, and must fall back to
@@ -897,6 +908,8 @@ pub trait TaskStore: Send + Sync + 'static {
     }
 }
 
+#[cfg(all(test, any(feature = "sqlite", feature = "postgres")))]
+mod sql_append_tests;
 /// Tests for the default `count` implementation on `TaskStore`.
 #[cfg(test)]
 mod tests;

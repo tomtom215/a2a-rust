@@ -100,3 +100,18 @@ index. No partial index now: one on `(updated_at) WHERE state IN
 proportional to running tasks, for one more index write per write of a
 running task, and pays at tens of millions of retained rows. The test
 `store::claim::postgres::plan_tests` keeps the measured plan from regressing.
+
+## The SQL stores' history append (NEW-h-designs-6)
+
+`TaskStore::save_appending_history`'s docs said the SQL stores splice the new
+messages into the stored document; none did. Measured before deciding, on
+PostgreSQL 16.15, a task with 1.04 MB of history JSON (91 KB stored, TOAST
+compressed), one message appended: `jsonb_set` in the database wrote 200,712
+bytes of WAL, replacing the whole document 190,448, the same in three runs.
+A JSON column is rewritten whole by any update, so a splice would save the
+read and the transfer of the history, not the write, while repeating the
+byte trim (`HistoryLimit`) and `save`'s write rules (fence, terminal state,
+status columns) in SQL for four stores. The docs now say the SQL stores take
+the default, and `store::task_store::sql_append_tests` checks what each of the
+four leaves: the tail appended and trimmed, the snapshot's other fields, and
+an insert when there was no record.
