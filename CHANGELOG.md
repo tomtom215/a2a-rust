@@ -1584,6 +1584,29 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   task before trusting a resumed stream. Read from the code, not reproduced by a
   test; nothing changes in behaviour.
 
+- **An idle subscription backs off its polling** (server; audit E-F25 (a), the
+  maintainer's recommendation). A `SubscribeToTask` stream between turns read the
+  store every `subscribe_reattach_interval` (250 ms), about eight statements a
+  second per idle subscriber of a task parked or running on another replica, for as
+  long as its client stayed, on the pool that also keeps the replica's claims alive
+  (the cost grows with idle subscribers; none was measured here). The wait now
+  doubles while nothing changes, up to the new
+  `HandlerLimits::subscribe_reattach_max_interval` (default 4 s;
+  `with_subscribe_reattach_max_interval`; below the interval it means no back-off),
+  and any change (a queue to attach to, events in the log, a terminal state) ends
+  the wait and the next one starts at the interval again, so a stream that is
+  receiving frames keeps its cadence. **Behaviour change (latency):** the first
+  frame after a long quiet can reach a cross-replica subscriber up to the ceiling
+  after it was logged, where it was up to one interval. An operator's
+  `subscribe_max_idle` is still met at its own time: each sleep is cut at the
+  deadline (without that, found by an existing test, a grown wait ended the stream up
+  to a ceiling late). Not done: a separate small read pool for subscriber polls (E-F25
+  (c)), deferred; `LISTEN`/`NOTIFY` (b) later. Tests:
+  `handler/lifecycle/subscribe/idle_backoff_tests.rs` (the poll times at 0, 250, 750,
+  1,750, 3,750 and 5,750 ms on a paused clock; a ceiling below the interval; the
+  bound met at 1,000 ms though the wait had grown) and
+  `tests/subscribe_no_idle_bound.rs`.
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a

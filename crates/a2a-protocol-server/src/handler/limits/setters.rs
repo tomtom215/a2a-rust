@@ -57,6 +57,15 @@ impl HandlerLimits {
         self
     }
 
+    /// Sets the longest wait between two re-checks of an idle `SubscribeToTask`
+    /// stream. See
+    /// [`subscribe_reattach_max_interval`](Self::subscribe_reattach_max_interval).
+    #[must_use]
+    pub const fn with_subscribe_reattach_max_interval(mut self, interval: Duration) -> Self {
+        self.subscribe_reattach_max_interval = interval;
+        self
+    }
+
     /// Sets how long a `SubscribeToTask` stream waits on a parked task before
     /// ending without a terminal state. See
     /// [`subscribe_max_idle`](Self::subscribe_max_idle) for what that costs.

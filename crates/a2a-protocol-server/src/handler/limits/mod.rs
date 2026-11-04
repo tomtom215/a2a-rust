@@ -229,8 +229,9 @@ pub struct HandlerLimits {
     /// reports a count (see [`PushConfigStore::count`](crate::push::PushConfigStore::count));
     /// stores that do not report one are unaffected.
     pub max_total_push_configs: usize,
-    /// How often a `SubscribeToTask` stream re-checks whether its task has
-    /// finished, once the current turn's event queue has closed. Default: 250ms.
+    /// How often a `SubscribeToTask` stream first re-checks whether its task
+    /// has finished, once the current turn's event queue has closed. Default:
+    /// 250ms.
     ///
     /// A task's queue lives only as long as one executor invocation, so an
     /// agent that parks a task in `input_required` closes the queue at every
@@ -238,7 +239,25 @@ pub struct HandlerLimits {
     /// **terminal** state, so it waits here for the next turn rather than
     /// ending. Only an idle stream pays this cost — a live queue delivers
     /// events immediately.
+    ///
+    /// This is the *first* wait: while nothing changes it doubles each poll up
+    /// to [`subscribe_reattach_max_interval`](Self::subscribe_reattach_max_interval),
+    /// and a change (a queue to attach to, events in the log, a terminal
+    /// state) ends the wait and the next one starts here again.
     pub subscribe_reattach_interval: Duration,
+    /// The longest wait between two re-checks of an idle `SubscribeToTask`
+    /// stream. Default: 4s. A value below
+    /// [`subscribe_reattach_interval`](Self::subscribe_reattach_interval) means no
+    /// back-off: the stream polls at that interval throughout.
+    ///
+    /// Without it an idle subscriber of a task parked on another replica read
+    /// the store about eight times a second for as long as its client stayed
+    /// (audit E-F25), on the pool that also keeps the replica's claims alive.
+    /// Backing off costs latency only after a long idle: the first event of the
+    /// next turn, run on another replica, reaches the subscriber up to this long
+    /// after it was logged. Raise it to cut idle load further; lower it, or set
+    /// it equal to the interval, to keep cross-replica latency at the interval.
+    pub subscribe_reattach_max_interval: Duration,
     /// How long a `SubscribeToTask` stream waits for a parked task to make
     /// progress before ending, if at all. Default: `None`, no bound.
     ///
@@ -362,6 +381,7 @@ impl Default for HandlerLimits {
             max_parts_per_artifact: 10_000,
             max_total_push_configs: 100_000,
             subscribe_reattach_interval: Duration::from_millis(250),
+            subscribe_reattach_max_interval: Duration::from_secs(4),
             subscribe_max_idle: None,
             subscribe_replay_limit: 1_000,
             subscribe_replay_catchup: Duration::from_secs(2),

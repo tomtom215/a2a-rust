@@ -37,6 +37,21 @@ fn last_event_id(headers: Option<&HashMap<String, String>>) -> Option<u64> {
     headers?.get("last-event-id")?.trim().parse::<u64>().ok()
 }
 
+/// How long to sleep before the next poll: `wait`, cut at the operator's idle
+/// `deadline` when there is one, so a wait that has grown does not carry the
+/// stream past the time it was set to end at.
+fn nap_before(deadline: Option<tokio::time::Instant>, wait: Duration) -> Duration {
+    deadline.map_or(wait, |d| {
+        wait.min(d.saturating_duration_since(tokio::time::Instant::now()))
+    })
+}
+
+/// The wait after `wait` for an idle stream: double, up to `longest`
+/// (audit E-F25). Saturating, so an enormous configured interval cannot overflow.
+fn next_wait(wait: Duration, longest: Duration) -> Duration {
+    wait.saturating_mul(2).min(longest)
+}
+
 impl RequestHandler {
     /// Builds the hook that keeps a `SubscribeToTask` stream alive across turns.
     ///
@@ -82,6 +97,8 @@ impl RequestHandler {
         let queues = self.event_queue_manager.clone();
         let store = std::sync::Arc::clone(&self.task_store);
         let interval = self.limits.subscribe_reattach_interval;
+        // A maximum below the first wait is no back-off, not a shrinking wait.
+        let longest = self.limits.subscribe_reattach_max_interval.max(interval);
         let max_idle = self.limits.subscribe_max_idle;
         let catchup = self.limits.subscribe_replay_catchup;
         let partition = crate::store::tenant::TenantContext::capture();
@@ -98,6 +115,9 @@ impl RequestHandler {
                 // idle bound a broken store would otherwise log four times a
                 // second for as long as the client stays.
                 let mut store_failing = false;
+                // Doubles while nothing changes (audit E-F25); a change returns
+                // from this loop, and the next call starts at `interval` again.
+                let mut wait = interval;
                 loop {
                     match store.get_with_position(&task_id).await {
                         // The task finished between queues, so the client
@@ -156,7 +176,10 @@ impl RequestHandler {
                         );
                         return Reattached::End;
                     }
-                    tokio::time::sleep(interval).await;
+                    // Not past the operator's bound: a wait that has grown must
+                    // not carry the stream beyond the deadline it was set to end at.
+                    tokio::time::sleep(nap_before(deadline, wait)).await;
+                    wait = next_wait(wait, longest);
                 }
             })) as std::pin::Pin<Box<dyn std::future::Future<Output = _> + Send>>
         })
@@ -802,6 +825,8 @@ mod gap_tests;
 #[cfg(test)]
 mod finished_tests;
 mod hold;
+#[cfg(test)]
+mod idle_backoff_tests;
 #[cfg(test)]
 mod log_replay_tests;
 

@@ -15,7 +15,15 @@ both SQL stores keep one. That client:
   order the agent emitted them and at the positions the running replica's own
   subscribers see (spec §3.5.2). They arrive in batches: the subscription's
   reattach hook looks for new events every `subscribe_reattach_interval`
-  (250 ms by default), so a frame can be up to one interval late.
+  (250 ms by default), so a frame can be up to one interval late. While the
+  stream is idle the wait doubles, up to `subscribe_reattach_max_interval`
+  (4 s by default), so the **first** frame after a long quiet can be up to that
+  late; each frame that does arrive starts the wait over at the interval. An idle
+  subscriber used to read the store about eight times a second for as long as its
+  client stayed, on the pool that keeps the replica's claims alive; at the ceiling
+  it makes one poll, two statements when the store keeps a log, every 4 s. Set the
+  ceiling equal to the interval to keep every frame within one interval and pay
+  the load, or raise it to pay less.
 
 The stream starts from a snapshot of the task and replays the log after the
 position that snapshot reflects. Every shipped store returns the task together
