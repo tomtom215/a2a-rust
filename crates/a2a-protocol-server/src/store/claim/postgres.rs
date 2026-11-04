@@ -323,3 +323,7 @@ impl TurnClaimStore for PostgresTurnClaims {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "postgres_plan_tests.rs"]
+mod plan_tests;
