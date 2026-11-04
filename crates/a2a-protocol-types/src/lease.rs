@@ -27,6 +27,13 @@
 //! * A **renewal** is a `GetTask` of the task whose request activates the
 //!   extension (the `A2A-Extensions` header, spec §3.2.6). It pushes the
 //!   deadline out by the granted time to live.
+//! * A renewal that also activates [`LEASE_RENEWAL_ONLY_URI`] asks for the
+//!   lease alone: the server renews and answers with the task's id, context
+//!   and status, and no history, artifacts or metadata, so a renewal costs
+//!   neither the serialization nor (with a content signer, ADR 0027) the
+//!   signature of every artifact (audit NEW-h-designs-3, ADR 0044). A server
+//!   that does not know the URI ignores it and answers the whole task, as
+//!   before, so a client may always send it.
 //!
 //! ```rust
 //! use std::time::Duration;
@@ -48,6 +55,10 @@ use crate::message::Message;
 /// The extension URI a card declares, a message names in `extensions`, and a
 /// renewing `GetTask` activates.
 pub const LEASE_EXTENSION_URI: &str = "https://a2a-rust.com/extensions/lease/v1";
+
+/// Activated beside [`LEASE_EXTENSION_URI`] on a renewing `GetTask`: answer
+/// with the task's status alone (ADR 0044).
+pub const LEASE_RENEWAL_ONLY_URI: &str = "https://a2a-rust.com/extensions/lease/v1/renewal-only";
 
 /// The `Message.metadata` key a grant travels under.
 pub const LEASE_METADATA_KEY: &str = "a2a-rust.com/lease";

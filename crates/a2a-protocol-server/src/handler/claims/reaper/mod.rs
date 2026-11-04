@@ -49,6 +49,13 @@ use crate::store::{LeaseStore, TaskStore};
 /// The tasks one look ends at most; the next look takes the rest.
 const BATCH: usize = 32;
 
+/// How long a lease stays lapsed before a look deletes it. A turn's watcher
+/// checks its lease at least every second and stops the turn on a lapse, so
+/// an hour leaves every watcher, and every operator reading the table after
+/// an incident, a lapsed lease to see, while a fleet with churn no longer
+/// keeps every lease it ever granted.
+pub const LEASE_SWEEP_MARGIN: std::time::Duration = std::time::Duration::from_secs(3_600);
+
 /// What a task the reaper ends says, in its status message.
 pub const REASON: &str = "no replica is running this task any more: the one that was \
     stopped before it finished (its turn claim expired with the task still running), or its \
@@ -118,6 +125,7 @@ impl Reaper {
                 ended += 1;
             }
         }
+        self.sweep_leases().await;
         Some(ended)
     }
 
@@ -214,6 +222,28 @@ impl Reaper {
         let Some(leases) = &self.leases else { return };
         if let Err(_e) = leases.release(&TenantContext::current(), task_id).await {
             trace_warn!(task_id, error = %_e, "the ended task's lease was not released");
+        }
+    }
+
+    /// Deletes the lease rows nobody will release: lapsed for longer than
+    /// [`LEASE_SWEEP_MARGIN`] (audit NEW-h-s0-6). A replica that died after
+    /// its task's terminal write, before its watcher released the lease,
+    /// leaves a row this look does not reach through a task, and so does a
+    /// child parked at `input-required` that is never continued.
+    async fn sweep_leases(&self) {
+        let Some(leases) = &self.leases else { return };
+        let margin = i64::try_from(LEASE_SWEEP_MARGIN.as_millis()).unwrap_or(i64::MAX);
+        match leases
+            .sweep(crate::store::lease::now_unix_ms(), margin)
+            .await
+        {
+            Ok(0) => {}
+            Ok(_swept) => {
+                trace_info!(swept = _swept, "swept lapsed leases");
+            }
+            Err(_e) => {
+                trace_warn!(error = %_e, "lapsed leases not swept; retrying next look");
+            }
         }
     }
 }

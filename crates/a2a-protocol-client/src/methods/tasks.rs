@@ -27,7 +27,7 @@ impl A2aClient {
     /// Returns [`ClientError::Protocol`] with [`a2a_protocol_types::ErrorCode::TaskNotFound`]
     /// if no task with the given ID exists.
     pub async fn get_task(&self, params: TaskQueryParams) -> ClientResult<Task> {
-        self.read_task(params, false).await
+        self.read_task(params, &[]).await
     }
 
     /// Renews the lease of a task this client delegated with one
@@ -43,11 +43,38 @@ impl A2aClient {
     ///
     /// As [`get_task`](Self::get_task).
     pub async fn renew_lease(&self, params: TaskQueryParams) -> ClientResult<Task> {
-        self.read_task(params, true).await
+        self.read_task(params, &[a2a_protocol_types::lease::LEASE_EXTENSION_URI])
+            .await
     }
 
-    /// `GetTask`, activating the lease extension when `renew`.
-    async fn read_task(&self, mut params: TaskQueryParams, renew: bool) -> ClientResult<Task> {
+    /// [`renew_lease`](Self::renew_lease), asking for the lease alone
+    /// (`LEASE_RENEWAL_ONLY_URI`, ADR 0044): a server that knows it answers
+    /// with the task's id, context and status, without history, artifacts or
+    /// metadata, so the renewal costs neither side the task's content. A
+    /// server that does not know it answers the whole task. A delegation's
+    /// own renewals use this.
+    ///
+    /// # Errors
+    ///
+    /// As [`get_task`](Self::get_task).
+    pub async fn renew_lease_status(&self, params: TaskQueryParams) -> ClientResult<Task> {
+        self.read_task(
+            params,
+            &[
+                a2a_protocol_types::lease::LEASE_EXTENSION_URI,
+                a2a_protocol_types::lease::LEASE_RENEWAL_ONLY_URI,
+            ],
+        )
+        .await
+    }
+
+    /// `GetTask`, activating each of `extensions` beside any an interceptor
+    /// asked for.
+    async fn read_task(
+        &self,
+        mut params: TaskQueryParams,
+        extensions: &[&str],
+    ) -> ClientResult<Task> {
         const METHOD: &str = "GetTask";
 
         params.tenant = self.tenant_or_default(params.tenant.take());
@@ -55,8 +82,7 @@ impl A2aClient {
 
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
-        if renew {
-            let lease = a2a_protocol_types::lease::LEASE_EXTENSION_URI;
+        for &lease in extensions {
             // The header an interceptor set, in whatever case it used.
             let key = req
                 .extra_headers

@@ -1659,6 +1659,7 @@ impl RequestHandlerBuilder {
             leases: self.lease_store.map(|store| crate::handler::lease::Leases {
                 store,
                 max_ttl: self.max_lease_ttl,
+                watch: Arc::default(),
             }),
             halt_sync: self.halt_store.map(|store| {
                 Arc::new(crate::handler::halt::sync::HaltSync::new(

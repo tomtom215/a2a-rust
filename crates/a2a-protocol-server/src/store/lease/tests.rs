@@ -65,6 +65,85 @@ async fn in_memory_keeps_the_contract() {
     caller_clock_contract(&InMemoryLeaseStore::new()).await;
 }
 
+/// A sweep deletes the leases whose deadline passed more than the margin
+/// ago, in every tenant, keeps one that lapsed exactly the margin ago, and
+/// reports how many it deleted (audit NEW-h-s0-6).
+#[tokio::test]
+async fn in_memory_sweeps_only_leases_lapsed_longer_than_the_margin() {
+    let store = InMemoryLeaseStore::new();
+    store.grant("t", "old", 10, 899).await.unwrap();
+    store.grant("u", "old", 10, 100).await.unwrap();
+    store.grant("t", "edge", 10, 900).await.unwrap();
+    store.grant("t", "live", 10, 5_000).await.unwrap();
+    assert_eq!(store.sweep(1_000, 100).await.unwrap(), 2);
+    assert_eq!(store.deadline("t", "old").await.unwrap(), None);
+    assert_eq!(store.deadline("u", "old").await.unwrap(), None);
+    assert_eq!(store.deadline("t", "edge").await.unwrap(), Some(900));
+    assert_eq!(store.deadline("t", "live").await.unwrap(), Some(5_000));
+    assert_eq!(store.sweep(1_000, 100).await.unwrap(), 0, "nothing more");
+}
+
+/// The default `lapsed_many` answers for each lease that exists, by the
+/// local clock, and leaves out one that does not (audit H5).
+#[tokio::test]
+async fn the_default_lapsed_many_answers_each_lease_that_exists() {
+    let store = InMemoryLeaseStore::new();
+    store.grant("t", "old", 10, 1).await.unwrap();
+    store.grant("t", "live", 10, i64::MAX).await.unwrap();
+    let asked = [
+        ("t".to_owned(), "old".to_owned()),
+        ("t".to_owned(), "live".to_owned()),
+        ("u".to_owned(), "old".to_owned()),
+    ];
+    assert_eq!(
+        store.lapsed_many(&asked).await.unwrap(),
+        HashMap::from([(asked[0].clone(), true), (asked[1].clone(), false)])
+    );
+}
+
+/// A store that does not override `sweep` deletes nothing.
+#[tokio::test]
+async fn the_default_sweep_deletes_nothing() {
+    struct Plain(InMemoryLeaseStore);
+    impl LeaseStore for Plain {
+        fn grant<'a>(
+            &'a self,
+            tenant: &'a str,
+            task: &'a str,
+            ttl_ms: i64,
+            deadline_ms: i64,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            self.0.grant(tenant, task, ttl_ms, deadline_ms)
+        }
+        fn renew<'a>(
+            &'a self,
+            tenant: &'a str,
+            task: &'a str,
+            now_ms: i64,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+            self.0.renew(tenant, task, now_ms)
+        }
+        fn deadline<'a>(
+            &'a self,
+            tenant: &'a str,
+            task: &'a str,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<Option<i64>>> + Send + 'a>> {
+            self.0.deadline(tenant, task)
+        }
+        fn release<'a>(
+            &'a self,
+            tenant: &'a str,
+            task: &'a str,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            self.0.release(tenant, task)
+        }
+    }
+    let store = Plain(InMemoryLeaseStore::new());
+    store.grant("t", "old", 10, 1).await.unwrap();
+    assert_eq!(store.sweep(i64::MAX, 0).await.unwrap(), 0);
+    assert_eq!(store.deadline("t", "old").await.unwrap(), Some(1));
+}
+
 /// The default `lapsed` compares the stored deadline with this process's
 /// clock: a deadline in 1970 has lapsed, one that never arrives has not, and
 /// no lease is `None`.
@@ -185,4 +264,42 @@ async fn postgres_keeps_the_contract_on_the_database_clock() {
     assert!(!store.renew("t", "a", 0).await.unwrap());
     store.release("u", "a").await.unwrap();
     store.release("t", "big").await.unwrap();
+
+    // The sweep judges on the database's clock too (audit NEW-h-s0-6): a
+    // lease that lapsed an hour ago goes, one that lapses in an hour and one
+    // that lapsed a moment ago stay, whatever `now_ms` the caller passes.
+    let now = database_now_ms(&pool).await;
+    for (task, deadline) in [
+        ("old", now - 3_600_000),
+        ("soon", now + 3_600_000),
+        ("new", now - 10),
+    ] {
+        sqlx::query("INSERT INTO a2a_leases VALUES ('s', $1, 1, $2)")
+            .bind(task)
+            .bind(deadline)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    assert_eq!(store.sweep(i64::MAX, 60_000).await.unwrap(), 1);
+    assert_eq!(store.deadline("s", "old").await.unwrap(), None);
+    assert!(store.deadline("s", "soon").await.unwrap().is_some());
+    assert!(store.deadline("s", "new").await.unwrap().is_some());
+    assert_eq!(store.sweep(0, 60_000).await.unwrap(), 0, "nothing more");
+
+    // Many leases in one read (audit H5): a lapsed one, a live one, the same
+    // task in a tenant that holds no lease (absent), and an empty list.
+    let asked = [
+        ("s".to_owned(), "new".to_owned()),
+        ("s".to_owned(), "soon".to_owned()),
+        ("x".to_owned(), "soon".to_owned()),
+    ];
+    let answers = store.lapsed_many(&asked).await.unwrap();
+    assert_eq!(
+        answers,
+        HashMap::from([(asked[0].clone(), true), (asked[1].clone(), false)])
+    );
+    assert!(store.lapsed_many(&[]).await.unwrap().is_empty());
+    store.release("s", "soon").await.unwrap();
+    store.release("s", "new").await.unwrap();
 }

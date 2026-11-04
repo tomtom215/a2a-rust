@@ -244,3 +244,64 @@ async fn the_tenant_is_sent_with_each_renewal() {
     settle().await;
     assert_eq!(*seen.lock().unwrap(), vec![Some("acme".to_owned())]);
 }
+
+/// Records the `A2A-Extensions` header of every request.
+struct Recording(Arc<std::sync::Mutex<Vec<String>>>);
+
+impl Transport for Recording {
+    fn send_request<'a>(
+        &'a self,
+        _method: &'a str,
+        _params: serde_json::Value,
+        extra_headers: &'a HashMap<String, String>,
+    ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
+        let asked = extra_headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(crate::extensions::HEADER))
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default();
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(asked);
+        let task = Task::new("t", "c", TaskStatus::new(TaskState::Working));
+        Box::pin(async move { serde_json::to_value(task).map_err(ClientError::Serialization) })
+    }
+
+    fn send_streaming_request<'a>(
+        &'a self,
+        _method: &'a str,
+        _params: serde_json::Value,
+        _extra_headers: &'a HashMap<String, String>,
+    ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
+        Box::pin(async { Err(ClientError::Transport("no streams here".into())) })
+    }
+}
+
+/// A delegation's renewal asks for the lease alone (ADR 0044): it activates
+/// the lease extension and the renewal-only one, so a server that knows the
+/// second answers with the status and signs no artifact.
+#[tokio::test(start_paused = true)]
+async fn a_renewal_asks_for_the_lease_alone() {
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let client = Arc::new(
+        ClientBuilder::new("http://stub.invalid")
+            .with_custom_transport(Recording(Arc::clone(&seen)))
+            .build()
+            .expect("client"),
+    );
+    let _renewal = Renewal::spawn(client, None, TTL, &Origin::current(), Some("t".to_owned()));
+    settle().await;
+    let seen = seen
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    assert_eq!(
+        seen,
+        [format!(
+            "{}, {}",
+            a2a_protocol_types::lease::LEASE_EXTENSION_URI,
+            a2a_protocol_types::lease::LEASE_RENEWAL_ONLY_URI
+        )]
+    );
+}

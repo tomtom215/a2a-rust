@@ -61,7 +61,9 @@ impl Renewal {
                 let Some(id) = known else { continue };
                 let mut query = a2a_protocol_types::TaskQueryParams::new(id);
                 query.tenant.clone_from(&tenant);
-                match client.renew_lease(query).await {
+                // The lease alone: the answer is read only for whether the
+                // child has ended (ADR 0044).
+                match client.renew_lease_status(query).await {
                     Ok(task) if task.status.state.is_terminal() => return,
                     Ok(_) => {}
                     // Missed renewals are what the lease is for; a later one

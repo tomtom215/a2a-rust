@@ -447,3 +447,58 @@ async fn a_store_with_its_own_clock_can_say_the_lease_has_not_lapsed() {
     tokio::time::sleep(TTL * 2).await;
     assert_eq!(read(&h, &id, false).await, TaskState::Working);
 }
+
+/// Writes an artifact, then works until cancelled.
+struct Produces;
+agent_executor!(Produces, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
+    emit.artifact("a", vec![Part::text("big")], None, Some(true))
+        .await?;
+    emit.status(TaskState::Working).await?;
+    ctx.cancellation_token.cancelled().await;
+    Ok(())
+});
+
+/// A renewal that activates the renewal-only extension beside the lease one
+/// renews and is answered with the status alone; one that does not, and a
+/// plain read, get the whole task (ADR 0044, audit NEW-h-designs-3).
+#[tokio::test]
+async fn a_renewal_only_read_renews_and_answers_with_the_status_alone() {
+    use a2a_protocol_types::lease::LEASE_RENEWAL_ONLY_URI;
+    let leases = InMemoryLeaseStore::new();
+    let h = RequestHandlerBuilder::new(Produces)
+        .without_agent_card()
+        .with_task_store_arc(tasks())
+        .with_lease_store(leases.clone())
+        .build()
+        .expect("handler");
+    let id = start(&h, Some(TTL)).await.unwrap();
+    reaches(&h, &id, TaskState::Working, Duration::from_secs(5)).await;
+    let get = |uris: &str| {
+        let headers = HashMap::from([("a2a-extensions".to_owned(), uris.to_owned())]);
+        let h = &h;
+        let id = id.clone();
+        async move {
+            h.on_get_task(TaskQueryParams::new(id), Some(&headers))
+                .await
+                .expect("get")
+        }
+    };
+    let before = leases.deadline("", &id).await.unwrap().expect("a lease");
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    let only = get(&format!("{LEASE_EXTENSION_URI}, {LEASE_RENEWAL_ONLY_URI}")).await;
+    assert!(
+        leases.deadline("", &id).await.unwrap().unwrap() > before,
+        "renewed"
+    );
+    assert_eq!(only.status.state, TaskState::Working);
+    assert_eq!(
+        (only.artifacts, only.history, only.metadata),
+        (None, None, None)
+    );
+    for uris in [LEASE_EXTENSION_URI, LEASE_RENEWAL_ONLY_URI, ""] {
+        let whole = get(uris).await;
+        assert_eq!(whole.artifacts.map(|a| a.len()), Some(1), "{uris:?}");
+        assert!(whole.history.is_some_and(|h| !h.is_empty()), "{uris:?}");
+    }
+}

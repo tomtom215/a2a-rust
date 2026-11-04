@@ -164,6 +164,18 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
             .await
             .unwrap();
     }
+    // NEW-h-s0-6: a lease left by a replica that died after its task ended,
+    // lapsed longer ago than the sweep's margin, and one that lapsed a moment
+    // ago, which a watcher may still be about to read.
+    let margin = i64::try_from(super::LEASE_SWEEP_MARGIN.as_millis()).unwrap();
+    leases
+        .grant(&tenant, "left-behind", 1, now_unix_ms() - margin - 1_000)
+        .await
+        .unwrap();
+    leases
+        .grant(&tenant, "just-lapsed", 1, now_unix_ms() - 1_000)
+        .await
+        .unwrap();
     let claims = Arc::new(super::super::TurnClaims::new(
         claims_store,
         Some("reaper".into()),
@@ -266,6 +278,19 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
         "nothing left to renew for an ended task"
     );
     assert!(leases.deadline(&tenant, &running).await.unwrap().is_some());
+    assert_eq!(
+        leases.deadline(&tenant, "left-behind").await.unwrap(),
+        None,
+        "swept"
+    );
+    assert!(
+        leases
+            .deadline(&tenant, "just-lapsed")
+            .await
+            .unwrap()
+            .is_some(),
+        "inside the margin: kept"
+    );
     let sent = sender.0.lock().unwrap().clone();
     let told = sent.iter().filter(|(_, e)| matches!(e, StreamResponse::StatusUpdate(e) if e.task_id.0 == orphan && e.status.state == TaskState::Failed)).count();
     assert_eq!(told, 1, "the orphan's webhook was told once: {sent:?}");
