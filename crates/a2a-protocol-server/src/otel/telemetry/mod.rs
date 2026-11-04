@@ -52,6 +52,7 @@ mod propagators;
 mod resource_env;
 mod runtime;
 mod selection;
+mod upstream;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};

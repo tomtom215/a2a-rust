@@ -15,10 +15,17 @@ one of them lacked). An exporter name it does not have, a protocol, a
 compression, a timeout or a Prometheus port it cannot read, an
 `OTEL_PROPAGATORS` name it does not have and a proxy kind it does not speak are
 each noted in `Telemetry::notices`, which `install_subscriber` prints at
-`WARN`, with what was used instead; the OpenTelemetry crates fall back on their
-own for others (an unrecognised `OTEL_TRACES_SAMPLER` becomes
-`parentbased_always_on`, with a warning printed before any subscriber exists, so
-it is usually not seen). What stays an error naming the variable, and `build`
+`WARN`, with what was used instead. Three variables are read by the
+OpenTelemetry crates themselves, which fall back on their own and warn before
+any subscriber exists, so that warning is not seen: `OTEL_TRACES_SAMPLER` (an
+unrecognised or unimplemented sampler becomes `parentbased_always_on`),
+`OTEL_TRACES_SAMPLER_ARG` (a ratio sampler without a number samples every
+trace) and `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` (anything but
+`cumulative`, `delta` or `lowmemory` is `cumulative`). Since 0.16.0
+`Telemetry` checks those values by the crates' own rules and notes each it
+falls back on, as it does `OTEL_METRIC_EXPORT_INTERVAL` when that is not a
+number (audit NEW-c-3); the sampler only when traces are built, the
+temporality only when metrics go over OTLP. What stays an error naming the variable, and `build`
 fails, is what it cannot do without: an OTLP/HTTP endpoint with no scheme or
 that is not a URL, a certificate or key file that cannot be read or is not PEM,
 a client certificate without its key, a header name that is not one, a

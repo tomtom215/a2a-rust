@@ -12,6 +12,7 @@ use opentelemetry_sdk::metrics::PeriodicReader;
 use super::super::console::Console;
 use super::super::propagators::Propagators;
 use super::super::selection::Selection;
+use super::super::upstream;
 use super::*;
 
 /// The metric reader's export interval, as `PeriodicReader` reads it.
@@ -99,6 +100,7 @@ impl TelemetryBuilder {
         } else {
             None
         };
+        self.note_upstream(&chosen);
         let (resource, resource_notices) = self.resource_and_notices();
         telemetry.notices.extend(resource_notices);
         let [traces, metrics, logs] = chosen;
@@ -128,6 +130,21 @@ impl TelemetryBuilder {
             opentelemetry::global::set_text_map_propagator(propagators.composite());
         }
         Ok(telemetry)
+    }
+
+    /// Notes on what the upstream crates read for themselves and would warn
+    /// about into no subscriber (audit NEW-c-3), for the signals that build
+    /// what reads each variable.
+    fn note_upstream(&self, chosen: &[Selection; 3]) {
+        if chosen[0].any() {
+            upstream::note_sampler(&*self.env, &self.notes);
+        }
+        if chosen[1].otlp {
+            upstream::note_temporality(&*self.env, &self.notes);
+        }
+        if chosen[1].otlp || chosen[1].console {
+            upstream::note_metric_interval(&*self.env, &self.notes);
+        }
     }
 
     fn tracer_provider(
