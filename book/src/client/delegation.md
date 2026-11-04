@@ -311,6 +311,14 @@ grant. One that does refuses a time to live under 1 second, or over its
 child. `detach()` stops the renewals too: a detached leased child stops
 once its lease lapses.
 
+Whose clock decides: `PostgresLeaseStore` takes a lease's deadline from the
+database's `now()` for the grant and for every renewal, and asks the database
+whether it has passed, so replicas whose wall clocks differ cannot shorten or
+stretch a lease. `InMemoryLeaseStore` serves one process and uses that process's
+clock. A `LeaseStore` of your own that keeps time itself overrides
+`LeaseStore::lapsed` and may ignore the `deadline_ms` and `now_ms` it is passed;
+one that does not is judged on the owning replica's clock, as before.
+
 ## A parent's budget: deadlines and meters
 
 A child can also outlive its parent's *deadline*, or spend more than the

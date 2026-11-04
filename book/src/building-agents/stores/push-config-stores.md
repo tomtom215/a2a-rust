@@ -49,6 +49,19 @@ pub trait PushConfigStore: Send + Sync + 'static {
 # }
 ```
 
+### The per-task cap with several replicas
+
+The handler enforces `max_push_configs_per_task` for every store, so a store
+does not count for itself. It reads the task's configs under a lock of its own,
+which is a lock in one process, stores the new config, then reads the task's
+configs again and withdraws the new one (a `delete`, then the same "maximum"
+`InvalidParams`) if the task is over the cap. Replicas sharing a store that
+create at once can therefore both be refused, and a retry succeeds; they cannot
+both be admitted past the cap. An update of an existing config is never
+withdrawn. A store that implements `delete` correctly and answers `list` from
+the same data as `set` gets this for free; one whose `list` lags its `set`
+(an eventually consistent read replica) can miss the overshoot.
+
 ## `InMemoryPushConfigStore`
 
 The default implementation stores configs in a `HashMap` with a secondary index for efficient per-task counting:

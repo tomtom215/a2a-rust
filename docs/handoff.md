@@ -19,12 +19,12 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-State on 2026-11-03. Each figure was read from a command or a file in the session that wrote it; the
+State on 2026-11-04. Each figure was read from a command or a file in the session that wrote it; the
 command is named so the next session re-runs it instead of copying the number.
 
-- **Where the code is.** `main` is `542250c8` (pull request #186, merged 2026-11-02; `git rev-parse
-  origin/main`). All 15 push-triggered workflow runs on it finished `success` (Actions API, 2026-11-03).
-  Nothing is tagged or published: crates.io, the GitHub releases and the tags end at 0.15.0; 0.15.1 was
+- **Where the code is.** `main` is `bcb7f971` (pull request #193, merged by the maintainer at 00:09 UTC on
+  2026-11-04; `git rev-parse origin/main`). All 15 push-triggered workflow runs on it finished `success`
+  (Actions API, 2026-11-04; the CI run is 1797). Nothing is tagged or published: crates.io, the GitHub releases and the tags end at 0.15.0; 0.15.1 was
   never released and its notes are 0.16.0's. The workspace reads 0.16.0. Pull requests #187 to #190 are
   Dependabot's and not part of this work.
 - **What is open.** The audit register (`docs/audits/2026-10-29/README.md`) has 283 rows and none is
@@ -51,27 +51,66 @@ command is named so the next session re-runs it instead of copying the number.
   2. The other 26 wire structs: **#192**, merged on 2026-11-03 (merge commit `045146ec`), after every job
      on its head `bb82bce7` was green; one job (`example-surface`, see First, next 6) hit its 20-minute
      limit while compiling and passed on its single re-run.
-  3. The client crate: branch `claude/inspiring-mccarthy-rgpntj-client`, rebased onto `main` at `67a7413f`
-     with the three handoff commits that were waiting on #191; the pull request from it is the one that
-     carries this note. Contents: delegation hand-off on shutdown
-     (`wait_or_hand_off`, `Outcome::HandedOff`), `DelegationOptions` with `start_with`/`reattach_with`,
-     the stream health rule and jitter, bounded journal writes (M); a retry budget, `max_elapsed`, a cap
-     on calls in flight, the `Retry-After` fail-fast rule and its HTTP-date form (O, audit D-10);
-     `follow_task` resume (D-11); opt-in gRPC HTTP/2 keep-alive (B-10, D-12 in part). Local evidence, on the
-     tree before the rebase (it differed from the rebased one only by #192's `scripts/codemod/`):
-     `cargo test -p a2a-protocol-client --all-features` exit 0 (1303 passed, 0 failed), clippy under four
-     feature sets, 40 of 40 script and clippy gates (1 to 9, 11 to 27, 30 to 43) exit 0; not run: the book
-     build, the two pip-hash gates, gates 44 to 101. `cargo mutants --in-diff` on the 156 mutants of the
-     client diff (restricted to the test binaries that touch the code, 3 h): 102 caught, 50 unviable, 4
-     missed: three in `TaskFollow` (killed by four new unit tests, each mutant applied by hand and the
-     intended test failing) and one equivalent mutant in `RetryBudget`'s rate clamp (refactored away). A
-     second run on `follow.rs` and `budget.rs` at the final head: 39 mutants, 33 caught, 6 unviable, 0
-     missed. The scratchpad logs (`mut-pr3-client*.log`) do not survive the container. **Not in it,
-     deliberately:** `HttpPool` (ADR 0032), HTTP/2 PING and a connection lifetime for the HTTP bindings
-     (D-12), B-11, and the live proof of M (kill -9 a supervisor with a PostgreSQL journal and 50
-     children). Those are the next client pull request.
-  4. The server crate (groups B, C, L, B2's E-F12, D-05, E-F18, E-F25, D-18, K's remainder) and
-  5. observability, deploy and docs (the rest of I, group J with `promtool` in CI, G, H, N): not started.
+  3. The client crate: **#193**, merged by the maintainer on 2026-11-04 (merge commit `bcb7f971`) after every
+     job on its head `05b23923` was green. Delegation hand-off on shutdown (`wait_or_hand_off`,
+     `Outcome::HandedOff`), `DelegationOptions`, the stream health rule and jitter, bounded journal writes
+     (M); a retry budget, `max_elapsed`, a cap on calls in flight, the `Retry-After` fail-fast rule (O,
+     D-10); `follow_task` resume (D-11); opt-in gRPC HTTP/2 keep-alive (B-10, D-12 in part). **Not in it,
+     deliberately, and so the next client pull request:** `HttpPool` (ADR 0032), HTTP/2 PING and a
+     connection lifetime for the HTTP bindings (D-12), B-11, and the live proof of M (kill -9 a supervisor
+     with a PostgreSQL journal and 50 children).
+  4. The server crate, first batch (L, fleet correctness): branch `claude/inspiring-mccarthy-rgpntj-server`,
+     rebased onto `main` at `bcb7f971`; **#194**. Rows: E-F21 (the three PostgreSQL batch deletes take `FOR UPDATE SKIP
+     LOCKED`; the docs said racing sweeps "delete disjoint sets"), E-F16 (the rate-limit window and sweep
+     use the database clock), E-F17 (the lease deadline is written and judged on one clock; additive
+     `LeaseStore::lapsed`), E-F26 (a warning when a SQLite file is on NFS, SMB or FUSE), E-F14 (the
+     per-task push-config cap is re-counted after the store, so it holds across replicas), E-F19 (a parked
+     turn ends its audit run entry), E-F18 (replicas queue for an audit chain under an advisory lock;
+     additive `AuditStore::append_next` and `Sealer`), and the E-F12 documentation (`max_concurrent_tasks`
+     is per replica). Plus `scripts/hand_mutate.py` and the `example-surface` timeout raised to 30 minutes.
+     Local evidence, on head `10289cb9` unless said: the 101 gates of the `ci.yml` list at that head,
+     numbered as `preflight.sh --list` printed them, exit 0 for gates 1 to 83 (clippy under every feature
+     set among them; the workspace nextest with all features ran 6512 tests, all passed, 189 skipped; the
+     PostgreSQL gates ran 74 store tests, 7 multi-replica tests, 13 test targets and 11 library modules
+     through `run_postgres_suites.py`, and the rate-limit step 6) after three fixes for failures this
+     change caused (the spec ledger's line citations, the panic-path scan not seeing a relocated test
+     module, `check_pg_retry.py`'s exemption naming a moved file); gate 83 ran with a fresh
+     `CARGO_TARGET_DIR`. Examples, by that list's numbers: 84 (`agent-team`), 95 (`incident-response ...
+     harden`, `INCIDENT_REQUIRE_ALL=1`: 16 passed, 0 not run) and 99 (`resilient-agent`,
+     `RESILIENT_REQUIRE_ALL=1`: 8 passed, 0 not run, among them the shared rate-limit counter across two
+     replicas) exit 0, and so do 94 and 98, which ran by an indexing slip (the list shifted by one when
+     `ci.yml` gained a step while the runner was between gates; the TSV records each command, so read it
+     and not the index). Not run: 85 to 93, 96, 97, 100 and 101 (the slimrpc binding, `echo-agent`,
+     `genai`, `rig`, `swarm`, the Go interop), which are CI's. The gates of the scripts and the workflow
+     list (1 to 42) were re-run on the final head, after the last commit; the pull request records
+     that result. **71 hand mutants, 0 missed**, by `hand_mutate.py` or its throwaway form, each
+     applied to the real code with the intended test failing: E-F21 3, E-F16 4, E-F17 7, E-F26 35 (two
+     of them loop forever and were ended by killing the test process, which CI's nextest profile records
+     as caught), E-F14 8, E-F19 6, E-F18 8. Three of them were checked against the behaviour before the
+     change and failed it as they should: E-F16's database window, E-F17's override under `scripts/
+     adversarial/with_clock_skew.sh` (libfaketime, process clock one day ahead: the test passes with the
+     override and fails without it), and E-F18's lock (with it removed the six-replica test failed in 2
+     of 3 runs with "lost the race ... 8 times", so that test alone is probabilistic against the old
+     protocol; the serialisation test fails every time). `cargo mutants --list` was read for the audit
+     diff. **CI on head `980918eb` (run 1799, read from the Actions API):** the sharded mutation run
+     (run 457, labelled) succeeded, so CI found no survivor; 19 of the 22 jobs of the CI workflow
+     succeeded, one was skipped and two failed: `Test (stable, ubuntu-latest)` lost its runner 20 seconds
+     into its ninth step (no test failed in its log; infrastructure), and `Test (stable,
+     windows-latest)` failed `a_cut_subscription_is_reopened_and_the_follow_goes_on_to_the_end`, a test
+     from #193 (not this change), which opened a task's gate when the proxy had accepted a TCP connection,
+     not when the server had registered the subscription. Fixed by `e1e9d48b`: the proxy can lag new
+     connections, the old body over a 150 ms lag fails every run with the CI message, and the fixed test
+     passed 40 runs of 5 tests. **Not in it:** E-F25, D-18, E-F22, the F13
+     documentation, D-05, E-F23 and E-F24 (the second server pull request, below), E-F15 and F14
+     (deferred as recorded), a count of `max_concurrent_tasks` across replicas and a build warning for
+     it (E-F12 is documentation only), E-F18's throughput at several replicas (report X17).
+  5. The server crate, second batch (E-F25(a) poll back-off, D-18, E-F22, the F13 documentation, D-05,
+     E-F23 and E-F24): branch `claude/inspiring-mccarthy-rgpntj-server2`, local and not pushed, on #194's
+     head `980918eb`; it holds E-F22, D-18, the F13 documentation, E-F25(a), E-F24 and E-F23, each with its
+     tests and hand mutants (all caught); D-05's dead-webhook policy is the one row left in it. It has no
+     pull request: the workflows run only on pull requests to `main`, so it waits for #194's merge and is
+     rebased. Observability, deploy and docs (the rest of I, group J with `promtool` in CI, G, H, N): not
+     started.
   After the tag: ADR 0035 and ADR 0036, each its own pull request. The workflows run only on pull
   requests to `main`, so a pull request that needs an earlier one waits for its merge and is rebased
   (`git rebase --onto origin/main <the earlier head>`), as the client branch was after #192.
@@ -85,9 +124,13 @@ command is named so the next session re-runs it instead of copying the number.
 
 ### First, next
 
-1. Read the CI of the client pull request before building on it; fix only what a failing check needs, in
+1. Read the CI of #194 on its newest head before building on it; fix only what a failing check needs, in
    one push (`ci-failure-triage`). Do not merge or tag: the maintainer's go is required.
-2. Then the server pull request, with `--list` and hand-tests, not a full local run, branched from `main`.
+2. Then the second server pull request (E-F25(a), D-18, E-F22, the F13 documentation, D-05, E-F23 and
+   E-F24), branched from `main` once the first is merged, or from its head and rebased after. For the
+   server crate use `scripts/hand_mutate.py` (hand-written mutants, each timed out if it hangs) and
+   `cargo mutants --list`; do not run `cargo mutants --in-place` with the whole package: its baseline
+   builds every test target and filled the disk twice.
 3. Per pull request, before its first push: the diff's new and changed functions and every new `Debug`
    impl; `cargo mutants --in-diff` on types and client; the kill-proof protocol for each test (it passes
    on the real code; the exact mutant applied by hand makes it fail; restore; re-run); the script gates
@@ -95,7 +138,10 @@ command is named so the next session re-runs it instead of copying the number.
    touched, and `cargo doc` of each crate on its own default features (gate 82): a doc link to an item
    behind a feature (`crate::transport::grpc::...`) resolves under `--all-features` and under a
    `--workspace` build, where another crate switches the feature on, and fails there; #193 hit it. The
-   heavy matrix gates are CI's. Run `cargo test -p a2a-protocol-sdk --all-features` too: `book_defaults` is
+   heavy matrix gates are CI's. After adding or moving a module that holds PostgreSQL statements or
+   tests, run `scripts/check_pg_retry.py`, `scripts/run_postgres_suites.py --check`,
+   `scripts/check_panic_paths.py` and `scripts/check_spec_ledger.py --fix-lines`: this batch tripped three
+   of them, each because a file moved. Run `cargo test -p a2a-protocol-sdk --all-features` too: `book_defaults` is
    compiled only with `grpc` and `grpc-tls`, checks every public field of `RetryPolicy` and
    `GrpcTransportConfig` against `book/src/reference/configuration.md`, and ran 0 tests in a client-only
    run; #193 added four fields without rows. Run the local workspace tests with at least 15 GB of free disk: the
@@ -105,11 +151,7 @@ command is named so the next session re-runs it instead of copying the number.
 5. `cargo semver-checks` passes today only because the version already reads 0.16.0 (a 0.x minor bump
    skips the checks). To list the breaks against the last release, run it with `--release-type patch
    --baseline-rev v0.15.0 --all-features`: not run yet.
-6. `ci.yml`'s `example-surface` job ("all methods x all bindings") has `timeout-minutes: 20` and ran 18.9
-   minutes on `main` at `542250c8` (Actions API, run 1786); on #192 it hit 20.4 and was cancelled while
-   compiling `rig-agent`, before any test, and was re-run once. Raise its limit to 30 in the next push that
-   touches `ci.yml` anyway; a push of its own restarts every workflow.
-7. Unrelated to these pull requests: `scripts/live/replica` fails `-D warnings` on `main`
+6. Unrelated to these pull requests: `scripts/live/replica` fails `-D warnings` on `main`
    (`unused ServeReport`, `src/main.rs:128`) and `scripts/live/replica/v015` cannot load its dependency
    manifest. The `/st2.out` file the maintainer asked to have deleted does not exist in this container.
 

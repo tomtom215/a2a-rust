@@ -53,7 +53,7 @@ EXCLUDED = {
         "opens its own pool with sqlx's defaults",
     "crates/a2a-protocol-server/src/push/tenant_postgres_config_store/caller_keys.rs":
         "runs on its parent push store's pool",
-    "crates/a2a-protocol-server/src/rate_limit/shared.rs":
+    "crates/a2a-protocol-server/src/rate_limit/shared/postgres.rs":
         "opens its own pool with sqlx's defaults",
 }
 

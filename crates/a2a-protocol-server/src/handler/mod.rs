@@ -38,6 +38,8 @@ mod locks;
 mod messaging;
 mod push_config;
 mod push_config_page;
+#[cfg(test)]
+mod push_config_race_tests;
 mod shutdown;
 mod tenant_resolution;
 mod undeclared_binding;

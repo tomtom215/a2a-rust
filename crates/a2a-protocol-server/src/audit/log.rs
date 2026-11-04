@@ -14,7 +14,7 @@ use a2a_protocol_types::audit::{
 };
 use a2a_protocol_types::error::{A2aError, A2aResult};
 
-use super::store::{Appended, AuditStore};
+use super::store::{AuditStore, BoxFuture};
 
 /// How many times an append re-reads the head after losing a race for a
 /// `seq` to another writer before it gives up. Losing more than a handful in
@@ -229,35 +229,58 @@ impl AuditLog {
     /// [`append`](Self::append), for a caller already holding the chain's
     /// lock.
     pub(super) async fn append_locked(&self, record: AuditRecord) -> A2aResult<AuditRecord> {
+        let seal = |head, store_ms| self.seal_next(&record, head, store_ms);
         for _ in 0..MAX_APPEND_ATTEMPTS {
-            let head = self.store.head(&record.chain).await?;
-            let (seq, prev) = match head {
-                Some((seq, hash)) => (seq + 1, Some(hash)),
-                None => match self.latest_anchor(&record.chain).await? {
-                    Some(anchor) => (anchor.seq + 1, Some(anchor.hash)),
-                    None => (1, None),
-                },
-            };
-            // Each attempt starts from the record as given: protection binds
-            // its sealed values to `seq`, which a lost race changes.
-            let mut record = record.clone();
-            #[cfg(feature = "encryption")]
-            if let Some(privacy) = &self.privacy {
-                privacy.protect(&*self.store, &mut record, seq).await?;
-            }
-            record.seal(seq, prev, a2a_protocol_types::utc_now_iso8601())?;
-            if self.store.append(&record).await? == Appended::Stored {
-                if self.checkpoint_every > 0 && seq % self.checkpoint_every == 0 {
-                    self.sign_checkpoint("checkpoint", &record.chain, seq, &record.hash)
+            if let Some(sealed) = self.store.append_next(&record.chain, &seal).await? {
+                if self.checkpoint_every > 0 && sealed.seq % self.checkpoint_every == 0 {
+                    self.sign_checkpoint("checkpoint", &sealed.chain, sealed.seq, &sealed.hash)
                         .await?;
                 }
-                return Ok(record);
+                return Ok(sealed);
             }
         }
         Err(A2aError::internal(format!(
             "audit append lost the race for chain {:?} {MAX_APPEND_ATTEMPTS} times",
             record.chain
         )))
+    }
+
+    /// `template` sealed onto the chain after `head`: its position, the
+    /// previous record's hash, and the time, which is the store's clock
+    /// (`store_ms`, Unix milliseconds) when it gave one and this process's
+    /// otherwise.
+    ///
+    /// An empty chain continues from its latest anchor when retention left one
+    /// and starts at 1 otherwise.
+    fn seal_next<'a>(
+        &'a self,
+        template: &'a AuditRecord,
+        head: Option<(u64, String)>,
+        store_ms: Option<i64>,
+    ) -> BoxFuture<'a, A2aResult<AuditRecord>> {
+        Box::pin(async move {
+            let (seq, prev) = match head {
+                Some((seq, hash)) => (seq + 1, Some(hash)),
+                None => match self.latest_anchor(&template.chain).await? {
+                    Some(anchor) => (anchor.seq + 1, Some(anchor.hash)),
+                    None => (1, None),
+                },
+            };
+            // Each attempt starts from the record as given: protection binds
+            // its sealed values to `seq`, which a lost race changes.
+            #[cfg_attr(not(feature = "encryption"), allow(unused_mut))]
+            let mut record = template.clone();
+            #[cfg(feature = "encryption")]
+            if let Some(privacy) = &self.privacy {
+                privacy.protect(&*self.store, &mut record, seq).await?;
+            }
+            let time = store_ms.map_or_else(
+                a2a_protocol_types::utc_now_iso8601,
+                a2a_protocol_types::unix_millis_to_iso8601,
+            );
+            record.seal(seq, prev, time)?;
+            Ok(record)
+        })
     }
 
     async fn latest_anchor(&self, chain: &str) -> A2aResult<Option<Checkpoint>> {

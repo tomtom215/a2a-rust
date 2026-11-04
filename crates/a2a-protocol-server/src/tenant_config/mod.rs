@@ -121,6 +121,19 @@ pub struct TenantLimits {
     /// queueing converts a declared bound into unbounded latency and unbounded
     /// memory.
     ///
+    /// **Per replica.** The semaphore lives in the handler, which is one
+    /// process: a fleet of `N` replicas behind a load balancer admits up to
+    /// `N` times this many turns for the tenant at once, and one replica can
+    /// refuse a tenant another has room for. The limit protects each replica,
+    /// not the fleet and not a downstream quota (a model's rate limit, say).
+    /// Where it must hold for the fleet, set it to the fleet limit divided by
+    /// the replica count and re-set it when the autoscaler changes that count,
+    /// or enforce it where every request passes, in the proxy or gateway in
+    /// front. A count taken across replicas is not built (audit E-F12). A send
+    /// holds its slot while it waits for another replica's turn claim (up to
+    /// `executor_drain_timeout`), so a tenant's slots can be taken by sends
+    /// that are waiting and not running.
+    ///
     /// [`ServerError::Overloaded`]: crate::error::ServerError::Overloaded
     pub max_concurrent_tasks: Option<usize>,
 

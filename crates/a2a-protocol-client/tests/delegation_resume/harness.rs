@@ -47,6 +47,28 @@ agent_executor!(Worker, |ctx, queue| async {
             () = released.notified() => emit.status(TaskState::Completed).await,
             () = ctx.cancellation_token.cancelled() => Ok(()),
         }
+    } else if text.starts_with("beat:") {
+        // Works until the test opens its gate, with a heartbeat: an artifact
+        // chunk every 25 ms. A subscriber the server has registered sees the
+        // chunks; one whose request has not yet arrived sees none, which is
+        // what lets a test tell the two apart.
+        emit.status(TaskState::Working).await?;
+        let released = gate(&text);
+        loop {
+            tokio::select! {
+                () = released.notified() => return emit.status(TaskState::Completed).await,
+                () = ctx.cancellation_token.cancelled() => return Ok(()),
+                () = tokio::time::sleep(Duration::from_millis(25)) => {
+                    emit.artifact(
+                        "beat",
+                        vec![Part::text("beat")],
+                        Some(true),
+                        None,
+                    )
+                    .await?;
+                }
+            }
+        }
     } else if text.starts_with("tick:") {
         // A stream of events: sixteen artifact chunks 100 ms apart, then done.
         emit.status(TaskState::Working).await?;
@@ -104,6 +126,8 @@ pub struct Proxy {
     generation: watch::Sender<u64>,
     blocked: Arc<AtomicBool>,
     accepted: Arc<AtomicUsize>,
+    /// Milliseconds a new connection waits before it is forwarded.
+    lag_ms: Arc<AtomicUsize>,
 }
 
 impl Proxy {
@@ -113,10 +137,12 @@ impl Proxy {
         let (generation, _rx) = watch::channel(0_u64);
         let blocked = Arc::new(AtomicBool::new(false));
         let accepted = Arc::new(AtomicUsize::new(0));
-        let (g, b, a) = (
+        let lag_ms = Arc::new(AtomicUsize::new(0));
+        let (g, b, a, l) = (
             generation.clone(),
             Arc::clone(&blocked),
             Arc::clone(&accepted),
+            Arc::clone(&lag_ms),
         );
         tokio::spawn(async move {
             while let Ok((mut inbound, _)) = listener.accept().await {
@@ -126,7 +152,9 @@ impl Proxy {
                     continue;
                 }
                 let mut cut = g.subscribe();
+                let lag = Duration::from_millis(l.load(Ordering::SeqCst) as u64);
                 tokio::spawn(async move {
+                    tokio::time::sleep(lag).await;
                     let Ok(mut outbound) = TcpStream::connect(upstream).await else {
                         return;
                     };
@@ -142,7 +170,20 @@ impl Proxy {
             generation,
             blocked,
             accepted,
+            lag_ms,
         }
+    }
+
+    /// Holds each connection accepted from now on for `lag` before it is
+    /// forwarded: a slow link, on which the TCP connection is accepted well
+    /// before the request on it reaches the server.
+    // Only `follow_task_resume` uses it; the other test target shares this file.
+    #[allow(dead_code)]
+    pub fn lag(&self, lag: Duration) {
+        self.lag_ms.store(
+            usize::try_from(lag.as_millis()).unwrap_or(usize::MAX),
+            Ordering::SeqCst,
+        );
     }
 
     /// Severs every open connection; new ones are served unless blocked.
@@ -176,6 +217,13 @@ pub fn job(text: &str) -> MessageSendParams {
 
 pub fn key() -> String {
     format!("hold:{}", uuid::Uuid::new_v4())
+}
+
+/// A key for a task that holds with a heartbeat (`beat:`).
+// Only `follow_task_resume` uses it; the other test target shares this file.
+#[allow(dead_code)]
+pub fn beating_key() -> String {
+    format!("beat:{}", uuid::Uuid::new_v4())
 }
 
 pub async fn state_of(client: &A2aClient, id: &str) -> TaskState {

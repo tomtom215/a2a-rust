@@ -80,7 +80,7 @@ assert_eq!(config.get("unknown").max_concurrent_tasks, Some(100));
 
 | Limit | Enforced | On exceeding |
 |---|---|---|
-| `max_concurrent_tasks` | per-tenant semaphore; the permit is taken **before any side effect** | `ServerError::Overloaded` |
+| `max_concurrent_tasks` | per-tenant semaphore **in each replica**; the permit is taken **before any side effect** | `ServerError::Overloaded` |
 | `executor_timeout` | resolved before the executor is spawned | the task fails, as with the handler-wide timeout |
 | `event_queue_capacity` | at queue creation | the stream buffer is that deep |
 | `rate_limit_rps` | `RateLimitInterceptor` — **opt-in** | the request is refused |
@@ -111,6 +111,22 @@ A tenant at `max_concurrent_tasks` is **refused**. Queueing would convert a
 declared bound into unbounded latency and unbounded memory — the limit would
 stop meaning anything under exactly the load it exists for. If you want
 queueing, build it in front of the agent where you can see its depth.
+
+### `max_concurrent_tasks` is per replica
+
+The semaphore is in the handler, so it is one process's. Behind a load balancer,
+`N` replicas admit up to `N` times the limit for a tenant, and one replica can
+refuse a tenant while another has room. The limit protects each replica; it
+does not protect the fleet or a downstream quota such as a model's rate limit.
+Either set it to the fleet limit divided by the replica count (and set it again
+when the autoscaler changes the count), or enforce the fleet limit in the proxy
+or gateway in front, where every request passes. Counting across replicas, in
+the database next to the turn claims, is not built.
+
+A send takes its slot before it waits for the task's turn claim, which another
+replica may hold for up to `executor_drain_timeout` (5 s by default), so a tenant
+whose sends wait on claims can have its slots held by sends that are waiting and
+not yet running.
 
 ### Limits bound use; they do not reserve capacity
 

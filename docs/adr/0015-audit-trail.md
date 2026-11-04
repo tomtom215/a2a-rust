@@ -92,6 +92,29 @@ is what lets replicas sharing a PostgreSQL store interleave on one chain
 instead of forking it (the loser of a race re-reads the head and re-seals,
 up to eight times).
 
+**Amendment, 2026-11-04 (audit E-F18).** That protocol is correct and does not
+scale with the writers: each append is at least two round trips, every success
+invalidates the other replicas' reads, and the same few lose again and again.
+The estimate for N saturated writers, not a measurement, is a request losing
+eight rounds with probability about ((N-1)/N)^8: 0.4% at N=2, 3.9% at N=3, 17%
+at N=5, and under `require_record(true)` such a request is refused. Chosen with
+the maintainer's recommendation (a): `AuditStore::append_next`, a defaulted
+method, reads the head, has `AuditLog` seal the record (`Sealer`) and stores it,
+and `PostgresAuditStore` overrides it to do all three in one transaction under
+`pg_advisory_xact_lock(hashtextextended('a2a.audit:' || chain, 0))`, so writers
+queue for a chain instead of racing for a position. Sealing stays in `AuditLog`
+(the sentence above still holds), the primary key still turns away a writer
+that does not take the lock, and the retry loop stays for that case and for
+other stores. The override also gives the sealer the database's clock, so one
+chain's record times come from one clock. Rejected: per-replica sub-chains with
+cross-signed checkpoints (b), which scales but changes the chain model, the
+export and the verification; and jittered back-off (c), a mitigation only.
+Cost: one connection held for the length of an append, and a second while the
+record is sealed when sealing reads the store; throughput on a chain is bounded
+by one transaction per append. The thresholds are not yet measured (report
+X17); this is decided by reading, and a measurement can change the numbers but
+not the mechanism.
+
 ### Failure
 
 By default a record that cannot be written is logged, counted

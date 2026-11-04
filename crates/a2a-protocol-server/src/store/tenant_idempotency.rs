@@ -94,11 +94,14 @@ pub(super) const SQLITE_EXPIRE: &str = "DELETE FROM tenant_idempotency_keys WHER
      )";
 
 /// The `PostgreSQL` half of [`SQLITE_EXPIRE`], whose doc comment applies.
+/// `FOR UPDATE SKIP LOCKED` makes a sweep on another replica take other rows
+/// rather than wait for the ones this one is deleting and find them gone.
 #[cfg(feature = "postgres")]
 pub(super) const PG_EXPIRE: &str = "DELETE FROM tenant_idempotency_keys WHERE ctid IN ( \
          SELECT ctid FROM tenant_idempotency_keys \
           WHERE created_at < now() - $1::interval \
           LIMIT $2 \
+            FOR UPDATE SKIP LOCKED \
      )";
 
 /// Turns the row a losing claim read into its outcome.

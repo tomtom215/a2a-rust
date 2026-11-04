@@ -98,8 +98,15 @@ operation (spec §3.3.2), and otherwise the A2A error's own label
 
 Stores: `InMemoryAuditStore` (tests, or a deployment that ships records
 elsewhere), `SqliteAuditStore` with `sqlite`, `PostgresAuditStore` with
-`postgres`. Replicas can share one PostgreSQL store; they interleave on a
-tenant's chain without forking it.
+`postgres`. Replicas can share one PostgreSQL store, and they append to a
+tenant's chain one at a time: each append takes a per-chain advisory lock in
+the database, reads the head and stores the next record in one transaction, so
+replicas queue for a chain and none loses a position and retries. That holds
+one connection for the length of an append (and a second while the record is
+sealed, when sealing reads the store), so give the store's pool at least two.
+Records are timed by the database's clock, so a chain's times do not run
+backwards when its writers' clocks differ. A store of your own keeps the
+optimistic protocol unless it overrides `AuditStore::append_next`.
 
 ### Or as one profile
 
@@ -403,7 +410,15 @@ names no caller; the `call` record after it does.
 - Record times come from the server's clock, not a trusted time source.
 - A run's link from its events to its caller is kept in memory; a restart
   while a task runs leaves that task's later events without a `runSeq`, and so
-  does a run forgotten because more than 65,536 runs were tracked at once.
-- Appends to one tenant's chain are serialised. ADR 0015 gives the measured
-  cost: about 9 µs per record in memory and 270 µs on a SQLite file on the
-  machine measured.
+  does a run forgotten because more than 65,536 runs were tracked at once. The
+  link lasts for the turn: it is dropped when the task finishes or parks in
+  `input-required` or `auth-required`, so a record this replica writes for the
+  task between turns (a reaper's `failed`, a supersede record, the `canceled`
+  event of a cancel on a parked task) carries no `runSeq`. It would otherwise
+  name the caller of a turn that is over, and on a fleet, of a turn that is not
+  the task's last. The event that ends a turn is still attributed to it.
+- Appends to one tenant's chain are serialised, across replicas too on
+  PostgreSQL, so a chain's throughput is bounded by one transaction per append.
+  ADR 0015 gives the measured cost: about 9 µs per record in memory and 270 µs
+  on a SQLite file on the machine measured. Throughput at several replicas on
+  PostgreSQL is not yet measured.

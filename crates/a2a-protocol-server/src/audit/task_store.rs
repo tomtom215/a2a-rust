@@ -51,7 +51,13 @@ impl AuditedTaskStore {
         r.task_id = Some(task_id.0.clone());
         r.event_seq = Some(seq);
         r.run_seq = self.log.run_of(&chain, &task_id.0);
-        let terminal = match event {
+        // Whether this event ends the turn on this replica: the task is
+        // finished, or parked waiting for input or authorisation. The run's
+        // entry in the registry lives only for the turn (audit E-F19). A
+        // parked task's next turn may run on any replica, and an entry kept
+        // here would name this turn's caller on whatever this replica writes
+        // for the task meanwhile (a reaper's `failed`, a supersede record).
+        let turn_ended = match event {
             StreamResponse::StatusUpdate(u) => {
                 r.context_id = Some(u.context_id.0.clone());
                 r.state = serde_json::to_value(u.status.state)
@@ -60,7 +66,7 @@ impl AuditedTaskStore {
                 // A message on the status, the agent's own or one the queue
                 // carried there from a mid-task `Message` (spec §3.1.2).
                 r.message_id = u.status.message.as_ref().map(|m| m.id.0.clone());
-                u.status.state.is_terminal()
+                u.status.state.is_terminal() || u.status.state.is_interrupted()
             }
             StreamResponse::ArtifactUpdate(u) => {
                 r.context_id = Some(u.context_id.0.clone());
@@ -91,7 +97,7 @@ impl AuditedTaskStore {
             }
         }
         let _ = append_or_report(&self.log, &*self.metrics, r).await;
-        if terminal {
+        if turn_ended {
             self.log.end_run(&chain, &task_id.0);
         }
     }

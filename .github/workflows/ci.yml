@@ -309,6 +309,12 @@ jobs:
       - name: Client and server outbound-HTTP copies agree
         run: python3 scripts/check_net_copies.py --self-test && python3 scripts/check_net_copies.py
 
+      # The local stand-in for `cargo mutants` on the server crate, where the
+      # sharded CI run is the arbiter: it applies hand-written mutants one at a
+      # time and kills one that hangs. Its self-test proves the five outcomes.
+      - name: Hand-mutation harness reports each outcome
+        run: python3 -I scripts/hand_mutate.py --self-test
+
       # The examples served their agents with a hand-written hyper accept loop
       # fifteen times (audit G-05): no connection cap, no drain, and a `continue`
       # that spins a core on a persistent accept error. A reader copied it. The
@@ -818,6 +824,10 @@ jobs:
           # report tee's status and a failing suite would go green. That is how
           # the official-TCK gate came to print UNDER-MEASURED and exit 0.
           #
+          # The tests are `rate_limit::shared::postgres::tests`; the filter below
+          # is their parent module, because the probe the gate-proving script
+          # injects is appended to that module's file and must be selected too.
+          #
           # No script filename in this comment on purpose: `injection_for` in
           # scripts/prove_gates_fail.sh routes a gate to its injection by
           # substring over the whole block, comments included, so naming a
@@ -1265,7 +1275,10 @@ jobs:
   example-surface:
     name: Example surface coverage (all methods x all bindings)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 18.9 minutes on `main` at 542250c8 (run 1786) and 20.4 on #192, where it
+    # was cancelled while compiling, before any test, and passed on one re-run:
+    # the compile alone is within a minute of the old limit of 20.
+    timeout-minutes: 30
     # Act 5's PostgreSQL check is the one capability the example cannot start a
     # server for. Without this service it reports `[NOT RUN]` and the job still
     # passes — honest, but a permanent gap. The service turns it into a check

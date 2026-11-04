@@ -34,6 +34,14 @@ pub fn now_unix_ms() -> i64 {
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
 }
 
+/// Whether a lease ending at `deadline_ms` has lapsed at `now_ms`: it holds
+/// through its deadline's millisecond, so a renewal that lands on it is not
+/// too late.
+#[must_use]
+pub const fn deadline_lapsed(deadline_ms: i64, now_ms: i64) -> bool {
+    now_ms > deadline_ms
+}
+
 /// Where leases are kept: a time to live and a deadline per task, keyed by
 /// tenant (`""` without one) and task id.
 ///
@@ -46,9 +54,25 @@ pub fn now_unix_ms() -> i64 {
 ///   creates one.
 /// - [`deadline`](Self::deadline) is the current deadline, `None` without a
 ///   lease.
+/// - [`lapsed`](Self::lapsed) says whether the deadline has passed, `None`
+///   without a lease. The handler asks this, not `deadline`, when it decides
+///   to stop a task.
 /// - [`release`](Self::release) deletes the lease.
 /// - An error is an error: a store that cannot be read must not answer with
 ///   a deadline in the past, which would stop a child whose parent is alive.
+///
+/// # Whose clock
+///
+/// `deadline_ms` and `now_ms` are read from the clock of the replica that
+/// calls. That is exact for one process and approximate for several: a
+/// renewal from a replica whose clock is behind the granting one shortens the
+/// lease by the difference, and a difference as large as the lease stops the
+/// child. A store whose backing system keeps a clock every replica shares may
+/// ignore both arguments and use that clock for the grant, the renewal and
+/// [`lapsed`](Self::lapsed), so one clock writes the deadline and judges it:
+/// `PostgresLeaseStore` (the `postgres` feature) does. Such a store's
+/// [`deadline`](Self::deadline) is a time on its clock, which a caller must
+/// not compare with its own; that is what `lapsed` is for.
 pub trait LeaseStore: Send + Sync + 'static {
     /// Whether this store keeps its state in this process alone.
     ///
@@ -97,6 +121,27 @@ pub trait LeaseStore: Send + Sync + 'static {
         tenant: &'a str,
         task: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<i64>>> + Send + 'a>>;
+
+    /// Whether `task`'s lease has lapsed: `None` without a lease.
+    ///
+    /// The default compares [`deadline`](Self::deadline) with this process's
+    /// clock ([`now_unix_ms`]), which is right for a store that takes its
+    /// times from its callers. A store that keeps time itself overrides it,
+    /// so that the clock that wrote the deadline is the one that judges it.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be read.
+    fn lapsed<'a>(
+        &'a self,
+        tenant: &'a str,
+        task: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<bool>>> + Send + 'a>> {
+        Box::pin(async move {
+            let deadline = self.deadline(tenant, task).await?;
+            Ok(deadline.map(|deadline_ms| deadline_lapsed(deadline_ms, now_unix_ms())))
+        })
+    }
 
     /// Deletes `task`'s lease.
     ///

@@ -1385,6 +1385,149 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   name a request chooses is not unbounded either. Tests:
   `audit/chain_lock_tests.rs`, `tests/caller_isolation.rs`.
 
+- **Racing retention and key-expiry sweeps no longer end early or wait on each
+  other** (server; audit E-F21). The three PostgreSQL batch deletes (the task
+  sweep, the key sweep, the tenant key sweep) picked rows with a bare
+  `SELECT ctid ... LIMIT n`. Two sweeps starting together picked the same
+  rows; the second `DELETE` waited for the first, found them gone, deleted
+  nothing, and read as "no more work" while eligible rows remained. Each
+  subquery now ends in `FOR UPDATE SKIP LOCKED`, so a sweep takes other rows,
+  and a sweep that finds only rows another holds deletes nothing and reports
+  `complete`, because the holder is deleting them. The rustdoc and the
+  sustained-load page claimed racing sweeps "delete disjoint sets"; they now
+  say how and why that holds, and the SQLite stores' wording gives their own
+  reason (one write statement at a time, on local storage). Tests:
+  `postgres_sweep_skips_rows_another_sweep_holds` and its tenant twin in
+  `tests/postgres_store_tests.rs`.
+
+- **The PostgreSQL rate-limit counter numbers windows by the database's
+  clock** (server; audit E-F16). It counted under the window number each
+  replica computed from its own clock and swept rows older than its own
+  current window, so replicas whose clocks differed counted in different rows
+  near every boundary and a replica running ahead could delete a window
+  another was still counting in. `PostgresRateLimitCounter` now computes
+  `floor(epoch / window_secs)` in SQL for the count and the sweep, and the
+  sweep keeps the previous window. `RateLimitCounter::count`'s `window`
+  argument is unchanged and documented as the interceptor's own number, which
+  an implementation with a shared clock may ignore; this one does. A
+  `RateLimitCounter` of your own is unaffected. The `Retry-After` on a refusal
+  still comes from the replica's clock.
+
+- **The PostgreSQL lease store keeps one clock for a lease's deadline and its
+  judgment** (server; audit E-F17). A grant wrote `now + ttl` on the granting
+  replica's clock, a renewal wrote it on the renewing replica's, and the
+  watcher judged it on the owner's, so a renewal from a replica behind the
+  owner shortened the lease by the difference and a difference as large as
+  the lease stopped the child. `PostgresLeaseStore` now takes the deadline
+  from the database's `now()` for grant and renewal and ignores the
+  `deadline_ms` and `now_ms` it is passed. **Additive:** `LeaseStore::lapsed`
+  (a default method) says whether the deadline has passed; the handler asks
+  it instead of reading `deadline` and comparing with its own clock, and a
+  store that keeps its own clock overrides it. The default compares with this
+  process's clock, so an existing `LeaseStore` behaves as before.
+  `store::lease::now_unix_ms` and the in-memory store are unchanged. Tests:
+  `store/lease/tests.rs` (the PostgreSQL contract on the database clock; each
+  deadline bracketed by the database's clock), `handler/lease/tests.rs` (a
+  store with its own clock decides), and `scripts/adversarial/with_clock_skew.sh`,
+  which runs the same test with the process clock a day ahead or behind: with
+  `LeaseStore::lapsed` not overridden the test fails under the skew and passes
+  without it.
+
+- **A SQLite file on a network or FUSE file system is warned about** (server;
+  audit E-F26). WAL mode and the turn claims kept in the file are not safe on
+  NFS, SMB or most FUSE mounts, and nothing said so. Opening any SQLite store
+  (tasks, push configs, halt, audit; plain and tenant-aware) now reads
+  `/proc/self/mountinfo` and, when the file is on `nfs`, `nfs4`, `cifs`, `smb3`,
+  `smbfs`, `9p`, `ceph`, `glusterfs`, `lustre`, `afs`, `ncpfs`, `beegfs`, `gpfs`,
+  `orangefs`, `panfs` or a `fuse`/`fuse.*` file system (not `fuseblk`), logs one
+  `WARN` per file naming the file and the file system. It warns and does not
+  refuse, because a mount can look remote and be fine for one process; it needs
+  the `tracing` feature to be seen and does nothing off Linux. An in-memory
+  database and a `file:` URI are not checked: `sqlx` names the database behind
+  `sqlite::memory:` `file:sqlx-in-memory-N`, which an early version of this check
+  read as a file in the working directory and so warned about whenever that
+  directory was on a network mount (the first CI run of this pull request found
+  it, because cargo-mutants copies the tree under `/tmp`). The horizontal
+  scaling page also states, for the first time, that SQLite claims are judged on
+  the host's wall clock, so a forward step past a claim's time to live makes live
+  claims read as expired until they next renew. Tests:
+  `sqlite_pool/network_fs/tests.rs` (the mount-table lookup against synthetic
+  tables: longest mount point, component-wise containment, escapes, a later mount
+  over an earlier one; the warning once per file; the whole open path against a
+  table that puts the temp directory on NFS).
+
+- **The per-task push-config cap holds across replicas** (server; audit
+  E-F14). The handler serialised creates with a lock it keeps per task, which
+  is one process's: two replicas sharing a store each read a count under the cap
+  and each stored, exceeding it by up to the replica count, permanently, since
+  nothing re-checked a config once stored. After storing a new config the
+  handler now counts the task's configs again and, if over the cap, deletes the
+  one it just stored and answers the usual "maximum" `InvalidParams`. The
+  configs that stay are ones that, at the moment they recounted, saw at most the
+  cap with their own included, and the last of them to store saw every other
+  survivor, so they cannot exceed it. Creates that race at the cap can all be
+  refused (a retry succeeds) but cannot all be admitted. An update of an
+  existing config is not recounted, so one on a task that is already over the
+  cap is not withdrawn. Costs one extra `list` per new config. The global
+  (per-tenant) ceiling stays approximate under concurrent creates for different
+  tasks, as before (backlog B20). Tests: `handler/push_config_race_tests.rs`
+  (two handlers over one store, the read-before-store interleaving forced with a
+  barrier, 20 rounds; the update path).
+
+- **A parked task's run no longer lingers in the audit log's run registry**
+  (server; audit E-F19). An event's `runSeq` names the `run.started` record of
+  the run that emitted it; the registry that finds it is per process and was
+  emptied only when a task ended terminal. A turn that parked in `input-required`
+  on one replica and continued on another left the first replica's entry, so a
+  record that replica later wrote for the task (a reaper's `failed`, a supersede
+  record) carried the first turn's `runSeq`. `AuditedTaskStore` now drops the
+  entry when the turn ends by parking as well as by finishing. **Behaviour
+  change:** a record written for a task between turns (the `canceled` event of a
+  cancel on a parked task, for one) now carries no `runSeq` where on a single
+  process it carried the parked turn's; the event that ends a turn is still
+  attributed to it. `book/src/deployment/audit.md` says so under Limits. (The
+  audit's second claim, that `task.cancel_requested` carries no `runSeq` on any
+  replica, is not replica-specific and is unchanged.) Test:
+  `audit/task_store/tests.rs`, for every task state.
+
+- **Replicas queue for an audit chain instead of racing for a position**
+  (server; audit E-F18, the maintainer's recommendation (a)). Appends to one
+  tenant's chain were optimistic: read the head, seal, store, and if another
+  replica took the position, read again, up to eight times. That is correct and
+  loses more as writers are added (about 4% of requests at three saturated
+  writers, 17% at five, by an estimate that is not a measurement), and under
+  `require_record(true)` such a request was refused. **Additive:**
+  `AuditStore::append_next` (a default method, behaving as before) reads the head,
+  has `AuditLog` seal the record through a `Sealer`, and stores it;
+  `PostgresAuditStore` overrides it to do all three in one transaction under a
+  per-chain `pg_advisory_xact_lock`, and hands the sealer the database's clock, so
+  one chain's record times come from one clock and do not run backwards when the
+  replicas' clocks differ. Sealing stays in `AuditLog`; the primary key still
+  turns away a writer that does not take the lock, and the retry loop stays for
+  it and for other stores. **Action required if you pass `PostgresAuditStore` a
+  pool of your own:** an append holds one connection for its length and a second
+  while the record is sealed when sealing reads the store, so a pool of one
+  deadlocks until its acquire timeout; the store's own pool is larger.
+  `Sealer` and `append_next` are new public items
+  (`book/src/reference/api-reference.md`). Cancelling an append drops its
+  transaction, which sqlx rolls back when the connection returns to the pool,
+  releasing the lock (tested). Tests: `tests/postgres_audit_append.rs` (six
+  replicas appending forty records each to one chain, all stored and the chain
+  verifying with non-decreasing times; sealers serialised on one chain and not
+  across chains; the database's clock handed over; a position taken behind the
+  lock's back; a cancelled append), `audit/append_next_tests.rs` (the default).
+  ADR 0015 carries the amendment.
+
+- **`max_concurrent_tasks` is documented as per replica** (server; audit E-F12,
+  interim, the maintainer's position F4). The per-tenant semaphore is in the
+  handler, so a fleet of `N` replicas admits up to `N` times the limit for a
+  tenant, and one replica can refuse a tenant another has room for. The field's
+  rustdoc and `book/src/deployment/multi-tenancy.md` now say so, say to size it as
+  the fleet limit over the replica count or to enforce it in the proxy in front,
+  and say that a send holds its slot while it waits for another replica's turn
+  claim. A count across replicas is not built, and there is no warning at build
+  when the limit is set over a store that hands out turn claims; both are open.
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a

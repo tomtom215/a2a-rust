@@ -137,13 +137,6 @@ fn check_interval(ttl: Duration) -> Duration {
     (ttl / 4).min(MAX_CHECK_INTERVAL)
 }
 
-/// Whether a lease ending at `deadline_ms` has lapsed at `now_ms`: it holds
-/// through its deadline's millisecond, so a renewal that lands on it is not
-/// too late.
-const fn lapsed(deadline_ms: i64, now_ms: i64) -> bool {
-    now_ms > deadline_ms
-}
-
 /// Watches one turn's lease until the turn finishes or the lease lapses.
 fn spawn_watcher(
     store: Arc<dyn LeaseStore>,
@@ -160,13 +153,15 @@ fn spawn_watcher(
                 () = turn.finished.cancelled() => break,
                 () = tokio::time::sleep(every) => {}
             }
-            match store.deadline(&tenant, &task).await {
-                Ok(Some(deadline)) if lapsed(deadline, now_unix_ms()) => {
+            // The store judges the deadline: one that keeps its own clock
+            // must be asked, not read and compared with this replica's.
+            match store.lapsed(&tenant, &task).await {
+                Ok(Some(true)) => {
                     trace_warn!(task, "lease lapsed; stopping the task");
                     super::halt::stop(&turn, &token);
                     break;
                 }
-                Ok(Some(_)) => {}
+                Ok(Some(false)) => {}
                 // Released: nothing left to watch.
                 Ok(None) => return,
                 Err(_e) => {

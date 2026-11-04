@@ -106,6 +106,21 @@ worst a crash can do is forget that a caller had spent part of its budget. That
 setting is **not** applied by `from_pool`, because that pool is usually the task
 store's, and it is not a counter's business to make a task store non-durable.
 
+## Whose clock numbers the window
+
+`PostgresRateLimitCounter` numbers windows by the **database's** clock
+(`floor(epoch / window_secs)` evaluated by PostgreSQL), not by each replica's.
+The window number the interceptor computes from its own clock is passed to the
+counter and ignored by this one. Replicas whose clocks differ therefore count in
+the same row, and one replica's sweep, which keeps the previous window and drops
+older ones, cannot delete a window another replica is still counting in. A
+`RateLimitCounter` of your own, backed by a store with a clock every replica
+shares, can do the same; one with no clock of its own should count under the
+`window` it is given.
+
+The `Retry-After` on a refusal is still computed from the replica's own clock,
+so with a skewed replica it can be off by the skew.
+
 ## When the counter is down
 
 The request is counted locally instead. The failure mode is exactly the

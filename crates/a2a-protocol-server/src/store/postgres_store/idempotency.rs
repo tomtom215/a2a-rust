@@ -49,9 +49,12 @@ pub(super) const RELEASE_SQL: &str = "DELETE FROM idempotency_keys WHERE key = $
 ///
 /// `ctid` to bound the batch, as the task sweep does — it is `PostgreSQL`'s
 /// physical row address, stable within the statement, which is all it needs
-/// to be.
+/// to be. `FOR UPDATE SKIP LOCKED` is the task sweep's too: a sweep on
+/// another replica that has locked a row is deleting it, so this one takes
+/// other rows instead of waiting for it and finding the row gone.
 pub(super) const EXPIRE_SQL: &str = "DELETE FROM idempotency_keys WHERE ctid IN ( \
          SELECT ctid FROM idempotency_keys \
           WHERE created_at < now() - $1::interval \
           LIMIT $2 \
+            FOR UPDATE SKIP LOCKED \
      )";

@@ -204,8 +204,11 @@ impl TenantAwarePostgresTaskStore {
     /// on a human, is never deleted however old it is.
     ///
     /// Safe to run from several replicas at once: each batch is a single
-    /// `DELETE` whose subquery picks the rows, so two sweeps racing delete
-    /// disjoint sets rather than colliding.
+    /// `DELETE` whose subquery locks the rows it picks with `FOR UPDATE SKIP
+    /// LOCKED`, so a sweep never waits for a row another sweep holds and never
+    /// deletes one twice. A sweep that finds only rows another sweep has
+    /// locked deletes nothing and reports `complete`, because the sweep that
+    /// holds them is deleting them.
     ///
     /// # Errors
     ///
