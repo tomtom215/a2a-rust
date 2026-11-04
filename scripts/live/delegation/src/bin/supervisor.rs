@@ -8,8 +8,12 @@
 //! a2a-live-supervisor start N    begin N journaled children, wait on them
 //! a2a-live-supervisor recover    the book's recovery loop over journal.open(owner): the OLD,
 //!                                serial one, reattach then wait, one record at a time
-//! a2a-live-supervisor recover-all  the book's loop since 291aaf89: reattach every record,
-//!                                then wait on all the children together
+//! a2a-live-supervisor recover-all  the book's loop once it reattached every record before it
+//!                                waited, ending each reattach with `?` (kept: the control of
+//!                                the `afail` runs, where one bad record cancels what the
+//!                                handles already held)
+//! a2a-live-supervisor recover-keep the book's loop as it reads now: the same, but a record
+//!                                that cannot be reattached is logged and the loop goes on
 //! a2a-live-supervisor serve      the same supervisor as an agent behind
 //!                                Server::serve_with_shutdown; a message
 //!                                "fan-out N" starts N children
@@ -232,12 +236,16 @@ async fn recover(c: Ctx) -> Result<(), BoxErr> {
     Ok(())
 }
 
-/// The book's recovery loop as it reads since 291aaf89 (book/src/client/delegation.md):
-/// reattach every open record first, then wait on all the children together. A
-/// child's handle is what renews its lease, so the serial loop above leaves every
-/// child but the one it waits on unrenewed. Lines are printed per record, and
-/// `REATTACHED` says how long reattaching them all took.
-async fn recover_all(c: Ctx) -> Result<(), BoxErr> {
+/// The book's recovery loop with every record reattached before any is waited on
+/// (book/src/client/delegation.md): a child's handle is what renews its lease, so the
+/// serial loop above leaves every child but the one it waits on unrenewed. Lines are
+/// printed per record, and `REATTACHED` says how long reattaching them all took.
+///
+/// `keep` is the one difference between the book's two versions of the loop: with it
+/// off a record that cannot be reattached ends the loop with `?`, which drops the
+/// handles already held (and a dropped handle cancels its child); with it on that
+/// record is logged as `REATTACH_FAILED` and left open, and the loop goes on.
+async fn recover_all(c: Ctx, keep: bool) -> Result<(), BoxErr> {
     let began = std::time::Instant::now();
     let open = c.journal.open(&c.owner).await?;
     let named = open.iter().filter(|r| r.task_id.is_some()).count();
@@ -252,12 +260,15 @@ async fn recover_all(c: Ctx) -> Result<(), BoxErr> {
                 options = options.with_lease(ttl);
             }
             record_of.insert(task_id.clone(), record.id.clone());
-            children.push(
-                Delegation::reattach_with(
-                    Arc::clone(&c.client), record.tenant.clone(), task_id, record.last_event_id.clone(), options,
-                )
-                .await?,
-            );
+            let reattached = Delegation::reattach_with(
+                Arc::clone(&c.client), record.tenant.clone(), task_id, record.last_event_id.clone(), options,
+            )
+            .await;
+            match reattached {
+                Ok(child) => children.push(child),
+                Err(e) if keep => log("REATTACH_FAILED", &format!("record={} error={e}", record.id)),
+                Err(e) => return Err(e.into()),
+            }
         } else {
             log("NO_TASK_ID", &format!("record={} idempotency_key={:?}", record.id, record.idempotency_key));
         }
@@ -339,8 +350,11 @@ async fn main() -> Result<(), BoxErr> {
                 run_children(n, &c, &rx, true, || std::future::pending::<()>()).await;
             }
         }
-        Some(mode @ ("recover" | "recover-all")) => {
-            let done = if mode == "recover" { recover(c).await } else { recover_all(c).await };
+        Some(mode @ ("recover" | "recover-all" | "recover-keep")) => {
+            let done = match mode {
+                "recover" => recover(c).await,
+                _ => recover_all(c, mode == "recover-keep").await,
+            };
             if let Err(e) = done {
                 log("ERROR", &format!("{mode} failed: {e}"));
                 // A supervisor goes on living after a failed recovery, and the handles the failure
@@ -352,7 +366,7 @@ async fn main() -> Result<(), BoxErr> {
             }
         }
         Some("serve") => serve(c).await?,
-        _ => return Err("usage: a2a-live-supervisor start N | recover | recover-all | serve".into()),
+        _ => return Err("usage: a2a-live-supervisor start N | recover | recover-all | recover-keep | serve".into()),
     }
     Ok(())
 }

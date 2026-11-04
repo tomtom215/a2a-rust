@@ -19,12 +19,18 @@ run, and runs, each `--runs` times:
       them, on start and on reattach. The book's recovery loop is sequential, so
       only the child it is waiting on is renewed: predicts that the others are
       stopped when their leases lapse (a conjecture; see the evidence README).
-  alold, alfix, allate, afix  after the library fix of 291aaf89 (a reattach with a lease
+  alold, alfix, allate, afix  after the library fix (a reattach with a lease
       renews at once; the book's loop reattaches every record before it waits):
       alold = al with the OLD serial `recover` (the control), alfix = al with
       `recover-all`, allate = alfix restarted after the leases lapsed (documents the
       limit), afix = a with `recover-all`, aledge = alfix restarted a second or so before the
       lapse (no outcome predicted). Restart delays are set with --restart-delays.
+  afail, afailold, afailkeep  `a` with one extra record naming a task the worker does not
+      have, listed after the 26th of the 50: the loop that ends a reattach with `?` (afail:
+      `recover-all`) cancels the 26 handles it holds when it returns; the serial loop
+      (afailold) cancels none; the loop as the book reads now (afailkeep: `recover-keep`,
+      a `match` that logs the record and goes on) completes all 50 and leaves only the
+      bad record open.
   cx  a control for c: SIGTERM, but the supervisor wires the signal to the cancel
       future (HAND_OFF=off), as the book's pattern did before wait_or_hand_off.
       Expects every child cancelled and every record settled: the harness must
@@ -34,7 +40,7 @@ Builds nothing: pass the two binaries. Counts come from psql on the journal
 table (a2a_delegations) and the task table (tasks), and from the processes'
 own logs. Exit status 1 if any expectation fails.
 
-    delegation_live.py --worker W --supervisor S [--scenarios a,c,c2,cx,al,alold,alfix,allate,afix] [--restart-delays 3,7,7.3] [--runs 3]
+    delegation_live.py --worker W --supervisor S [--scenarios a,c,c2,cx,al,alold,alfix,allate,afix,afailkeep] [--restart-delays 3,7,7.3] [--runs 3]
         [--children 50] [--hold-secs 60] [--kill-at 20] [--seed N] [--out DIR]
 """
 
@@ -68,7 +74,8 @@ SCEN = {"a": (False, "recover", "complete"), "afix": (False, "recover-all", "com
         "alfix": (True, "recover-all", "complete"), "allate": (True, "recover-all", "late"),
         "aledge": (True, "recover-all", "edge"),
         # one record that names a task the worker does not have, in the middle of the list:
-        "afail": (False, "recover-all", "fail"), "afailold": (False, "recover", "fail")}
+        "afail": (False, "recover-all", "fail"), "afailold": (False, "recover", "fail"),
+        "afailkeep": (False, "recover-keep", "fail")}
 
 
 def free_port() -> int:
@@ -314,8 +321,13 @@ def run_one(kind: str, run_no: int, cfg: argparse.Namespace, out: pathlib.Path, 
         if expect == "fail":
             reattached = sum(1 for _, k, _f in lines if k == "REATTACH")
             err = next((f for _, k, f in lines if k == "ERROR"), None)
-            res.update(reattach_lines=reattached, recover_error=bool(err))
-            chk("recover failed on the bogus record (exit 1)", rcode == 1 and err is not None, f"exit {rcode}, ERROR line {bool(err)}")
+            failed = next((f for _, k, f in lines if k == "REATTACH_FAILED"), None)
+            res.update(reattach_lines=reattached, recover_error=bool(err), reattach_failed=bool(failed))
+            if mode == "recover-keep":  # the loop logs the bad record and goes on: it does not fail
+                chk("recover logged the bogus record and finished (exit 0)", rcode == 0 and err is None and failed is not None,
+                    f"exit {rcode}, ERROR line {bool(err)}, REATTACH_FAILED line {bool(failed)}")
+            else:
+                chk("recover failed on the bogus record (exit 1)", rcode == 1 and err is not None, f"exit {rcode}, ERROR line {bool(err)}")
         else:
             chk("recover exited 0", rcode == 0, str(rcode))
         want = n + 1 if expect == "fail" else n
@@ -329,6 +341,13 @@ def run_one(kind: str, run_no: int, cfg: argparse.Namespace, out: pathlib.Path, 
                     f"{cancelled} tasks canceled; journal {post['journal']}")
                 chk("prediction: the others ran on to completion, their records open", state_n(post, "completed") == n - before_bogus and post["journal"].get("<open>") == n - before_bogus + 1,
                     f"tasks {post['tasks']}; journal {post['journal']}")
+            elif mode == "recover-keep":
+                chk("prediction: the loop that keeps its handles cancelled nothing", cancelled == 0 and not w["cancel-hook"],
+                    f"{cancelled} tasks canceled; cancel-hook {len(w['cancel-hook'])}")
+                chk(f"prediction: all {n} children completed and only the bogus record is left open",
+                    state_n(post, "completed") == n and post["journal"] == {"completed": n, "<open>": 1}, f"tasks {post['tasks']}; journal {post['journal']}")
+                chk(f"prediction: {n} children reattached, the bogus one logged", res["reattach_all_ms"] is not None
+                    and sum(1 for _, k, _f in lines if k == "OUTCOME") == n, f"{len(routs)} OUTCOME lines")
             else:
                 chk("prediction: the serial loop cancelled nothing", cancelled == 0 and not w["cancel-hook"], f"{cancelled} tasks canceled; cancel-hook {len(w['cancel-hook'])}")
                 chk("prediction: the serial loop completed what it had reached, the rest stay open", post["journal"].get("completed") == res["real_records_before_bogus"]

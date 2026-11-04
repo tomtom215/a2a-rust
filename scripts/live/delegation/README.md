@@ -12,9 +12,9 @@ the last one, its expectation and its limits are in
 | File | What it is |
 |---|---|
 | `src/bin/worker.rs` | `a2a-live-worker`: JSON-RPC agent over `PostgresTaskStore`; `hold` works `$HOLD_SECS` (60) then **completes**, and logs every start, completion and cancel |
-| `src/bin/supervisor.rs` | `a2a-live-supervisor`: `start N` (N journaled children), `recover` (the book's old, serial loop), `recover-all` (the book's loop since `291aaf89`: reattach every record, then wait on all), `serve` (the supervisor as an agent behind `Server::serve_with_shutdown`); SIGTERM hands the children off with `wait_or_hand_off` |
+| `src/bin/supervisor.rs` | `a2a-live-supervisor`: `start N` (N journaled children), `recover` (the book's old, serial loop), `recover-all` (the book's loop once it reattached every record before it waited, with `?` on each reattach: the control of `afail`), `recover-keep` (the book's loop as it reads now: a bad record is logged and the loop goes on), `serve` (the supervisor as an agent behind `Server::serve_with_shutdown`); SIGTERM hands the children off with `wait_or_hand_off` |
 | `src/bin/grpc_idle.rs` | `a2a-live-grpc-idle` (feature `grpc`): a quiet child over gRPC cut by the client's idle timeout |
-| `delegation_live.py` | the driver; fresh database per run, counts with `psql`, exit 1 on a failed expectation. Scenarios: `a` (kill -9), `c` (SIGTERM), `c2` (SIGTERM to the agent), `cx` (control: SIGTERM wired to cancel), `al` (`a` with 15 s leases), `alold` / `alfix` / `allate` / `aledge` (leases, kill -9 and the serial loop on the fixed library / `recover-all` / `recover-all` after the lapse / `recover-all` just before it), `afix` (`a` with `recover-all`), `afail` / `afailold` (a bogus record in the journal). `--restart-delays` sets the delay from the kill to the launch of `recover` |
+| `delegation_live.py` | the driver; fresh database per run, counts with `psql`, exit 1 on a failed expectation. Scenarios: `a` (kill -9), `c` (SIGTERM), `c2` (SIGTERM to the agent), `cx` (control: SIGTERM wired to cancel), `al` (`a` with 15 s leases), `alold` / `alfix` / `allate` / `aledge` (leases, kill -9 and the serial loop on the fixed library / `recover-all` / `recover-all` after the lapse / `recover-all` just before it), `afix` (`a` with `recover-all`), `afail` / `afailold` / `afailkeep` (a bogus record in the journal: `recover-all`, the serial loop, `recover-keep`). `--restart-delays` sets the delay from the kill to the launch of `recover` |
 | `grpc_idle_live.py` | the driver for `grpc_idle` |
 | `timeline.py` | merges the driver's output directories into one JSON line per run, with the worker's stop and completion times in the run's own clock |
 | `pglocal.py` | the local PostgreSQL 16 helpers (no Docker) |
@@ -41,6 +41,6 @@ default needs `ALTER SYSTEM SET ssl = off` first on some images.
     python3 scripts/live/delegation/grpc_idle_live.py --bin target/live/delegation-grpc/debug/a2a-live-grpc-idle
 
 A full run of `a,c,c2,cx,al` is about thirteen minutes for `delegation_live.py`
-and five for the gRPC probe. The scenarios and delays of the re-run on `291aaf89` are in the evidence README. Add `--children 5 --hold-secs 15 --kill-at 5` for a smoke run of the
+and five for the gRPC probe. The scenarios and delays of the re-runs are in the evidence README. Add `--children 5 --hold-secs 15 --kill-at 5` for a smoke run of the
 harness itself. Logs and per-run database snapshots go to `target/live/delegation`
 (`A2A_LIVE_OUT`).
