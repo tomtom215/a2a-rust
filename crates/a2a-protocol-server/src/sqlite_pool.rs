@@ -33,23 +33,40 @@
 //! start doing the work they currently only describe.
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+use std::path::Path;
 use std::str::FromStr;
+
+mod network_fs;
 
 /// The pool size every caller used before this module existed.
 const DEFAULT_MAX_CONNECTIONS: u32 = 8;
 
 /// Creates a `SqlitePool` with production-ready defaults and the default size.
 pub async fn sqlite_pool(url: &str) -> Result<SqlitePool, sqlx::Error> {
-    sqlite_pool_with_size(url, DEFAULT_MAX_CONNECTIONS).await
+    sqlite_pool_with_size(
+        url,
+        DEFAULT_MAX_CONNECTIONS,
+        Path::new(network_fs::MOUNTINFO),
+    )
+    .await
 }
 
 /// Creates a `SqlitePool` with production-ready defaults and a specific size.
 ///
 /// Private: nothing outside this module has ever asked for a non-default size.
 /// It exists so the default above is a named value rather than a literal at the
-/// one call site.
-async fn sqlite_pool_with_size(url: &str, max_connections: u32) -> Result<SqlitePool, sqlx::Error> {
-    let opts = SqliteConnectOptions::from_str(url)?
+/// one call site. `mountinfo` is the mount table the file system check reads: the
+/// kernel's, except in a test that needs a database to be on a network mount.
+async fn sqlite_pool_with_size(
+    url: &str,
+    max_connections: u32,
+    mountinfo: &Path,
+) -> Result<SqlitePool, sqlx::Error> {
+    let opts = SqliteConnectOptions::from_str(url)?;
+    // Before the pool exists: a database on NFS should be named while it is
+    // still only a path (audit E-F26).
+    network_fs::warn_if_remote(mountinfo, opts.get_filename());
+    let opts = opts
         .pragma("journal_mode", "WAL")
         .pragma("busy_timeout", "5000")
         .pragma("synchronous", "NORMAL")
@@ -166,9 +183,13 @@ mod tests {
             }
         };
         cleanup(&path);
-        let pool = sqlite_pool_with_size(&format!("sqlite://{}", path.display()), 1)
-            .await
-            .expect("pool");
+        let pool = sqlite_pool_with_size(
+            &format!("sqlite://{}", path.display()),
+            1,
+            Path::new(network_fs::MOUNTINFO),
+        )
+        .await
+        .expect("pool");
         {
             let mut conn = pool.acquire().await.expect("connection");
             let pragma = if secure {

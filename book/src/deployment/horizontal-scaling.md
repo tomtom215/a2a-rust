@@ -69,6 +69,28 @@ keeps tasks correct, and an upgrade from 0.15 does not need it either
 | Know how it behaves under load, and stop the `tasks` table growing | [Sustained load and table growth](./horizontal-scaling/sustained-load.md) |
 | Replace 0.15 replicas with this release | [Upgrading a fleet](#upgrading-a-fleet-to-this-release), below |
 
+## SQLite: one host, local disk, one clock
+
+Several processes may share a SQLite file only on **one host, on a local file
+system**. WAL mode keeps its index in a shared-memory file and relies on POSIX
+locks, and neither is dependable on NFS, SMB or most FUSE file systems; a file
+there can be held by two processes at once, which loses writes and lets two
+replicas read one turn claim as free. When a store opens a SQLite file the
+server checks the Linux mount table (`/proc/self/mountinfo`) and, if the file is
+on NFS, SMB, Ceph, a 9p share or a FUSE file system other than a local block
+device (`fuseblk`), logs one warning naming the file and the file system
+(`WARN`, with the `tracing` feature). It does not refuse: a mount can look
+remote and be fine for one process. Where the table cannot be read (any other
+operating system) nothing is checked, so on a Kubernetes `ReadWriteMany` volume
+the absence of the warning is not evidence the volume is safe.
+
+SQLite turn claims are judged on that host's wall clock, in milliseconds. A
+clock that steps forward by more than a claim's time to live (an NTP step, a
+virtual machine resumed after a pause) makes live claims read as expired until
+their next renewal, during which a continuation or the reaper can take the
+task. PostgreSQL claims use the database's `now()` and have no such
+dependency.
+
 ## Upgrading a fleet to this release
 
 Replace replicas one at a time, in any order, with no session affinity: a

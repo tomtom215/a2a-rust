@@ -1433,6 +1433,24 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `LeaseStore::lapsed` not overridden the test fails under the skew and passes
   without it.
 
+- **A SQLite file on a network or FUSE file system is warned about** (server;
+  audit E-F26). WAL mode and the turn claims kept in the file are not safe on
+  NFS, SMB or most FUSE mounts, and nothing said so. Opening any SQLite store
+  (tasks, push configs, halt, audit; plain and tenant-aware) now reads
+  `/proc/self/mountinfo` and, when the file is on `nfs`, `nfs4`, `cifs`, `smb3`,
+  `smbfs`, `9p`, `ceph`, `glusterfs`, `lustre`, `afs`, `ncpfs`, `beegfs`, `gpfs`,
+  `orangefs`, `panfs` or a `fuse`/`fuse.*` file system (not `fuseblk`), logs one
+  `WARN` per file naming the file and the file system. It warns and does not
+  refuse, because a mount can look remote and be fine for one process; it needs
+  the `tracing` feature to be seen and does nothing off Linux. The horizontal
+  scaling page also states, for the first time, that SQLite claims are judged on
+  the host's wall clock, so a forward step past a claim's time to live makes live
+  claims read as expired until they next renew. Tests:
+  `sqlite_pool/network_fs/tests.rs` (the mount-table lookup against synthetic
+  tables: longest mount point, component-wise containment, escapes, a later mount
+  over an earlier one; the warning once per file; the whole open path against a
+  table that puts the temp directory on NFS).
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a
