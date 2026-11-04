@@ -49,11 +49,11 @@ mod a2a;
 #[cfg(feature = "tracing")]
 mod address;
 mod agent;
-#[cfg(feature = "tracing")]
-mod content;
 mod binding;
 mod call;
 mod card;
+#[cfg(feature = "tracing")]
+mod content;
 mod link;
 mod names;
 #[cfg(feature = "otel")]
@@ -106,8 +106,12 @@ const METHOD_ORIGINAL_MAX: usize = 128;
 
 /// The `error.type` of a call whose future was dropped before it finished —
 /// the peer went away, or gave up waiting. A component-specific value, as
-/// the conventions allow where no status code was sent.
+/// the conventions allow where no status code was sent. On gRPC the call
+/// records the status `CANCELLED` instead ([`ServerSpan::finish`]).
 const CANCELLED: &str = "cancelled";
+
+/// gRPC's name for the status of a call the client cancelled.
+const GRPC_CANCELLED: &str = "CANCELLED";
 
 /// One inbound call: its span, its clock, and where its duration goes.
 pub struct ServerSpan {
@@ -381,17 +385,38 @@ impl ServerSpan {
     /// Records a finished call on the span and in the metrics: `status` is
     /// the wire status of a call that did not succeed, `None` for one that
     /// did. Whether it is an error is the binding's conventions' call
-    /// ([`RpcSystem::is_server_error`]); a call that never finished is one
-    /// on every binding.
+    /// ([`RpcSystem::is_server_error`]).
+    ///
+    /// A call the peer abandoned ([`CANCELLED`]) is not the server failing,
+    /// and its span is never marked `Error` (audit C-09; ADR 0038 §2). On
+    /// gRPC it records the status `CANCELLED` and no `error.type`, as
+    /// `docs/rpc/grpc.md` has a server span do ("The following status codes
+    /// SHOULD be considered errors: `UNKNOWN`, `DEADLINE_EXCEEDED`, …";
+    /// `CANCELLED` is not among them). The other bindings have no status for
+    /// a call that never answered — none is recorded (until 2026-11-04 it was
+    /// `cancelled`, which is no binding's status) — so `error.type` is `cancelled`, the
+    /// component-specific identifier `rpc-spans.md` asks for ("If the RPC
+    /// fails with an error before status code is returned"), which the
+    /// shipped error ratios leave out; the span status stays unset, as
+    /// `http-spans.md` has it for a request "cancelled intentionally by the
+    /// caller".
     fn finish(&self, duration: Duration, status: Option<&str>) {
+        let abandoned = status == Some(CANCELLED);
         // gRPC always has a status; the other bindings have one only on error.
         let status_code = match (status, self.system) {
+            (Some(CANCELLED), RpcSystem::Grpc) => Some(GRPC_CANCELLED),
+            // No status was sent; `cancelled` is not one of the binding's.
+            (Some(CANCELLED), _) => None,
             (Some(code), _) => Some(code),
             (None, RpcSystem::Grpc) => Some("OK"),
             (None, RpcSystem::Custom(binding)) => binding.ok_status,
             (None, _) => None,
         };
-        let failed_with = status.filter(|s| *s == CANCELLED || self.system.is_server_error(s));
+        let failed_with = match self.system {
+            RpcSystem::Grpc if abandoned => None,
+            _ if abandoned => Some(CANCELLED),
+            system => status.filter(|s| system.is_server_error(s)),
+        };
         #[cfg(feature = "tracing")]
         {
             if let Some(code) = status_code {
@@ -399,7 +424,9 @@ impl ServerSpan {
             }
             if let Some(code) = failed_with {
                 self.span.record("error.type", code);
-                self.span.record("otel.status_code", "ERROR");
+                if !abandoned {
+                    self.span.record("otel.status_code", "ERROR");
+                }
             }
         }
         self.metrics.on_rpc_call(&RpcCall {
@@ -478,6 +505,8 @@ fn truncated(s: &str, max: usize) -> &str {
     &s[..end]
 }
 
+#[cfg(test)]
+mod abandoned_tests;
 #[cfg(test)]
 mod jsonrpc_tests;
 #[cfg(test)]
