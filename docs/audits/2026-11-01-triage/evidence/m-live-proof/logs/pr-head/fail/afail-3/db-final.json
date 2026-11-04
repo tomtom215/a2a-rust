@@ -1,0 +1,16 @@
+{
+ "journal": {
+  "<open>": 25,
+  "canceled": 26
+ },
+ "no_task_id": 0,
+ "tasks": {
+  "TASK_STATE_CANCELED": 26,
+  "TASK_STATE_COMPLETED": 24
+ },
+ "pairs": {
+  "<open>/TASK_STATE_COMPLETED": 24,
+  "canceled/TASK_STATE_CANCELED": 26
+ },
+ "connections": 11
+}

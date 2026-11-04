@@ -1,0 +1,153 @@
+t=1793813861269 BEGIN owner=sup-cx-1 children=50 pid=27150
+t=1793813861293 STARTED i=0 record=09d97d01-e61a-4551-839a-8c9016b7a4ef
+t=1793813861349 STARTED i=18 record=daf7ddc1-d809-41f3-aaa7-a8a5ce6eade3
+t=1793813861376 STARTED i=25 record=98c432d7-c60a-4682-b5d4-5a22bb703473
+t=1793813861390 STARTED i=26 record=16c19e06-fa5e-419f-a557-2a07518c773e
+t=1793813861392 NAMED i=0 record=09d97d01-e61a-4551-839a-8c9016b7a4ef task=0ea4edcb-ba7c-4323-804b-12cee9ded99b
+t=1793813861392 NAMED i=18 record=daf7ddc1-d809-41f3-aaa7-a8a5ce6eade3 task=5c3c9013-1fdb-4e57-a163-bc330bdf4725
+t=1793813861396 NAMED i=25 record=98c432d7-c60a-4682-b5d4-5a22bb703473 task=14358536-5bda-4df7-b565-0a7eb259724f
+t=1793813861404 NAMED i=26 record=16c19e06-fa5e-419f-a557-2a07518c773e task=c838076f-169b-4cb4-b669-4587c57229e8
+t=1793813861437 STARTED i=19 record=79ecba8d-ce6e-445e-aefd-dbabf05b08dc
+t=1793813861441 STARTED i=15 record=cc5e4922-7ea3-4322-9c06-8e0ad2fa18df
+t=1793813861444 NAMED i=19 record=79ecba8d-ce6e-445e-aefd-dbabf05b08dc task=3d1e6e14-6ae8-49ec-b1ce-f05d3185c00a
+t=1793813861448 NAMED i=15 record=cc5e4922-7ea3-4322-9c06-8e0ad2fa18df task=abd7da66-d15a-45bf-b567-fcb7e4aee5d0
+t=1793813861449 STARTED i=27 record=08e7ba1f-ba7b-4033-ab8f-395f68348474
+t=1793813861449 STARTED i=28 record=cff830de-459f-4010-aaf4-fa3022c1eb9a
+t=1793813861456 NAMED i=28 record=cff830de-459f-4010-aaf4-fa3022c1eb9a task=022d25ae-1e42-4249-af5c-2f457015b701
+t=1793813861457 NAMED i=27 record=08e7ba1f-ba7b-4033-ab8f-395f68348474 task=df0527f9-d0cd-464c-88f5-07fc563e6519
+t=1793813861458 STARTED i=20 record=bc76aa7d-9f39-4b85-8f70-a7086dffbb4c
+t=1793813861464 NAMED i=20 record=bc76aa7d-9f39-4b85-8f70-a7086dffbb4c task=a567d3be-d74a-4893-aa1a-1fba6557aaa7
+t=1793813861477 STARTED i=29 record=835c69ad-2060-4719-99b9-7c28b4fc01ff
+t=1793813861485 NAMED i=29 record=835c69ad-2060-4719-99b9-7c28b4fc01ff task=044740d6-d6b9-4439-b08a-870f7668e93b
+t=1793813861498 STARTED i=21 record=326f246b-8d76-4415-956a-83106346f255
+t=1793813861499 STARTED i=30 record=d53489f4-9963-460b-85f9-5e388fb7f20b
+t=1793813861501 STARTED i=13 record=44116ba8-852f-4203-8deb-bbd24061ec1b
+t=1793813861501 STARTED i=31 record=c7ee4353-8af5-4a01-bb5e-63715ecf1e72
+t=1793813861504 NAMED i=21 record=326f246b-8d76-4415-956a-83106346f255 task=f4526537-d66b-4266-9eb1-4a1565edc8d1
+t=1793813861506 STARTED i=9 record=970ff9d2-3433-4eab-a498-2d4e64d5cc27
+t=1793813861506 NAMED i=30 record=d53489f4-9963-460b-85f9-5e388fb7f20b task=8f1e755f-6062-42e2-83e9-940bc1934aee
+t=1793813861509 STARTED i=32 record=b081f2ee-2b82-4c31-adc5-66bd9389b1e1
+t=1793813861509 NAMED i=9 record=970ff9d2-3433-4eab-a498-2d4e64d5cc27 task=7df1b799-a52c-4184-bc35-bad52ae453a1
+t=1793813861509 NAMED i=31 record=c7ee4353-8af5-4a01-bb5e-63715ecf1e72 task=34f6087a-f629-4ba1-a8d2-bfc5ddd05b20
+t=1793813861509 NAMED i=13 record=44116ba8-852f-4203-8deb-bbd24061ec1b task=fb74cda8-80f3-45be-91ba-b6d93263b9be
+t=1793813861510 STARTED i=22 record=f2b6f401-837f-4e32-82a1-ba3e1a8010b6
+t=1793813861511 NAMED i=32 record=b081f2ee-2b82-4c31-adc5-66bd9389b1e1 task=25fd4f40-8093-4d8e-b0ba-024b868600c1
+t=1793813861512 STARTED i=23 record=0919b369-5df4-42cc-a294-1c6ebafa2789
+t=1793813861514 STARTED i=10 record=3223e6fe-549b-4323-985f-7fe48bc98d68
+t=1793813861515 NAMED i=23 record=0919b369-5df4-42cc-a294-1c6ebafa2789 task=6e934515-c024-4912-880f-9da4ccff5b31
+t=1793813861515 STARTED i=33 record=6fbba071-62ab-4740-ae71-1d3d99c0431f
+t=1793813861516 NAMED i=22 record=f2b6f401-837f-4e32-82a1-ba3e1a8010b6 task=29b771b0-e455-4920-bd4a-ff57ce572538
+t=1793813861518 STARTED i=7 record=f139868e-0994-4080-9ad9-ec77a158c910
+t=1793813861519 STARTED i=34 record=b9445a75-2db2-41c3-9d41-f792910b6782
+t=1793813861520 NAMED i=10 record=3223e6fe-549b-4323-985f-7fe48bc98d68 task=26a5b515-47de-4ea5-bfe5-ca6a31110258
+t=1793813861522 NAMED i=33 record=6fbba071-62ab-4740-ae71-1d3d99c0431f task=3a64a562-e16a-4b99-bc9d-e5d742dd8b44
+t=1793813861522 STARTED i=35 record=a7599163-792d-4601-bbce-ee88f05709b5
+t=1793813861522 STARTED i=37 record=c49554d8-510b-4879-9d95-f5bdca707d7e
+t=1793813861528 NAMED i=34 record=b9445a75-2db2-41c3-9d41-f792910b6782 task=ceab17c0-d810-4828-bbda-b9460c50e31a
+t=1793813861528 STARTED i=36 record=c7fdfec8-a2cd-433d-8347-83c47b3edd7e
+t=1793813861528 STARTED i=41 record=aaa8896f-afad-4d96-97d6-99f09690755e
+t=1793813861528 STARTED i=38 record=bf2cb013-9a04-476b-823e-f7c98802982a
+t=1793813861528 NAMED i=35 record=a7599163-792d-4601-bbce-ee88f05709b5 task=ceb43add-66d3-4a33-b1ab-1fa86b1f25c1
+t=1793813861528 STARTED i=40 record=f61a719e-fb98-46c2-8683-f0b7468dfe96
+t=1793813861528 STARTED i=42 record=b51fbd9c-6d8b-4a1f-b965-aae2f8a870dc
+t=1793813861528 NAMED i=7 record=f139868e-0994-4080-9ad9-ec77a158c910 task=19709844-665f-4da3-81d3-e1e24283269a
+t=1793813861528 NAMED i=37 record=c49554d8-510b-4879-9d95-f5bdca707d7e task=f5be023a-73cb-4404-bf0c-663714f3c41b
+t=1793813861529 STARTED i=12 record=3a375b56-9d7c-4b50-be74-5676277808b5
+t=1793813861530 NAMED i=38 record=bf2cb013-9a04-476b-823e-f7c98802982a task=f5372b20-9ff5-4bad-b0ad-a30d355bdc4d
+t=1793813861530 NAMED i=41 record=aaa8896f-afad-4d96-97d6-99f09690755e task=6f9009a6-2ebe-49bb-a42d-89fffb03eb86
+t=1793813861532 NAMED i=40 record=f61a719e-fb98-46c2-8683-f0b7468dfe96 task=2e6d64df-b7d0-47dc-8818-24d1d0942a09
+t=1793813861532 NAMED i=36 record=c7fdfec8-a2cd-433d-8347-83c47b3edd7e task=643f9199-1f18-4cbf-9928-113b9fc2ac38
+t=1793813861532 STARTED i=39 record=53831a13-40a8-46d7-ba8e-aac140778c0b
+t=1793813861532 NAMED i=12 record=3a375b56-9d7c-4b50-be74-5676277808b5 task=863e92cf-80b7-4a35-80e0-adabcba716e3
+t=1793813861534 STARTED i=44 record=63d50ea1-5317-4910-ac54-e8bb414ad43c
+t=1793813861534 STARTED i=43 record=1d99cc2e-63ed-45d8-a004-33897a812b1d
+t=1793813861535 STARTED i=45 record=22989998-33d0-40d1-975c-8ed2431cd143
+t=1793813861538 STARTED i=49 record=0b30d4e5-61f0-4c7e-bd6e-9c3b7abd54f2
+t=1793813861540 STARTED i=47 record=21a63359-aa8b-4d06-979c-2d2498542132
+t=1793813861540 STARTED i=46 record=bddd24e3-a2f6-4e6b-a977-00225ce0c3eb
+t=1793813861541 NAMED i=44 record=63d50ea1-5317-4910-ac54-e8bb414ad43c task=fa859122-ce9e-4b32-81e9-a987c04aa25c
+t=1793813861541 NAMED i=43 record=1d99cc2e-63ed-45d8-a004-33897a812b1d task=38de5c18-7a49-4447-b32f-882fc1e5d053
+t=1793813861542 NAMED i=39 record=53831a13-40a8-46d7-ba8e-aac140778c0b task=846b0f64-401b-40b1-bc5a-c87d98e18df5
+t=1793813861542 NAMED i=45 record=22989998-33d0-40d1-975c-8ed2431cd143 task=2e0c6eb1-46b3-4876-85b1-aaedb3f138e4
+t=1793813861542 STARTED i=48 record=fb87dc0e-d3cf-400a-825b-b50bd647ad6b
+t=1793813861543 NAMED i=49 record=0b30d4e5-61f0-4c7e-bd6e-9c3b7abd54f2 task=e2d80279-cf56-45b2-92dc-24724ec6ff9d
+t=1793813861544 STARTED i=2 record=d69d5bc4-793b-46e6-9365-90598b53c7fe
+t=1793813861544 NAMED i=42 record=b51fbd9c-6d8b-4a1f-b965-aae2f8a870dc task=8fddba5d-6ff2-4b6b-9d3c-ac8c4096a234
+t=1793813861544 NAMED i=47 record=21a63359-aa8b-4d06-979c-2d2498542132 task=9df84464-d803-4aa2-ad17-8fd71c96c63d
+t=1793813861545 STARTED i=6 record=0d8c1e10-2329-47d1-91c4-2f2f7018d5dd
+t=1793813861546 STARTED i=1 record=53ac6495-ab4e-4367-83ce-35a46f08c317
+t=1793813861546 NAMED i=48 record=fb87dc0e-d3cf-400a-825b-b50bd647ad6b task=13b4eeb3-5477-4be7-8ce3-32a10068339b
+t=1793813861548 NAMED i=2 record=d69d5bc4-793b-46e6-9365-90598b53c7fe task=6e53fe8e-8606-48d5-a221-d13ab52d7c26
+t=1793813861548 NAMED i=1 record=53ac6495-ab4e-4367-83ce-35a46f08c317 task=2a5a8398-2a78-49b6-abf2-d92ddabf432e
+t=1793813861549 STARTED i=8 record=015169d4-a510-4371-b71e-d1cc2e06035a
+t=1793813861549 NAMED i=46 record=bddd24e3-a2f6-4e6b-a977-00225ce0c3eb task=70dea7fd-c06a-4217-a6f7-ac091bd28ed3
+t=1793813861551 STARTED i=11 record=6e0cc5b1-298f-4f4e-a1e4-a21473d65b78
+t=1793813861552 NAMED i=6 record=0d8c1e10-2329-47d1-91c4-2f2f7018d5dd task=81b86c71-ceda-4e2c-8ed1-748fbe1c0f1c
+t=1793813861553 NAMED i=11 record=6e0cc5b1-298f-4f4e-a1e4-a21473d65b78 task=08986a29-fce9-4dd5-8f41-edeb27579707
+t=1793813861553 NAMED i=8 record=015169d4-a510-4371-b71e-d1cc2e06035a task=4c5c93c8-da56-47d6-b37c-72ab5d99d205
+t=1793813861553 STARTED i=5 record=0e270cff-693e-49a3-af51-1f3ce5e764df
+t=1793813861554 STARTED i=14 record=b4c866a6-9ee3-4eea-bc3c-c1f3adc4906a
+t=1793813861556 NAMED i=14 record=b4c866a6-9ee3-4eea-bc3c-c1f3adc4906a task=cd59009a-d32a-4bc6-83af-d4d647beb9d3
+t=1793813861558 STARTED i=16 record=c6a5feeb-265d-4d5e-8a16-c9d8aaec8abc
+t=1793813861558 NAMED i=5 record=0e270cff-693e-49a3-af51-1f3ce5e764df task=64ca628e-2736-458f-9980-fdb9312b6594
+t=1793813861559 STARTED i=4 record=db79093d-6418-43d7-b7b5-cf9062454350
+t=1793813861559 NAMED i=16 record=c6a5feeb-265d-4d5e-8a16-c9d8aaec8abc task=8a2529df-385d-44a5-ad57-ac9739d55a05
+t=1793813861560 STARTED i=3 record=db7ca2d9-92d0-4f90-9868-f967e4e24ffb
+t=1793813861562 STARTED i=17 record=21ce5eed-5146-4716-852d-4061a0d8513b
+t=1793813861562 NAMED i=4 record=db79093d-6418-43d7-b7b5-cf9062454350 task=d590b07b-055a-48b9-ab8f-5f3d5b55eaf4
+t=1793813861564 NAMED i=3 record=db7ca2d9-92d0-4f90-9868-f967e4e24ffb task=1ad0ec21-3774-4c4f-99fc-4e0cf53576f5
+t=1793813861564 NAMED i=17 record=21ce5eed-5146-4716-852d-4061a0d8513b task=86d185aa-ad7c-4671-badd-a299602b50ab
+t=1793813861582 STARTED i=24 record=20d1be02-ed1b-4f8e-b3e7-a29d73b2556c
+t=1793813861583 NAMED i=24 record=20d1be02-ed1b-4f8e-b3e7-a29d73b2556c task=f0ae3367-62a2-4a47-933a-a84934c1a775
+t=1793813881225 SIGNAL shutdown signal received
+t=1793813881289 OUTCOME i=49 record=0b30d4e5-61f0-4c7e-bd6e-9c3b7abd54f2 task=e2d80279-cf56-45b2-92dc-24724ec6ff9d outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.239Z\") })"
+t=1793813881293 OUTCOME i=8 record=015169d4-a510-4371-b71e-d1cc2e06035a task=4c5c93c8-da56-47d6-b37c-72ab5d99d205 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.240Z\") })"
+t=1793813881296 OUTCOME i=42 record=b51fbd9c-6d8b-4a1f-b965-aae2f8a870dc task=8fddba5d-6ff2-4b6b-9d3c-ac8c4096a234 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.240Z\") })"
+t=1793813881297 OUTCOME i=33 record=6fbba071-62ab-4740-ae71-1d3d99c0431f task=3a64a562-e16a-4b99-bc9d-e5d742dd8b44 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.241Z\") })"
+t=1793813881300 OUTCOME i=36 record=c7fdfec8-a2cd-433d-8347-83c47b3edd7e task=643f9199-1f18-4cbf-9928-113b9fc2ac38 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.242Z\") })"
+t=1793813881307 OUTCOME i=35 record=a7599163-792d-4601-bbce-ee88f05709b5 task=ceb43add-66d3-4a33-b1ab-1fa86b1f25c1 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.242Z\") })"
+t=1793813881308 OUTCOME i=10 record=3223e6fe-549b-4323-985f-7fe48bc98d68 task=26a5b515-47de-4ea5-bfe5-ca6a31110258 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.240Z\") })"
+t=1793813881311 OUTCOME i=5 record=0e270cff-693e-49a3-af51-1f3ce5e764df task=64ca628e-2736-458f-9980-fdb9312b6594 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.242Z\") })"
+t=1793813881311 OUTCOME i=44 record=63d50ea1-5317-4910-ac54-e8bb414ad43c task=fa859122-ce9e-4b32-81e9-a987c04aa25c outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.241Z\") })"
+t=1793813881313 OUTCOME i=38 record=bf2cb013-9a04-476b-823e-f7c98802982a task=f5372b20-9ff5-4bad-b0ad-a30d355bdc4d outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.243Z\") })"
+t=1793813881316 OUTCOME i=7 record=f139868e-0994-4080-9ad9-ec77a158c910 task=19709844-665f-4da3-81d3-e1e24283269a outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.243Z\") })"
+t=1793813881320 OUTCOME i=23 record=0919b369-5df4-42cc-a294-1c6ebafa2789 task=6e934515-c024-4912-880f-9da4ccff5b31 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.244Z\") })"
+t=1793813881320 OUTCOME i=13 record=44116ba8-852f-4203-8deb-bbd24061ec1b task=fb74cda8-80f3-45be-91ba-b6d93263b9be outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.245Z\") })"
+t=1793813881321 OUTCOME i=27 record=08e7ba1f-ba7b-4033-ab8f-395f68348474 task=df0527f9-d0cd-464c-88f5-07fc563e6519 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.241Z\") })"
+t=1793813881323 OUTCOME i=48 record=fb87dc0e-d3cf-400a-825b-b50bd647ad6b task=13b4eeb3-5477-4be7-8ce3-32a10068339b outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.243Z\") })"
+t=1793813881323 OUTCOME i=11 record=6e0cc5b1-298f-4f4e-a1e4-a21473d65b78 task=08986a29-fce9-4dd5-8f41-edeb27579707 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.242Z\") })"
+t=1793813881327 OUTCOME i=14 record=b4c866a6-9ee3-4eea-bc3c-c1f3adc4906a task=cd59009a-d32a-4bc6-83af-d4d647beb9d3 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.244Z\") })"
+t=1793813881328 OUTCOME i=43 record=1d99cc2e-63ed-45d8-a004-33897a812b1d task=38de5c18-7a49-4447-b32f-882fc1e5d053 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.245Z\") })"
+t=1793813881328 OUTCOME i=1 record=53ac6495-ab4e-4367-83ce-35a46f08c317 task=2a5a8398-2a78-49b6-abf2-d92ddabf432e outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.245Z\") })"
+t=1793813881328 OUTCOME i=34 record=b9445a75-2db2-41c3-9d41-f792910b6782 task=ceab17c0-d810-4828-bbda-b9460c50e31a outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.246Z\") })"
+t=1793813881330 OUTCOME i=25 record=98c432d7-c60a-4682-b5d4-5a22bb703473 task=14358536-5bda-4df7-b565-0a7eb259724f outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.247Z\") })"
+t=1793813881331 OUTCOME i=40 record=f61a719e-fb98-46c2-8683-f0b7468dfe96 task=2e6d64df-b7d0-47dc-8818-24d1d0942a09 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.247Z\") })"
+t=1793813881331 OUTCOME i=4 record=db79093d-6418-43d7-b7b5-cf9062454350 task=d590b07b-055a-48b9-ab8f-5f3d5b55eaf4 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.244Z\") })"
+t=1793813881331 OUTCOME i=0 record=09d97d01-e61a-4551-839a-8c9016b7a4ef task=0ea4edcb-ba7c-4323-804b-12cee9ded99b outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.245Z\") })"
+t=1793813881331 OUTCOME i=2 record=d69d5bc4-793b-46e6-9365-90598b53c7fe task=6e53fe8e-8606-48d5-a221-d13ab52d7c26 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.249Z\") })"
+t=1793813881332 OUTCOME i=46 record=bddd24e3-a2f6-4e6b-a977-00225ce0c3eb task=70dea7fd-c06a-4217-a6f7-ac091bd28ed3 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.246Z\") })"
+t=1793813881332 OUTCOME i=6 record=0d8c1e10-2329-47d1-91c4-2f2f7018d5dd task=81b86c71-ceda-4e2c-8ed1-748fbe1c0f1c outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.248Z\") })"
+t=1793813881332 OUTCOME i=3 record=db7ca2d9-92d0-4f90-9868-f967e4e24ffb task=1ad0ec21-3774-4c4f-99fc-4e0cf53576f5 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.246Z\") })"
+t=1793813881332 OUTCOME i=31 record=c7ee4353-8af5-4a01-bb5e-63715ecf1e72 task=34f6087a-f629-4ba1-a8d2-bfc5ddd05b20 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.247Z\") })"
+t=1793813881332 OUTCOME i=26 record=16c19e06-fa5e-419f-a557-2a07518c773e task=c838076f-169b-4cb4-b669-4587c57229e8 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.248Z\") })"
+t=1793813881333 OUTCOME i=19 record=79ecba8d-ce6e-445e-aefd-dbabf05b08dc task=3d1e6e14-6ae8-49ec-b1ce-f05d3185c00a outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.249Z\") })"
+t=1793813881333 OUTCOME i=9 record=970ff9d2-3433-4eab-a498-2d4e64d5cc27 task=7df1b799-a52c-4184-bc35-bad52ae453a1 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.247Z\") })"
+t=1793813881333 OUTCOME i=12 record=3a375b56-9d7c-4b50-be74-5676277808b5 task=863e92cf-80b7-4a35-80e0-adabcba716e3 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.248Z\") })"
+t=1793813881333 OUTCOME i=47 record=21a63359-aa8b-4d06-979c-2d2498542132 task=9df84464-d803-4aa2-ad17-8fd71c96c63d outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.249Z\") })"
+t=1793813881333 OUTCOME i=37 record=c49554d8-510b-4879-9d95-f5bdca707d7e task=f5be023a-73cb-4404-bf0c-663714f3c41b outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.249Z\") })"
+t=1793813881334 OUTCOME i=28 record=cff830de-459f-4010-aaf4-fa3022c1eb9a task=022d25ae-1e42-4249-af5c-2f457015b701 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.249Z\") })"
+t=1793813881334 OUTCOME i=17 record=21ce5eed-5146-4716-852d-4061a0d8513b task=86d185aa-ad7c-4671-badd-a299602b50ab outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.248Z\") })"
+t=1793813881334 OUTCOME i=45 record=22989998-33d0-40d1-975c-8ed2431cd143 task=2e0c6eb1-46b3-4876-85b1-aaedb3f138e4 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.250Z\") })"
+t=1793813881334 OUTCOME i=39 record=53831a13-40a8-46d7-ba8e-aac140778c0b task=846b0f64-401b-40b1-bc5a-c87d98e18df5 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.250Z\") })"
+t=1793813881334 OUTCOME i=24 record=20d1be02-ed1b-4f8e-b3e7-a29d73b2556c task=f0ae3367-62a2-4a47-933a-a84934c1a775 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.250Z\") })"
+t=1793813881335 OUTCOME i=41 record=aaa8896f-afad-4d96-97d6-99f09690755e task=6f9009a6-2ebe-49bb-a42d-89fffb03eb86 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.251Z\") })"
+t=1793813881335 OUTCOME i=32 record=b081f2ee-2b82-4c31-adc5-66bd9389b1e1 task=25fd4f40-8093-4d8e-b0ba-024b868600c1 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.251Z\") })"
+t=1793813881335 OUTCOME i=16 record=c6a5feeb-265d-4d5e-8a16-c9d8aaec8abc task=8a2529df-385d-44a5-ad57-ac9739d55a05 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.250Z\") })"
+t=1793813881335 OUTCOME i=15 record=cc5e4922-7ea3-4322-9c06-8e0ad2fa18df task=abd7da66-d15a-45bf-b567-fcb7e4aee5d0 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.251Z\") })"
+t=1793813881335 OUTCOME i=22 record=f2b6f401-837f-4e32-82a1-ba3e1a8010b6 task=29b771b0-e455-4920-bd4a-ff57ce572538 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.250Z\") })"
+t=1793813881336 OUTCOME i=18 record=daf7ddc1-d809-41f3-aaa7-a8a5ce6eade3 task=5c3c9013-1fdb-4e57-a163-bc330bdf4725 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.251Z\") })"
+t=1793813881336 OUTCOME i=29 record=835c69ad-2060-4719-99b9-7c28b4fc01ff task=044740d6-d6b9-4439-b08a-870f7668e93b outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.252Z\") })"
+t=1793813881336 OUTCOME i=21 record=326f246b-8d76-4415-956a-83106346f255 task=f4526537-d66b-4266-9eb1-4a1565edc8d1 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.250Z\") })"
+t=1793813881336 OUTCOME i=20 record=bc76aa7d-9f39-4b85-8f70-a7086dffbb4c task=a567d3be-d74a-4893-aa1a-1fba6557aaa7 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.253Z\") })"
+t=1793813881336 OUTCOME i=30 record=d53489f4-9963-460b-85f9-5e388fb7f20b task=8f1e755f-6062-42e2-83e9-940bc1934aee outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T17:38:01.251Z\") })"
+t=1793813881336 SUMMARY children=50 canceled=50 

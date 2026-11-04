@@ -1,0 +1,851 @@
+[
+ {
+  "scenario": "afail",
+  "run": 1,
+  "seed": "20261104-afail-1",
+  "children": 50,
+  "db": "a2a_deleg_afail1_670890f2",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": -9,
+  "exit_after_s": 0.01,
+  "child_age_at_signal_s": [
+   19.7,
+   19.9
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {},
+  "start_spread_ms": 189,
+  "token_cancelled_at_handoff": null,
+  "real_records_before_bogus": 26,
+  "restart_delay_s": 5.4,
+  "pre": {
+   "journal": {
+    "<open>": 51
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_WORKING": 50
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 50
+   },
+   "connections": 11
+  },
+  "pre_worker_cancels": 0,
+  "recover_mode": "recover-all",
+  "restart_after_s": 5.4,
+  "recover_launch_in_run_s": 25.41,
+  "recover_exit": 1,
+  "recover_s": 3.2,
+  "post_early": {
+   "journal": {
+    "<open>": 25,
+    "canceled": 26
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_CANCELED": 26,
+    "TASK_STATE_WORKING": 24
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 24,
+    "canceled/TASK_STATE_CANCELED": 26
+   },
+   "connections": 11
+  },
+  "recover_exit_after_last_child_s": -31.7,
+  "recover_line_in_run_s": 25.49,
+  "reattach_all_ms": null,
+  "post": {
+   "journal": {
+    "<open>": 25,
+    "canceled": 26
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_CANCELED": 26,
+    "TASK_STATE_COMPLETED": 24
+   },
+   "pairs": {
+    "<open>/TASK_STATE_COMPLETED": 24,
+    "canceled/TASK_STATE_CANCELED": 26
+   },
+   "connections": 11
+  },
+  "recover_outcomes": {},
+  "recover_head": {
+   "owner": "sup-afail-1",
+   "open": "51",
+   "with_task_id": "51"
+  },
+  "worker": {
+   "start": 50,
+   "completed": 24,
+   "token-fired": 26,
+   "cancel-hook": 26
+  },
+  "tasks_total": 50,
+  "reattach_lines": 27,
+  "recover_error": false,
+  "reattach_failed": false,
+  "cancelled_by_failure": 26,
+  "checks": [
+   {
+    "name": "supervisor died by SIGKILL",
+    "ok": true,
+    "detail": "exit -9"
+   },
+   {
+    "name": "all 50 children named before the signal",
+    "ok": true,
+    "detail": "50"
+   },
+   {
+    "name": "no rejected send",
+    "ok": true,
+    "detail": "0 START_ERR"
+   },
+   {
+    "name": "51 records open (one bogus) and 50 tasks working before recover",
+    "ok": true,
+    "detail": "{'<open>': 51} / {'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "supervisor's death cancelled nothing",
+    "ok": true,
+    "detail": "0 cancel lines"
+   },
+   {
+    "name": "recover failed on the bogus record (exit 1)",
+    "ok": true,
+    "detail": "exit 1, ERROR line False"
+   },
+   {
+    "name": "recover found 51 open records, all with a task id",
+    "ok": true,
+    "detail": "{'owner': 'sup-afail-1', 'open': '51', 'with_task_id': '51'}"
+   },
+   {
+    "name": "prediction: the 26 children reattached before the failure were cancelled",
+    "ok": true,
+    "detail": "26 tasks canceled; journal {'<open>': 25, 'canceled': 26}"
+   },
+   {
+    "name": "prediction: the others ran on to completion, their records open",
+    "ok": true,
+    "detail": "tasks {'TASK_STATE_CANCELED': 26, 'TASK_STATE_COMPLETED': 24}; journal {'<open>': 25, 'canceled': 26}"
+   }
+  ],
+  "failed": []
+ },
+ {
+  "scenario": "afail",
+  "run": 2,
+  "seed": "20261104-afail-2",
+  "children": 50,
+  "db": "a2a_deleg_afail2_1dc6002d",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": -9,
+  "exit_after_s": 0.01,
+  "child_age_at_signal_s": [
+   19.6,
+   19.9
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {},
+  "start_spread_ms": 324,
+  "token_cancelled_at_handoff": null,
+  "real_records_before_bogus": 26,
+  "restart_delay_s": 5.4,
+  "pre": {
+   "journal": {
+    "<open>": 51
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_WORKING": 50
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 50
+   },
+   "connections": 11
+  },
+  "pre_worker_cancels": 0,
+  "recover_mode": "recover-all",
+  "restart_after_s": 5.4,
+  "recover_launch_in_run_s": 25.41,
+  "recover_exit": 1,
+  "recover_s": 3.2,
+  "post_early": {
+   "journal": {
+    "<open>": 25,
+    "canceled": 26
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_CANCELED": 26,
+    "TASK_STATE_WORKING": 24
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 24,
+    "canceled/TASK_STATE_CANCELED": 26
+   },
+   "connections": 11
+  },
+  "recover_exit_after_last_child_s": -31.73,
+  "recover_line_in_run_s": 25.5,
+  "reattach_all_ms": null,
+  "post": {
+   "journal": {
+    "<open>": 25,
+    "canceled": 26
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_CANCELED": 26,
+    "TASK_STATE_COMPLETED": 24
+   },
+   "pairs": {
+    "<open>/TASK_STATE_COMPLETED": 24,
+    "canceled/TASK_STATE_CANCELED": 26
+   },
+   "connections": 11
+  },
+  "recover_outcomes": {},
+  "recover_head": {
+   "owner": "sup-afail-2",
+   "open": "51",
+   "with_task_id": "51"
+  },
+  "worker": {
+   "start": 50,
+   "completed": 24,
+   "token-fired": 26,
+   "cancel-hook": 26
+  },
+  "tasks_total": 50,
+  "reattach_lines": 27,
+  "recover_error": false,
+  "reattach_failed": false,
+  "cancelled_by_failure": 26,
+  "checks": [
+   {
+    "name": "supervisor died by SIGKILL",
+    "ok": true,
+    "detail": "exit -9"
+   },
+   {
+    "name": "all 50 children named before the signal",
+    "ok": true,
+    "detail": "50"
+   },
+   {
+    "name": "no rejected send",
+    "ok": true,
+    "detail": "0 START_ERR"
+   },
+   {
+    "name": "51 records open (one bogus) and 50 tasks working before recover",
+    "ok": true,
+    "detail": "{'<open>': 51} / {'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "supervisor's death cancelled nothing",
+    "ok": true,
+    "detail": "0 cancel lines"
+   },
+   {
+    "name": "recover failed on the bogus record (exit 1)",
+    "ok": true,
+    "detail": "exit 1, ERROR line False"
+   },
+   {
+    "name": "recover found 51 open records, all with a task id",
+    "ok": true,
+    "detail": "{'owner': 'sup-afail-2', 'open': '51', 'with_task_id': '51'}"
+   },
+   {
+    "name": "prediction: the 26 children reattached before the failure were cancelled",
+    "ok": true,
+    "detail": "26 tasks canceled; journal {'<open>': 25, 'canceled': 26}"
+   },
+   {
+    "name": "prediction: the others ran on to completion, their records open",
+    "ok": true,
+    "detail": "tasks {'TASK_STATE_CANCELED': 26, 'TASK_STATE_COMPLETED': 24}; journal {'<open>': 25, 'canceled': 26}"
+   }
+  ],
+  "failed": []
+ },
+ {
+  "scenario": "afail",
+  "run": 3,
+  "seed": "20261104-afail-3",
+  "children": 50,
+  "db": "a2a_deleg_afail3_fd02bdd7",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": -9,
+  "exit_after_s": 0.01,
+  "child_age_at_signal_s": [
+   19.7,
+   19.8
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {},
+  "start_spread_ms": 178,
+  "token_cancelled_at_handoff": null,
+  "real_records_before_bogus": 26,
+  "restart_delay_s": 5.4,
+  "pre": {
+   "journal": {
+    "<open>": 51
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_WORKING": 50
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 50
+   },
+   "connections": 11
+  },
+  "pre_worker_cancels": 0,
+  "recover_mode": "recover-all",
+  "restart_after_s": 5.4,
+  "recover_launch_in_run_s": 25.41,
+  "recover_exit": 1,
+  "recover_s": 3.2,
+  "post_early": {
+   "journal": {
+    "<open>": 25,
+    "canceled": 26
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_CANCELED": 26,
+    "TASK_STATE_WORKING": 24
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 24,
+    "canceled/TASK_STATE_CANCELED": 26
+   },
+   "connections": 11
+  },
+  "recover_exit_after_last_child_s": -31.76,
+  "recover_line_in_run_s": 25.48,
+  "reattach_all_ms": null,
+  "post": {
+   "journal": {
+    "<open>": 25,
+    "canceled": 26
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_CANCELED": 26,
+    "TASK_STATE_COMPLETED": 24
+   },
+   "pairs": {
+    "<open>/TASK_STATE_COMPLETED": 24,
+    "canceled/TASK_STATE_CANCELED": 26
+   },
+   "connections": 11
+  },
+  "recover_outcomes": {},
+  "recover_head": {
+   "owner": "sup-afail-3",
+   "open": "51",
+   "with_task_id": "51"
+  },
+  "worker": {
+   "start": 50,
+   "completed": 24,
+   "token-fired": 26,
+   "cancel-hook": 26
+  },
+  "tasks_total": 50,
+  "reattach_lines": 27,
+  "recover_error": false,
+  "reattach_failed": false,
+  "cancelled_by_failure": 26,
+  "checks": [
+   {
+    "name": "supervisor died by SIGKILL",
+    "ok": true,
+    "detail": "exit -9"
+   },
+   {
+    "name": "all 50 children named before the signal",
+    "ok": true,
+    "detail": "50"
+   },
+   {
+    "name": "no rejected send",
+    "ok": true,
+    "detail": "0 START_ERR"
+   },
+   {
+    "name": "51 records open (one bogus) and 50 tasks working before recover",
+    "ok": true,
+    "detail": "{'<open>': 51} / {'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "supervisor's death cancelled nothing",
+    "ok": true,
+    "detail": "0 cancel lines"
+   },
+   {
+    "name": "recover failed on the bogus record (exit 1)",
+    "ok": true,
+    "detail": "exit 1, ERROR line False"
+   },
+   {
+    "name": "recover found 51 open records, all with a task id",
+    "ok": true,
+    "detail": "{'owner': 'sup-afail-3', 'open': '51', 'with_task_id': '51'}"
+   },
+   {
+    "name": "prediction: the 26 children reattached before the failure were cancelled",
+    "ok": true,
+    "detail": "26 tasks canceled; journal {'<open>': 25, 'canceled': 26}"
+   },
+   {
+    "name": "prediction: the others ran on to completion, their records open",
+    "ok": true,
+    "detail": "tasks {'TASK_STATE_CANCELED': 26, 'TASK_STATE_COMPLETED': 24}; journal {'<open>': 25, 'canceled': 26}"
+   }
+  ],
+  "failed": []
+ },
+ {
+  "scenario": "afailkeep",
+  "run": 1,
+  "seed": "20261104-afailkeep-1",
+  "children": 50,
+  "db": "a2a_deleg_afailkeep1_5af7a916",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": -9,
+  "exit_after_s": 0.01,
+  "child_age_at_signal_s": [
+   19.6,
+   19.8
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {},
+  "start_spread_ms": 227,
+  "token_cancelled_at_handoff": null,
+  "real_records_before_bogus": 26,
+  "restart_delay_s": 5.4,
+  "pre": {
+   "journal": {
+    "<open>": 51
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_WORKING": 50
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 50
+   },
+   "connections": 11
+  },
+  "pre_worker_cancels": 0,
+  "recover_mode": "recover-keep",
+  "restart_after_s": 5.4,
+  "recover_launch_in_run_s": 25.41,
+  "recover_exit": 0,
+  "recover_s": 35.0,
+  "post_early": {
+   "journal": {
+    "<open>": 1,
+    "completed": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_COMPLETED": 50
+   },
+   "pairs": {
+    "completed/TASK_STATE_COMPLETED": 50
+   },
+   "connections": 11
+  },
+  "recover_exit_after_last_child_s": 0.06,
+  "recover_line_in_run_s": 25.49,
+  "reattach_all_ms": 201,
+  "post": {
+   "journal": {
+    "<open>": 1,
+    "completed": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_COMPLETED": 50
+   },
+   "pairs": {
+    "completed/TASK_STATE_COMPLETED": 50
+   },
+   "connections": 11
+  },
+  "recover_outcomes": {
+   "completed": 50
+  },
+  "recover_head": {
+   "owner": "sup-afailkeep-1",
+   "open": "51",
+   "with_task_id": "51"
+  },
+  "worker": {
+   "start": 50,
+   "completed": 50,
+   "token-fired": 0,
+   "cancel-hook": 0
+  },
+  "tasks_total": 50,
+  "reattach_lines": 51,
+  "recover_error": false,
+  "reattach_failed": true,
+  "cancelled_by_failure": 0,
+  "checks": [
+   {
+    "name": "supervisor died by SIGKILL",
+    "ok": true,
+    "detail": "exit -9"
+   },
+   {
+    "name": "all 50 children named before the signal",
+    "ok": true,
+    "detail": "50"
+   },
+   {
+    "name": "no rejected send",
+    "ok": true,
+    "detail": "0 START_ERR"
+   },
+   {
+    "name": "51 records open (one bogus) and 50 tasks working before recover",
+    "ok": true,
+    "detail": "{'<open>': 51} / {'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "supervisor's death cancelled nothing",
+    "ok": true,
+    "detail": "0 cancel lines"
+   },
+   {
+    "name": "recover logged the bogus record and finished (exit 0)",
+    "ok": true,
+    "detail": "exit 0, ERROR line False, REATTACH_FAILED line True"
+   },
+   {
+    "name": "recover found 51 open records, all with a task id",
+    "ok": true,
+    "detail": "{'owner': 'sup-afailkeep-1', 'open': '51', 'with_task_id': '51'}"
+   },
+   {
+    "name": "prediction: the loop that keeps its handles cancelled nothing",
+    "ok": true,
+    "detail": "0 tasks canceled; cancel-hook 0"
+   },
+   {
+    "name": "prediction: all 50 children completed and only the bogus record is left open",
+    "ok": true,
+    "detail": "tasks {'TASK_STATE_COMPLETED': 50}; journal {'<open>': 1, 'completed': 50}"
+   },
+   {
+    "name": "prediction: 50 children reattached, the bogus one logged",
+    "ok": true,
+    "detail": "50 OUTCOME lines"
+   }
+  ],
+  "failed": []
+ },
+ {
+  "scenario": "afailkeep",
+  "run": 2,
+  "seed": "20261104-afailkeep-2",
+  "children": 50,
+  "db": "a2a_deleg_afailkeep2_1295ee1a",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": -9,
+  "exit_after_s": 0.01,
+  "child_age_at_signal_s": [
+   19.6,
+   19.9
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {},
+  "start_spread_ms": 285,
+  "token_cancelled_at_handoff": null,
+  "real_records_before_bogus": 26,
+  "restart_delay_s": 5.4,
+  "pre": {
+   "journal": {
+    "<open>": 51
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_WORKING": 50
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 50
+   },
+   "connections": 11
+  },
+  "pre_worker_cancels": 0,
+  "recover_mode": "recover-keep",
+  "restart_after_s": 5.4,
+  "recover_launch_in_run_s": 25.41,
+  "recover_exit": 0,
+  "recover_s": 35.0,
+  "post_early": {
+   "journal": {
+    "<open>": 1,
+    "completed": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_COMPLETED": 50
+   },
+   "pairs": {
+    "completed/TASK_STATE_COMPLETED": 50
+   },
+   "connections": 11
+  },
+  "recover_exit_after_last_child_s": 0.05,
+  "recover_line_in_run_s": 25.48,
+  "reattach_all_ms": 208,
+  "post": {
+   "journal": {
+    "<open>": 1,
+    "completed": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_COMPLETED": 50
+   },
+   "pairs": {
+    "completed/TASK_STATE_COMPLETED": 50
+   },
+   "connections": 11
+  },
+  "recover_outcomes": {
+   "completed": 50
+  },
+  "recover_head": {
+   "owner": "sup-afailkeep-2",
+   "open": "51",
+   "with_task_id": "51"
+  },
+  "worker": {
+   "start": 50,
+   "completed": 50,
+   "token-fired": 0,
+   "cancel-hook": 0
+  },
+  "tasks_total": 50,
+  "reattach_lines": 51,
+  "recover_error": false,
+  "reattach_failed": true,
+  "cancelled_by_failure": 0,
+  "checks": [
+   {
+    "name": "supervisor died by SIGKILL",
+    "ok": true,
+    "detail": "exit -9"
+   },
+   {
+    "name": "all 50 children named before the signal",
+    "ok": true,
+    "detail": "50"
+   },
+   {
+    "name": "no rejected send",
+    "ok": true,
+    "detail": "0 START_ERR"
+   },
+   {
+    "name": "51 records open (one bogus) and 50 tasks working before recover",
+    "ok": true,
+    "detail": "{'<open>': 51} / {'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "supervisor's death cancelled nothing",
+    "ok": true,
+    "detail": "0 cancel lines"
+   },
+   {
+    "name": "recover logged the bogus record and finished (exit 0)",
+    "ok": true,
+    "detail": "exit 0, ERROR line False, REATTACH_FAILED line True"
+   },
+   {
+    "name": "recover found 51 open records, all with a task id",
+    "ok": true,
+    "detail": "{'owner': 'sup-afailkeep-2', 'open': '51', 'with_task_id': '51'}"
+   },
+   {
+    "name": "prediction: the loop that keeps its handles cancelled nothing",
+    "ok": true,
+    "detail": "0 tasks canceled; cancel-hook 0"
+   },
+   {
+    "name": "prediction: all 50 children completed and only the bogus record is left open",
+    "ok": true,
+    "detail": "tasks {'TASK_STATE_COMPLETED': 50}; journal {'<open>': 1, 'completed': 50}"
+   },
+   {
+    "name": "prediction: 50 children reattached, the bogus one logged",
+    "ok": true,
+    "detail": "50 OUTCOME lines"
+   }
+  ],
+  "failed": []
+ },
+ {
+  "scenario": "afailkeep",
+  "run": 3,
+  "seed": "20261104-afailkeep-3",
+  "children": 50,
+  "db": "a2a_deleg_afailkeep3_4993ddb0",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": -9,
+  "exit_after_s": 0.01,
+  "child_age_at_signal_s": [
+   19.6,
+   19.9
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {},
+  "start_spread_ms": 258,
+  "token_cancelled_at_handoff": null,
+  "real_records_before_bogus": 26,
+  "restart_delay_s": 5.4,
+  "pre": {
+   "journal": {
+    "<open>": 51
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_WORKING": 50
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 50
+   },
+   "connections": 11
+  },
+  "pre_worker_cancels": 0,
+  "recover_mode": "recover-keep",
+  "restart_after_s": 5.4,
+  "recover_launch_in_run_s": 25.41,
+  "recover_exit": 0,
+  "recover_s": 35.0,
+  "post_early": {
+   "journal": {
+    "<open>": 1,
+    "completed": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_COMPLETED": 50
+   },
+   "pairs": {
+    "completed/TASK_STATE_COMPLETED": 50
+   },
+   "connections": 11
+  },
+  "recover_exit_after_last_child_s": 0.04,
+  "recover_line_in_run_s": 25.49,
+  "reattach_all_ms": 201,
+  "post": {
+   "journal": {
+    "<open>": 1,
+    "completed": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_COMPLETED": 50
+   },
+   "pairs": {
+    "completed/TASK_STATE_COMPLETED": 50
+   },
+   "connections": 11
+  },
+  "recover_outcomes": {
+   "completed": 50
+  },
+  "recover_head": {
+   "owner": "sup-afailkeep-3",
+   "open": "51",
+   "with_task_id": "51"
+  },
+  "worker": {
+   "start": 50,
+   "completed": 50,
+   "token-fired": 0,
+   "cancel-hook": 0
+  },
+  "tasks_total": 50,
+  "reattach_lines": 51,
+  "recover_error": false,
+  "reattach_failed": true,
+  "cancelled_by_failure": 0,
+  "checks": [
+   {
+    "name": "supervisor died by SIGKILL",
+    "ok": true,
+    "detail": "exit -9"
+   },
+   {
+    "name": "all 50 children named before the signal",
+    "ok": true,
+    "detail": "50"
+   },
+   {
+    "name": "no rejected send",
+    "ok": true,
+    "detail": "0 START_ERR"
+   },
+   {
+    "name": "51 records open (one bogus) and 50 tasks working before recover",
+    "ok": true,
+    "detail": "{'<open>': 51} / {'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "supervisor's death cancelled nothing",
+    "ok": true,
+    "detail": "0 cancel lines"
+   },
+   {
+    "name": "recover logged the bogus record and finished (exit 0)",
+    "ok": true,
+    "detail": "exit 0, ERROR line False, REATTACH_FAILED line True"
+   },
+   {
+    "name": "recover found 51 open records, all with a task id",
+    "ok": true,
+    "detail": "{'owner': 'sup-afailkeep-3', 'open': '51', 'with_task_id': '51'}"
+   },
+   {
+    "name": "prediction: the loop that keeps its handles cancelled nothing",
+    "ok": true,
+    "detail": "0 tasks canceled; cancel-hook 0"
+   },
+   {
+    "name": "prediction: all 50 children completed and only the bogus record is left open",
+    "ok": true,
+    "detail": "tasks {'TASK_STATE_COMPLETED': 50}; journal {'<open>': 1, 'completed': 50}"
+   },
+   {
+    "name": "prediction: 50 children reattached, the bogus one logged",
+    "ok": true,
+    "detail": "50 OUTCOME lines"
+   }
+  ],
+  "failed": []
+ }
+]

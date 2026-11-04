@@ -3,7 +3,17 @@
 
 # Live proof of the delegation hand-off (audit group M)
 
-Run on 2026-11-04 from `main` at `3685b8f9`, by `scripts/live/delegation/`. Nothing under `crates/` was changed. Findings 1 and 2 below were then fixed by the maintainer in `291aaf89` and the fix was run live with the same harness: the last section summarises it, `RERUN-291aaf89.md` has the expectations, tables and limits. Everything above that section is the run on `main`, the "before".
+Run on 2026-11-04 from `main` at `3685b8f9`, by `scripts/live/delegation/`. Nothing under `crates/` was changed. Findings 1 and 2 below were then fixed by the maintainer in `291aaf89` and the fix was run live with the same harness: the last section summarises it, `RERUN-291aaf89.md` has the expectations, tables and limits. Everything above that section is the run on `main`, the "before". The loop as the book now reads it, and the
+SIGTERM and gRPC scenarios again, were run on this pull request's head: "Re-run on this pull request's head", last.
+
+**Commit names.** This evidence was recorded on a branch whose history was rewritten once afterwards, so
+three commits are cited here by their old names: `72ab3b64` (the harness) is `9bf8a90e` on this pull
+request, `291aaf89` (the renewal fix and the book loop) is `998773c7`, and `8151e5a1` (the re-run) is
+`4da9d9d8`. Checked with git on the final head: the harness paths of `72ab3b64` and `9bf8a90e` do not differ;
+`8151e5a1` and `4da9d9d8` have the same patch-id; `crates/` differs between `291aaf89` and this branch only in
+`pool/mod.rs` and `tests/http_pool/idle.rs` (the HTTP pool, which the harness does not use), so the delegation
+code under test is the same. `998773c7` differs from `291aaf89` in the book (the loop's `match` and the lease
+note) and in the CHANGELOG entries that describe them; the change to the book is what finding 5 asked for. The recorded logs keep the old names, as written.
 
 Status words: **PROVEN** is a count read from `psql` and from the processes' own
 logs in every run of a scenario, in this setup only. **VALIDATED** says by what
@@ -298,15 +308,54 @@ Same harness, library and book as the maintainer changed them in `291aaf89` (`cr
 | `afailold` (extra): one bad record, serial `recover` | 5.4 | 1 | 50 completed, 0 canceled; 26 records completed, 25 open |
 | `afail` with no linger (extra) | 5.4 | 3 | canceled 1, 1, 2 of 26 reattached, 51 records open |
 
-Contradicted my expectations (details in `RERUN-291aaf89.md`): the edge probe (I predicted a sharp edge near 10.3 s; the loss grows from 0 at 9.5 s to 50 at 12 s and differs between two passes of the same delay), the cost of reattaching 50 (179 to 266 ms, not about 0.5 s), and one pre-recover snapshot of `allate`. Nothing contradicted the fix. **New finding 5:** the new loop collects handles and ends each reattach with `?`; a record that cannot be reattached drops the handles already collected, and a dropped handle cancels its child (`delegation/drop.rs`): 26 of 26 cancelled in 3 of 3 runs; with no linger 1 to 2 of 26 and 51 records left open. The serial loop cancelled none. Not fixed.
+Contradicted my expectations (details in `RERUN-291aaf89.md`): the edge probe (I predicted a sharp edge near 10.3 s; the loss grows from 0 at 9.5 s to 50 at 12 s and differs between two passes of the same delay), the cost of reattaching 50 (179 to 266 ms, not about 0.5 s), and one pre-recover snapshot of `allate`. Nothing contradicted the fix. **New finding 5:** the new loop collects handles and ends each reattach with `?`; a record that cannot be reattached drops the handles already collected, and a dropped handle cancels its child (`delegation/drop.rs`): 26 of 26 cancelled in 3 of 3 runs; with no linger 1 to 2 of 26 and 51 records left open. The serial loop cancelled none. Not fixed at `291aaf89`; fixed in the book by `998773c7` (a `match` that logs the record and goes on) and validated live by `afailkeep`, 3 of 3 (last section).
 
-Not run in the re-run: `c`, `c2`, `cx` and the gRPC probe on `291aaf89`, `PostgresLeaseStore`, other TTLs and kill phases, more than 50 children, the unit tests of `291aaf89`, a restart between 10.6 and 12 s.
+Not run in the re-run on `291aaf89` (`c`, `c2`, `cx` and the gRPC probe were run later, on this pull request's head: last section): `c`, `c2`, `cx` and the gRPC probe on `291aaf89`, `PostgresLeaseStore`, other TTLs and kill phases, more than 50 children, the unit tests of `291aaf89`, a restart between 10.6 and 12 s.
+
+## Re-run on this pull request's head (the loop as the book now reads it)
+
+Run by the session that opened this pull request, not by the agent that made the sections above, on `2a5e2ede` with the
+harness built from it (`logs/pr-head/environment.txt`: two uncommitted files, a documentation edit and the
+harness's `Cargo.lock`, copied from the workspace's and rewritten by cargo for the harness's packages;
+binary hashes there). PostgreSQL 16.15, rustc 1.99.1, 4 cores. Script: `logs/pr-head/run.sh`; phase times:
+`logs/pr-head/times.txt`. 50 children x 60 s, kill -9 at 20 s, seed 20261104, a fresh database per run.
+
+Expectations, written before the runs (they are in the message of `2a5e2ede`, committed 17:23:56 UTC; the
+runs began at 17:24:54): `afailkeep` exits 0 with one `REATTACH_FAILED` line, all 50 tasks complete, none is
+cancelled, and the journal reads 50 completed and 1 open. `afail` (the `?` loop, the control), `c`, `c2`,
+`cx` and the gRPC probe as in the sections above.
+
+| scenario | runs | result (from `logs/pr-head/fail/results.json`, `.../term/results.json`, `grpc-stdout.log`) |
+|---|---|---|
+| `afailkeep`: one bad record, `recover-keep` (the book's loop now) | 3 | exit 0; one `REATTACH_FAILED` ("Task not found: no-such-task"); 50 tasks completed, 0 canceled, 0 cancel hooks; journal 50 completed, 1 open (the bad record); reattaching the 50 took 201, 208 and 201 ms |
+| `afail`: the same, `recover-all` with `?` (control) | 3 | exit 1; 26 tasks canceled and 24 completed; journal 26 canceled, 25 open: the same as on `291aaf89` |
+| `c`: SIGTERM, bare supervisor | 3 | every child `handed_off` (50), records open, tasks working, nothing cancelled; `recover` then completed 50 of 50 |
+| `c2`: SIGTERM, supervisor as an agent behind `serve_with_shutdown` | 3 | the same |
+| `cx`: control, SIGTERM wired to cancel | 3 | 50 canceled, 50 journal records `canceled`, 50 cancel hooks: the harness sees the failure `c` rules out |
+| gRPC idle probe, quiet 90 s under a 10 s client idle timeout | 3 | `completed` in each, 8 `SubscribeToTask` resumes, 0 `CancelTask` |
+
+So **finding 5 is fixed and VALIDATED live**: the same bad record that made the `?` loop cancel 26 children made
+the `match` loop cancel none and complete all 50, in 3 of 3 runs. The `c`, `c2`, `cx` and gRPC results of the
+first section hold on a tree that includes the renewal change, which the agent's re-run had not run.
+
+Limits. `recover-keep` is my transcription of the book's loop, with log lines, a record map and the lease
+option the printed code does not have (as `recover-all` is the agent's); the book's text is compiled by
+`book-tests` as a `no_run` example, not executed. One bad record at one position, whose cause is a purged
+task; a transient error in `reattach_with` was not injected. Not re-run on this head: `alold`, `alfix`,
+`allate`, `aledge` and `afix`. Their results stand on the sources they ran being the same
+(client delegation, server and types sources do not differ from `291aaf89`, checked with git), which is an
+inference, not a run. Not run at all: `PostgresLeaseStore`, a lease other than 15 s, more than 50 children,
+`kill -9` of the `serve` supervisor, the old gRPC probe's seven quiet minutes through Envoy or nginx.
+
+Cost: the harness build 48 s (dev profile, `-j3`), the gRPC probe's build at most 58 s (17:23:56 to the first run's start); the six `afail` and
+`afailkeep` runs 17:24:54 to 17:31:33, the nine `c`, `c2`, `cx` runs to 17:38:52, the gRPC probe to 17:43:22.
 
 ## Files
 
 - `logs/driver-stdout.log`: the final run's full stdout, ending with the table. `logs/results.jsonl`: every measurement of every run, one line each.
 - `logs/<scenario>-<run>/`: `supervisor.log` (the `start` or `serve` process), `recover.log`, `worker.log`, `db-final.json` for a-1, c-1, c2-1, cx-1, al-1, al-2. The others are in `target/live/delegation/final` and were not copied.
 - `RERUN-291aaf89.md` and `logs/fix/`: the re-run on `291aaf89` (`results.jsonl` and `linger0-results.jsonl` with a timeline per run, `driver-stdout.log`, `linger0-stdout.log`, `first-pass.txt`, `environment.txt`, and `supervisor.log`, `recover.log`, `worker.log`, `db-final.json` for alold-1, alold-3, alfix-1, alfix-3, allate-1, afix-1, aledge-9.5-1, aledge-10.6-3, afail-1, afailold-1, afail-linger0-1).
+- `logs/pr-head/`: the re-run on this pull request's head (`run.sh`, `environment.txt`, `times.txt`, `fail-stdout.log`, `term-stdout.log`, `grpc-stdout.log`, `fail/` and `term/` with `results.json` and per-run `supervisor.log`, `recover.log`, `worker.log`, `db-final.json`, `grpc/`).
 - `logs/grpc-driver-stdout.log`, `logs/grpc-run1.log`; `logs/replica-hold-check.log`; `logs/environment.txt`; `logs/earlier-passes.txt`.
 - The harness: `scripts/live/delegation/` (see its `README.md`).
 

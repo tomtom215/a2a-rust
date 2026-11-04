@@ -1,0 +1,1151 @@
+[
+ {
+  "scenario": "c",
+  "run": 1,
+  "seed": "20261104-c-1",
+  "children": 50,
+  "db": "a2a_deleg_c1_f7bdad68",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": 0,
+  "exit_after_s": 0.03,
+  "child_age_at_signal_s": [
+   19.6,
+   19.9
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {
+   "handed_off": 50
+  },
+  "start_spread_ms": 258,
+  "token_cancelled_at_handoff": null,
+  "restart_delay_s": 5.0,
+  "pre": {
+   "journal": {
+    "<open>": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_WORKING": 50
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 50
+   },
+   "connections": 11
+  },
+  "pre_worker_cancels": 0,
+  "recover_mode": "recover",
+  "restart_after_s": 5.0,
+  "recover_launch_in_run_s": 25.03,
+  "recover_exit": 0,
+  "recover_s": 35.7,
+  "recover_exit_after_last_child_s": 0.34,
+  "recover_line_in_run_s": 25.12,
+  "reattach_all_ms": null,
+  "post": {
+   "journal": {
+    "completed": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_COMPLETED": 50
+   },
+   "pairs": {
+    "completed/TASK_STATE_COMPLETED": 50
+   },
+   "connections": 11
+  },
+  "recover_outcomes": {
+   "completed": 50
+  },
+  "recover_head": {
+   "owner": "sup-c-1",
+   "open": "50",
+   "with_task_id": "50"
+  },
+  "worker": {
+   "start": 50,
+   "completed": 50,
+   "token-fired": 0,
+   "cancel-hook": 0
+  },
+  "tasks_total": 50,
+  "checks": [
+   {
+    "name": "supervisor exited 0 after SIGTERM",
+    "ok": true,
+    "detail": "exit 0"
+   },
+   {
+    "name": "exit within 10s of SIGTERM",
+    "ok": true,
+    "detail": "0.03s"
+   },
+   {
+    "name": "every child reported HandedOff",
+    "ok": true,
+    "detail": "{'handed_off': 50}"
+   },
+   {
+    "name": "no record settled by the exit",
+    "ok": true,
+    "detail": "{'<open>': 50}"
+   },
+   {
+    "name": "no task cancelled by the exit",
+    "ok": true,
+    "detail": "{'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "all 50 children named before the signal",
+    "ok": true,
+    "detail": "50"
+   },
+   {
+    "name": "no rejected send",
+    "ok": true,
+    "detail": "0 START_ERR"
+   },
+   {
+    "name": "50 records open and 50 tasks working before recover",
+    "ok": true,
+    "detail": "{'<open>': 50} / {'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "supervisor's death cancelled nothing",
+    "ok": true,
+    "detail": "0 cancel lines"
+   },
+   {
+    "name": "recover exited 0",
+    "ok": true,
+    "detail": "0"
+   },
+   {
+    "name": "recover found 50 open records, all with a task id",
+    "ok": true,
+    "detail": "{'owner': 'sup-c-1', 'open': '50', 'with_task_id': '50'}"
+   },
+   {
+    "name": "recover: 50 outcomes completed",
+    "ok": true,
+    "detail": "{'completed': 50}"
+   },
+   {
+    "name": "journal: 50 completed, 0 canceled, 0 open",
+    "ok": true,
+    "detail": "{'completed': 50}"
+   },
+   {
+    "name": "tasks: all completed, none non-terminal",
+    "ok": true,
+    "detail": "{'TASK_STATE_COMPLETED': 50}"
+   },
+   {
+    "name": "worker: 50 tasks, none cancelled",
+    "ok": true,
+    "detail": "tasks 50, cancel-hook 0, token-fired 0"
+   },
+   {
+    "name": "worker: 50 completed log lines",
+    "ok": true,
+    "detail": "50"
+   }
+  ],
+  "failed": []
+ },
+ {
+  "scenario": "c",
+  "run": 2,
+  "seed": "20261104-c-2",
+  "children": 50,
+  "db": "a2a_deleg_c2_87c25713",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": 0,
+  "exit_after_s": 0.03,
+  "child_age_at_signal_s": [
+   19.7,
+   19.9
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {
+   "handed_off": 50
+  },
+  "start_spread_ms": 203,
+  "token_cancelled_at_handoff": null,
+  "restart_delay_s": 7.0,
+  "pre": {
+   "journal": {
+    "<open>": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_WORKING": 50
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 50
+   },
+   "connections": 11
+  },
+  "pre_worker_cancels": 0,
+  "recover_mode": "recover",
+  "restart_after_s": 7.0,
+  "recover_launch_in_run_s": 27.03,
+  "recover_exit": 0,
+  "recover_s": 33.6,
+  "recover_exit_after_last_child_s": 0.35,
+  "recover_line_in_run_s": 27.11,
+  "reattach_all_ms": null,
+  "post": {
+   "journal": {
+    "completed": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_COMPLETED": 50
+   },
+   "pairs": {
+    "completed/TASK_STATE_COMPLETED": 50
+   },
+   "connections": 11
+  },
+  "recover_outcomes": {
+   "completed": 50
+  },
+  "recover_head": {
+   "owner": "sup-c-2",
+   "open": "50",
+   "with_task_id": "50"
+  },
+  "worker": {
+   "start": 50,
+   "completed": 50,
+   "token-fired": 0,
+   "cancel-hook": 0
+  },
+  "tasks_total": 50,
+  "checks": [
+   {
+    "name": "supervisor exited 0 after SIGTERM",
+    "ok": true,
+    "detail": "exit 0"
+   },
+   {
+    "name": "exit within 10s of SIGTERM",
+    "ok": true,
+    "detail": "0.03s"
+   },
+   {
+    "name": "every child reported HandedOff",
+    "ok": true,
+    "detail": "{'handed_off': 50}"
+   },
+   {
+    "name": "no record settled by the exit",
+    "ok": true,
+    "detail": "{'<open>': 50}"
+   },
+   {
+    "name": "no task cancelled by the exit",
+    "ok": true,
+    "detail": "{'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "all 50 children named before the signal",
+    "ok": true,
+    "detail": "50"
+   },
+   {
+    "name": "no rejected send",
+    "ok": true,
+    "detail": "0 START_ERR"
+   },
+   {
+    "name": "50 records open and 50 tasks working before recover",
+    "ok": true,
+    "detail": "{'<open>': 50} / {'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "supervisor's death cancelled nothing",
+    "ok": true,
+    "detail": "0 cancel lines"
+   },
+   {
+    "name": "recover exited 0",
+    "ok": true,
+    "detail": "0"
+   },
+   {
+    "name": "recover found 50 open records, all with a task id",
+    "ok": true,
+    "detail": "{'owner': 'sup-c-2', 'open': '50', 'with_task_id': '50'}"
+   },
+   {
+    "name": "recover: 50 outcomes completed",
+    "ok": true,
+    "detail": "{'completed': 50}"
+   },
+   {
+    "name": "journal: 50 completed, 0 canceled, 0 open",
+    "ok": true,
+    "detail": "{'completed': 50}"
+   },
+   {
+    "name": "tasks: all completed, none non-terminal",
+    "ok": true,
+    "detail": "{'TASK_STATE_COMPLETED': 50}"
+   },
+   {
+    "name": "worker: 50 tasks, none cancelled",
+    "ok": true,
+    "detail": "tasks 50, cancel-hook 0, token-fired 0"
+   },
+   {
+    "name": "worker: 50 completed log lines",
+    "ok": true,
+    "detail": "50"
+   }
+  ],
+  "failed": []
+ },
+ {
+  "scenario": "c",
+  "run": 3,
+  "seed": "20261104-c-3",
+  "children": 50,
+  "db": "a2a_deleg_c3_d9bdc7f6",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": 0,
+  "exit_after_s": 0.03,
+  "child_age_at_signal_s": [
+   19.7,
+   19.8
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {
+   "handed_off": 50
+  },
+  "start_spread_ms": 188,
+  "token_cancelled_at_handoff": null,
+  "restart_delay_s": 5.8,
+  "pre": {
+   "journal": {
+    "<open>": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_WORKING": 50
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 50
+   },
+   "connections": 11
+  },
+  "pre_worker_cancels": 0,
+  "recover_mode": "recover",
+  "restart_after_s": 5.8,
+  "recover_launch_in_run_s": 25.83,
+  "recover_exit": 0,
+  "recover_s": 34.8,
+  "recover_exit_after_last_child_s": 0.3,
+  "recover_line_in_run_s": 25.92,
+  "reattach_all_ms": null,
+  "post": {
+   "journal": {
+    "completed": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_COMPLETED": 50
+   },
+   "pairs": {
+    "completed/TASK_STATE_COMPLETED": 50
+   },
+   "connections": 11
+  },
+  "recover_outcomes": {
+   "completed": 50
+  },
+  "recover_head": {
+   "owner": "sup-c-3",
+   "open": "50",
+   "with_task_id": "50"
+  },
+  "worker": {
+   "start": 50,
+   "completed": 50,
+   "token-fired": 0,
+   "cancel-hook": 0
+  },
+  "tasks_total": 50,
+  "checks": [
+   {
+    "name": "supervisor exited 0 after SIGTERM",
+    "ok": true,
+    "detail": "exit 0"
+   },
+   {
+    "name": "exit within 10s of SIGTERM",
+    "ok": true,
+    "detail": "0.03s"
+   },
+   {
+    "name": "every child reported HandedOff",
+    "ok": true,
+    "detail": "{'handed_off': 50}"
+   },
+   {
+    "name": "no record settled by the exit",
+    "ok": true,
+    "detail": "{'<open>': 50}"
+   },
+   {
+    "name": "no task cancelled by the exit",
+    "ok": true,
+    "detail": "{'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "all 50 children named before the signal",
+    "ok": true,
+    "detail": "50"
+   },
+   {
+    "name": "no rejected send",
+    "ok": true,
+    "detail": "0 START_ERR"
+   },
+   {
+    "name": "50 records open and 50 tasks working before recover",
+    "ok": true,
+    "detail": "{'<open>': 50} / {'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "supervisor's death cancelled nothing",
+    "ok": true,
+    "detail": "0 cancel lines"
+   },
+   {
+    "name": "recover exited 0",
+    "ok": true,
+    "detail": "0"
+   },
+   {
+    "name": "recover found 50 open records, all with a task id",
+    "ok": true,
+    "detail": "{'owner': 'sup-c-3', 'open': '50', 'with_task_id': '50'}"
+   },
+   {
+    "name": "recover: 50 outcomes completed",
+    "ok": true,
+    "detail": "{'completed': 50}"
+   },
+   {
+    "name": "journal: 50 completed, 0 canceled, 0 open",
+    "ok": true,
+    "detail": "{'completed': 50}"
+   },
+   {
+    "name": "tasks: all completed, none non-terminal",
+    "ok": true,
+    "detail": "{'TASK_STATE_COMPLETED': 50}"
+   },
+   {
+    "name": "worker: 50 tasks, none cancelled",
+    "ok": true,
+    "detail": "tasks 50, cancel-hook 0, token-fired 0"
+   },
+   {
+    "name": "worker: 50 completed log lines",
+    "ok": true,
+    "detail": "50"
+   }
+  ],
+  "failed": []
+ },
+ {
+  "scenario": "c2",
+  "run": 1,
+  "seed": "20261104-c2-1",
+  "children": 50,
+  "db": "a2a_deleg_c21_79121d07",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": 0,
+  "exit_after_s": 0.03,
+  "child_age_at_signal_s": [
+   19.7,
+   19.9
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {
+   "handed_off": 50
+  },
+  "start_spread_ms": 198,
+  "token_cancelled_at_handoff": "false",
+  "restart_delay_s": 3.5,
+  "pre": {
+   "journal": {
+    "<open>": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_WORKING": 50
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 50
+   },
+   "connections": 11
+  },
+  "pre_worker_cancels": 0,
+  "recover_mode": "recover",
+  "restart_after_s": 3.5,
+  "recover_launch_in_run_s": 23.53,
+  "recover_exit": 0,
+  "recover_s": 37.1,
+  "recover_exit_after_last_child_s": 0.3,
+  "recover_line_in_run_s": 23.61,
+  "reattach_all_ms": null,
+  "post": {
+   "journal": {
+    "completed": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_COMPLETED": 50
+   },
+   "pairs": {
+    "completed/TASK_STATE_COMPLETED": 50
+   },
+   "connections": 11
+  },
+  "recover_outcomes": {
+   "completed": 50
+  },
+  "recover_head": {
+   "owner": "sup-c2-1",
+   "open": "50",
+   "with_task_id": "50"
+  },
+  "worker": {
+   "start": 50,
+   "completed": 50,
+   "token-fired": 0,
+   "cancel-hook": 0
+  },
+  "tasks_total": 50,
+  "checks": [
+   {
+    "name": "supervisor exited 0 after SIGTERM",
+    "ok": true,
+    "detail": "exit 0"
+   },
+   {
+    "name": "exit within 10s of SIGTERM",
+    "ok": true,
+    "detail": "0.03s"
+   },
+   {
+    "name": "every child reported HandedOff",
+    "ok": true,
+    "detail": "{'handed_off': 50}"
+   },
+   {
+    "name": "no record settled by the exit",
+    "ok": true,
+    "detail": "{'<open>': 50}"
+   },
+   {
+    "name": "no task cancelled by the exit",
+    "ok": true,
+    "detail": "{'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "executor token not yet fired when the children handed off",
+    "ok": true,
+    "detail": "false"
+   },
+   {
+    "name": "all 50 children named before the signal",
+    "ok": true,
+    "detail": "50"
+   },
+   {
+    "name": "no rejected send",
+    "ok": true,
+    "detail": "0 START_ERR"
+   },
+   {
+    "name": "50 records open and 50 tasks working before recover",
+    "ok": true,
+    "detail": "{'<open>': 50} / {'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "supervisor's death cancelled nothing",
+    "ok": true,
+    "detail": "0 cancel lines"
+   },
+   {
+    "name": "recover exited 0",
+    "ok": true,
+    "detail": "0"
+   },
+   {
+    "name": "recover found 50 open records, all with a task id",
+    "ok": true,
+    "detail": "{'owner': 'sup-c2-1', 'open': '50', 'with_task_id': '50'}"
+   },
+   {
+    "name": "recover: 50 outcomes completed",
+    "ok": true,
+    "detail": "{'completed': 50}"
+   },
+   {
+    "name": "journal: 50 completed, 0 canceled, 0 open",
+    "ok": true,
+    "detail": "{'completed': 50}"
+   },
+   {
+    "name": "tasks: all completed, none non-terminal",
+    "ok": true,
+    "detail": "{'TASK_STATE_COMPLETED': 50}"
+   },
+   {
+    "name": "worker: 50 tasks, none cancelled",
+    "ok": true,
+    "detail": "tasks 50, cancel-hook 0, token-fired 0"
+   },
+   {
+    "name": "worker: 50 completed log lines",
+    "ok": true,
+    "detail": "50"
+   }
+  ],
+  "failed": []
+ },
+ {
+  "scenario": "c2",
+  "run": 2,
+  "seed": "20261104-c2-2",
+  "children": 50,
+  "db": "a2a_deleg_c22_718e2788",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": 0,
+  "exit_after_s": 0.03,
+  "child_age_at_signal_s": [
+   19.7,
+   20.0
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {
+   "handed_off": 50
+  },
+  "start_spread_ms": 264,
+  "token_cancelled_at_handoff": "false",
+  "restart_delay_s": 6.3,
+  "pre": {
+   "journal": {
+    "<open>": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_WORKING": 50
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 50
+   },
+   "connections": 11
+  },
+  "pre_worker_cancels": 0,
+  "recover_mode": "recover",
+  "restart_after_s": 6.3,
+  "recover_launch_in_run_s": 26.33,
+  "recover_exit": 0,
+  "recover_s": 34.3,
+  "recover_exit_after_last_child_s": 0.32,
+  "recover_line_in_run_s": 26.41,
+  "reattach_all_ms": null,
+  "post": {
+   "journal": {
+    "completed": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_COMPLETED": 50
+   },
+   "pairs": {
+    "completed/TASK_STATE_COMPLETED": 50
+   },
+   "connections": 11
+  },
+  "recover_outcomes": {
+   "completed": 50
+  },
+  "recover_head": {
+   "owner": "sup-c2-2",
+   "open": "50",
+   "with_task_id": "50"
+  },
+  "worker": {
+   "start": 50,
+   "completed": 50,
+   "token-fired": 0,
+   "cancel-hook": 0
+  },
+  "tasks_total": 50,
+  "checks": [
+   {
+    "name": "supervisor exited 0 after SIGTERM",
+    "ok": true,
+    "detail": "exit 0"
+   },
+   {
+    "name": "exit within 10s of SIGTERM",
+    "ok": true,
+    "detail": "0.03s"
+   },
+   {
+    "name": "every child reported HandedOff",
+    "ok": true,
+    "detail": "{'handed_off': 50}"
+   },
+   {
+    "name": "no record settled by the exit",
+    "ok": true,
+    "detail": "{'<open>': 50}"
+   },
+   {
+    "name": "no task cancelled by the exit",
+    "ok": true,
+    "detail": "{'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "executor token not yet fired when the children handed off",
+    "ok": true,
+    "detail": "false"
+   },
+   {
+    "name": "all 50 children named before the signal",
+    "ok": true,
+    "detail": "50"
+   },
+   {
+    "name": "no rejected send",
+    "ok": true,
+    "detail": "0 START_ERR"
+   },
+   {
+    "name": "50 records open and 50 tasks working before recover",
+    "ok": true,
+    "detail": "{'<open>': 50} / {'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "supervisor's death cancelled nothing",
+    "ok": true,
+    "detail": "0 cancel lines"
+   },
+   {
+    "name": "recover exited 0",
+    "ok": true,
+    "detail": "0"
+   },
+   {
+    "name": "recover found 50 open records, all with a task id",
+    "ok": true,
+    "detail": "{'owner': 'sup-c2-2', 'open': '50', 'with_task_id': '50'}"
+   },
+   {
+    "name": "recover: 50 outcomes completed",
+    "ok": true,
+    "detail": "{'completed': 50}"
+   },
+   {
+    "name": "journal: 50 completed, 0 canceled, 0 open",
+    "ok": true,
+    "detail": "{'completed': 50}"
+   },
+   {
+    "name": "tasks: all completed, none non-terminal",
+    "ok": true,
+    "detail": "{'TASK_STATE_COMPLETED': 50}"
+   },
+   {
+    "name": "worker: 50 tasks, none cancelled",
+    "ok": true,
+    "detail": "tasks 50, cancel-hook 0, token-fired 0"
+   },
+   {
+    "name": "worker: 50 completed log lines",
+    "ok": true,
+    "detail": "50"
+   }
+  ],
+  "failed": []
+ },
+ {
+  "scenario": "c2",
+  "run": 3,
+  "seed": "20261104-c2-3",
+  "children": 50,
+  "db": "a2a_deleg_c23_b35c8488",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": 0,
+  "exit_after_s": 0.03,
+  "child_age_at_signal_s": [
+   19.7,
+   19.9
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {
+   "handed_off": 50
+  },
+  "start_spread_ms": 211,
+  "token_cancelled_at_handoff": "false",
+  "restart_delay_s": 3.2,
+  "pre": {
+   "journal": {
+    "<open>": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_WORKING": 50
+   },
+   "pairs": {
+    "<open>/TASK_STATE_WORKING": 50
+   },
+   "connections": 11
+  },
+  "pre_worker_cancels": 0,
+  "recover_mode": "recover",
+  "restart_after_s": 3.2,
+  "recover_launch_in_run_s": 23.23,
+  "recover_exit": 0,
+  "recover_s": 37.4,
+  "recover_exit_after_last_child_s": 0.3,
+  "recover_line_in_run_s": 23.31,
+  "reattach_all_ms": null,
+  "post": {
+   "journal": {
+    "completed": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_COMPLETED": 50
+   },
+   "pairs": {
+    "completed/TASK_STATE_COMPLETED": 50
+   },
+   "connections": 11
+  },
+  "recover_outcomes": {
+   "completed": 50
+  },
+  "recover_head": {
+   "owner": "sup-c2-3",
+   "open": "50",
+   "with_task_id": "50"
+  },
+  "worker": {
+   "start": 50,
+   "completed": 50,
+   "token-fired": 0,
+   "cancel-hook": 0
+  },
+  "tasks_total": 50,
+  "checks": [
+   {
+    "name": "supervisor exited 0 after SIGTERM",
+    "ok": true,
+    "detail": "exit 0"
+   },
+   {
+    "name": "exit within 10s of SIGTERM",
+    "ok": true,
+    "detail": "0.03s"
+   },
+   {
+    "name": "every child reported HandedOff",
+    "ok": true,
+    "detail": "{'handed_off': 50}"
+   },
+   {
+    "name": "no record settled by the exit",
+    "ok": true,
+    "detail": "{'<open>': 50}"
+   },
+   {
+    "name": "no task cancelled by the exit",
+    "ok": true,
+    "detail": "{'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "executor token not yet fired when the children handed off",
+    "ok": true,
+    "detail": "false"
+   },
+   {
+    "name": "all 50 children named before the signal",
+    "ok": true,
+    "detail": "50"
+   },
+   {
+    "name": "no rejected send",
+    "ok": true,
+    "detail": "0 START_ERR"
+   },
+   {
+    "name": "50 records open and 50 tasks working before recover",
+    "ok": true,
+    "detail": "{'<open>': 50} / {'TASK_STATE_WORKING': 50}"
+   },
+   {
+    "name": "supervisor's death cancelled nothing",
+    "ok": true,
+    "detail": "0 cancel lines"
+   },
+   {
+    "name": "recover exited 0",
+    "ok": true,
+    "detail": "0"
+   },
+   {
+    "name": "recover found 50 open records, all with a task id",
+    "ok": true,
+    "detail": "{'owner': 'sup-c2-3', 'open': '50', 'with_task_id': '50'}"
+   },
+   {
+    "name": "recover: 50 outcomes completed",
+    "ok": true,
+    "detail": "{'completed': 50}"
+   },
+   {
+    "name": "journal: 50 completed, 0 canceled, 0 open",
+    "ok": true,
+    "detail": "{'completed': 50}"
+   },
+   {
+    "name": "tasks: all completed, none non-terminal",
+    "ok": true,
+    "detail": "{'TASK_STATE_COMPLETED': 50}"
+   },
+   {
+    "name": "worker: 50 tasks, none cancelled",
+    "ok": true,
+    "detail": "tasks 50, cancel-hook 0, token-fired 0"
+   },
+   {
+    "name": "worker: 50 completed log lines",
+    "ok": true,
+    "detail": "50"
+   }
+  ],
+  "failed": []
+ },
+ {
+  "scenario": "cx",
+  "run": 1,
+  "seed": "20261104-cx-1",
+  "children": 50,
+  "db": "a2a_deleg_cx1_bd227cb1",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": 0,
+  "exit_after_s": 0.17,
+  "child_age_at_signal_s": [
+   19.6,
+   19.9
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {
+   "canceled": 50
+  },
+  "start_spread_ms": 289,
+  "token_cancelled_at_handoff": null,
+  "post": {
+   "journal": {
+    "canceled": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_CANCELED": 50
+   },
+   "pairs": {
+    "canceled/TASK_STATE_CANCELED": 50
+   },
+   "connections": 11
+  },
+  "worker": {
+   "start": 50,
+   "completed": 0,
+   "token-fired": 50,
+   "cancel-hook": 50
+  },
+  "checks": [
+   {
+    "name": "supervisor exited 0",
+    "ok": true,
+    "detail": "exit 0"
+   },
+   {
+    "name": "all 50 children cancelled by the supervisor",
+    "ok": true,
+    "detail": "{'canceled': 50}"
+   },
+   {
+    "name": "all 50 records settled, none open",
+    "ok": true,
+    "detail": "{'canceled': 50}"
+   },
+   {
+    "name": "all 50 tasks canceled",
+    "ok": true,
+    "detail": "{'TASK_STATE_CANCELED': 50}"
+   },
+   {
+    "name": "50 cancel hooks ran at the worker",
+    "ok": true,
+    "detail": "50"
+   }
+  ],
+  "failed": []
+ },
+ {
+  "scenario": "cx",
+  "run": 2,
+  "seed": "20261104-cx-2",
+  "children": 50,
+  "db": "a2a_deleg_cx2_510e94a0",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": 0,
+  "exit_after_s": 0.17,
+  "child_age_at_signal_s": [
+   19.6,
+   19.9
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {
+   "canceled": 50
+  },
+  "start_spread_ms": 240,
+  "token_cancelled_at_handoff": null,
+  "post": {
+   "journal": {
+    "canceled": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_CANCELED": 50
+   },
+   "pairs": {
+    "canceled/TASK_STATE_CANCELED": 50
+   },
+   "connections": 11
+  },
+  "worker": {
+   "start": 50,
+   "completed": 0,
+   "token-fired": 50,
+   "cancel-hook": 50
+  },
+  "checks": [
+   {
+    "name": "supervisor exited 0",
+    "ok": true,
+    "detail": "exit 0"
+   },
+   {
+    "name": "all 50 children cancelled by the supervisor",
+    "ok": true,
+    "detail": "{'canceled': 50}"
+   },
+   {
+    "name": "all 50 records settled, none open",
+    "ok": true,
+    "detail": "{'canceled': 50}"
+   },
+   {
+    "name": "all 50 tasks canceled",
+    "ok": true,
+    "detail": "{'TASK_STATE_CANCELED': 50}"
+   },
+   {
+    "name": "50 cancel hooks ran at the worker",
+    "ok": true,
+    "detail": "50"
+   }
+  ],
+  "failed": []
+ },
+ {
+  "scenario": "cx",
+  "run": 3,
+  "seed": "20261104-cx-3",
+  "children": 50,
+  "db": "a2a_deleg_cx3_ef1c0df1",
+  "kill_at_s": 20.0,
+  "named": 50,
+  "exit": 0,
+  "exit_after_s": 0.17,
+  "child_age_at_signal_s": [
+   19.7,
+   19.9
+  ],
+  "start_err": 0,
+  "supervisor_outcomes": {
+   "canceled": 50
+  },
+  "start_spread_ms": 226,
+  "token_cancelled_at_handoff": null,
+  "post": {
+   "journal": {
+    "canceled": 50
+   },
+   "no_task_id": 0,
+   "tasks": {
+    "TASK_STATE_CANCELED": 50
+   },
+   "pairs": {
+    "canceled/TASK_STATE_CANCELED": 50
+   },
+   "connections": 11
+  },
+  "worker": {
+   "start": 50,
+   "completed": 0,
+   "token-fired": 50,
+   "cancel-hook": 50
+  },
+  "checks": [
+   {
+    "name": "supervisor exited 0",
+    "ok": true,
+    "detail": "exit 0"
+   },
+   {
+    "name": "all 50 children cancelled by the supervisor",
+    "ok": true,
+    "detail": "{'canceled': 50}"
+   },
+   {
+    "name": "all 50 records settled, none open",
+    "ok": true,
+    "detail": "{'canceled': 50}"
+   },
+   {
+    "name": "all 50 tasks canceled",
+    "ok": true,
+    "detail": "{'TASK_STATE_CANCELED': 50}"
+   },
+   {
+    "name": "50 cancel hooks ran at the worker",
+    "ok": true,
+    "detail": "50"
+   }
+  ],
+  "failed": []
+ }
+]

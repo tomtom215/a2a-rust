@@ -1,0 +1,30 @@
+t=1793813253318 RECOVER owner=sup-afail-3 open=51 with_task_id=51
+t=1793813253318 REATTACH record=0044e227-e6a2-447d-9712-e75c500a38f5 task=74a899d8-f125-494f-96b1-e1a49417ec71 last_event_id=None
+t=1793813253324 REATTACH record=015af779-f04d-49b9-a57e-4ab52dfb8ff2 task=1b8f782e-1732-4f61-81a6-4228a3ec860b last_event_id=None
+t=1793813253329 REATTACH record=02159cda-f849-4410-adca-c3980b1d7da7 task=9bb67c5f-ead4-4b9b-8c27-17cf0531a692 last_event_id=None
+t=1793813253333 REATTACH record=0564cbb0-7390-4626-8016-0f50d7c0c18a task=cac87267-c26e-4b34-91da-254731fe6339 last_event_id=None
+t=1793813253338 REATTACH record=0bdfd4a6-ccc4-4149-920c-84488957618c task=e1be551c-88fd-4fcd-a44b-172a9c9d9486 last_event_id=None
+t=1793813253342 REATTACH record=0f6b7e04-a98c-4bf5-b1cf-ea686558b6bf task=c07de7d8-bd35-4c6c-9512-690275cfbf94 last_event_id=None
+t=1793813253344 REATTACH record=13a0507c-8b1f-4fa0-ae0a-a5c43dc59695 task=179fd7ff-c718-4e65-95ed-dd197e534bc9 last_event_id=None
+t=1793813253347 REATTACH record=141252d0-b438-474c-bf31-5362e85f4315 task=71bf3e3b-92c2-4547-8d33-3fd14c48cb24 last_event_id=None
+t=1793813253350 REATTACH record=19634686-3ee4-49a0-831d-64bf9be9c109 task=29e4e767-1207-494b-9768-7cc1ca8681c1 last_event_id=None
+t=1793813253352 REATTACH record=1db98db2-bfd3-455c-99a9-683e4ac1bce7 task=a509cd0f-acdc-4e8f-8f3c-2fc6b2090641 last_event_id=None
+t=1793813253355 REATTACH record=213c4a3f-f99c-45fb-ba3e-91f3ade53174 task=124f87ad-b17a-4050-8e35-5901c0d0df73 last_event_id=None
+t=1793813253358 REATTACH record=22f09298-8deb-4459-af96-ce5617f9a093 task=f75416a6-b61f-4b77-8e0b-7a847e6dd6d2 last_event_id=None
+t=1793813253362 REATTACH record=241ae70f-23fe-4c48-b54f-b553bf1e982c task=38f52021-e4d4-4c36-b9d4-cf93b74eb98b last_event_id=None
+t=1793813253365 REATTACH record=2476caec-16d9-41b5-877e-95e875955748 task=d3a6e17a-5237-42a7-a86f-11e26614b396 last_event_id=None
+t=1793813253368 REATTACH record=2ac7ae61-1ef7-4a2f-aa69-a13c8569d6d2 task=aed2265a-7f2c-49ae-8a25-45bf65c89e22 last_event_id=None
+t=1793813253371 REATTACH record=2cecb4ed-e22c-4699-bf4e-6ecfa4790be2 task=e4e2c578-5349-4fd5-ba1c-7ebbdc7b6f80 last_event_id=None
+t=1793813253374 REATTACH record=34774491-abb6-4f4d-97e6-eaff61caabbd task=9c164e65-e831-416c-9436-45df9065e31a last_event_id=None
+t=1793813253376 REATTACH record=3c8cfed9-dc10-405b-aff5-b3e67ef10512 task=fafc42e6-37e7-4c1a-9694-01925bee24cc last_event_id=None
+t=1793813253380 REATTACH record=3e038757-7fe8-446c-a9c0-5d2703635f50 task=f8d97582-8425-4e12-ad9a-a684760cef22 last_event_id=None
+t=1793813253383 REATTACH record=3e928a88-78df-4b38-af87-28e9b27c99f1 task=f9672973-eeca-4a49-a945-1020017f59b4 last_event_id=None
+t=1793813253386 REATTACH record=44f33da1-3ca1-412d-a565-3fb842f5f5c0 task=bae68994-831b-4392-8146-5df7f55894cd last_event_id=None
+t=1793813253389 REATTACH record=4e2954d5-ea77-4580-a236-990c90d69c28 task=251defe7-8de9-4051-8e02-85e536914392 last_event_id=None
+t=1793813253392 REATTACH record=51cfd7c8-1414-4a05-a11b-158f8f042e9d task=355a6c1c-dab5-4c8c-82b9-e36464ef5e63 last_event_id=None
+t=1793813253394 REATTACH record=55c9b123-253d-4a6b-bcca-fab5445f12f8 task=d7aac2b3-b6ef-4920-aabb-3475a68b0237 last_event_id=None
+t=1793813253397 REATTACH record=5e257589-ec7e-4082-8c11-57ba44cb9693 task=aa139277-14ed-419a-ab43-910facef09e8 last_event_id=None
+t=1793813253400 REATTACH record=614fd4dc-2ef2-464d-a19f-90cc1d67a3e4 task=fc41f046-e103-4840-aed2-3d12e09c1828 last_event_id=None
+t=1793813253403 REATTACH record=614fd4dc-2ef2-464d-a19f-90cc1d67a3e4z task=no-such-task last_event_id=None
+t=1793813253407 ERROR recover-all failed: protocol error: [-32001] Task not found: no-such-task
+t=1793813256409 EXIT after a failed recovery
