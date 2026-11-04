@@ -10,13 +10,15 @@ use std::time::Duration;
 
 use super::*;
 
+mod search_path;
+
 #[test]
 fn an_index_statement_is_guarded_and_nothing_else_is() {
     assert_eq!(
         index_if_missing("CREATE INDEX IF NOT EXISTS idx_t_c ON t(c)").as_deref(),
         Some(
-            "DO $$ BEGIN IF to_regclass('idx_t_c') IS NULL THEN \
-             CREATE INDEX IF NOT EXISTS idx_t_c ON t(c); END IF; END $$"
+            "DO $$ BEGIN IF to_regclass(format('%I.%I', current_schema(), 'idx_t_c')) IS NULL \
+             THEN CREATE INDEX IF NOT EXISTS idx_t_c ON t(c); END IF; END $$"
         )
     );
     for other in [
@@ -31,7 +33,11 @@ fn an_index_statement_is_guarded_and_nothing_else_is() {
 #[test]
 fn a_table_and_a_function_are_guarded() {
     let table = guarded("CREATE TABLE IF NOT EXISTS t (c TEXT)").expect("a table");
-    assert!(table.contains("to_regclass('t') IS NULL"), "{table}");
+    assert_eq!(
+        table,
+        "DO $a2a_ddl$ BEGIN IF to_regclass(format('%I.%I', current_schema(), 't')) IS NULL \
+         THEN CREATE TABLE IF NOT EXISTS t (c TEXT); END IF; END $a2a_ddl$"
+    );
     assert_eq!(
         guarded("CREATE TABLE IF NOT EXISTS t (c TEXT); SELECT 1"),
         None
