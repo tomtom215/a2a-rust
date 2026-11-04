@@ -13,10 +13,17 @@ Agent card responses include standard HTTP caching headers (spec §8.6, RFC 9110
 | Header | Purpose |
 |--------|---------|
 | `ETag` | Content hash for cache validation |
-| `Last-Modified` | Static handler only: when it loaded the card |
+| `Last-Modified` | Static handler only: when the running executable was last modified (not when the process started), or `StaticAgentCardHandler::with_last_modified` |
 | `Cache-Control` | `public, max-age=3600` (configurable: `DispatchConfig::with_agent_card_max_age`, and `with_agent_card_max_age` on `WebSocketDispatcher` and `GrpcDispatcher`) |
 
 Clients revalidate with `If-None-Match`, or with `If-Modified-Since` against the static handler. If the card hasn't changed, the server returns `304 Not Modified` with no body. The dynamic handler sends no `Last-Modified` and ignores `If-Modified-Since`: a card produced per request has no modification date, so the `ETag` is its only validator.
+
+### Behind several replicas
+
+Replicas of one build should send one card, with one validator. Two things decide it:
+
+- **`Last-Modified`** is the running executable's modification time, so replicas of one build agree whatever time each started. (Before 0.16.0 it was the time each process started, so an `If-Modified-Since` revalidation missed on every replica but the one that issued the date; `If-None-Match` was never affected, and a client that sends it is decided by the `ETag` alone.) Where the executable's time cannot be read, or lies ahead of the clock, it is the time of construction. If you know the card's real date, `StaticAgentCardHandler::with_last_modified` sets it.
+- **The `ETag`** is a hash of the card's JSON, so replicas agree while the card is the same bytes. A card **signed with ES256 at start-up** is not: each signature differs, so each replica's card, and its `ETag`, differs and a revalidation that reaches another replica is a miss (about `(N-1)/N` of them). Sign the card **once, offline**, and ship the signed card to every replica, or sign with Ed25519, whose signatures are deterministic. This is a cache-efficiency and signature-pinning concern; no replica serves stale data.
 
 ## Client cache
 

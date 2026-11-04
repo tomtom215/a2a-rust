@@ -1528,6 +1528,22 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   claim. A count across replicas is not built, and there is no warning at build
   when the limit is set over a store that hands out turn claims; both are open.
 
+- **A card's `Last-Modified` is the same on every replica of one build** (server;
+  audit E-F22). `StaticAgentCardHandler` sent the time each process started, so
+  replicas behind a balancer disagreed and an `If-Modified-Since` revalidation
+  missed on every replica but the one that issued the date (`If-None-Match`, which
+  decides when present, was never affected). It now sends the running executable's
+  modification time, so replicas of one build agree, and the time of construction
+  where that cannot be read or lies ahead of the clock. **Additive:**
+  `StaticAgentCardHandler::with_last_modified(SystemTime)` sets it explicitly. The
+  caching page also says what the audit found about the other validator: a card
+  signed with ES256 at start-up has a different signature, bytes and `ETag` on every
+  replica (ES256 draws a fresh nonce; Ed25519 does not), so sign once offline or
+  with Ed25519 for a fleet. Tests: `agent_card/static_handler.rs` (the clamp, the
+  executable's time, two replicas started a day apart, the setter and an
+  `If-Modified-Since` `304`), and `signing.rs` (ES256 signatures of one card differ,
+  Ed25519 signatures are equal).
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a

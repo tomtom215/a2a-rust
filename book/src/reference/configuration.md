@@ -250,7 +250,7 @@ and the `with_*` setters.
 |--------|---------|-------------|
 | `Cache-Control` | `public, max-age=3600` | Configurable max-age (default 1 hour) |
 | `ETag` | Auto-computed | Content hash |
-| `Last-Modified` | Static handler: when it loaded the card | Not sent by the dynamic handler, which has no modification date |
+| `Last-Modified` | Static handler: the running executable's modification time (replicas of one build agree); `with_last_modified` sets it | Not sent by the dynamic handler, which has no modification date |
 
 ## Feature Flags
 
