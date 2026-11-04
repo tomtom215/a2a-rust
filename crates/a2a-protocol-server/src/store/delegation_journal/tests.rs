@@ -2,9 +2,10 @@
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! The [`DelegationJournal`] contract (the clauses of
-//! `a2a_protocol_types::delegation_journal`), run against PostgreSQL.
+//! `a2a_protocol_types::delegation_journal`), run against PostgreSQL and
+//! SQLite.
 
-use a2a_protocol_types::delegation_journal::InMemoryDelegationJournal;
+use a2a_protocol_types::delegation_journal::{DelegationJournal, InMemoryDelegationJournal};
 
 use super::*;
 
@@ -140,6 +141,7 @@ async fn the_in_memory_journal_keeps_the_same_contract() {
     contract(&InMemoryDelegationJournal::new(), "mem").await;
 }
 
+#[cfg(feature = "postgres")]
 #[tokio::test]
 #[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
 async fn postgres_keeps_the_contract() {
@@ -198,4 +200,75 @@ async fn postgres_keeps_the_contract() {
             .iter()
             .any(|r| r.id == format!("{tag}-x"))
     );
+}
+
+/// The SQLite journal keeps the contract, and what the trait cannot show: a
+/// settled record keeps its first outcome and stops changing (audit
+/// NEW-h-s0-4).
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn sqlite_keeps_the_contract() {
+    let journal = SqliteDelegationJournal::new("sqlite::memory:")
+        .await
+        .unwrap();
+    journal.begin(&rec("direct", "sup", 1)).await.unwrap();
+    journal
+        .progress("direct", Some("task-1"), Some("evt-1"), 2)
+        .await
+        .unwrap();
+    journal.settle("direct", "completed", 3).await.unwrap();
+    journal.settle("direct", "lost", 4).await.unwrap();
+    journal
+        .progress("direct", Some("late"), Some("late"), 5)
+        .await
+        .unwrap();
+    let row: (Option<String>, Option<String>, Option<String>, i64) = sqlx::query_as(
+        "SELECT outcome, task_id, last_event_id, updated_at_ms FROM a2a_delegations WHERE id = ?1",
+    )
+    .bind("direct")
+    .fetch_one(&journal.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        row,
+        (
+            Some("completed".into()),
+            Some("task-1".into()),
+            Some("evt-1".into()),
+            3
+        )
+    );
+    contract(&journal, "lite").await;
+}
+
+/// The point of a SQLite journal: a supervisor that restarts on the same
+/// host finds its open records in the file, with what it noted about them.
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn a_sqlite_journal_survives_a_restart() {
+    let dir = std::env::temp_dir().join(format!("a2a-journal-{}", uuid::Uuid::new_v4().simple()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let url = format!("sqlite:{}?mode=rwc", dir.join("journal.db").display());
+    let first = SqliteDelegationJournal::new(&url).await.unwrap();
+    first
+        .begin(&rec("child", "sup", 7).with_idempotency_key(Some("k".into())))
+        .await
+        .unwrap();
+    first
+        .progress("child", Some("task-9"), Some("evt-3"), 8)
+        .await
+        .unwrap();
+    first.pool.close().await;
+    drop(first);
+
+    let second = SqliteDelegationJournal::new(&url).await.unwrap();
+    let open = second.open("sup").await.unwrap();
+    second.pool.close().await;
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].id, "child");
+    assert_eq!(open[0].idempotency_key.as_deref(), Some("k"));
+    assert_eq!(open[0].task_id.as_deref(), Some("task-9"));
+    assert_eq!(open[0].last_event_id.as_deref(), Some("evt-3"));
+    assert_eq!((open[0].started_at_ms, open[0].updated_at_ms), (7, 8));
 }

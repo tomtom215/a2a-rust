@@ -488,6 +488,8 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `TenantAwarePostgresTaskStore` | Multi-tenant PostgreSQL task store (`postgres` feature) |
 | `TenantAwarePostgresPushConfigStore` | Multi-tenant PostgreSQL push config store (`postgres` feature) |
 | `PgMigrationRunner` | PostgreSQL migration runner (`postgres` feature) |
+| `PostgresDelegationJournal` | A supervisor's `DelegationJournal` in PostgreSQL, shared by its replicas (`postgres` feature; ADR 0030) |
+| `SqliteDelegationJournal` | A supervisor's `DelegationJournal` in a SQLite file, kept across a restart on one host (`sqlite` feature; ADR 0030) |
 | `StaticAgentCardHandler` | Static agent card with HTTP caching |
 | `DynamicAgentCardHandler` | Dynamic agent card with producer |
 | `HotReloadAgentCardHandler` | Agent card with live reloading |

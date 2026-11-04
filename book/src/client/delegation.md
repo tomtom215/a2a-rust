@@ -230,8 +230,10 @@ past it nothing is sent and the call returns a timeout.) The position can lag
 the stream by up to two seconds, so a reattach may replay a few events. Settled records stay until
 `purge_settled` removes them. `InMemoryDelegationJournal` serves one process; for a supervisor that must
 survive its own death use `PostgresDelegationJournal` (the server crate's
-`postgres` feature, table `a2a_delegations`), or implement the trait over a
-store of your own. There is no SQLite journal.
+`postgres` feature) when it runs as several replicas or moves between hosts,
+`SqliteDelegationJournal` (the `sqlite` feature) when it runs on one host with
+a file that outlives the process, or implement the trait over a store of your
+own. Both keep the table `a2a_delegations`, with the same columns.
 
 ### Shutting down on purpose: hand the children over
 
