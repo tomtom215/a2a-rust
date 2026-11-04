@@ -1,0 +1,15 @@
+start 2026-11-04T15:22:35Z
+c3b9cfbc783a0ae6559a347b75f7b1917162dbbf1d355c4cc00d6d8a9febcb53  docs/audits/2026-11-01-triage/evidence/m-live-proof/expectation-b.md.part
+958625e5efe36ffb99616b58be2834cf40dc849214d612ec5ccdaf376a72f482  target/live/delegation-grpc/debug/a2a-live-grpc-idle
+run 1: exit 0 ('completed', '90.0', 8, 0, {'SendStreamingMessage': 1, 'SubscribeToTask': 8}, 'PASS') wall 90.0s
+run 2: exit 0 ('completed', '90.0', 8, 0, {'SendStreamingMessage': 1, 'SubscribeToTask': 8}, 'PASS') wall 90.0s
+run 3: exit 0 ('completed', '90.0', 8, 0, {'SendStreamingMessage': 1, 'SubscribeToTask': 8}, 'PASS') wall 90.0s
+
+run  outcome    elapsed_s  SubscribeToTask  CancelTask  result
+  1  completed       90.0                8           0  PASS
+  2  completed       90.0                8           0  PASS
+  3  completed       90.0                8           0  PASS
+elapsed_s min 90.0 / median 90.0 / max 90.0; resumes min 8 / median 8 / max 8
+quiet 90s, client stream_idle_timeout 10s; logs target/live/delegation/grpc/20261104T152235
+driver exit 0
+end 2026-11-04T15:27:05Z

@@ -1,0 +1,102 @@
+t=1793806767635 RECOVER owner=sup-al-1 open=50 with_task_id=50
+t=1793806767635 REATTACH record=5c495509-83ec-4fea-a49c-a20ddb0442fd task=dc6fbda3-0747-4f22-ac9b-36906d37cd61 last_event_id=None
+t=1793806804620 OUTCOME record=5c495509-83ec-4fea-a49c-a20ddb0442fd task=dc6fbda3-0747-4f22-ac9b-36906d37cd61 outcome=completed
+t=1793806804620 REATTACH record=b9c15e5e-f7c5-4312-aa4b-a3cf6d7dd76d task=bf3a44f5-2a95-4d4d-a527-31723067f1c8 last_event_id=None
+t=1793806804630 OUTCOME record=b9c15e5e-f7c5-4312-aa4b-a3cf6d7dd76d task=bf3a44f5-2a95-4d4d-a527-31723067f1c8 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.605Z\") })"
+t=1793806804630 REATTACH record=01e5f44c-62dc-4034-ad7b-286d2ca939a7 task=95fdbaec-a2e4-4652-8b4f-14292cf233ba last_event_id=None
+t=1793806804636 OUTCOME record=01e5f44c-62dc-4034-ad7b-286d2ca939a7 task=95fdbaec-a2e4-4652-8b4f-14292cf233ba outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.605Z\") })"
+t=1793806804636 REATTACH record=0c47830a-f8cb-449c-8a44-9620c5c8b908 task=31066fcc-d116-4d66-b687-77679f0a62cd last_event_id=None
+t=1793806804643 OUTCOME record=0c47830a-f8cb-449c-8a44-9620c5c8b908 task=31066fcc-d116-4d66-b687-77679f0a62cd outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.590Z\") })"
+t=1793806804643 REATTACH record=1ee56ee3-a549-474d-9137-1f5ff573ea14 task=bb060b8a-d154-4cbf-b867-074618895143 last_event_id=None
+t=1793806804649 OUTCOME record=1ee56ee3-a549-474d-9137-1f5ff573ea14 task=bb060b8a-d154-4cbf-b867-074618895143 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.564Z\") })"
+t=1793806804649 REATTACH record=1ef8ea14-8c48-4e2d-8b19-658a56d82746 task=c7ce8488-aacd-4a7a-8756-a6e5427eb155 last_event_id=None
+t=1793806804655 OUTCOME record=1ef8ea14-8c48-4e2d-8b19-658a56d82746 task=c7ce8488-aacd-4a7a-8756-a6e5427eb155 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.530Z\") })"
+t=1793806804655 REATTACH record=213ebbbb-47f5-4c81-bfad-ca99e801e3bc task=7590245e-0144-4f8c-9ace-77f5211b2964 last_event_id=None
+t=1793806804660 OUTCOME record=213ebbbb-47f5-4c81-bfad-ca99e801e3bc task=7590245e-0144-4f8c-9ace-77f5211b2964 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.610Z\") })"
+t=1793806804660 REATTACH record=22081851-98a0-4a93-8840-60fde342613b task=11ff0f7e-2235-411d-a1c1-4065722c6a75 last_event_id=None
+t=1793806804666 OUTCOME record=22081851-98a0-4a93-8840-60fde342613b task=11ff0f7e-2235-411d-a1c1-4065722c6a75 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:34.629Z\") })"
+t=1793806804666 REATTACH record=252fb70c-60b5-4c48-a749-a2a4b642676c task=ff47ba45-3033-4bfa-be02-5a2bb8ec129d last_event_id=None
+t=1793806804672 OUTCOME record=252fb70c-60b5-4c48-a749-a2a4b642676c task=ff47ba45-3033-4bfa-be02-5a2bb8ec129d outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.556Z\") })"
+t=1793806804672 REATTACH record=2a891f7f-3d46-4cf2-b2cb-0d8b896ef662 task=7f6538f1-7cae-4508-bcf6-fc2ef5c4b144 last_event_id=None
+t=1793806804677 OUTCOME record=2a891f7f-3d46-4cf2-b2cb-0d8b896ef662 task=7f6538f1-7cae-4508-bcf6-fc2ef5c4b144 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.590Z\") })"
+t=1793806804677 REATTACH record=2d0220ff-8b9d-45eb-a4a9-5510c4b90856 task=9912db07-bb66-44a8-a2f4-2769efd7140b last_event_id=None
+t=1793806804683 OUTCOME record=2d0220ff-8b9d-45eb-a4a9-5510c4b90856 task=9912db07-bb66-44a8-a2f4-2769efd7140b outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.489Z\") })"
+t=1793806804683 REATTACH record=36994e07-2f1e-42b4-aaa0-9984f62f4129 task=05d59e74-a679-4e66-b830-35b109b50e6d last_event_id=None
+t=1793806804690 OUTCOME record=36994e07-2f1e-42b4-aaa0-9984f62f4129 task=05d59e74-a679-4e66-b830-35b109b50e6d outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.509Z\") })"
+t=1793806804690 REATTACH record=463e9611-a63e-4605-bfff-4627ce0c92db task=ce5b0c62-a6ef-447f-88e5-80a68a6ebc3e last_event_id=None
+t=1793806804696 OUTCOME record=463e9611-a63e-4605-bfff-4627ce0c92db task=ce5b0c62-a6ef-447f-88e5-80a68a6ebc3e outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.509Z\") })"
+t=1793806804696 REATTACH record=4760c7c3-3ecd-4ce4-8297-aced1a462283 task=fe10584d-05e0-40a7-90ea-ccae5d4191f3 last_event_id=None
+t=1793806804702 OUTCOME record=4760c7c3-3ecd-4ce4-8297-aced1a462283 task=fe10584d-05e0-40a7-90ea-ccae5d4191f3 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.590Z\") })"
+t=1793806804702 REATTACH record=489e4bee-4c25-4653-9ecf-f441618c283f task=bedf2161-3393-491a-917d-bc1d93fa1e3c last_event_id=None
+t=1793806804707 OUTCOME record=489e4bee-4c25-4653-9ecf-f441618c283f task=bedf2161-3393-491a-917d-bc1d93fa1e3c outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.590Z\") })"
+t=1793806804707 REATTACH record=4b05f16b-41ab-4a28-bd8e-8297df78c3d2 task=2e618adc-1984-4e05-a5cd-dd953768514b last_event_id=None
+t=1793806804713 OUTCOME record=4b05f16b-41ab-4a28-bd8e-8297df78c3d2 task=2e618adc-1984-4e05-a5cd-dd953768514b outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.542Z\") })"
+t=1793806804713 REATTACH record=55083e10-37e6-4074-9735-08771b77db1b task=bb929686-9162-4923-8019-7e8c9144af55 last_event_id=None
+t=1793806804719 OUTCOME record=55083e10-37e6-4074-9735-08771b77db1b task=bb929686-9162-4923-8019-7e8c9144af55 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:34.675Z\") })"
+t=1793806804719 REATTACH record=5631fe34-c196-4bd3-b74d-0bb65302ad4f task=a761b7c2-17f3-47f0-a500-549266fac708 last_event_id=None
+t=1793806804725 OUTCOME record=5631fe34-c196-4bd3-b74d-0bb65302ad4f task=a761b7c2-17f3-47f0-a500-549266fac708 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.413Z\") })"
+t=1793806804725 REATTACH record=59ecfc5f-307f-4be3-9f6f-70bc95a9d227 task=2122f410-783a-4d73-b820-c0ce3af5f661 last_event_id=None
+t=1793806804732 OUTCOME record=59ecfc5f-307f-4be3-9f6f-70bc95a9d227 task=2122f410-783a-4d73-b820-c0ce3af5f661 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.469Z\") })"
+t=1793806804732 REATTACH record=61db2636-3493-45ac-8d57-db7aee1b2e06 task=f08a1b30-a358-471d-b8a7-8688cc45b6c6 last_event_id=None
+t=1793806804738 OUTCOME record=61db2636-3493-45ac-8d57-db7aee1b2e06 task=f08a1b30-a358-471d-b8a7-8688cc45b6c6 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.509Z\") })"
+t=1793806804738 REATTACH record=630b1954-8a34-4fe8-9605-b57aaeb5d40a task=511e9728-19e1-47f5-8cc6-6efeaff4297b last_event_id=None
+t=1793806804744 OUTCOME record=630b1954-8a34-4fe8-9605-b57aaeb5d40a task=511e9728-19e1-47f5-8cc6-6efeaff4297b outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.385Z\") })"
+t=1793806804744 REATTACH record=6c810a8a-85de-4fda-87fd-ec8105f30bad task=83e1f6d5-05b5-461f-bdfc-8273fbab0767 last_event_id=None
+t=1793806804749 OUTCOME record=6c810a8a-85de-4fda-87fd-ec8105f30bad task=83e1f6d5-05b5-461f-bdfc-8273fbab0767 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.576Z\") })"
+t=1793806804749 REATTACH record=6e33bb01-f5fa-4444-be11-7908eded7747 task=a3279620-6cd2-4923-bb73-2b49b45ba534 last_event_id=None
+t=1793806804755 OUTCOME record=6e33bb01-f5fa-4444-be11-7908eded7747 task=a3279620-6cd2-4923-bb73-2b49b45ba534 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.605Z\") })"
+t=1793806804755 REATTACH record=6ee6c8de-88d8-4283-b9b0-e4eedfe7dc75 task=1d5166b9-d020-4890-ade4-25dbf8093ae5 last_event_id=None
+t=1793806804761 OUTCOME record=6ee6c8de-88d8-4283-b9b0-e4eedfe7dc75 task=1d5166b9-d020-4890-ade4-25dbf8093ae5 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.593Z\") })"
+t=1793806804761 REATTACH record=731d6889-d622-4958-b9d9-403892215344 task=fc48c010-7a45-4802-98ec-360e8850539e last_event_id=None
+t=1793806804767 OUTCOME record=731d6889-d622-4958-b9d9-403892215344 task=fc48c010-7a45-4802-98ec-360e8850539e outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:34.637Z\") })"
+t=1793806804767 REATTACH record=73953861-74c0-439d-80ac-686a90c84397 task=cec853e9-c793-4c8b-b688-c7014a67665a last_event_id=None
+t=1793806804773 OUTCOME record=73953861-74c0-439d-80ac-686a90c84397 task=cec853e9-c793-4c8b-b688-c7014a67665a outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.593Z\") })"
+t=1793806804773 REATTACH record=7cbae1e4-e0b5-4a2b-8bdb-2471980e7cf2 task=ee999aab-59a6-4298-be52-0572f98c3d7e last_event_id=None
+t=1793806804779 OUTCOME record=7cbae1e4-e0b5-4a2b-8bdb-2471980e7cf2 task=ee999aab-59a6-4298-be52-0572f98c3d7e outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.605Z\") })"
+t=1793806804779 REATTACH record=87dd8c6a-bece-4410-acd7-3726764d44ae task=0f1b0026-6b9a-4b41-97f0-da5fed181d52 last_event_id=None
+t=1793806804784 OUTCOME record=87dd8c6a-bece-4410-acd7-3726764d44ae task=0f1b0026-6b9a-4b41-97f0-da5fed181d52 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.506Z\") })"
+t=1793806804784 REATTACH record=8ea17267-d9c0-4616-b431-987abeb062a3 task=f90404b5-326c-4d17-a7cc-20149bea80b6 last_event_id=None
+t=1793806804790 OUTCOME record=8ea17267-d9c0-4616-b431-987abeb062a3 task=f90404b5-326c-4d17-a7cc-20149bea80b6 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.575Z\") })"
+t=1793806804790 REATTACH record=9b96cd18-2037-4f68-a86d-37075da95b05 task=46d0e9d0-7f47-4f8e-bb36-fd3845570ad4 last_event_id=None
+t=1793806804795 OUTCOME record=9b96cd18-2037-4f68-a86d-37075da95b05 task=46d0e9d0-7f47-4f8e-bb36-fd3845570ad4 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.590Z\") })"
+t=1793806804795 REATTACH record=a6298edd-453e-41b1-b6b7-ffd688049084 task=ac3f69a0-724a-4cad-bab7-c9673569f436 last_event_id=None
+t=1793806804801 OUTCOME record=a6298edd-453e-41b1-b6b7-ffd688049084 task=ac3f69a0-724a-4cad-bab7-c9673569f436 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.493Z\") })"
+t=1793806804801 REATTACH record=b9402f4f-f29e-43f3-9416-4e4e6fa2e97c task=b7b472ad-9ea0-4884-ab4f-5f81644a127f last_event_id=None
+t=1793806804806 OUTCOME record=b9402f4f-f29e-43f3-9416-4e4e6fa2e97c task=b7b472ad-9ea0-4884-ab4f-5f81644a127f outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:34.628Z\") })"
+t=1793806804806 REATTACH record=c03b7412-2e75-4e22-aa7a-df198942f545 task=de25e550-f353-4590-b091-3ac9667419a8 last_event_id=None
+t=1793806804811 OUTCOME record=c03b7412-2e75-4e22-aa7a-df198942f545 task=de25e550-f353-4590-b091-3ac9667419a8 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.606Z\") })"
+t=1793806804811 REATTACH record=c62b8342-68a4-4ae4-85ed-32ceac1f3769 task=2bcbebbc-36a3-40ee-8ead-dc7fa8f644c0 last_event_id=None
+t=1793806804816 OUTCOME record=c62b8342-68a4-4ae4-85ed-32ceac1f3769 task=2bcbebbc-36a3-40ee-8ead-dc7fa8f644c0 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.604Z\") })"
+t=1793806804816 REATTACH record=d1478b60-41e0-47f3-9241-02b95c97fa0c task=728a7aec-8f55-46b1-9696-17c5ab3e878a last_event_id=None
+t=1793806804821 OUTCOME record=d1478b60-41e0-47f3-9241-02b95c97fa0c task=728a7aec-8f55-46b1-9696-17c5ab3e878a outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.363Z\") })"
+t=1793806804821 REATTACH record=e23eb61d-9f49-47be-a866-fa1a145e84e3 task=dad65fd3-5899-48ad-a5d8-cd33c8231f0c last_event_id=None
+t=1793806804837 OUTCOME record=e23eb61d-9f49-47be-a866-fa1a145e84e3 task=dad65fd3-5899-48ad-a5d8-cd33c8231f0c outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.542Z\") })"
+t=1793806804837 REATTACH record=e7e13486-950a-41fd-a140-8cef627b88f0 task=95f4ad40-4ea2-4705-a30c-0162c7bb034b last_event_id=None
+t=1793806804843 OUTCOME record=e7e13486-950a-41fd-a140-8cef627b88f0 task=95f4ad40-4ea2-4705-a30c-0162c7bb034b outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.593Z\") })"
+t=1793806804843 REATTACH record=e902a238-3f03-4436-8169-839ed4ebe8f7 task=6ef3df09-5080-4a6f-a10f-61ef73ae8d9d last_event_id=None
+t=1793806804848 OUTCOME record=e902a238-3f03-4436-8169-839ed4ebe8f7 task=6ef3df09-5080-4a6f-a10f-61ef73ae8d9d outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.441Z\") })"
+t=1793806804848 REATTACH record=ecb960e5-a0b8-4fda-b3c3-3dd54987edbe task=828fd9d3-3a4e-474b-b377-89ac8fdf660f last_event_id=None
+t=1793806804853 OUTCOME record=ecb960e5-a0b8-4fda-b3c3-3dd54987edbe task=828fd9d3-3a4e-474b-b377-89ac8fdf660f outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.590Z\") })"
+t=1793806804853 REATTACH record=fb8b6efe-c80d-40aa-8c17-a8a3164e7443 task=d13b5f61-bbbb-487a-bf0c-cf69b5d2e5ae last_event_id=None
+t=1793806804858 OUTCOME record=fb8b6efe-c80d-40aa-8c17-a8a3164e7443 task=d13b5f61-bbbb-487a-bf0c-cf69b5d2e5ae outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.605Z\") })"
+t=1793806804858 REATTACH record=077cfa51-7a42-4657-a676-93b0aea157c4 task=66c0ef9f-c13e-4413-80fb-06d0d7e20e7c last_event_id=None
+t=1793806804865 OUTCOME record=077cfa51-7a42-4657-a676-93b0aea157c4 task=66c0ef9f-c13e-4413-80fb-06d0d7e20e7c outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.606Z\") })"
+t=1793806804865 REATTACH record=0ecdd124-9aa1-4cae-8466-3c579bf90638 task=91d18a24-60bb-40ed-8969-c0edc2cdf341 last_event_id=None
+t=1793806804870 OUTCOME record=0ecdd124-9aa1-4cae-8466-3c579bf90638 task=91d18a24-60bb-40ed-8969-c0edc2cdf341 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.602Z\") })"
+t=1793806804870 REATTACH record=14f5d14a-d49c-4536-8dd5-d1d516b9eb92 task=636ad515-3d1f-48fc-91fd-a576aff3e6f6 last_event_id=None
+t=1793806804875 OUTCOME record=14f5d14a-d49c-4536-8dd5-d1d516b9eb92 task=636ad515-3d1f-48fc-91fd-a576aff3e6f6 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.605Z\") })"
+t=1793806804875 REATTACH record=19abe665-ec9f-4825-a09f-fae3178c85f2 task=694220f2-b1f5-4980-861c-c0b9edc04517 last_event_id=None
+t=1793806804880 OUTCOME record=19abe665-ec9f-4825-a09f-fae3178c85f2 task=694220f2-b1f5-4980-861c-c0b9edc04517 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.605Z\") })"
+t=1793806804880 REATTACH record=493a84c8-47aa-4213-9cef-60e55e482714 task=9ed2931f-77b1-463f-ab92-c38f74e93f2e last_event_id=None
+t=1793806804885 OUTCOME record=493a84c8-47aa-4213-9cef-60e55e482714 task=9ed2931f-77b1-463f-ab92-c38f74e93f2e outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.604Z\") })"
+t=1793806804885 REATTACH record=7c51d0df-3835-4799-9027-80c23b6cd459 task=acab3266-3cc1-431f-9e86-f339b1f40fb0 last_event_id=None
+t=1793806804892 OUTCOME record=7c51d0df-3835-4799-9027-80c23b6cd459 task=acab3266-3cc1-431f-9e86-f339b1f40fb0 outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.604Z\") })"
+t=1793806804892 REATTACH record=7ed8c7a4-9946-4fea-be5c-a253db3d2913 task=cf517674-f09b-4815-bc2e-624a2ea33b2d last_event_id=None
+t=1793806804899 OUTCOME record=7ed8c7a4-9946-4fea-be5c-a253db3d2913 task=cf517674-f09b-4815-bc2e-624a2ea33b2d outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.593Z\") })"
+t=1793806804899 REATTACH record=8e16b577-f264-4cbf-a20b-2182aa7811eb task=45d68864-6cdb-4f83-a891-aa50e5fbf12d last_event_id=None
+t=1793806804907 OUTCOME record=8e16b577-f264-4cbf-a20b-2182aa7811eb task=45d68864-6cdb-4f83-a891-aa50e5fbf12d outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.604Z\") })"
+t=1793806804907 REATTACH record=c4824b39-1117-49ef-820e-11b40d09d22f task=207f3fcd-ad5d-4812-83e3-931b5869c91d last_event_id=None
+t=1793806804914 OUTCOME record=c4824b39-1117-49ef-820e-11b40d09d22f task=207f3fcd-ad5d-4812-83e3-931b5869c91d outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.605Z\") })"
+t=1793806804914 REATTACH record=c5b57c42-d5a4-40f7-bf3e-88e15cd32e7c task=77fd64ec-706d-49ee-829e-4a3068dae68d last_event_id=None
+t=1793806804920 OUTCOME record=c5b57c42-d5a4-40f7-bf3e-88e15cd32e7c task=77fd64ec-706d-49ee-829e-4a3068dae68d outcome=canceled detail="Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-04T15:39:35.605Z\") })"
+t=1793806804920 RECOVERED loop done

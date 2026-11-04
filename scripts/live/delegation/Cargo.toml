@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The two programs behind scripts/live/delegation/delegation_live.py: a worker
+# (an agent whose children hold a task for a time) and a supervisor (delegates
+# to it with a PostgreSQL journal). Outside the workspace, like scripts/live/replica;
+# built from this checkout against the crates beside it. Build, from the repository root
+# (the lockfile is copied so the dependencies are the ones the workspace tests):
+#   cp Cargo.lock scripts/live/delegation/Cargo.lock
+#   CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 cargo build -j2 \
+#     --manifest-path scripts/live/delegation/Cargo.toml --target-dir target/live/delegation
+
+[package]
+name = "a2a-live-delegation"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[[bin]]
+name = "a2a-live-worker"
+path = "src/bin/worker.rs"
+
+[[bin]]
+name = "a2a-live-supervisor"
+path = "src/bin/supervisor.rs"
+
+# The gRPC idle probe is built apart (it needs protobuf code generation, which the
+# worker and the supervisor do not):
+#   cargo build -j2 --features grpc --manifest-path scripts/live/delegation/Cargo.toml \
+#     --target-dir target/live/delegation-grpc --bin a2a-live-grpc-idle
+[features]
+grpc = ["a2a-protocol-client/grpc", "a2a-protocol-server/grpc"]
+
+[[bin]]
+name = "a2a-live-grpc-idle"
+path = "src/bin/grpc_idle.rs"
+required-features = ["grpc"]
+
+[dependencies]
+a2a-protocol-client = { path = "../../../crates/a2a-protocol-client" }
+a2a-protocol-server = { path = "../../../crates/a2a-protocol-server", features = ["postgres"] }
+a2a-protocol-types = { path = "../../../crates/a2a-protocol-types" }
+tokio = { version = "1", features = ["full"] }
+
+[workspace]

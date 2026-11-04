@@ -1,0 +1,82 @@
+# Earlier full passes with the same driver and seed, on earlier builds of the binaries.
+# Pass 1: worker and supervisor before the HAND_OFF=off control and lease support were added (scenarios a, c, c2).
+# Pass 2: with the control (scenarios a, c, c2, cx), before lease support. Both passed. Neither is used in the tables.
+
+## pass 1
+start 2026-11-04T14:58:21Z
+26a34de7873cefc30ef3e1f28c7adc72ae6d54f92966958353c00e407c8005f4  docs/audits/2026-11-01-triage/evidence/m-live-proof/expectation.md.part
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/full/20261104T145821
+    1.06s [a-1] children named: 50 of 50 after 0.8s
+scn  run      seed  sig@s  ageA  exit  exit+s  restart  open  work  cncl  rec_s  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+  a    1  20261104   20.0  19.2    -9    0.01      5.4    50    50     0   35.9    50      50       0       0      50          0       0    0    PASS
+  a    2  20261104   20.0  19.4    -9     0.0      6.5    50    50     0   34.4    50      50       0       0      50          0       0    0    PASS
+  a    3  20261104   20.0  19.6    -9    0.01      7.6    50    50     0   33.1    50      50       0       0      50          0       0    0    PASS
+  c    1  20261104   20.0  19.6     0    0.04      5.2    50    50     0   35.5    50      50       0       0      50          0       0    0    PASS
+  c    2  20261104   20.0  19.7     0    0.07      7.2    50    50     0   33.3    50      50       0       0      50          0       0    0    PASS
+  c    3  20261104   20.0  19.7     0    0.02      6.0    50    50     0   34.6    50      50       0       0      50          0       0    0    PASS
+ c2    1  20261104   20.0  19.7     0    0.03      3.7    50    50     0   36.9    50      50       0       0      50          0       0    0    PASS
+ c2    2  20261104   20.0  19.6     0    0.03      6.5    50    50     0   34.2    50      50       0       0      50          0       0    0    PASS
+ c2    3  20261104   20.0  19.7     0    0.06      3.4    50    50     0   37.2    50      50       0       0      50          0       0    0    PASS
+
+a: exit_after_s min 0 / median 0.01 / max 0.01 (n=3)
+a: restart_after_s min 5.4 / median 6.5 / max 7.6 (n=3)
+a: recover_s min 33.1 / median 34.4 / max 35.9 (n=3)
+a: passed 3 of 3
+c: exit_after_s min 0.02 / median 0.04 / max 0.07 (n=3)
+c: restart_after_s min 5.2 / median 6 / max 7.2 (n=3)
+c: recover_s min 33.3 / median 34.6 / max 35.5 (n=3)
+c: passed 3 of 3
+c2: exit_after_s min 0.03 / median 0.03 / max 0.06 (n=3)
+c2: restart_after_s min 3.4 / median 3.7 / max 6.5 (n=3)
+c2: recover_s min 34.2 / median 36.9 / max 37.2 (n=3)
+c2: passed 3 of 3
+driver exit 0
+end 2026-11-04T15:07:33Z
+
+## pass 2
+start 2026-11-04T15:09:47Z
+26a34de7873cefc30ef3e1f28c7adc72ae6d54f92966958353c00e407c8005f4  docs/audits/2026-11-01-triage/evidence/m-live-proof/expectation.md.part
+7ba669d16928d117056ebdca5aac645233051abab4811d94bf55336339629df3  target/live/delegation/debug/a2a-live-worker
+2c9d9b633e6442bfc938f302ca0f7ee2e4551d9fddedec9cceea94a81e8c7c81  target/live/delegation/debug/a2a-live-supervisor
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/full2/20261104T150947
+    0.73s [a-1] children named: 50 of 50 after 0.6s
+scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+  a    1  20261104   20.0   19.5    -9    0.02        393      5.4    50    50     0   35.3      0.27    50      50       0       0      50          0       0    0    PASS
+  a    2  20261104   20.0   19.5    -9     0.0        317      6.5    50    50     0   34.3      0.31    50      50       0       0      50          0       0    0    PASS
+  a    3  20261104   20.0   19.5    -9    0.01        392      7.5    50    50     0   33.2      0.27    50      50       0       0      50          0       0    0    PASS
+  c    1  20261104   20.0   19.5     0    0.03        371      5.2    50    50     0   35.5      0.24    50      50       0       0      50          0       0    0    PASS
+  c    2  20261104   20.0   19.5     0    0.03        346      7.2    50    50     0   33.5      0.29    50      50       0       0      50          0       0    0    PASS
+  c    3  20261104   20.0   19.6     0    0.04        230      6.0    50    50     0   34.7      0.28    50      50       0       0      50          0       0    0    PASS
+ c2    1  20261104   20.0   19.6     0    0.03        269      3.7    50    50     0   37.0      0.31    50      50       0       0      50          0       0    0    PASS
+ c2    2  20261104   20.0   19.5     0    0.07        392      6.5    50    50     0   34.4      0.46    50      50       0       0      50          0       0    0    PASS
+ c2    3  20261104   20.0   19.6     0    0.06        331      3.4    50    50     0   37.2      0.27    50      50       0       0      50          0       0    0    PASS
+ cx    1  20261104   20.0   19.6     0    0.14        317        -     0     -     -      -         -     0       0      50       0       0          0      50    0    PASS
+ cx    2  20261104   20.0   19.6     0    0.12        251        -     0     -     -      -         -     0       0      50       0       0          0      50    0    PASS
+ cx    3  20261104   20.0   19.6     0    0.18        219        -     0     -     -      -         -     0       0      50       0       0          0      50    0    PASS
+
+a: exit_after_s min 0 / median 0.01 / max 0.02 (n=3)
+a: restart_after_s min 5.4 / median 6.5 / max 7.5 (n=3)
+a: recover_s min 33.2 / median 34.3 / max 35.3 (n=3)
+a: recover_exit_after_last_child_s min 0.27 / median 0.27 / max 0.31 (n=3)
+a: start_spread_ms min 317 / median 392 / max 393 (n=3)
+a: passed 3 of 3
+c: exit_after_s min 0.03 / median 0.03 / max 0.04 (n=3)
+c: restart_after_s min 5.2 / median 6 / max 7.2 (n=3)
+c: recover_s min 33.5 / median 34.7 / max 35.5 (n=3)
+c: recover_exit_after_last_child_s min 0.24 / median 0.28 / max 0.29 (n=3)
+c: start_spread_ms min 230 / median 346 / max 371 (n=3)
+c: passed 3 of 3
+c2: exit_after_s min 0.03 / median 0.06 / max 0.07 (n=3)
+c2: restart_after_s min 3.4 / median 3.7 / max 6.5 (n=3)
+c2: recover_s min 34.4 / median 37 / max 37.2 (n=3)
+c2: recover_exit_after_last_child_s min 0.27 / median 0.31 / max 0.46 (n=3)
+c2: start_spread_ms min 269 / median 331 / max 392 (n=3)
+c2: passed 3 of 3
+cx: exit_after_s min 0.12 / median 0.14 / max 0.18 (n=3)
+cx: restart_after_s n/a
+cx: recover_s n/a
+cx: recover_exit_after_last_child_s n/a
+cx: start_spread_ms min 219 / median 251 / max 317 (n=3)
+cx: passed 3 of 3
+driver exit 0
+end 2026-11-04T15:20:10Z
