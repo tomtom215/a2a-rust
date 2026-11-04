@@ -60,8 +60,7 @@ command is named so the next session re-runs it instead of copying the number.
      connection lifetime for the HTTP bindings (D-12), B-11, and the live proof of M (kill -9 a supervisor
      with a PostgreSQL journal and 50 children).
   4. The server crate, first batch (L, fleet correctness): branch `claude/inspiring-mccarthy-rgpntj-server`,
-     rebased onto `main` at `bcb7f971`; the pull request from it is the one that carries this note, and it
-     is where its number is recorded. Rows: E-F21 (the three PostgreSQL batch deletes take `FOR UPDATE SKIP
+     rebased onto `main` at `bcb7f971`; **#194**. Rows: E-F21 (the three PostgreSQL batch deletes take `FOR UPDATE SKIP
      LOCKED`; the docs said racing sweeps "delete disjoint sets"), E-F16 (the rate-limit window and sweep
      use the database clock), E-F17 (the lease deadline is written and judged on one clock; additive
      `LeaseStore::lapsed`), E-F26 (a warning when a SQLite file is on NFS, SMB or FUSE), E-F14 (the
@@ -93,13 +92,25 @@ command is named so the next session re-runs it instead of copying the number.
      override and fails without it), and E-F18's lock (with it removed the six-replica test failed in 2
      of 3 runs with "lost the race ... 8 times", so that test alone is probabilistic against the old
      protocol; the serialisation test fails every time). `cargo mutants --list` was read for the audit
-     diff; the sharded CI run is the arbiter and has not run. **Not in it:** E-F25, D-18, E-F22, the F13
+     diff. **CI on head `980918eb` (run 1799, read from the Actions API):** the sharded mutation run
+     (run 457, labelled) succeeded, so CI found no survivor; 19 of the 22 jobs of the CI workflow
+     succeeded, one was skipped and two failed: `Test (stable, ubuntu-latest)` lost its runner 20 seconds
+     into its ninth step (no test failed in its log; infrastructure), and `Test (stable,
+     windows-latest)` failed `a_cut_subscription_is_reopened_and_the_follow_goes_on_to_the_end`, a test
+     from #193 (not this change), which opened a task's gate when the proxy had accepted a TCP connection,
+     not when the server had registered the subscription. Fixed by `e1e9d48b`: the proxy can lag new
+     connections, the old body over a 150 ms lag fails every run with the CI message, and the fixed test
+     passed 40 runs of 5 tests. **Not in it:** E-F25, D-18, E-F22, the F13
      documentation, D-05, E-F23 and E-F24 (the second server pull request, below), E-F15 and F14
      (deferred as recorded), a count of `max_concurrent_tasks` across replicas and a build warning for
      it (E-F12 is documentation only), E-F18's throughput at several replicas (report X17).
   5. The server crate, second batch (E-F25(a) poll back-off, D-18, E-F22, the F13 documentation, D-05,
-     E-F23 and E-F24), and observability, deploy and docs (the rest of I, group J with `promtool` in CI, G,
-     H, N): not started.
+     E-F23 and E-F24): branch `claude/inspiring-mccarthy-rgpntj-server2`, local and not pushed, on #194's
+     head `980918eb`; it holds E-F22, D-18, the F13 documentation, E-F25(a), E-F24 and E-F23, each with its
+     tests and hand mutants (all caught); D-05's dead-webhook policy is the one row left in it. It has no
+     pull request: the workflows run only on pull requests to `main`, so it waits for #194's merge and is
+     rebased. Observability, deploy and docs (the rest of I, group J with `promtool` in CI, G, H, N): not
+     started.
   After the tag: ADR 0035 and ADR 0036, each its own pull request. The workflows run only on pull
   requests to `main`, so a pull request that needs an earlier one waits for its merge and is rebased
   (`git rebase --onto origin/main <the earlier head>`), as the client branch was after #192.
@@ -113,9 +124,8 @@ command is named so the next session re-runs it instead of copying the number.
 
 ### First, next
 
-1. Read the CI of the server pull request (first batch) before building on it; fix only what a failing
-   check needs, in one push (`ci-failure-triage`). The sharded mutation run is the arbiter for the server
-   crate and has not run on this code. Do not merge or tag: the maintainer's go is required.
+1. Read the CI of #194 on its newest head before building on it; fix only what a failing check needs, in
+   one push (`ci-failure-triage`). Do not merge or tag: the maintainer's go is required.
 2. Then the second server pull request (E-F25(a), D-18, E-F22, the F13 documentation, D-05, E-F23 and
    E-F24), branched from `main` once the first is merged, or from its head and rebased after. For the
    server crate use `scripts/hand_mutate.py` (hand-written mutants, each timed out if it hangs) and
