@@ -19,7 +19,7 @@
 //! | (this file) | `OtelMetrics` struct and `Metrics` trait impl |
 //! | `builder` | `OtelMetricsBuilder` — fluent configuration |
 //! | `telemetry` | `Telemetry` — OTLP export of traces, metrics and logs from the `OTEL_*` environment (feature `otlp`) |
-//! | `pipeline` | `init_otlp_pipeline` / `init_otlp_pipeline_with_endpoint` — the older metrics-only, gRPC-only setup |
+//! | `pipeline` | `init_otlp_pipeline` / `init_otlp_pipeline_with_endpoint` — the older metrics-only, gRPC-only setup, deprecated since 0.16.0 |
 //!
 //! # Feature flags
 //!
@@ -68,6 +68,7 @@ use crate::metrics::{ConnectionPoolStats, Metrics, RpcCall};
 pub use builder::OtelMetricsBuilder;
 pub(crate) use global::GlobalOtelMetrics;
 #[cfg(feature = "otlp")]
+#[allow(deprecated)] // re-exported until their removal, no earlier than 0.17.0
 pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};
 #[cfg(feature = "otlp")]
 pub use telemetry::{

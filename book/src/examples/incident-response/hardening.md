@@ -50,7 +50,7 @@ to say what is asserted, such as
 | Graceful shutdown | `RequestHandler::shutdown` | A shutdown that hangs instead of draining |
 | Metrics hook | The `Metrics` hook | Served requests that reach no recorder |
 | OpenTelemetry export | `OtelMetrics` | An instrumented handler that exports no `a2a.server.requests` datapoint — checked by collecting from a real `ManualReader`, because the default global meter provider is a no-op and would make any wiring look correct |
-| OTLP pipeline | `init_otlp_pipeline` | A pipeline that builds cleanly and never reaches the collector — checked by pointing it at a socket this example owns and requiring HTTP/2 bytes |
+| OTLP pipeline | `Telemetry` (metrics over OTLP/gRPC) | A pipeline that builds cleanly and never reaches the collector — checked by pointing it at a socket this example owns and requiring HTTP/2 bytes |
 | HTTPS push | `HttpPushSender::with_tls_config` | A sender that speaks HTTPS without verifying certificates — the same self-signed cert must be accepted with a trust store naming it and rejected with the default one |
 
 Every check names the specific wrong answer in its failure message, and every

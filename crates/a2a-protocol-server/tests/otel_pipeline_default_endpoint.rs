@@ -21,6 +21,9 @@
 //! state, away from every other test.
 
 #![cfg(feature = "otlp")]
+// The deprecated pipeline's own tests, kept until its removal (no earlier
+// than 0.17.0).
+#![allow(deprecated)]
 
 use std::io::Read as _;
 use std::sync::Arc;

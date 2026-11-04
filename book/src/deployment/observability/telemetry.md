@@ -101,7 +101,13 @@ nothing listening where it goes is lost. `shutdown` returns an error naming the
 signal and the count, and a warning says so as it happens wherever a layer
 that prints warnings is installed, as `install_subscriber` does (the registry
 above has none; see [Debugging telemetry](./debugging.md#when-something-is-wrong)).
-`Telemetry::init()` is the same as `Telemetry::builder().build()`.
+`Telemetry::init()` is the same as `Telemetry::builder().build()`: the
+specification's defaults, `localhost` included, kept so a deployment with a
+collector beside it (a sidecar) and no `OTEL_*` variable goes on exporting.
+`Telemetry::init_where_configured()` is `builder().with_export_where_configured().build()`,
+for a binary that must run as well without a collector as with one (audit
+G-14). `Telemetry` is `#[must_use]`: `Telemetry::init()?;` on its own line drops
+the guard at once, which shuts every exporter down, and is now a warning.
 
 Each process also reports a `service.instance.id`, a random UUID unless
 `OTEL_RESOURCE_ATTRIBUTES` names one: it is what tells replicas of one service
@@ -265,16 +271,40 @@ the protocol of every exporter in the process that is built without one, and
 Cargo's feature unification would impose that on an application's own
 exporters.
 
-## Older API: `init_otlp_pipeline`
+## Older API: `init_otlp_pipeline` (deprecated in 0.16.0)
 
 `init_otlp_pipeline` and `init_otlp_pipeline_with_endpoint` predate
-`Telemetry` and stay for existing callers. They export **metrics only**, over
-**gRPC only** (`OTEL_EXPORTER_OTLP_PROTOCOL` has no effect on them), must be
-called from inside a Tokio runtime — outside one they panic with `there is no
-reactor running` — and their `service_name` argument, an `Option<&str>`, names the service
-only when `OTEL_SERVICE_NAME` (or `service.name` in
-`OTEL_RESOURCE_ATTRIBUTES`) does not, as the environment specification
-prescribes (before 0.15 it overwrote them; see the
-[upgrade guide](../../reference/upgrading/0.14-to-0.15/telemetry.md#init_otlp_pipeline-and-init_otlp_pipeline_with_endpoint-take-optionstr)).
-Calling one twice replaces the first provider and silently orphans it. New
-code should use `Telemetry`.
+`Telemetry` and are deprecated since 0.16.0; they are removed no earlier than
+0.17.0 (`STABILITY.md` §3). They export **metrics only**, over **gRPC only**
+(`OTEL_EXPORTER_OTLP_PROTOCOL` has no effect on them), with no TLS of their own
+(an `https://` collector is not reachable), must be called from inside a Tokio
+runtime — outside one they panic with `there is no reactor running` — and do
+none of what `Telemetry` does since: no `service.instance.id` (two replicas
+with one service name write one series), no `OTEL_SDK_DISABLED` or
+`OTEL_METRICS_EXPORTER`, no percent-decoding of `OTEL_RESOURCE_ATTRIBUTES`, no
+proxy, no count of lost exports (audit C-12). Calling one twice replaces the
+first provider and silently orphans it.
+
+The same metrics, with all of that, from `Telemetry`:
+
+```rust,ignore
+use a2a_protocol_server::otel::{OtlpProtocol, Telemetry};
+
+// Was: let provider = init_otlp_pipeline(Some("my-agent"))?;
+let telemetry = Telemetry::builder()
+    .with_default_service_name("my-agent") // OTEL_SERVICE_NAME still wins
+    .with_traces(false)
+    .with_logs(false)
+    .with_otlp_protocol(OtlpProtocol::Grpc) // the old transport; drop for HTTP/protobuf
+    .build()?;
+// Was: init_otlp_pipeline_with_endpoint(name, "http://collector:4317")
+//      — add `.with_otlp_endpoint("http://collector:4317")` above.
+
+// Was: provider.shutdown()
+telemetry.shutdown()?; // or let it drop at the end of `main`
+```
+
+`telemetry.meter_provider()` is the `SdkMeterProvider` the old functions
+returned, and the provider is installed as the global one in the same way
+(`install_globally(false)` keeps it local, and `telemetry.otel_metrics()` then
+records to it).

@@ -120,7 +120,12 @@ fn is_self_target(target: &str) -> bool {
 /// (debug build, one run each): 0.1 s to a collector that answers, 1.8 s to a
 /// port that refuses, 15.0 s to one that accepts the connection and never
 /// answers, 4.1 s to that one with `OTEL_EXPORTER_OTLP_TIMEOUT=2000`.
+///
+/// `#[must_use]`: `Telemetry::init()?;` alone on a line drops the guard at
+/// once, which shuts every exporter down before anything is recorded (audit
+/// G-14). Keep it for as long as the process should export.
 #[derive(Debug)]
+#[must_use = "dropping `Telemetry` shuts every exporter down; keep it until the process exits"]
 pub struct Telemetry {
     tracer: Option<SdkTracerProvider>,
     meter: Option<SdkMeterProvider>,
@@ -166,8 +171,28 @@ impl Telemetry {
     /// # Errors
     ///
     /// As [`TelemetryBuilder::build`].
+    ///
+    /// Without an endpoint in the environment, every signal is exported to
+    /// `localhost` (4318, or 4317 over gRPC), as the OpenTelemetry environment
+    /// specification has it — what a deployment with a collector beside it
+    /// (a sidecar) and no `OTEL_*` variable relies on. A binary that must run
+    /// as well without a collector wants
+    /// [`init_where_configured`](Self::init_where_configured).
     pub fn init() -> Result<Self, TelemetryError> {
         Self::builder().build()
+    }
+
+    /// Like [`init`](Self::init), but a signal is built only where an endpoint
+    /// is configured for it: the same as [`Telemetry::builder`] followed by
+    /// [`TelemetryBuilder::with_export_where_configured`] and
+    /// [`TelemetryBuilder::build`]. With no `OTEL_EXPORTER_OTLP_*ENDPOINT` set,
+    /// nothing is exported and no export thread is started.
+    ///
+    /// # Errors
+    ///
+    /// As [`TelemetryBuilder::build`].
+    pub fn init_where_configured() -> Result<Self, TelemetryError> {
+        Self::builder().with_export_where_configured().build()
     }
 
     /// The `tracing` layer: spans become OpenTelemetry spans, and events at
