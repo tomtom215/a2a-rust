@@ -86,6 +86,41 @@ pub async fn a_retry_while_its_send_waits_on_another_replica_is_not_replayed(db:
     let _ = a.shutdown().await;
 }
 
+/// A retry routed to another replica while the send it repeats is running is
+/// answered with that send's task at once. The retry finds the turn held,
+/// reads the key (the running send took it when it took the turn) and replays;
+/// it is not made to wait out the turn and refused as busy.
+pub async fn a_retry_while_its_send_runs_on_another_replica_is_replayed(db: &impl Db) {
+    let probe = Arc::default();
+    let store = db.store().await;
+    let a = replica(db.store().await, &probe, Duration::from_secs(5));
+    let b = replica(db.store().await, &probe, Duration::from_secs(5));
+
+    let task = send(&a, params("park", None, true)).await.expect("A opens");
+    until(&*store, &task.id, "parks", |t| {
+        t.status.state == TaskState::InputRequired
+    })
+    .await;
+    let mut keyed = params("hold", Some(&task), true);
+    keyed.message.metadata = Some(serde_json::json!({
+        a2a_protocol_types::idempotency::IDEMPOTENCY_METADATA_KEY: uuid::Uuid::new_v4().to_string(),
+    }));
+    send(&a, keyed.clone()).await.expect("the send runs on A");
+
+    let asked = Instant::now();
+    let replayed = send(&b, keyed)
+        .await
+        .expect("B answers the retry and does not refuse it");
+    assert_eq!(replayed.id, task.id, "the retry is answered with the task");
+    assert!(
+        asked.elapsed() < Duration::from_secs(2),
+        "answered at once, not after waiting out A's turn: {:?}",
+        asked.elapsed()
+    );
+    let _ = b.shutdown().await;
+    let _ = a.shutdown().await;
+}
+
 /// A replica shut down hands its tasks on at once: its claims are released
 /// by `shutdown`, not left to expire, even while an executor that ignores
 /// its token is still running (its writes are then refused by the fence).

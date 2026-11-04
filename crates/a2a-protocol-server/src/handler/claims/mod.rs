@@ -7,15 +7,18 @@
 //! for each turn, keeping it while the turn runs, and acting on what a
 //! renewal reports.
 //!
-//! A turn's claim is taken in `commit_task` once the send's task is known
-//! (after an idempotent replay has been answered, so a retried send whose
-//! first attempt is still running replays rather than waits). The executor's
-//! future and the turn's event consumer (the background processor, or a
-//! blocking send's collector) each hold it, and it is released when the last
-//! of them ends: the consumer logs a terminal event after the store has ruled
-//! on it, which is after the executor's own release point, and a claim
-//! released there fenced out the turn's last log append. Every path that ends
-//! a turn early drops its [`TurnClaim`] the same way; `Drop` releases it.
+//! A turn's claim is taken in `commit_task` once the send's task is known,
+//! and before the send's idempotency key, so that a send waiting for a turn
+//! holds no key a retry could be answered by. A retried send whose first
+//! attempt is still running is still answered at once: it finds the claim
+//! held, reads the key's holder (`TaskStore::idempotency_holder`) and
+//! replays. The executor's future and the turn's event consumer (the
+//! background processor, or a blocking send's collector) each hold it, and it
+//! is released when the last of them ends: the consumer logs a terminal event
+//! after the store has ruled on it, which is after the executor's own release
+//! point, and a claim released there fenced out the turn's last log append.
+//! Every path that ends a turn early drops its [`TurnClaim`] the same way;
+//! `Drop` releases it.
 //!
 //! One renewer per handler extends every claim the handler holds, in one
 //! statement per interval, while it holds any. It cancels a turn's executor
@@ -40,7 +43,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use a2a_protocol_types::task::TaskId;
+use a2a_protocol_types::message::Message;
+use a2a_protocol_types::task::{Task, TaskId};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
@@ -206,13 +210,23 @@ impl RequestHandler {
     /// A turn running in this process is refused at once, as before: the
     /// in-process admission already waited for it if it had parked.
     ///
+    /// Before every attempt, the first included, the key `message` carries is
+    /// read (`replay_of_held_key`): the send's retry, arriving on another
+    /// replica and finding the turn free first, has taken it, and this send
+    /// is answered with the task that retry holds instead of waiting for a
+    /// turn it no longer needs.
+    ///
     /// # Errors
     ///
     /// [`ServerError::UnsupportedOperation`] while another turn holds the
-    /// task; the store's error when the claim cannot be read.
-    pub(super) async fn claim_turn(&self, task_id: &TaskId) -> ServerResult<Option<TurnClaim>> {
+    /// task; the store's error when the claim or the key cannot be read.
+    pub(super) async fn claim_turn(
+        &self,
+        task_id: &TaskId,
+        message: &Message,
+    ) -> ServerResult<Waited> {
         let Some(claims) = &self.turn_claims else {
-            return Ok(None);
+            return Ok(Waited::Turn(None));
         };
         let scope = TenantContext::partition();
         let token = uuid::Uuid::new_v4().to_string();
@@ -220,6 +234,9 @@ impl RequestHandler {
         let mut wait = RETRY_FIRST;
         let mut started;
         loop {
+            if let Some(task) = self.replay_of_held_key(message).await? {
+                return Ok(Waited::Replay(task));
+            }
             started = Instant::now();
             if claims
                 .store
@@ -236,15 +253,18 @@ impl RequestHandler {
             tokio::time::sleep(wait.min(deadline - now)).await;
             wait = (wait * 2).min(RETRY_MAX);
         }
-        Ok(Some(hold(claims, task_id, token, started)))
+        Ok(Waited::Turn(Some(hold(claims, task_id, token, started))))
     }
 
     /// One attempt at [`claim_turn`](Self::claim_turn), without waiting:
-    /// [`TurnAttempt::Busy`] when a turn on another replica holds the task.
+    /// [`TurnAttempt::Busy`] when another turn holds the task. What to do
+    /// about it is the caller's: `claim_turn` waits, and refuses a send to a
+    /// task a turn in this process runs, unless the send is the retry of the
+    /// one that runs it.
     ///
     /// # Errors
     ///
-    /// As `claim_turn`'s, at once.
+    /// The store's, when the claim cannot be read.
     pub(super) async fn try_claim_turn(&self, task_id: &TaskId) -> ServerResult<TurnAttempt> {
         let Some(claims) = &self.turn_claims else {
             return Ok(TurnAttempt::Off);
@@ -263,9 +283,6 @@ impl RequestHandler {
             .await?
         {
             return Ok(TurnAttempt::Held(hold(claims, task_id, token, started)));
-        }
-        if self.cancellation_tokens.read().await.contains_key(task_id) {
-            return Err(busy(task_id));
         }
         Ok(TurnAttempt::Busy)
     }
@@ -323,8 +340,16 @@ pub(super) enum TurnAttempt {
     Off,
     /// The claim, now this turn's.
     Held(TurnClaim),
-    /// A turn on another replica holds it.
+    /// Another turn holds it.
     Busy,
+}
+
+/// How a wait for a turn ended.
+pub(super) enum Waited {
+    /// The turn is this send's: its claim, `None` when the handler takes none.
+    Turn(Option<TurnClaim>),
+    /// A retry of the send holds its idempotency key: the task that holds it.
+    Replay(Box<Task>),
 }
 
 /// The refusal of a send to a task another turn is running.

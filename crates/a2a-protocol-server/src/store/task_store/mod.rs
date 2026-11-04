@@ -34,7 +34,7 @@ pub use config::{
     DEFAULT_MAX_PAGE_SIZE, TaskStoreConfig,
 };
 pub use history::HistoryLimit;
-pub use records::{ArtifactDelta, IdempotencyClaim, RecordedEvent};
+pub use records::{ArtifactDelta, IdempotencyClaim, IdempotencyHolder, RecordedEvent};
 
 /// Trait for persisting and retrieving [`Task`] objects.
 ///
@@ -388,6 +388,41 @@ pub trait TaskStore: Send + Sync + 'static {
                 "this task store does not implement idempotency keys",
             ))
         })
+    }
+
+    /// Reads who holds `key`, without claiming it: `None` when it is free.
+    ///
+    /// # Why this exists
+    ///
+    /// A send that has to wait for another replica's turn must not hold its
+    /// idempotency key while it waits: a retry routed elsewhere would be
+    /// answered "accepted" by the key while the send it repeats could still
+    /// be refused when its wait ran out. So such a send takes the key only
+    /// once it holds the turn. A *retry* of a send that is running still has
+    /// to be told so at once, and that needs a read of the key that does not
+    /// take it; [`claim_idempotency_key`](TaskStore::claim_idempotency_key)
+    /// cannot be that read, because for a free key it claims.
+    ///
+    /// Read once and not under a lock, so the answer can be stale by the time
+    /// it is used: the caller treats `Some` as "already accepted" and `None`
+    /// as "not yet", and the claim itself, which is atomic, stays the
+    /// arbiter.
+    ///
+    /// Defaults to `None`, which is right for a store whose handler takes no
+    /// turn claims ([`turn_claims`](TaskStore::turn_claims) is `None`): the
+    /// only caller is the wait for a turn another replica holds. A store that
+    /// returns claims and keeps keys must override it. A wrapper that
+    /// forwards to another store must forward this too.
+    ///
+    /// # Errors
+    ///
+    /// Implementations return an error if the store operation fails.
+    fn idempotency_holder<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<IdempotencyHolder>>> + Send + 'a>> {
+        let _ = key;
+        Box::pin(async { Ok(None) })
     }
 
     /// Persists an artifact change that has **already been applied** to `task`.

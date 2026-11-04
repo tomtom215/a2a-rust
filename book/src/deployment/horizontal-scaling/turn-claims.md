@@ -21,20 +21,23 @@ executor, and B's save replaced what A stored after B read the task.
 tenant-aware) keep a table, `a2a_task_claims`, in the same database as the
 tasks, and the handler takes a row in it for each turn:
 
-1. **A send claims its task** once it knows which task that is, after an
-   idempotent replay has been answered (so a retried send replays rather than
-   waits). The row names this replica (`HOSTNAME`, the process id and a random
+1. **A send claims its task** once it knows which task that is, and then its
+   idempotency key if it carries one. The row names this replica (`HOSTNAME`, the process id and a random
    suffix; `with_replica_name` overrides the first) and a random token for the
    turn.
 2. **A claim another turn holds is waited for**, for up to
    `executor_drain_timeout` (5 s by default), the same bound the in-process
    wait for a parked turn has. If it is still held then, the send is refused
    exactly as on the replica running the task: `UnsupportedOperation`, "task …
-   is already being processed". A send that waits gives up its idempotency
-   key for the wait and claims it again once it holds the turn, so a retry of
-   it that reaches a third replica meanwhile is not answered "accepted" for a
-   send that is then refused: the retry claims the key and waits its own turn,
-   and the first of the two to hold the turn runs while the other replays it.
+   is already being processed". A send takes its idempotency key only once it
+   holds the turn, so a send that waits holds none, at any moment of the wait:
+   a retry of it that reaches a third replica meanwhile is not answered
+   "accepted" for a send that is then refused. The retry waits its own turn,
+   and the first of the two to hold the turn takes the key and runs; the other
+   reads the key before each attempt and is answered with the first one's
+   task. A retry of a send that is *running* is answered at once: it finds the
+   task claimed, reads who holds the key (a read that takes nothing, on every
+   bundled store) and replays.
 3. **A continuation reads the task again** once it holds the claim, and starts
    from that read, so it keeps everything the last turn stored, wherever that
    turn ran.

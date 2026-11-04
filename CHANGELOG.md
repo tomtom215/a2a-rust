@@ -1607,6 +1607,42 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   bound met at 1,000 ms though the wait had grown) and
   `tests/subscribe_no_idle_bound.rs`.
 
+- **A send waiting for another replica's turn holds no idempotency key**
+  (server; audit E-F24). A keyed send claimed its key first, then asked for the
+  task's turn, and released the key if the turn was held elsewhere. In the two or
+  three database round trips between, a retry routed to another replica found the
+  key and was answered "accepted" with the task as it then stood; the send it
+  repeated could then wait out `executor_drain_timeout` and be refused, and the
+  message never ran. The turn is now claimed first and the key once the turn is
+  held, so a waiting send holds no key at any instant. A retry of a send that is
+  *running* is still answered at once: it finds the task claimed, reads who holds
+  the key and replays (before, the key itself said so); and a waiting send reads
+  the key before each attempt, so one whose retry took the turn first is answered
+  with the retry's task and runs nothing. New, additive and defaulted:
+  `TaskStore::idempotency_holder(key)` and `IdempotencyHolder`, a read of a key
+  that takes nothing, implemented by every bundled store (in-memory, SQLite,
+  PostgreSQL, and the tenant-aware ones) and forwarded by the audit, traced and
+  encrypted wrappers. **A store that returns turn claims and keeps keys outside
+  this crate should implement it:** the default answers "free", which makes a
+  retry of a running send wait for a turn it will not get and be refused as busy
+  (a refusal, never a lost message). **Behaviour changes (latency):** the retry
+  of a send that already finished is answered after it has taken and released the
+  turn it did not need (one more round trip than before); and when two copies of
+  one message arrive together while the turn is free, the one that does not get it
+  is answered with the other's task at its next poll of the key (20 ms later),
+  where the key used to answer it at once. A malformed key is still refused first,
+  before anything is claimed. Tests:
+  `handler/messaging/idempotency_tests/turn_first.rs` (the key is free while the
+  first claim is in flight; a retry of a running send is replayed, on another
+  replica and in this process; a waiting send answered by its retry; a refused
+  send releases its key; the read's errors), a store test per backend, one per
+  wrapper, and `tests/turn_claims/lifecycle.rs` on SQLite and PostgreSQL.
+  Hand mutants: 29, all caught (the handler's order and the key reads 16; the
+  lookup in the in-memory, SQLite, PostgreSQL and tenant-aware stores and the
+  audit, traced and encrypted wrappers 13). The first run left one: a message with
+  no key read the store for the key `""`, a round trip per attempt that nothing
+  noticed; `only_a_message_with_a_key_reads_the_store` closes it.
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a

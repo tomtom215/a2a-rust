@@ -110,7 +110,7 @@ pub use seal::SEALED_MEDIA_TYPE;
 pub(crate) use seal::Sealer;
 
 use super::tenant::TenantContext;
-use super::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore};
+use super::{ArtifactDelta, IdempotencyClaim, IdempotencyHolder, RecordedEvent, TaskStore};
 
 type Fut<'a, T> = Pin<Box<dyn Future<Output = A2aResult<T>> + Send + 'a>>;
 
@@ -264,6 +264,10 @@ impl TaskStore for EncryptedTaskStore {
 
     fn release_idempotency_key<'a>(&'a self, key: &'a str) -> Fut<'a, ()> {
         self.inner.release_idempotency_key(key)
+    }
+
+    fn idempotency_holder<'a>(&'a self, key: &'a str) -> Fut<'a, Option<IdempotencyHolder>> {
+        self.inner.idempotency_holder(key)
     }
 
     // A delta seals only what the inner store writes in place: the delta's

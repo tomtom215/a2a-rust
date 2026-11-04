@@ -51,7 +51,9 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId, TaskStatus};
 use tokio::sync::RwLock;
 
-use super::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore, TaskStoreConfig};
+use super::{
+    ArtifactDelta, IdempotencyClaim, IdempotencyHolder, RecordedEvent, TaskStore, TaskStoreConfig,
+};
 use crate::metrics::{self, MetricsHandle};
 use crate::store::AppliedPosition;
 use crate::store::terminal::{TerminalStateConflict, refuses_write};
@@ -854,6 +856,21 @@ impl TaskStore for InMemoryTaskStore {
             data.idempotency_index.remove(key);
             drop(data);
             Ok(())
+        })
+    }
+
+    fn idempotency_holder<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<IdempotencyHolder>>> + Send + 'a>> {
+        Box::pin(async move {
+            let data = self.data.read().await;
+            let holder = data
+                .idempotency_index
+                .get(key)
+                .map(|(message, task, _)| IdempotencyHolder::new(message.clone(), task.clone()));
+            drop(data);
+            Ok(holder)
         })
     }
 
@@ -2909,6 +2926,43 @@ mod idempotency_tests {
     #[tokio::test]
     async fn the_default_store_supports_idempotency() {
         assert!(InMemoryTaskStore::new().supports_idempotency());
+    }
+
+    #[tokio::test]
+    async fn reading_a_key_names_its_holder_and_takes_nothing() {
+        let store = InMemoryTaskStore::new();
+        assert_eq!(
+            store.idempotency_holder(KEY).await.unwrap(),
+            None,
+            "a free key has no holder"
+        );
+        // Reading did not claim it: a claim still finds it free.
+        assert_eq!(
+            store
+                .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("t1"))
+                .await
+                .unwrap(),
+            IdempotencyClaim::Claimed
+        );
+        assert_eq!(
+            store.idempotency_holder(KEY).await.unwrap(),
+            Some(IdempotencyHolder::new(
+                MessageId::new("m1"),
+                TaskId::new("t1")
+            )),
+            "the holder is the message that claimed the key and the task it named"
+        );
+        assert_eq!(
+            store.idempotency_holder(OTHER_KEY).await.unwrap(),
+            None,
+            "another key is not held"
+        );
+        store.release_idempotency_key(KEY).await.unwrap();
+        assert_eq!(
+            store.idempotency_holder(KEY).await.unwrap(),
+            None,
+            "a released key has no holder"
+        );
     }
 
     #[tokio::test]

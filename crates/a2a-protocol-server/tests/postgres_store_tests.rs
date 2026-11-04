@@ -1661,6 +1661,104 @@ async fn idempotency_claim_replay_and_conflict() {
 
 #[tokio::test]
 #[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn idempotency_holder_names_the_holder_and_takes_nothing() {
+    use a2a_protocol_server::store::task_store::{IdempotencyClaim, IdempotencyHolder};
+    use a2a_protocol_types::message::MessageId;
+
+    let db = TestDb::create("idem_holder").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    assert_eq!(
+        store.idempotency_holder(IDEM_KEY).await.expect("read"),
+        None,
+        "a free key has no holder"
+    );
+    assert_eq!(
+        store
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &TaskId("t1".into()))
+            .await
+            .expect("claim"),
+        IdempotencyClaim::Claimed,
+        "reading took nothing"
+    );
+    assert_eq!(
+        store.idempotency_holder(IDEM_KEY).await.expect("read"),
+        Some(IdempotencyHolder::new(
+            MessageId::new("m1"),
+            TaskId("t1".into())
+        )),
+        "the holder is the message that claimed the key and the task it named"
+    );
+    assert_eq!(
+        store
+            .idempotency_holder("0123456789abcdef0123456789abcdef")
+            .await
+            .expect("read"),
+        None,
+        "another key is not held"
+    );
+    store
+        .release_idempotency_key(IDEM_KEY)
+        .await
+        .expect("release");
+    assert_eq!(
+        store.idempotency_holder(IDEM_KEY).await.expect("read"),
+        None,
+        "a released key has no holder"
+    );
+
+    db.drop_db().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_idempotency_holder_is_read_in_its_own_tenant() {
+    use a2a_protocol_server::store::task_store::{IdempotencyClaim, IdempotencyHolder};
+    use a2a_protocol_types::message::MessageId;
+
+    let db = TestDb::create("tenant_idem_holder").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant-aware postgres store");
+
+    let free = TenantContext::scope("acme", async {
+        store.idempotency_holder(IDEM_KEY).await.expect("read")
+    })
+    .await;
+    assert_eq!(free, None, "a free key has no holder");
+    let claimed = TenantContext::scope("acme", async {
+        store
+            .claim_idempotency_key(IDEM_KEY, &MessageId::new("m1"), &TaskId("t1".into()))
+            .await
+            .expect("claim")
+    })
+    .await;
+    assert_eq!(claimed, IdempotencyClaim::Claimed, "reading took nothing");
+
+    let in_acme = TenantContext::scope("acme", async {
+        store.idempotency_holder(IDEM_KEY).await.expect("read")
+    })
+    .await;
+    assert_eq!(
+        in_acme,
+        Some(IdempotencyHolder::new(
+            MessageId::new("m1"),
+            TaskId("t1".into())
+        ))
+    );
+    let in_globex = TenantContext::scope("globex", async {
+        store.idempotency_holder(IDEM_KEY).await.expect("read")
+    })
+    .await;
+    assert_eq!(in_globex, None, "another tenant's key is not visible");
+
+    db.drop_db().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
 async fn idempotency_release_frees_the_key() {
     use a2a_protocol_server::store::task_store::IdempotencyClaim;
     use a2a_protocol_types::message::MessageId;

@@ -9,7 +9,7 @@
 
 use super::SqliteTaskStore;
 use crate::store::TaskStore;
-use crate::store::task_store::IdempotencyClaim;
+use crate::store::task_store::{IdempotencyClaim, IdempotencyHolder};
 use a2a_protocol_types::message::MessageId;
 use a2a_protocol_types::task::TaskId;
 
@@ -212,5 +212,45 @@ async fn both_ways_of_building_the_schema_create_the_table() {
             .unwrap(),
         IdempotencyClaim::Claimed,
         "the migration runner must create idempotency_keys"
+    );
+}
+
+#[tokio::test]
+async fn reading_a_key_names_its_holder_and_takes_nothing() {
+    let store = store().await;
+    assert_eq!(
+        store.idempotency_holder(KEY).await.unwrap(),
+        None,
+        "a free key has no holder"
+    );
+    // Reading did not claim it: a claim still finds it free.
+    assert_eq!(
+        store
+            .claim_idempotency_key(KEY, &MessageId::new("m1"), &TaskId::new("t1"))
+            .await
+            .unwrap(),
+        IdempotencyClaim::Claimed
+    );
+    assert_eq!(
+        store.idempotency_holder(KEY).await.unwrap(),
+        Some(IdempotencyHolder::new(
+            MessageId::new("m1"),
+            TaskId::new("t1")
+        )),
+        "the holder is the message that claimed the key and the task it named"
+    );
+    assert_eq!(
+        store
+            .idempotency_holder("0123456789abcdef0123456789abcdef")
+            .await
+            .unwrap(),
+        None,
+        "another key is not held"
+    );
+    store.release_idempotency_key(KEY).await.unwrap();
+    assert_eq!(
+        store.idempotency_holder(KEY).await.unwrap(),
+        None,
+        "a released key has no holder"
     );
 }

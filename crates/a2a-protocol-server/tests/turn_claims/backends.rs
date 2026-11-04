@@ -66,6 +66,12 @@ mod sqlite {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_a_retry_while_its_send_runs_on_another_replica_is_replayed() {
+        a_retry_while_its_send_runs_on_another_replica_is_replayed(&TempDb::new("retry_runs"))
+            .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn sqlite_a_replica_shut_down_releases_its_claims_at_once() {
         a_replica_shut_down_releases_its_claims_at_once(&TempDb::new("shutdown")).await;
     }
@@ -206,6 +212,14 @@ pub(crate) mod postgres {
     async fn postgres_a_retry_while_its_send_waits_on_another_replica_is_not_replayed() {
         let db = TestDb::create("retry").await;
         a_retry_while_its_send_waits_on_another_replica_is_not_replayed(&db).await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_retry_while_its_send_runs_on_another_replica_is_replayed() {
+        let db = TestDb::create("retry_runs").await;
+        a_retry_while_its_send_runs_on_another_replica_is_replayed(&db).await;
         db.drop_db().await;
     }
 

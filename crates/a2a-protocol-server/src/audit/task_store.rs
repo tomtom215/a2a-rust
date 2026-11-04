@@ -21,7 +21,7 @@ use super::interceptor::append_or_report;
 use super::log::AuditLog;
 use crate::metrics::Metrics;
 use crate::store::tenant::TenantContext;
-use crate::store::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore};
+use crate::store::{ArtifactDelta, IdempotencyClaim, IdempotencyHolder, RecordedEvent, TaskStore};
 
 type Fut<'a, T> = Pin<Box<dyn Future<Output = A2aResult<T>> + Send + 'a>>;
 
@@ -177,6 +177,10 @@ impl TaskStore for AuditedTaskStore {
 
     fn release_idempotency_key<'a>(&'a self, key: &'a str) -> Fut<'a, ()> {
         self.inner.release_idempotency_key(key)
+    }
+
+    fn idempotency_holder<'a>(&'a self, key: &'a str) -> Fut<'a, Option<IdempotencyHolder>> {
+        self.inner.idempotency_holder(key)
     }
 
     fn save_artifact_delta<'a>(&'a self, task: &'a Task, delta: ArtifactDelta) -> Fut<'a, ()> {

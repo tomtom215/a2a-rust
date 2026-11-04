@@ -49,6 +49,31 @@ pub enum IdempotencyClaim {
     },
 }
 
+/// Who holds an idempotency key, as [`TaskStore::idempotency_holder`] reads
+/// it: the message that claimed the key and the task the claim named.
+///
+/// `#[non_exhaustive]`, with [`new`](Self::new), so a store written outside
+/// this crate can build one and a later field is not a compile break.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct IdempotencyHolder {
+    /// The message that claimed the key.
+    pub message_id: MessageId,
+    /// The task the claim named.
+    pub task_id: TaskId,
+}
+
+impl IdempotencyHolder {
+    /// A holder: `message_id` claimed the key for `task_id`.
+    #[must_use]
+    pub const fn new(message_id: MessageId, task_id: TaskId) -> Self {
+        Self {
+            message_id,
+            task_id,
+        }
+    }
+}
+
 /// One event as the log holds it: what was emitted, and where in the order.
 #[derive(Debug, Clone)]
 #[non_exhaustive]

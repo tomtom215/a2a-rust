@@ -36,6 +36,11 @@ pub(super) const CLAIM_SQL: &str = "INSERT INTO idempotency_keys (key, message_i
 pub(super) const HOLDER_SQL: &str =
     "SELECT message_id, task_id FROM idempotency_keys WHERE key = $1 FOR UPDATE";
 
+/// Reads the holder of a key without claiming it, and without a lock: the
+/// caller treats the answer as a hint and the claim stays the arbiter (see
+/// `TaskStore::idempotency_holder`).
+pub(super) const PEEK_SQL: &str = "SELECT message_id, task_id FROM idempotency_keys WHERE key = $1";
+
 /// Releases a key, so a send that failed after claiming does not keep it.
 pub(super) const RELEASE_SQL: &str = "DELETE FROM idempotency_keys WHERE key = $1";
 

@@ -686,6 +686,34 @@ impl TaskStore for SqliteTaskStore {
         })
     }
 
+    fn idempotency_holder<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = A2aResult<Option<super::task_store::IdempotencyHolder>>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            let row = sqlx::query(idempotency::HOLDER_SQL)
+                .bind(key)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            row.map(|row| {
+                let message: String = row.try_get("message_id").map_err(to_a2a_error)?;
+                let task: String = row.try_get("task_id").map_err(to_a2a_error)?;
+                Ok(super::task_store::IdempotencyHolder::new(
+                    a2a_protocol_types::message::MessageId::new(message),
+                    TaskId::new(task),
+                ))
+            })
+            .transpose()
+        })
+    }
+
     fn save<'a>(
         &'a self,
         task: &'a Task,
