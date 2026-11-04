@@ -82,6 +82,38 @@ let client = ClientBuilder::new(url)
     .unwrap();
 ```
 
+Retries can multiply an overload: with three retries, a saturated worker sees up
+to four times the calls it was sent. Three opt-in bounds keep a client from
+adding to it:
+
+```rust
+# use a2a_protocol_sdk::client::ClientBuilder;
+# use std::time::Duration;
+# let url = "http://agent.example.com";
+use a2a_protocol_client::{RetryBudget, RetryPolicy};
+
+let client = ClientBuilder::new(url)
+    .with_retry_policy(
+        RetryPolicy::default()
+            // At most one retry per ten calls, and one a second besides.
+            .with_budget(RetryBudget::new(0.1, 1.0))
+            // No retry starts more than 20 s after the call's first attempt.
+            .with_max_elapsed(Duration::from_secs(20)),
+    )
+    // At most 32 calls wait for a response at once.
+    .with_max_in_flight(32)
+    .build()
+    .unwrap();
+```
+
+A retry the budget cannot pay for, or that would start after `max_elapsed`, is
+not made, and the error that called for it is returned. A call that finds the
+in-flight cap reached is refused up front with `TooManyPendingRequests`, which is
+retryable, so a retry policy backs off and tries again as responses arrive. A
+streaming call counts until its stream has opened, not while it stays open.
+All three are per client: a thousand clients each have their own, so share one
+`Arc<A2aClient>` per peer to bound the calls to it.
+
 Sends (`send_message`, `stream_message`, creating a push config) are retried only
 on a 429, a 503, or a protocol error that names a retry delay (`RetryInfo`), all
 of which prove the server did not process them. After a timeout or a dropped

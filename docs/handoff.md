@@ -43,33 +43,75 @@ command is named so the next session re-runs it instead of copying the number.
   was rebuilt from the maintainer's description of it, not recovered.
 - **Pull requests, as a batch.** The maintainer asked for a batch done correctly, with no piecemeal CI
   iteration: a pull request is pushed when its local gates, mutation work and live probes are done, and
-  its fixes go in together. The split is mine and can change:
-  1. CI hygiene: the runner-disk step in `mutants.yml`, `scripts/preflight_all.py` with its runner and
-     inventory, `scripts/audit/plan_status.py`, this handoff.
-  2. The other 26 wire structs: `#[non_exhaustive]`, a constructor for each, every literal converted by a
-     script, `STABILITY.md` section 4, the upgrade guide.
-  3. The server crate: groups B, C and L, B2's E-F12, D-05's dead-webhook policy, E-F18, E-F25, D-18, K's
-     remainder.
-  4. The client crate and the network: M (delegation hand-off on shutdown), O and the opt-in `HttpPool`
-     (ADR 0032), the rest of D, E and F, F15's deprecation.
-  5. Observability, deploy and docs: the rest of I, group J with `promtool` in CI, the rest of G, H and N.
-  After the tag: ADR 0035 and ADR 0036, each its own pull request. The workflows trigger only on pull
-  requests that target `main`, so pull requests cannot be stacked: each is branched from `main`. The
-  codemod of pull request 2 is a script, so when `main` moves it is re-run, not merged by hand.
+  its fixes go in together. State on 2026-11-03, evening:
+  1. CI hygiene: **#191**, merged by the maintainer on 2026-11-03 (merge commit `67a7413f`). All 13
+     workflow runs on its head `65adf836` completed before the merge; 12 succeeded and Mutation Testing run
+     448 failed in 7 s because the label was added after the PR opened, and run 449 on the same commit
+     succeeded (Actions API).
+  2. The other 26 wire structs: **#192**, merged on 2026-11-03 (merge commit `045146ec`), after every job
+     on its head `bb82bce7` was green; one job (`example-surface`, see First, next 6) hit its 20-minute
+     limit while compiling and passed on its single re-run.
+  3. The client crate: branch `claude/inspiring-mccarthy-rgpntj-client`, rebased onto `main` at `67a7413f`
+     with the three handoff commits that were waiting on #191; the pull request from it is the one that
+     carries this note. Contents: delegation hand-off on shutdown
+     (`wait_or_hand_off`, `Outcome::HandedOff`), `DelegationOptions` with `start_with`/`reattach_with`,
+     the stream health rule and jitter, bounded journal writes (M); a retry budget, `max_elapsed`, a cap
+     on calls in flight, the `Retry-After` fail-fast rule and its HTTP-date form (O, audit D-10);
+     `follow_task` resume (D-11); opt-in gRPC HTTP/2 keep-alive (B-10, D-12 in part). Local evidence, on the
+     tree before the rebase (it differed from the rebased one only by #192's `scripts/codemod/`):
+     `cargo test -p a2a-protocol-client --all-features` exit 0 (1303 passed, 0 failed), clippy under four
+     feature sets, 40 of 40 script and clippy gates (1 to 9, 11 to 27, 30 to 43) exit 0; not run: the book
+     build, the two pip-hash gates, gates 44 to 101. `cargo mutants --in-diff` on the 156 mutants of the
+     client diff (restricted to the test binaries that touch the code, 3 h): 102 caught, 50 unviable, 4
+     missed: three in `TaskFollow` (killed by four new unit tests, each mutant applied by hand and the
+     intended test failing) and one equivalent mutant in `RetryBudget`'s rate clamp (refactored away). A
+     second run on `follow.rs` and `budget.rs` at the final head: 39 mutants, 33 caught, 6 unviable, 0
+     missed. The scratchpad logs (`mut-pr3-client*.log`) do not survive the container. **Not in it,
+     deliberately:** `HttpPool` (ADR 0032), HTTP/2 PING and a connection lifetime for the HTTP bindings
+     (D-12), B-11, and the live proof of M (kill -9 a supervisor with a PostgreSQL journal and 50
+     children). Those are the next client pull request.
+  4. The server crate (groups B, C, L, B2's E-F12, D-05, E-F18, E-F25, D-18, K's remainder) and
+  5. observability, deploy and docs (the rest of I, group J with `promtool` in CI, G, H, N): not started.
+  After the tag: ADR 0035 and ADR 0036, each its own pull request. The workflows run only on pull
+  requests to `main`, so a pull request that needs an earlier one waits for its merge and is rebased
+  (`git rebase --onto origin/main <the earlier head>`), as the client branch was after #192.
+  **How the time went, so the next session spends it differently:** a full `cargo mutants --in-diff` on the
+  server crate took 88 minutes for 24 mutants (16 unviable, 8 `TIMEOUT`) and decided nothing, because
+  other builds shared the 4 cores and a mutant run that exceeds `--timeout` is `TIMEOUT`, which CI's
+  scoring counts as neither caught nor missed. The maintainer's brief says server: `--list` and
+  hand-test, with CI's sharded run as the arbiter. Re-running only the timed-out mutants alone with
+  `--timeout 1200` took 63 minutes and gave 8 caught, 0 missed. Run no other cargo command while a
+  mutation run is in progress, and push a pull request as soon as its own gates pass.
 
 ### First, next
 
-1. Read the CI of pull request 1 once it is open, before building on it.
-2. Pull request 2, then 3, 4 and 5.
-3. Per pull request, before its first push: list the diff's new and changed functions and every new `Debug`
-   impl; `cargo mutants --in-diff` on types and client; hand-test each server mutant listed with `--list`;
-   the kill-proof protocol for each test (it passes on the real code; the exact mutant applied by hand
-   makes it fail; restore; re-run); `scripts/preflight_all.py`, reading the table and not its last line.
+1. Read the CI of the client pull request before building on it; fix only what a failing check needs, in
+   one push (`ci-failure-triage`). Do not merge or tag: the maintainer's go is required.
+2. Then the server pull request, with `--list` and hand-tests, not a full local run, branched from `main`.
+3. Per pull request, before its first push: the diff's new and changed functions and every new `Debug`
+   impl; `cargo mutants --in-diff` on types and client; the kill-proof protocol for each test (it passes
+   on the real code; the exact mutant applied by hand makes it fail; restore; re-run); the script gates
+   of `ci.yml` (`rest_gates.sh`-style, reading each gate's own exit code) and clippy on the crates
+   touched, and `cargo doc` of each crate on its own default features (gate 82): a doc link to an item
+   behind a feature (`crate::transport::grpc::...`) resolves under `--all-features` and under a
+   `--workspace` build, where another crate switches the feature on, and fails there; #193 hit it. The
+   heavy matrix gates are CI's. Run `cargo test -p a2a-protocol-sdk --all-features` too: `book_defaults` is
+   compiled only with `grpc` and `grpc-tls`, checks every public field of `RetryPolicy` and
+   `GrpcTransportConfig` against `book/src/reference/configuration.md`, and ran 0 tests in a client-only
+   run; #193 added four fields without rows. Run the local workspace tests with at least 15 GB of free disk: the
+   link of hundreds of test binaries fills a smaller allowance and dies with `ld ... Bus error`.
 4. The adversarial campaign (the matrix in the maintainer's brief) is not started. It is scripts with
    recorded output, one brief per area, in the style of `docs/audits/2026-11-01-triage/BRIEF.md`.
 5. `cargo semver-checks` passes today only because the version already reads 0.16.0 (a 0.x minor bump
    skips the checks). To list the breaks against the last release, run it with `--release-type patch
    --baseline-rev v0.15.0 --all-features`: not run yet.
+6. `ci.yml`'s `example-surface` job ("all methods x all bindings") has `timeout-minutes: 20` and ran 18.9
+   minutes on `main` at `542250c8` (Actions API, run 1786); on #192 it hit 20.4 and was cancelled while
+   compiling `rig-agent`, before any test, and was re-run once. Raise its limit to 30 in the next push that
+   touches `ci.yml` anyway; a push of its own restarts every workflow.
+7. Unrelated to these pull requests: `scripts/live/replica` fails `-D warnings` on `main`
+   (`unused ServeReport`, `src/main.rs:128`) and `scripts/live/replica/v015` cannot load its dependency
+   manifest. The `/st2.out` file the maintainer asked to have deleted does not exist in this container.
 
 ### Facts this session established
 
@@ -98,6 +140,11 @@ command is named so the next session re-runs it instead of copying the number.
 - `promtool` 3.15.1 (from the Prometheus image, below) passes `check rules` on
   `deploy/observability/prometheus/rules/` (9 alert rules, 14 recording rules) and `test rules` on
   `tests/a2a-alerts.test.yml`. No workflow runs either: that is group J.
+- `scripts/run_postgres_suites.py`'s `statement_count` counts PostgreSQL round trips through a proxy that
+  forwards the TLS request. Against a server with `ssl = on` (the Debian default, as in this image) it
+  reads ciphertext and counts `(0, 0)`, so the test fails on `main` too. CI's service container has TLS
+  off. Here: `psql -h localhost -U postgres -c "ALTER SYSTEM SET ssl = off" -c "SELECT pg_reload_conf()"`
+  (a local setting; nothing in the repository changes).
 - Not run, and not claimed: Kubernetes (on 2026-10-28 `kind` could not start a pod sandbox here, nested
   `runc`, and Kubernetes 1.35's kubelet refuses this host's cgroup v1; not re-measured), IPv6 on the wire
   (the kernel has none), the toxiproxy partition run, a live pass of the Squid, private-CA and model

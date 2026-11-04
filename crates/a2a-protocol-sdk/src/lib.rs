@@ -72,7 +72,7 @@ pub mod server {
 /// - **Params and responses**: `MessageSendParams`, `TaskQueryParams`,
 ///   `ListTasksParams`, `SendMessageResponse`, `TaskListResponse`
 /// - **Client**: `A2aClient`, `ClientBuilder`, `EventStream`, `RetryPolicy`,
-///   `resolve_agent_card`, and the token providers and bearer interceptor
+///   `RetryBudget`, `resolve_agent_card`, and the token providers and bearer interceptor
 ///   (`TokenProvider`, `StaticTokenProvider`, `OAuth2ClientCredentials`,
 ///   `BearerAuthInterceptor`)
 /// - **Webhooks** (feature `webhook`, on by default): `WebhookReceiver`,
@@ -110,8 +110,8 @@ pub mod prelude {
     // ── Client ───────────────────────────────────────────────────────────
     pub use a2a_protocol_client::{
         A2aClient, BearerAuthInterceptor, ClientBuilder, ClientError, ClientResult, EventStream,
-        OAuth2ClientCredentials, RetryPolicy, StaticTokenProvider, TokenProvider, new_message_id,
-        resolve_agent_card,
+        OAuth2ClientCredentials, RetryBudget, RetryPolicy, StaticTokenProvider, TokenProvider,
+        new_message_id, resolve_agent_card,
     };
 
     #[cfg(feature = "webhook")]

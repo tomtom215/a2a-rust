@@ -156,7 +156,7 @@ pub use discovery::resolve_agent_card;
 pub use error::{ClientError, ClientResult};
 pub use interceptor::{CallInterceptor, ClientRequest, ClientResponse, InterceptorChain};
 pub use message_id::new_message_id;
-pub use retry::RetryPolicy;
+pub use retry::{RetryBudget, RetryPolicy};
 pub use streaming::EventStream;
 pub use token_provider::{
     BearerAuthInterceptor, OAuth2ClientCredentials, StaticTokenProvider, TokenProvider,

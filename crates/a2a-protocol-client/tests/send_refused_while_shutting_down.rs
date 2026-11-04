@@ -99,9 +99,32 @@ async fn the_refusal_tells_the_client_it_may_send_again() {
 
 /// With a retry policy the client does send it again: the handler sees
 /// every attempt. Behind a load balancer the next attempt reaches another
-/// replica.
+/// replica. The refusal names one second, and a client waits out what the
+/// server asked for, so its `max_backoff` has to admit it.
 #[tokio::test]
 async fn a_client_with_a_retry_policy_sends_it_again() {
+    let (url, sends) = leaving().await;
+    for (n, binding) in ["JSONRPC", "HTTP+JSON"].into_iter().enumerate() {
+        let client = ClientBuilder::new(&url)
+            .with_protocol_binding(binding)
+            .with_retry_policy(
+                RetryPolicy::default()
+                    .with_max_retries(2)
+                    .with_initial_backoff(Duration::from_millis(10))
+                    .with_max_backoff(Duration::from_secs(1)),
+            )
+            .build()
+            .unwrap();
+        let _ = client.send_message(send(&format!("r-{binding}"))).await;
+        assert_eq!(sends.0.load(Ordering::SeqCst), 3 * (n + 1), "{binding}");
+    }
+}
+
+/// A client whose `max_backoff` is shorter than the delay the refusal names
+/// does not send again inside it (audit D-10): to wait less is to retry
+/// within the penalty window. The error it returns carries the delay.
+#[tokio::test]
+async fn a_client_that_would_not_wait_that_long_does_not_send_it_again() {
     let (url, sends) = leaving().await;
     for (n, binding) in ["JSONRPC", "HTTP+JSON"].into_iter().enumerate() {
         let client = ClientBuilder::new(&url)
@@ -114,7 +137,15 @@ async fn a_client_with_a_retry_policy_sends_it_again() {
             )
             .build()
             .unwrap();
-        let _ = client.send_message(send(&format!("r-{binding}"))).await;
-        assert_eq!(sends.0.load(Ordering::SeqCst), 3 * (n + 1), "{binding}");
+        let error = client
+            .send_message(send(&format!("g-{binding}")))
+            .await
+            .expect_err("refused");
+        assert_eq!(sends.0.load(Ordering::SeqCst), n + 1, "{binding}: one send");
+        assert_eq!(
+            error.retry_after(),
+            Some(Duration::from_secs(1)),
+            "{binding}"
+        );
     }
 }

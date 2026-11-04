@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use a2a_protocol_client::delegation::{Delegation, Outcome};
+use a2a_protocol_client::delegation::{Delegation, DelegationOptions, Outcome};
 use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
@@ -101,9 +101,16 @@ fn params(id: &str) -> MessageSendParams {
 /// Starts a delegation and waits for it to settle, returning its key and
 /// the child's task id.
 async fn delegate(client: &Arc<A2aClient>, params: MessageSendParams) -> (Option<String>, String) {
-    let child = Delegation::start(Arc::clone(client), params)
-        .await
-        .expect("start");
+    settle(
+        Delegation::start(Arc::clone(client), params)
+            .await
+            .expect("start"),
+    )
+    .await
+}
+
+/// Waits for `child` to settle, returning its key and the child's task id.
+async fn settle(child: Delegation) -> (Option<String>, String) {
     let key = child.idempotency_key().map(str::to_owned);
     let done = tokio::time::timeout(GUARD, child.wait(std::future::pending()))
         .await
@@ -176,4 +183,56 @@ async fn nothing_is_added_for_an_agent_not_known_to_honour_keys() {
     assert!(!client.honours_idempotency());
     let (key, _) = delegate(&client, params("m-3")).await;
     assert_eq!(key, None);
+}
+
+/// `start_with` adds the key itself (it has to, to record it before the
+/// message is sent), so it must add it on exactly the terms `start` does.
+#[tokio::test]
+async fn start_with_adds_a_key_for_an_honouring_agent_and_keeps_the_callers() {
+    let (_, card, runs) = serve().await;
+    let client = Arc::new(
+        ClientBuilder::from_card(&card)
+            .expect("card")
+            .build()
+            .expect("client"),
+    );
+    assert!(client.honours_idempotency());
+
+    let child =
+        Delegation::start_with(Arc::clone(&client), params("m-4"), DelegationOptions::new())
+            .await
+            .expect("start");
+    let (key, first) = settle(child).await;
+    let key = key.expect("a key was added");
+    assert_eq!(key.len(), 64);
+    assert!(idempotency::validate_key(&key).is_ok());
+
+    let mut again = params("m-4");
+    idempotency::set_key(&mut again.message, &key).expect("valid");
+    let child = Delegation::start_with(Arc::clone(&client), again, DelegationOptions::new())
+        .await
+        .expect("start");
+    let (kept, second) = settle(child).await;
+    assert_eq!(
+        kept.as_deref(),
+        Some(key.as_str()),
+        "the caller's key is kept"
+    );
+    assert_eq!(second, first, "and it reached the same child");
+    assert_eq!(runs.load(Ordering::SeqCst), 1, "which did not run again");
+}
+
+#[tokio::test]
+async fn start_with_adds_nothing_for_an_agent_not_known_to_honour_keys() {
+    let (addr, _, _) = serve().await;
+    let client = Arc::new(
+        ClientBuilder::new(format!("http://{addr}"))
+            .build()
+            .expect("client"),
+    );
+    assert!(!client.honours_idempotency());
+    let child = Delegation::start_with(client, params("m-5"), DelegationOptions::new())
+        .await
+        .expect("start");
+    assert_eq!(settle(child).await.0, None);
 }

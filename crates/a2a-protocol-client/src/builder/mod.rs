@@ -74,6 +74,8 @@ pub struct ClientBuilder {
     pub(super) config: ClientConfig,
     pub(super) preferred_binding: Option<String>,
     pub(super) retry_policy: Option<RetryPolicy>,
+    /// The most calls the client lets wait for a response at once.
+    pub(super) max_in_flight: Option<usize>,
     /// Whether the peer is known to honour an idempotency key.
     ///
     /// Only an agent card that advertises the extension, or a caller saying so
@@ -113,6 +115,10 @@ pub struct ClientBuilder {
     ///
     /// [`build_grpc`]: ClientBuilder::build_grpc
     pub(super) grpc_bare_address_scheme: crate::config::GrpcBareAddressScheme,
+    /// HTTP/2 PING interval and timeout for [`build_grpc`]; `None` sends none.
+    ///
+    /// [`build_grpc`]: ClientBuilder::build_grpc
+    pub(super) grpc_keep_alive: Option<(std::time::Duration, std::time::Duration)>,
     /// TLS settings for [`build_grpc`]; `None` verifies against the bundled
     /// Mozilla roots.
     ///
@@ -149,9 +155,11 @@ impl ClientBuilder {
             config: ClientConfig::default(),
             preferred_binding: None,
             retry_policy: None,
+            max_in_flight: None,
             peer_honours_idempotency: false,
             content: crate::content::ContentKeys::default(),
             grpc_bare_address_scheme: crate::config::GrpcBareAddressScheme::default(),
+            grpc_keep_alive: None,
             #[cfg(feature = "grpc-tls")]
             grpc_tls_config: None,
             card_interfaces: Vec::new(),
@@ -267,7 +275,9 @@ impl ClientBuilder {
             },
             preferred_binding: Some(binding),
             retry_policy: None,
+            max_in_flight: None,
             grpc_bare_address_scheme: crate::config::GrpcBareAddressScheme::default(),
+            grpc_keep_alive: None,
             #[cfg(feature = "grpc-tls")]
             grpc_tls_config: None,
             card_interfaces: card.supported_interfaces.clone(),
@@ -497,6 +507,25 @@ impl ClientBuilder {
         self
     }
 
+    /// Has `build_grpc` (behind the `grpc` feature) send an HTTP/2 PING every
+    /// `interval`, and drop the connection when none is answered within
+    /// `timeout` (audit B-10, D-12). Off by default: a PING is hop-by-hop,
+    /// keeps only the hop to the nearest proxy open, and a server that limits
+    /// PINGs (grpc-go answers a client that pings more often than every 5
+    /// minutes with `GOAWAY`) refuses a short interval. See
+    /// `GrpcTransportConfig::http2_keep_alive_interval`. (These are plain
+    /// code, not links: the method exists in every build and the gRPC items
+    /// only with the feature.)
+    #[must_use]
+    pub const fn with_grpc_keep_alive(
+        mut self,
+        interval: std::time::Duration,
+        timeout: std::time::Duration,
+    ) -> Self {
+        self.grpc_keep_alive = Some((interval, timeout));
+        self
+    }
+
     /// Sets the TLS configuration `build_grpc` (behind the `grpc` feature) uses for
     /// an `https://` endpoint, explicit or chosen by the bare-address policy:
     /// a private CA, a client certificate, or a server name that differs from
@@ -645,6 +674,29 @@ impl ClientBuilder {
     #[must_use]
     pub const fn with_retry_policy(mut self, policy: RetryPolicy) -> Self {
         self.retry_policy = Some(policy);
+        self
+    }
+
+    /// Lets at most `limit` calls wait for a response at once (audit H6).
+    ///
+    /// A call that finds the cap reached is refused up front with
+    /// [`ClientError::TooManyPendingRequests`]
+    /// instead of being sent, so that a supervisor fanning out to a saturated
+    /// peer does not add to the saturation as fast as it can loop. The error is
+    /// retryable: with a [`RetryPolicy`] the call backs off and tries again as
+    /// responses arrive. A streaming call counts until its stream has opened,
+    /// not while it stays open. The default is no cap.
+    ///
+    /// The cap is per client. Clients that share nothing each have their own;
+    /// share one `Arc<A2aClient>` per peer to bound the calls to it.
+    ///
+    /// # Errors
+    ///
+    /// `build` returns [`ClientError::Config`] for
+    /// a limit of zero, which would refuse every call.
+    #[must_use]
+    pub const fn with_max_in_flight(mut self, limit: usize) -> Self {
+        self.max_in_flight = Some(limit);
         self
     }
 

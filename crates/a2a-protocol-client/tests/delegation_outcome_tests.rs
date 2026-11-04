@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use a2a_protocol_client::ClientBuilder;
-use a2a_protocol_client::delegation::{Delegation, Outcome};
+use a2a_protocol_client::delegation::{Delegation, DelegationOptions, Outcome};
 use a2a_protocol_types::{
     ContextId, Message, MessageRole, MessageSendParams, Part, StreamResponse, TaskId, TaskState,
     TaskStatus, TaskStatusUpdateEvent,
@@ -175,6 +175,26 @@ async fn a_cancel_before_any_event_names_the_child_is_unreachable() {
     let done = tokio::time::timeout(GUARD, d.cancel())
         .await
         .expect("bounded by the id wait");
+    assert!(done.task_id.is_none());
+    assert!(matches!(done.outcome, Outcome::Unreachable), "{done:?}");
+}
+
+/// The same cancel with the wait asked for in the options: the bound is the
+/// 200 ms given, not the five seconds a handle waits by default.
+#[tokio::test]
+async fn the_id_wait_in_the_options_bounds_a_cancel_before_the_child_is_named() {
+    let url = fake_peer(vec![], true, serde_json::Value::Null).await;
+    let client = Arc::new(ClientBuilder::new(url).build().expect("client"));
+    let d = Delegation::start_with(
+        client,
+        job("anything"),
+        DelegationOptions::new().with_id_wait(Duration::from_millis(200)),
+    )
+    .await
+    .expect("start");
+    let done = tokio::time::timeout(Duration::from_secs(3), d.cancel())
+        .await
+        .expect("bounded by the 200 ms wait, not the default 5 s");
     assert!(done.task_id.is_none());
     assert!(matches!(done.outcome, Outcome::Unreachable), "{done:?}");
 }

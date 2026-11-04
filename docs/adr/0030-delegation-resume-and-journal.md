@@ -98,7 +98,8 @@ implements it without a new dependency.
   (a reattached delegation does not renew a lease it did not grant); a
   supervisor that wants that records the grant itself. A journal shared by
   several supervisors needs an owner column, which the first version has but
-  does not enforce.
+  does not enforce. (Amended 2026-11-03: a lease is restored by
+  `reattach_with`; see Amendment.)
 
 ## What was and was not run
 
@@ -108,3 +109,48 @@ are tested against this repository's server, and `PostgresDelegationJournal`
 runs the journal contract on PostgreSQL 16.15. The SQL has not been run on
 PostgreSQL 17, under concurrent replicas, or after a connection loss
 mid-statement (it uses the crate's `pg_retry`, which is tested elsewhere).
+
+## Amendment, 2026-11-03 (audit H4, H18, NEW-h-s0-2, NEW-h-s0-3, NEW-h-designs-2, NEW-h-designs-5; fork F5)
+
+Found by running the delegation against the replica fleet, and decided by the
+maintainer as fork F5. Built in the same release as the original.
+
+1. **Hand-off on shutdown.** `Delegation::wait_or_hand_off(cancel, hand_off)`
+   takes the supervisor's own shutdown signal. When it fires first and the
+   delegation has a journal record, the child keeps running, the record stays
+   open at the position the stream reached, and the outcome is
+   `Outcome::HandedOff`. Without a record a hand-off cancels, as a cancel
+   does: a child nothing can find again must not be left running. `wait` is
+   `wait_or_hand_off` with a future that never fires. The reason: a graceful
+   redeploy fires every executor's token, the documented pattern passes it to
+   `wait`, and every child was cancelled and every record settled `canceled`.
+2. **`DelegationOptions`**, taken by `start_with` and `reattach_with`: a lease,
+   a budget grant, a journal record, a `ResumePolicy` and an id wait together.
+   `start_leased`, `start_budgeted` and `start_journaled` call `start_with`.
+   `reattach_with` renews the lease again from the moment the handle exists,
+   because the lease a child was granted lapses after its time to live without
+   a renewal, and the restart a journal is for would otherwise end the children
+   it recorded. It refuses a budget grant (the parent's meter died with the
+   process) and a new record (written before a send, and a reattach sends
+   none) with `ClientError::Config`.
+3. **A stream has worked** when its position advanced or when it delivered an
+   event and stayed open for `ResumePolicy::healthy_after` (default 5 s). gRPC
+   and WebSocket streams carry no event ids, so under the first rule alone a
+   long quiet child was given up on after about six idle cuts. A server that sends
+   a snapshot and drops the stream at once delivers an event but does not stay
+   open, so it still exhausts the policy.
+4. **Jitter.** The waits between attempts are shortened by up to half
+   (`ResumePolicy::jitter`, default on), so that streams a proxy rollout cut in
+   the same instant do not return in the same instant.
+5. **Bounded journal writes.** Each write is given `WRITE_BOUND` (5 s) and then
+   given up on; none is tried again for the 2 s progress interval; the record
+   written before the first send fails the start with a timeout. The writes
+   are awaited on the event path, so without a bound a journal outage stalled
+   every delegation.
+
+Not built, and why: a recovery driver. The loop is eight lines over
+`DelegationJournal::open` and `reattach_with` (`book/src/client/delegation.md`),
+and what it needs proving is a supervisor killed with `kill -9` against a
+PostgreSQL journal with fifty children, which is a run, not code. gRPC and
+WebSocket keep-alive is in ADR 0032's scope (the WebSocket client already pings
+every 15 s by default).

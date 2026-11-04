@@ -13,10 +13,13 @@
 //!
 //! The retry layer sits *below* the client's interceptor chain: headers an
 //! [`AuthInterceptor`](crate::AuthInterceptor) produces are computed once and
-//! reused for every attempt. A server-directed `Retry-After` is honored up to
-//! [`RetryPolicy`]'s `max_backoff` (30 s by default, and never more than an
-//! hour): never shortened, and lengthened at random by up to a quarter so that
-//! clients refused together do not all return together. A short-lived
+//! reused for every attempt. A server-directed `Retry-After` (delta-seconds
+//! or an HTTP-date) is honored up to [`RetryPolicy`]'s `max_backoff` (30 s by
+//! default): never shortened, and lengthened at random by up to a quarter so
+//! that clients refused together do not all return together. A longer one
+//! ends the retrying: to wait less is to retry inside the penalty window the
+//! server asked for, so the call returns the error, which carries the delay
+//! ([`ClientError::retry_after`]) for the caller to act on. A short-lived
 //! credential can expire between attempts — the retried request then fails with
 //! a non-retryable auth error rather than re-deriving the header. Refresh
 //! credentials in the store and issue a new call if that matters for your
@@ -42,9 +45,14 @@ use std::time::Duration;
 
 use a2a_protocol_types::idempotency::{IDEMPOTENCY_METADATA_KEY, validate_key};
 
+use tokio::time::Instant;
+
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 use crate::transport::Transport;
+
+mod budget;
+pub use budget::RetryBudget;
 
 // ── RetryPolicy ──────────────────────────────────────────────────────────────
 
@@ -74,7 +82,9 @@ use crate::transport::Transport;
 /// seconds** for one `send_request` on a client configured with "timeout: 30
 /// seconds". A server sending `Retry-After` can lengthen each gap up to
 /// `max_backoff`, so the same policy against a rate-limiting server is four
-/// attempts plus up to 90 seconds of waiting.
+/// attempts plus up to 90 seconds of waiting. [`RetryPolicy::with_max_elapsed`]
+/// bounds the waiting, and [`RetryPolicy::with_budget`] bounds how many calls
+/// retry at all.
 ///
 /// Nothing here is wrong — the two knobs mean what they say — but the product
 /// of them is what a caller actually waits for, and multiplying it out is not
@@ -101,6 +111,16 @@ pub struct RetryPolicy {
     pub max_backoff: Duration,
     /// Multiplier applied to the backoff after each retry.
     pub backoff_multiplier: f64,
+    /// A bound on the retries as a fraction of the calls made, so that
+    /// retries cannot multiply an overload (audit H6). `None`, the default,
+    /// puts no bound but `max_retries`.
+    pub budget: Option<RetryBudget>,
+    /// The longest a call may spend between its first attempt and the start
+    /// of its last retry, backoffs included. A retry that would start after
+    /// it is not made, and the error that called for it is returned. An
+    /// attempt in flight is bounded by the request timeout, not by this.
+    /// `None`, the default, puts no bound but `max_retries`.
+    pub max_elapsed: Option<Duration>,
 }
 
 impl Default for RetryPolicy {
@@ -110,6 +130,8 @@ impl Default for RetryPolicy {
             initial_backoff: Duration::from_millis(500),
             max_backoff: Duration::from_secs(30),
             backoff_multiplier: 2.0,
+            budget: None,
+            max_elapsed: None,
         }
     }
 }
@@ -140,6 +162,23 @@ impl RetryPolicy {
     #[must_use]
     pub const fn with_backoff_multiplier(mut self, multiplier: f64) -> Self {
         self.backoff_multiplier = multiplier;
+        self
+    }
+
+    /// Bounds the retries as a fraction of the calls made (see
+    /// [`RetryBudget`]). A retry the budget cannot pay for is not made, and
+    /// the error that called for it is returned.
+    #[must_use]
+    pub const fn with_budget(mut self, budget: RetryBudget) -> Self {
+        self.budget = Some(budget);
+        self
+    }
+
+    /// Bounds the time between a call's first attempt and the start of its
+    /// last retry (see [`max_elapsed`](Self::max_elapsed)).
+    #[must_use]
+    pub const fn with_max_elapsed(mut self, max_elapsed: Duration) -> Self {
+        self.max_elapsed = Some(max_elapsed);
         self
     }
 }
@@ -343,16 +382,65 @@ pub(crate) struct RetryTransport {
     /// caller asserting it. Never assumed: an unkeyed peer is the default,
     /// because the cost of being wrong is a duplicated task.
     peer_honours_idempotency: bool,
+    /// The policy's budget with its balance.
+    ledger: Option<budget::Ledger>,
 }
 
 impl RetryTransport {
     /// Creates a new retry transport wrapping the given inner transport.
     pub(crate) fn new(inner: Box<dyn Transport>, policy: RetryPolicy) -> Self {
+        let ledger = policy.budget.map(budget::Ledger::new);
         Self {
             inner,
             policy,
             peer_honours_idempotency: false,
+            ledger,
         }
+    }
+
+    /// A call was made: it earns its fraction of a retry.
+    fn call_made(&self) {
+        if let Some(ledger) = &self.ledger {
+            ledger.deposit();
+        }
+    }
+
+    /// How long to wait before the next attempt, or `None` when the call
+    /// gives up with the error it has.
+    ///
+    /// It gives up, without waiting, when the server directed a delay longer
+    /// than `max_backoff` (the error carries it, for the caller to act on: to
+    /// retry sooner is to retry inside a penalty window; audit D-10), when
+    /// the attempt would start after `max_elapsed`, and when the budget
+    /// cannot pay for it. The budget is asked last, so that a retry that was
+    /// not going to be made costs nothing.
+    fn retry_in(
+        &self,
+        started: Instant,
+        backoff: Duration,
+        last_err: Option<&ClientError>,
+    ) -> Option<Duration> {
+        let policy = &self.policy;
+        if last_err
+            .and_then(ClientError::retry_after)
+            .is_some_and(|after| after > policy.max_backoff)
+        {
+            trace_warn!("not retrying: the server asked for a delay longer than max_backoff");
+            return None;
+        }
+        let delay = retry_delay(last_err, backoff, policy.max_backoff);
+        if policy
+            .max_elapsed
+            .is_some_and(|max| started.elapsed().saturating_add(delay) > max)
+        {
+            trace_warn!("not retrying: the next attempt would start after max_elapsed");
+            return None;
+        }
+        if self.ledger.as_ref().is_some_and(|l| !l.withdraw()) {
+            trace_warn!("not retrying: the retry budget is spent");
+            return None;
+        }
+        Some(delay)
     }
 
     /// Records that the peer advertises the idempotency extension.
@@ -401,10 +489,14 @@ impl Transport for RetryTransport {
             // FIX(H7): Serialize params to bytes once and deserialize for each attempt,
             // avoiding deep-clone of the serde_json::Value tree on every retry.
             let serialized = serde_json::to_vec(&params).map_err(ClientError::Serialization)?;
+            let started = Instant::now();
+            self.call_made();
 
             for attempt in 0..=self.policy.max_retries {
                 if attempt > 0 {
-                    let delay = retry_delay(last_err.as_ref(), backoff, self.policy.max_backoff);
+                    let Some(delay) = self.retry_in(started, backoff, last_err.as_ref()) else {
+                        return Err(last_err.expect("a retry follows an error"));
+                    };
                     trace_info!(method, attempt, ?delay, "retrying after backoff");
                     tokio::time::sleep(delay).await;
                     backoff = cap_backoff(
@@ -460,10 +552,14 @@ impl Transport for RetryTransport {
             // FIX(H7): Serialize params to bytes once and deserialize for each attempt,
             // avoiding deep-clone of the serde_json::Value tree on every retry.
             let serialized = serde_json::to_vec(&params).map_err(ClientError::Serialization)?;
+            let started = Instant::now();
+            self.call_made();
 
             for attempt in 0..=self.policy.max_retries {
                 if attempt > 0 {
-                    let delay = retry_delay(last_err.as_ref(), backoff, self.policy.max_backoff);
+                    let Some(delay) = self.retry_in(started, backoff, last_err.as_ref()) else {
+                        return Err(last_err.expect("a retry follows an error"));
+                    };
                     trace_info!(
                         method,
                         attempt,
@@ -556,7 +652,7 @@ fn apply_jitter(backoff: Duration, factor: f64) -> Duration {
 /// Uses `std::hash::RandomState` for cheap, no-dependency randomness. This
 /// prevents thundering-herd retry storms where all clients experiencing the
 /// same transient failure retry at identical intervals.
-fn jittered(backoff: Duration) -> Duration {
+pub(crate) fn jittered(backoff: Duration) -> Duration {
     use std::hash::{BuildHasher, Hasher};
     let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
     // Mix in the backoff value for extra entropy.
@@ -566,6 +662,9 @@ fn jittered(backoff: Duration) -> Duration {
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod limits_tests;
 
 #[cfg(test)]
 mod tests {
@@ -944,6 +1043,7 @@ mod tests {
                 // 1.0, so the expected sum does not depend on the jitter that
                 // `initial_backoff` alone would be subject to under growth.
                 backoff_multiplier: 1.0,
+                ..RetryPolicy::default()
             },
         );
 

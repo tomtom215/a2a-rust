@@ -67,7 +67,12 @@ mod tests {
             retry_after(b"999999"),
             Some(std::time::Duration::from_secs(3600))
         );
-        assert_eq!(retry_after(b"Wed, 21 Oct 2015 07:28:00 GMT"), None);
+        // A date that has passed is no wait; the HTTP-date form is read.
+        assert_eq!(
+            retry_after(b"Wed, 21 Oct 2015 07:28:00 GMT"),
+            Some(std::time::Duration::ZERO)
+        );
+        assert_eq!(retry_after(b"soon"), None);
     }
 
     #[cfg(feature = "websocket")]

@@ -37,6 +37,8 @@ impl Drop for Delegation {
             last_event_id: self.last_event_id.take(),
             streak: 0,
             resumed_at: None,
+            opened_at: None,
+            events_since_open: 0,
             // The cancel the drop sends settles the record too.
             journal: self.journal.take(),
         };

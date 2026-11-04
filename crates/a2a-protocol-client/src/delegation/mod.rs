@@ -86,14 +86,19 @@ use crate::streaming::EventStream;
 
 mod drop;
 mod journal;
+mod options;
 mod origin;
 mod outcome;
+mod policy;
 mod renewal;
 mod resume;
+#[cfg(test)]
+mod testing;
+pub use options::DelegationOptions;
 use origin::Origin;
 pub use outcome::{Delegated, Outcome};
+pub use policy::ResumePolicy;
 use renewal::Renewal;
-pub use resume::ResumePolicy;
 use resume::Resumed;
 
 /// How long a cancel waits for the child's id, when it is asked for before
@@ -140,6 +145,10 @@ pub struct Delegation {
     streak: u32,
     /// The position when the last loss was worked on.
     resumed_at: Option<String>,
+    /// When the stream being followed was opened.
+    opened_at: Option<tokio::time::Instant>,
+    /// Events received on the stream being followed.
+    events_since_open: u32,
     /// The delegation's record in a journal, when it keeps one.
     journal: Option<journal::Journaled>,
 }
@@ -187,6 +196,8 @@ impl Delegation {
             last_event_id: None,
             streak: 0,
             resumed_at: None,
+            opened_at: Some(tokio::time::Instant::now()),
+            events_since_open: 0,
             journal: None,
         })
     }
@@ -197,74 +208,6 @@ impl Delegation {
     #[must_use]
     pub fn idempotency_key(&self) -> Option<&str> {
         self.idempotency_key.as_deref()
-    }
-
-    /// [`start`](Self::start), granting the child a lease of `ttl` and
-    /// renewing it every third of `ttl` until this handle settles, is
-    /// cancelled, is detached or is dropped (see the [module docs](self)).
-    /// The agent must grant leases (its card declares
-    /// `a2a_protocol_types::lease::LEASE_EXTENSION_URI`); one that does not
-    /// ignores the grant, and the child runs as with [`start`](Self::start).
-    ///
-    /// # Errors
-    ///
-    /// As [`start`](Self::start); an agent that grants leases also refuses
-    /// a `ttl` outside its bounds.
-    pub async fn start_leased(
-        client: Arc<A2aClient>,
-        mut params: MessageSendParams,
-        ttl: Duration,
-    ) -> ClientResult<Self> {
-        a2a_protocol_types::lease::Lease::new(ttl).attach(&mut params.message);
-        let tenant = params.tenant.clone();
-        let mut this = Self::start(Arc::clone(&client), params).await?;
-        this.renewal = Some(Renewal::spawn(client, tenant, ttl, &this.origin));
-        Ok(this)
-    }
-
-    /// [`start`](Self::start) with `grant`, a budget carved out of the
-    /// parent's by `BudgetHandle::grant`, and a lease of `lease` as
-    /// [`start_leased`](Self::start_leased) grants one when it is `Some`.
-    ///
-    /// When the handle ends, the grant is settled. If the status update
-    /// that settled the child (terminal or interrupted) carried a budget
-    /// report, the parent is charged that spend instead of the reservation.
-    /// Any other ending (a lost stream, a cancel answered by `CancelTask`,
-    /// an unreachable child), a report-less update, or a handle detached or
-    /// dropped keeps the whole reservation as spent. An agent that does not
-    /// implement the extension reports nothing.
-    ///
-    /// # Errors
-    ///
-    /// As [`start`](Self::start). The reservation is returned only when the
-    /// error shows the agent refused the request, so no child exists: an
-    /// A2A error, an HTTP error status, an authentication challenge, or an
-    /// endpoint the client cannot use.
-    /// After a transport error or a timeout a child may be running, and the
-    /// reservation is kept.
-    pub async fn start_budgeted(
-        client: Arc<A2aClient>,
-        mut params: MessageSendParams,
-        grant: ChildGrant,
-        lease: Option<Duration>,
-    ) -> ClientResult<Self> {
-        grant.budget().attach(&mut params.message);
-        if let Some(ttl) = lease {
-            a2a_protocol_types::lease::Lease::new(ttl).attach(&mut params.message);
-        }
-        let tenant = params.tenant.clone();
-        let mut this = match Self::start(Arc::clone(&client), params).await {
-            Ok(this) => this,
-            Err(e) => {
-                if refused(&e) {
-                    grant.release();
-                }
-                return Err(e);
-            }
-        };
-        this.renewal = lease.map(|ttl| Renewal::spawn(client, tenant, ttl, &this.origin));
-        this.budget = Some((grant, None));
-        Ok(this)
     }
 
     /// Sets how long a cancel waits for the child's id when none has been
@@ -299,6 +242,7 @@ impl Delegation {
             Some(Ok(ev)) => {
                 self.observe(ev);
                 self.remember_position(None);
+                self.events_since_open = self.events_since_open.saturating_add(1);
                 false
             }
             Some(Err(e)) => {
@@ -366,13 +310,45 @@ impl Delegation {
     /// the last event id, under the [`ResumePolicy`]; a child found settled
     /// meanwhile is reported as what it became. Only a child still running
     /// after the policy is spent is cancelled, with [`Outcome::Lost`].
-    pub async fn wait<F: Future<Output = ()>>(mut self, cancel: F) -> Delegated {
+    pub async fn wait<F: Future<Output = ()>>(self, cancel: F) -> Delegated {
+        self.wait_or_hand_off(cancel, std::future::pending()).await
+    }
+
+    /// [`wait`](Self::wait) for a supervisor that is shut down on purpose and
+    /// must not take its children with it.
+    ///
+    /// `cancel` is the parent being cancelled: the child is cancelled, as
+    /// [`wait`](Self::wait) does. `hand_off` is the supervisor being shut down
+    /// (the signal it passes to `Server::serve_with_shutdown`, for one). When
+    /// it completes and the delegation keeps a journal record (see
+    /// [`start_journaled`](Self::start_journaled)) and the child has been
+    /// named, the child is **left running**, the record is left open at the
+    /// position the stream reached, and the outcome is
+    /// [`Outcome::HandedOff`]: the next supervisor lists its open records
+    /// ([`DelegationJournal::open`](a2a_protocol_types::delegation_journal::DelegationJournal::open))
+    /// and [`reattach`](Self::reattach)es. With no journal there is nothing to
+    /// find the child by, so it is cancelled. When both futures are ready,
+    /// `hand_off` wins: a graceful shutdown fires the executor's cancellation
+    /// token as well as the supervisor's own signal, and must not be read as
+    /// the parent's cancel.
+    ///
+    /// A child's lease, if it has one, stops being renewed with this handle;
+    /// the next supervisor renews it (see
+    /// [`reattach_with`](Self::reattach_with)) before its time to live runs out.
+    pub async fn wait_or_hand_off<C, H>(mut self, cancel: C, hand_off: H) -> Delegated
+    where
+        C: Future<Output = ()>,
+        H: Future<Output = ()>,
+    {
         tokio::pin!(cancel);
+        tokio::pin!(hand_off);
         loop {
             if let Some(outcome) = self.settled.take() {
                 return self.finish(outcome).await;
             }
             tokio::select! {
+                biased;
+                () = &mut hand_off => return self.hand_off().await,
                 ev = self.next_event() => {
                     let error = match ev {
                         Some(Ok(_)) => continue,
@@ -427,6 +403,22 @@ impl Delegation {
     pub fn detach(mut self) -> Option<String> {
         self.armed = false;
         self.task_id.take()
+    }
+
+    /// Leaves the child running and its record open, when there is a record
+    /// and a child to find by it; cancels the child otherwise.
+    async fn hand_off(mut self) -> Delegated {
+        if self.journal.is_none() || self.task_id.is_none() {
+            return self.cancel().await;
+        }
+        // The position the next supervisor resumes from, written at once.
+        self.note_progress(true).await;
+        self.armed = false;
+        self.journal = None; // not settled: the record stays open
+        Delegated {
+            task_id: self.task_id.take(),
+            outcome: Outcome::HandedOff,
+        }
     }
 
     async fn lost(self, error: Option<ClientError>) -> Delegated {

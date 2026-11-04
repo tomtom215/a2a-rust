@@ -19,6 +19,54 @@ use super::ClientBuilder;
 use super::selection::canonical_binding;
 
 impl ClientBuilder {
+    /// The gRPC transport's configuration, from what the builder was given.
+    #[cfg(feature = "grpc")]
+    fn grpc_transport_config(&self) -> crate::transport::grpc::GrpcTransportConfig {
+        use crate::transport::grpc::GrpcTransportConfig;
+
+        let grpc_config = GrpcTransportConfig::default()
+            .with_timeout(self.config.request_timeout)
+            .with_send_timeout(self.config.send_timeout)
+            .with_connect_timeout(self.config.connection_timeout)
+            // Keep the response-size ceiling consistent across transports:
+            // a payload that fits the configured cap over JSON-RPC/REST
+            // must not be rejected by gRPC's separate decode default.
+            .with_max_message_size(self.config.max_response_size)
+            .with_bare_address_scheme(self.grpc_bare_address_scheme);
+        let grpc_config = match self.grpc_keep_alive {
+            Some((every, timeout)) => grpc_config.with_http2_keep_alive(every, timeout),
+            None => grpc_config,
+        };
+        #[cfg(feature = "grpc-tls")]
+        let grpc_config = match self.grpc_tls_config.clone() {
+            Some(tls) => grpc_config.with_tls_config(tls),
+            None => grpc_config,
+        };
+        grpc_config
+    }
+
+    /// A cap of zero would refuse every call: refused here, before anything
+    /// is dialled.
+    fn check_max_in_flight(&self) -> ClientResult<()> {
+        if self.max_in_flight == Some(0) {
+            return Err(ClientError::Config(
+                "max_in_flight must be at least 1".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Puts the in-flight cap, if one was asked for, under the retry layer, so
+    /// that a call it refuses is retried like any other transient failure.
+    fn limit_in_flight(max: Option<usize>, transport: Box<dyn Transport>) -> Box<dyn Transport> {
+        match max {
+            Some(limit) => Box::new(crate::transport::in_flight::InFlightTransport::new(
+                transport, limit,
+            )),
+            None => transport,
+        }
+    }
+
     /// Validates configuration and constructs the [`A2aClient`].
     ///
     /// Binding names are matched ignoring ASCII case, as card selection
@@ -52,6 +100,7 @@ impl ClientBuilder {
                 "connection_timeout must be non-zero".into(),
             ));
         }
+        self.check_max_in_flight()?;
         self.send_extensions()?;
 
         let custom = self.transport_override.as_ref().map(|t| {
@@ -71,6 +120,7 @@ impl ClientBuilder {
         };
 
         // Wrap with retry transport if a policy is configured.
+        let transport = Self::limit_in_flight(self.max_in_flight, transport);
         let transport: Box<dyn Transport> = if let Some(policy) = self.retry_policy {
             Box::new(
                 RetryTransport::new(transport, policy)
@@ -236,7 +286,7 @@ impl ClientBuilder {
     /// - [`ClientError::Transport`] if the gRPC connection fails.
     #[cfg(feature = "grpc")]
     pub async fn build_grpc(mut self) -> ClientResult<A2aClient> {
-        use crate::transport::grpc::{GrpcTransport, GrpcTransportConfig};
+        use crate::transport::grpc::GrpcTransport;
 
         if self.config.request_timeout.is_zero() || self.config.send_timeout.is_zero() {
             return Err(ClientError::Config(
@@ -258,6 +308,7 @@ impl ClientBuilder {
                 "stream_connect_timeout must be non-zero".into(),
             ));
         }
+        self.check_max_in_flight()?;
         self.send_extensions()?;
 
         let peer = if let Some(t) = &self.transport_override {
@@ -268,20 +319,7 @@ impl ClientBuilder {
         let transport: Box<dyn Transport> = if let Some(t) = self.transport_override {
             t
         } else {
-            let grpc_config = GrpcTransportConfig::default()
-                .with_timeout(self.config.request_timeout)
-                .with_send_timeout(self.config.send_timeout)
-                .with_connect_timeout(self.config.connection_timeout)
-                // Keep the response-size ceiling consistent across transports:
-                // a payload that fits the configured cap over JSON-RPC/REST
-                // must not be rejected by gRPC's separate decode default.
-                .with_max_message_size(self.config.max_response_size)
-                .with_bare_address_scheme(self.grpc_bare_address_scheme);
-            #[cfg(feature = "grpc-tls")]
-            let grpc_config = match self.grpc_tls_config {
-                Some(tls) => grpc_config.with_tls_config(tls),
-                None => grpc_config,
-            };
+            let grpc_config = self.grpc_transport_config();
             // The third timeout. `with_timeout`/`with_connect_timeout` above
             // carry two of the builder's three, and this one used to be
             // dropped on the floor — so a caller who set it got the *unary
@@ -294,6 +332,7 @@ impl ClientBuilder {
             Box::new(t)
         };
 
+        let transport = Self::limit_in_flight(self.max_in_flight, transport);
         let transport: Box<dyn Transport> = if let Some(policy) = self.retry_policy {
             Box::new(
                 RetryTransport::new(transport, policy)
