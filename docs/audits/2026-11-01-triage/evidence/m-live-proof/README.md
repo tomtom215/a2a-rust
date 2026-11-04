@@ -3,7 +3,7 @@
 
 # Live proof of the delegation hand-off (audit group M)
 
-Run on 2026-11-04 from `main` at `3685b8f9`, by `scripts/live/delegation/`. Nothing under `crates/` was changed.
+Run on 2026-11-04 from `main` at `3685b8f9`, by `scripts/live/delegation/`. Nothing under `crates/` was changed. Findings 1 and 2 below were then fixed by the maintainer in `291aaf89` and the fix was run live with the same harness: the last section summarises it, `RERUN-291aaf89.md` has the expectations, tables and limits. Everything above that section is the run on `main`, the "before".
 
 Status words: **PROVEN** is a count read from `psql` and from the processes' own
 logs in every run of a scenario, in this setup only. **VALIDATED** says by what
@@ -16,7 +16,7 @@ tables come from `logs/results.jsonl`) or from the file named beside it.
 - **(a) kill -9: PROVEN** (3 of 3 runs, 50 children each). Killing the supervisor at 20 s cancelled nothing. The book's recovery loop, run as a new process 5.4 to 7.5 s after the kill, found 50 open records with task ids and ended with 50 `completed` journal records, 0 `canceled`, 0 open, and 50 `completed` tasks. The worker log has 0 cancel lines.
 - **(c) graceful redeploy detaches: PROVEN** (3 of 3 for a bare supervisor, 3 of 3 for a supervisor that is an agent behind `Server::serve_with_shutdown`). SIGTERM at 20 s: the supervisor exited 0 within 0.07 s with 50 `HandedOff`, the 50 records stayed open, the 50 tasks stayed `working`, nothing was cancelled, and `recover` then completed all 50. **VALIDATED** by a control (`cx`) in which the same SIGTERM is wired to the cancel future, as the book's pattern did before the fix: 50 of 50 cancelled, 50 records settled `canceled`, 50 cancel hooks at the worker (3 of 3). So the harness can see the failure the hand-off rules out.
 - **(b) gRPC idle child survives: PROVEN at scaled timers** (3 of 3): a child silent for 90 s under a 10 s client idle timeout was resumed 8 times and ended `completed`, 0 `CancelTask`. Not the old probe's 7 minutes and 60 s.
-- **Leased children (`al`), not asked for by the task, from the h-s0 probe:** the book's loop loses them. Predicted (CONJECTURE, written before): 1 completes, 49 are stopped. Observed: 1 completed and 49 canceled in 2 of 3 runs, 0 completed and 50 canceled in the third (the restart was late enough that even the first child's lease lapsed before its first renewal was due). See Findings.
+- **Leased children (`al`), not asked for by the task, from the h-s0 probe:** the book's loop loses them. Predicted (CONJECTURE, written before): 1 completes, 49 are stopped. Observed: 1 completed and 49 canceled in 2 of 3 runs, 0 completed and 50 canceled in the third (the restart was late enough that even the first child's lease lapsed before its first renewal was due). See Findings. **Fixed in `291aaf89` and re-run live: see "Re-run on the fix".**
 - **Defects in `crates/`: none found.** One documentation gap (finding 1) and one design edge (finding 2) are in Findings. The worker in `scripts/live/replica` could not stand in: its `hold` never completes (VALIDATED, below), so this directory has its own worker.
 
 ## Environment
@@ -249,8 +249,8 @@ Table notes: `al` is 15 s leases, kill -9 at 20 s, the worker granting them (`LE
 
 **No defect in `crates/` was found by these runs.** What was found, none of it changed:
 
-1. **The book's recovery loop loses leased children (documentation gap; PROVEN in 3 of 3 runs for "most are lost", CONJECTURE confirmed in 2 of 3 for the exact count).** `book/src/client/delegation.md:166-175` reattaches a record and `wait`s on it before it looks at the next, so the next handle (the thing that renews a lease) does not exist while the first child runs. With 15 s leases and 60 s children, 49 or 50 of 50 were stopped by the worker and settled `canceled`. The book says a restarted supervisor "must give `reattach_with` the lease" but its loop gives it to one child at a time. Reproduction: `delegation_live.py --scenarios al --runs 3 --seed 20261104` (`logs/results.jsonl`, `scenario: "al"`). A fix is a different loop (reattach every record first, then wait on all) or text saying so; neither was made.
-2. **A restart too long after the kill loses every leased child, including the first (PROVEN: kept at 3.3 s, lost at 7.3 s; a design edge, not a contradiction of the text).** `Renewal::spawn` sleeps `ttl / 3` before its first renewal (`renewal.rs:34-36`), so a reattached child is renewed 5 s after its handle exists, and its lease lapses `ttl` after the last renewal the dead supervisor made (INFERRED, not logged: its tick at about +15 s, since the next would have been at about +20.3 s, after the kill at 20.0 s; the leases lapsed from +30.1 s). A restart at +27.4 s was too late: the new handle's first renewal was due at +32.4 s. The boundary is where `restart + ttl/3` passes `ttl` minus the age of the last renewal, about 5 s here (INFERRED from those two numbers, no run between 3.3 s and 7.3 s). An immediate first renewal on `reattach_with` would close it. Minimal reproduction: `--scenarios al --runs 3 --seed 20261104`, run 2 (restart delay 7.3 s).
+1. **Fixed in `291aaf89` (the book's loop now reattaches every record before it waits; validated live, below); what follows is the before.** **The book's recovery loop loses leased children (documentation gap; PROVEN in 3 of 3 runs for "most are lost", CONJECTURE confirmed in 2 of 3 for the exact count).** `book/src/client/delegation.md:166-175` reattaches a record and `wait`s on it before it looks at the next, so the next handle (the thing that renews a lease) does not exist while the first child runs. With 15 s leases and 60 s children, 49 or 50 of 50 were stopped by the worker and settled `canceled`. The book says a restarted supervisor "must give `reattach_with` the lease" but its loop gives it to one child at a time. Reproduction: `delegation_live.py --scenarios al --runs 3 --seed 20261104` (`logs/results.jsonl`, `scenario: "al"`). A fix is a different loop (reattach every record first, then wait on all) or text saying so; `291aaf89` made the first.
+2. **Fixed in `291aaf89` (a reattach with a lease renews at once; validated live, below); what follows is the before.** **A restart too long after the kill loses every leased child, including the first (PROVEN: kept at 3.3 s, lost at 7.3 s; a design edge, not a contradiction of the text).** `Renewal::spawn` sleeps `ttl / 3` before its first renewal (`renewal.rs:34-36`), so a reattached child is renewed 5 s after its handle exists, and its lease lapses `ttl` after the last renewal the dead supervisor made (INFERRED, not logged: its tick at about +15 s, since the next would have been at about +20.3 s, after the kill at 20.0 s; the leases lapsed from +30.1 s). A restart at +27.4 s was too late: the new handle's first renewal was due at +32.4 s. The boundary is where `restart + ttl/3` passes `ttl` minus the age of the last renewal, about 5 s here (INFERRED from those two numbers, no run between 3.3 s and 7.3 s). An immediate first renewal on `reattach_with` would close it; `291aaf89` does that. Minimal reproduction: `--scenarios al --runs 3 --seed 20261104`, run 2 (restart delay 7.3 s).
 3. **In (a) the journal records carry no position (`last_event_id=None`, all 50).** The children emit nothing after being named, so the stream position never moved; `reattach_with` follows from the current state. Correct for this child, and it means (a) does not exercise a replay from a recorded position. In (c) and (c2) the hand-off forces a write and the position is `Some("1")` (`logs/c-1/recover.log`). Not a defect.
 4. **The replica's `hold` ends `failed` after 60 s** (VALIDATED above). Not a defect of the SDK (the executor guide says an executor must write a terminal state); a trap for a harness.
 
@@ -282,10 +282,31 @@ A hostile reviewer would say:
 9. **(b) is a scaling of the old probe** with a ratio of 9, not the real timers, and without a proxy in the path.
 10. **`al` shows the book's loop with one lease TTL and one kill time**; the numbers (49 of 50, 50 of 50) depend on 15 s and 60 s, and a longer lease or a parallel loop would change them.
 
+## Re-run on the fix (`291aaf89`)
+
+Same harness, library and book as the maintainer changed them in `291aaf89` (`crates/` read-only); 50 children x 60 s, 15 s leases, kill -9 at 20 s, seed 20261104, a fresh database per run, restart delays set explicitly. Full expectations (written before, with their sha256), tables, contradictions and limits: `RERUN-291aaf89.md`; the numbers are in `logs/fix/results.jsonl`. The tables there are the second of two passes; the first, on a supervisor without the failure handling, matched the same expectations (`logs/fix/first-pass.txt`).
+
+| scenario | delays (s) | runs | result |
+|---|---|---|---|
+| `alold`: the old serial loop on the fixed library | 3, 7, 7.3 | 3 | completed 1, canceled 49: exactly 1 completes in each run, including the 7.3 s run that lost all 50 before the fix |
+| `alfix`: `recover-all` (the book's new loop) | 3, 7, 7.3 | 3 | completed 50 of 50 in each run, 0 canceled |
+| `allate`: `recover-all` after the lapse | 12 | 3 | canceled 50 of 50 in each run: stopped before it started; the documented limit |
+| `afix`: `a` without leases, `recover-all` | 5.4 | 1 | completed 50 of 50 |
+| `aledge` (extra): `recover-all` just before the lapse | 9.5 | 3 | completed 50 of 50 |
+| `aledge` (extra) | 10.0, 10.3, 10.6 | 1 each | completed 50, 49, 29 of 50 (first pass 49, 49, 46): a soft edge, not a sharp one |
+| `afail` (extra): one bad record, `recover-all` | 5.4 | 3 | 26 canceled and 24 completed in each run; 26 records canceled, 25 open |
+| `afailold` (extra): one bad record, serial `recover` | 5.4 | 1 | 50 completed, 0 canceled; 26 records completed, 25 open |
+| `afail` with no linger (extra) | 5.4 | 3 | canceled 1, 1, 2 of 26 reattached, 51 records open |
+
+Contradicted my expectations (details in `RERUN-291aaf89.md`): the edge probe (I predicted a sharp edge near 10.3 s; the loss grows from 0 at 9.5 s to 50 at 12 s and differs between two passes of the same delay), the cost of reattaching 50 (179 to 266 ms, not about 0.5 s), and one pre-recover snapshot of `allate`. Nothing contradicted the fix. **New finding 5:** the new loop collects handles and ends each reattach with `?`; a record that cannot be reattached drops the handles already collected, and a dropped handle cancels its child (`delegation/drop.rs`): 26 of 26 cancelled in 3 of 3 runs; with no linger 1 to 2 of 26 and 51 records left open. The serial loop cancelled none. Not fixed.
+
+Not run in the re-run: `c`, `c2`, `cx` and the gRPC probe on `291aaf89`, `PostgresLeaseStore`, other TTLs and kill phases, more than 50 children, the unit tests of `291aaf89`, a restart between 10.6 and 12 s.
+
 ## Files
 
 - `logs/driver-stdout.log`: the final run's full stdout, ending with the table. `logs/results.jsonl`: every measurement of every run, one line each.
 - `logs/<scenario>-<run>/`: `supervisor.log` (the `start` or `serve` process), `recover.log`, `worker.log`, `db-final.json` for a-1, c-1, c2-1, cx-1, al-1, al-2. The others are in `target/live/delegation/final` and were not copied.
+- `RERUN-291aaf89.md` and `logs/fix/`: the re-run on `291aaf89` (`results.jsonl` and `linger0-results.jsonl` with a timeline per run, `driver-stdout.log`, `linger0-stdout.log`, `first-pass.txt`, `environment.txt`, and `supervisor.log`, `recover.log`, `worker.log`, `db-final.json` for alold-1, alold-3, alfix-1, alfix-3, allate-1, afix-1, aledge-9.5-1, aledge-10.6-3, afail-1, afailold-1, afail-linger0-1).
 - `logs/grpc-driver-stdout.log`, `logs/grpc-run1.log`; `logs/replica-hold-check.log`; `logs/environment.txt`; `logs/earlier-passes.txt`.
 - The harness: `scripts/live/delegation/` (see its `README.md`).
 
@@ -295,3 +316,4 @@ A hostile reviewer would say:
 - Disk: `df -h /home/user` showed 19G available before the first build and 14G after the last (other work shares the disk). `du -sh target`: 1.8G (`target/live/delegation` 550M, `delegation-grpc` 714M, `replica-build` 484M); deleted after the evidence was copied.
 - Builds: `cargo build -j2` of the worker and supervisor, 1 min 48 s; of the gRPC probe, 1 min 24 s (dev profile, from the build output).
 
+The re-run on `291aaf89` (`RERUN-291aaf89.md`): first build of the new worktree 16:21 UTC (57.7 s, from an empty target directory), first pass 16:26:18 to 16:38:12 and edge probe 16:39:00 to 16:42:03, second pass 16:48:55 to 17:08:19, no-linger runs 17:09:21 to 17:12:41 (the `start` and `end` lines of the driver logs). `du -sh target` was 551M (a new target directory); `df -h /home/user` showed 18G available before the build and 16G after the runs (other work shares the disk). The target directory is deleted after the evidence is copied.

@@ -1,0 +1,44 @@
+# First pass of the re-run on 291aaf89: supervisor without the failure handling (LINGER_SECS), sha256 17c2889c62ef... Every run passed.
+# Second pass (the tables in the README) used the final supervisor, 5811cd95...
+
+## first-pass-fix-stdout.log
+start 2026-11-04T16:26:18Z
+f30824c8ef939c2e3f36c8cffd6b3fc36afb9bda964205a3e2b9bb5b18637135  /tmp/claude-0/-home-user-a2a-rust/5446577a-9083-5ac8-a8d0-71b54994e2d3/scratchpad/fix/expectation-fix.md
+7372deebcebf5ebd50e2428cf1385c1a03cbfc14267c7d30a7df05d895076f66  target/live/delegation/debug/a2a-live-worker
+17c2889c62efdeaa48ea0c0e588571009327117876b38dc64cf05f34b31a55c0  target/live/delegation/debug/a2a-live-supervisor
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/fix/20261104T162618
+driver exit alold 0
+driver exit alfix 0
+driver exit allate 0
+driver exit afix 0
+driver exit aledge 0
+end 2026-11-04T16:38:12Z
+  scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart     mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+alold    1  20261104   20.0   19.6    -9    0.01        268      3.0  recover  23.08      None    50    50     0   37.7      0.38     1       1      49       0       1          0      49    0    PASS
+alold    2  20261104   20.0   19.6    -9    0.01        239      7.0  recover  27.08      None    50    50     0   33.6       0.3     1       1      49       0       1          0      49    0    PASS
+alold    3  20261104   20.0   19.7    -9    0.01        257      7.3  recover   27.4      None    50    50     0   33.3      0.34     1       1      49       0       1          0      49    0    PASS
+  scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart         mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+alfix    1  20261104   20.0   19.6    -9     0.0        305      3.0  recover-all  23.13       220    50    50     0   37.6      0.06    50      50       0       0      50          0       0    0    PASS
+alfix    2  20261104   20.0   19.5    -9    0.01        262      7.0  recover-all  27.08       172    50    50     0   33.5      0.02    50      50       0       0      50          0       0    0    PASS
+alfix    3  20261104   20.0   19.6    -9    0.01        256      7.3  recover-all  27.41       247    50    50     0   33.1      0.05    50      50       0       0      50          0       0    0    PASS
+   scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart         mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+allate    1  20261104   20.0   19.4    -9    0.01        430     12.0  recover-all  32.07       243    50     0   100    0.5      None     0       0      50       0       0          0      50    0    PASS
+allate    2  20261104   20.0   19.5    -9     0.0        320     12.0  recover-all  32.09       337    50     0   100    0.7      None     0       0      50       0       0          0      50    0    PASS
+allate    3  20261104   20.0   19.5    -9    0.02        346     12.0  recover-all  32.11       267    50     0   100    0.5      None     0       0      50       0       0          0      50    0    PASS
+ scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart         mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+afix    1  20261104   20.0   19.6    -9     0.0        285      5.4  recover-all  25.49       175    50    50     0   35.1      0.03    50      50       0       0      50          0       0    0    PASS
+   scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart         mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+aledge    1  20261104   20.0   19.5    -9    0.02        383      9.5  recover-all  29.61       218    50    50     0   31.1      0.06    50      50       0       0      50          0       0    0    PASS
+aledge    2  20261104   20.0   19.5    -9    0.01        302      9.5  recover-all   29.6       214    50    50     0   31.0      0.04    50      50       0       0      50          0       0    0    PASS
+aledge    3  20261104   20.0   19.6    -9    0.01        276      9.5  recover-all  29.58       194    50    50     0   31.0      0.05    50      50       0       0      50          0       0    0    PASS
+
+## first-pass-edge-stdout.log
+start 2026-11-04T16:39:00Z
+2918095f28818feb59c8d16a65e003df74dba536b3daeebf5a119b6061c43528  /tmp/claude-0/-home-user-a2a-rust/5446577a-9083-5ac8-a8d0-71b54994e2d3/scratchpad/fix/expectation-edge.m
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/fix/20261104T163900
+driver exit 0
+end 2026-11-04T16:42:03Z
+   scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart         mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+aledge    1  20261104   20.0   19.6    -9    0.01        310     10.0  recover-all   30.1       223    50    50     0   30.4      0.04    49      49       1       0      49          0       1    0    PASS
+aledge    2  20261104   20.0   19.6    -9    0.02        309     10.3  recover-all   30.4       244    50    50     0   30.2      0.03    49      49       1       0      49          0       1    0    PASS
+aledge    3  20261104   20.0   19.4    -9     0.0        391     10.6  recover-all  30.68       214    50    50     0   30.0      0.03    46      46       4       0      46          0       4    0    PASS

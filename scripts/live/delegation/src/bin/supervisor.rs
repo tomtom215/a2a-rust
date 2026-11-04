@@ -6,7 +6,10 @@
 //!
 //! ```text
 //! a2a-live-supervisor start N    begin N journaled children, wait on them
-//! a2a-live-supervisor recover    the book's recovery loop over journal.open(owner)
+//! a2a-live-supervisor recover    the book's recovery loop over journal.open(owner): the OLD,
+//!                                serial one, reattach then wait, one record at a time
+//! a2a-live-supervisor recover-all  the book's loop since 291aaf89: reattach every record,
+//!                                then wait on all the children together
 //! a2a-live-supervisor serve      the same supervisor as an agent behind
 //!                                Server::serve_with_shutdown; a message
 //!                                "fan-out N" starts N children
@@ -19,6 +22,8 @@
 //! book's pattern did before `wait_or_hand_off`: a control for the harness.
 //! `LEASE_SECS` grants each child a lease that long, and `recover` gives
 //! `reattach_with` the same lease.
+//! `LINGER_SECS`: how long a failed `recover` or `recover-all` keeps the process alive
+//! (so that the cancels of the handles it dropped can go out) before it exits 1.
 //!
 //! SIGTERM (and SIGINT) is the supervisor's shutdown signal, and every wait is
 //! `Delegation::wait_or_hand_off(cancel, shutting_down)`: the documented
@@ -227,6 +232,51 @@ async fn recover(c: Ctx) -> Result<(), BoxErr> {
     Ok(())
 }
 
+/// The book's recovery loop as it reads since 291aaf89 (book/src/client/delegation.md):
+/// reattach every open record first, then wait on all the children together. A
+/// child's handle is what renews its lease, so the serial loop above leaves every
+/// child but the one it waits on unrenewed. Lines are printed per record, and
+/// `REATTACHED` says how long reattaching them all took.
+async fn recover_all(c: Ctx) -> Result<(), BoxErr> {
+    let began = std::time::Instant::now();
+    let open = c.journal.open(&c.owner).await?;
+    let named = open.iter().filter(|r| r.task_id.is_some()).count();
+    log("RECOVER", &format!("owner={} open={} with_task_id={named}", c.owner, open.len()));
+    let mut children = Vec::new();
+    let mut record_of = std::collections::HashMap::new();
+    for record in open {
+        if let Some(task_id) = record.task_id.clone() {
+            log("REATTACH", &format!("record={} task={task_id} last_event_id={:?}", record.id, record.last_event_id));
+            let mut options = DelegationOptions::new().with_journal_record(Arc::clone(&c.journal), &record.id);
+            if let Some(ttl) = c.lease {
+                options = options.with_lease(ttl);
+            }
+            record_of.insert(task_id.clone(), record.id.clone());
+            children.push(
+                Delegation::reattach_with(
+                    Arc::clone(&c.client), record.tenant.clone(), task_id, record.last_event_id.clone(), options,
+                )
+                .await?,
+            );
+        } else {
+            log("NO_TASK_ID", &format!("record={} idempotency_key={:?}", record.id, record.idempotency_key));
+        }
+    }
+    log("REATTACHED", &format!("children={} took_ms={}", children.len(), began.elapsed().as_millis()));
+    let mut waiting = tokio::task::JoinSet::new();
+    for child in children {
+        waiting.spawn(child.wait(std::future::pending()));
+    }
+    while let Some(done) = waiting.join_next().await {
+        let done = done?;
+        let task = done.task_id.as_deref().unwrap_or("-");
+        let record = done.task_id.as_ref().and_then(|t| record_of.get(t)).map_or("-", String::as_str);
+        log("OUTCOME", &format!("record={record} task={task} outcome={}", label(&done.outcome)));
+    }
+    log("RECOVERED", "loop done");
+    Ok(())
+}
+
 /// The supervisor as an agent: a message "fan-out N" starts N journaled
 /// children, each waited on with the executor's own cancellation token as
 /// `cancel` and the process's shutdown signal as `hand_off`.
@@ -289,9 +339,20 @@ async fn main() -> Result<(), BoxErr> {
                 run_children(n, &c, &rx, true, || std::future::pending::<()>()).await;
             }
         }
-        Some("recover") => recover(c).await?,
+        Some(mode @ ("recover" | "recover-all")) => {
+            let done = if mode == "recover" { recover(c).await } else { recover_all(c).await };
+            if let Err(e) = done {
+                log("ERROR", &format!("{mode} failed: {e}"));
+                // A supervisor goes on living after a failed recovery, and the handles the failure
+                // dropped cancel their children in the background. LINGER_SECS stands in for that life.
+                let linger = std::env::var("LINGER_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+                tokio::time::sleep(std::time::Duration::from_secs(linger)).await;
+                log("EXIT", "after a failed recovery");
+                std::process::exit(1);
+            }
+        }
         Some("serve") => serve(c).await?,
-        _ => return Err("usage: a2a-live-supervisor start N | recover | serve".into()),
+        _ => return Err("usage: a2a-live-supervisor start N | recover | recover-all | serve".into()),
     }
     Ok(())
 }
