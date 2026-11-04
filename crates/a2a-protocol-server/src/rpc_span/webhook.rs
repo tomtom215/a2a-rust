@@ -215,12 +215,17 @@ fn record_duration(
     failure: Option<&str>,
 ) {
     use opentelemetry::KeyValue;
-    let histogram = opentelemetry::global::meter("a2a.server")
-        .f64_histogram("http.client.request.duration")
-        .with_unit("s")
-        .with_description("Duration of HTTP client requests.")
-        .with_boundaries(DURATION_BUCKETS.to_vec())
-        .build();
+    // Built once per global provider, not per attempt (audit C-23).
+    static HISTOGRAM: crate::otel::GlobalInstrument<opentelemetry::metrics::Histogram<f64>> =
+        crate::otel::GlobalInstrument::new(|meter| {
+            meter
+                .f64_histogram("http.client.request.duration")
+                .with_unit("s")
+                .with_description("Duration of HTTP client requests.")
+                .with_boundaries(DURATION_BUCKETS.to_vec())
+                .build()
+        });
+    let histogram = HISTOGRAM.get();
     let mut attributes = vec![
         KeyValue::new("http.request.method", "POST"),
         KeyValue::new("server.address", bounded_host(host)),

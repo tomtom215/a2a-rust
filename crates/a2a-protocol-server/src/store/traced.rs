@@ -133,12 +133,17 @@ impl TracedTaskStore {
         failure: Option<&str>,
     ) {
         use opentelemetry::KeyValue;
-        let histogram = opentelemetry::global::meter("a2a.server")
-            .f64_histogram("db.client.operation.duration")
-            .with_unit("s")
-            .with_description("Duration of database client operations.")
-            .with_boundaries(DURATION_BUCKETS.to_vec())
-            .build();
+        // Built once per global provider, not per operation (audit C-23).
+        static HISTOGRAM: crate::otel::GlobalInstrument<opentelemetry::metrics::Histogram<f64>> =
+            crate::otel::GlobalInstrument::new(|meter| {
+                meter
+                    .f64_histogram("db.client.operation.duration")
+                    .with_unit("s")
+                    .with_description("Duration of database client operations.")
+                    .with_boundaries(DURATION_BUCKETS.to_vec())
+                    .build()
+            });
+        let histogram = HISTOGRAM.get();
         let mut attributes = vec![
             KeyValue::new("db.system.name", self.db.system.clone()),
             KeyValue::new("db.operation.name", operation),

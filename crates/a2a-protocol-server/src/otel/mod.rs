@@ -52,6 +52,7 @@
 
 mod builder;
 mod global;
+mod instrument;
 #[cfg(feature = "otlp")]
 mod pipeline;
 #[cfg(feature = "otlp")]
@@ -67,6 +68,7 @@ use crate::metrics::{ConnectionPoolStats, Metrics, RpcCall};
 
 pub use builder::OtelMetricsBuilder;
 pub(crate) use global::GlobalOtelMetrics;
+pub(crate) use instrument::GlobalInstrument;
 #[cfg(feature = "otlp")]
 #[allow(deprecated)] // re-exported until their removal, no earlier than 0.17.0
 pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};

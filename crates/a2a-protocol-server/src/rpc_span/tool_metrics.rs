@@ -34,23 +34,21 @@
 //! `turn_limit`, `budget_exhausted`. `cancelled` on all three is work
 //! abandoned before it ended: the token fired, or the future was dropped.
 //!
-//! The instruments are built from the meter at the moment each measurement
-//! is taken, not at start-up, so a provider the process installs after
-//! building its loop still receives them.
+//! The instruments are built once per meter: for a meter given in code, when
+//! it is given; for the global provider, at the first measurement after it is
+//! installed (`otel::GlobalInstrument`), so a provider the process installs
+//! after building its loop still receives them. Until 2026-11-04 every
+//! measurement built its instrument again (audit C-23).
 //!
 //! [`ChatRequest`]: crate::tool_loop::ChatRequest
 //! [`ModelError::error_type`]: crate::tool_loop::ModelError::error_type
 
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use opentelemetry::KeyValue;
-use opentelemetry::metrics::Meter;
-
-/// The instrumentation scope the loop's metrics are recorded under when no
-/// meter is given: the one `OtelMetricsBuilder` defaults to.
-pub const METER_NAME: &str = "a2a.server";
+use opentelemetry::metrics::{Counter, Histogram, Meter};
 
 /// `gen_ai.client.inference.duration` and `gen_ai.execute_tool.duration`.
 const DURATION_BUCKETS: [f64; 14] = [
@@ -83,21 +81,98 @@ const TOKEN_BUCKETS: [f64; 14] = [
 /// `gen_ai.invoke_agent.{inference,tool}_calls`.
 const CALL_COUNT_BUCKETS: [f64; 8] = [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0];
 
-/// The meter the loop's metrics go to: the one given, or the global
-/// provider's as it is when asked.
-#[derive(Clone, Debug, Default)]
-pub struct GenAiMeter(Option<Meter>);
+/// Every instrument the loop records to, built from one meter.
+struct Instruments {
+    inference_duration: Histogram<f64>,
+    tool_duration: Histogram<f64>,
+    /// `gen_ai.client.inference.operation.{input,output}_tokens`.
+    operation_tokens: [Histogram<f64>; 2],
+    /// `gen_ai.client.inference.usage.{input,output}_tokens`.
+    usage_tokens: [Counter<u64>; 2],
+    agent_duration: Histogram<f64>,
+    inference_calls: Histogram<u64>,
+    tool_calls: Histogram<u64>,
+}
+
+impl std::fmt::Debug for Instruments {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Instruments").finish_non_exhaustive()
+    }
+}
+
+impl Instruments {
+    fn build(meter: &Meter) -> Arc<Self> {
+        let duration = |name: &'static str| {
+            meter
+                .f64_histogram(name)
+                .with_unit("s")
+                .with_boundaries(DURATION_BUCKETS.to_vec())
+                .build()
+        };
+        let operation_tokens = |name: &'static str| {
+            meter
+                .f64_histogram(name)
+                .with_unit("{token}")
+                .with_boundaries(TOKEN_BUCKETS.to_vec())
+                .build()
+        };
+        let usage_tokens =
+            |name: &'static str| meter.u64_counter(name).with_unit("{token}").build();
+        let calls = |name: &'static str, unit: &'static str| {
+            meter
+                .u64_histogram(name)
+                .with_unit(unit)
+                .with_boundaries(CALL_COUNT_BUCKETS.to_vec())
+                .build()
+        };
+        Arc::new(Self {
+            inference_duration: duration("gen_ai.client.inference.duration"),
+            tool_duration: duration("gen_ai.execute_tool.duration"),
+            operation_tokens: [
+                operation_tokens("gen_ai.client.inference.operation.input_tokens"),
+                operation_tokens("gen_ai.client.inference.operation.output_tokens"),
+            ],
+            usage_tokens: [
+                usage_tokens("gen_ai.client.inference.usage.input_tokens"),
+                usage_tokens("gen_ai.client.inference.usage.output_tokens"),
+            ],
+            agent_duration: meter
+                .f64_histogram("gen_ai.invoke_agent.duration")
+                .with_unit("s")
+                .with_boundaries(AGENT_DURATION_BUCKETS.to_vec())
+                .build(),
+            inference_calls: calls("gen_ai.invoke_agent.inference_calls", "{inference_call}"),
+            tool_calls: calls("gen_ai.invoke_agent.tool_calls", "{tool_call}"),
+        })
+    }
+}
+
+/// The global provider's instruments, under the `a2a.server` scope
+/// `OtelMetricsBuilder` defaults to, built once per provider.
+static GLOBAL: crate::otel::GlobalInstrument<Arc<Instruments>> =
+    crate::otel::GlobalInstrument::new(Instruments::build);
+
+/// The instruments the loop's metrics go to: those of the meter given, or the
+/// global provider's as it is when asked.
+#[derive(Clone, Default)]
+pub struct GenAiMeter(Option<Arc<Instruments>>);
+
+impl std::fmt::Debug for GenAiMeter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("GenAiMeter")
+            .field(&if self.0.is_some() { "given" } else { "global" })
+            .finish()
+    }
+}
 
 impl GenAiMeter {
     /// Records to `meter` rather than the global provider.
-    pub const fn new(meter: Meter) -> Self {
-        Self(Some(meter))
+    pub fn new(meter: &Meter) -> Self {
+        Self(Some(Instruments::build(meter)))
     }
 
-    fn get(&self) -> Meter {
-        self.0
-            .clone()
-            .unwrap_or_else(|| opentelemetry::global::meter(METER_NAME))
+    fn get(&self) -> Arc<Instruments> {
+        self.0.clone().unwrap_or_else(|| GLOBAL.get())
     }
 }
 
@@ -120,7 +195,7 @@ struct Outcome {
 /// One turn's or one call's measurements, recorded when it is dropped.
 #[derive(Debug)]
 pub struct Measure {
-    meter: Meter,
+    instruments: Arc<Instruments>,
     started: Instant,
     op: Op,
     attributes: Vec<KeyValue>,
@@ -158,7 +233,7 @@ impl Measure {
 
     fn new(meter: &GenAiMeter, op: Op, attributes: Vec<KeyValue>) -> Self {
         Self {
-            meter: meter.get(),
+            instruments: meter.get(),
             started: Instant::now(),
             op,
             attributes,
@@ -198,28 +273,13 @@ impl Measure {
             attributes.push(KeyValue::new("error.type", error_type.clone()));
         }
         let duration = match self.op {
-            Op::Chat => "gen_ai.client.inference.duration",
-            Op::Tool => "gen_ai.execute_tool.duration",
+            Op::Chat => &self.instruments.inference_duration,
+            Op::Tool => &self.instruments.tool_duration,
         };
-        self.meter
-            .f64_histogram(duration)
-            .with_unit("s")
-            .with_boundaries(DURATION_BUCKETS.to_vec())
-            .build()
-            .record(seconds, &attributes);
+        duration.record(seconds, &attributes);
         if self.op == Op::Chat {
-            self.tokens(
-                "input",
-                outcome.input_tokens,
-                &attributes,
-                &usage_attributes,
-            );
-            self.tokens(
-                "output",
-                outcome.output_tokens,
-                &attributes,
-                &usage_attributes,
-            );
+            self.tokens(0, outcome.input_tokens, &attributes, &usage_attributes);
+            self.tokens(1, outcome.output_tokens, &attributes, &usage_attributes);
         }
     }
 
@@ -227,33 +287,23 @@ impl Measure {
     /// any reported count, and the usage counter for a positive one — "Each
     /// measurement MUST be a known, strictly positive modality
     /// contribution".
+    /// `direction` is 0 for input, 1 for output.
     fn tokens(
         &self,
-        direction: &str,
+        direction: usize,
         count: Option<u64>,
         attributes: &[KeyValue],
         usage_attributes: &[KeyValue],
     ) {
         let Some(count) = count else { return };
         #[allow(clippy::cast_precision_loss)] // A token count below 2^53.
-        self.meter
-            .f64_histogram(format!(
-                "gen_ai.client.inference.operation.{direction}_tokens"
-            ))
-            .with_unit("{token}")
-            .with_boundaries(TOKEN_BUCKETS.to_vec())
-            .build()
-            .record(count as f64, attributes);
+        self.instruments.operation_tokens[direction].record(count as f64, attributes);
         if count == 0 {
             return;
         }
         let mut usage_attributes = usage_attributes.to_vec();
         usage_attributes.push(KeyValue::new("gen_ai.token.modality", "text"));
-        self.meter
-            .u64_counter(format!("gen_ai.client.inference.usage.{direction}_tokens"))
-            .with_unit("{token}")
-            .build()
-            .add(count, &usage_attributes);
+        self.instruments.usage_tokens[direction].add(count, &usage_attributes);
     }
 }
 
@@ -271,7 +321,7 @@ impl Drop for Measure {
 /// `cancelled` unless [`ended`](Self::ended) said otherwise.
 #[derive(Debug)]
 pub struct AgentRun {
-    meter: Meter,
+    instruments: Arc<Instruments>,
     started: Instant,
     attributes: Vec<KeyValue>,
     inference_calls: AtomicU64,
@@ -295,7 +345,7 @@ impl AgentRun {
             attributes.push(KeyValue::new("gen_ai.agent.name", agent.to_owned()));
         }
         Self {
-            meter: meter.get(),
+            instruments: meter.get(),
             started: Instant::now(),
             attributes,
             inference_calls: AtomicU64::new(0),
@@ -344,30 +394,14 @@ impl Drop for AgentRun {
         if let Some(error_type) = error_type {
             attributes.push(KeyValue::new("error.type", error_type));
         }
-        self.meter
-            .f64_histogram("gen_ai.invoke_agent.duration")
-            .with_unit("s")
-            .with_boundaries(AGENT_DURATION_BUCKETS.to_vec())
-            .build()
+        self.instruments
+            .agent_duration
             .record(self.started.elapsed().as_secs_f64(), &attributes);
-        for (name, unit, count) in [
-            (
-                "gen_ai.invoke_agent.inference_calls",
-                "{inference_call}",
-                &self.inference_calls,
-            ),
-            (
-                "gen_ai.invoke_agent.tool_calls",
-                "{tool_call}",
-                &self.tool_calls,
-            ),
-        ] {
-            self.meter
-                .u64_histogram(name)
-                .with_unit(unit)
-                .with_boundaries(CALL_COUNT_BUCKETS.to_vec())
-                .build()
-                .record(count.load(Ordering::Relaxed), &counts);
-        }
+        self.instruments
+            .inference_calls
+            .record(self.inference_calls.load(Ordering::Relaxed), &counts);
+        self.instruments
+            .tool_calls
+            .record(self.tool_calls.load(Ordering::Relaxed), &counts);
     }
 }

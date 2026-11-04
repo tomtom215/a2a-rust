@@ -95,7 +95,7 @@ fn a_turn_records_its_duration_and_its_tokens_in_both_families() {
         "openai",
         "qwen3:1.7b",
         Some(("127.0.0.1", 8080)),
-        &GenAiMeter::new(meter),
+        &GenAiMeter::new(&meter),
     );
     span.answered(Reply {
         input_tokens: Some(120),
@@ -158,7 +158,7 @@ fn a_turn_records_its_duration_and_its_tokens_in_both_families() {
 #[test]
 fn zero_tokens_are_observed_but_not_counted_and_unreported_ones_are_neither() {
     let (meter, reader, _provider) = recording_meter();
-    GenAiSpan::chat("openai", "m", None, &GenAiMeter::new(meter)).answered(Reply {
+    GenAiSpan::chat("openai", "m", None, &GenAiMeter::new(&meter)).answered(Reply {
         input_tokens: Some(0),
         output_tokens: None,
         ..Reply::default()
@@ -180,7 +180,7 @@ fn zero_tokens_are_observed_but_not_counted_and_unreported_ones_are_neither() {
 #[test]
 fn a_failed_turn_or_call_records_its_error_type() {
     let (meter, reader, _provider) = recording_meter();
-    let meter = GenAiMeter::new(meter);
+    let meter = GenAiMeter::new(&meter);
     GenAiSpan::chat("openai", "m", None, &meter).failed("503");
     GenAiSpan::tool("t", true, "c1", None, &meter).failed("tool_error");
     let rm = collect(&reader);
@@ -200,7 +200,7 @@ fn a_failed_turn_or_call_records_its_error_type() {
 #[test]
 fn an_unknown_tool_is_one_series() {
     let (meter, reader, _provider) = recording_meter();
-    let meter = GenAiMeter::new(meter);
+    let meter = GenAiMeter::new(&meter);
     GenAiSpan::tool("made-up-1", false, "c1", None, &meter).failed("unknown_tool");
     let rm = collect(&reader);
     let tool = only(&rm, "gen_ai.execute_tool.duration");
@@ -214,7 +214,7 @@ fn an_unknown_tool_is_one_series() {
 #[test]
 fn an_abandoned_turn_or_call_is_recorded_as_cancelled() {
     let (meter, reader, _provider) = recording_meter();
-    let meter = GenAiMeter::new(meter);
+    let meter = GenAiMeter::new(&meter);
     let spans = recorded(|| {
         drop(GenAiSpan::chat("openai", "m", None, &meter));
         drop(GenAiSpan::tool("t", true, "c1", None, &meter));

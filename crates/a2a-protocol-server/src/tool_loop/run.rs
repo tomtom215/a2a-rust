@@ -107,8 +107,9 @@ impl ToolLoop {
     /// meter, which is looked up each time one is recorded.
     #[cfg(feature = "otel")]
     #[must_use]
+    #[allow(clippy::needless_pass_by_value)] // the public signature, kept
     pub fn with_meter(mut self, meter: opentelemetry::metrics::Meter) -> Self {
-        self.meter = GenAiMeter::new(meter);
+        self.meter = GenAiMeter::new(&meter);
         self
     }
 
