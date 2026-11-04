@@ -49,7 +49,7 @@ NAMED_ELSEWHERE = {
     "test:cross_replica_cancel": ".github/workflows/ci.yml",
     "test:stale_write_position": ".github/workflows/ci.yml",
     "test:soak_multi_replica": ".github/workflows/soak.yml",
-    "lib:rate_limit::shared": ".github/workflows/ci.yml",
+    "lib:rate_limit::shared::postgres::tests": ".github/workflows/ci.yml",
 }
 
 # Suites with PostgreSQL cases that no CI job runs, and why.

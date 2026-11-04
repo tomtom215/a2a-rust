@@ -1485,6 +1485,34 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   replica, is not replica-specific and is unchanged.) Test:
   `audit/task_store/tests.rs`, for every task state.
 
+- **Replicas queue for an audit chain instead of racing for a position**
+  (server; audit E-F18, the maintainer's recommendation (a)). Appends to one
+  tenant's chain were optimistic: read the head, seal, store, and if another
+  replica took the position, read again, up to eight times. That is correct and
+  loses more as writers are added (about 4% of requests at three saturated
+  writers, 17% at five, by an estimate that is not a measurement), and under
+  `require_record(true)` such a request was refused. **Additive:**
+  `AuditStore::append_next` (a default method, behaving as before) reads the head,
+  has `AuditLog` seal the record through a `Sealer`, and stores it;
+  `PostgresAuditStore` overrides it to do all three in one transaction under a
+  per-chain `pg_advisory_xact_lock`, and hands the sealer the database's clock, so
+  one chain's record times come from one clock and do not run backwards when the
+  replicas' clocks differ. Sealing stays in `AuditLog`; the primary key still
+  turns away a writer that does not take the lock, and the retry loop stays for
+  it and for other stores. **Action required if you pass `PostgresAuditStore` a
+  pool of your own:** an append holds one connection for its length and a second
+  while the record is sealed when sealing reads the store, so a pool of one
+  deadlocks until its acquire timeout; the store's own pool is larger.
+  `Sealer` and `append_next` are new public items
+  (`book/src/reference/api-reference.md`). Cancelling an append drops its
+  transaction, which sqlx rolls back when the connection returns to the pool,
+  releasing the lock (tested). Tests: `tests/postgres_audit_append.rs` (six
+  replicas appending forty records each to one chain, all stored and the chain
+  verifying with non-decreasing times; sealers serialised on one chain and not
+  across chains; the database's clock handed over; a position taken behind the
+  lock's back; a cancelled append), `audit/append_next_tests.rs` (the default).
+  ADR 0015 carries the amendment.
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a

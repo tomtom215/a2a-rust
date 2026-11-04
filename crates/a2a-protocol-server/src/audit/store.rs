@@ -5,13 +5,11 @@
 
 //! Where audit records are kept.
 
-use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::pin::Pin;
 
 use a2a_protocol_types::audit::{AuditRecord, Checkpoint};
 use a2a_protocol_types::error::A2aResult;
-use tokio::sync::RwLock;
 
 /// A boxed future, as every store trait in this crate returns.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -25,6 +23,20 @@ pub enum Appended {
     /// re-read the head and seal the record again.
     Conflict,
 }
+
+/// Seals one record onto a chain, for [`AuditStore::append_next`].
+///
+/// Called with the chain's head, `(seq, hash)` of its last record (`None` for
+/// an empty chain), and the store's own clock in Unix milliseconds when the
+/// store keeps one every writer shares. Returns the record with its `seq`,
+/// `prev`, `time` and `hash` set. A store calls it and does not look inside:
+/// choosing the position and computing the hash is
+/// [`AuditLog`](super::AuditLog)'s job, so every store gets it right in one
+/// place.
+pub type Sealer<'a> = dyn Fn(Option<(u64, String)>, Option<i64>) -> BoxFuture<'a, A2aResult<AuditRecord>>
+    + Send
+    + Sync
+    + 'a;
 
 /// One person's audit key, as `AuditPrivacy` (with the `encryption`
 /// feature) keeps it.
@@ -109,6 +121,38 @@ pub trait AuditStore: Send + Sync + 'static {
 
     /// Stores a sealed record, unless its `(chain, seq)` is already taken.
     fn append<'a>(&'a self, record: &'a AuditRecord) -> BoxFuture<'a, A2aResult<Appended>>;
+
+    /// Appends the next record of `chain`: reads its head, has `seal` build the
+    /// record that follows it, and stores that. `Ok(None)` when another writer
+    /// took the position first: nothing was stored, and the caller asks again.
+    ///
+    /// The default does it optimistically, as [`head`](Self::head) then
+    /// [`append`](Self::append): replicas sharing the store interleave on one
+    /// chain because the loser of a position is refused it and asks again, and
+    /// with many of them the same few lose again and again. The default passes
+    /// `seal` no clock, so the record is timed by the writer's.
+    ///
+    /// A store that can serialise writers across processes overrides this and
+    /// holds the head fixed from the read to the store, so no one loses, and may
+    /// pass its own clock, so that records in one chain are timed by one clock
+    /// whatever the writers' are. `PostgresAuditStore` (the `postgres` feature)
+    /// does both. An override must call `seal` exactly once, after reading the
+    /// head and before storing, and must not retry on its own.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be read or written, or `seal` fails.
+    fn append_next<'a>(
+        &'a self,
+        chain: &'a str,
+        seal: &'a Sealer<'a>,
+    ) -> BoxFuture<'a, A2aResult<Option<AuditRecord>>> {
+        Box::pin(async move {
+            let head = self.head(chain).await?;
+            let record = seal(head, None).await?;
+            Ok((self.append(&record).await? == Appended::Stored).then_some(record))
+        })
+    }
 
     /// Up to `limit` records of `chain` with `seq` above `after`, in order.
     fn read<'a>(
@@ -237,237 +281,4 @@ pub(super) fn record_millis(record: &AuditRecord) -> i64 {
     a2a_protocol_types::parse_iso8601_to_unix_millis(&record.time).unwrap_or(0)
 }
 
-#[derive(Default)]
-struct Chain {
-    records: BTreeMap<u64, AuditRecord>,
-    checkpoints: BTreeMap<(u64, String), Checkpoint>,
-}
-
-/// An [`AuditStore`] in memory: for tests and for deployments that ship
-/// records elsewhere and keep none. Everything is lost on restart, which is
-/// no use as a log of record.
-#[derive(Default)]
-pub struct InMemoryAuditStore {
-    chains: RwLock<HashMap<String, Chain>>,
-    holds: RwLock<HashMap<String, LegalHold>>,
-    /// Per chain, each subject key by its lookup.
-    subject_keys: RwLock<HashMap<String, HashMap<String, SubjectKey>>>,
-}
-
-impl InMemoryAuditStore {
-    /// An empty store.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl std::fmt::Debug for InMemoryAuditStore {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("InMemoryAuditStore").finish_non_exhaustive()
-    }
-}
-
-impl AuditStore for InMemoryAuditStore {
-    fn is_process_local(&self) -> bool {
-        true
-    }
-
-    fn head<'a>(&'a self, chain: &'a str) -> BoxFuture<'a, A2aResult<Option<(u64, String)>>> {
-        Box::pin(async move {
-            let chains = self.chains.read().await;
-            Ok(chains
-                .get(chain)
-                .and_then(|c| c.records.last_key_value())
-                .map(|(seq, r)| (*seq, r.hash.clone())))
-        })
-    }
-
-    fn append<'a>(&'a self, record: &'a AuditRecord) -> BoxFuture<'a, A2aResult<Appended>> {
-        Box::pin(async move {
-            let mut chains = self.chains.write().await;
-            let c = chains.entry(record.chain.clone()).or_default();
-            if c.records.contains_key(&record.seq) {
-                return Ok(Appended::Conflict);
-            }
-            c.records.insert(record.seq, record.clone());
-            drop(chains);
-            Ok(Appended::Stored)
-        })
-    }
-
-    fn read<'a>(
-        &'a self,
-        chain: &'a str,
-        after: u64,
-        limit: usize,
-    ) -> BoxFuture<'a, A2aResult<Vec<AuditRecord>>> {
-        Box::pin(async move {
-            let chains = self.chains.read().await;
-            Ok(chains.get(chain).map_or_else(Vec::new, |c| {
-                c.records
-                    .range(after.saturating_add(1)..)
-                    .take(limit)
-                    .map(|(_, r)| r.clone())
-                    .collect()
-            }))
-        })
-    }
-
-    fn chains(&self) -> BoxFuture<'_, A2aResult<Vec<String>>> {
-        Box::pin(async move {
-            let mut out: Vec<String> = self.chains.read().await.keys().cloned().collect();
-            out.sort();
-            Ok(out)
-        })
-    }
-
-    fn put_checkpoint<'a>(&'a self, checkpoint: &'a Checkpoint) -> BoxFuture<'a, A2aResult<()>> {
-        Box::pin(async move {
-            self.chains
-                .write()
-                .await
-                .entry(checkpoint.chain.clone())
-                .or_default()
-                .checkpoints
-                .insert(
-                    (checkpoint.seq, checkpoint.kind.clone()),
-                    checkpoint.clone(),
-                );
-            Ok(())
-        })
-    }
-
-    fn checkpoints<'a>(&'a self, chain: &'a str) -> BoxFuture<'a, A2aResult<Vec<Checkpoint>>> {
-        Box::pin(async move {
-            let chains = self.chains.read().await;
-            Ok(chains
-                .get(chain)
-                .map_or_else(Vec::new, |c| c.checkpoints.values().cloned().collect()))
-        })
-    }
-
-    fn last_before<'a>(
-        &'a self,
-        chain: &'a str,
-        cutoff_ms: i64,
-    ) -> BoxFuture<'a, A2aResult<Option<(u64, String)>>> {
-        Box::pin(async move {
-            let chains = self.chains.read().await;
-            Ok(chains.get(chain).and_then(|c| {
-                c.records
-                    .values()
-                    .take_while(|r| record_millis(r) < cutoff_ms)
-                    .last()
-                    .map(|r| (r.seq, r.hash.clone()))
-            }))
-        })
-    }
-
-    fn delete_through<'a>(&'a self, chain: &'a str, seq: u64) -> BoxFuture<'a, A2aResult<u64>> {
-        Box::pin(async move {
-            let mut chains = self.chains.write().await;
-            let Some(c) = chains.get_mut(chain) else {
-                return Ok(0);
-            };
-            let keep = c.records.split_off(&seq.saturating_add(1));
-            let removed = c.records.len() as u64;
-            c.records = keep;
-            c.checkpoints.retain(|(s, _), _| *s >= seq);
-            drop(chains);
-            Ok(removed)
-        })
-    }
-
-    fn place_hold<'a>(&'a self, hold: &'a LegalHold) -> BoxFuture<'a, A2aResult<()>> {
-        Box::pin(async move {
-            self.holds
-                .write()
-                .await
-                .insert(hold.chain.clone(), hold.clone());
-            Ok(())
-        })
-    }
-
-    fn release_hold<'a>(&'a self, chain: &'a str) -> BoxFuture<'a, A2aResult<bool>> {
-        Box::pin(async move { Ok(self.holds.write().await.remove(chain).is_some()) })
-    }
-
-    fn holds(&self) -> BoxFuture<'_, A2aResult<Vec<LegalHold>>> {
-        Box::pin(async move {
-            let mut out: Vec<LegalHold> = self.holds.read().await.values().cloned().collect();
-            out.sort_by(|a, b| a.chain.cmp(&b.chain));
-            Ok(out)
-        })
-    }
-
-    fn supports_subject_keys(&self) -> bool {
-        true
-    }
-
-    fn subject_key<'a>(
-        &'a self,
-        chain: &'a str,
-        lookup: &'a str,
-    ) -> BoxFuture<'a, A2aResult<Option<SubjectKey>>> {
-        Box::pin(async move {
-            let keys = self.subject_keys.read().await;
-            Ok(keys.get(chain).and_then(|k| k.get(lookup)).cloned())
-        })
-    }
-
-    fn subject_key_by_sid<'a>(
-        &'a self,
-        chain: &'a str,
-        sid: &'a str,
-    ) -> BoxFuture<'a, A2aResult<Option<SubjectKey>>> {
-        Box::pin(async move {
-            let keys = self.subject_keys.read().await;
-            Ok(keys
-                .get(chain)
-                .and_then(|k| k.values().find(|key| key.sid == sid))
-                .cloned())
-        })
-    }
-
-    fn subject_keys<'a>(&'a self, chain: &'a str) -> BoxFuture<'a, A2aResult<Vec<SubjectKey>>> {
-        Box::pin(async move {
-            let keys = self.subject_keys.read().await;
-            Ok(keys
-                .get(chain)
-                .map(|k| k.values().cloned().collect())
-                .unwrap_or_default())
-        })
-    }
-
-    fn put_subject_key<'a>(
-        &'a self,
-        chain: &'a str,
-        key: &'a SubjectKey,
-    ) -> BoxFuture<'a, A2aResult<bool>> {
-        Box::pin(async move {
-            let mut keys = self.subject_keys.write().await;
-            let chain_keys = keys.entry(chain.to_owned()).or_default();
-            if chain_keys.contains_key(&key.lookup) {
-                return Ok(false);
-            }
-            chain_keys.insert(key.lookup.clone(), key.clone());
-            drop(keys);
-            Ok(true)
-        })
-    }
-
-    fn delete_subject_key<'a>(
-        &'a self,
-        chain: &'a str,
-        lookup: &'a str,
-    ) -> BoxFuture<'a, A2aResult<Option<String>>> {
-        Box::pin(async move {
-            let mut keys = self.subject_keys.write().await;
-            Ok(keys
-                .get_mut(chain)
-                .and_then(|k| k.remove(lookup))
-                .map(|key| key.sid))
-        })
-    }
-}
+pub use super::memory::InMemoryAuditStore;

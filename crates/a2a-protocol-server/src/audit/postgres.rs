@@ -10,7 +10,7 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use sqlx::Row;
 use sqlx::postgres::PgPool;
 
-use super::store::{Appended, AuditStore, BoxFuture, LegalHold, SubjectKey, record_millis};
+use super::store::{Appended, AuditStore, BoxFuture, LegalHold, Sealer, SubjectKey, record_millis};
 
 const SCHEMA: [&str; 5] = [
     "CREATE TABLE IF NOT EXISTS a2a_audit_records (
@@ -46,6 +46,26 @@ const SCHEMA: [&str; 5] = [
     )",
 ];
 
+/// Stores a sealed record unless its `(chain, seq)` is taken.
+const INSERT_SQL: &str = "INSERT INTO a2a_audit_records (chain, seq, time_ms, hash, record)
+                 VALUES ($1, $2, $3, $4, $5) ON CONFLICT (chain, seq) DO NOTHING";
+
+/// Takes the chain's append lock: one per chain, held to the end of the
+/// transaction, named like the turn locks in `store::claim`. `$1` is the chain.
+const LOCK_CHAIN_SQL: &str =
+    "SELECT pg_advisory_xact_lock(hashtextextended('a2a.audit:' || $1, 0))";
+
+/// The chain's head, if it has one, with the database's clock in Unix
+/// milliseconds, in the one row this always returns. `clock_timestamp()`, not
+/// `now()`: the time of this statement, not of the transaction's start, which
+/// is before the wait for the lock. `$1` is the chain.
+const HEAD_AND_CLOCK_SQL: &str = "SELECT h.seq, h.hash,
+        floor(extract(epoch from clock_timestamp()) * 1000)::bigint AS now_ms
+     FROM (SELECT 1) AS one
+     LEFT JOIN LATERAL (
+        SELECT seq, hash FROM a2a_audit_records WHERE chain = $1 ORDER BY seq DESC LIMIT 1
+     ) AS h ON true";
+
 fn db(e: &sqlx::Error) -> A2aError {
     crate::sql_error::sql_error(crate::sql_error::Db::Postgres, "postgres audit store", e)
 }
@@ -72,8 +92,16 @@ const fn u64_of(seq: i64) -> u64 {
 /// `a2a_audit_checkpoints`, `a2a_audit_holds` and `a2a_audit_subject_keys`,
 /// created if absent.
 ///
-/// Replicas may share it: the `(chain, seq)` primary key is what lets two
-/// of them append to one chain without forking it. It can share a database
+/// Replicas may share it: the `(chain, seq)` primary key is what keeps two of
+/// them from forking one chain, and each append takes a per-chain advisory lock
+/// and reads the head under it, so replicas queue for the chain instead of
+/// racing for a position and retrying (audit E-F18). That costs one connection
+/// held for the length of an append, and a second while the record is being
+/// sealed when the log reads the store to do it (an empty chain with an anchor,
+/// or `AuditPrivacy`), so a pool handed to
+/// [`from_pool`](Self::from_pool) needs at least two. The records are timed by
+/// the database's clock, so one chain's times do not run backwards when its
+/// writers' clocks disagree. It can share a database
 /// (and a pool) with [`PostgresTaskStore`](crate::store::PostgresTaskStore);
 /// it touches only its own tables. Each record is stored as the exact JSON
 /// it was sealed with, so it reads back byte-for-byte equal and its hash
@@ -122,23 +150,65 @@ impl AuditStore for PostgresAuditStore {
 
     fn append<'a>(&'a self, record: &'a AuditRecord) -> BoxFuture<'a, A2aResult<Appended>> {
         Box::pin(async move {
-            let done = sqlx::query(
-                "INSERT INTO a2a_audit_records (chain, seq, time_ms, hash, record)
-                 VALUES ($1, $2, $3, $4, $5) ON CONFLICT (chain, seq) DO NOTHING",
-            )
-            .bind(&record.chain)
-            .bind(i64_of(record.seq))
-            .bind(record_millis(record))
-            .bind(&record.hash)
-            .bind(json(record)?)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| db(&e))?;
+            let done = sqlx::query(INSERT_SQL)
+                .bind(&record.chain)
+                .bind(i64_of(record.seq))
+                .bind(record_millis(record))
+                .bind(&record.hash)
+                .bind(json(record)?)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| db(&e))?;
             Ok(if done.rows_affected() == 1 {
                 Appended::Stored
             } else {
                 Appended::Conflict
             })
+        })
+    }
+
+    /// Reads the head and stores the record that follows it in one transaction
+    /// that holds the chain's advisory lock, so no other appender that takes the
+    /// lock can take the position in between.
+    ///
+    /// Cancellation: dropping this future drops the transaction, which sqlx
+    /// rolls back when the connection is returned to the pool (it pings the
+    /// connection on release), and the rollback releases the lock. A writer
+    /// that does not take the lock (another implementation, or SQL of one's
+    /// own) is still turned away by the primary key.
+    fn append_next<'a>(
+        &'a self,
+        chain: &'a str,
+        seal: &'a Sealer<'a>,
+    ) -> BoxFuture<'a, A2aResult<Option<AuditRecord>>> {
+        Box::pin(async move {
+            let mut tx = self.pool.begin().await.map_err(|e| db(&e))?;
+            sqlx::query(LOCK_CHAIN_SQL)
+                .bind(chain)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| db(&e))?;
+            let row = sqlx::query(HEAD_AND_CLOCK_SQL)
+                .bind(chain)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| db(&e))?;
+            let head = row
+                .get::<Option<i64>, _>(0)
+                .zip(row.get::<Option<String>, _>(1))
+                .map(|(seq, hash)| (u64_of(seq), hash));
+            let record = seal(head, Some(row.get::<i64, _>(2))).await?;
+            let done = sqlx::query(INSERT_SQL)
+                .bind(&record.chain)
+                .bind(i64_of(record.seq))
+                .bind(record_millis(&record))
+                .bind(&record.hash)
+                .bind(json(&record)?)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| db(&e))?;
+            tx.commit().await.map_err(|e| db(&e))?;
+            Ok((done.rows_affected() == 1).then_some(record))
         })
     }
 

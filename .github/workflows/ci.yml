@@ -818,6 +818,10 @@ jobs:
           # report tee's status and a failing suite would go green. That is how
           # the official-TCK gate came to print UNDER-MEASURED and exit 0.
           #
+          # The tests are `rate_limit::shared::postgres::tests`; the filter below
+          # is their parent module, because the probe the gate-proving script
+          # injects is appended to that module's file and must be selected too.
+          #
           # No script filename in this comment on purpose: `injection_for` in
           # scripts/prove_gates_fail.sh routes a gate to its injection by
           # substring over the whole block, comments included, so naming a

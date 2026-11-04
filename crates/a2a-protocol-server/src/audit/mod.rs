@@ -40,6 +40,7 @@
 
 mod interceptor;
 mod log;
+mod memory;
 #[cfg(feature = "encryption")]
 mod privacy;
 mod retention;
@@ -54,6 +55,8 @@ mod sqlite;
 #[cfg(test)]
 mod actors_tests;
 #[cfg(test)]
+mod append_next_tests;
+#[cfg(test)]
 mod chain_lock_tests;
 #[cfg(test)]
 mod executor_detail_tests;
@@ -67,7 +70,9 @@ pub use privacy::{
     AuditPrivacy, Erasure, HMAC_KEY_LEN, KEYED_DIGEST_PREFIX, Revealed, SEALED_PREFIX,
 };
 pub use retention::{AuditRetention, Erased, PurgeReport, SIX_MONTHS};
-pub use store::{Appended, AuditStore, BoxFuture, InMemoryAuditStore, LegalHold, SubjectKey};
+pub use store::{
+    Appended, AuditStore, BoxFuture, InMemoryAuditStore, LegalHold, Sealer, SubjectKey,
+};
 
 #[cfg(feature = "postgres")]
 pub use postgres::PostgresAuditStore;
