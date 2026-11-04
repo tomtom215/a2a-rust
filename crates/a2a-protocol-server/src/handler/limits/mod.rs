@@ -133,6 +133,38 @@ pub struct HandlerLimits {
     /// waiting deliveries rather than failures, since a lane only fills
     /// behind a webhook that is slower than the agent. Zero is read as one.
     pub push_queue_capacity: usize,
+    /// How many deliveries to a webhook may fail in a row before it is
+    /// suspended. Default: 5. **Zero turns suspension off.**
+    ///
+    /// Each failed delivery has already had the sender's retries (three
+    /// attempts, up to 38 s at the defaults), so five is five events a
+    /// webhook did not take. A suspended webhook is not sent the events that
+    /// follow, for [`push_suspend_for`](Self::push_suspend_for), then one
+    /// event is tried again: a success ends the suspension, a failure
+    /// doubles the next (up to 32 times as long). The events that end a turn
+    /// (a terminal or interrupted status) are always attempted, so a webhook
+    /// that comes back is told how a task ended. The config is kept, and
+    /// each skipped delivery is counted as
+    /// [`push_outcome::SUSPENDED`](crate::metrics::push_outcome::SUSPENDED).
+    /// Spec §4.3.3 allows an agent to stop attempting delivery after a
+    /// configured number of consecutive failures (audit D-05). The count is
+    /// per replica and held in memory, as delivery is.
+    pub push_suspend_after: usize,
+    /// How long a suspended webhook is left alone before one event is
+    /// tried again. Default: 30 s; see
+    /// [`push_suspend_after`](Self::push_suspend_after).
+    pub push_suspend_for: Duration,
+    /// Whether a webhook that answers `410 Gone` has its config removed.
+    /// Default: `true`.
+    ///
+    /// `410` is the receiver saying the address is permanently gone, so the
+    /// config would only be tried, and answered `410`, on every later event.
+    /// Removing it is the store's `delete`: the client sees it as the config
+    /// no longer listed. Only `410`: a `404` can be a deploy in progress and
+    /// counts as any other failure. A sender other than `HttpPushSender`
+    /// reports a status in its error's `data` as `{"httpStatus": 410}` to
+    /// get the same.
+    pub push_remove_gone: bool,
     /// The most webhook deliveries in flight at once, across every task.
     /// Default: 512. Zero is read as one.
     ///
@@ -372,6 +404,9 @@ impl Default for HandlerLimits {
             push_delivery_timeout: Duration::from_secs(30),
             push_delivery_budget: Duration::from_secs(30),
             push_queue_capacity: 1024,
+            push_suspend_after: 5,
+            push_suspend_for: Duration::from_secs(30),
+            push_remove_gone: true,
             push_max_in_flight: 512,
             push_max_in_flight_per_host: 64,
             executor_drain_timeout: Duration::from_secs(5),

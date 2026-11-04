@@ -134,7 +134,7 @@ fn statuses_are_delivered_retried_or_final() {
     }
     for final_ in [400, 401, 403, 404, 410, 422] {
         assert!(
-            matches!(judged_status(final_), Attempt::Rejected(m) if m.contains("non-retryable")),
+            matches!(judged_status(final_), Attempt::Rejected { why, .. } if why.contains("non-retryable")),
             "{final_}"
         );
     }

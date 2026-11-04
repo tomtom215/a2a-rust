@@ -146,8 +146,9 @@ impl Prepared {
 pub(super) enum Attempt {
     /// The webhook answered `2xx`.
     Delivered,
-    /// The webhook answered in a way no retry will change.
-    Rejected(String),
+    /// The webhook answered in a way no retry will change: the message to
+    /// report and the status it answered with.
+    Rejected { why: String, status: u16 },
     /// The attempt failed in a way worth another: the message to report if
     /// none succeeds.
     Retry(String),
@@ -179,9 +180,10 @@ pub(super) fn judge<B>(
                 || status == hyper::StatusCode::TOO_MANY_REQUESTS;
             if !retryable {
                 trace_warn!(target = %target, attempt, status = %status, "push delivery rejected; not retrying");
-                return Attempt::Rejected(format!(
-                    "push notification got non-retryable HTTP {status}"
-                ));
+                return Attempt::Rejected {
+                    why: format!("push notification got non-retryable HTTP {status}"),
+                    status: status.as_u16(),
+                };
             }
             trace_warn!(target = %target, attempt, status = %status, "push delivery failed");
             Attempt::Retry(format!("push notification got HTTP {status}"))

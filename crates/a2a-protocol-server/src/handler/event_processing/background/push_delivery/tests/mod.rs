@@ -23,6 +23,7 @@ use super::*;
 
 mod budget;
 mod config_list;
+mod dead_webhook;
 #[cfg(feature = "tracing")]
 mod log_redaction;
 

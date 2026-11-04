@@ -9,6 +9,7 @@
 pub mod cipher;
 pub mod config_store;
 pub(crate) mod gate;
+pub(crate) mod health;
 mod pinning;
 mod request;
 pub mod sender;

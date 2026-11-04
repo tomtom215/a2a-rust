@@ -112,6 +112,8 @@ a2a.server.push_deliveries{outcome="delivered"}   the webhook accepted it
 a2a.server.push_deliveries{outcome="failed"}      reached, and refused it — or the sender errored
 a2a.server.push_deliveries{outcome="timeout"}     the webhook did not answer in time, and the schedule fit inside push_delivery_timeout
 a2a.server.push_deliveries{outcome="timeout_truncated"}  push_delivery_timeout cut the retry schedule short
+a2a.server.push_deliveries{outcome="suspended"}  not attempted: the webhook failed five deliveries in a row (push_suspend_after); the next event after the pause is tried
+a2a.server.push_deliveries{outcome="gone"}       the webhook answered 410 Gone and its config was removed
 ```
 
 `timeout_truncated` is the one that surprises people, because it is **not

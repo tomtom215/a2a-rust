@@ -699,7 +699,9 @@ impl HttpPushSender {
 
             match judge(&target, attempt, self.request_timeout, request_result) {
                 Attempt::Delivered => return Ok(()),
-                Attempt::Rejected(why) => return Err(A2aError::internal(why)),
+                Attempt::Rejected { why, status } => {
+                    return Err(super::health::rejected(why, status));
+                }
                 Attempt::Retry(why) => last_err = why,
             }
 

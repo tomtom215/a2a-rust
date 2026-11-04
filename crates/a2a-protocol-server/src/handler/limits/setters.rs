@@ -174,6 +174,30 @@ impl HandlerLimits {
         self
     }
 
+    /// Sets how many failed deliveries in a row suspend a webhook, zero for
+    /// never; see [`push_suspend_after`](Self::push_suspend_after).
+    #[must_use]
+    pub const fn with_push_suspend_after(mut self, failures: usize) -> Self {
+        self.push_suspend_after = failures;
+        self
+    }
+
+    /// Sets how long a suspended webhook is left alone; see
+    /// [`push_suspend_for`](Self::push_suspend_for).
+    #[must_use]
+    pub const fn with_push_suspend_for(mut self, pause: Duration) -> Self {
+        self.push_suspend_for = pause;
+        self
+    }
+
+    /// Sets whether a webhook answering `410 Gone` has its config removed;
+    /// see [`push_remove_gone`](Self::push_remove_gone).
+    #[must_use]
+    pub const fn with_push_remove_gone(mut self, remove: bool) -> Self {
+        self.push_remove_gone = remove;
+        self
+    }
+
     /// Sets how many webhook deliveries may be in flight across all tasks;
     /// see [`push_max_in_flight`](Self::push_max_in_flight).
     #[must_use]

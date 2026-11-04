@@ -1662,6 +1662,48 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   "missed" that only the integration test kills (it had been run against the
   library tests alone).
 
+- **A webhook that is gone, or down for good, stops costing a delivery on every
+  event** (server; audit D-05, the maintainer's accepted position: the delivery
+  id first, this next, an ADR for the outbox). A `410 Gone` was "final for that
+  event" and the config was kept and tried, with its retries, on the next; a
+  webhook that failed for a day was tried on every event of it. Two rules now
+  apply to the handler's push sender, so every path that delivers (the task
+  lanes, a blocking send's batch, the reaper) has them:
+  * **A `410` removes the config** (`HandlerLimits::push_remove_gone`, on by
+    default; `with_push_remove_gone`), counted as the new outcome `gone`. Only
+    `410`: a `404` can be a deploy in progress and counts as any other failure.
+    `HttpPushSender` now reports the status of a refusal in its error's `data`
+    (`{"httpStatus": 410}`); a sender of your own gets the `410` rule by doing
+    the same.
+  * **Failures in a row suspend the config** (`push_suspend_after`, default 5,
+    zero turns it off; `push_suspend_for`, default 30 s). A suspended webhook
+    is skipped, counted as the new outcome `suspended`, until its pause is
+    over; then one event is tried, a success ends the suspension, and a failure
+    doubles the pause, up to 32 times as long. **An event that ends a turn (a
+    terminal or interrupted status) is always attempted**, so a webhook that
+    comes back is told how a task ended, and spec §4.3.3's "attempt delivery at
+    least once for each configured webhook" holds for the events that matter;
+    the skipping rests on its MAY ("stop attempting delivery after a configured
+    number of consecutive failures"). The config is kept.
+  **Behaviour changes, each a choice of mine for the maintainer to veto:**
+  both rules are on by default; suspension is not the config's removal, so a
+  receiver down for an hour loses the events in between and not its
+  subscription; the counts are per replica and in memory (a restart starts from
+  none, two replicas count apart), as delivery is; `suspended` and `gone` are in
+  the delivery failure ratio (`a2a:push_delivery_failure_ratio:rate5m`) with
+  `failed`, as `dropped` is, so a suspended webhook keeps the failing-pushes
+  alert firing, which is what it is. A delivery that `push_delivery_timeout` cuts off before the webhook answers counts as failed too: at the defaults the sender's own schedule (38 s) is longer than that bound (30 s), so a webhook that never answers is always cut off and never returns an error, and would otherwise never have been suspended. A blocking send's batch reads its configs once, so after a `410` its later events still reach the webhook once each and are counted `gone`; the next batch finds no config. **Not done:** a durable
+  outbox that would survive a restart and share the counts, written down as
+  ADR 0037 (Proposed, not built). Tests: `push/health/tests.rs` (suspension,
+  the probe, the doubling and its ceiling, ending events, per-config and
+  per-tenant counts, the bound on what is kept, `410`, the config that cannot
+  be removed, the wrapper's forwarding); `push_delivery/tests/dead_webhook.rs`
+  (the real sender against real sockets, through the path that lists configs
+  afresh for each event: a `410` and the next event reaching nobody; five events
+  and a turn-ending one against a webhook that answers `500`); and
+  `builder/dead_webhook_tests.rs` (the handler's own sender is wrapped, and is
+  not when both rules are off). Hand mutants: 25, all caught (the policy 20, the outcome mapping in the delivery path 2, the status the sender and its request carry 2, the builder's wiring 1); three of them were written after planning showed a gap (a config with no id, an address watched on its own, a delivery cut off before it was answered), and one first written did not compile and was rewritten.
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a

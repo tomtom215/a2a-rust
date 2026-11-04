@@ -102,6 +102,8 @@ pub(crate) enum CallerIsolation {
     EveryCaller,
 }
 
+#[cfg(test)]
+mod dead_webhook_tests;
 mod shared_stores;
 
 /// What the builder was told about the agent card.
@@ -1556,6 +1558,15 @@ impl RequestHandlerBuilder {
         // Outermost, so the signing wrapper and a custom sender are both bounded.
         let push_sender = push_sender
             .map(|sender| crate::push::gate::gated(sender, &self.handler_limits, &self.metrics));
+        // Outside the gate: a suspended webhook is skipped before it takes a
+        // slot, and a `410` is read off the answer the gate let through (D-05).
+        let push_sender = push_sender.map(|sender| {
+            crate::push::health::watched(
+                sender,
+                Arc::clone(&push_config_store),
+                &self.handler_limits,
+            )
+        });
         let in_flight = crate::handler::InFlight::default();
         let push_lanes = crate::handler::PushLanes::new(
             Arc::clone(&push_config_store),

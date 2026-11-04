@@ -375,6 +375,24 @@ pub mod push_outcome {
     /// delivery (one event, or one blocking send's batch), not per config.
     /// A terminal or interrupted status is never dropped.
     pub const DROPPED: &str = "dropped";
+    /// A delivery not attempted, because its webhook is suspended.
+    ///
+    /// A webhook is suspended after
+    /// [`HandlerLimits::push_suspend_after`](crate::handler::HandlerLimits::push_suspend_after)
+    /// failed deliveries in a row, for
+    /// [`push_suspend_for`](crate::handler::HandlerLimits::push_suspend_for) and
+    /// longer after each failed probe. Counted once per skipped delivery, one
+    /// per config. A delivery that ends a turn is attempted anyway, and
+    /// counted as whatever it came to; a success ends the suspension (audit
+    /// D-05).
+    pub const SUSPENDED: &str = "suspended";
+    /// The webhook answered `410 Gone` and its config was removed.
+    ///
+    /// See [`HandlerLimits::push_remove_gone`](crate::handler::HandlerLimits::push_remove_gone).
+    /// Counted for each delivery that learned it; a blocking send's batch
+    /// reads its configs once, so its later events are counted too, and the
+    /// config takes no delivery after that (audit D-05).
+    pub const GONE: &str = "gone";
     /// No longer reported.
     ///
     /// It counted configs the per-event delivery budget never reached; since
