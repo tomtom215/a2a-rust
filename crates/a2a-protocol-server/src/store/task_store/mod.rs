@@ -417,6 +417,12 @@ pub trait TaskStore: Send + Sync + 'static {
     /// # Errors
     ///
     /// Implementations return an error if the store operation fails.
+    // Equivalent mutant: the default body is a future that is ready with
+    // `Ok(None)` (`key` is a `&str`, so discarding it has no effect), and
+    // cargo-mutants' replacement, `Box::pin(async move { Ok(None) })`, is the
+    // same future. No test can distinguish the two (ADR 0006). The stores this
+    // crate ships override the method, and each override is tested.
+    #[mutants::skip]
     fn idempotency_holder<'a>(
         &'a self,
         key: &'a str,
