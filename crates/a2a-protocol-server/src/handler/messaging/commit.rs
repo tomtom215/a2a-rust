@@ -9,6 +9,7 @@ use a2a_protocol_types::params::MessageSendParams;
 use tokio::sync::OwnedSemaphorePermit;
 
 use super::super::RequestHandler;
+use super::super::locks::ContextLock;
 use super::claimed::{Claimed, Regated};
 use super::mode::SendMode;
 use super::start::{Committed, ExecutorStart, Started, runtime_has_one_worker};
@@ -87,10 +88,10 @@ impl RequestHandler {
         // The per-context lock serializes the find + save sequence for one
         // context_id, so two concurrent sends cannot both create a new task
         // for it. Held until the task is saved.
-        let context_lock = self.keyed_lock(&context_id).await;
         // Owned, so a send dropped mid-commit can hold it until its rollback
-        // is done (see `commit_guard`).
-        let context_guard = context_lock.lock_owned().await;
+        // is done (see `commit_guard`). A send that has to wait for another
+        // replica's turn gives it up for the wait (`claimed_view`).
+        let mut context_lock = ContextLock::take(self.keyed_lock(&context_id).await).await;
 
         let stored_task = self
             .stored_for(&context_id, minted, &params.message)
@@ -131,7 +132,8 @@ impl RequestHandler {
         // and all three dispatch futures sit just under clippy's
         // `large_futures` threshold.
         let message = &params.message;
-        let claimed = self.claimed_view(&task_id, stored_task, message, call_ctx);
+        let claimed =
+            self.claimed_view(&task_id, stored_task, message, call_ctx, &mut context_lock);
         let turn = match Box::pin(claimed).await? {
             Claimed::Turn(turn) => turn,
             Claimed::Waiting(task) => return Ok(Committed::Waiting(task)),
@@ -150,7 +152,7 @@ impl RequestHandler {
             std::sync::Arc::clone(&self.task_store),
             std::sync::Arc::clone(&self.push_config_store),
             claimed_key.clone(),
-            context_guard,
+            context_lock.into_guard(),
         );
         let guard_ref = &mut guard;
 

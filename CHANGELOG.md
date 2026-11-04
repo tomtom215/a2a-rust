@@ -1643,6 +1643,25 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   no key read the store for the key `""`, a round trip per attempt that nothing
   noticed; `only_a_message_with_a_key_reads_the_store` closes it.
 
+- **A send waiting for another replica's turn no longer holds up its context**
+  (server; audit E-F23). A continuation that found its task's turn held on another
+  replica waited for it, up to `executor_drain_timeout` (5 s by default), while
+  holding the per-context lock, so every other send in that context on the same
+  replica waited behind it: a supervisor fanning out over many tasks in one
+  context ran at one busy task's pace, though nothing in those sends depended on
+  it. The lock is now given up for the wait and taken again, waiting for it, once
+  the wait has ended; the task is read again under the claim, as it already was,
+  and that read is what the lock's find and save need of it. New (internal):
+  `ContextLock`, whose `unlocked_during` takes the lock back before it returns
+  whatever the wait came to, so no caller can leave without it. Nothing changes
+  for a send that does not wait. Tests: `a_send_waiting_for_a_turn_does_not_hold_up_its_context`
+  (a send to a sibling task of the same context completes in under a second
+  while the first waits five), three on the lock alone, and the existing
+  `send_dropped_mid_commit` (the commit guard keeps the lock through a dropped
+  send's rollback). Hand mutants: 6, all caught; the first run showed one
+  "missed" that only the integration test kills (it had been run against the
+  library tests alone).
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a

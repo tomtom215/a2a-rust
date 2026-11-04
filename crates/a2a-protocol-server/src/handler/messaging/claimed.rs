@@ -21,6 +21,7 @@ use a2a_protocol_types::task::{Task, TaskId};
 
 use super::super::RequestHandler;
 use super::super::claims::{TurnAttempt, TurnClaim, Waited};
+use super::super::locks::ContextLock;
 use super::idempotency::SendKey;
 use super::quorum::Gated;
 use crate::approval::VerifiedApproval;
@@ -119,12 +120,20 @@ impl RequestHandler {
         stored: Option<Task>,
         message: &Message,
         call_ctx: &CallContext,
+        context_lock: &mut ContextLock,
     ) -> ServerResult<Claimed> {
         self.send_key_of(message)?;
         let claim = match self.try_claim_turn(task_id).await? {
             TurnAttempt::Off => None,
             TurnAttempt::Held(claim) => Some(claim),
-            TurnAttempt::Busy => match self.claim_turn(task_id, message).await? {
+            // Another replica's turn: waited for without the per-context
+            // lock, so the other sends in this context go on meanwhile
+            // (audit E-F23). The task is read again under the claim below,
+            // which is what the lock's find and save need of it.
+            TurnAttempt::Busy => match context_lock
+                .unlocked_during(self.claim_turn(task_id, message))
+                .await?
+            {
                 Waited::Turn(claim) => claim,
                 Waited::Replay(task) => return Ok(Claimed::Replay(task)),
             },

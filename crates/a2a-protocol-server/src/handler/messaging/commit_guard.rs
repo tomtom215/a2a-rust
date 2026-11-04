@@ -87,7 +87,7 @@ impl CommitGuard {
         store: Arc<dyn TaskStore>,
         push_store: Arc<dyn PushConfigStore>,
         key: Option<String>,
-        context: OwnedMutexGuard<()>,
+        context: Option<OwnedMutexGuard<()>>,
     ) -> Self {
         Self {
             task_id,
@@ -96,7 +96,7 @@ impl CommitGuard {
             store,
             push_store,
             key,
-            context: Some(context),
+            context,
             tenant: Some(TenantContext::capture()),
             created_row: false,
             leased: false,
@@ -210,7 +210,7 @@ mod tests {
             Arc::new(InMemoryTaskStore::new()),
             Arc::new(InMemoryPushConfigStore::new()),
             None,
-            context.try_lock_owned().expect("free"),
+            Some(context.try_lock_owned().expect("free")),
         )
     }
 

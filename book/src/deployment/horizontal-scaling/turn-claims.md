@@ -38,6 +38,9 @@ tasks, and the handler takes a row in it for each turn:
    task. A retry of a send that is *running* is answered at once: it finds the
    task claimed, reads who holds the key (a read that takes nothing, on every
    bundled store) and replays.
+   The wait is not under the lock that serialises the sends of one context on
+   this replica, so a send to another task of the same context goes on
+   meanwhile.
 3. **A continuation reads the task again** once it holds the claim, and starts
    from that read, so it keeps everything the last turn stored, wherever that
    turn ran.
