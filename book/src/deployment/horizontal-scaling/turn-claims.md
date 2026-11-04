@@ -164,6 +164,35 @@ nothing), and against PostgreSQL for the pool (`postgres_renews_while_the_task_p
 The live partition run above has not been repeated through toxiproxy since the
 change, so the timings in this page are the 2026-10-28 ones, not these.
 
+### A known window: a killed owner and event positions
+
+An event is numbered when it enters the owner's queue and is broadcast to the
+subscribers attached to that replica at once; the background processor writes it
+to the event log, under the same number, a moment later. A turn taken over after
+its owner was **killed** (`SIGKILL`, out of memory, the node lost) numbers its
+events from the end of the log, or from the position stored with the task if that
+is later. So events the owner had broadcast but not yet logged, a window the
+size of the persistence backlog at that moment, have positions the new turn
+numbers again. A subscriber that saw them, or that resumes with `Last-Event-ID`
+at one of them, can skip the new turn's first events as already delivered. The
+stored task is not affected: `GetTask` always reads what was written.
+
+This is a window, not a loop: it needs a kill during a store stall. The
+watchdog above removes the other way into it, an owner cut off from the store,
+because that owner stops at four fifths of the claim's life and writes a terminal
+event through its own queue before anyone can take over. The reaper, the close-out
+of a finished task and a continuation already number from the later of the log's
+end and the stored position.
+
+It is accepted and documented, not fixed (audit F13, the maintainer's position
+2026-11-03): closing it means the claim carrying the owner's broadcast
+high-water mark in a schema change to two stores, or a takeover that jumps the
+numbering and shows every client a hole after every takeover, and neither is
+worth that for a window that needs a kill during a stall. It was read from the
+code, not reproduced by a test. A client whose stream ends without a terminal
+event should read the task with `GetTask` before it trusts a resumed stream, and
+resubscribe from the state that returns.
+
 ## Cancelling a task that runs elsewhere
 
 `CancelTask` can arrive at any replica. On replica B, for a task whose

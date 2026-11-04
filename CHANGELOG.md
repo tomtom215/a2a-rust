@@ -1572,6 +1572,18 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `insert_if_absent`, accepts an update, and recovers when one finishes; the
   count) and the existing capacity tests.
 
+- **The event-position window after a killed owner is documented** (server; audit
+  F13, E-F8, the maintainer's position: accept it and document it). Events are
+  numbered and broadcast before the background processor logs them, and a takeover
+  numbers from the log's end, so an owner killed with broadcast-but-unlogged events
+  leaves positions the new turn reuses; a subscriber that saw them, or resumes with
+  `Last-Event-ID` at one, can skip the new turn's first events. `GetTask` is
+  unaffected. The turn-claims page now says so, says what removes the partition
+  case (the lease watchdog) and what the window needs (a kill during a store
+  stall), and tells a client whose stream ended without a terminal event to read the
+  task before trusting a resumed stream. Read from the code, not reproduced by a
+  test; nothing changes in behaviour.
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a
