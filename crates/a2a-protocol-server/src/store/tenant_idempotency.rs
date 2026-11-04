@@ -110,9 +110,35 @@ pub(super) const PG_EXPIRE: &str = "DELETE FROM tenant_idempotency_keys WHERE ct
             FOR UPDATE SKIP LOCKED \
      )";
 
+/// What `TaskStore::idempotency_holder` returns, for the tenant stores.
+pub(super) type HolderFuture<'a> = std::pin::Pin<
+    Box<
+        dyn std::future::Future<
+                Output = a2a_protocol_types::error::A2aResult<Option<IdempotencyHolder>>,
+            > + Send
+            + 'a,
+    >,
+>;
+
 /// The holder a row read by `TaskStore::idempotency_holder` names.
-pub(super) fn holder(held_by: String, held_task: String) -> IdempotencyHolder {
+fn holder(held_by: String, held_task: String) -> IdempotencyHolder {
     IdempotencyHolder::new(MessageId::new(held_by), TaskId::new(held_task))
+}
+
+/// The holder a `SQLite` row names.
+#[cfg(feature = "sqlite")]
+pub(super) fn sqlite_holder(
+    row: &sqlx::sqlite::SqliteRow,
+) -> Result<IdempotencyHolder, sqlx::Error> {
+    use sqlx::Row as _;
+    Ok(holder(row.try_get("message_id")?, row.try_get("task_id")?))
+}
+
+/// The holder a `PostgreSQL` row names.
+#[cfg(feature = "postgres")]
+pub(super) fn pg_holder(row: &sqlx::postgres::PgRow) -> Result<IdempotencyHolder, sqlx::Error> {
+    use sqlx::Row as _;
+    Ok(holder(row.try_get("message_id")?, row.try_get("task_id")?))
 }
 
 /// Turns the row a losing claim read into its outcome.

@@ -133,18 +133,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         })
     }
 
-    fn idempotency_holder<'a>(
-        &'a self,
-        key: &'a str,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = A2aResult<Option<crate::store::task_store::IdempotencyHolder>>>
-                + Send
-                + 'a,
-        >,
-    > {
-        use sqlx::Row as _;
-
+    fn idempotency_holder<'a>(&'a self, key: &'a str) -> idem::HolderFuture<'a> {
         Box::pin(async move {
             let tenant = TenantContext::partition();
             let row = crate::store::pg_retry::retry(&*self.metrics, || {
@@ -155,12 +144,8 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             })
             .await
             .map_err(|e| to_a2a_error(&e))?;
-            row.map(|row| {
-                let message: String = row.try_get("message_id").map_err(|e| to_a2a_error(&e))?;
-                let task: String = row.try_get("task_id").map_err(|e| to_a2a_error(&e))?;
-                Ok(idem::holder(message, task))
-            })
-            .transpose()
+            row.map(|row| idem::pg_holder(&row).map_err(|e| to_a2a_error(&e)))
+                .transpose()
         })
     }
 

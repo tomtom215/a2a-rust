@@ -345,18 +345,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
         })
     }
 
-    fn idempotency_holder<'a>(
-        &'a self,
-        key: &'a str,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = A2aResult<Option<crate::store::task_store::IdempotencyHolder>>>
-                + Send
-                + 'a,
-        >,
-    > {
-        use sqlx::Row as _;
-
+    fn idempotency_holder<'a>(&'a self, key: &'a str) -> idem::HolderFuture<'a> {
         Box::pin(async move {
             let tenant = TenantContext::partition();
             let row = sqlx::query(idem::SQLITE_HOLDER)
@@ -365,12 +354,8 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(|e| to_a2a_error(&e))?;
-            row.map(|row| {
-                let message: String = row.try_get("message_id").map_err(|e| to_a2a_error(&e))?;
-                let task: String = row.try_get("task_id").map_err(|e| to_a2a_error(&e))?;
-                Ok(idem::holder(message, task))
-            })
-            .transpose()
+            row.map(|row| idem::sqlite_holder(&row).map_err(|e| to_a2a_error(&e)))
+                .transpose()
         })
     }
 
