@@ -53,6 +53,7 @@ RUN: dict[tuple[str, str], list[str]] = {
     ("verification.yml", "loom"): [],
     ("official-tck.yml", "official-tck"): [],
     ("coverage.yml", "ignores-applied"): ["--event", "workflow_dispatch"],
+    ("observability.yml", "promtool"): [],
 }
 
 # (workflow, job) -> scratch paths the job creates at a fixed place and cannot create twice. A hosted

@@ -692,6 +692,17 @@ def build_registry() -> dict[str, Probe | Exempt]:
     # (Rust signs, Python rejects) and the script exits 1; the fixed CLI exits
     # 0. Expected divergences are asserted too, so an SDK change that makes
     # them agree also exits 1.
+    # Needs promtool, which the job downloads by pinned digest and this harness
+    # does not. Verified by hand on 2026-11-04 with promtool 3.15.1: an empty
+    # tests directory exits 1 with the ::error:: line, a test file whose
+    # expectation the rules do not meet exits 1, the real tree exits 0; and
+    # each rule the tests cover was mutated in turn by scripts/hand_mutate.py
+    # (53 mutants, 0 missed).
+    reg["observability.yml::promtool::promtool test rules"] = Exempt(
+        "requires promtool, downloaded by the job; verified by hand against an "
+        "empty tests directory and a failing test file (exit 1 each)"
+    )
+
     reg["tck.yml::card-signature-interop::Sign and verify both ways"] = Exempt(
         "requires the official a2a-sdk from PyPI and a built a2a CLI; verified "
         "by hand against the pre-fix CLI (exit 1) and the fixed one (exit 0)"
