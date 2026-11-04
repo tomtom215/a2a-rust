@@ -6,12 +6,12 @@ Upstream source of truth for the `a2a-protocol-slimrpc` binding.
 |---|---|
 | Upstream | [`a2aproject/experimental-cpb-slimrpc`](https://github.com/a2aproject/experimental-cpb-slimrpc) |
 | Branch | `main` |
-| Vendored | 2026-09-30, at upstream `1328426` (first vendored 2026-08-16) |
+| Vendored | 2026-11-04, at upstream `bd1dd37` (first vendored 2026-08-16; re-vendored 2026-09-30 at `1328426`) |
 | Files | every `spec/**/*.md` on upstream `main`: `spec/v1/slimrpc.md`, `spec/v1/slimrpc-multicast.md`, `spec/v1/a2a-collaborative-task.md`, `spec/v1/a2a-shared-task.md`, `spec/v1/slimrpc-collaborative-task.md` |
 | Implemented | the A2A 1.0 surface of `slimrpc.md` and `slimrpc-multicast.md`; see below |
 
 ```
-3b62aae218d3f5aacc5748ef7833b478454a055c330bf3b40073209561fab1b7  a2a-collaborative-task.md
+9f41c9dc0e406323364b3cda310236ce387531a8db12719a7f8d25dc4f7052f9  a2a-collaborative-task.md
 09624ccafb7bba97e3a2dd729d3b717e56d996f4f9b38f4b592531e6b4feefb1  a2a-shared-task.md
 ef95099c806b9f4856364720dd3936a289ec53e12d4fd3b5d654df23061745f2  slimrpc-collaborative-task.md
 09842ae391d4265ddfadab303b063844516bf37e3fc8c0810a0f98830b2a195d  slimrpc-multicast.md
@@ -94,6 +94,29 @@ the new text links to returned 404 that day.
 `scripts/check_method_denominator.py --slimrpc-spec` still reports 11 methods
 against the new `slimrpc.md`: it matches the eleven A2A 1.0 names, so the
 twelfth neither counts toward nor breaks the denominator.
+
+## The 2026-11-04 re-vendor, and why the binding did not follow
+
+The `Official TCK` run on `main` after the merge of #195 (2026-11-04, 14:39 UTC)
+failed this check at its step 11; the run before it (08:13 UTC) had passed, so
+upstream moved in between. Upstream `main` was `bd1dd37` when this was
+vendored. The whole diff was read. It changes one file,
+`a2a-collaborative-task.md` (sha-256 `3b62aae2…` to `9f41c9dc…`, 19 lines
+added, 3 removed): the relay now hands a peer's `TaskArtifactUpdateEvent` to
+the receiving agent as `SendMessage` with `artifact_updates: [event]` and no
+`message` (the vendored text had `StreamRequest { artifact_update }`,
+unchanged); an agent that may receive relayed artifacts **MUST** declare
+`AgentCapabilities.user_artifacts`; and the relay **MUST** carry the sender's
+identity in the event's `metadata` under the shared-task extension's
+`message-sender` key. It also rewords one sentence about `Part.data`.
+
+The decision is that `bindings/a2a-protocol-slimrpc` does not change. The file
+is in the table below as not implemented here: it is the transport-independent
+half of the collaborative-task design and defers every transport question to
+the SLIMRPC profile. The other four vendored files are byte-identical to
+before, and neither `artifact_updates` nor `user_artifacts` appears in this
+repository's vendored A2A proto or types crate. `scripts/check_slimrpc_spec.sh`
+now reads: 5 files on upstream main, all vendored and matching.
 
 ## Vendored, not implemented
 

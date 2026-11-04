@@ -135,6 +135,14 @@ command is named so the next session re-runs it instead of copying the number.
      (ADR 0032 decision 5), the card resolver sharing the pool (decision 6), client-side balancing (H12), B-11's
      option 2 (the client folding a blocking send into a stream: the maintainer's call), E-F15, F14, E-F25
      (b) and (c), and the observability, deploy and docs group.
+     **CI on its first head `5fa46675`** (Actions API, read after every run had completed): 12 of the 14
+     workflow runs concluded success, the main `CI` run (1805: 21 jobs passed, 1 skipped) and the labelled
+     mutation run (463, 27 jobs, no survivors) among them. The two failures were not the diff's: the first mutation
+     run (462) failed in seconds because the PR was opened before its `mutation-test` label, and `Official TCK`
+     (run 540) failed at step 11, where `scripts/check_slimrpc_spec.sh` found upstream's
+     `a2a-collaborative-task.md` changed. `main` failed at the same step from the #195 merge on (run 539; run 536
+     at 08:13 UTC had passed). The next commit re-vendors the file with the binding unchanged, the decision
+     recorded in `spec/slimrpc_v1/README.md`.
   After the tag: ADR 0035 and ADR 0036, each its own pull request. The workflows run only on pull
   requests to `main`, so a pull request that needs an earlier one waits for its merge and is rebased
   (`git rebase --onto origin/main <the earlier head>`), as the client branch was after #192.
@@ -192,6 +200,15 @@ command is named so the next session re-runs it instead of copying the number.
 - A push can move a branch's ref without the pull request object following (the PR still showed the old
   head); re-asserting the PR's base through the API made GitHub sync it. Not an empty commit, not
   a close and reopen.
+- A pull request opened before its `mutation-test` label gets a red `Mutation Testing (incremental)` for that
+  head: the opened event carries no label and the job fails in seconds ("the PR has no 'mutation-test' label").
+  A re-run replays the same event and fails the same way (tried once on #196: attempt 2 failed identically). The
+  labelled event starts a second run that does the grading; the merge box showed only `Official TCK` as failing
+  once that run had passed. `create_pull_request` takes no labels, so add the label at once and do not re-run
+  the first run.
+- `scripts/check_slimrpc_spec.sh` reads upstream `main` and fails when `spec/slimrpc_v1/` differs, so
+  `Official TCK` can go red on `main` with nothing changed here (2026-11-04, run 539). The fix is
+  `--update`, the new hash in `spec/slimrpc_v1/README.md`, and the decision recorded there.
 
 - `scripts/preflight_all.py` runs every `ci.yml` gate through `preflight.sh --full` (101 commands: the 105
   `run:` steps of the 12 gate jobs less the 4 named set-up steps, counted from the YAML), then the jobs of
