@@ -5,6 +5,13 @@
 
 //! [`LeaseStore`] in PostgreSQL: leases every replica sharing the database
 //! renews and reads.
+//!
+//! Every time in this file is the **database's**: the deadline of a grant or
+//! a renewal is `now() + ttl` as `PostgreSQL` reads `now()`, and whether a
+//! lease has lapsed is asked of the same clock. The `deadline_ms` and
+//! `now_ms` a caller passes are ignored. A lease whose deadline one replica
+//! wrote and another judged by its own wall clock was shortened or lengthened
+//! by the difference between the two (audit E-F17).
 
 use std::future::Future;
 use std::pin::Pin;
@@ -22,10 +29,53 @@ const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS a2a_leases (
     PRIMARY KEY (tenant, task_id)
 )";
 
-const GRANT_SQL: &str = "INSERT INTO a2a_leases (tenant, task_id, ttl_ms, deadline_ms)
-    VALUES ($1, $2, $3, $4)
+/// The database's clock in whole milliseconds since the Unix epoch.
+macro_rules! now_ms {
+    () => {
+        "floor(extract(epoch from now()) * 1000)::bigint"
+    };
+}
+
+/// The deadline of a lease of `$ttl` milliseconds starting now, on the
+/// database's clock, saturating at `i64::MAX` as the in-process arithmetic
+/// does, so that an absurd time to live is a lease that does not lapse and
+/// not an overflow error.
+macro_rules! deadline_after {
+    ($ttl:expr) => {
+        concat!(
+            now_ms!(),
+            " + LEAST(",
+            $ttl,
+            ", 9223372036854775807 - ",
+            now_ms!(),
+            ")"
+        )
+    };
+}
+
+const GRANT_SQL: &str = concat!(
+    "INSERT INTO a2a_leases (tenant, task_id, ttl_ms, deadline_ms)
+    VALUES ($1, $2, $3, ",
+    deadline_after!("$3::bigint"),
+    ")
     ON CONFLICT (tenant, task_id) DO UPDATE
-    SET ttl_ms = EXCLUDED.ttl_ms, deadline_ms = EXCLUDED.deadline_ms";
+    SET ttl_ms = EXCLUDED.ttl_ms, deadline_ms = EXCLUDED.deadline_ms"
+);
+
+const RENEW_SQL: &str = concat!(
+    "UPDATE a2a_leases SET deadline_ms = ",
+    deadline_after!("ttl_ms"),
+    "
+    WHERE tenant = $1 AND task_id = $2"
+);
+
+/// Whether the deadline has passed: it holds through its own millisecond,
+/// as [`deadline_lapsed`](super::deadline_lapsed) does.
+const LAPSED_SQL: &str = concat!(
+    "SELECT ",
+    now_ms!(),
+    " > deadline_ms FROM a2a_leases WHERE tenant = $1 AND task_id = $2"
+);
 
 /// Leases in a PostgreSQL table, `a2a_leases`, created if absent.
 #[derive(Debug, Clone)]
@@ -58,7 +108,7 @@ impl LeaseStore for PostgresLeaseStore {
         tenant: &'a str,
         task: &'a str,
         ttl_ms: i64,
-        deadline_ms: i64,
+        _deadline_ms: i64,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             // Checked, not retried: a second run after a renewal landed would set
@@ -68,7 +118,6 @@ impl LeaseStore for PostgresLeaseStore {
                     .bind(tenant)
                     .bind(task)
                     .bind(ttl_ms)
-                    .bind(deadline_ms)
                     .execute(&self.pool),
             )
             .await
@@ -81,18 +130,14 @@ impl LeaseStore for PostgresLeaseStore {
         &'a self,
         tenant: &'a str,
         task: &'a str,
-        now_ms: i64,
+        _now_ms: i64,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
             let done = crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
-                sqlx::query(
-                    "UPDATE a2a_leases SET deadline_ms = $3 + ttl_ms
-                 WHERE tenant = $1 AND task_id = $2",
-                )
-                .bind(tenant)
-                .bind(task)
-                .bind(now_ms)
-                .execute(&self.pool)
+                sqlx::query(RENEW_SQL)
+                    .bind(tenant)
+                    .bind(task)
+                    .execute(&self.pool)
             })
             .await
             .map_err(|e| failed("renew", &e))?;
@@ -118,6 +163,25 @@ impl LeaseStore for PostgresLeaseStore {
                 .await
                 .map_err(|e| failed("read", &e))?;
             Ok(row.map(|(deadline,)| deadline))
+        })
+    }
+
+    fn lapsed<'a>(
+        &'a self,
+        tenant: &'a str,
+        task: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<bool>>> + Send + 'a>> {
+        Box::pin(async move {
+            let row: Option<(bool,)> =
+                crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
+                    sqlx::query_as(LAPSED_SQL)
+                        .bind(tenant)
+                        .bind(task)
+                        .fetch_optional(&self.pool)
+                })
+                .await
+                .map_err(|e| failed("read", &e))?;
+            Ok(row.map(|(lapsed,)| lapsed))
         })
     }
 

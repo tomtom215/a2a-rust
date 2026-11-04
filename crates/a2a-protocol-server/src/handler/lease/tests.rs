@@ -378,10 +378,72 @@ fn the_check_interval_is_a_quarter_of_the_ttl_at_most_a_second() {
     );
 }
 
-/// A lease holds through its deadline's millisecond and lapses after it.
-#[test]
-fn a_lease_lapses_after_its_deadline_not_on_it() {
-    assert!(!super::lapsed(1_000, 999));
-    assert!(!super::lapsed(1_000, 1_000));
-    assert!(super::lapsed(1_000, 1_001));
+/// A store that keeps its own clock. Its `deadline` is a time on that clock,
+/// which says nothing next to this replica's, so it is made to say the
+/// opposite of what `lapsed` does: read and compared with the local clock, a
+/// lapsed lease would look live and a live one lapsed (audit E-F17).
+struct OwnClock {
+    lapsed: bool,
+}
+
+impl LeaseStore for OwnClock {
+    fn grant<'a>(
+        &'a self,
+        _tenant: &'a str,
+        _task: &'a str,
+        _ttl_ms: i64,
+        _deadline_ms: i64,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn renew<'a>(
+        &'a self,
+        _tenant: &'a str,
+        _task: &'a str,
+        _now_ms: i64,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async { Ok(true) })
+    }
+    fn deadline<'a>(
+        &'a self,
+        _tenant: &'a str,
+        _task: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<i64>>> + Send + 'a>> {
+        let misleading = if self.lapsed { i64::MAX } else { 0 };
+        Box::pin(async move { Ok(Some(misleading)) })
+    }
+    fn lapsed<'a>(
+        &'a self,
+        _tenant: &'a str,
+        _task: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<bool>>> + Send + 'a>> {
+        let lapsed = self.lapsed;
+        Box::pin(async move { Ok(Some(lapsed)) })
+    }
+    fn release<'a>(
+        &'a self,
+        _tenant: &'a str,
+        _task: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// The store's verdict stops the task although its deadline, read on this
+/// replica's clock, is the far future.
+#[tokio::test]
+async fn a_store_with_its_own_clock_can_say_the_lease_has_lapsed() {
+    let h = leased(OwnClock { lapsed: true }, tasks());
+    let id = start(&h, Some(TTL)).await.unwrap();
+    reaches(&h, &id, TaskState::Canceled, Duration::from_secs(5)).await;
+}
+
+/// The store's verdict keeps the task although its deadline, read on this
+/// replica's clock, is 1970.
+#[tokio::test]
+async fn a_store_with_its_own_clock_can_say_the_lease_has_not_lapsed() {
+    let h = leased(OwnClock { lapsed: false }, tasks());
+    let id = start(&h, Some(TTL)).await.unwrap();
+    tokio::time::sleep(TTL * 2).await;
+    assert_eq!(read(&h, &id, false).await, TaskState::Working);
 }

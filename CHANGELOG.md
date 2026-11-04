@@ -1385,6 +1385,54 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   name a request chooses is not unbounded either. Tests:
   `audit/chain_lock_tests.rs`, `tests/caller_isolation.rs`.
 
+- **Racing retention and key-expiry sweeps no longer end early or wait on each
+  other** (server; audit E-F21). The three PostgreSQL batch deletes (the task
+  sweep, the key sweep, the tenant key sweep) picked rows with a bare
+  `SELECT ctid ... LIMIT n`. Two sweeps starting together picked the same
+  rows; the second `DELETE` waited for the first, found them gone, deleted
+  nothing, and read as "no more work" while eligible rows remained. Each
+  subquery now ends in `FOR UPDATE SKIP LOCKED`, so a sweep takes other rows,
+  and a sweep that finds only rows another holds deletes nothing and reports
+  `complete`, because the holder is deleting them. The rustdoc and the
+  sustained-load page claimed racing sweeps "delete disjoint sets"; they now
+  say how and why that holds, and the SQLite stores' wording gives their own
+  reason (one write statement at a time, on local storage). Tests:
+  `postgres_sweep_skips_rows_another_sweep_holds` and its tenant twin in
+  `tests/postgres_store_tests.rs`.
+
+- **The PostgreSQL rate-limit counter numbers windows by the database's
+  clock** (server; audit E-F16). It counted under the window number each
+  replica computed from its own clock and swept rows older than its own
+  current window, so replicas whose clocks differed counted in different rows
+  near every boundary and a replica running ahead could delete a window
+  another was still counting in. `PostgresRateLimitCounter` now computes
+  `floor(epoch / window_secs)` in SQL for the count and the sweep, and the
+  sweep keeps the previous window. `RateLimitCounter::count`'s `window`
+  argument is unchanged and documented as the interceptor's own number, which
+  an implementation with a shared clock may ignore; this one does. A
+  `RateLimitCounter` of your own is unaffected. The `Retry-After` on a refusal
+  still comes from the replica's clock.
+
+- **The PostgreSQL lease store keeps one clock for a lease's deadline and its
+  judgment** (server; audit E-F17). A grant wrote `now + ttl` on the granting
+  replica's clock, a renewal wrote it on the renewing replica's, and the
+  watcher judged it on the owner's, so a renewal from a replica behind the
+  owner shortened the lease by the difference and a difference as large as
+  the lease stopped the child. `PostgresLeaseStore` now takes the deadline
+  from the database's `now()` for grant and renewal and ignores the
+  `deadline_ms` and `now_ms` it is passed. **Additive:** `LeaseStore::lapsed`
+  (a default method) says whether the deadline has passed; the handler asks
+  it instead of reading `deadline` and comparing with its own clock, and a
+  store that keeps its own clock overrides it. The default compares with this
+  process's clock, so an existing `LeaseStore` behaves as before.
+  `store::lease::now_unix_ms` and the in-memory store are unchanged. Tests:
+  `store/lease/tests.rs` (the PostgreSQL contract on the database clock; each
+  deadline bracketed by the database's clock), `handler/lease/tests.rs` (a
+  store with its own clock decides), and `scripts/adversarial/with_clock_skew.sh`,
+  which runs the same test with the process clock a day ahead or behind: with
+  `LeaseStore::lapsed` not overridden the test fails under the skew and passes
+  without it.
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a
