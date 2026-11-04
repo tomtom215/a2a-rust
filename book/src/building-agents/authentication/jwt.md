@@ -22,7 +22,12 @@ has a `crit` member is refused: the validator understands no critical
 extension, and RFC 7515 section 4.1.11 says to reject what it does not
 understand. Keys come from a
 static `Jwks`, a shared HS256 secret, or a remote JWKS endpoint. A remote
-JWKS or discovery URL must be `https://`, or `http://` to a loopback host.
+JWKS or discovery URL must be `https://`, or `http://` to a loopback host:
+`localhost` or a loopback address such as `127.0.0.1` or `[::1]`. A name under
+`.localhost` (`http://idp.localhost/`) is refused since 0.16.0: glibc and musl
+send such a name to DNS unless nss-myhostname or systemd-resolved answers it,
+so it is not guaranteed to stay on this host. Use `localhost` with a port, a
+loopback address, or `https://`.
 
 ```toml
 a2a-protocol-server = { version = "0.16", features = ["auth-jwt", "tls-rustls"] }

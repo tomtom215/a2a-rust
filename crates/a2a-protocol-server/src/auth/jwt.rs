@@ -877,8 +877,10 @@ impl JwtAuthInterceptor {
     /// The keys are not fetched here — the first request triggers the fetch.
     ///
     /// `jwks_url` must be `https://`; `http://` is refused (every token is,
-    /// with the reason logged) except to a loopback host, since whoever can
-    /// change the keys in transit can sign any identity (audit SEC-06).
+    /// with the reason logged) except to a loopback host (`localhost` or a
+    /// loopback address; not a name under `.localhost`, which can reach DNS),
+    /// since whoever can change the keys in transit can sign any identity
+    /// (audit SEC-06, NEW-b-5).
     #[must_use]
     pub fn from_jwks_url(validator: JwtValidator, jwks_url: impl Into<String>) -> Self {
         let url = jwks_url.into();
@@ -1341,7 +1343,13 @@ fn bind_discovered(
 }
 
 /// Whether keys may be fetched from `url`: `https://`, or `http://` to a
-/// loopback host (an identity provider in the same pod or test).
+/// loopback host (an identity provider in the same pod or test): the name
+/// `localhost` or a loopback address.
+///
+/// A name under `.localhost` is not one: glibc and musl send it to DNS unless
+/// nss-myhostname or systemd-resolved answers it, so an on-path answer could
+/// point a plaintext key fetch at another host (NEW-b-5). The client's
+/// `fetch_jwks` refuses it too.
 fn trustworthy_url(url: &str) -> bool {
     let Ok(uri) = url.parse::<hyper::Uri>() else {
         return false;
@@ -1351,7 +1359,6 @@ fn trustworthy_url(url: &str) -> bool {
         Some("http") => uri.host().is_some_and(|host| {
             let host = host.trim_start_matches('[').trim_end_matches(']');
             host.eq_ignore_ascii_case("localhost")
-                || host.to_ascii_lowercase().ends_with(".localhost")
                 || host
                     .parse::<std::net::IpAddr>()
                     .is_ok_and(|ip| ip.to_canonical().is_loopback())
@@ -1719,7 +1726,7 @@ mod tests {
             "http://[::1]/jwks",
             "http://[::ffff:127.0.0.1]/jwks",
             "http://localhost/jwks",
-            "http://idp.localhost/jwks",
+            "http://LocalHost:8080/jwks",
         ] {
             assert!(trustworthy_url(ok), "{ok}");
         }
@@ -1728,6 +1735,11 @@ mod tests {
             "http://[::ffff:10.0.0.1]/jwks",
             "http://idp.example.com/jwks",
             "http://localhost.evil.example/jwks",
+            // A name under `.localhost` reaches DNS on glibc and musl unless
+            // nss-myhostname or systemd-resolved answers it (NEW-b-5).
+            "http://idp.localhost/jwks",
+            "http://idp.localhost./jwks",
+            "http://localhost./jwks",
             "ftp://idp.example.com/jwks",
             "not a url",
         ] {
