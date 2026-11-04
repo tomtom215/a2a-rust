@@ -1513,6 +1513,16 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   lock's back; a cancelled append), `audit/append_next_tests.rs` (the default).
   ADR 0015 carries the amendment.
 
+- **`max_concurrent_tasks` is documented as per replica** (server; audit E-F12,
+  interim, the maintainer's position F4). The per-tenant semaphore is in the
+  handler, so a fleet of `N` replicas admits up to `N` times the limit for a
+  tenant, and one replica can refuse a tenant another has room for. The field's
+  rustdoc and `book/src/deployment/multi-tenancy.md` now say so, say to size it as
+  the fleet limit over the replica count or to enforce it in the proxy in front,
+  and say that a send holds its slot while it waits for another replica's turn
+  claim. A count across replicas is not built, and there is no warning at build
+  when the limit is set over a store that hands out turn claims; both are open.
+
 - **The examples serve agents with `Server`, not a hand-written accept loop**
   (audit G-05, SEC-15, SEC-16). Fourteen examples carried the loop the SDK
   calls a defect: no connection cap, no drain, and a `continue` that spins a
