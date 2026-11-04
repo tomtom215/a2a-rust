@@ -67,27 +67,29 @@ request because the session had grown too long to continue in; CI runs the rest.
 |---|---|---|---|
 | A | done | `a3a5dde` `78fcd2c` | |
 | B | part | `c902c46` | NEW-h-s0-6, NEW-h-s0-8; H3 in part |
-| C | part | `aa6e4ff` | E-F8 (fork F13); D-03 (d) (fork F14) |
+| C | part | `aa6e4ff` `6355a0c5` | E-F8 documented only (fork F13); D-03 (d) (fork F14) |
 | D | part | `6d746dd` | B-14 (fork F15), B-29 (a decision), the rest of B-18, H2's pooling (fork F7) |
 | G | part | `636eaf0` | A14, A15, A19, A21, A22, A23, A24, A25, A26, NEW-a-l-2, NEW-a-l-4a, NEW-a-l-5, NEW-a-l-6 |
 | H | part | `065f0a0` | NEW-g-docs-8 |
 | E | part | `4b6b382` | NEW-b-1 and NEW-b-5 (fork F16), NEW-b-3, NEW-b-4, B-08, B-09, B-26, B-28 |
-| F | part | `e2712ec` | B-10, B-11, D-20, B-25 |
+| F | part | `e2712ec` `f532f245` | B-10 in part (gRPC only), B-11, D-20, B-25 |
 | I | part | `4fd80d0` | C-06, C-09, C-10, C-12, C-13, C-16, C-22, C-23, NEW-c-3, NEW-c-4 |
 | J | **not started, blocked** | | all 8: the proof is `promtool test rules` and a live stack, and running `promtool` here was refused |
-| K | part | `2b83f88` | SEC-14, NEW-f-2, NEW-d-3; D-05 (the id and the book only: no outbox, no dead-webhook policy), D-13 and SEC-13 (direct connections only; fork F16), SEC-17 and NEW-f-4 (documented only) |
-| B2 | part | `9c69ef6` | E-F12 |
-| L | part | `93dbb05` `af747a4` | D-19 done; E-F15 documented only; open: E-F14, E-F16, E-F17, E-F19, E-F21, E-F22, E-F23, E-F24, E-F26; need a decision: E-F18, E-F25, D-18 |
-| M | **not started** | | all 8 (fork F5) |
-| O | **not started** | | H6, H12, D-10, D-11, D-12 (fork F7); NEW-h-designs-1 was done under R |
+| K | part | `2b83f88` | SEC-14, NEW-f-2, NEW-d-3; D-05 (the id, the book and the dead-webhook policy; the outbox is ADR 0037, not built), D-13 and SEC-13 (direct connections only; fork F16), SEC-17 and NEW-f-4 (documented only) |
+| B2 | done | `9c69ef6` `10333c48` | |
+| L | part | `93dbb05` `af747a4` `7bdf55b2` `f9a4b347` `7e3a995d` `30e017be` `459b9d23` `6cc38533` `021408e7` `` `7efcdee1` `e9799881` `4d4ad27e` `673c2b18` | D-19, E-F14, E-F16, E-F17, E-F18, E-F19, E-F21, E-F22, E-F23, E-F24, E-F26 done; E-F15 documented only; E-F25 in part ((a) the back-off; (b) `LISTEN`/`NOTIFY` and (c) a read pool are not done); D-18 in part (a task waiting for a person is not evicted; an abandoned one never expires, the maintainer's call) |
+| M | part | `61b5555b` `ae5d774e` | D-21, NEW-h-s0-4 (neither is claimed by the client pull request; NEW-h-s0-4 has an earlier CHANGELOG entry that was not checked against this row) |
+| O | part | `0a8038cb` `f532f245` | H12; D-12's HTTP PING, connection lifetime and `HttpPool` (fork F7); NEW-h-designs-1 was done under R |
 | R | part | `a8bf45e` | the four fixes are done; open: NEW-h-designs-3, NEW-h-designs-6, H5, H7, H8, H9, H10, H11, H13, H14, H17, H19 |
-| N | part | `41756f1` `7b36d51` `4ec89f3` `b9c1304` | G-09, G-12, G-14, G-15, G-16; G-10 for the other 26 wire structs; G-23 in part |
+| N | part | `41756f1` `7b36d51` `4ec89f3` `b9c1304` `70fdf52c` `ba01ce60` | G-09, G-12, G-14, G-15, G-16; G-23 in part |
 | P | done | `0b06ec2` `d75efc9` | |
 | Q | done | `c4c5c29` | |
 
-**Build next, in this order:** M, then O with the `HttpPool`, then the contained rows of L, then the rest of
-I and G. Rows that wait on the maintainer are in `DECISIONS.md` (forks F13 to F16, and the options for
-D-05's dead-webhook policy, E-F18, E-F25 and D-18).
+**Build next, in this order:** the client pull request (`HttpPool`, HTTP/2 PING and a connection lifetime for
+the HTTP bindings, B-11, the live proof of M), then the rest of I and G (observability and deploy), then J
+(it needs `promtool`, which the maintainer has allowed). Rows that wait on the maintainer are in
+`DECISIONS.md` (forks F14 to F16, and the choice of whether an abandoned parked task should ever expire,
+D-18).
 
 ### A. Credentials follow the host the caller named
 
