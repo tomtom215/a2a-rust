@@ -309,6 +309,12 @@ jobs:
       - name: Client and server outbound-HTTP copies agree
         run: python3 scripts/check_net_copies.py --self-test && python3 scripts/check_net_copies.py
 
+      # The local stand-in for `cargo mutants` on the server crate, where the
+      # sharded CI run is the arbiter: it applies hand-written mutants one at a
+      # time and kills one that hangs. Its self-test proves the five outcomes.
+      - name: Hand-mutation harness reports each outcome
+        run: python3 -I scripts/hand_mutate.py --self-test
+
       # The examples served their agents with a hand-written hyper accept loop
       # fifteen times (audit G-05): no connection cap, no drain, and a `continue`
       # that spins a core on a persistent accept error. A reader copied it. The
