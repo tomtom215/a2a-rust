@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Prometheus of docker-compose.yml: prometheus.yml (OTLP in, the same name
+# translation, retention and rules), plus what only the compose stack has:
+# Alertmanager to send alerts to, and scrape jobs for the stack's own
+# components, so a Collector that drops data or a backend that is down is
+# seen (audit C-15). The `global`, `otlp`, `storage` and `rule_files` blocks
+# must equal prometheus.yml's; deploy/observability/scripts/check_stack.py
+# fails if they do not.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+otlp:
+  # Each agent's OTEL_SERVICE_NAME becomes `job` and its
+  # service.instance.id `instance` without promotion; these are promoted
+  # too so dashboards can group by them.
+  promote_resource_attributes:
+    - service.version
+    - deployment.environment.name
+  translation_strategy: UnderscoreEscapingWithSuffixes
+
+storage:
+  tsdb:
+    # OTLP pushes arrive out of order under retries; accept 30 minutes.
+    out_of_order_time_window: 30m
+    # Whichever comes first: seven days, or 5 GB of blocks (audit C-19). The
+    # size bound keeps a burst of new series from filling the disk.
+    retention:
+      time: 7d
+      size: 5GB
+
+rule_files:
+  - rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+  # The Collector's own metrics (service.telemetry in
+  # ../otel-collector/config-compose.yaml): sends that failed, data refused,
+  # queue size and capacity.
+  - job_name: otelcol
+    static_configs:
+      - targets: ["otel-collector:8888"]
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+  - job_name: tempo
+    static_configs:
+      - targets: ["tempo:3200"]
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]

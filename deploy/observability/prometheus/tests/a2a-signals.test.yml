@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# promtool unit tests for the alerts added for signals nothing watched
+# before (audit C-14 c): store retries, executor failures, model calls and
+# client calls. Each fires on its input and stays silent on a control. Run:
+#   promtool test rules deploy/observability/prometheus/tests/a2a-signals.test.yml
+
+rule_files:
+  - ../rules/a2a-recording.yml
+  - ../rules/a2a-alerts.yml
+
+evaluation_interval: 30s
+
+tests:
+  # Job a retries 12 store operations a minute (0.2/s) for half an hour; job
+  # b retries a burst of 30 in one minute (a failover) and then none.
+  - interval: 1m
+    input_series:
+      - series: 'a2a_server_store_retries_total{job="a",operation="statement",cause="connection_lost"}'
+        values: '0+12x40'
+      - series: 'a2a_server_store_retries_total{job="b",operation="statement",cause="connection_lost"}'
+        values: '0x10 30x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: A2AStoreRetriesHigh
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: A2AStoreRetriesHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, job: a, cause: connection_lost}
+            exp_annotations:
+              summary: "a: 0.20 store retries a second (connection_lost)"
+              description: "Store operations have been run again after a failure more than 0.1 times a second for 15 minutes. Each retry passed, so nothing was lost yet; a rate that stays up is the store degrading before A2APersistenceErrors counts what it lost. A failover shows as a burst shorter than this."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2astoreretrieshigh"
+
+  # Job a: 8 runs a minute complete, 1 errors, 1 panics (20%). Job b: twice as
+  # many end on a spent budget or a cancel, which are not failures. Job c fails
+  # every run, at one run in five minutes: under the floor.
+  - interval: 1m
+    input_series:
+      - series: 'a2a_server_executor_duration_seconds_count{job="a",outcome="completed"}'
+        values: '0+8x30'
+      - series: 'a2a_server_executor_duration_seconds_count{job="a",outcome="error"}'
+        values: '0+1x30'
+      - series: 'a2a_server_executor_duration_seconds_count{job="a",outcome="aborted"}'
+        values: '0+1x30'
+      - series: 'a2a_server_executor_duration_seconds_count{job="b",outcome="completed"}'
+        values: '0+6x30'
+      - series: 'a2a_server_executor_duration_seconds_count{job="b",outcome="budget_exhausted"}'
+        values: '0+2x30'
+      - series: 'a2a_server_executor_duration_seconds_count{job="b",outcome="canceled"}'
+        values: '0+2x30'
+      - series: 'a2a_server_executor_duration_seconds_count{job="c",outcome="error"}'
+        values: '0+0.2x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2AExecutorFailureRatioHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, job: a}
+            exp_annotations:
+              summary: "a: 20% of executor runs failed"
+              description: "More than 10% of the agent's executor runs returned an error or never returned (a panic, a dropped run) for 15 minutes, while it ran more than 0.05 a second. Timeouts and cancellations are not counted; split by outcome with a2a:executor_runs:rate5m."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aexecutorfailureratiohigh"
+
+  # Job a: 6 model calls a minute, 2 rate-limited (33%). Job b: 6 a minute,
+  # none failed. Job c: every call failed, at one call in five minutes.
+  - interval: 1m
+    input_series:
+      - series: 'gen_ai_client_inference_duration_seconds_count{job="a",gen_ai_request_model="m"}'
+        values: '0+4x30'
+      - series: 'gen_ai_client_inference_duration_seconds_count{job="a",gen_ai_request_model="m",error_type="429"}'
+        values: '0+2x30'
+      - series: 'gen_ai_client_inference_duration_seconds_count{job="b",gen_ai_request_model="m"}'
+        values: '0+6x30'
+      - series: 'gen_ai_client_inference_duration_seconds_count{job="c",gen_ai_request_model="m",error_type="timeout"}'
+        values: '0+0.2x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2AModelCallsFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, job: a}
+            exp_annotations:
+              summary: "a: 33.33% of model calls failed"
+              description: "More than 10% of the tool loop's model calls failed for 15 minutes, while it made more than 0.05 a second: the model provider is down, rate-limiting, or timing out. The GenAI dashboard splits them by model and error_type."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2amodelcallsfailing"
+
+  # A client whose every call times out, at one call in five minutes: under
+  # the floor, so no page; A2AAgentSilent and the traces still show it.
+  - interval: 1m
+    input_series:
+      - series: 'rpc_client_call_duration_seconds_count{job="batch",server_address="agent",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendMessage",error_type="timeout"}'
+        values: '0+0.2x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2AClientErrorRatioHigh
+        exp_alerts: []
+    promql_expr_test:
+      - expr: a2a:rpc_client_error_ratio:rate5m
+        eval_time: 25m
+        exp_samples:
+          - labels: 'a2a:rpc_client_error_ratio:rate5m{job="batch",server_address="agent"}'
+            value: 1

@@ -1,0 +1,123 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Alerts on the observability stack itself (audit C-15): the Collector the
+# agents export through, and Prometheus's own rule evaluation and alert
+# delivery. A Collector that drops data, or a rule that cannot evaluate,
+# otherwise looks exactly like a quiet, healthy fleet.
+#
+# The Collector series come from its own telemetry endpoint (8888), which
+# prometheus-compose.yml and prometheus-collector.yml scrape as job
+# `otelcol`. otelcol-contrib 0.163.2 names its counters without a `_total`
+# suffix (otelcol_receiver_refused_spans, read from a live Collector on
+# 2026-11-04); the selectors accept either spelling, so a Collector that adds
+# the suffix does not silence them. Without that scrape the Collector alerts
+# have no series and stay silent.
+
+groups:
+  - name: observability-stack
+    rules:
+      - alert: OTelCollectorDown
+        expr: up{job="otelcol"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The OpenTelemetry Collector at {{ $labels.instance }} cannot be scraped"
+          description: >-
+            Prometheus has not reached the Collector's telemetry endpoint for 2
+            minutes. Every agent exporting through it is losing traces, metrics
+            and logs (each SDK retries, then drops), so A2AAgentSilent follows
+            for every job; Alertmanager holds those back while this fires.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectordown"
+
+      - alert: OTelCollectorExportFailing
+        # One term per signal: rate() drops the metric name, so a single
+        # selector over the three names gives series with the same labels,
+        # which PromQL refuses (seen on a live Collector, 2026-11-04).
+        expr: |
+          sum by (job, instance, exporter) (rate({__name__=~"otelcol_exporter_send_failed_spans(_total)?", job="otelcol"}[5m])) > 0
+            or
+          sum by (job, instance, exporter) (rate({__name__=~"otelcol_exporter_send_failed_metric_points(_total)?", job="otelcol"}[5m])) > 0
+            or
+          sum by (job, instance, exporter) (rate({__name__=~"otelcol_exporter_send_failed_log_records(_total)?", job="otelcol"}[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Collector exporter {{ $labels.exporter }} is dropping data"
+          description: >-
+            The Collector's {{ $labels.exporter }} exporter has given up on
+            items (retries exhausted) in every five-minute window for 10
+            minutes: its backend is down, refusing, or unreachable. What it
+            gave up on is lost.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorexportfailing"
+
+      - alert: OTelCollectorRefusing
+        # One term per name, for the reason above.
+        expr: |
+          sum by (job, instance, receiver) (rate({__name__=~"otelcol_receiver_refused_spans(_total)?", job="otelcol"}[5m])) > 0
+            or
+          sum by (job, instance, receiver) (rate({__name__=~"otelcol_receiver_refused_metric_points(_total)?", job="otelcol"}[5m])) > 0
+            or
+          sum by (job, instance, receiver) (rate({__name__=~"otelcol_receiver_refused_log_records(_total)?", job="otelcol"}[5m])) > 0
+            or
+          sum by (job, instance, receiver) (rate({__name__=~"otelcol_receiver_failed_spans(_total)?", job="otelcol"}[5m])) > 0
+            or
+          sum by (job, instance, receiver) (rate({__name__=~"otelcol_receiver_failed_metric_points(_total)?", job="otelcol"}[5m])) > 0
+            or
+          sum by (job, instance, receiver) (rate({__name__=~"otelcol_receiver_failed_log_records(_total)?", job="otelcol"}[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Collector receiver {{ $labels.receiver }} is refusing data"
+          description: >-
+            The Collector has refused or failed incoming items for 10 minutes.
+            Refused is usually memory_limiter pushing back (the container is
+            near its memory limit); the agents retry and then drop.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorrefusing"
+
+      - alert: OTelCollectorQueueFilling
+        expr: |
+          max by (job, instance, exporter) (otelcol_exporter_queue_size{job="otelcol"})
+            /
+          max by (job, instance, exporter) (otelcol_exporter_queue_capacity{job="otelcol"})
+            > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Collector exporter {{ $labels.exporter }} queue is {{ $value | humanizePercentage }} full'
+          description: >-
+            The exporter's sending queue has stayed over 80% full for 5
+            minutes: its backend is slower than the traffic or not answering.
+            A full queue refuses new items, and they are lost.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorqueuefilling"
+
+      - alert: PrometheusRuleEvaluationFailing
+        expr: sum by (job, instance, rule_group) (rate(prometheus_rule_evaluation_failures_total[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus cannot evaluate rule group {{ $labels.rule_group }}"
+          description: >-
+            Rules in {{ $labels.rule_group }} have failed to evaluate for 10
+            minutes. An alert whose rule cannot evaluate never fires, so the
+            alerts in that group are blind until this is fixed. The rule's
+            lastError is on Prometheus's Rules page.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#prometheusruleevaluationfailing"
+
+      - alert: PrometheusNotificationsFailing
+        expr: sum by (job, instance, alertmanager) (rate(prometheus_notifications_errors_total[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus cannot send alerts to {{ $labels.alertmanager }}"
+          description: >-
+            Sending alerts to the Alertmanager has failed for 10 minutes, so
+            firing alerts notify nobody. Shown on Prometheus's Alerts page
+            and here, which is all there is while Alertmanager is unreachable.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#prometheusnotificationsfailing"

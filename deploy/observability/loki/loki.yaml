@@ -6,6 +6,10 @@
 # (/otlp/v1/logs); the trace and span ids each record carries are kept as
 # structured metadata, which is what lets Grafana jump from a log line to its
 # trace. Not a production configuration.
+#
+# Retention (audit C-19): the compactor deletes log chunks older than
+# `retention_period`, seven days, as Prometheus keeps metrics; without it
+# Loki keeps every line until the volume fills.
 auth_enabled: false
 server:
   http_listen_port: 3100
@@ -29,7 +33,12 @@ schema_config:
       index:
         prefix: index_
         period: 24h
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
 limits_config:
   allow_structured_metadata: true
+  retention_period: 168h
 analytics:
   reporting_enabled: false

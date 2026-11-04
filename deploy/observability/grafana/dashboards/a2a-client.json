@@ -138,7 +138,7 @@
       "id": 3,
       "type": "timeseries",
       "title": "Failed calls (ratio), by agent",
-      "description": "error.type set: the agent's error, or timeout / transport when it never answered.",
+      "description": "The agent's failures over all calls: by the rule the server applies (a 5xx-class status), plus calls that got no answer (timeout, transport, a response that did not decode). A 404 or TaskNotFound is the caller's own mistake and is not counted; Failures by kind shows every kind.",
       "datasource": {
         "type": "prometheus",
         "uid": "a2a-prometheus"
@@ -262,6 +262,61 @@
         },
         "tooltip": {
           "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "bargauge",
+      "title": "Calls in the range by processes that started in it",
+      "description": "Every call made by a client process whose first export falls inside the dashboard's time range, by agent: one-shot CLI runs and batch jobs included. Such a process exports once, under its own instance, and a rate needs two samples; on a Prometheus without created-timestamp-zero-ingestion the rate panels above never show it, this one does (audit L11). A process that was already running when the range began is not counted here.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum by (server_address) (last_over_time(rpc_client_call_duration_seconds_count{job=~\"$job\", server_address=~\"$server\"}[$__range]) unless rpc_client_call_duration_seconds_count{job=~\"$job\", server_address=~\"$server\"} offset $__range)",
+          "legendFormat": "{{server_address}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         }
       }
     }

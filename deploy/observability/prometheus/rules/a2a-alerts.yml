@@ -1,20 +1,28 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 #
-# Alerts for a2a-rust agents, built on a2a-recording.yml. The book lists each
-# one, what it means and what to check first
-# (book/src/deployment/observability/dashboards.md). Thresholds are starting
-# points: tune `for:` and the ratios to your traffic. Each alert has a
-# promtool unit test in ../tests/.
+# Alerts for a2a-rust agents, built on a2a-recording.yml. Each one has a
+# runbook section in the book (book/src/deployment/observability/alerts.md,
+# linked from its runbook_url): what it means and what to check first.
+# Thresholds are starting points: tune `for:` and the ratios to your traffic.
+# Each alert has promtool unit tests in ../tests/, which CI runs
+# (.github/workflows/observability.yml).
+#
+# A ratio alert carries a traffic floor: one failure in two calls an hour is
+# 50% and nobody's problem. A job under the floor that fails every call does
+# not page on the ratio; A2AAgentSilent and the absolute alerts still see it.
+#
+# Nothing here notifies anyone by itself: Prometheus sends firing alerts to
+# Alertmanager (the compose stack runs one), and Alertmanager to the
+# receivers you configure (../../alertmanager/alertmanager.yml).
 
 groups:
   - name: a2a-alerts
     rules:
       - alert: A2AServerErrorRatioHigh
-        # A ratio needs traffic to mean anything: one failure in two calls
-        # an hour is 50% and nobody's problem. 0.1 calls a second (six a
-        # minute) is a starting point, like the threshold itself. Abandoned
-        # streams (error_type="cancelled") are not counted as failures.
+        # Abandoned streams and the caller's mistakes (a status A2A maps to a
+        # 4xx) are not failures; a2a-recording.yml says why (audits C-09 and
+        # NEW-c-1).
         expr: |
           a2a:rpc_server_error_ratio:rate5m > 0.05
             and on (job)
@@ -25,23 +33,51 @@ groups:
         annotations:
           summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of A2A calls failed over 5m"
           description: >-
-            More than 5% of calls to {{ $labels.job }} failed for 10 minutes, by
-            the RPC conventions' definition of failure (error_type set, other
-            than a stream the client abandoned), while the job took more than
-            0.1 calls a second. Split by rpc_method and rpc_system_name with
-            a2a:rpc_server_errors:rate5m.
+            More than 5% of calls to {{ $labels.job }} failed for 10 minutes
+            while the job took more than 0.1 calls a second. Failed means the
+            server's failure: error_type set, other than a call the client
+            abandoned or one refused as the caller's mistake (a status A2A maps
+            to a 4xx, such as TaskNotFound -32001). Split by rpc_method and
+            rpc_system_name with a2a:rpc_server_errors:rate5m; caller mistakes
+            are a2a:rpc_server_caller_errors:rate5m.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aservererrorratiohigh"
 
+      # One failed task write is a divergence worth knowing about, not a page
+      # (audit C-14 d): a warning that stays firing for the hour. An
+      # OpenTelemetry counter with these attributes is exported only once it
+      # has counted something, so its first sample is already 1 and
+      # increase() cannot see that first failure; the second arm catches a
+      # series that appeared within the hour with a count above zero.
       - alert: A2APersistenceErrors
+        expr: |
+          sum by (job, operation) (increase(a2a_server_persistence_errors_total[1h])) > 0
+            or
+          sum by (job, operation) (a2a_server_persistence_errors_total unless a2a_server_persistence_errors_total offset 1h) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: task writes failed in the last hour ({{ $labels.operation }})"
+          description: >-
+            The background processor could not persist a task write in the
+            last hour. A streaming client already received those events, so
+            the stored task and what clients saw have diverged; a later
+            GetTask returns the wrong answer. It stays firing for an hour after
+            the last failure. Sustained failures page as A2APersistenceFailing.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2apersistenceerrors"
+
+      - alert: A2APersistenceFailing
         expr: sum by (job, operation) (rate(a2a_server_persistence_errors_total[5m])) > 0
-        for: 1m
+        for: 10m
         labels:
           severity: critical
         annotations:
-          summary: "{{ $labels.job }}: task writes are failing ({{ $labels.operation }})"
+          summary: "{{ $labels.job }}: task writes keep failing ({{ $labels.operation }})"
           description: >-
-            The background processor could not persist task writes. A streaming
-            client already received these events, so the stored task and what
-            clients saw have diverged; a later GetTask returns the wrong answer.
+            Task writes have failed in every five-minute window for 10
+            minutes: the store is refusing writes, not one write that failed.
+            Every task updated meanwhile may read back wrong.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2apersistencefailing"
 
       - alert: A2ARequestsUnanswered
         # Above floating-point noise: requests - responses - errors is a
@@ -56,6 +92,7 @@ groups:
             Requests arrived that produced no response for 15 minutes: a
             panicking executor, dropped connections, or a process exiting
             mid-request.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2arequestsunanswered"
 
       - alert: A2AQueueDepthGrowing
         expr: deriv(a2a_server_queue_depth[30m]) > 0 and a2a_server_queue_depth > 100
@@ -68,6 +105,7 @@ groups:
             Active event queues have grown for 30 minutes. Each open stream holds
             one; a depth that never comes down is subscribers that stopped
             reading without disconnecting.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aqueuedepthgrowing"
 
       - alert: A2APushDeliveryTruncated
         expr: sum by (job) (rate(a2a_server_push_deliveries_total{outcome="timeout_truncated"}[15m])) > 0
@@ -80,6 +118,7 @@ groups:
             push_delivery_timeout is shorter than the sender's retry schedule, so
             deliveries are given up with attempts remaining. A configuration
             problem: it will not resolve on its own and no webhook reports it.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2apushdeliverytruncated"
 
       - alert: A2APushDeliveryFailing
         expr: a2a:push_delivery_failure_ratio:rate5m > 0.2
@@ -91,18 +130,27 @@ groups:
           description: >-
             Over 20% of push-notification attempts failed, timed out or were
             cut short by push_delivery_timeout for 15 minutes. Split by outcome with a2a:push_deliveries:rate5m.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2apushdeliveryfailing"
 
+      # On the share of calls over a bucket bound, not an interpolated
+      # quantile (audit C-14 a; a2a-recording.yml says why).
       - alert: A2AUnaryLatencyHigh
-        expr: a2a:rpc_server_unary_latency:p99_5m > 2.5
+        expr: |
+          a2a:rpc_server_unary_over_5s:ratio_rate5m > 0.01
+            and on (job, rpc_method)
+          a2a:rpc_server_unary_calls:rate5m > 0.1
         for: 15m
         labels:
           severity: warning
         annotations:
-          summary: "{{ $labels.job }} {{ $labels.rpc_method }}: p99 {{ $value | humanizeDuration }}"
+          summary: "{{ $labels.job }} {{ $labels.rpc_method }}: {{ $value | humanizePercentage }} of calls over 5 s"
           description: >-
-            The 99th percentile of non-streaming calls has been above 2.5 s for
-            15 minutes. A blocking SendMessage includes the executor's work; set
-            the threshold per method if your agents run long turns.
+            More than 1% of non-streaming calls took longer than 5 s for 15
+            minutes, while the method took more than 0.1 calls a second. Read
+            from the 5 s bucket bound itself, so no interpolation. A blocking
+            SendMessage includes the executor's work; set the threshold per
+            method if your agents run long turns.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aunarylatencyhigh"
 
       - alert: A2AAgentSilent
         expr: |
@@ -120,6 +168,7 @@ groups:
             instances has sent any for 10 minutes has stopped, or its exporters
             have. Keyed on the job: a rollout or restart, which replaces
             instances, does not fire it, and it stays firing for a day.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aagentsilent"
 
       - alert: A2AAgentInstancesLost
         expr: |
@@ -137,3 +186,74 @@ groups:
             was not replaced, or the job was scaled in. A rollout replaces
             instances and does not fire it. It resolves within the hour, once
             the smaller count is what the hour before saw too.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aagentinstanceslost"
+
+      # Signals no alert watched before 0.16.0 (audit C-14 c).
+      - alert: A2AStoreRetriesHigh
+        expr: sum by (job, cause) (a2a:store_retries:rate5m) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }}: {{ printf "%.2f" $value }} store retries a second ({{ $labels.cause }})'
+          description: >-
+            Store operations have been run again after a failure more than 0.1
+            times a second for 15 minutes. Each retry passed, so nothing was
+            lost yet; a rate that stays up is the store degrading before
+            A2APersistenceErrors counts what it lost. A failover shows as a
+            burst shorter than this.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2astoreretrieshigh"
+
+      - alert: A2AExecutorFailureRatioHigh
+        expr: |
+          a2a:executor_failure_ratio:rate5m > 0.1
+            and on (job)
+          sum by (job) (a2a:executor_runs:rate5m) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of executor runs failed"
+          description: >-
+            More than 10% of the agent's executor runs returned an error or
+            never returned (a panic, a dropped run) for 15 minutes, while it ran
+            more than 0.05 a second. Timeouts and cancellations are not counted;
+            split by outcome with a2a:executor_runs:rate5m.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aexecutorfailureratiohigh"
+
+      - alert: A2AModelCallsFailing
+        expr: |
+          a2a:gen_ai_inference_error_ratio:rate5m > 0.1
+            and on (job)
+          a2a:gen_ai_inference_calls:rate5m > 0.05
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of model calls failed"
+          description: >-
+            More than 10% of the tool loop's model calls failed for 15 minutes,
+            while it made more than 0.05 a second: the model provider is down,
+            rate-limiting, or timing out. The GenAI dashboard splits them by
+            model and error_type.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2amodelcallsfailing"
+
+      - alert: A2AClientErrorRatioHigh
+        expr: |
+          a2a:rpc_client_error_ratio:rate5m > 0.05
+            and on (job, server_address)
+          sum by (job, server_address) (a2a:rpc_client_calls:rate5m) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of calls to {{ $labels.server_address }} failed over 5m"
+          description: >-
+            More than 5% of the calls {{ $labels.job }} made to the agent at
+            {{ $labels.server_address }} failed for 10 minutes while it made
+            more than 0.1 calls a second to it. Failed means the agent's
+            failure or no answer at all (a timeout, a transport error, a
+            response that did not decode); a call the caller abandoned or one
+            refused as its own mistake (a 404, TaskNotFound) is not counted.
+            Split by kind on the client dashboard's Failures by kind panel.
+          runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aclienterrorratiohigh"

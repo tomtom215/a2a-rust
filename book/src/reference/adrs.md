@@ -49,6 +49,7 @@ number links to its file.
 | [0035](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0035-agent-skills.md) | Agent Skills are adopted in the tool loop, as a feature-gated module (0.17.0): lenient discovery, a catalog in the prompt, an `activate_skill` tool whose name is an enum, path-confined resource reads, and no script execution | Proposed; not built |
 | [0036](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0036-steering-a-running-task.md) | A message to a running task is an extension (`.../extensions/steering/v1`) delivered through a bounded per-task inbox, across replicas through the claim holder; peers without it keep today's refusal | Proposed; not built |
 | [0037](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0037-push-outbox.md) | Push notifications get a durable outbox in the task database, one row per event and webhook, claimed per webhook so order holds across replicas, retried with backoff up to a maximum age, opt-in and SQL stores only | Proposed; not built |
+| [0039](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0039-observability-stack-alerts-and-deployment.md) | The shipped alerts count the server's failures (caller mistakes and abandoned calls are not), alert on bucket bounds rather than interpolated quantiles, reach an Alertmanager that notifies nobody until given a receiver; the stack watches its own Collector, converts delta temporality, stores exemplars from Tempo's span metrics, and ships generated Kubernetes objects rather than a chart | Accepted; built |
 
 ## The first eight in brief
 

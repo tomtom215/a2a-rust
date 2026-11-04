@@ -116,7 +116,10 @@ leave a server span's status unset for a 4xx); on gRPC only `UNKNOWN`,
 `DATA_LOSS`. A `GetTask` for an unknown task is `rpc.status_code` `NOT_FOUND`
 (or `404`) with no `error.type`; a dashboard that wants the 4xx class reads
 `rpc.status_code`. A binding outside this crate opts into gRPC's rule with
-`CustomBinding::with_grpc_server_errors`.
+`CustomBinding::with_grpc_server_errors`. The shipped recording rules and alerts go one
+step further and leave out a JSON-RPC code that A2A maps to a 4xx
+(`-32001` and the rest), so a ratio does not depend on the binding the client
+chose ([what counts as a failure](./alerts.md#what-counts-as-a-failure)).
 
 It records calls the handler never sees, with the status they were answered:
 on JSON-RPC, a body that is not a request (no `rpc.method`), an unknown

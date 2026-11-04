@@ -489,5 +489,6 @@ pub mod page_reference_conformance_testing {}
 #[doc = include_str!("../../book/src/deployment/observability/trace-context.md")]
 #[doc = include_str!("../../book/src/deployment/observability/logs.md")]
 #[doc = include_str!("../../book/src/deployment/observability/dashboards.md")]
+#[doc = include_str!("../../book/src/deployment/observability/alerts.md")]
 #[doc = include_str!("../../book/src/deployment/observability/debugging.md")]
 pub mod pages_deployment_observability {}

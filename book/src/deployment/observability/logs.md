@@ -132,7 +132,14 @@ sources and links them both ways:
 
 * **From a span to its logs.** Tempo's `tracesToLogsV2` points at Loki with
   `filterByTraceID: true`, searching five minutes either side of the span, so
-  a span in Tempo opens the log lines written inside its trace.
+  a span in Tempo opens the log lines written inside its trace. The trace id
+  is structured metadata in Loki, not part of the line, so a plain line filter
+  (`|= "<trace id>"`) finds nothing; Grafana 13.2.4's link filters on the
+  metadata as well. Checked on 2026-11-04 (audit C-18): the span's *Links*
+  menu, *Logs for this trace*, opened Loki with
+  `{service_name="hello-agent"} | label_format log_line_contains_trace_id=… |
+  log_line_contains_trace_id="true" or trace_id="<trace id>"` and showed the
+  trace's line, while `|= "<trace id>"` alone returned none.
 * **From a log line to its trace.** Loki's derived field `trace_id` points at
   Tempo, so a log line that carries a trace id opens its trace.
 

@@ -6,8 +6,10 @@
 # Grafana provisioned from that directory alone (Prometheus only) does not get
 # two data sources pointing nowhere. Set TEMPO_URL and LOKI_URL.
 #
-# The links: a span opens the logs written inside it (Loki, by trace id), and
-# a log line with a trace id opens its trace (Tempo).
+# The links: a span opens the logs written inside it (Loki, by trace id), a
+# log line with a trace id opens its trace (Tempo), a span opens its span
+# metrics (Prometheus), and the service graph reads Tempo's
+# traces_service_graph_* series.
 apiVersion: 1
 datasources:
   - name: Tempo
@@ -21,8 +23,22 @@ datasources:
         filterByTraceID: true
         spanStartTimeShift: -5m
         spanEndTimeShift: 5m
+      # Tempo's span metrics (tempo.yaml, metrics_generator), by the span's
+      # service; `$$__tags` becomes service="<service.name>".
       tracesToMetrics:
         datasourceUid: a2a-prometheus
+        spanStartTimeShift: -10m
+        spanEndTimeShift: 10m
+        tags:
+          - key: service.name
+            value: service
+        queries:
+          - name: Span rate
+            query: sum(rate(traces_spanmetrics_calls_total{$$__tags}[5m]))
+          - name: Span error rate
+            query: sum(rate(traces_spanmetrics_calls_total{$$__tags, status_code="STATUS_CODE_ERROR"}[5m]))
+          - name: Span p95
+            query: histogram_quantile(0.95, sum by (le) (rate(traces_spanmetrics_latency_bucket{$$__tags}[5m])))
       serviceMap:
         datasourceUid: a2a-prometheus
       nodeGraph:

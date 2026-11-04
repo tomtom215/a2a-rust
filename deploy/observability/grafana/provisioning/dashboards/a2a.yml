@@ -2,13 +2,16 @@
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 #
 # Loads the dashboards in A2A_DASHBOARDS_DIR (deploy/observability/grafana/dashboards).
+# The files are the source: an edit in Grafana's UI cannot be saved over a
+# provisioned dashboard (allowUiUpdates: false), where it would be lost the
+# next time Grafana starts. "Save as" makes a copy of your own (audit C-19).
 apiVersion: 1
 providers:
   - name: a2a-rust
     folder: A2A
     type: file
     disableDeletion: false
-    allowUiUpdates: true
+    allowUiUpdates: false
     options:
       path: ${A2A_DASHBOARDS_DIR}
       foldersFromFilesStructure: false

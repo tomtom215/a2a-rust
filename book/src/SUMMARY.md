@@ -156,6 +156,7 @@
     - [Distributed tracing across agents](./deployment/observability/trace-context.md)
     - [Logs](./deployment/observability/logs.md)
     - [Dashboards, alerts and recording rules](./deployment/observability/dashboards.md)
+    - [Alerts and runbooks](./deployment/observability/alerts.md)
     - [Debugging telemetry](./deployment/observability/debugging.md)
     - [Langfuse](./deployment/langfuse.md)
 - [Troubleshooting](./deployment/troubleshooting.md)

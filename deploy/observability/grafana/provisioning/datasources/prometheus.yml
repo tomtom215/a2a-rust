@@ -13,3 +13,13 @@ datasources:
     isDefault: true
     jsonData:
       timeInterval: 15s
+      # An exemplar's trace id opens that trace in the Tempo data source
+      # (uid a2a-tempo, ../traces-and-logs.yml). Tempo's span metrics label
+      # it `traceID` (read from a live stack, 2026-11-04); an exemplar that
+      # arrives over OTLP labels it `trace_id`. Without that data source the
+      # link has nowhere to go and Grafana shows the exemplar without it.
+      exemplarTraceIdDestinations:
+        - name: traceID
+          datasourceUid: a2a-tempo
+        - name: trace_id
+          datasourceUid: a2a-tempo

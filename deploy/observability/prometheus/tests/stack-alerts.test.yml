@@ -1,0 +1,197 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# promtool unit tests for ../rules/stack-alerts.yml (audit C-15): each alert
+# fires on its input and stays silent on a control. Run:
+#   promtool test rules deploy/observability/prometheus/tests/stack-alerts.test.yml
+
+rule_files:
+  - ../rules/stack-alerts.yml
+
+evaluation_interval: 30s
+
+tests:
+  # The Collector stops answering at minute 5; a second scrape job is fine.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="otelcol",instance="otel-collector:8888"}'
+        values: '1x5 0x10'
+      - series: 'up{job="tempo",instance="tempo:3200"}'
+        values: '1x15'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: OTelCollectorDown
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: OTelCollectorDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: otelcol, instance: "otel-collector:8888"}
+            exp_annotations:
+              summary: "The OpenTelemetry Collector at otel-collector:8888 cannot be scraped"
+              description: "Prometheus has not reached the Collector's telemetry endpoint for 2 minutes. Every agent exporting through it is losing traces, metrics and logs (each SDK retries, then drops), so A2AAgentSilent follows for every job; Alertmanager holds those back while this fires."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectordown"
+
+  # Loki's exporter gives up on log records every minute (the 0.163 name, no
+  # suffix); Tempo's, in the `_total` spelling, does too; Prometheus's sends
+  # everything.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_exporter_send_failed_log_records{job="otelcol",instance="c:8888",exporter="otlphttp/loki"}'
+        values: '0+50x30'
+      - series: 'otelcol_exporter_send_failed_spans_total{job="otelcol",instance="c:8888",exporter="otlp/tempo"}'
+        values: '0+5x30'
+      - series: 'otelcol_exporter_send_failed_metric_points{job="otelcol",instance="c:8888",exporter="otlphttp/prometheus"}'
+        values: '0x30'
+      - series: 'otelcol_exporter_send_failed_spans{job="otelcol",instance="c:8888",exporter="otlphttp/loki"}'
+        values: '0x30'
+      # A second Prometheus exporter that does give up on metric points.
+      - series: 'otelcol_exporter_send_failed_metric_points{job="otelcol",instance="c:8888",exporter="otlphttp/remote"}'
+        values: '0+3x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: OTelCollectorExportFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, job: otelcol, instance: "c:8888", exporter: otlphttp/loki}
+            exp_annotations: &export-failing
+              summary: "Collector exporter otlphttp/loki is dropping data"
+              description: "The Collector's otlphttp/loki exporter has given up on items (retries exhausted) in every five-minute window for 10 minutes: its backend is down, refusing, or unreachable. What it gave up on is lost."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorexportfailing"
+          - exp_labels: {severity: warning, job: otelcol, instance: "c:8888", exporter: otlp/tempo}
+            exp_annotations:
+              summary: "Collector exporter otlp/tempo is dropping data"
+              description: "The Collector's otlp/tempo exporter has given up on items (retries exhausted) in every five-minute window for 10 minutes: its backend is down, refusing, or unreachable. What it gave up on is lost."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorexportfailing"
+          - exp_labels: {severity: warning, job: otelcol, instance: "c:8888", exporter: otlphttp/remote}
+            exp_annotations:
+              summary: "Collector exporter otlphttp/remote is dropping data"
+              description: "The Collector's otlphttp/remote exporter has given up on items (retries exhausted) in every five-minute window for 10 minutes: its backend is down, refusing, or unreachable. What it gave up on is lost."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorexportfailing"
+
+  # Each of the six counters on a receiver of its own, so each term of the
+  # expression is needed; on receiver `all` every counter carries the same
+  # labels, the shape that made a single selector over every name fail to
+  # evaluate on a live Collector. Receiver `ok` refuses nothing.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_receiver_refused_spans{job="otelcol",instance="c:8888",receiver="refused-spans",transport="http"}'
+        values: '0+20x30'
+      - series: 'otelcol_receiver_refused_spans{job="otelcol",instance="c:8888",receiver="all",transport="http"}'
+        values: '0+1x30'
+      - series: 'otelcol_receiver_refused_spans{job="otelcol",instance="c:8888",receiver="ok",transport="http"}'
+        values: '0x30'
+      - series: 'otelcol_receiver_refused_metric_points{job="otelcol",instance="c:8888",receiver="refused-metric_points",transport="http"}'
+        values: '0+20x30'
+      - series: 'otelcol_receiver_refused_metric_points{job="otelcol",instance="c:8888",receiver="all",transport="http"}'
+        values: '0+1x30'
+      - series: 'otelcol_receiver_refused_metric_points{job="otelcol",instance="c:8888",receiver="ok",transport="http"}'
+        values: '0x30'
+      - series: 'otelcol_receiver_refused_log_records{job="otelcol",instance="c:8888",receiver="refused-log_records",transport="http"}'
+        values: '0+20x30'
+      - series: 'otelcol_receiver_refused_log_records{job="otelcol",instance="c:8888",receiver="all",transport="http"}'
+        values: '0+1x30'
+      - series: 'otelcol_receiver_refused_log_records{job="otelcol",instance="c:8888",receiver="ok",transport="http"}'
+        values: '0x30'
+      - series: 'otelcol_receiver_failed_spans{job="otelcol",instance="c:8888",receiver="failed-spans",transport="http"}'
+        values: '0+20x30'
+      - series: 'otelcol_receiver_failed_spans{job="otelcol",instance="c:8888",receiver="all",transport="http"}'
+        values: '0+1x30'
+      - series: 'otelcol_receiver_failed_spans{job="otelcol",instance="c:8888",receiver="ok",transport="http"}'
+        values: '0x30'
+      - series: 'otelcol_receiver_failed_metric_points{job="otelcol",instance="c:8888",receiver="failed-metric_points",transport="http"}'
+        values: '0+20x30'
+      - series: 'otelcol_receiver_failed_metric_points{job="otelcol",instance="c:8888",receiver="all",transport="http"}'
+        values: '0+1x30'
+      - series: 'otelcol_receiver_failed_metric_points{job="otelcol",instance="c:8888",receiver="ok",transport="http"}'
+        values: '0x30'
+      - series: 'otelcol_receiver_failed_log_records{job="otelcol",instance="c:8888",receiver="failed-log_records",transport="http"}'
+        values: '0+20x30'
+      - series: 'otelcol_receiver_failed_log_records{job="otelcol",instance="c:8888",receiver="all",transport="http"}'
+        values: '0+1x30'
+      - series: 'otelcol_receiver_failed_log_records{job="otelcol",instance="c:8888",receiver="ok",transport="http"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: OTelCollectorRefusing
+        exp_alerts:
+          - exp_labels: {severity: warning, job: otelcol, instance: "c:8888", receiver: all}
+            exp_annotations:
+              summary: "Collector receiver all is refusing data"
+              description: "The Collector has refused or failed incoming items for 10 minutes. Refused is usually memory_limiter pushing back (the container is near its memory limit); the agents retry and then drop."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorrefusing"
+          - exp_labels: {severity: warning, job: otelcol, instance: "c:8888", receiver: refused-spans}
+            exp_annotations:
+              summary: "Collector receiver refused-spans is refusing data"
+              description: "The Collector has refused or failed incoming items for 10 minutes. Refused is usually memory_limiter pushing back (the container is near its memory limit); the agents retry and then drop."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorrefusing"
+          - exp_labels: {severity: warning, job: otelcol, instance: "c:8888", receiver: refused-metric_points}
+            exp_annotations:
+              summary: "Collector receiver refused-metric_points is refusing data"
+              description: "The Collector has refused or failed incoming items for 10 minutes. Refused is usually memory_limiter pushing back (the container is near its memory limit); the agents retry and then drop."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorrefusing"
+          - exp_labels: {severity: warning, job: otelcol, instance: "c:8888", receiver: refused-log_records}
+            exp_annotations:
+              summary: "Collector receiver refused-log_records is refusing data"
+              description: "The Collector has refused or failed incoming items for 10 minutes. Refused is usually memory_limiter pushing back (the container is near its memory limit); the agents retry and then drop."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorrefusing"
+          - exp_labels: {severity: warning, job: otelcol, instance: "c:8888", receiver: failed-spans}
+            exp_annotations:
+              summary: "Collector receiver failed-spans is refusing data"
+              description: "The Collector has refused or failed incoming items for 10 minutes. Refused is usually memory_limiter pushing back (the container is near its memory limit); the agents retry and then drop."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorrefusing"
+          - exp_labels: {severity: warning, job: otelcol, instance: "c:8888", receiver: failed-metric_points}
+            exp_annotations:
+              summary: "Collector receiver failed-metric_points is refusing data"
+              description: "The Collector has refused or failed incoming items for 10 minutes. Refused is usually memory_limiter pushing back (the container is near its memory limit); the agents retry and then drop."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorrefusing"
+          - exp_labels: {severity: warning, job: otelcol, instance: "c:8888", receiver: failed-log_records}
+            exp_annotations:
+              summary: "Collector receiver failed-log_records is refusing data"
+              description: "The Collector has refused or failed incoming items for 10 minutes. Refused is usually memory_limiter pushing back (the container is near its memory limit); the agents retry and then drop."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorrefusing"
+
+  # Loki's queue at 900 of 1000; Tempo's at 100.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_exporter_queue_size{job="otelcol",instance="c:8888",exporter="otlphttp/loki",data_type="logs"}'
+        values: '900x20'
+      - series: 'otelcol_exporter_queue_capacity{job="otelcol",instance="c:8888",exporter="otlphttp/loki",data_type="logs"}'
+        values: '1000x20'
+      - series: 'otelcol_exporter_queue_size{job="otelcol",instance="c:8888",exporter="otlp/tempo",data_type="traces"}'
+        values: '100x20'
+      - series: 'otelcol_exporter_queue_capacity{job="otelcol",instance="c:8888",exporter="otlp/tempo",data_type="traces"}'
+        values: '1000x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: OTelCollectorQueueFilling
+        exp_alerts:
+          - exp_labels: {severity: warning, job: otelcol, instance: "c:8888", exporter: otlphttp/loki}
+            exp_annotations:
+              summary: "Collector exporter otlphttp/loki queue is 90% full"
+              description: "The exporter's sending queue has stayed over 80% full for 5 minutes: its backend is slower than the traffic or not answering. A full queue refuses new items, and they are lost."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#otelcollectorqueuefilling"
+
+  - interval: 1m
+    input_series:
+      - series: 'prometheus_rule_evaluation_failures_total{job="prometheus",instance="localhost:9090",rule_group="/etc/prometheus/rules/a2a-alerts.yml;a2a-alerts"}'
+        values: '0+2x30'
+      - series: 'prometheus_rule_evaluation_failures_total{job="prometheus",instance="localhost:9090",rule_group="/etc/prometheus/rules/a2a-recording.yml;a2a-server"}'
+        values: '0x30'
+      - series: 'prometheus_notifications_errors_total{job="prometheus",instance="localhost:9090",alertmanager="http://alertmanager:9093/api/v2/alerts"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: PrometheusRuleEvaluationFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, job: prometheus, instance: "localhost:9090", rule_group: "/etc/prometheus/rules/a2a-alerts.yml;a2a-alerts"}
+            exp_annotations:
+              summary: "Prometheus cannot evaluate rule group /etc/prometheus/rules/a2a-alerts.yml;a2a-alerts"
+              description: "Rules in /etc/prometheus/rules/a2a-alerts.yml;a2a-alerts have failed to evaluate for 10 minutes. An alert whose rule cannot evaluate never fires, so the alerts in that group are blind until this is fixed. The rule's lastError is on Prometheus's Rules page."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#prometheusruleevaluationfailing"
+      - eval_time: 25m
+        alertname: PrometheusNotificationsFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, job: prometheus, instance: "localhost:9090", alertmanager: "http://alertmanager:9093/api/v2/alerts"}
+            exp_annotations:
+              summary: "Prometheus cannot send alerts to http://alertmanager:9093/api/v2/alerts"
+              description: "Sending alerts to the Alertmanager has failed for 10 minutes, so firing alerts notify nobody. Shown on Prometheus's Alerts page and here, which is all there is while Alertmanager is unreachable."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#prometheusnotificationsfailing"

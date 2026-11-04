@@ -11,8 +11,12 @@
 #
 # and open Grafana on http://localhost:3001 (folder "A2A"; Explore for Tempo
 # and Loki). Metrics, traces and logs all go to the Collector on 4317/4318,
-# which sends them to Prometheus, Tempo and Loki. Ports published on the host:
-# 3001 Grafana, 9090 Prometheus, 4317/4318 the Collector, 3200 Tempo, 3100
+# which sends them to Prometheus, Tempo and Loki. Prometheus sends firing
+# alerts to Alertmanager, whose only receiver notifies nobody until you give
+# it one (alertmanager/alertmanager.yml). Tempo derives span metrics and a
+# service graph from the traces and writes them, with exemplars, to
+# Prometheus. Ports published on 127.0.0.1 only: 3001 Grafana, 9090
+# Prometheus, 9093 Alertmanager, 4317/4318 the Collector, 3200 Tempo, 3100
 # Loki.
 #
 # An agent in a container on the same Docker network uses
@@ -20,78 +24,143 @@
 # authentication (Grafana's anonymous user is an admin), local volumes only.
 # docker-compose.prod.yml, added with a second -f, closes it down for a shared
 # host.
+#
+# Each image is pinned by tag and digest (the multi-platform index digest the
+# registry served on 2026-11-04), so a re-pushed tag cannot change what runs.
+# To move a pin, `docker buildx imagetools inspect IMAGE:TAG` prints the new
+# digest. deploy/observability/scripts/check_stack.py fails on an image
+# without one.
 name: a2a-observability
 
 services:
+  # The Collector and Tempo run as uid 10001, and a named volume is created
+  # owned by root. This one-shot chowns their data directories, so neither
+  # has to run as root (audit C-19). Tempo's image carries busybox's chown.
+  volume-init:
+    image: grafana/tempo:2.9.0@sha256:65a5789759435f1ef696f1953258b9bbdb18eb571d5ce711ff812d2e128288a4
+    user: "0"
+    entrypoint: ["chown", "-R", "10001:10001", "/var/tempo", "/var/lib/otelcol"]
+    volumes:
+      - tempo-data:/var/tempo
+      - otelcol-data:/var/lib/otelcol
+    restart: "no"
+
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.163.2
+    image: otel/opentelemetry-collector-contrib:0.163.2@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
     command: ["--config=/etc/otelcol/config.yaml"]
+    # memory_limiter takes its limits as a share of this (audit C-15).
+    # Without a limit it reads the host's memory and refuses nothing until
+    # the host is nearly out.
+    mem_limit: 1g
     volumes:
       - ./otel-collector/config-compose.yaml:/etc/otelcol/config.yaml:ro
+      # The exporters' queues, so a restart does not lose what was queued.
+      - otelcol-data:/var/lib/otelcol
     ports:
-      - "4317:4317"
-      - "4318:4318"
-    depends_on: [prometheus, tempo, loki]
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+    depends_on:
+      volume-init: {condition: service_completed_successfully}
+      prometheus: {condition: service_started}
+      tempo: {condition: service_started}
+      loki: {condition: service_started}
     restart: unless-stopped
 
   prometheus:
-    image: prom/prometheus:v3.15.1
+    image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
     command:
       - --config.file=/etc/prometheus/prometheus.yml
+      # OTLP in, from the Collector (or an agent pushing directly).
       - --web.enable-otlp-receiver
-      - --storage.tsdb.retention.time=7d
+      # Remote write in, from Tempo's metrics generator (span metrics and
+      # the service graph).
+      - --web.enable-remote-write-receiver
+      # exemplar-storage keeps the trace ids that span metrics carry, so a
+      # panel can link a point to its trace (audit C-05).
+      # otlp-deltatocumulative turns delta sums and histograms into the
+      # cumulative series every rule and panel reads, so an agent started
+      # with OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta still
+      # shows (audit C-21).
+      # created-timestamp-zero-ingestion writes a zero at each point's start
+      # time, so a process that exported once (a CLI run, a batch job) has
+      # two samples and a rate, and a counter's first count is an increase
+      # (audit L11).
+      - --enable-feature=exemplar-storage,otlp-deltatocumulative,created-timestamp-zero-ingestion
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/prometheus-compose.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.2@sha256:39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
     restart: unless-stopped
 
   tempo:
-    image: grafana/tempo:2.9.0
+    image: grafana/tempo:2.9.0@sha256:65a5789759435f1ef696f1953258b9bbdb18eb571d5ce711ff812d2e128288a4
     command: ["-config.file=/etc/tempo.yaml"]
-    user: "0"
     volumes:
       - ./tempo/tempo.yaml:/etc/tempo.yaml:ro
       - tempo-data:/var/tempo
     ports:
-      - "3200:3200"
+      - "127.0.0.1:3200:3200"
+    depends_on:
+      volume-init: {condition: service_completed_successfully}
     restart: unless-stopped
 
   loki:
-    image: grafana/loki:3.7.9
+    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
     command: ["-config.file=/etc/loki/loki.yaml"]
     volumes:
       - ./loki/loki.yaml:/etc/loki/loki.yaml:ro
       - loki-data:/loki
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:13.2.4
+    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
     environment:
       PROMETHEUS_URL: http://prometheus:9090
       TEMPO_URL: http://tempo:3200
       LOKI_URL: http://loki:3100
+      ALERTMANAGER_URL: http://alertmanager:9093
       A2A_DASHBOARDS_DIR: /var/lib/grafana/dashboards/a2a
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
     volumes:
+      # Grafana's own state (users, preferences, dashboards made in the UI)
+      # survives a recreate. The provisioned dashboards are the files below
+      # and cannot be saved over from the UI (allowUiUpdates: false); "Save
+      # as" makes a copy that lives in this volume.
+      - grafana-data:/var/lib/grafana
       - ./grafana/provisioning/datasources/prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
       - ./grafana/provisioning/traces-and-logs.yml:/etc/grafana/provisioning/datasources/traces-and-logs.yml:ro
+      - ./grafana/provisioning/alertmanager.yml:/etc/grafana/provisioning/datasources/alertmanager.yml:ro
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards/a2a:ro
     ports:
       # Host port 3001: 3000 is where hello-agent and a self-hosted Langfuse
       # listen, and the quick start runs an agent beside this stack.
-      - "3001:3000"
-    depends_on: [prometheus, tempo, loki]
+      - "127.0.0.1:3001:3000"
+    depends_on: [prometheus, tempo, loki, alertmanager]
     restart: unless-stopped
 
 volumes:
   prometheus-data:
+  alertmanager-data:
   tempo-data:
   loki-data:
+  grafana-data:
+  otelcol-data:
