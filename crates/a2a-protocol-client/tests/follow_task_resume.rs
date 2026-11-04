@@ -71,7 +71,7 @@ fn quick() -> ResumePolicy {
 async fn a_cut_subscription_is_reopened_and_the_follow_goes_on_to_the_end() {
     let upstream = serve().await;
     let proxy = Proxy::start(upstream).await;
-    let hold = key();
+    let hold = beating_key();
     let id = start(upstream, &hold).await;
 
     let via = client_for(proxy.addr);
@@ -84,19 +84,29 @@ async fn a_cut_subscription_is_reopened_and_the_follow_goes_on_to_the_end() {
     let first = next(&mut follow).await.expect("the task as it stands");
     assert_eq!(state(&first), Some(TaskState::Working));
 
+    // A slow link: the new connection is accepted 150 ms before the request on
+    // it reaches the server. The connection being accepted is therefore no
+    // sign the server has registered the subscription, and a task that ends
+    // before it has cannot be subscribed to: the follow polls (the next test).
+    // This test used to open the gate on the accepted connection, and failed
+    // once in CI, on Windows, when the request lost that race.
+    proxy.lag(Duration::from_millis(150));
     let before = proxy.accepted();
     proxy.cut();
-    // The task ends only once the follow has reopened its subscription: a
-    // task that ended first cannot be subscribed to, and is polled (the next
-    // test).
-    let reopened = async {
-        until("a new connection was opened after the cut", || {
-            proxy.accepted() > before
-        })
-        .await;
-        gate(&hold).notify_one();
-    };
-    let (states, ()) = tokio::join!(to_the_end(&mut follow), reopened);
+    // The task ends only once the reopened subscription has delivered an event
+    // (the executor's heartbeat), which only a subscription the server has
+    // registered can.
+    let mut states = Vec::new();
+    loop {
+        let event = next(&mut follow).await.expect("the follow goes on");
+        states.extend(state(&event));
+        if proxy.accepted() > before {
+            break;
+        }
+    }
+    assert!(!follow.is_polling(), "the subscription was reopened");
+    gate(&hold).notify_one();
+    states.extend(to_the_end(&mut follow).await);
     assert_eq!(states.last(), Some(&TaskState::Completed), "{states:?}");
     assert!(!follow.is_polling(), "it stayed on a subscription");
 }
