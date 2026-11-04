@@ -49,6 +49,8 @@ mod a2a;
 #[cfg(feature = "tracing")]
 mod address;
 mod agent;
+#[cfg(feature = "tracing")]
+mod content;
 mod binding;
 mod call;
 mod card;

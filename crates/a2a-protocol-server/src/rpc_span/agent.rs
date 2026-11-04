@@ -32,8 +32,9 @@
 //! `RequestHandlerBuilder::with_span_content_capture(true)` the request's
 //! message and the agent's replies and artifacts are recorded, in the
 //! conventions' JSON message format (`model/gen-ai/gen-ai-*-messages.json`),
-//! within [`CONTENT_LIMIT`] bytes per attribute. Raw bytes are never
-//! recorded, only their type and size.
+//! within [`CONTENT_LIMIT`] bytes per attribute, every byte of a part's JSON
+//! charged (`content.rs`). Raw bytes are never recorded, only their type and
+//! size.
 
 use std::future::Future;
 #[cfg(feature = "tracing")]
@@ -44,7 +45,7 @@ use a2a_protocol_types::agent_card::AgentCard;
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::Message;
 #[cfg(feature = "tracing")]
-use a2a_protocol_types::message::{MessageRole, Part, PartContent};
+use a2a_protocol_types::message::MessageRole;
 #[cfg(feature = "tracing")]
 use a2a_protocol_types::task::TaskState;
 #[cfg(feature = "tracing")]
@@ -53,7 +54,13 @@ use serde_json::{Value, json};
 #[cfg(feature = "tracing")]
 mod lineage;
 
-/// The most bytes of text and structured data one message attribute holds.
+#[cfg(feature = "tracing")]
+use super::content::{Budget, parts_json};
+
+/// The most bytes one message attribute's parts serialise to (plus
+/// `content::MARKER_SLACK`, 41 bytes, for a cut text's marker):
+/// every byte of each part's JSON is charged, not only its text and data
+/// (audit NEW-c-4).
 /// Langfuse's own default field limit is 2 MiB
 /// (`LANGFUSE_OBSERVATION_FIELD_SIZE_LIMIT_BYTES`); a span attribute is held
 /// in memory until export, so this is far below it.
@@ -194,10 +201,12 @@ fn executor_span(
         super::a2a::record_agent(&span, card);
     }
     if settings.content {
-        let mut budget = CONTENT_LIMIT;
+        let mut budget = Budget::new(CONTENT_LIMIT);
+        let mut parts = parts_json(&input.parts, &mut budget);
+        parts.extend(budget.omitted_marker());
         let input = json!([{
             "role": role(input.role),
-            "parts": parts_json(&input.parts, &mut budget),
+            "parts": parts,
         }]);
         span.record("gen_ai.input.messages", input.to_string().as_str());
     }
@@ -210,9 +219,10 @@ fn executor_span(
 pub struct OutputRecorder {
     span: tracing::Span,
     content: bool,
-    /// Output parts, bytes left, turn ended, and task stream (a continued
-    /// task, or task/status/artifact seen: a `Message` is no reply, §3.1.2).
-    output: Mutex<(Vec<Value>, usize, bool, bool)>,
+    /// Output parts, the budget left for them, turn ended, and task stream (a
+    /// continued task, or task/status/artifact seen: a `Message` is no reply,
+    /// §3.1.2). Parts past the budget are counted in it, not kept.
+    output: Mutex<(Vec<Value>, Budget, bool, bool)>,
 }
 
 #[cfg(feature = "tracing")]
@@ -221,7 +231,7 @@ impl OutputRecorder {
         Self {
             span,
             content: settings.content,
-            output: Mutex::new((Vec::new(), CONTENT_LIMIT, false, continues)),
+            output: Mutex::new((Vec::new(), Budget::new(CONTENT_LIMIT), false, continues)),
         }
     }
 
@@ -289,8 +299,10 @@ impl OutputRecorder {
         if let Some(reason) = state.and_then(finish_reason) {
             super::a2a::record_finish_reason(&self.span, reason);
         }
-        if self.content && !collected.is_empty() {
-            let message = json!({ "role": "assistant", "parts": collected });
+        if self.content && (!collected.is_empty() || budget.omitted_marker().is_some()) {
+            let mut parts = std::mem::take(collected);
+            parts.extend(budget.omitted_marker());
+            let message = json!({ "role": "assistant", "parts": parts });
             self.span.record(
                 "gen_ai.output.messages",
                 json!([message]).to_string().as_str(),
@@ -338,73 +350,6 @@ const fn role(role: MessageRole) -> &'static str {
         // `User`, and the proto default, which a valid request never sends.
         _ => "user",
     }
-}
-
-#[cfg(feature = "tracing")]
-/// The conventions' `modality` for a media type: image, video and audio by
-/// their top-level type, anything else a document.
-fn modality(media_type: Option<&str>) -> &'static str {
-    match media_type.and_then(|m| m.split('/').next()) {
-        Some("image") => "image",
-        Some("video") => "video",
-        Some("audio") => "audio",
-        _ => "document",
-    }
-}
-
-#[cfg(feature = "tracing")]
-/// `parts` as the conventions' message parts, spending at most `budget`
-/// bytes on text and data; whatever does not fit is cut, and says so.
-fn parts_json(parts: &[Part], budget: &mut usize) -> Vec<Value> {
-    parts
-        .iter()
-        .map(|part| {
-            let media = part.media_type.as_deref();
-            match &part.content {
-                PartContent::Text(text) => json!({ "type": "text", "content": take(text, budget) }),
-                PartContent::Url(url) => json!({
-                    "type": "uri",
-                    "uri": take(url, budget),
-                    "mime_type": media,
-                    "modality": modality(media),
-                }),
-                // Bytes are not content anyone reads in a trace, and an
-                // inline file would dwarf every other attribute.
-                PartContent::Raw(base64) => json!({
-                    "type": "a2a.raw",
-                    "mime_type": media,
-                    "filename": part.filename,
-                    "base64_length": base64.len(),
-                }),
-                PartContent::Data(value) => {
-                    let text = value.to_string();
-                    if text.len() <= *budget {
-                        *budget -= text.len();
-                        json!({ "type": "a2a.data", "content": value })
-                    } else {
-                        json!({ "type": "a2a.data", "truncated": true, "length": text.len() })
-                    }
-                }
-                _ => json!({ "type": "a2a.unknown" }),
-            }
-        })
-        .collect()
-}
-
-#[cfg(feature = "tracing")]
-/// `s`, or as much of it as `budget` allows on a character boundary followed
-/// by a marker, and charges the budget.
-fn take(s: &str, budget: &mut usize) -> String {
-    if s.len() <= *budget {
-        *budget -= s.len();
-        return s.to_owned();
-    }
-    let mut end = *budget;
-    while !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    *budget = 0;
-    format!("{}…[truncated {} bytes]", &s[..end], s.len() - end)
 }
 
 #[cfg(all(test, feature = "tracing"))]
