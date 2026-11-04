@@ -129,11 +129,22 @@ pub(super) fn warn_once(seen: &Mutex<HashSet<PathBuf>>, path: &Path, _fstype: &s
     first
 }
 
+/// Whether `database` is a `file:` URI and not a path. `sqlx` names the database
+/// behind `sqlite::memory:` `file:sqlx-in-memory-N` (a shared-cache in-memory
+/// database), and a `file:` URI of one's own is handed to `SQLite` unparsed, so
+/// neither is a file in the working directory: read as a path it would put an
+/// in-memory database on whatever file system the working directory is on.
+fn is_uri(database: &Path) -> bool {
+    database
+        .to_str()
+        .is_some_and(|name| name.starts_with("file:"))
+}
+
 /// The absolute path of the file `database` names, with the directory's symbolic
 /// links resolved; the file itself need not exist yet. `None` for an in-memory
-/// database or a directory that cannot be resolved.
+/// database, a `file:` URI (not checked) or a directory that cannot be resolved.
 fn resolved(database: &Path) -> Option<PathBuf> {
-    if database == Path::new(":memory:") || database.as_os_str().is_empty() {
+    if database == Path::new(":memory:") || database.as_os_str().is_empty() || is_uri(database) {
         return None;
     }
     let name = database.file_name()?;

@@ -1442,7 +1442,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `orangefs`, `panfs` or a `fuse`/`fuse.*` file system (not `fuseblk`), logs one
   `WARN` per file naming the file and the file system. It warns and does not
   refuse, because a mount can look remote and be fine for one process; it needs
-  the `tracing` feature to be seen and does nothing off Linux. The horizontal
+  the `tracing` feature to be seen and does nothing off Linux. An in-memory
+  database and a `file:` URI are not checked: `sqlx` names the database behind
+  `sqlite::memory:` `file:sqlx-in-memory-N`, which an early version of this check
+  read as a file in the working directory and so warned about whenever that
+  directory was on a network mount (the first CI run of this pull request found
+  it, because cargo-mutants copies the tree under `/tmp`). The horizontal
   scaling page also states, for the first time, that SQLite claims are judged on
   the host's wall clock, so a forward step past a claim's time to live makes live
   claims read as expired until they next renew. Tests:

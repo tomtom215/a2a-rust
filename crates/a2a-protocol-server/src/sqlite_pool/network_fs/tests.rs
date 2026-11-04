@@ -142,6 +142,20 @@ fn the_file_a_database_names_is_resolved_through_its_directory() {
     );
     assert_eq!(resolved(Path::new(":memory:")), None);
     assert_eq!(resolved(Path::new("")), None);
+    // What `sqlx` hands back for `sqlite::memory:`, and a URI of one's own: not
+    // files in the working directory, so not resolved as if they were.
+    assert_eq!(resolved(Path::new("file:sqlx-in-memory-0")), None);
+    assert_eq!(resolved(Path::new("file:/data/a2a.db?mode=rwc")), None);
+    assert_eq!(
+        resolved(Path::new("filename-that-merely-starts-with-file.db")),
+        Some(
+            std::env::current_dir()
+                .and_then(|d| d.canonicalize())
+                .expect("cwd")
+                .join("filename-that-merely-starts-with-file.db")
+        ),
+        "only the `file:` scheme is a URI"
+    );
     assert_eq!(
         resolved(&dir.join("no-such-directory-e-f26").join("a2a.db")),
         None,
@@ -217,11 +231,19 @@ mod warnings {
         let dir = std::env::temp_dir().canonicalize().expect("temp dir");
         let table =
             std::env::temp_dir().join(format!("a2a-e-f26-mountinfo-{tag}-{}", std::process::id()));
+        // The working directory is on the same mount, so a database that is
+        // wrongly read as a path in it (an in-memory one) is warned about
+        // wherever the test runs: under cargo-mutants the tree is copied under
+        // the temp directory, and without this the bug showed only there.
+        let cwd = std::env::current_dir()
+            .and_then(|d| d.canonicalize())
+            .expect("working directory");
         std::fs::write(
             &table,
             format!(
-                "22 1 8:1 / / rw - ext4 /dev/sda1 rw\n30 22 0:27 / {} rw - {fstype} srv:/x rw\n",
-                dir.display()
+                "22 1 8:1 / / rw - ext4 /dev/sda1 rw\n30 22 0:27 / {} rw - {fstype} srv:/x rw\n31 22 0:28 / {} rw - {fstype} srv:/y rw\n",
+                dir.display(),
+                cwd.display()
             ),
         )
         .expect("write the mount table");

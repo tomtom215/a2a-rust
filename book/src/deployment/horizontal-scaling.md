@@ -80,7 +80,8 @@ server checks the Linux mount table (`/proc/self/mountinfo`) and, if the file is
 on NFS, SMB, Ceph, a 9p share or a FUSE file system other than a local block
 device (`fuseblk`), logs one warning naming the file and the file system
 (`WARN`, with the `tracing` feature). It does not refuse: a mount can look
-remote and be fine for one process. Where the table cannot be read (any other
+remote and be fine for one process. An in-memory database and a `file:` URI are
+not checked (the URI is not a path this check can place). Where the table cannot be read (any other
 operating system) nothing is checked, so on a Kubernetes `ReadWriteMany` volume
 the absence of the warning is not evidence the volume is safe.
 
