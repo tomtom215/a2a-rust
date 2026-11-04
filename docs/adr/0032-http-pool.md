@@ -4,10 +4,16 @@
 # ADR 0032: A shared HTTP pool is opt-in, fixed at construction, and owns per-origin state
 
 **Date:** 2026-10-31
-**Status:** Proposed. Nothing here is built or run. The shape (opt-in, not the
-default) is recommended to the maintainer, who asked for the production-ready
-choice on 2026-10-31 (audit X-3). The part about client-side load balancing
-(H12) reverses a recorded recommendation and needs the maintainer's decision.
+**Status:** Accepted, built in part (amended 2026-11-04). The pool itself,
+`ClientBuilder::with_pool`, `HttpPool::shared()` and the pool-level settings
+(TLS configuration, connect and idle timeouts, a cap on idle connections per
+host, HTTP/2 PING, a maximum connection lifetime, HTTP/2 prior knowledge) are
+built and tested; see the amendment at the end. The per-origin state of
+decision 5 and the card resolver of decision 6 are not built. The part about
+client-side load balancing (H12) is not built and stays conditional on a
+measurement, as written below. The shape (opt-in, not the default) was
+recommended to the maintainer, who decided on 2026-11-03 to build the opt-in
+pool (fork F7).
 **Author:** Tom F.
 
 ---
@@ -118,12 +124,60 @@ unevenly loaded**; otherwise take H-D7 as recorded.
 * For H12 only: a fan-out through an L4 balancer measuring per-replica load
   with and without the hook.
 
-## Open
+## Amendment, 2026-11-04: what was built, and the two open questions
 
-* The configuration error type (a variant of `ClientError`, or the builder's own).
-* Whether `HttpPool` lives in the client crate or in a crate below both. The
-  server builds its own clients too (`net/client.rs`, the push sender, the JWT
-  key fetch, the telemetry exporter), and the proxy and root-store code is
-  already written twice, once per crate, and held identical by
-  `scripts/check_net_copies.py`. A shared pool would end that duplication, or
-  add a third copy.
+**Decided.**
+
+* The configuration error is the existing `ClientError::Config`, with a
+  message that names the two calls in conflict and says where the setting
+  belongs. A new variant would have been a second way to say "the client
+  cannot be built as configured".
+* `HttpPool` lives in the client crate. The server's own clients
+  (`net/client.rs`, the push sender, the JWT key fetch, the telemetry
+  exporter) keep theirs: they differ in what they resolve and pin, and
+  `scripts/check_net_copies.py` still holds the duplicated proxy and root-store
+  code identical. A crate below both is still possible later and would end the
+  duplication; nothing here makes it harder.
+* A pool is available with `tls-rustls`, the default. Without it each client
+  keeps its own plain-HTTP pool.
+* Conflicts are detected by what the caller *called*, not by comparing values:
+  `with_connection_timeout(10 s)` conflicts with a pool though 10 s is the
+  default, because the caller asked for a value the pool owns.
+* A maximum connection lifetime is a *generation*: past it, new requests go to
+  a new hyper client and the old one is dropped when nothing uses it, so no call
+  is cut. hyper-util has no per-connection age limit to configure. Each
+  lifetime is spread by up to 10% either way.
+* Both of hyper-util's timers are installed for every client, pooled or not:
+  hyper panics if an HTTP/2 keep-alive or timeout is configured without one,
+  and without the pool timer the idle sweeper never starts (found while
+  building this; see the CHANGELOG, Fixed).
+
+**Built, with the test that shows it** (`crates/a2a-protocol-client/tests/http_pool/`):
+
+* Ten clients on one pool make one connection; ten without one make ten
+  (`sharing`). Two clients with different TLS configurations given one pool
+  fail at `build()` (`conflicts`); a pool uses its own TLS configuration and
+  client certificate (`tls`).
+* The maximum lifetime, to the nanosecond under a paused clock, and no call
+  cut by it (`pool::tests`, `lifetime`). HTTP/2 PINGs only when asked, and an
+  unanswered one closes the connection and the next call reconnects
+  (`keep_alive`). The idle sweeper and the idle cap (`idle`). The connect
+  timeout (`connect`).
+
+**Not built, and why.**
+
+* Decision 5: the per-origin in-flight cap, circuit breaker, retry budget
+  and passive ejection. They are the next change. The per-client forms
+  (`with_max_in_flight`, `RetryPolicy::with_budget`) exist already.
+  Passive ejection has no consumer until the balancer below exists, so it is
+  the breaker's open state and nothing more until then.
+* Decision 6: `CachingCardResolver` sharing the pool, with singleflight per URL
+  and jittered expiry (H8). `CardFetchOptions` still builds a client per fetch.
+* H12, the `EndpointResolver` and hedging: the condition above (a measurement
+  showing that layer-4/7 balancing leaves a fan-out uneven) has not been met,
+  so H-D7 stands as recorded.
+* The swarm measurement ("500 and 2,000 clients on one host") and the
+  per-replica measurement through a layer-4 balancer from "What would settle
+  it": not run.
+* Gauges of open and idle connections: hyper-util does not expose the pool's
+  counts, so this needs a counting connector; with the per-origin state.

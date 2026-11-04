@@ -74,7 +74,8 @@ pub mod server {
 /// - **Client**: `A2aClient`, `ClientBuilder`, `EventStream`, `RetryPolicy`,
 ///   `RetryBudget`, `resolve_agent_card`, and the token providers and bearer interceptor
 ///   (`TokenProvider`, `StaticTokenProvider`, `OAuth2ClientCredentials`,
-///   `BearerAuthInterceptor`)
+///   `BearerAuthInterceptor`), and, with feature `tls-rustls` (on by default),
+///   `HttpPool` and `HttpPoolBuilder` for sharing HTTP connections between clients
 /// - **Webhooks** (feature `webhook`, on by default): `WebhookReceiver`,
 ///   `WebhookOutcome`, for receiving push notifications
 /// - **Server**: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`,
@@ -113,6 +114,9 @@ pub mod prelude {
         OAuth2ClientCredentials, RetryBudget, RetryPolicy, StaticTokenProvider, TokenProvider,
         new_message_id, resolve_agent_card,
     };
+
+    #[cfg(feature = "tls-rustls")]
+    pub use a2a_protocol_client::{HttpPool, HttpPoolBuilder};
 
     #[cfg(feature = "webhook")]
     pub use a2a_protocol_client::{WebhookOutcome, WebhookReceiver};

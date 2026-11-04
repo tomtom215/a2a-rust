@@ -43,6 +43,8 @@ extensions, use `ClientBuilder::from_card(&card)`; the
 | Look up a builder method and its default | [Builder reference](./builder/reference.md) |
 | Call an agent over gRPC | [gRPC client](./builder/grpc.md) |
 | Share one client across requests and tasks | [Reusing and sharing a client](./builder/reuse.md) |
+| Share connections between many clients | [Sharing connections: `HttpPool`](./builder/pool.md) |
+| Call an agent behind a load balancer | [Behind a load balancer](./load-balancers.md) |
 
 ## Next Steps
 

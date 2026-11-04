@@ -35,6 +35,39 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`HttpPool`: one set of HTTP connections many clients share**
+  (client, `tls-rustls`; audit D-12, ADR 0032). `HttpPool::builder()...build()`
+  makes a pool; `ClientBuilder::with_pool(&pool)` sends the JSON-RPC and
+  HTTP+JSON bindings through it, so clients that call the same host reuse each
+  other's connections instead of each holding a pool of its own. Tested
+  against this repository's server behind a tap that counts accepted
+  connections: ten clients on one pool made one connection (over HTTP/2),
+  ten without a pool made ten. `HttpPool::shared()` is one process-wide pool
+  with the defaults. A pool has one TLS configuration (`with_tls_config`) and
+  one connect timeout (`with_connect_timeout`), so a client that sets either
+  itself *and* is given a pool fails at `build()` with an error that names the
+  setting, in whichever order the two were called, and a pool is built with
+  the proxy variables as they are when it is built. Nothing changes for a
+  client that is not given a pool. gRPC and WebSocket clients do not use one.
+  The pool also takes, all off by default:
+  `with_max_connection_lifetime` (new connections are used once the current
+  ones are that old, spread by up to 10%, without cutting a call or stream
+  running on the old one), `with_http2_keep_alive(interval, timeout)` (an HTTP/2
+  PING on HTTP/2 connections, idle or not; one that is not answered closes
+  the connection and the next call reconnects),
+  `with_max_idle_per_host`, `with_idle_timeout` (default 50 s) and
+  `with_http2_prior_knowledge` (HTTP/2 without negotiating it, so also over
+  plain `http://`). The per-origin in-flight cap, circuit breaker and retry
+  budget ADR 0032 also describes are not in this entry.
+- **A book page, "Behind a load balancer"** (audit B-11). A blocking
+  `send_message` that outlasts a balancer's idle timeout (60 s on an AWS ALB
+  and in nginx by default; the client waits up to ten minutes) is answered
+  `504` while the task runs on, and the client never learns its id. The page
+  gives the three remedies (send with `return_immediately` and poll, stream,
+  raise the balancer's timeout), says why a long-lived HTTP/2 connection is
+  pinned to one replica behind a layer-4 balancer, and what an HTTP/2 PING
+  does and does not cross. Linked from the client builder and CLI pages.
+
 - **`ClientBuilder::with_grpc_keep_alive`, `GrpcTransportConfig::with_http2_keep_alive`**
   (client; audit B-10, D-12). An opt-in HTTP/2 PING interval and timeout for
   gRPC: a quiet stream is not closed by a load balancer's idle timeout when
@@ -44,8 +77,8 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   wire through a proxy that reads the client's bytes as HTTP/2 frames: PINGs
   at the interval on an idle connection, none by default, and a connection
   whose PINGs nobody answers dropped after the timeout. HTTP/2 PINGs for the
-  HTTP bindings, a maximum connection lifetime and a per-host cap are ADR
-  0032's pool.
+  HTTP bindings, a maximum connection lifetime and a per-host idle cap are
+  `HttpPool`'s (next entry above).
 - **Retries that cannot multiply an overload: a retry budget, a bound on
   elapsed time, and a cap on calls in flight** (client; audit H6, per client
   and opt-in, fork F7). A client that retries sends a saturated worker up to
@@ -1354,6 +1387,16 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **An idle HTTP connection is closed when its idle timeout passes, not when
+  the next request finds it stale** (client; audit D-12, B-07). The client set
+  `pool_idle_timeout` (50 s) without the timer hyper-util needs to start its
+  background sweeper (`pool.rs:436`, hyper-util 0.1.21), so an idle socket was
+  dropped only when something asked the pool for a connection to that host. A
+  program that called many hosts once kept a socket to each until it exited.
+  Both timers are now installed for every client, with or without a pool; the
+  same change is what lets HTTP/2 keep-alive run without hyper's "You must
+  supply a timer" panic. Tested: a pool with a 200 ms idle timeout and no
+  further request sees the client close the connection.
 - **A journal database that stopped answering stopped every delegation of
   the supervisor** (client; audit NEW-h-s0-3). Journal writes are awaited on
   the path the stream's events are read from, so a failover on the journal's

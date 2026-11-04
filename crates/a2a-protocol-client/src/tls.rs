@@ -32,46 +32,20 @@
 //! [`HttpsClient`] goes through the proxy `HTTPS_PROXY`, `HTTP_PROXY`,
 //! `ALL_PROXY` and `NO_PROXY` name (see the crate's proxy module docs).
 
-use std::sync::Arc;
-use std::time::Duration;
-
-use http_body_util::Full;
-use hyper::body::Bytes;
-use hyper_util::client::legacy::Client;
-use hyper_util::rt::TokioExecutor;
 /// The TLS client configuration every setter in this crate takes
 /// ([`ClientBuilder::with_tls_config`](crate::ClientBuilder::with_tls_config)
 /// and the others), re-exported so a caller needs no `rustls` dependency of its
 /// own to hold one.
 pub use rustls::ClientConfig;
 use rustls::crypto::CryptoProvider;
+use std::sync::Arc;
 
-/// The HTTPS-capable HTTP client the transports, card discovery, JWKS and
-/// the token provider use: rustls, and the environment's proxy.
-#[derive(Clone, Debug)]
-pub struct HttpsClient {
-    inner: Client<crate::proxy::ProxyConnector, Full<Bytes>>,
-    rules: Arc<hyper_util::client::proxy::matcher::Matcher>,
-}
-
-impl HttpsClient {
-    /// Sends `req`. A plain `http://` request through a forward proxy whose
-    /// URL carries a user gets its `Proxy-Authorization`; a tunnelled one is
-    /// authenticated in the `CONNECT`.
-    pub fn request(
-        &self,
-        mut req: hyper::Request<Full<Bytes>>,
-    ) -> hyper_util::client::legacy::ResponseFuture {
-        if req.uri().scheme_str() == Some("http")
-            && let Some(auth) = crate::proxy::intercept(&self.rules, req.uri())
-                .and_then(|p| p.basic_auth().cloned())
-        {
-            req.headers_mut()
-                .insert(hyper::header::PROXY_AUTHORIZATION, auth);
-        }
-        self.inner.request(req)
-    }
-}
+pub use crate::https_client::{
+    HttpsClient, build_https_client_with_config, build_https_client_with_connect_timeout,
+};
+pub(crate) use crate::https_client::{Inner, build_inner};
+// Used by the transports' own constructors and card discovery.
+pub(crate) use crate::https_client::build_https_client;
 
 /// Returns an [`Arc`] to the `ring`-backed [`CryptoProvider`] that the
 /// a2a-rust client uses for every TLS handshake.
@@ -318,41 +292,6 @@ fn read_env_roots(
         }
     }
     certs
-}
-
-/// Default connection timeout used when none is specified (10 seconds).
-const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Builds an HTTPS-capable hyper client using the default TLS configuration
-/// and the default connection timeout.
-pub(crate) fn build_https_client() -> HttpsClient {
-    build_https_client_with_connect_timeout(default_tls_config(), DEFAULT_CONNECT_TIMEOUT)
-}
-
-/// Builds an HTTPS-capable hyper client using a custom TLS configuration
-/// and the default connection timeout.
-#[must_use]
-pub fn build_https_client_with_config(tls_config: ClientConfig) -> HttpsClient {
-    build_https_client_with_connect_timeout(tls_config, DEFAULT_CONNECT_TIMEOUT)
-}
-
-/// Builds an HTTPS-capable hyper client with a custom TLS configuration and
-/// connection timeout applied to the underlying TCP connector.
-#[must_use]
-pub fn build_https_client_with_connect_timeout(
-    tls_config: ClientConfig,
-    connection_timeout: Duration,
-) -> HttpsClient {
-    let tcp = crate::transport::connector::http_connector(connection_timeout);
-    let rules = Arc::new(crate::proxy::matcher_from_env());
-    let connector = crate::proxy::ProxyConnector::new(tls_config, Arc::clone(&rules), tcp);
-    let inner = Client::builder(TokioExecutor::new())
-        // Below the 60 s idle timeout of common load balancers (AWS ALB,
-        // nginx's keepalive) and this crate's server's 75 s: a connection
-        // the peer has already closed is not reused (audit B-07).
-        .pool_idle_timeout(Duration::from_secs(50))
-        .build(connector);
-    HttpsClient { inner, rules }
 }
 
 #[cfg(test)]

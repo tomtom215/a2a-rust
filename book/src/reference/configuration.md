@@ -241,6 +241,22 @@ and the `with_*` setters.
 | `budget` | `Option<RetryBudget>` | None (off) | Retries as a bounded fraction of calls, so retries cannot multiply an overload (`with_budget`); a retry the budget cannot pay for is not made |
 | `max_elapsed` | `Option<Duration>` | None (off) | Longest from a call's first attempt to the start of its last retry, backoffs included (`with_max_elapsed`) |
 
+### HttpPool (`HttpPool::builder()`)
+
+One set of HTTP connections that many clients share
+(`ClientBuilder::with_pool`; see [Sharing connections](../client/builder/pool.md)).
+Every setting is fixed when `build()` is called. A zero duration is refused.
+
+| Setter | Type | Default | Description |
+|--------|------|---------|-------------|
+| `with_tls_config` | `ClientConfig` | Mozilla roots plus `SSL_CERT_FILE` / `SSL_CERT_DIR` | The roots every connection of the pool trusts and any client certificate it presents. A client given the pool and its own TLS configuration fails at `build()`. |
+| `with_connect_timeout` | `Duration` | 10s | TCP connect timeout. A client given the pool and `with_connection_timeout` fails at `build()`. |
+| `with_idle_timeout` | `Duration` | 50s | How long an unused connection is kept before it is closed in the background |
+| `with_max_idle_per_host` | `usize` | no limit | Idle connections kept per host |
+| `with_max_connection_lifetime` | `Duration` | not recycled | Use new connections once the current ones are this old, spread by up to 10% either way; calls and streams already running are not cut |
+| `with_http2_keep_alive` | `(Duration, Duration)` | no PING | `(interval, timeout)`: an HTTP/2 PING every `interval`, idle or not, and a connection that does not answer within `timeout` is closed. Applies to connections that speak HTTP/2 |
+| `with_http2_prior_knowledge` | — | negotiate | Speak HTTP/2 without negotiating it, including over plain `http://` |
+
 ### SSE Parser Limits
 
 | Limit | Value | Description |
