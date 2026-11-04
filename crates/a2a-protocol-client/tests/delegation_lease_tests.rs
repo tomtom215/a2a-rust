@@ -265,3 +265,95 @@ async fn renewals_stop_once_the_child_is_finished() {
     assert!(seen <= 2, "{seen} reads of a finished child");
     drop(child);
 }
+
+/// Counts the `GetTask` calls that renew a lease: those with the lease
+/// extension active.
+#[derive(Clone, Default)]
+struct Renewals(Arc<std::sync::atomic::AtomicUsize>);
+
+impl a2a_protocol_server::ServerInterceptor for Renewals {
+    fn before<'a>(
+        &'a self,
+        ctx: &'a a2a_protocol_server::CallContext,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        if ctx.method() == "GetTask"
+            && ctx
+                .extensions()
+                .iter()
+                .any(|e| e == a2a_protocol_types::lease::LEASE_EXTENSION_URI)
+        {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        Box::pin(async { Ok(()) })
+    }
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a a2a_protocol_server::CallContext,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// A supervisor that restarts and picks a child up again renews its lease at
+/// once, not a third of the lease later: after a slow restart the lease may
+/// be about to lapse, and the next tick would be too late (live proof of
+/// group M, 2026-11-04: with 15 s leases a restart 7 s after the kill lost
+/// every child).
+///
+/// The lease is 30 s, so the next tick would be 10 s away; a renewal within
+/// 5 s of the reattach is the immediate one.
+#[tokio::test]
+async fn a_reattach_with_a_lease_renews_it_at_once() {
+    const LONG: Duration = Duration::from_secs(30);
+    let renewals = Renewals::default();
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(Sleeper)
+            .without_agent_card()
+            .with_lease_store(InMemoryLeaseStore::new())
+            .with_interceptor(renewals.clone())
+            .build()
+            .expect("handler"),
+    );
+    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
+        .await
+        .expect("serve");
+    let client = Arc::new(
+        ClientBuilder::new(format!("http://{addr}"))
+            .build()
+            .expect("client"),
+    );
+    let (child, id) = named(
+        Delegation::start_leased(Arc::clone(&client), job(), LONG)
+            .await
+            .expect("start"),
+    )
+    .await;
+    let seen = |renewals: &Renewals| renewals.0.load(std::sync::atomic::Ordering::SeqCst);
+    // Held, not detached: a renewal made at once would have reached the
+    // server by now. A start renews after a third of the lease (10 s).
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(seen(&renewals), 0, "a start does not renew at once");
+    assert_eq!(child.detach().as_deref(), Some(id.as_str()));
+
+    let again = Delegation::reattach_with(
+        Arc::clone(&client),
+        None,
+        id,
+        None,
+        DelegationOptions::new().with_lease(LONG),
+    )
+    .await
+    .expect("reattach");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while seen(&renewals) == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("renewed within 5 s of the reattach, where the next tick is 10 s away");
+    let _ = again.cancel().await;
+}

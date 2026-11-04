@@ -24,18 +24,36 @@ impl Renewal {
     /// named the child, until the child is terminal or this is dropped.
     /// Runs where the delegation started (`origin`), so each renewal's call
     /// is in its trace.
+    ///
+    /// `known` is the child's id when it is named already, which is a
+    /// supervisor picking a child up again after a restart. Its lease was
+    /// last renewed before the restart, by an amount nobody here knows, and
+    /// may be about to lapse, so the first renewal is made at once. A child
+    /// not yet named was granted its lease a moment ago, and the first
+    /// renewal is due in a third of it. Until 2026-11-04 both waited a third
+    /// of `ttl`; a restart later than two thirds of it after the last
+    /// renewal lost every leased child, the first included (live proof of
+    /// group M, `scripts/live/delegation`).
     pub(super) fn spawn(
         client: Arc<A2aClient>,
         tenant: Option<String>,
         ttl: Duration,
         origin: &Origin,
+        known: Option<String>,
     ) -> Self {
-        let id = Arc::new(std::sync::Mutex::new(None::<String>));
+        let every = ttl / 3;
+        let first = if known.is_some() {
+            Duration::ZERO
+        } else {
+            every
+        };
+        let id = Arc::new(std::sync::Mutex::new(known));
         let slot = Arc::clone(&id);
         let task = tokio::spawn(origin.carry(async move {
-            let every = ttl / 3;
+            let mut wait = first;
             loop {
-                tokio::time::sleep(every).await;
+                tokio::time::sleep(wait).await;
+                wait = every;
                 let known = slot
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -63,3 +81,7 @@ impl Drop for Renewal {
         self.task.abort();
     }
 }
+
+#[cfg(test)]
+#[path = "renewal_tests.rs"]
+mod tests;

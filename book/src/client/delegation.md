@@ -162,24 +162,63 @@ let child = Delegation::start_journaled(
 ).await?;
 # drop(child);
 
-// After a restart: pick up what is still open.
+// After a restart: pick up what is still open. Reattach every record first
+// and wait on the children afterwards (see below).
+let mut children = Vec::new();
 for record in journal.open("orchestrator-1").await? {
     if let Some(task_id) = record.task_id.clone() {
-        let child = Delegation::reattach_with(
+        match Delegation::reattach_with(
             Arc::clone(&client), record.tenant.clone(), task_id, record.last_event_id.clone(),
             DelegationOptions::new().with_journal_record(Arc::clone(&journal), &record.id),
         )
-        .await?;
-        let done = child.wait(std::future::pending()).await;
-        println!("{:?}", done.outcome);
+        .await
+        {
+            Ok(child) => children.push(child),
+            // Not `?`: returning here would drop the children already
+            // reattached, and a dropped handle cancels its child.
+            Err(e) => eprintln!("record {} stays open: {e}", record.id),
+        }
     }
     // A record with no task id died before the child was named: send the same
     // message again under `record.idempotency_key` to reach the child the
     // first send created.
 }
+let mut waiting = tokio::task::JoinSet::new();
+for child in children {
+    waiting.spawn(child.wait(std::future::pending()));
+}
+while let Some(done) = waiting.join_next().await {
+    println!("{:?}", done?.outcome);
+}
 # Ok(())
 # }
 ```
+
+**Reattach all of them before waiting on any, and never return early while
+you hold handles.** A child's handle is what renews its lease
+(`DelegationOptions::with_lease`), so a child whose record has not been
+reattached yet has nothing renewing it, and a loop that waits for the first
+child to finish before it reattaches the second lets the second's lease lapse;
+the agent then stops it. Run against a PostgreSQL journal with fifty children
+on 15-second leases, that loop lost 49 or 50 of the 50 in each of three runs
+(`docs/audits/2026-11-01-triage/evidence/m-live-proof/`); with no lease it
+loses none, because nothing is expiring. The other half of the rule is the
+`match`. A handle that is dropped before its child settles cancels the child,
+so a `?` on a record that cannot be reattached cancels every child already
+reattached. In the live runs one record named a task the agent did not have,
+as the 27th of 51: the 26 children reattached before it were cancelled in each
+of three runs, and the other 24 were never reattached. Log it and go on, and
+the record stays open for the next pass.
+
+A reattach with a lease renews at once, but it helps only if it reaches the
+agent before the agent notices the lapse, so restart soon after a crash and
+make the lease long enough to cover a restart. With 15-second leases renewed
+every five seconds, a restart 9.5 seconds after the kill kept all 50 children
+in each of six runs; at 10.0, 10.3 and 10.6 seconds the runs kept 49 or 50, 49,
+and between 29 and 46; a restart at 12 seconds kept none in each of three runs.
+The loss grows over that range rather than stepping, and two runs at one delay
+can differ. (The agent in those runs kept its leases in memory; a shared lease
+store was not run.)
 
 A record holds ids, keys, positions and an outcome label: no message text and
 no credentials. A write that fails after the start is logged and does not stop

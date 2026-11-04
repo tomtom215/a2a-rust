@@ -1387,6 +1387,41 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **The book's recovery loop lost the leased children it was meant to
+  recover** (docs; found by the live proof of audit group M, 2026-11-04).
+  `book/src/client/delegation.md` reattached a journal record and waited for
+  that child to finish before it reattached the next, but a child's handle is
+  what renews its lease, so every child after the first had nothing renewing
+  it and its lease lapsed. Run against a PostgreSQL journal with fifty children
+  on 15-second leases, `kill -9` of the supervisor and the loop as the book
+  wrote it: 49 of 50 children were stopped by the agent in two of three runs
+  and 50 of 50 in the third. With no lease the same loop lost none (3 of 3 runs,
+  50 of 50 completed). The loop now reattaches every record first and waits on
+  the children together, and the page says why. It also does not use `?` once it
+  holds handles: a `Delegation` dropped before its child settles cancels the
+  child (`delegation/drop.rs`), so an early return cancels every child already
+  reattached. Run live with one unreattachable record as the 27th of 51, a loop
+  that returned early cancelled the 26 before it in 3 of 3 runs. The evidence,
+  the harness and the commands to re-run it are in
+  `docs/audits/2026-11-01-triage/evidence/m-live-proof/` and
+  `scripts/live/delegation/`.
+- **A reattach renewed its lease a third of the lease too late**
+  (client; same live proof). `Delegation::reattach_with` with a lease started
+  its renewal task as `start_leased` does, waiting a third of the lease before
+  the first renewal. A child picked up after a crash has had no renewal since
+  before it, so a restart late enough lost it. With 15-second leases a restart
+  7.3 s after the kill, in one of three runs, stopped every child, the first
+  included, though the supervisor had started 2.7 s before the leases lapsed. A
+  reattach now renews at once and then every third of the lease; a start waits
+  a third as before. A restart that comes after the lease has lapsed can still
+  be too late: size the lease to cover one. Live, with 15-second leases renewed
+  every five seconds, a restart 9.5 s after the kill kept 50 of 50 children in
+  six of six runs and one at 12 s kept none in three of three; between them the
+  loss grows (49 or 50, 49, and 29 to 46 kept at 10.0, 10.3 and 10.6 s), and the
+  agent's lease store was in memory. Tested to the nanosecond under a paused
+  clock, and through `reattach_with` against this repository's server (a
+  renewal within 5 s of a reattach whose next tick would be 10 s away).
+
 - **An idle HTTP connection is closed when its idle timeout passes, not when
   the next request finds it stale** (client; audit D-12, B-07). The client set
   `pool_idle_timeout` (50 s) without the timer hyper-util needs to start its

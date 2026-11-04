@@ -183,7 +183,7 @@ impl Delegation {
                 return Err(e);
             }
         };
-        this.renewal = lease.map(|ttl| Renewal::spawn(client, tenant, ttl, &this.origin));
+        this.renewal = lease.map(|ttl| Renewal::spawn(client, tenant, ttl, &this.origin, None));
         this.budget = budget.map(|grant| (grant, None));
         if let Some((journal, id)) = record {
             this = this.with_journal(journal, id);
@@ -233,14 +233,15 @@ impl Delegation {
         let mut this =
             Self::reattach(Arc::clone(&client), tenant.clone(), task_id, last_event_id).await?;
         if let Some(ttl) = options.lease {
-            let renewal = Renewal::spawn(client, tenant, ttl, &this.origin);
-            // The child is named already: renewal starts at the next tick.
-            renewal
-                .id
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone_from(&this.task_id);
-            this.renewal = Some(renewal);
+            // The child is named already, so its first renewal is made at
+            // once: the lease may be about to lapse.
+            this.renewal = Some(Renewal::spawn(
+                client,
+                tenant,
+                ttl,
+                &this.origin,
+                this.task_id.clone(),
+            ));
         }
         if let Some((journal, record)) = existing {
             this = this.with_journal(journal, record);
