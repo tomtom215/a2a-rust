@@ -168,7 +168,8 @@ fn the_lineage_option_is_printed() {
     let options = DelegationOptions::new().with_lineage(Lineage::origin("job"));
     assert!(
         format!("{options:?}").ends_with(
-            "lineage: Some(Lineage { root: \"job\", depth: 0, parent_task_id: None }) }"
+            "lineage: Some(Lineage { root: \"job\", depth: 0, parent_task_id: None }), \
+             hand_off: None }"
         ),
         "{options:?}"
     );
