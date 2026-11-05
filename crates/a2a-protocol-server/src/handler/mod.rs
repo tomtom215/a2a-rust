@@ -473,6 +473,8 @@ mod context_lookup_cost;
 #[cfg(test)]
 mod context_lookup_tests;
 #[cfg(test)]
+mod control_metrics_tests;
+#[cfg(test)]
 mod default_store_metrics_tests;
 #[cfg(test)]
 mod executor_metrics_tests;

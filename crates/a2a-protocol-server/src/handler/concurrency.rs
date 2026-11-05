@@ -62,6 +62,8 @@ impl RequestHandler {
         // `try_acquire_owned`, not `acquire_owned`: refuse now rather than
         // wait. See the module header.
         semaphore.try_acquire_owned().map(Some).map_err(|_| {
+            self.metrics
+                .on_refusal(crate::metrics::control::refusal::TENANT_CAP);
             ServerError::Overloaded(format!(
                 "tenant '{tenant}' already has {cap} task(s) in flight"
             ))

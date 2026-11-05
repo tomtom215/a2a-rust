@@ -49,6 +49,24 @@ impl PushSender for Recorder {
     }
 }
 
+/// Counts the reaped-claim events the reaper reports.
+#[derive(Default)]
+struct Reaped(std::sync::atomic::AtomicUsize);
+
+impl Reaped {
+    fn count(&self) -> usize {
+        self.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl crate::metrics::Metrics for Reaped {
+    fn on_claim(&self, event: &str) {
+        if event == crate::metrics::control::claim::REAPED {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
 pub(super) fn task(id: &str, state: TaskState) -> Task {
     Task::new(
         TaskId::new(id),
@@ -204,6 +222,7 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
             lapsed: false,
         },
     );
+    let claim_events = Arc::new(Reaped::default());
     let reaper = super::Reaper {
         claims: Arc::downgrade(&claims),
         task_store: Arc::clone(&store),
@@ -211,14 +230,18 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
         push_sender: Some(Arc::clone(&sender) as Arc<dyn PushSender>),
         leases: Some(Arc::clone(&leases) as Arc<dyn LeaseStore>),
         limits: crate::handler::limits::HandlerLimits::default(),
-        metrics: Arc::new(crate::metrics::NoopMetrics),
+        metrics: Arc::clone(&claim_events) as Arc<dyn crate::metrics::Metrics>,
     };
 
     // Other runs' leftovers in a shared database may be ended too; this
     // run's orphan must be among them.
-    assert!(
-        reaper.look().await.is_some_and(|n| n >= 1),
-        "the orphan ended"
+    let first = reaper.look().await;
+    assert!(first.is_some_and(|n| n >= 1), "the orphan ended");
+    // Each ending is counted once as a reaped claim (audit H11).
+    assert_eq!(
+        Some(claim_events.count()),
+        first,
+        "each ending counted once"
     );
     TenantContext::scope(scope.to_owned(), async {
         let ended = store.get(&TaskId::new(&*orphan)).await.unwrap().unwrap();

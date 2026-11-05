@@ -240,6 +240,11 @@ impl RequestHandler {
         };
         drop(held);
         let report = HaltReport { stopped, persisted };
+        self.metrics.on_halt(
+            halt_scope(&scope),
+            crate::metrics::control::halt_action::HALT,
+            report.stopped.len(),
+        );
         self.record_halt(&scope, by, "halt", Some(reason), Some(&report.stopped))
             .await;
         report
@@ -277,6 +282,11 @@ impl RequestHandler {
         drop(held);
         if was {
             trace_warn!(scope = ?scope, by, "resumed");
+            self.metrics.on_halt(
+                halt_scope(&scope),
+                crate::metrics::control::halt_action::RESUME,
+                0,
+            );
             self.record_halt(&scope, by, "resume", None, None).await;
         }
         Ok(was)
@@ -295,6 +305,8 @@ impl RequestHandler {
                 sync.apply(&self.halts, &self.cancellation_tokens)
                     .await
                     .map_err(|e| {
+                        self.metrics
+                            .on_refusal(crate::metrics::control::refusal::HALT_STORE);
                         // Temporary, and refused before any work began, so a
                         // client may send again: `Overloaded` goes out with
                         // `Retry-After` and `RetryInfo`, as the idempotency
@@ -447,6 +459,14 @@ impl RequestHandler {
 pub(super) fn stop(turn: &ExecutorTurn, token: &CancellationToken) {
     turn.halt();
     token.cancel();
+}
+
+/// What `scope` covers, as a metric label.
+const fn halt_scope(scope: &HaltScope) -> &'static str {
+    match scope {
+        HaltScope::All => crate::metrics::control::halt_scope::ALL,
+        HaltScope::Tenant(_) => crate::metrics::control::halt_scope::TENANT,
+    }
 }
 
 #[cfg(test)]

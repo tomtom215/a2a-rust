@@ -119,6 +119,7 @@ fn arc_delegates_on_rpc_call() {
         duration: Duration::from_millis(3),
         status_code: Some("NOT_FOUND"),
         error_type: Some("NOT_FOUND"),
+        tenant: None,
     });
     assert_eq!(
         *seen.0.lock().unwrap(),
@@ -258,6 +259,7 @@ fn a_tee_forwards_every_callback_to_both_in_order() {
         duration: Duration::ZERO,
         status_code: None,
         error_type: None,
+        tenant: None,
     });
     tee.on_executor_run("completed", Duration::ZERO);
     let expected: Vec<String> = [

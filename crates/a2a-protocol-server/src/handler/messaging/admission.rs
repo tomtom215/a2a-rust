@@ -211,7 +211,7 @@ impl RequestHandler {
                             // `Existing` for every later send.
                             drop((writer, reader, persistence_rx));
                             self.event_queue_manager.destroy(task_id).await;
-                            return Err(unreadable_log(task_id, &e));
+                            return Err(unreadable_log(&*self.metrics, task_id, &e));
                         }
                     }
                 }
@@ -227,6 +227,8 @@ impl RequestHandler {
                     .to_owned(),
             )),
             QueueLease::CapacityExhausted => {
+                self.metrics
+                    .on_refusal(crate::metrics::control::refusal::STREAM_CAP);
                 let cap = self
                     .event_queue_manager
                     .max_concurrent_queues()
@@ -285,12 +287,17 @@ impl RequestHandler {
 /// destroyed: nothing ran, so a store that is only unavailable for now is
 /// answered as a new task's send is in the same blip, 503 with `Retry-After`,
 /// not a 500 that says retrying will not help (audit D-16).
-fn unreadable_log(task_id: &TaskId, e: &a2a_protocol_types::error::A2aError) -> ServerError {
+fn unreadable_log(
+    metrics: &dyn crate::metrics::Metrics,
+    task_id: &TaskId,
+    e: &a2a_protocol_types::error::A2aError,
+) -> ServerError {
     let refusal = format!(
         "task {task_id}: could not read the event log's last position, so this turn's \
          events could not be numbered without colliding with the previous turn's: {e}"
     );
     if e.is_unavailable() {
+        metrics.on_refusal(crate::metrics::control::refusal::EVENT_LOG);
         ServerError::Overloaded(refusal)
     } else {
         ServerError::Internal(refusal)

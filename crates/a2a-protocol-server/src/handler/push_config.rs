@@ -154,6 +154,8 @@ impl RequestHandler {
             && let Some(total) = self.push_config_store.count().await?
             && total >= self.limits.max_total_push_configs
         {
+            self.metrics
+                .on_refusal(crate::metrics::control::refusal::PUSH_CONFIG_CAP);
             return Err(ServerError::Overloaded(format!(
                 "server is at the maximum of {} push notification configs; \
                          delete unused configs before creating more",

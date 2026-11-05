@@ -118,14 +118,31 @@ Options (from `DECISIONS.md#h11`): (A) a bounded tenant attribute in the
 OpenTelemetry implementation; (B) new default-no-op `Metrics` hooks for the
 control plane; (C) derive everything from spans in a collector.
 
-**Proposed (not built): B, and A opt-in with an allow-list.** Every new hook has a default
-empty body, so a `Metrics` implementation outside this crate compiles
-unchanged. The label values are bounded constants. No task, root, job or
-message id is ever a metric label (ADR 0034 §4). The tenant attribute is off
-unless `OtelMetricsBuilder::with_tenant_dimension(allowed)` names the tenants
-to label; every other tenant is recorded as `_OTHER`, so the series count is
-bounded by the list the operator wrote. None of this is built: the hooks
-touch the control plane's code, which other work packages own in this release.
+**Decision, built: B, and A opt-in with an allow-list.** Four hooks with
+empty default bodies, so a `Metrics` implementation outside this crate
+compiles unchanged, and forwarded by `Arc<T>`, `Tee` and the global
+forwarder: `on_refusal(cause)` at each refusal before work (`stream_cap`,
+`tenant_cap`, `push_config_cap`, `idempotency_store`, `event_log`,
+`halt_store`), `on_lease("lapsed")` in the lease watcher, `on_halt(scope,
+action, stopped)` at halt and resume, `on_claim("reaped")` when the reaper
+ends a task. `OtelMetrics` counts them as `a2a.server.refusals`,
+`a2a.server.lease.events`, `a2a.server.halts`,
+`a2a.server.halt.stopped_tasks` and `a2a.server.claim.events`, in the
+`a2a.server.*` family the existing instruments use (the other packages of this
+release add hooks, `on_push_delivery` outcomes, but no instrument names of
+their own). The label values are bounded constants (`metrics::control`).
+
+Dimensions: `OtelMetrics::with_tenant_dimension(allowed)` labels the RPC,
+executor and refusal metrics with `a2a.tenant`, `_OTHER` for a tenant not
+allowed, so the series count is bounded by the list the operator wrote; the
+call's tenant reaches `on_rpc_call` through `RpcCall::tenant`, carried out of
+the handler's tenant scope by a per-call cell (`rpc_span/call_tenant.rs`).
+`with_agent_name(name)` adds `gen_ai.agent.name`. Both off by default. No
+task, root, job or message id is ever a metric label (ADR 0034 §4); a job
+dimension is therefore not built, and a per-job view stays a trace query.
+Budget settlement is not a hook: its meter names are chosen by delegators,
+so they are not a bounded label set, and budget-exhausted endings are already
+counted (`a2a.server.executor.duration{outcome="budget_exhausted"}`).
 
 ## 5. `Telemetry` ergonomics (G-14) and the legacy pipeline (C-12)
 

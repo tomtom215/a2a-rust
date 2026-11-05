@@ -47,6 +47,8 @@ struct Watched {
 pub struct LeaseWatch {
     watched: Mutex<HashMap<(String, String), Watched>>,
     started: AtomicBool,
+    /// The handler's metrics, for a lapse (audit H11); set on first use.
+    pub metrics: std::sync::OnceLock<Arc<dyn crate::metrics::Metrics>>,
 }
 
 impl std::fmt::Debug for LeaseWatch {
@@ -149,6 +151,9 @@ async fn check(watch: Weak<LeaseWatch>, store: Arc<dyn LeaseStore>) {
                 Some(true) => {
                     if let Some(w) = map.remove(&key) {
                         trace_warn!(task = %key.1, "lease lapsed; stopping the task");
+                        if let Some(metrics) = watch.metrics.get() {
+                            metrics.on_lease(crate::metrics::control::lease::LAPSED);
+                        }
                         super::super::halt::stop(&w.turn, &w.token);
                     }
                 }

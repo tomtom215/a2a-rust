@@ -113,6 +113,7 @@ pub struct ServerSpan {
     system: RpcSystem,
     method: &'static str,
     metrics: Arc<dyn Metrics>,
+    tenant: call_tenant::Cell,
     #[cfg(feature = "tracing")]
     span: tracing::Span,
     /// The handler's policy is [`InboundTracePolicy::Drop`]: this call, and
@@ -208,6 +209,7 @@ impl ServerSpan {
             system,
             method: qualified,
             metrics: Arc::clone(&handler.metrics),
+            tenant: call_tenant::Cell::default(),
             #[cfg(feature = "tracing")]
             untraced: handler.inbound_trace_policy == InboundTracePolicy::Drop,
             #[cfg(feature = "tracing")]
@@ -347,7 +349,10 @@ impl ServerSpan {
         T: FnOnce(F::Output) -> R,
     {
         let slot = streams.then(stream::Slot::new);
-        let fut = stream::scope_future(slot.as_ref(), fut);
+        let fut = call_tenant::scope(
+            Arc::clone(&self.tenant),
+            stream::scope_future(slot.as_ref(), fut),
+        );
         #[cfg(feature = "tracing")]
         let inner =
             tracing::Instrument::instrument(UNTRACED.scope(self.untraced, fut), self.span.clone());
@@ -407,6 +412,7 @@ impl ServerSpan {
             duration,
             status_code,
             error_type: failed_with,
+            tenant: self.tenant.get().map(String::as_str),
         });
     }
 }
@@ -479,6 +485,8 @@ fn truncated(s: &str, max: usize) -> &str {
 
 #[cfg(test)]
 mod abandoned_tests;
+mod call_tenant;
+pub use call_tenant::note as note_tenant;
 #[cfg(all(test, feature = "otel"))]
 mod baggage_tests;
 #[cfg(test)]

@@ -54,7 +54,10 @@ impl RequestHandler {
             .resolve_tenant_unadmitted(method, headers, client_tenant)
             .await
         {
-            Ok(tenant) => Ok(tenant),
+            Ok(tenant) => {
+                crate::rpc_span::note_tenant(&tenant);
+                Ok(tenant)
+            }
             Err(e) => Err(Box::pin(self.refuse_unreadable(method, headers, e)).await),
         }
     }

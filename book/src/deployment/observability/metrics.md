@@ -430,12 +430,43 @@ implements it; so can you, to count something of your own
 | `on_persistence_error(operation, error_kind)` | A task write could not be persisted | `a2a.server.persistence_errors` |
 | `on_store_retry(operation, cause)` | A store operation is run again after a failure that passed | `a2a.server.store_retries` |
 | `on_push_delivery(outcome)` | A push delivery ends | `a2a.server.push_deliveries` |
+| `on_refusal(cause)` | A request is refused before any work: `stream_cap`, `tenant_cap`, `push_config_cap`, `idempotency_store`, `event_log`, `halt_store` | `a2a.server.refusals` |
+| `on_lease(event)` | A task lease event: `lapsed` | `a2a.server.lease.events` |
+| `on_halt(scope, action, stopped)` | A halt or resume is applied: scope `all` \| `tenant`, action `halt` \| `resume`, and the running tasks it stopped | `a2a.server.halts`, `a2a.server.halt.stopped_tasks` |
+| `on_claim(event)` | A turn-claim event: `reaped` (the reaper ended a task its replica left) | `a2a.server.claim.events` |
 
 `RpcCall` carries `system`, `method` (`Option`), `duration`, `status_code`
-(`Option`) and `error_type` (`Option`), the values above. The label constants
-are public modules: `executor_outcome`, `persistence_operation`,
-`push_outcome`, `event_append_error`, `event_log_catchup_error` and
-`queue_handoff_error`. `ConnectionPoolStats` carries
+(`Option`), `error_type` (`Option`) and `tenant` (`Option`, the tenant the
+handler resolved), the values above. The label constants are public modules:
+`executor_outcome`, `persistence_operation`, `push_outcome`,
+`event_append_error`, `event_log_catchup_error`, `queue_handoff_error` and
+`control` (`refusal`, `lease`, `halt_scope`, `halt_action`, `claim`). The
+four control-plane hooks are new in 0.16.0 with empty default bodies, so an
+existing `Metrics` implementation compiles unchanged (audit H11).
+
+### Tenant and agent dimensions
+
+Off by default, so no series an existing dashboard reads changes. On
+`OtelMetrics` (from `OtelMetricsBuilder::build()` or `Telemetry::otel_metrics()`):
+
+```rust,ignore
+let metrics = telemetry
+    .otel_metrics()
+    .with_tenant_dimension(["acme", "globex"]) // others are `_OTHER`
+    .with_agent_name("billing");               // one per handler
+```
+
+`with_tenant_dimension(allowed)` adds `a2a.tenant` to
+`rpc.server.call.duration`, `a2a.server.executor.duration` and
+`a2a.server.refusals`: the tenant's name when it is in `allowed`, `_OTHER` for
+any other tenant, and no label for a request with none, so each series splits
+into at most `allowed.len() + 1`, the bound the operator writes.
+`with_agent_name(name)` adds `gen_ai.agent.name` (the span's attribute name) to
+those and to the control-plane counters, for a process serving several agents
+with one `OtelMetrics` each. There is no job or task dimension, by rule
+(ADR 0034 §4): a job, root or task id is unbounded, and a per-job view is a
+trace query (`a2a.task.id`, the lineage root) or a collector's span metrics,
+not a series. `ConnectionPoolStats` carries
 `active_connections`, `idle_connections`, `total_connections_created` and
 `connections_closed`, the last two cumulative since start (`OtelMetrics` adds
 only the increase to its counters). `NoopMetrics` discards everything, and

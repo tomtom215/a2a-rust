@@ -107,6 +107,7 @@ impl RequestHandler {
             .grant(&tenant, task, ttl_ms, now_unix_ms().saturating_add(ttl_ms))
             .await
             .map_err(|e| ServerError::Internal(format!("the lease could not be stored: {e}")))?;
+        let _ = leases.watch.metrics.set(Arc::clone(&self.metrics));
         leases.watch.watch(
             &leases.store,
             tenant,

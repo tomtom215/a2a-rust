@@ -15,10 +15,11 @@ use super::{CANCELLED, RpcSystem, ServerSpan};
 /// The future inside a call's span, as the call's future is wrapped when
 /// tracing is compiled in.
 #[cfg(feature = "tracing")]
-type Inner<F> =
-    tracing::instrument::Instrumented<tokio::task::futures::TaskLocalFuture<bool, Scoped<F>>>;
+type Inner<F> = tracing::instrument::Instrumented<
+    tokio::task::futures::TaskLocalFuture<bool, super::call_tenant::Scoped<Scoped<F>>>,
+>;
 #[cfg(not(feature = "tracing"))]
-type Inner<F> = Scoped<F>;
+type Inner<F> = super::call_tenant::Scoped<Scoped<F>>;
 
 pin_project_lite::pin_project! {
     /// A call running in its span; when it finishes, it is recorded and its

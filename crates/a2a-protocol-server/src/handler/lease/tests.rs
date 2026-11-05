@@ -455,3 +455,29 @@ async fn a_store_with_its_own_clock_can_say_the_lease_has_not_lapsed() {
     tokio::time::sleep(TTL * 2).await;
     assert_eq!(read(&h, &id, false).await, TaskState::Working);
 }
+
+/// A lapse is counted as a lease event (audit H11). Tokio's clock is paused
+/// and advances by itself, so the watcher's waits pass without real time.
+#[tokio::test(start_paused = true)]
+async fn a_lapse_is_counted() {
+    #[derive(Default)]
+    struct Lapses(std::sync::atomic::AtomicUsize);
+    impl crate::metrics::Metrics for Lapses {
+        fn on_lease(&self, event: &str) {
+            if event == crate::metrics::control::lease::LAPSED {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+    }
+    let lapses = Arc::new(Lapses::default());
+    let h = RequestHandlerBuilder::new(Sleeper)
+        .without_agent_card()
+        .with_task_store_arc(tasks())
+        .with_lease_store(OwnClock { lapsed: true })
+        .with_metrics(Arc::clone(&lapses))
+        .build()
+        .expect("handler");
+    let id = start(&h, Some(TTL)).await.unwrap();
+    reaches(&h, &id, TaskState::Canceled, Duration::from_secs(5)).await;
+    assert_eq!(lapses.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+}

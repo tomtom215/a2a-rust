@@ -64,6 +64,7 @@ fn record(
         duration: started.elapsed(),
         status_code: Some(status),
         error_type: system.is_server_error(status).then_some(status),
+        tenant: None,
     });
 }
 
