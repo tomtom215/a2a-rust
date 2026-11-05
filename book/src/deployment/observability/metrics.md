@@ -432,7 +432,7 @@ implements it; so can you, to count something of your own
 | `on_push_delivery(outcome)` | A push delivery ends | `a2a.server.push_deliveries` |
 | `on_refusal(cause)` | A request is refused before any work: `stream_cap`, `tenant_cap`, `push_config_cap`, `idempotency_store`, `event_log`, `halt_store` | `a2a.server.refusals` |
 | `on_lease(event)` | A task lease event: `lapsed` | `a2a.server.lease.events` |
-| `on_halt(scope, action, stopped)` | A halt or resume is applied: scope `all` \| `tenant`, action `halt` \| `resume`, and the running tasks it stopped | `a2a.server.halts`, `a2a.server.halt.stopped_tasks` |
+| `on_halt(scope, action, stopped)` | A halt or resume is applied: scope `all` \| `tenant` \| `root` (a job), action `halt` \| `resume`, and the running tasks it stopped | `a2a.server.halts`, `a2a.server.halt.stopped_tasks` |
 | `on_claim(event)` | A turn-claim event: `reaped` (the reaper ended a task its replica left) | `a2a.server.claim.events` |
 
 `RpcCall` carries `system`, `method` (`Option`), `duration`, `status_code`

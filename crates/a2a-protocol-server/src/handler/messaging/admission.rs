@@ -226,17 +226,7 @@ impl RequestHandler {
                  for them; retry later"
                     .to_owned(),
             )),
-            QueueLease::CapacityExhausted => {
-                self.metrics
-                    .on_refusal(crate::metrics::control::refusal::STREAM_CAP);
-                let cap = self
-                    .event_queue_manager
-                    .max_concurrent_queues()
-                    .map_or_else(String::new, |n| format!(" ({n})"));
-                Err(ServerError::Overloaded(format!(
-                    "server at maximum concurrent stream capacity{cap}; retry later"
-                )))
-            }
+            QueueLease::CapacityExhausted => Err(self.stream_cap_refusal()),
         }
     }
 
@@ -278,6 +268,22 @@ impl RequestHandler {
         };
         let seq = read.as_ref().map_or(end, |read| end.max(read.position()));
         Ok((seq, read))
+    }
+}
+
+impl RequestHandler {
+    /// The refusal of a stream past the server's concurrent-stream cap,
+    /// counted with its cause (audit H11).
+    fn stream_cap_refusal(&self) -> ServerError {
+        self.metrics
+            .on_refusal(crate::metrics::control::refusal::STREAM_CAP);
+        let cap = self
+            .event_queue_manager
+            .max_concurrent_queues()
+            .map_or_else(String::new, |n| format!(" ({n})"));
+        ServerError::Overloaded(format!(
+            "server at maximum concurrent stream capacity{cap}; retry later"
+        ))
     }
 }
 

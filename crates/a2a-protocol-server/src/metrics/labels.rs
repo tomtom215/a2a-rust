@@ -187,6 +187,9 @@ pub mod control {
         pub const ALL: &str = "all";
         /// One tenant's tasks.
         pub const TENANT: &str = "tenant";
+        /// One task tree, from its root (a job; ADR 0034). The root is not a
+        /// label: it is unbounded.
+        pub const ROOT: &str = "root";
     }
 
     /// What was applied.

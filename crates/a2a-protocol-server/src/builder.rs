@@ -1929,15 +1929,12 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("lease_store", &self.lease_store.is_some())
             .field("max_lease_ttl", &self.max_lease_ttl)
             .field("turn_claims", &self.turn_claims)
-            .field(
-                "allow_process_local_stores",
-                &self.allow_process_local_stores,
-            )
             .field("turn_claim_ttl", &self.turn_claim_ttl)
             .field("turn_claim_renewal", &self.turn_claim_renewal)
             .field("replica_name", &self.replica_name)
-            .field("baggage", &self.baggage)
-            .field("propagators", &self.propagators);
+            .field("propagation", &(&self.baggage, &self.propagators));
+        let local = self.allow_process_local_stores;
+        d.field("allow_process_local_stores", &local);
         d.field("profiles", &self.profiles);
         #[cfg(feature = "audit")]
         d.field("audit", &self.audit.is_some());

@@ -466,6 +466,7 @@ const fn halt_scope(scope: &HaltScope) -> &'static str {
     match scope {
         HaltScope::All => crate::metrics::control::halt_scope::ALL,
         HaltScope::Tenant(_) => crate::metrics::control::halt_scope::TENANT,
+        HaltScope::Root { .. } => crate::metrics::control::halt_scope::ROOT,
     }
 }
 
