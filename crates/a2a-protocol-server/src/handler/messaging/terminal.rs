@@ -79,9 +79,24 @@ pub(super) enum Stop {
     /// before it could. Nobody cancelled the task: it ends `Failed`, failure
     /// class `transient`, as a shutdown does (audit E-F7).
     ClaimLapsed,
+    /// This replica is shutting down, and the executor said its turn may be
+    /// run again (`AgentExecutor::resumes_after_hand_off`) on a handler with
+    /// turn claims: the task stays `working`, marked as handed back to its
+    /// caller (ADR 0054, audit D-21).
+    HandedOff,
 }
 
 impl Stop {
+    /// A shutdown's stop, as a hand-off when `hands_off` (the executor can be
+    /// re-run and the turn holds a claim another replica can take); any
+    /// other stop as it is.
+    pub(super) const fn handed_off_if(self, hands_off: bool) -> Self {
+        match self {
+            Self::ShutDown if hands_off => Self::HandedOff,
+            other => other,
+        }
+    }
+
     /// How a run was stopped, from whether its turn was halted, whether
     /// shutdown had begun when it returned, and whether its claim lapsed. A
     /// halt wins: the operator's stop is a cancellation. Shutdown names the
@@ -103,6 +118,13 @@ impl Stop {
 pub const SHUT_DOWN: &str = "the server running this task shut down before the turn \
     ended; the task did not complete. To try again, send it as a new request (a new \
     message id and idempotency key): a retry with the same key is answered with this task";
+
+/// The status message of a turn shutdown handed back to its caller (ADR
+/// 0054).
+pub const HANDED_OFF: &str = "the server running this turn shut down before it ended and \
+    handed it back: the task is still working and nothing runs it. Send the turn's message \
+    again to this task id (a new message id) and another replica runs it; a task nobody \
+    continues is ended failed, failure class transient, after ten minutes";
 
 /// The status message of a turn stopped because its replica could not keep
 /// the claim on the task (audit E-F7).
@@ -214,6 +236,8 @@ impl TerminalTracking {
         } else if stop == Stop::ShutDown && !self.terminal_written() {
             self.end_transient(executor, ctx, SHUT_DOWN, "shutdown")
                 .await;
+        } else if stop == Stop::HandedOff && !self.terminal_written() {
+            self.hand_off(ctx).await;
         } else if stop == Stop::ClaimLapsed && !self.terminal_written() {
             self.end_transient(executor, ctx, CLAIM_LAPSED, "a lapsed claim")
                 .await;
@@ -278,6 +302,31 @@ impl TerminalTracking {
         *self.replacement() = None;
         if !self.terminal_written() {
             super::execute::write_failure_event(self, ctx, &error, FailureClass::Transient).await;
+        }
+    }
+
+    /// Hands a stopped turn back to its caller (ADR 0054): a `working`
+    /// status whose agent message says so and carries
+    /// [`HAND_OFF_METADATA_KEY`](crate::executor::HAND_OFF_METADATA_KEY). The
+    /// cancel hook is not run: the turn is to be run again, not ended.
+    async fn hand_off(&self, ctx: &RequestContext) {
+        let mut note = Message::new(
+            a2a_protocol_types::message::MessageId::new(uuid::Uuid::new_v4().to_string()),
+            a2a_protocol_types::message::MessageRole::Agent,
+            vec![a2a_protocol_types::message::Part::text(HANDED_OFF)],
+        )
+        .with_task_id(ctx.task_id.clone())
+        .with_context_id(ctx.context_id.clone());
+        note.metadata = Some(serde_json::json!({
+            crate::executor::HAND_OFF_METADATA_KEY: true
+        }));
+        let update = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            TaskStatus::with_timestamp(TaskState::Working).with_message(note),
+        ));
+        if let Err(_e) = self.write(update).await {
+            trace_warn!(task_id = %ctx.task_id, error = %_e, "hand-off status not written");
         }
     }
 

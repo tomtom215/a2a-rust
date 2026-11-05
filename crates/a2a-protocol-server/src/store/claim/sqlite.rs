@@ -53,12 +53,16 @@ const CLAIM_SQL: &str = "INSERT INTO a2a_task_claims
     WHERE a2a_task_claims.expires_at_ms < ?5
     RETURNING token";
 
-/// Tasks left `submitted` or `working` with no live claim, in each table.
+/// Tasks left `submitted` or `working` with no live claim, in each table,
+/// except a turn handed back to its caller less than `HAND_OFF_WINDOW` (600 s)
+/// ago, which waits for its caller, not the reaper (ADR 0054).
 const ABANDONED_PLAIN_SQL: &str = "SELECT '' AS scope, t.id FROM tasks t
     WHERE t.state IN ('TASK_STATE_SUBMITTED', 'TASK_STATE_WORKING')
       AND t.updated_at < strftime('%Y-%m-%d %H:%M:%f', 'now', ?1)
       AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c
                       WHERE c.scope = '' AND c.task_id = t.id AND c.expires_at_ms > ?2)
+      AND NOT COALESCE(json_extract(t.data, '$.status.message.metadata.\"a2a-rust.com/hand-off\"') = 1
+                       AND t.updated_at > strftime('%Y-%m-%d %H:%M:%f', 'now', '-600 seconds'), 0)
     ORDER BY t.updated_at LIMIT ?3";
 
 const ABANDONED_TENANT_SQL: &str = "SELECT t.tenant_id, t.id FROM tenant_tasks t
@@ -66,6 +70,8 @@ const ABANDONED_TENANT_SQL: &str = "SELECT t.tenant_id, t.id FROM tenant_tasks t
       AND t.updated_at < strftime('%Y-%m-%d %H:%M:%f', 'now', ?1)
       AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c
                       WHERE c.scope = t.tenant_id AND c.task_id = t.id AND c.expires_at_ms > ?2)
+      AND NOT COALESCE(json_extract(t.data, '$.status.message.metadata.\"a2a-rust.com/hand-off\"') = 1
+                       AND t.updated_at > strftime('%Y-%m-%d %H:%M:%f', 'now', '-600 seconds'), 0)
     ORDER BY t.updated_at LIMIT ?3";
 
 /// Turn claims in a SQLite table, `a2a_task_claims`.

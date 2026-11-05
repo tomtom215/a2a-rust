@@ -38,6 +38,43 @@ client does not repeat a cancelled task. A `canceled` that the `cancel` hook
 writes during shutdown is written as the transient failure instead. A halt
 ([operator oversight](../oversight.md)) still ends tasks `canceled`.
 
+### Handing a long turn back to its caller
+
+A turn longer than the completion window loses its work on every deploy:
+it ends `failed`/`transient` and is sent again as a new task. An executor
+for which running a turn twice is safe (its tool calls carry idempotency
+keys, its other side effects are checked before they are made) can say so,
+and on a store that hands out turn claims (the SQLite and PostgreSQL stores)
+shutdown then hands the turn back instead (ADR 0054):
+
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+impl AgentExecutor for MyAgent {
+    // `execute` as usual: it returns when its cancellation token fires.
+#   fn execute<'a>(&'a self, ctx: &'a RequestContext, _: &'a dyn EventQueueWriter)
+#       -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+#       Box::pin(async move { ctx.cancellation_token.cancelled().await; Ok(()) })
+#   }
+    fn resumes_after_hand_off(&self) -> bool {
+        true
+    }
+}
+```
+
+The task stays `working`. Its status message says it was handed back and
+carries `{"a2a-rust.com/hand-off": true}` in its metadata
+(`HAND_OFF_METADATA_KEY`); the cancel hook is not run and the claim is
+released. The caller sends the turn's message again, with a new message id,
+to the same task id; whichever replica receives it runs the turn with the
+caller's own credentials and the stored task in `ctx.stored_task`. A task
+nobody continues is ended `failed`/`transient` by the reaper once
+`HAND_OFF_WINDOW` (ten minutes) has passed. A crash hands nothing back: the
+reaper ends the task as before. This SDK's `Delegation` does not yet continue
+a handed-back child by itself.
+
 <figure class="diagram">
 <a href="../../images/diagrams/dep-shutdown-order.light.svg"><img class="diagram-light" src="../../images/diagrams/dep-shutdown-order.light.svg" alt="The shutdown sequence of Server::serve_with_shutdown: stop accepting, let tasks finish for up to 5 s, cancel the rest and wait up to 10 s, drain connections for up to 15 s, then handler.shutdown and the telemetry flush, all before Kubernetes sends SIGKILL."></a>
 <a href="../../images/diagrams/dep-shutdown-order.dark.svg"><img class="diagram-dark" src="../../images/diagrams/dep-shutdown-order.dark.svg" alt=""></a>

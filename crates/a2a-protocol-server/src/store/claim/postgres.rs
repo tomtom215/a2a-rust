@@ -47,13 +47,17 @@ pub const MIGRATION_SQL: &str = concat!(create_table!(), ";", create_owner_index
 /// release holds the task (`upgrade`). `now()` is the database's clock.
 const CLAIM_SQL: &str = "SELECT a2a_claim_turn($1, $2, $3, $4, $5)";
 
-/// Tasks left `submitted` or `working` with no live claim, in each table.
+/// Tasks left `submitted` or `working` with no live claim, in each table,
+/// except a turn handed back to its caller less than `HAND_OFF_WINDOW` (600 s)
+/// ago, which waits for its caller, not the reaper (ADR 0054).
 /// The database's clock decides both the claim's expiry and the quiet time.
 const ABANDONED_PLAIN_SQL: &str = "SELECT '' AS scope, t.id FROM tasks t
     WHERE t.state IN ('TASK_STATE_SUBMITTED', 'TASK_STATE_WORKING')
       AND t.updated_at < now() - $1 * interval '1 millisecond'
       AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c
                       WHERE c.scope = '' AND c.task_id = t.id AND c.expires_at > now())
+      AND NOT COALESCE(t.data->'status'->'message'->'metadata'->>'a2a-rust.com/hand-off' = 'true'
+                       AND t.updated_at > now() - interval '600 seconds', FALSE)
     ORDER BY t.updated_at LIMIT $2";
 
 const ABANDONED_TENANT_SQL: &str = "SELECT t.tenant_id, t.id FROM tenant_tasks t
@@ -61,6 +65,8 @@ const ABANDONED_TENANT_SQL: &str = "SELECT t.tenant_id, t.id FROM tenant_tasks t
       AND t.updated_at < now() - $1 * interval '1 millisecond'
       AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c
                       WHERE c.scope = t.tenant_id AND c.task_id = t.id AND c.expires_at > now())
+      AND NOT COALESCE(t.data->'status'->'message'->'metadata'->>'a2a-rust.com/hand-off' = 'true'
+                       AND t.updated_at > now() - interval '600 seconds', FALSE)
     ORDER BY t.updated_at LIMIT $2";
 
 const RENEW_SQL: &str = "UPDATE a2a_task_claims

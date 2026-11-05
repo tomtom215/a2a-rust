@@ -268,6 +268,9 @@ impl RequestHandler {
         claim: Option<Arc<TurnClaim>>,
     ) -> impl std::future::Future<Output = ()> + Send + 'static {
         let executor = Arc::clone(&self.executor);
+        // Only a turn holding a claim can be taken over by another replica;
+        // without one, a hand-off would leave a task nobody may run.
+        let hands_off = claim.is_some() && executor.resumes_after_hand_off();
         let metrics = Arc::clone(&self.metrics);
         let task_id = ctx.task_id.clone();
         let event_queue_mgr = self.event_queue_manager.clone();
@@ -340,7 +343,8 @@ impl RequestHandler {
                 run_executor(executor.as_ref(), &ctx, &writer, timeout, expose_internal)
             })
             .await;
-            let stop = Stop::of(turn.is_halted(), shutdown.is_cancelled(), turn.is_lapsed());
+            let stop = Stop::of(turn.is_halted(), shutdown.is_cancelled(), turn.is_lapsed())
+                .handed_off_if(hands_off);
             run.finish(run_outcome(
                 &result,
                 stop != Stop::No || ctx.cancellation_token.is_cancelled(),

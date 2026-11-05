@@ -158,3 +158,14 @@ async fn a_cancel_writes_canceled_only_when_the_hook_did_not_end_the_task() {
     );
     assert_eq!(cancel_through(&Refuses).await, (vec![], false));
 }
+
+/// A shutdown's stop becomes a hand-off only when the turn can be handed
+/// off; no other stop does (ADR 0054).
+#[test]
+fn only_a_shutdown_is_handed_off() {
+    assert_eq!(Stop::ShutDown.handed_off_if(true), Stop::HandedOff);
+    assert_eq!(Stop::ShutDown.handed_off_if(false), Stop::ShutDown);
+    for stop in [Stop::No, Stop::Halted, Stop::ClaimLapsed] {
+        assert_eq!(stop.handed_off_if(true), stop);
+    }
+}

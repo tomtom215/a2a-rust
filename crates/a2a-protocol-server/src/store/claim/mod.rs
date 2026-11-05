@@ -174,6 +174,13 @@ pub trait TurnClaimStore: Send + Sync + 'static {
     /// stopped its executor past the grace, left them so, and until
     /// 2026-10-29 nothing finished them (audit E-F1, run live).
     ///
+    /// A task a shutdown handed back to its caller (its status message's
+    /// metadata carries `executor::HAND_OFF_METADATA_KEY`) is left out until
+    /// its status is [`HAND_OFF_WINDOW`](crate::executor::HAND_OFF_WINDOW)
+    /// old: its caller continues it, and only one nobody continued is the
+    /// reaper's (ADR 0054). Without this a deploy that hands off more turns
+    /// than a look ends would fill every look with tasks it must leave.
+    ///
     /// The default finds none: a claim store that does not share a database
     /// with its tasks cannot see them.
     ///
@@ -375,6 +382,8 @@ fn live(expires: Instant, now: Instant) -> bool {
     expires > now
 }
 
+#[cfg(all(test, any(feature = "sqlite", feature = "postgres")))]
+mod hand_off_tests;
 #[cfg(test)]
 mod tests;
 
