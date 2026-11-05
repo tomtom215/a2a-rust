@@ -149,9 +149,7 @@ impl OriginState {
     /// Where the origin stands at `now`. Taking a probe slot is a side
     /// effect: `Available(Probe)` claims it, so only one caller gets it.
     pub fn standing(&self, now: Instant) -> Standing {
-        if self.ejection.is_none() {
-            return Standing::Available(Ticket::Normal);
-        }
+        // Without a policy nothing is ever ejected, and this is the first arm.
         let mut health = self.health();
         match health.ejected_until {
             None => Standing::Available(Ticket::Normal),

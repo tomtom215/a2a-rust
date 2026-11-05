@@ -186,6 +186,35 @@ async fn forced_calls_close_on_success_and_change_nothing_on_failure() {
     assert_eq!(s.ejected_until(), None);
 }
 
+/// A probe's guard is recorded once. A stream opened as the probe keeps its
+/// guard after recording success; if the origin is ejected again and a new
+/// probe takes the slot, dropping the old stream must not free that slot.
+#[tokio::test(start_paused = true)]
+async fn a_recorded_probe_dropped_later_leaves_a_newer_probe_alone() {
+    let origins = Origins::new(Some(policy()), None, None);
+    let s = origins.get("o");
+    fail(&s, 3);
+    tokio::time::advance(10 * SECOND).await;
+    assert_eq!(
+        s.standing(Instant::now()),
+        Standing::Available(Ticket::Probe)
+    );
+    let mut stream = s.enter(Ticket::Probe).unwrap();
+    stream.record(Outcome::Success);
+    fail(&s, 3);
+    tokio::time::advance(20 * SECOND).await;
+    assert_eq!(
+        s.standing(Instant::now()),
+        Standing::Available(Ticket::Probe)
+    );
+    drop(stream);
+    assert_eq!(
+        s.standing(Instant::now()),
+        Standing::Ejected(None),
+        "still taken"
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_probe_that_learns_nothing_frees_its_slot() {
     let origins = Origins::new(Some(policy()), None, None);
