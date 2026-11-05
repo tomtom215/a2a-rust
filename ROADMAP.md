@@ -1124,6 +1124,12 @@ Work committed to and not yet built:
 * **Listing on the ITK dashboard.** This waits on upstream changes, drafted
   in `docs/upstream/a2a-itk-dashboard-enrolment-draft.md`.
 
+## Waiting on upstream
+
+| Item | Blocked on | What happens until then |
+|---|---|---|
+| SDK exemplars on this crate's metrics (audit C-05, SDK half; ADR 0038) | `opentelemetry_sdk` recording exemplars: 0.33.1, the version in `Cargo.lock`, builds every data point with `exemplars: vec![]`, has no exemplar filter or reservoir, and keeps the field `pub(crate)` | `OTEL_METRICS_EXEMPLAR_FILTER` asking for exemplars is noted at `WARN` (ad037faa); metrics-to-traces correlation comes from the stack half (Tempo span-metrics exemplars, `deploy/observability`). Pick it up on the first `opentelemetry_sdk` release that ships a reservoir: honour the variable and drop the notice |
+
 ## Open questions
 
 Genuinely undecided — listed so they are not mistaken for oversights.

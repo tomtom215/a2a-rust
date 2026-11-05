@@ -156,7 +156,10 @@ CPU time, open descriptors) are not built.
 
 ## What is not built, and why
 
-* **Exemplars (C-05, SDK half).** `opentelemetry_sdk` 0.33.1, the version
+* **Exemplars (C-05, SDK half). C-05 is closed by the stack half plus this
+  limit:** metrics-to-traces correlation comes from Tempo's span-metrics
+  exemplars (`deploy/observability`, the `obs-stack` package), and the SDK
+  half waits on upstream (ROADMAP "Waiting on upstream"). `opentelemetry_sdk` 0.33.1, the version
   pinned in `Cargo.lock`, builds every data point with `exemplars: vec![]` and
   does not read `OTEL_METRICS_EXEMPLAR_FILTER`; the field is `pub(crate)`, so
   neither this crate nor an exporter can add one. `Telemetry` notes the
