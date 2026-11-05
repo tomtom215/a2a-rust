@@ -175,7 +175,7 @@ async fn setup() -> (Arc<RequestHandler>, Touches, Touches, String, String) {
         other => panic!("expected a task, got {other:?}"),
     };
     let config = handler
-        .on_set_push_config(
+        .on_create_push_config(
             TaskPushNotificationConfig::new(task.as_str(), "https://hook.example.com/a2a"),
             Some(&good),
         )

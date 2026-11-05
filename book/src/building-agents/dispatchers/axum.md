@@ -3,11 +3,11 @@
 
 # Axum router
 
-`A2aRouter` serves the REST binding as an `axum::Router`, so an existing Axum
+`RestRouter` serves the REST binding as an `axum::Router`, so an existing Axum
 application can mount the agent beside its own routes and middleware. This
 page shows how, and where it differs from `RestDispatcher`.
 
-For projects already using Axum, the `axum` feature provides `A2aRouter` — an
+For projects already using Axum, the `axum` feature provides `RestRouter` — an
 idiomatic adapter that wraps `RequestHandler` as an `axum::Router`:
 
 ```toml
@@ -21,7 +21,7 @@ a2a-protocol-server = { version = "0.16", features = ["axum"] }
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::rest("http://localhost:3000")).with_description("An example agent").with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
-use a2a_protocol_server::A2aRouter;
+use a2a_protocol_server::RestRouter;
 use std::sync::Arc;
 
 let handler = Arc::new(
@@ -31,7 +31,7 @@ let handler = Arc::new(
         .unwrap(),
 );
 
-let app = A2aRouter::new(handler).into_router();
+let app = RestRouter::new(handler).into_router();
 
 let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
 axum::serve(listener, app).await?;
@@ -57,9 +57,9 @@ The returned `Router` can be merged with other Axum routes and middleware:
 # async fn custom_handler() -> &'static str { "ok" }
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build()?);
-# use a2a_protocol_server::A2aRouter;
+# use a2a_protocol_server::RestRouter;
 let app = axum::Router::new()
-    .merge(A2aRouter::new(handler).into_router())
+    .merge(RestRouter::new(handler).into_router())
     .route("/custom", axum::routing::get(custom_handler));
 # Ok(())
 # }

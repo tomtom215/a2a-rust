@@ -62,13 +62,13 @@
 //!
 //! let config = PerTenantConfig::builder()
 //!     .default_limits(TenantLimits::builder()
-//!         .max_concurrent_tasks(100)
-//!         .rate_limit_rps(50)
+//!         .with_max_concurrent_tasks(100)
+//!         .with_rate_limit_rps(50)
 //!         .build())
 //!     .with_override("premium-corp", TenantLimits::builder()
-//!         .max_concurrent_tasks(1000)
-//!         .executor_timeout(Duration::from_secs(120))
-//!         .rate_limit_rps(500)
+//!         .with_max_concurrent_tasks(1000)
+//!         .with_executor_timeout(Duration::from_secs(120))
+//!         .with_rate_limit_rps(500)
 //!         .build())
 //!     .build();
 //!
@@ -228,30 +228,70 @@ pub struct TenantLimitsBuilder {
 impl TenantLimitsBuilder {
     /// Sets the maximum concurrent tasks.
     #[must_use]
-    pub const fn max_concurrent_tasks(mut self, n: usize) -> Self {
+    pub const fn with_max_concurrent_tasks(mut self, n: usize) -> Self {
         self.max_concurrent_tasks = Some(n);
         self
     }
 
     /// Sets the executor timeout.
     #[must_use]
-    pub const fn executor_timeout(mut self, d: Duration) -> Self {
+    pub const fn with_executor_timeout(mut self, d: Duration) -> Self {
         self.executor_timeout = Some(d);
         self
     }
 
     /// Sets the event queue capacity per stream.
     #[must_use]
-    pub const fn event_queue_capacity(mut self, n: usize) -> Self {
+    pub const fn with_event_queue_capacity(mut self, n: usize) -> Self {
         self.event_queue_capacity = Some(n);
         self
     }
 
     /// Sets the rate limit in requests per second.
     #[must_use]
-    pub const fn rate_limit_rps(mut self, rps: u32) -> Self {
+    pub const fn with_rate_limit_rps(mut self, rps: u32) -> Self {
         self.rate_limit_rps = Some(rps);
         self
+    }
+
+    /// Sets the maximum concurrent tasks.
+    #[deprecated(
+        since = "0.16.0",
+        note = "use `with_max_concurrent_tasks`; removed no earlier than 0.17.0"
+    )]
+    #[must_use]
+    pub const fn max_concurrent_tasks(self, n: usize) -> Self {
+        self.with_max_concurrent_tasks(n)
+    }
+
+    /// Sets the executor timeout.
+    #[deprecated(
+        since = "0.16.0",
+        note = "use `with_executor_timeout`; removed no earlier than 0.17.0"
+    )]
+    #[must_use]
+    pub const fn executor_timeout(self, d: Duration) -> Self {
+        self.with_executor_timeout(d)
+    }
+
+    /// Sets the event queue capacity per stream.
+    #[deprecated(
+        since = "0.16.0",
+        note = "use `with_event_queue_capacity`; removed no earlier than 0.17.0"
+    )]
+    #[must_use]
+    pub const fn event_queue_capacity(self, n: usize) -> Self {
+        self.with_event_queue_capacity(n)
+    }
+
+    /// Sets the rate limit in requests per second.
+    #[deprecated(
+        since = "0.16.0",
+        note = "use `with_rate_limit_rps`; removed no earlier than 0.17.0"
+    )]
+    #[must_use]
+    pub const fn rate_limit_rps(self, rps: u32) -> Self {
+        self.with_rate_limit_rps(rps)
     }
 
     /// Builds the [`TenantLimits`].

@@ -1538,7 +1538,7 @@ mod dispatch_guards {
     /// An executor that keeps its task alive long enough to subscribe to.
     ///
     /// `EchoExecutor` completes before the subscribe request lands, and
-    /// `on_resubscribe` on a finished task takes the arm's *error* branch —
+    /// `on_subscribe_to_task` on a finished task takes the arm's *error* branch —
     /// which returns JSON, exactly like the fall-through a deleted arm
     /// produces. The distinguishing behaviour is the SSE stream, and only a
     /// live task reaches it.

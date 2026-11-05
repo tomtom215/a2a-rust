@@ -86,7 +86,7 @@ screen of code, and is compiled and tested in CI:
 2. A handler: `RequestHandlerBuilder::new(executor).with_agent_card(card).build()`,
    wrapped in an `Arc`.
 3. A dispatcher for each binding the agent serves (`JsonRpcDispatcher`,
-   `RestDispatcher`, the gRPC and WebSocket dispatchers, or `A2aRouter` for
+   `RestDispatcher`, the gRPC and WebSocket dispatchers, or `RestRouter` for
    Axum), handed to `serve`, or to a `Server` with a `ServeConfig` in
    production.
 

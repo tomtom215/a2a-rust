@@ -238,7 +238,7 @@ pub async fn test_push_delivery_e2e(ctx: &TestContext) -> TestResult {
                     .with_authentication(
                         AuthenticationInfo::new("bearer").with_credentials("push-secret"),
                     );
-                if let Err(e) = client.set_push_config(push_config).await {
+                if let Err(e) = client.create_push_config(push_config).await {
                     set_config_err = Some(format!("{e}"));
                 }
             }

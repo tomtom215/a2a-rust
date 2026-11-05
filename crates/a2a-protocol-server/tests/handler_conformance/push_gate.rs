@@ -80,7 +80,7 @@ async fn six_webhooks_on_one_task(limits: HandlerLimits) -> Arc<Overlap> {
         }))
         .expect("config");
         handler
-            .on_set_push_config(config, None)
+            .on_create_push_config(config, None)
             .await
             .expect("create");
     }

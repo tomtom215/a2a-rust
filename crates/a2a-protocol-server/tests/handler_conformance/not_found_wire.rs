@@ -61,7 +61,7 @@ async fn alices_task(h: &RequestHandler) -> (String, String) {
         other => panic!("expected a task, got {other:?}"),
     };
     let config = h
-        .on_set_push_config(
+        .on_create_push_config(
             a2a_protocol_types::push::TaskPushNotificationConfig::new(id.as_str(), HOOK),
             Some(&alice),
         )

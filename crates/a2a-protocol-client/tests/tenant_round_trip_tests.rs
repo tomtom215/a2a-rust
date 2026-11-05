@@ -206,7 +206,7 @@ async fn drive(client: &A2aClient, binding: &str) -> String {
     );
 
     let created = client
-        .set_push_config(TaskPushNotificationConfig::new(
+        .create_push_config(TaskPushNotificationConfig::new(
             &task_id,
             "https://hook.example/callback",
         ))

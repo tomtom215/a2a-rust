@@ -76,7 +76,7 @@ async fn start(h: &RequestHandler, token: &str, tenant: &str) -> String {
     let mut config = TaskPushNotificationConfig::new(&id, "https://hooks.example/a");
     config.id = Some("c1".into());
     config.tenant = Some(tenant.to_owned());
-    h.on_set_push_config(config, Some(&as_caller(token)))
+    h.on_create_push_config(config, Some(&as_caller(token)))
         .await
         .expect("webhook");
     id

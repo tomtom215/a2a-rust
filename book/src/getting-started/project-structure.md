@@ -112,7 +112,7 @@ This gives you:
 - Errors: `A2aError`, `A2aResult`, `ClientError`, `ClientResult`, `ServerError`, `ServerResult`
 - Client: `A2aClient`, `ClientBuilder`, `EventStream`, `RetryPolicy`
 - Server: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`, `RequestContext`, `EventQueueWriter`, `EventEmitter`, `Dispatcher`
-- Dispatchers: `JsonRpcDispatcher`, `RestDispatcher`, and `A2aRouter` (`axum` feature)
+- Dispatchers: `JsonRpcDispatcher`, `RestDispatcher`, and `RestRouter` (`axum` feature)
 - Macros and helpers: `agent_executor!`, `boxed_future`
 - Discovery and auth: `resolve_agent_card`, `ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`, `BearerAuthInterceptor`, `OAuth2ClientCredentials`, `StaticTokenProvider`, `TokenProvider`
 - Telemetry and webhooks (default features): `Telemetry`, `WebhookReceiver`, `WebhookOutcome`
@@ -131,7 +131,7 @@ a2a-rust keeps its dependency tree lean:
 | `uuid` | Task and message ID generation |
 | `bytes` | Efficient byte buffers |
 
-No web framework is required by default — the dispatchers work directly with hyper. However, the optional `axum` feature provides an `A2aRouter` for projects that already use Axum.
+No web framework is required by default — the dispatchers work directly with hyper. However, the optional `axum` feature provides an `RestRouter` for projects that already use Axum.
 
 ## Next Steps
 

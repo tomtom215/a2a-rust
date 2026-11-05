@@ -2509,7 +2509,7 @@ mod tests {
             "taskId": "t-panic-push", "url": "https://hook.example.com/a"
         }))
         .unwrap();
-        handler.on_set_push_config(config, None).await.unwrap();
+        handler.on_create_push_config(config, None).await.unwrap();
 
         let (writer, reader) = collected_queue();
         let executor_handle = tokio::spawn(async {

@@ -252,7 +252,7 @@ async fn inline_config_respects_the_per_task_quota() {
 
     // A standalone create for the same task is now over quota...
     let standalone = handler
-        .on_set_push_config(
+        .on_create_push_config(
             {
                 let mut built = inline_config("http://127.0.0.1:9/b");
                 built.task_id = Some(task_id.clone());

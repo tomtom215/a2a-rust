@@ -195,7 +195,7 @@ async fn the_rate_limiter_keys_a_verified_peer_by_its_identity() {
     let limiter = RateLimitInterceptor::new(
         RateLimitConfig::default()
             .with_requests_per_window(1)
-            .with_window_secs(3600),
+            .with_window(std::time::Duration::from_secs(3600)),
     )
     .expect("valid config");
     let auth = SlimPeerAuthInterceptor::new();

@@ -72,7 +72,7 @@ The agent team exercises **45+ distinct SDK features** in a single run:
 - `EventStream` consumer (SSE event loop)
 - `GetTask` and `ListTasks` with pagination and status filtering
 - `CancelTask` with custom executor override
-- Push notification config CRUD (`set_push_config`, `list_push_configs`)
+- Push notification config CRUD (`create_push_config`, `list_push_configs`)
 - `HttpPushSender` delivery with webhook receiver
 - `ServerInterceptor` (audit logging + bearer token auth checking)
 - Custom `Metrics` observer (request/response/error counting)

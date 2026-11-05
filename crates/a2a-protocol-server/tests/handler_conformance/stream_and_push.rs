@@ -207,7 +207,7 @@ async fn a_push_config_reads_back_whole_and_lasts_through_completion() {
     }))
     .expect("config");
     let created = handler
-        .on_set_push_config(asked, None)
+        .on_create_push_config(asked, None)
         .await
         .expect("create");
     let id = created.id.clone().expect("an id");

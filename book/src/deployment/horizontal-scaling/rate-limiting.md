@@ -22,7 +22,7 @@ let counter = Arc::new(PostgresRateLimitCounter::new(&database_url).await?);
 let limiter = RateLimitInterceptor::new(
     RateLimitConfig::default()
         .with_requests_per_window(100)
-        .with_window_secs(60),
+        .with_window(std::time::Duration::from_secs(60)),
 )?
 .with_shared_counter(counter);
 # Ok(())

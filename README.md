@@ -69,7 +69,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | **Retry policy** | Configurable `RetryPolicy` with jittered exponential backoff (connection errors, timeouts, 429/502/503/504) |
 | **Idempotency keys** | A client-supplied key on `SendMessage` that the server deduplicates on, so a send that failed ambiguously can be retried without starting a second task. An extension (`https://a2a-rust.com/extensions/idempotency/v1`), **not** part of A2A v1.0, advertised on the agent card exactly when the configured `TaskStore` supports it |
 | **TLS support** | HTTPS via `rustls`, no OpenSSL dependency — on by default in the client/SDK (`tls-rustls`; `default-features = false` opts either out), and on the server it gives the push sender HTTPS webhooks and `Server` TLS on its own listener (`Server::with_tls`, `with_tls_pem`) |
-| **Axum integration** | Feature-gated `A2aRouter` for idiomatic Axum servers (`axum` feature) |
+| **Axum integration** | Feature-gated `RestRouter` for idiomatic Axum servers (`axum` feature) |
 | **Zero framework lock-in** | Core built on raw `hyper` 1.x; Axum optional, or bring your own |
 
 ### Observability & Operations
@@ -405,7 +405,7 @@ Commands, flags, a captured transcript and the exit-code table are in
 ┌─────────────────────▼──────────────────────┐
 │  Transport Layer                           │
 │  JsonRpcDispatcher · RestDispatcher        │
-│  A2aRouter (axum, feature-gated)           │
+│  RestRouter (axum, feature-gated)           │
 │  WebSocketDispatcher (feature-gated)       │
 │  GrpcDispatcher (feature-gated)            │
 │  JsonRpcTransport · RestTransport          │
@@ -421,7 +421,7 @@ Commands, flags, a captured transcript and the exit-code table are in
 The server uses a 3-layer architecture:
 1. **You implement `AgentExecutor`** — your agent logic, produces events via `EventQueueWriter`
 2. **`RequestHandler` orchestrates** — manages tasks, stores, push notifications, interceptors
-3. **Dispatchers handle HTTP/gRPC** — `JsonRpcDispatcher` (JSON-RPC 2.0), `RestDispatcher` (REST), `A2aRouter` (Axum), `WebSocketDispatcher` (WebSocket), and `GrpcDispatcher` (gRPC) wire hyper/tonic/axum to the handler
+3. **Dispatchers handle HTTP/gRPC** — `JsonRpcDispatcher` (JSON-RPC 2.0), `RestDispatcher` (REST), `RestRouter` (Axum), `WebSocketDispatcher` (WebSocket), and `GrpcDispatcher` (gRPC) wire hyper/tonic/axum to the handler
 
 ## Supported Methods
 

@@ -93,7 +93,7 @@ println!("{report:?}");
 ```text
 ┌───────────────────────────────────────────────────┐
 │                  Dispatchers                      │
-│  JsonRpcDispatcher · RestDispatcher · A2aRouter   │
+│  JsonRpcDispatcher · RestDispatcher · RestRouter   │
 │  WebSocketDispatcher · GrpcDispatcher             │
 ├───────────────────────────────────────────────────┤
 │               RequestHandler                      │
@@ -118,7 +118,7 @@ println!("{report:?}");
 | `EventEmitter` | Helper for emitting status/artifact events |
 | `JsonRpcDispatcher` | JSON-RPC 2.0 transport |
 | `RestDispatcher` | REST transport |
-| `A2aRouter` | Axum framework integration (feature-gated) |
+| `RestRouter` | Axum framework integration (feature-gated) |
 | `TaskStore` | Trait -- pluggable task persistence |
 | `InMemoryTaskStore` | Default in-memory store |
 | `ServerInterceptor` | Trait -- `before` / `after` / `on_complete` (runs on every outcome) |
@@ -145,7 +145,7 @@ println!("{report:?}");
 | `otlp-json` | No | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`); off by default because `opentelemetry-otlp`'s `http-json` also makes JSON the default of any exporter built without a protocol (implies `otlp`) |
 | `otel-prometheus` | No | `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` for a Prometheus that scrapes, with no collector in between (`OTEL_EXPORTER_PROMETHEUS_HOST`, default `localhost`, and `_PORT`, default 9464); off by default because it adds `opentelemetry-prometheus` and a listener (implies `otlp`) |
 | `conformance` | No | A harness that grades an `AgentExecutor` against the protocol's invariants |
-| `axum` | No | Axum integration (`A2aRouter`) |
+| `axum` | No | Axum integration (`RestRouter`) |
 | `tool-loop` | No | Tool calling inside a task (ADR 0022): `tool_loop::ToolLoop`, `ToolLoopExecutor`, and `OpenAiChatModel` for the chat-completions API; each tool call carries an idempotency key and a repeated call runs once (ADR 0026); HTTPS to the model needs `tls-rustls` |
 | `auth-jwt` | No | JWT bearer-token authentication (HS256/RS256/ES256, static or remote JWKS) |
 | `encryption` | No | Encryption at rest for task content: `store::encrypted::EncryptedTaskStore`, AES-256-GCM over a key ring, or a cipher of your own |

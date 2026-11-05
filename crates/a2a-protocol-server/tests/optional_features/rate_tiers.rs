@@ -29,13 +29,19 @@ fn limiter() -> RateLimitInterceptor {
     RateLimitInterceptor::new(
         RateLimitConfig::default()
             .with_requests_per_window(1_000_000)
-            .with_window_secs(WINDOW_SECS),
+            .with_window(std::time::Duration::from_secs(WINDOW_SECS)),
     )
     .unwrap()
     .with_tenant_config(
         PerTenantConfig::builder()
-            .with_override("premium", TenantLimits::builder().rate_limit_rps(3).build())
-            .with_override("free", TenantLimits::builder().rate_limit_rps(1).build())
+            .with_override(
+                "premium",
+                TenantLimits::builder().with_rate_limit_rps(3).build(),
+            )
+            .with_override(
+                "free",
+                TenantLimits::builder().with_rate_limit_rps(1).build(),
+            )
             .build(),
     )
 }

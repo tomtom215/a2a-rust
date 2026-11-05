@@ -310,7 +310,7 @@ pub fn claims() -> Vec<FeatureClaim> {
             cfg!(all(feature = "websocket", feature = "grpc")),
         ),
         gated(
-            "Axum A2aRouter (send + stream + card discovery)",
+            "Axum RestRouter (send + stream + card discovery)",
             &["axum-send-message", "axum-streaming", "axum-agent-card"],
             cfg!(feature = "axum"),
         ),

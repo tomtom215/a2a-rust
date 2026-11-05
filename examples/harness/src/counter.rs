@@ -101,7 +101,7 @@ pub async fn run(client: &A2aClient, restricted: &A2aClient) -> CounterOutcome {
     expect_code!(
         "push config against a card without pushNotifications",
         ErrorCode::PushNotificationNotSupported,
-        restricted.set_push_config(TaskPushNotificationConfig::new(
+        restricted.create_push_config(TaskPushNotificationConfig::new(
             "any",
             "http://127.0.0.1:1/webhook"
         ))

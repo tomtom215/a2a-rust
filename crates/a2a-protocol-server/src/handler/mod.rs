@@ -43,6 +43,7 @@ mod push_config;
 mod push_config_page;
 #[cfg(test)]
 mod push_config_race_tests;
+mod renamed;
 mod shutdown;
 pub(crate) mod subscribers;
 mod tenant_resolution;

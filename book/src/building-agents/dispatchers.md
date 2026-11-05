@@ -1,6 +1,6 @@
 # Dispatchers (JSON-RPC, REST, WebSocket, Axum & gRPC)
 
-Dispatchers translate HTTP/gRPC requests into handler calls. a2a-rust provides five built-in dispatchers: `JsonRpcDispatcher`, `RestDispatcher`, `A2aRouter` (`axum` feature), `WebSocketDispatcher` (`websocket` feature), and `GrpcDispatcher` (`grpc` feature). `CombinedDispatcher` puts the first two on one listener ([JSON-RPC and REST on one port](./dispatchers/serving.md#json-rpc-and-rest-on-one-port)).
+Dispatchers translate HTTP/gRPC requests into handler calls. a2a-rust provides five built-in dispatchers: `JsonRpcDispatcher`, `RestDispatcher`, `RestRouter` (`axum` feature), `WebSocketDispatcher` (`websocket` feature), and `GrpcDispatcher` (`grpc` feature). `CombinedDispatcher` puts the first two on one listener ([JSON-RPC and REST on one port](./dispatchers/serving.md#json-rpc-and-rest-on-one-port)).
 
 Every dispatcher feeds the same `RequestHandler`, so one handler can serve
 several bindings at once and they share its tasks, push configs and executor.
@@ -14,7 +14,7 @@ What happens after the dispatcher hands a request on is on
 | `JsonRpcDispatcher` | JSON-RPC 2.0 over HTTP | none | [JSON-RPC dispatcher](./dispatchers/jsonrpc.md) |
 | `RestDispatcher` | HTTP+JSON (REST) | none | [REST dispatcher](./dispatchers/rest.md) |
 | `CombinedDispatcher` | JSON-RPC and REST on one port | none | [Serving and combining](./dispatchers/serving.md#json-rpc-and-rest-on-one-port) |
-| `A2aRouter` | HTTP+JSON as an `axum::Router` | `axum` | [Axum router](./dispatchers/axum.md) |
+| `RestRouter` | HTTP+JSON as an `axum::Router` | `axum` | [Axum router](./dispatchers/axum.md) |
 | `WebSocketDispatcher` | JSON-RPC 2.0 over WebSocket | `websocket` | [Below](#websocketdispatcher), and [TLS and limits](./dispatchers/websocket.md) |
 | `GrpcDispatcher` | gRPC, `lf.a2a.v1.A2AService` | `grpc`, `grpc-tls` | [gRPC dispatcher](./dispatchers/grpc.md) |
 

@@ -143,6 +143,14 @@ pub struct A2aRouter {
     websocket: Option<super::websocket::WebSocketUpgrades>,
 }
 
+/// [`A2aRouter`] under a name that says which binding it serves.
+///
+/// The binding is HTTP+JSON, which this crate's identifiers call REST
+/// ([`RestDispatcher`](super::RestDispatcher), `AgentInterface::rest`). The
+/// same type; the documentation uses this name, and `A2aRouter` is not
+/// deprecated (ADR 0053).
+pub type RestRouter = A2aRouter;
+
 impl std::fmt::Debug for A2aRouter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("A2aRouter")
@@ -880,7 +888,7 @@ async fn handle_subscribe_inner(
     if params.tenant.is_none() {
         params.tenant = tenant;
     }
-    match state.handler.on_resubscribe(params, Some(hdrs)).await {
+    match state.handler.on_subscribe_to_task(params, Some(hdrs)).await {
         Ok(reader) => hyper_to_axum(build_sse_response(
             reader,
             Some(state.config.sse_keep_alive_interval),
@@ -915,7 +923,11 @@ async fn handle_create_push_config_inner(
             Ok(c) => c,
             Err(e) => return refuse_unreadable(state, method, hdrs, e).await,
         };
-    match state.handler.on_set_push_config(config, Some(hdrs)).await {
+    match state
+        .handler
+        .on_create_push_config(config, Some(hdrs))
+        .await
+    {
         Ok(result) => a2a_json(&result),
         Err(e) => handler_error_to_response(&e),
     }

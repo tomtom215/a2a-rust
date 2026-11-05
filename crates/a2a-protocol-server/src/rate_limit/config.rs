@@ -7,6 +7,8 @@
 
 //! What the limiter is configured with, separate from what it does with it.
 
+use std::time::Duration;
+
 use super::forwarded::ForwardedHeader;
 use super::identity::ProxyChain;
 use super::trusted::TrustedProxy;
@@ -105,7 +107,30 @@ impl RateLimitConfig {
         self
     }
 
+    /// Sets the window's length.
+    ///
+    /// The window is counted in whole seconds
+    /// ([`window_secs`](Self::window_secs)), so a fractional second is
+    /// rounded **up**: 1.5 s is a window of 2 s, and no non-zero duration
+    /// becomes the zero window
+    /// [`RateLimitInterceptor::new`](super::RateLimitInterceptor::new)
+    /// refuses. `Duration::ZERO` is that zero window, and is refused.
+    #[must_use]
+    pub const fn with_window(mut self, window: Duration) -> Self {
+        let whole = window.as_secs();
+        self.window_secs = if window.subsec_nanos() == 0 {
+            whole
+        } else {
+            whole.saturating_add(1)
+        };
+        self
+    }
+
     /// Sets the window duration in seconds. Must be non-zero.
+    #[deprecated(
+        since = "0.16.0",
+        note = "use `with_window(Duration)`; removed no earlier than 0.17.0"
+    )]
     #[must_use]
     pub const fn with_window_secs(mut self, secs: u64) -> Self {
         self.window_secs = secs;
@@ -170,6 +195,8 @@ pub const fn untrusted_hops_warning(hops: usize, trusted: &[TrustedProxy]) -> Op
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::{RateLimitConfig, TrustedProxy};
 
     /// Every setter writes its own field, against values that differ from
@@ -180,7 +207,7 @@ mod tests {
         let proxy: TrustedProxy = "10.0.0.0/8".parse().expect("a range");
         let cfg = RateLimitConfig::default()
             .with_requests_per_window(d.requests_per_window + 1)
-            .with_window_secs(d.window_secs + 1)
+            .with_window(std::time::Duration::from_secs(d.window_secs + 1))
             .with_trusted_proxy_hops(d.trusted_proxy_hops + 1)
             .with_trusted_proxies([proxy])
             .with_forwarded_header(super::ForwardedHeader::Forwarded)
@@ -193,5 +220,30 @@ mod tests {
         assert_eq!(cfg.forwarded_header, super::ForwardedHeader::Forwarded);
         assert_eq!(d.forwarded_header, super::ForwardedHeader::XForwardedFor);
         assert_eq!(cfg.max_buckets, d.max_buckets + 1);
+    }
+
+    /// The window is whole seconds, rounded up, so no non-zero duration
+    /// becomes the refused zero window.
+    #[test]
+    fn with_window_rounds_a_fraction_up() {
+        let window = |d| RateLimitConfig::default().with_window(d).window_secs;
+        assert_eq!(window(Duration::from_secs(90)), 90);
+        assert_eq!(window(Duration::from_millis(1500)), 2);
+        assert_eq!(window(Duration::from_nanos(1)), 1);
+        assert_eq!(window(Duration::from_millis(999)), 1);
+        assert_eq!(window(Duration::ZERO), 0);
+        assert_eq!(window(Duration::MAX), u64::MAX);
+    }
+
+    /// The integer setter deprecated in 0.16.0 still sets the window. Its own
+    /// test, its only caller in the workspace; removed with it, no earlier
+    /// than 0.17.0 (ADR 0053).
+    #[test]
+    #[allow(deprecated)]
+    fn with_window_secs_still_sets_the_window() {
+        assert_eq!(
+            RateLimitConfig::default().with_window_secs(45).window_secs,
+            45
+        );
     }
 }

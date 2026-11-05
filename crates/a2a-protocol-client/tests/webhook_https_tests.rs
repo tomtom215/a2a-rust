@@ -153,7 +153,7 @@ async fn require_https_refuses_plaintext_to_a_remote_host_before_sending() {
     let client = client(&recorder, true);
 
     let err = client
-        .set_push_config(TaskPushNotificationConfig::new("t-1", REMOTE_HTTP))
+        .create_push_config(TaskPushNotificationConfig::new("t-1", REMOTE_HTTP))
         .await
         .unwrap_err();
     let ClientError::InsecureWebhook(origin) = &err else {
@@ -168,7 +168,7 @@ async fn require_https_refuses_plaintext_to_a_remote_host_before_sending() {
 
     // Userinfo cannot dress a remote host up as loopback.
     let err = client
-        .set_push_config(TaskPushNotificationConfig::new(
+        .create_push_config(TaskPushNotificationConfig::new(
             "t-1",
             "http://127.0.0.1@evil.example/hook",
         ))
@@ -197,7 +197,7 @@ async fn require_https_lets_loopback_http_and_https_through() {
         "https://hooks.example.com/hook",
     ] {
         let err = client
-            .set_push_config(TaskPushNotificationConfig::new("t-1", url))
+            .create_push_config(TaskPushNotificationConfig::new("t-1", url))
             .await
             .unwrap_err();
         assert!(
@@ -223,7 +223,7 @@ async fn without_require_https_plaintext_is_sent() {
     let client = client(&recorder, false);
     assert!(!client.config().require_https_webhooks);
     let err = client
-        .set_push_config(TaskPushNotificationConfig::new("t-1", REMOTE_HTTP))
+        .create_push_config(TaskPushNotificationConfig::new("t-1", REMOTE_HTTP))
         .await
         .unwrap_err();
     assert!(matches!(err, ClientError::Transport(_)), "{err:?}");
@@ -236,7 +236,7 @@ async fn without_require_https_plaintext_is_sent() {
         let warnings = warnings_about("http://warned.example.com");
         assert!(warnings.is_empty(), "{warnings:?}");
         let _ = client
-            .set_push_config(TaskPushNotificationConfig::new(
+            .create_push_config(TaskPushNotificationConfig::new(
                 "t-1",
                 "http://warned.example.com/hook/SECRET",
             ))

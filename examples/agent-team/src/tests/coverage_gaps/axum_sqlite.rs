@@ -14,11 +14,11 @@ use crate::infrastructure::{bind_listener, serve_jsonrpc, serve_rest};
 
 /// Test 93: Spin up an Axum-based A2A server and send a message through it.
 ///
-/// Exercises `A2aRouter`, Axum routing, and the full HTTP→handler→executor
+/// Exercises `RestRouter`, Axum routing, and the full HTTP→handler→executor
 /// pipeline through Axum instead of the raw hyper dispatchers.
 #[cfg(feature = "axum")]
 pub async fn test_axum_send_message(ctx: &TestContext) -> TestResult {
-    use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
+    use a2a_protocol_server::dispatch::axum_adapter::RestRouter;
 
     let _ = ctx;
     let start = Instant::now();
@@ -31,7 +31,7 @@ pub async fn test_axum_send_message(ctx: &TestContext) -> TestResult {
             .expect("build axum handler"),
     );
 
-    let app = A2aRouter::new(handler).into_router();
+    let app = RestRouter::new(handler).into_router();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind axum listener");
@@ -84,10 +84,10 @@ pub async fn test_axum_send_message(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 94: Axum streaming (SSE) through A2aRouter.
+/// Test 94: Axum streaming (SSE) through RestRouter.
 #[cfg(feature = "axum")]
 pub async fn test_axum_streaming(ctx: &TestContext) -> TestResult {
-    use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
+    use a2a_protocol_server::dispatch::axum_adapter::RestRouter;
 
     let _ = ctx;
     let start = Instant::now();
@@ -99,7 +99,7 @@ pub async fn test_axum_streaming(ctx: &TestContext) -> TestResult {
             .expect("build axum handler"),
     );
 
-    let app = A2aRouter::new(handler).into_router();
+    let app = RestRouter::new(handler).into_router();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind axum listener");
@@ -156,7 +156,7 @@ pub async fn test_axum_streaming(ctx: &TestContext) -> TestResult {
 /// Test 95: Axum agent card discovery via `/.well-known/agent-card.json`.
 #[cfg(feature = "axum")]
 pub async fn test_axum_agent_card(ctx: &TestContext) -> TestResult {
-    use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
+    use a2a_protocol_server::dispatch::axum_adapter::RestRouter;
 
     let _ = ctx;
     let start = Instant::now();
@@ -169,7 +169,7 @@ pub async fn test_axum_agent_card(ctx: &TestContext) -> TestResult {
             .expect("build axum handler"),
     );
 
-    let app = A2aRouter::new(handler).into_router();
+    let app = RestRouter::new(handler).into_router();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
@@ -395,7 +395,7 @@ pub async fn test_sqlite_push_config(ctx: &TestContext) -> TestResult {
     )
     .with_token("sqlite-test");
 
-    let stored = match client.set_push_config(config).await {
+    let stored = match client.create_push_config(config).await {
         Ok(s) => s,
         Err(e) => {
             return TestResult::fail(
@@ -442,7 +442,7 @@ pub async fn test_sqlite_push_config(ctx: &TestContext) -> TestResult {
 /// and verifies end-to-end persistence through the framework layer.
 #[cfg(all(feature = "axum", feature = "sqlite"))]
 pub async fn test_axum_with_sqlite(ctx: &TestContext) -> TestResult {
-    use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
+    use a2a_protocol_server::dispatch::axum_adapter::RestRouter;
     use a2a_protocol_server::store::SqliteTaskStore;
 
     let _ = ctx;
@@ -467,7 +467,7 @@ pub async fn test_axum_with_sqlite(ctx: &TestContext) -> TestResult {
             .expect("build axum+sqlite handler"),
     );
 
-    let app = A2aRouter::new(handler).into_router();
+    let app = RestRouter::new(handler).into_router();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");

@@ -23,7 +23,7 @@
 //! let receiver = WebhookReceiver::new();
 //!
 //! // One fresh token per config (§13.2). Register the config the agent
-//! // stored — `set_push_config` returns it, with the id the agent assigned.
+//! // stored — `create_push_config` returns it, with the id the agent assigned.
 //! let mut config = TaskPushNotificationConfig::new("task-1", "https://hooks.example.com/a2a");
 //! config.token = Some(new_notification_token());
 //! receiver.register(&config)?;

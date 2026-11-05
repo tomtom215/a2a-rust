@@ -158,7 +158,7 @@ async fn another_callers_task_is_not_found_by_any_operation(h: &RequestHandler) 
         "CancelTask",
     );
     not_found(
-        h.on_resubscribe(TaskIdParams::new(id.clone()), Some(&bob))
+        h.on_subscribe_to_task(TaskIdParams::new(id.clone()), Some(&bob))
             .await,
         "SubscribeToTask",
     );
@@ -190,7 +190,7 @@ async fn another_callers_task_is_not_found_by_any_operation(h: &RequestHandler) 
     // A webhook Bob registers on Alice's task lands in Bob's partition, so
     // Alice's task never delivers to it and Alice does not see it.
     let _ = h
-        .on_set_push_config(
+        .on_create_push_config(
             TaskPushNotificationConfig::new(id.as_str(), "https://bob.example.com/hook"),
             Some(&bob),
         )
@@ -389,7 +389,7 @@ async fn another_callers_push_config_cannot_be_read_or_deleted() {
         let mut config =
             TaskPushNotificationConfig::new(id.as_str(), "https://alice.example.com/hook");
         config.id = Some("alices-hook".into());
-        h.on_set_push_config(config, Some(&alice))
+        h.on_create_push_config(config, Some(&alice))
             .await
             .expect("Alice registers a webhook");
         let get = || GetPushConfigParams::new(id.clone(), "alices-hook");

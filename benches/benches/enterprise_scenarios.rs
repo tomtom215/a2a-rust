@@ -321,7 +321,7 @@ fn bench_rate_limiting(c: &mut Criterion) {
     // limit, so the overhead measured is unchanged.
     let rate_config = a2a_protocol_server::RateLimitConfig::default()
         .with_requests_per_window(u64::MAX)
-        .with_window_secs(60);
+        .with_window(std::time::Duration::from_secs(60));
     let rate_limiter =
         a2a_protocol_server::RateLimitInterceptor::new(rate_config).expect("valid config");
 

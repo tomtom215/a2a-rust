@@ -104,7 +104,7 @@ feature, and are left out:
 | `otlp-json` | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off by default because it would also make JSON the default of an application's own `opentelemetry-otlp` exporters (implies `otlp`) |
 | `otel-prometheus` | `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` for a Prometheus that scrapes, with no collector in between; off by default because it adds `opentelemetry-prometheus` and a listener (implies `otlp`) |
 | `conformance` | A harness that grades an `AgentExecutor` against the protocol's invariants |
-| `axum` | Axum framework integration (`A2aRouter`) |
+| `axum` | Axum framework integration (`RestRouter`) |
 | `tool-loop` | Tool calling inside a task: `tool_loop::ToolLoop`, `ToolLoopExecutor` and the chat-completions client `OpenAiChatModel` |
 | `auth-jwt` | JWT bearer-token authentication (`JwtAuthInterceptor`) |
 | `encryption` | Encryption at rest for task content (`EncryptedTaskStore`) |

@@ -146,7 +146,7 @@ async fn every_handler_method_reports_its_outcome() {
         .await
         .expect("list");
     let _ = handler
-        .on_resubscribe(from_json(serde_json::json!({"id": "missing"})), none)
+        .on_subscribe_to_task(from_json(serde_json::json!({"id": "missing"})), none)
         .await;
     let _ = handler.on_get_extended_agent_card(none).await;
 

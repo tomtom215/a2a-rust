@@ -2259,10 +2259,10 @@ mod tests {
             .with_tenant_resolver(HeaderTenantResolver::default())
             .with_tenant_config(
                 PerTenantConfig::builder()
-                    .default_limits(TenantLimits::builder().rate_limit_rps(100).build())
+                    .default_limits(TenantLimits::builder().with_rate_limit_rps(100).build())
                     .with_override(
                         "premium",
-                        TenantLimits::builder().rate_limit_rps(1000).build(),
+                        TenantLimits::builder().with_rate_limit_rps(1000).build(),
                     )
                     .build(),
             )

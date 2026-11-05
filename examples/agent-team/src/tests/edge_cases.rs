@@ -241,7 +241,7 @@ pub async fn test_push_crud_jsonrpc(ctx: &TestContext) -> TestResult {
             format!("http://{}/webhook", ctx.webhook_addr),
         )
         .with_token("jsonrpc-test-token");
-        match client.set_push_config(config).await {
+        match client.create_push_config(config).await {
             Ok(stored) => {
                 let cid = stored.id.clone().unwrap_or_default();
                 println!("  Created push config: {cid}");

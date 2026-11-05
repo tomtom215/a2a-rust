@@ -58,7 +58,7 @@ async fn task_with_configs(h: &RequestHandler, n: usize) -> String {
     for i in 0..n {
         let mut config = TaskPushNotificationConfig::new(&task, format!("http://127.0.0.1:9/{i}"));
         config.id = Some(format!("cfg-{i}"));
-        h.on_set_push_config(config, None).await.unwrap();
+        h.on_create_push_config(config, None).await.unwrap();
     }
     task
 }

@@ -291,7 +291,7 @@ async fn a_resumed_subscription_replays_the_same_payload_at_each_position() {
 
     let headers = HashMap::from([("last-event-id".to_owned(), "0".to_owned())]);
     let mut reader = handler
-        .on_resubscribe(TaskIdParams::new(id.clone()), Some(&headers))
+        .on_subscribe_to_task(TaskIdParams::new(id.clone()), Some(&headers))
         .await
         .expect("resubscribe");
     let mut replayed = HashMap::new();

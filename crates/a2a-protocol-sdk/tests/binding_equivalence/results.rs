@@ -196,7 +196,7 @@ async fn bind_equiv_002_one_push_config_reads_the_same_through_every_binding() {
     let task = send(&rpc, "configure me").await.expect("send");
     let id = task.id.0.clone();
     let made = rpc
-        .set_push_config(TaskPushNotificationConfig::new(id.as_str(), HOOK))
+        .create_push_config(TaskPushNotificationConfig::new(id.as_str(), HOOK))
         .await
         .expect("create");
     let config_id = made.id.clone().expect("id");

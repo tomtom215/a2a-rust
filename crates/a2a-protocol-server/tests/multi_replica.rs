@@ -246,7 +246,7 @@ async fn a_subscriber_on_the_other_replica_still_sees_the_stream_end() {
 
     // B subscribes to a task whose executor is running on A.
     let mut stream_b = b
-        .on_resubscribe(TaskIdParams::new(task_id.0.clone()), None)
+        .on_subscribe_to_task(TaskIdParams::new(task_id.0.clone()), None)
         .await
         .expect("replica B accepts the subscription");
 
@@ -340,7 +340,7 @@ async fn intermediate_events_cross_replicas_through_the_log() {
     let task_id = task_id_of(&first.event).expect("the first frame names its task");
 
     let mut stream_b = b
-        .on_resubscribe(TaskIdParams::new(task_id.0), None)
+        .on_subscribe_to_task(TaskIdParams::new(task_id.0), None)
         .await
         .expect("replica B accepts the subscription");
 
@@ -404,7 +404,7 @@ async fn independent_limiters_admit_their_limit_each() {
 
     let config = RateLimitConfig::default()
         .with_requests_per_window(LIMIT)
-        .with_window_secs(300);
+        .with_window(std::time::Duration::from_secs(300));
     let a = RateLimitInterceptor::new(config.clone()).expect("limiter A");
     let b = RateLimitInterceptor::new(config).expect("limiter B");
 
@@ -439,7 +439,7 @@ async fn limiters_sharing_a_counter_enforce_one_global_limit() {
         .with_requests_per_window(LIMIT)
         // Wide enough that the window cannot roll mid-test and hand out a
         // second budget, which would look exactly like the bug being fixed.
-        .with_window_secs(300);
+        .with_window(std::time::Duration::from_secs(300));
     let a = RateLimitInterceptor::new(config.clone())
         .expect("limiter A")
         .with_shared_counter(counter.clone());
@@ -483,7 +483,7 @@ async fn a_shared_counter_still_separates_callers() {
     let limiter = RateLimitInterceptor::new(
         RateLimitConfig::default()
             .with_requests_per_window(LIMIT)
-            .with_window_secs(300),
+            .with_window(std::time::Duration::from_secs(300)),
     )
     .expect("limiter")
     .with_shared_counter(counter);

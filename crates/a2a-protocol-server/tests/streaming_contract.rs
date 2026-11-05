@@ -172,7 +172,7 @@ async fn closing_one_stream_leaves_the_other_streaming() {
         panic!("a task stream begins with the task (§3.1.2), got {first:?}");
     };
     let mut kept = handler
-        .on_resubscribe(TaskIdParams::new(task.id.0.clone()), None)
+        .on_subscribe_to_task(TaskIdParams::new(task.id.0.clone()), None)
         .await
         .expect("subscriber");
     drop(originating);

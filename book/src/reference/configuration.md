@@ -121,13 +121,13 @@ deletes nothing unless asked.
 
 Shared configuration for JSON-RPC, REST, and Axum dispatchers. Pass to
 `JsonRpcDispatcher::with_config()`, `RestDispatcher::with_config()`, or
-`A2aRouter::with_config()`.
+`RestRouter::with_config()`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `max_request_body_size` | `usize` | 4 MiB | Larger bodies return 413 |
 | `body_read_timeout` | `Duration` | 30s | Slow loris protection |
-| `max_query_string_length` | `usize` | 4,096 | `RestDispatcher` only (not `A2aRouter`, whose query parsing is Axum's); longer queries return 414 |
+| `max_query_string_length` | `usize` | 4,096 | `RestDispatcher` only (not `RestRouter`, whose query parsing is Axum's); longer queries return 414 |
 | `sse_keep_alive_interval` | `Duration` | 30s | Periodic keep-alive comment interval for SSE streams |
 | `sse_channel_capacity` | `usize` | 64 | SSE response body channel buffer size |
 | `max_batch_size` | `usize` | 100 | Maximum requests in a JSON-RPC batch |
@@ -161,7 +161,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `requests_per_window` | `u64` | 100 | Max requests per caller per window |
-| `window_secs` | `u64` | 60 | Window duration in seconds |
+| `window_secs` | `u64` | 60 | Window duration in seconds; set it with `with_window(Duration)`, which rounds a fraction of a second up (`with_window_secs` is deprecated since 0.16.0) |
 | `trusted_proxy_hops` | `usize` | 0 | How many `X-Forwarded-For` hops to trust (0 = ignore XFF entirely) |
 | `trusted_proxies` | `Vec<TrustedProxy>` | `[]` | Address ranges the proxies connect from; when set, XFF is believed only from a peer in one (no effect while `trusted_proxy_hops` is 0). `RateLimitInterceptor::new` logs a warning when hops are set and this is empty |
 | `forwarded_header` | `ForwardedHeader` | `XForwardedFor` | The header the proxies write the client address into: `X-Forwarded-For` or RFC 7239 `Forwarded` (its `for=` parameter); only that one is read |
@@ -192,7 +192,7 @@ take the same three through their own `with_completion_grace`,
 |------|----------|
 | `CorsConfig::new(origin)` | `allow_methods` `GET, POST, PUT, DELETE, OPTIONS`; `allow_headers` `content-type, authorization, a2a-version, a2a-extensions, last-event-id, x-a2a-notification-token`; `max_age_secs` 86400 |
 | `TenantStoreConfig` | `max_tenants` 1,000 partitions (each caller's partition counts when tasks are isolated by caller); `max_total_tasks` none |
-| `WebSocketDispatcher` | on its own listener (`serve`, `serve_with_shutdown`), or on the HTTP port through `CombinedDispatcher::with_websocket` / `A2aRouter::with_websocket` (ADR 0055), where the listener settings (TLS, handshake timeout) are the HTTP server's and its own `with_max_connections` caps upgrades; handshake timeout 10s (`with_handshake_timeout`); write timeout 30s (`with_write_timeout`: a peer that stops reading is dropped at it, and the connection with it); idle timeout `DEFAULT_WS_IDLE_TIMEOUT`, 75s, pinging at half (`with_idle_timeout`, `without_idle_timeout`; off until 0.16.0); `with_max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
+| `WebSocketDispatcher` | on its own listener (`serve`, `serve_with_shutdown`), or on the HTTP port through `CombinedDispatcher::with_websocket` / `RestRouter::with_websocket` (ADR 0055), where the listener settings (TLS, handshake timeout) are the HTTP server's and its own `with_max_connections` caps upgrades; handshake timeout 10s (`with_handshake_timeout`); write timeout 30s (`with_write_timeout`: a peer that stops reading is dropped at it, and the connection with it); idle timeout `DEFAULT_WS_IDLE_TIMEOUT`, 75s, pinging at half (`with_idle_timeout`, `without_idle_timeout`; off until 0.16.0); `with_max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
 | `GrpcDispatcher` | HTTP/2 keep-alive: a PING after 60s idle (`DEFAULT_GRPC_KEEPALIVE_INTERVAL`), closing at 20s unanswered (`DEFAULT_GRPC_KEEPALIVE_TIMEOUT`; `with_http2_keepalive`, `without_http2_keepalive`; off until 0.16.0); `with_max_connections` unbounded; `with_max_connection_age` off; under `with_rustls` a 10s TLS handshake bound |
 | `ReloadingCertResolver` | nothing re-read until `reload()`, or every interval given to `watch(interval)` |
 | `HttpPushSender` | 10s request timeout (`HttpPushSender::with_timeout`), 5s DNS lookup bound (`with_dns_timeout`), `PushRetryPolicy` above; SSRF guard on unless `allow_private_urls()` |
@@ -336,7 +336,7 @@ How a client spreads calls over the endpoints of an `EndpointSource`
 | `otlp-json` | Off | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off because `opentelemetry-otlp`'s `http-json` also makes JSON the default of any exporter built without a protocol (implies `otlp`) |
 | `otel-prometheus` | Off | `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` for a Prometheus that scrapes, with no collector in between; off by default because it adds `opentelemetry-prometheus` and a listener (implies `otlp`) |
 | `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
-| `axum` | Off | Axum framework integration (`A2aRouter`) |
+| `axum` | Off | Axum framework integration (`RestRouter`) |
 | `tool-loop` | Off | Tool calling inside a task: `tool_loop::ToolLoop`, `ToolLoopExecutor`, `OpenAiChatModel` |
 | `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
 | `encryption` | Off | Encryption at rest for task content (`EncryptedTaskStore`) |

@@ -202,7 +202,7 @@ impl RequestHandler {
     /// Returns [`ServerError::PushNotSupported`] if the agent card does not
     /// advertise push notifications or no push sender is configured.
     #[allow(clippy::too_many_lines)]
-    pub async fn on_set_push_config(
+    pub async fn on_create_push_config(
         &self,
         mut config: TaskPushNotificationConfig,
         headers: Option<&HashMap<String, String>>,
@@ -792,7 +792,7 @@ mod tests {
         for i in 0..WRITERS {
             let each = Arc::clone(&handler);
             creates.push(tokio::spawn(async move {
-                each.on_set_push_config(
+                each.on_create_push_config(
                     TaskPushNotificationConfig::new(
                         "task-1".to_owned(),
                         format!("https://example.com/hook/{i}"),
@@ -828,13 +828,13 @@ mod tests {
         );
     }
 
-    // ── on_set_push_config ───────────────────────────────────────────────────
+    // ── on_create_push_config ───────────────────────────────────────────────────
 
     #[tokio::test]
     async fn set_push_config_without_sender_returns_push_not_supported() {
         let handler = make_handler();
         let config = make_push_config("task-1");
-        let result = handler.on_set_push_config(config, None).await;
+        let result = handler.on_create_push_config(config, None).await;
         assert!(
             matches!(result, Err(crate::error::ServerError::PushNotSupported)),
             "expected PushNotSupported, got: {result:?}"
@@ -906,7 +906,7 @@ mod tests {
             .unwrap();
 
         let config = TaskPushNotificationConfig::for_url("https://example.com/webhook".to_owned());
-        let result = handler.on_set_push_config(config, None).await;
+        let result = handler.on_create_push_config(config, None).await;
         match result {
             Err(crate::error::ServerError::InvalidField { message: msg, .. }) => {
                 assert!(msg.contains("taskId"), "got: {msg}");
@@ -967,7 +967,7 @@ mod tests {
         // `validate_webhook_url` yields an `A2aError` that `?` converts.
         // Asserted on the message rather than the variant so the test pins the
         // security behaviour, not the error plumbing.
-        match handler.on_set_push_config(config, None).await {
+        match handler.on_create_push_config(config, None).await {
             Err(e) => {
                 let msg = e.to_string();
                 assert!(
@@ -1022,7 +1022,7 @@ mod tests {
             )
             .with_id(format!("cfg-{i}"));
             handler
-                .on_set_push_config(cfg, None)
+                .on_create_push_config(cfg, None)
                 .await
                 .expect("creates under the global cap should succeed");
         }
@@ -1034,7 +1034,7 @@ mod tests {
             "https://example.com/webhook".to_owned(),
         )
         .with_id("cfg-x".to_owned());
-        let result = handler.on_set_push_config(cfg, None).await;
+        let result = handler.on_create_push_config(cfg, None).await;
         assert!(
             matches!(result, Err(crate::error::ServerError::Overloaded(_))),
             "global push-config cap must reject, got {result:?}"
@@ -1082,20 +1082,20 @@ mod tests {
 
         // First create fills the task to its cap.
         handler
-            .on_set_push_config(make("https://example.com/a"), None)
+            .on_create_push_config(make("https://example.com/a"), None)
             .await
             .expect("first create should succeed");
 
         // Re-setting the SAME id is an update, not a new config → allowed at cap.
         handler
-            .on_set_push_config(make("https://example.com/b"), None)
+            .on_create_push_config(make("https://example.com/b"), None)
             .await
             .expect("updating an existing config at the cap must be allowed");
 
         // A DIFFERENT id would be a new config and must be rejected at the cap.
         let mut newcfg = make("https://example.com/c");
         newcfg.id = Some("cfg-2".to_owned());
-        let rejected = handler.on_set_push_config(newcfg, None).await;
+        let rejected = handler.on_create_push_config(newcfg, None).await;
         assert!(
             matches!(rejected, Err(crate::error::ServerError::InvalidParams(_))),
             "a new config beyond the per-task cap must be rejected, got {rejected:?}"
@@ -1158,7 +1158,7 @@ mod tests {
         for url in ["", "example.com/hook"] {
             let mut config = make_push_config("t-1");
             config.url = url.to_owned();
-            let result = handler.on_set_push_config(config, None).await;
+            let result = handler.on_create_push_config(config, None).await;
             // An empty url is a missing REQUIRED field, named as one (and
             // refused before the task lookup); a scheme-less one is a bad
             // value. Both are InvalidParams on the wire.
@@ -1199,14 +1199,14 @@ mod tests {
             config
         };
         let refused = handler
-            .on_set_push_config(with_scheme("Digest"), None)
+            .on_create_push_config(with_scheme("Digest"), None)
             .await;
         assert!(
             matches!(&refused, Err(crate::error::ServerError::InvalidField { message: m, .. }) if m.contains("Digest")),
             "{refused:?}"
         );
         // The proto marks `scheme` REQUIRED; gRPC delivers an absent one as "".
-        let refused = handler.on_set_push_config(with_scheme(""), None).await;
+        let refused = handler.on_create_push_config(with_scheme(""), None).await;
         assert!(
             matches!(
                 &refused,
@@ -1216,7 +1216,7 @@ mod tests {
         );
         for scheme in ["Bearer", "basic"] {
             handler
-                .on_set_push_config(with_scheme(scheme), None)
+                .on_create_push_config(with_scheme(scheme), None)
                 .await
                 .unwrap_or_else(|e| panic!("{scheme} must be accepted: {e}"));
         }
@@ -1271,7 +1271,7 @@ mod tests {
         save_task(&handler, "t-1").await;
         let mut config = make_push_config("t-1");
         config.url = "https://other.example.com/hook".into();
-        let refused = handler.on_set_push_config(config, None).await;
+        let refused = handler.on_create_push_config(config, None).await;
         assert!(
             matches!(&refused, Err(crate::error::ServerError::InvalidField { message: m, .. }) if m.contains("allowlist")),
             "{refused:?}"
@@ -1279,7 +1279,7 @@ mod tests {
         let mut config = make_push_config("t-1");
         config.url = "https://hooks.example.com/hook".into();
         handler
-            .on_set_push_config(config, None)
+            .on_create_push_config(config, None)
             .await
             .expect("a listed host is accepted");
     }
@@ -1296,7 +1296,7 @@ mod tests {
         save_task(&handler, "t-1").await;
         let mut config = make_push_config("t-1");
         config.url = "http://hooks.example.com/hook".into();
-        let refused = handler.on_set_push_config(config, None).await;
+        let refused = handler.on_create_push_config(config, None).await;
         assert!(
             matches!(&refused, Err(crate::error::ServerError::InvalidField { message: m, .. }) if m.contains("must be https://")),
             "{refused:?}"
@@ -1304,7 +1304,7 @@ mod tests {
         let mut config = make_push_config("t-1");
         config.url = "https://hooks.example.com/hook".into();
         handler
-            .on_set_push_config(config, None)
+            .on_create_push_config(config, None)
             .await
             .expect("an https:// webhook is accepted");
     }
@@ -1322,7 +1322,7 @@ mod tests {
         let mut config = make_push_config("t-1");
         config.url = "http://hooks.example.com/hook".into();
         handler
-            .on_set_push_config(config, None)
+            .on_create_push_config(config, None)
             .await
             .expect("http:// is accepted unless the sender requires https");
     }
@@ -1337,7 +1337,7 @@ mod tests {
             .build()
             .unwrap();
         let config = make_push_config("ghost-task");
-        let result = handler.on_set_push_config(config, None).await;
+        let result = handler.on_create_push_config(config, None).await;
         assert!(
             matches!(result, Err(crate::error::ServerError::TaskNotFound(_))),
             "expected TaskNotFound for a config targeting a missing task, got: {result:?}"
@@ -1359,7 +1359,7 @@ mod tests {
             .unwrap();
 
         let set = handler
-            .on_set_push_config(make_push_config("t1"), None)
+            .on_create_push_config(make_push_config("t1"), None)
             .await;
         assert!(
             matches!(set, Err(crate::error::ServerError::PushNotSupported)),
@@ -1405,7 +1405,7 @@ mod tests {
         save_task(&handler, "t1").await;
 
         handler
-            .on_set_push_config(make_push_config("t1"), None)
+            .on_create_push_config(make_push_config("t1"), None)
             .await
             .expect("set should succeed when push capability is advertised");
         let configs = handler
@@ -1588,7 +1588,7 @@ mod tests {
         // This additionally verifies the error is propagated through the metrics path.
         let handler = make_handler();
         let config = make_push_config("task-err");
-        let result = handler.on_set_push_config(config, None).await;
+        let result = handler.on_create_push_config(config, None).await;
         assert!(
             result.is_err(),
             "set_push_config without push sender should hit error metrics path"

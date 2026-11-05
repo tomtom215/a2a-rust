@@ -390,7 +390,7 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
             "https://hooks.example.com/webhook",
         );
         client
-            .set_push_config(config)
+            .create_push_config(config)
             .await
             .expect("create initial push config for set_roundtrip")
     });
@@ -402,7 +402,7 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
             let config = config.clone();
             async move {
                 client
-                    .set_push_config(config)
+                    .create_push_config(config)
                     .await
                     .expect("set_push_config");
             }
@@ -416,7 +416,7 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
             "https://hooks.example.com/webhook-bench",
         );
         client
-            .set_push_config(config)
+            .create_push_config(config)
             .await
             .expect("setup push config")
     });
@@ -462,7 +462,7 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
             "https://hooks.example.com/webhook-delete",
         );
         client
-            .set_push_config(config)
+            .create_push_config(config)
             .await
             .expect("create initial push config for delete_roundtrip")
     });
@@ -476,7 +476,7 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
             async move {
                 // Re-create (upsert) then delete to have something to delete each iteration.
                 let saved = client
-                    .set_push_config(template)
+                    .create_push_config(template)
                     .await
                     .expect("set before delete");
                 let id = saved.id.unwrap_or_default();

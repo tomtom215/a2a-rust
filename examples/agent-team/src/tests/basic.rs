@@ -277,7 +277,7 @@ pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
             AuthenticationInfo::new("bearer").with_credentials("my-secret-bearer"),
         );
 
-    let stored = match client.set_push_config(push_config).await {
+    let stored = match client.create_push_config(push_config).await {
         Ok(s) => s,
         Err(e) => {
             return TestResult::fail(

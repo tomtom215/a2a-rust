@@ -242,20 +242,18 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
             async move {
                 let headers = h.headers(&ctx)?;
                 let inner = req.into_inner();
-                let params = {
-                    let mut built = a2a_protocol_types::params::TaskIdParams::new(inner.id);
-                    built.tenant = non_empty(inner.tenant);
-                    built
-                };
+                let mut params = a2a_protocol_types::params::TaskIdParams::new(inner.id);
+                params.tenant = non_empty(inner.tenant);
                 let (reader, end) = BindingSpan::open(
                     &h.handler,
                     SLIMRPC,
                     method::SUBSCRIBE_TO_TASK,
                     Some(&headers),
                 )
-                .run_with(h.handler.on_resubscribe(params, Some(&headers)), |out| {
-                    out.map(|reader| (reader, StreamEnd::claim()))
-                })
+                .run_with(
+                    h.handler.on_subscribe_to_task(params, Some(&headers)),
+                    |out| out.map(|reader| (reader, StreamEnd::claim())),
+                )
                 .await
                 .map_err(|e| server_error_to_rpc_error(&e))?;
                 Ok(event_stream(reader, end))
@@ -279,7 +277,7 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     method::CREATE_PUSH_CONFIG,
                     Some(&headers),
                 )
-                .run(h.handler.on_set_push_config(config, Some(&headers)))
+                .run(h.handler.on_create_push_config(config, Some(&headers)))
                 .await
                 .map_err(|e| server_error_to_rpc_error(&e))?;
                 Ok(Pb(pb::TaskPushNotificationConfig::from(saved)))

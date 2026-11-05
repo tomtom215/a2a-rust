@@ -87,7 +87,7 @@ pub mod server {
 /// - **Errors**: `A2aError`, `A2aResult`, `ClientError`, `ClientResult`,
 ///   `ServerError`, `ServerResult`
 /// - **Telemetry** (feature `otlp`): `Telemetry`; **Axum** (feature `axum`):
-///   `A2aRouter`
+///   `RestRouter` (and `A2aRouter`, the same type)
 ///
 /// This is a summary: the `pub use` lines of the module are the complete list.
 ///
@@ -145,5 +145,5 @@ pub mod prelude {
 
     // ── Axum integration (feature-gated) ────────────────────────────────
     #[cfg(feature = "axum")]
-    pub use a2a_protocol_server::A2aRouter;
+    pub use a2a_protocol_server::{A2aRouter, RestRouter};
 }

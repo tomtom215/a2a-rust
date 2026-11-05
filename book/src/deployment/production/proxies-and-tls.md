@@ -32,7 +32,7 @@ fn dispatcher(handler: Arc<RequestHandler>) -> ServerResult<CombinedDispatcher> 
 ```
 
 `with_base_path` is read by `RestDispatcher`, `JsonRpcDispatcher`,
-`CombinedDispatcher` and the axum `A2aRouter`. A request under the prefix is
+`CombinedDispatcher` and the axum `RestRouter`. A request under the prefix is
 routed as though the prefix were not there: the card is at
 `/agents/billing/.well-known/agent-card.json`, a tenant is the segment after
 the prefix, and `PathSegmentTenantResolver` sees the path without it. A

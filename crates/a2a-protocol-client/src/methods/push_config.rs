@@ -5,7 +5,7 @@
 
 //! Push notification configuration client methods.
 //!
-//! Provides `set_push_config`, `get_push_config`, `list_push_configs`, and
+//! Provides `create_push_config`, `get_push_config`, `list_push_configs`, and
 //! `delete_push_config` on [`A2aClient`].
 
 use a2a_protocol_types::{
@@ -70,7 +70,7 @@ impl A2aClient {
     /// built with
     /// [`require_https_webhooks`](crate::ClientBuilder::require_https_webhooks).
     /// Without that, such a URL is sent and a warning logged (spec §13.2).
-    pub async fn set_push_config(
+    pub async fn create_push_config(
         &self,
         mut config: TaskPushNotificationConfig,
     ) -> ClientResult<TaskPushNotificationConfig> {
@@ -91,6 +91,24 @@ impl A2aClient {
             Ok(config)
         })
         .await
+    }
+
+    /// [`create_push_config`](Self::create_push_config), under the name it
+    /// had before 0.16.0. The wire method is `CreateTaskPushNotificationConfig`
+    /// (ADR 0053).
+    ///
+    /// # Errors
+    ///
+    /// As [`create_push_config`](Self::create_push_config).
+    #[deprecated(
+        since = "0.16.0",
+        note = "use `create_push_config`; removed no earlier than 0.17.0"
+    )]
+    pub async fn set_push_config(
+        &self,
+        config: TaskPushNotificationConfig,
+    ) -> ClientResult<TaskPushNotificationConfig> {
+        self.create_push_config(config).await
     }
 
     /// Retrieves a push notification configuration by task ID and config ID.

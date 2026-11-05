@@ -631,7 +631,11 @@ impl RestDispatcher {
             Ok(p) => p,
             Err(resp) => return resp,
         };
-        match self.handler.on_resubscribe(params, Some(headers)).await {
+        match self
+            .handler
+            .on_subscribe_to_task(params, Some(headers))
+            .await
+        {
             Ok(reader) => build_sse_response(
                 reader,
                 Some(self.config.sse_keep_alive_interval),
@@ -663,7 +667,11 @@ impl RestDispatcher {
             Ok(c) => c,
             Err(resp) => return resp,
         };
-        match self.handler.on_set_push_config(config, Some(headers)).await {
+        match self
+            .handler
+            .on_create_push_config(config, Some(headers))
+            .await
+        {
             Ok(result) => json_ok_response(&result),
             Err(e) => server_error_to_response(&e),
         }

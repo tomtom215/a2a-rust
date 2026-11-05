@@ -25,9 +25,9 @@ middleware, and server lifecycle:
 | `on_get_task(params, headers)` | `GetTask` |
 | `on_list_tasks(params, headers)` | `ListTasks` |
 | `on_cancel_task(params, headers)` | `CancelTask` |
-| `on_resubscribe(params, headers)` | `SubscribeToTask` |
+| `on_subscribe_to_task(params, headers)` | `SubscribeToTask` |
 | `on_get_extended_agent_card(headers)` | `GetExtendedAgentCard` |
-| `on_set_push_config(config, headers)` | `CreateTaskPushNotificationConfig` |
+| `on_create_push_config(config, headers)` | `CreateTaskPushNotificationConfig` |
 | `on_get_push_config(params, headers)` | `GetTaskPushNotificationConfig` |
 | `on_list_push_configs_page(&params, headers)` | `ListTaskPushNotificationConfigs`, with `pageSize` and `pageToken`; what every dispatcher calls |
 | `on_list_push_configs(task_id, tenant, headers)` | `ListTaskPushNotificationConfigs`, unpaged: every config of the task |

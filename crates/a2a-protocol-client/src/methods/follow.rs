@@ -227,7 +227,7 @@ impl A2aClient {
     /// subscription that is cut is reopened from the last event id and, when
     /// that does not work, followed by polling: see
     /// [`TaskFollow::next`]. Registering a webhook, the spec's third way, is
-    /// [`set_push_config`](Self::set_push_config) with a
+    /// [`create_push_config`](Self::create_push_config) with a
     /// [`WebhookReceiver`](crate::WebhookReceiver) on your side.
     ///
     /// # Errors

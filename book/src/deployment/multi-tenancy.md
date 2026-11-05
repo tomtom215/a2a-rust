@@ -64,13 +64,13 @@ use a2a_protocol_server::tenant_config::{PerTenantConfig, TenantLimits};
 
 let config = PerTenantConfig::builder()
     .default_limits(TenantLimits::builder()
-        .max_concurrent_tasks(100)
-        .rate_limit_rps(50)
+        .with_max_concurrent_tasks(100)
+        .with_rate_limit_rps(50)
         .build())
     .with_override("premium-corp", TenantLimits::builder()
-        .max_concurrent_tasks(1000)
-        .executor_timeout(Duration::from_secs(120))
-        .rate_limit_rps(500)
+        .with_max_concurrent_tasks(1000)
+        .with_executor_timeout(Duration::from_secs(120))
+        .with_rate_limit_rps(500)
         .build())
     .build();
 

@@ -38,7 +38,7 @@ async fn an_empty_task_id_is_invalid_params() {
             "CancelTask {id:?}: {cancel:?}"
         );
         let subscribe = handler
-            .on_resubscribe(serde_json::from_value(params).unwrap(), None)
+            .on_subscribe_to_task(serde_json::from_value(params).unwrap(), None)
             .await;
         assert!(
             matches!(subscribe, Err(ServerError::InvalidField { .. })),

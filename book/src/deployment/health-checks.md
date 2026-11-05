@@ -12,8 +12,8 @@ depends on the dispatcher.
 
 | Dispatcher | `GET /health` | `GET /ready` | `GET /load` |
 |---|---|---|---|
-| `A2aRouter` (Axum, feature `axum`) | `200 {"status":"ok"}`, a constant | `200 {"status":"ready"}`, or `503 {"status":"not_ready","reason":…}` from `RequestHandler::readiness()` | with `with_load_reporting()`: `200` and the load as JSON |
-| `RestDispatcher`, `CombinedDispatcher` | `200 {"status":"ok"}`, a constant | the same as `A2aRouter` | the same as `A2aRouter` |
+| `RestRouter` (Axum, feature `axum`) | `200 {"status":"ok"}`, a constant | `200 {"status":"ready"}`, or `503 {"status":"not_ready","reason":…}` from `RequestHandler::readiness()` | with `with_load_reporting()`: `200` and the load as JSON |
+| `RestDispatcher`, `CombinedDispatcher` | `200 {"status":"ok"}`, a constant | the same as `RestRouter` | the same as `RestRouter` |
 | `JsonRpcDispatcher` | not served | not served | not served |
 | gRPC and WebSocket listeners | not served | not served | not served |
 
@@ -58,7 +58,7 @@ which slowed as the table grew until every replica's probe timed out at once. It
 records no span: a probe every few seconds per replica would otherwise be a
 trace each. On failure, expose
 `A2aError::metric_label` rather than the
-error's message, which can name a host or a connection string; `A2aRouter`'s
+error's message, which can name a host or a connection string; `RestRouter`'s
 `/ready` does that in its `reason` field.
 
 ## Kubernetes probes

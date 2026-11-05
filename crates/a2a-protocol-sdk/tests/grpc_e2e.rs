@@ -249,7 +249,7 @@ async fn push_config_crud_roundtrip() {
     };
 
     let created = client
-        .set_push_config(
+        .create_push_config(
             TaskPushNotificationConfig::new(task.id.0.clone(), "https://hooks.example.com/notify")
                 .with_token("tok-1"),
         )

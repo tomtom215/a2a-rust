@@ -178,7 +178,7 @@ async fn one_task_reads_the_same_through_slimrpc_and_jsonrpc() {
     let id = made.id.0.clone();
     let config = both
         .slim_client
-        .set_push_config(TaskPushNotificationConfig::new(id.as_str(), HOOK))
+        .create_push_config(TaskPushNotificationConfig::new(id.as_str(), HOOK))
         .await
         .expect("create a push config");
     let config_id = config.id.clone().expect("an id");

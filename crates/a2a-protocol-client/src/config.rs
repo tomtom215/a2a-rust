@@ -291,7 +291,7 @@ pub struct ClientConfig {
     ///
     /// Spec §13.2: webhook URLs SHOULD use HTTPS, since the payload, the
     /// notification token and any credentials travel with it. Off, such a
-    /// config is sent and a warning logged; on, `set_push_config`, and a send
+    /// config is sent and a warning logged; on, `create_push_config`, and a send
     /// carrying the config inline, fail with
     /// [`ClientError::InsecureWebhook`](crate::ClientError::InsecureWebhook).
     /// `http://` to `localhost`, `127.0.0.0/8` or `::1` is allowed either way.

@@ -127,7 +127,7 @@ async fn frames_from_a_live_resubscribe(
 
     let headers = last_event_id.map(|id| header("last-event-id", id));
     let mut reader = handler
-        .on_resubscribe(TaskIdParams::new(task_id.0.clone()), headers.as_ref())
+        .on_subscribe_to_task(TaskIdParams::new(task_id.0.clone()), headers.as_ref())
         .await
         .expect("resubscribe");
 

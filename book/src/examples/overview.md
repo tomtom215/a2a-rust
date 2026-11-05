@@ -105,7 +105,7 @@ let handler = Arc::new(RequestHandlerBuilder::new(MyExecutor).with_agent_card(ca
 
 // 3. Serve via any dispatcher
 let dispatcher = JsonRpcDispatcher::new(handler);
-// or: RestDispatcher, A2aRouter (Axum), gRPC
+// or: RestDispatcher, RestRouter (Axum), gRPC
 # let _ = dispatcher;
 # Ok(())
 # }

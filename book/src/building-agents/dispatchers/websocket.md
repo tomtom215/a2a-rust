@@ -101,9 +101,9 @@ What differs from the separate listener:
   handshake timeout and listener settings do not apply: the connection is the
   HTTP server's.
 
-The axum router has the same route (`A2aRouter::with_websocket`, at `/`);
+The axum router has the same route (`RestRouter::with_websocket`, at `/`);
 `axum::serve` does not know upgraded connections, so close them in the
-application's shutdown with `A2aRouter::websocket_upgrades()`'s `close`.
+application's shutdown with `RestRouter::websocket_upgrades()`'s `close`.
 
 ## Built-in limits
 

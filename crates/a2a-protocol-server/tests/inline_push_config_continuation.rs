@@ -162,7 +162,7 @@ async fn a_continuation_over_the_push_config_quota_keeps_its_task() {
         .expect("handler must build");
     let task_id = parked(&handler).await;
     handler
-        .on_set_push_config(
+        .on_create_push_config(
             {
                 let mut built = config("http://127.0.0.1:9/a");
                 built.task_id = Some(task_id.clone());
@@ -294,7 +294,7 @@ async fn a_continuation_whose_turn_cannot_be_saved_keeps_a_named_config() {
         built
     };
     handler
-        .on_set_push_config(
+        .on_create_push_config(
             {
                 let mut built = named.clone();
                 built.task_id = Some(task_id.clone());

@@ -295,10 +295,13 @@ impl A2aService for A2aServiceImpl {
             .await?;
         let capacity = self.config.stream_channel_capacity;
         self.rpc_span("SubscribeToTask", &headers)
-            .run_with(self.handler.on_resubscribe(params, Some(&headers)), |out| {
-                out.map(|reader| Response::new(reader_to_native_stream(reader, capacity)))
-                    .map_err(|e| server_error_to_status(&e))
-            })
+            .run_with(
+                self.handler.on_subscribe_to_task(params, Some(&headers)),
+                |out| {
+                    out.map(|reader| Response::new(reader_to_native_stream(reader, capacity)))
+                        .map_err(|e| server_error_to_status(&e))
+                },
+            )
             .await
     }
 
@@ -317,7 +320,7 @@ impl A2aService for A2aServiceImpl {
             .await?;
         match self
             .rpc_span("CreateTaskPushNotificationConfig", &headers)
-            .run(self.handler.on_set_push_config(config, Some(&headers)))
+            .run(self.handler.on_create_push_config(config, Some(&headers)))
             .await
         {
             Ok(cfg) => Ok(Response::new(cfg.into())),

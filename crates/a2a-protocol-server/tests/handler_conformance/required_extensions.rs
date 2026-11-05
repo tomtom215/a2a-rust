@@ -72,7 +72,7 @@ async fn seed(handler: &RequestHandler) -> (String, String) {
         other => panic!("expected a task, got {other:?}"),
     };
     let config = handler
-        .on_set_push_config(
+        .on_create_push_config(
             TaskPushNotificationConfig::new(task.as_str(), HOOK),
             Some(&declared()),
         )
@@ -119,11 +119,11 @@ pub async fn call(
             .await
             .map(drop),
         Method::SubscribeToTask => handler
-            .on_resubscribe(serde_json::from_value(json!({"id": task})).unwrap(), h)
+            .on_subscribe_to_task(serde_json::from_value(json!({"id": task})).unwrap(), h)
             .await
             .map(drop),
         Method::CreateTaskPushNotificationConfig => handler
-            .on_set_push_config(TaskPushNotificationConfig::new(task, HOOK), h)
+            .on_create_push_config(TaskPushNotificationConfig::new(task, HOOK), h)
             .await
             .map(drop),
         Method::GetTaskPushNotificationConfig => handler

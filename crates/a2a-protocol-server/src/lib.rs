@@ -29,9 +29,9 @@
 //! |---|---|
 //! | [`on_send_message`] | `SendMessage`, `SendStreamingMessage` |
 //! | [`on_get_task`], [`on_list_tasks`], [`on_cancel_task`] | `GetTask`, `ListTasks`, `CancelTask` |
-//! | [`on_resubscribe`] | `SubscribeToTask` |
+//! | [`on_subscribe_to_task`] | `SubscribeToTask` |
 //! | [`on_get_extended_agent_card`] | `GetExtendedAgentCard` |
-//! | [`on_set_push_config`], [`on_get_push_config`], [`on_list_push_configs`], [`on_delete_push_config`] | Push-config CRUD |
+//! | [`on_create_push_config`], [`on_get_push_config`], [`on_list_push_configs`], [`on_delete_push_config`] | Push-config CRUD |
 //!
 //! What the dispatchers add on top is wire-format decoding and reply encoding.
 //! Task lifecycle, idempotency, streaming, push delivery, interceptors,
@@ -42,9 +42,9 @@
 //! [`on_get_task`]: RequestHandler::on_get_task
 //! [`on_list_tasks`]: RequestHandler::on_list_tasks
 //! [`on_cancel_task`]: RequestHandler::on_cancel_task
-//! [`on_resubscribe`]: RequestHandler::on_resubscribe
+//! [`on_subscribe_to_task`]: RequestHandler::on_subscribe_to_task
 //! [`on_get_extended_agent_card`]: RequestHandler::on_get_extended_agent_card
-//! [`on_set_push_config`]: RequestHandler::on_set_push_config
+//! [`on_create_push_config`]: RequestHandler::on_create_push_config
 //! [`on_get_push_config`]: RequestHandler::on_get_push_config
 //! [`on_list_push_configs`]: RequestHandler::on_list_push_configs
 //! [`on_delete_push_config`]: RequestHandler::on_delete_push_config
@@ -77,7 +77,7 @@
 //!
 //! # Axum integration
 //!
-//! Enable the `axum` feature flag to use `A2aRouter` for idiomatic Axum
+//! Enable the `axum` feature flag to use `RestRouter` (also named `A2aRouter`) for idiomatic Axum
 //! integration. See the `dispatch::axum_adapter` module for details.
 //!
 //! # gRPC transport
@@ -202,7 +202,7 @@ pub use call_context::{
     CallContext, PEER_ADDR_KEY, PEER_CERTIFICATE_KEY, PeerAddr, PeerCertificate,
 };
 #[cfg(feature = "axum")]
-pub use dispatch::axum_adapter::A2aRouter;
+pub use dispatch::axum_adapter::{A2aRouter, RestRouter};
 pub use dispatch::{
     A2A_VERSION_METADATA_KEY, CombinedDispatcher, CorsConfig, DispatchConfig, JsonRpcDispatcher,
     RestDispatcher, validate_version_metadata,

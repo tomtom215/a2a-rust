@@ -93,7 +93,7 @@ Both JSON-RPC and REST dispatchers share a `DispatchConfig` for transport-level 
 |-------|------|---------|-------------|
 | `max_request_body_size` | `usize` | 4 MiB | Maximum request body size in bytes |
 | `body_read_timeout` | `Duration` | 30 seconds | Timeout for reading the full request body |
-| `max_query_string_length` | `usize` | 4096 | Maximum query string length (`RestDispatcher` only; `A2aRouter` leaves query parsing to axum) |
+| `max_query_string_length` | `usize` | 4096 | Maximum query string length (`RestDispatcher` only; `RestRouter` leaves query parsing to axum) |
 | `sse_keep_alive_interval` | `Duration` | 30 seconds | Periodic `: keep-alive` comment interval for SSE |
 | `sse_channel_capacity` | `usize` | 64 | Backpressure channel between event reader and HTTP response |
 | `max_batch_size` | `usize` | 100 | Maximum requests in a JSON-RPC batch |
@@ -103,7 +103,7 @@ Both JSON-RPC and REST dispatchers share a `DispatchConfig` for transport-level 
 `DispatchConfig` is `#[non_exhaustive]`: build one with
 `DispatchConfig::default()` and its `with_*` methods, and pass it to
 `JsonRpcDispatcher::with_config(handler, config)`,
-`RestDispatcher::with_config`, `A2aRouter::with_config` or
+`RestDispatcher::with_config`, `RestRouter::with_config` or
 `CombinedDispatcher::with_config`.
 
 ## Running multiple transports

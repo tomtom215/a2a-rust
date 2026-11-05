@@ -40,7 +40,7 @@ async fn subscribe(
     h: &RequestHandler,
     id: &str,
 ) -> Result<crate::streaming::InMemoryQueueReader, ServerError> {
-    h.on_resubscribe(TaskIdParams::new(id.to_owned()), None)
+    h.on_subscribe_to_task(TaskIdParams::new(id.to_owned()), None)
         .await
 }
 

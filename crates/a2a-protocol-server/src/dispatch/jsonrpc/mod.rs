@@ -343,7 +343,9 @@ impl JsonRpcDispatcher {
             "SubscribeToTask" => {
                 let call = async {
                     let params = self.params(rpc_req, Some(headers)).await?;
-                    self.handler.on_resubscribe(params, Some(headers)).await
+                    self.handler
+                        .on_subscribe_to_task(params, Some(headers))
+                        .await
                 };
                 self.rpc_span(rpc_req, headers)
                     .run_with(call, |out| match out {
@@ -435,7 +437,7 @@ impl JsonRpcDispatcher {
             }
             "CreateTaskPushNotificationConfig" => {
                 let params = self.params(rpc_req, headers).await?;
-                let config = self.handler.on_set_push_config(params, headers).await?;
+                let config = self.handler.on_create_push_config(params, headers).await?;
                 Ok(success_response_bytes(id, &config))
             }
             "GetTaskPushNotificationConfig" => {

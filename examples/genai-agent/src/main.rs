@@ -325,7 +325,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             use a2a_protocol_server::tenant_config::{PerTenantConfig, TenantLimits};
             builder = builder.with_tenant_config(
                 PerTenantConfig::builder()
-                    .default_limits(TenantLimits::builder().max_concurrent_tasks(n).build())
+                    .default_limits(TenantLimits::builder().with_max_concurrent_tasks(n).build())
                     .build(),
             );
             println!("max concurrent tasks per tenant: {n}");

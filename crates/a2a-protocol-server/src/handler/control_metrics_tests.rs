@@ -73,7 +73,7 @@ async fn a_tenant_at_its_cap_is_refused_with_its_cause() {
             PerTenantConfig::builder()
                 .with_override(
                     "busy",
-                    TenantLimits::builder().max_concurrent_tasks(1).build(),
+                    TenantLimits::builder().with_max_concurrent_tasks(1).build(),
                 )
                 .build(),
         )
@@ -228,11 +228,11 @@ async fn a_server_at_its_push_config_cap_is_refused_with_its_cause() {
         TaskPushNotificationConfig::new(task.to_owned(), "https://example.com/hook".to_owned())
             .with_id(format!("cfg-{task}"))
     };
-    h.on_set_push_config(config("t-0"), None)
+    h.on_create_push_config(config("t-0"), None)
         .await
         .expect("under the cap");
     assert_eq!(seen.lines(), Vec::<String>::new());
-    let refused = h.on_set_push_config(config("t-1"), None).await;
+    let refused = h.on_create_push_config(config("t-1"), None).await;
     assert!(
         matches!(refused, Err(ServerError::Overloaded(_))),
         "{refused:?}"

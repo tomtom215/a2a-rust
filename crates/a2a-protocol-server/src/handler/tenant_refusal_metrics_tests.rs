@@ -133,7 +133,7 @@ fn task_calls(handler: &RequestHandler) -> Vec<Call<'_>> {
         ),
         call(
             "SubscribeToTask",
-            handler.on_resubscribe(TaskIdParams::new("t"), none),
+            handler.on_subscribe_to_task(TaskIdParams::new("t"), none),
         ),
     ]
 }
@@ -143,7 +143,7 @@ fn push_config_calls(handler: &RequestHandler) -> Vec<Call<'_>> {
     vec![
         call(
             "CreateTaskPushNotificationConfig",
-            handler.on_set_push_config(
+            handler.on_create_push_config(
                 TaskPushNotificationConfig::new("t", "https://example.invalid/hook"),
                 none,
             ),

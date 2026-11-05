@@ -1249,7 +1249,7 @@ async fn process_ws_message(
         "SubscribeToTask" => {
             let call = async {
                 let params = parse_params(handler, &rpc_req, headers).await?;
-                handler.on_resubscribe(params, Some(headers)).await
+                handler.on_subscribe_to_task(params, Some(headers)).await
             };
             // The stream claims the call, which then ends with it.
             let claim = |out: Result<_, _>| out.map(|r| (r, StreamEnd::claim()));
@@ -1268,7 +1268,7 @@ async fn process_ws_message(
                 Box::pin(async move {
                     let params: a2a_protocol_types::push::TaskPushNotificationConfig =
                         p.read().await?;
-                    h.on_set_push_config(params, Some(hdr))
+                    h.on_create_push_config(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
                         .map_err(|e| e.to_a2a_error())
