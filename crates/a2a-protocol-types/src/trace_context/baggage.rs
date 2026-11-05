@@ -127,7 +127,9 @@ fn percent_encode(value: &str) -> String {
 /// decode to UTF-8) is skipped, not the header.
 #[must_use]
 pub fn parse(header: &str, policy: &BaggagePolicy) -> Vec<Member> {
-    if policy.is_off() || header.len() > MAX_BYTES {
+    // `Off` needs no check of its own: it allows no key, so nothing
+    // passes the filter below.
+    if header.len() > MAX_BYTES {
         return Vec::new();
     }
     header
