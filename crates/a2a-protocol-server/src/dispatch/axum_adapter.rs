@@ -600,7 +600,7 @@ fn rpc_call(
     method: &str,
     (http_method, route): (&str, &str),
     hdrs: &HashMap<String, String>,
-    call: impl std::future::Future<Output = axum::response::Response>,
+    call: impl std::future::Future<Output = axum::response::Response> + Send,
 ) -> impl std::future::Future<Output = axum::response::Response> {
     crate::rpc_span::ServerSpan::open(
         handler,

@@ -146,7 +146,7 @@ impl BindingSpan {
     where
         F: Future<Output = ServerResult<T>>,
     {
-        self.0.run(fut)
+        self.0.call(fut, super::failed_with, |out| out, false)
     }
 
     /// [`run`](Self::run), then `then` on the outcome, inside the call: for
@@ -165,7 +165,7 @@ impl BindingSpan {
     where
         F: Future<Output = ServerResult<T>>,
     {
-        self.0.run_with(fut, then)
+        self.0.call(fut, super::failed_with, then, true)
     }
 }
 
