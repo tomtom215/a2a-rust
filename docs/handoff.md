@@ -43,8 +43,9 @@ command is named so the next session re-runs it instead of copying the number. A
   documentation, the spec ledger and one formatting-only file of the out-of-workspace SLIMRPC crate; no Rust file of the workspace changed.
   The CI clippy job's 13 commands exit 0. `cargo nextest run --profile ci --workspace`: 7120 passed, 0 failed, 200 skipped; with
   `--all-features`: 7141 passed, 0 failed, 200 skipped (each logged to a file, never piped to `head`). `cargo test --doc --workspace`: 511 passed, 0 failed, 4 ignored (summed over the crates); with `--all-features` 512, with `--no-default-features` 511, the same 0 failed and 4 ignored. `cargo hack clippy -p a2a-protocol-types -p
-  a2a-protocol-client -p a2a-protocol-server -p a2a-protocol-sdk --all-targets --each-feature -- -D warnings` exits 0. Gates 1 to 43 of
-  `scripts/preflight.sh --list` exit 0 (gate 15, the spec ledger, failed once on a CHANGELOG line number the branch's own entries moved, and was fixed).
+  a2a-protocol-client -p a2a-protocol-server -p a2a-protocol-sdk --all-targets --each-feature -- -D warnings` exits 0. Gates 1 to 44 of
+  `scripts/preflight.sh --list` exit 0 (1 to 43 through one runner, the 44th, `check_gate_inventory.sh`, by hand; gate 15, the spec ledger, fails whenever an edit moves a line it cites,
+  as it did after the CHANGELOG entries, the SLIMRPC reformat and the deprecation-count correction; each time fixed with `--fix-lines`).
   In `bindings/a2a-protocol-slimrpc`: `cargo fmt --check` (failed once on one file the API-shape package left unformatted; fixed),
   `cargo clippy --all-targets -- -D warnings`, `cargo build --bin slim-node` and `cargo test -- --test-threads=1` exit 0 (75 unit tests, the
   integration suites, 10 doctests). `cargo clippy --workspace --all-targets --target x86_64-pc-windows-gnu -- -D warnings` exits 0.
