@@ -19,6 +19,8 @@
 //! regressing: dropping or reshaping the state index turns it into a
 //! sequential scan of the table, which it refuses.
 
+#![cfg(feature = "postgres")]
+
 use std::str::FromStr;
 
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
@@ -33,26 +35,34 @@ async fn the_reapers_tenant_query_reads_the_state_index_not_the_table() {
     let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
     let (admin, pool, schema) = seeded(&url).await;
 
-    let (plan,): (serde_json::Value,) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+    let explain = format!(
         "EXPLAIN (FORMAT JSON) {}",
         super::postgres::ABANDONED_TENANT_SQL
-    )))
-    .bind(15_000_i64)
-    .bind(32_i64)
-    .fetch_one(&pool)
+    );
+    let (plan,): (serde_json::Value,) =
+        crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
+            sqlx::query_as(sqlx::AssertSqlSafe(explain.as_str()))
+                .bind(15_000_i64)
+                .bind(32_i64)
+                .fetch_one(&pool)
+        })
+        .await
+        .unwrap();
+    // The reaper finds exactly the two running rows through that plan.
+    let found: Vec<(String, String)> =
+        crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
+            sqlx::query_as(super::postgres::ABANDONED_TENANT_SQL)
+                .bind(15_000_i64)
+                .bind(32_i64)
+                .fetch_all(&pool)
+        })
+        .await
+        .unwrap();
+    crate::store::pg_retry::checked(
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE"))).execute(&admin),
+    )
     .await
     .unwrap();
-    // The reaper finds exactly the two running rows through that plan.
-    let found: Vec<(String, String)> = sqlx::query_as(super::postgres::ABANDONED_TENANT_SQL)
-        .bind(15_000_i64)
-        .bind(32_i64)
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-    sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
-        .execute(&admin)
-        .await
-        .unwrap();
 
     let mut scans = Vec::new();
     scans_of(&plan, "tenant_tasks", &mut scans);
@@ -77,10 +87,11 @@ async fn seeded(url: &str) -> (sqlx::postgres::PgPool, sqlx::postgres::PgPool, S
     // no other test's rows change the statistics.
     let schema = format!("plan_{}", uuid::Uuid::new_v4().simple());
     let admin = sqlx::postgres::PgPool::connect(url).await.unwrap();
-    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE SCHEMA {schema}")))
-        .execute(&admin)
-        .await
-        .unwrap();
+    crate::store::pg_retry::checked(
+        sqlx::query(sqlx::AssertSqlSafe(format!("CREATE SCHEMA {schema}"))).execute(&admin),
+    )
+    .await
+    .unwrap();
     let options = PgConnectOptions::from_str(url)
         .unwrap()
         .options([("search_path", schema.as_str())]);
@@ -95,7 +106,7 @@ async fn seeded(url: &str) -> (sqlx::postgres::PgPool, sqlx::postgres::PgPool, S
         .unwrap();
     // Marked as this release's writes, as the store marks its own, so the
     // earlier-release trigger (`upgrade`) leaves them alone.
-    let mut tx = pool.begin().await.unwrap();
+    let mut tx = crate::store::pg_retry::checked(pool.begin()).await.unwrap();
     sqlx::query("SET LOCAL a2a.claims = 'on'")
         .execute(&mut *tx)
         .await
@@ -114,10 +125,11 @@ async fn seeded(url: &str) -> (sqlx::postgres::PgPool, sqlx::postgres::PgPool, S
     .await
     .unwrap();
     tx.commit().await.unwrap();
-    sqlx::query("ANALYZE tenant_tasks")
-        .execute(&pool)
-        .await
-        .unwrap();
+    crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
+        sqlx::query("ANALYZE tenant_tasks").execute(&pool)
+    })
+    .await
+    .unwrap();
     (admin, pool, schema)
 }
 

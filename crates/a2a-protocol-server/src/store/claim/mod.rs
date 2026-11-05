@@ -382,9 +382,9 @@ fn live(expires: Instant, now: Instant) -> bool {
     expires > now
 }
 
-#[cfg(all(test, any(feature = "sqlite", feature = "postgres")))]
+#[cfg(test)]
 mod hand_off_tests;
-#[cfg(all(test, feature = "postgres"))]
+#[cfg(test)]
 mod postgres_plan_tests;
 #[cfg(test)]
 mod tests;

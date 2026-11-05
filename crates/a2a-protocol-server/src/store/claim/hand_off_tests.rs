@@ -5,6 +5,8 @@
 //! runs, and finds it once the window has run out (ADR 0054), in each SQL
 //! claim store.
 
+#![cfg(any(feature = "sqlite", feature = "postgres"))]
+
 use std::sync::Arc;
 use std::time::Duration;
 

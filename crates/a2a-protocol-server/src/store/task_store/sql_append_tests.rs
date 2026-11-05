@@ -7,6 +7,8 @@
 //! NEW-h-designs-6). The SQL stores take the trait's default, a read and a
 //! write of the whole document, and the trait's docs say so and why.
 
+#![cfg(any(feature = "sqlite", feature = "postgres"))]
+
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 

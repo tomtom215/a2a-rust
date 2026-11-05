@@ -908,7 +908,7 @@ pub trait TaskStore: Send + Sync + 'static {
     }
 }
 
-#[cfg(all(test, any(feature = "sqlite", feature = "postgres")))]
+#[cfg(test)]
 mod sql_append_tests;
 /// Tests for the default `count` implementation on `TaskStore`.
 #[cfg(test)]
