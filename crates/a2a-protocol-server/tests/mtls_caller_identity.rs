@@ -276,6 +276,58 @@ async fn the_client_certificate_names_the_caller_over_wss() {
     }
 }
 
+/// On the HTTPS port (ADR 0055) the upgrade itself is admitted by the
+/// certificate: with it the chain names the caller before the `101`; without
+/// it the upgrade is refused `401` and no later interceptor runs.
+#[tokio::test]
+async fn the_client_certificate_admits_the_upgrade_on_the_https_port() {
+    let pki = pki();
+    let seen = Seen::default();
+    let server = Server::bind("127.0.0.1:0")
+        .await
+        .unwrap()
+        .with_tls(server_config(&pki));
+    let addr = server.local_addr().unwrap();
+    let h = handler(&seen);
+    tokio::spawn(server.serve_with_shutdown(
+        CombinedDispatcher::new(Arc::clone(&h)).with_websocket(WebSocketDispatcher::new(h)),
+        std::future::pending(),
+    ));
+
+    for with_cert in [true, false] {
+        let mut config = client_config(&pki, with_cert);
+        config.alpn_protocols = vec![b"http/1.1".to_vec()];
+        let tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let tls = tokio_rustls::TlsConnector::from(Arc::new(config))
+            .connect(
+                rustls_pki_types::ServerName::try_from("localhost").unwrap(),
+                tcp,
+            )
+            .await
+            .unwrap();
+        let mut req = format!("wss://localhost:{}/", addr.port())
+            .into_client_request()
+            .unwrap();
+        req.headers_mut()
+            .insert("a2a-version", "1.0".parse().unwrap());
+        let upgraded = tokio_tungstenite::client_async(req, tls).await;
+        if with_cert {
+            assert!(upgraded.is_ok(), "{:?}", upgraded.err());
+            assert_eq!(
+                seen.0.lock().unwrap().pop(),
+                Some(Some(mtls(&certificate_fingerprint(&pki.client.0)))),
+                "the upgrade's caller is named by its certificate"
+            );
+        } else {
+            let Err(tokio_tungstenite::tungstenite::Error::Http(resp)) = upgraded else {
+                panic!("upgraded without a certificate");
+            };
+            assert_eq!(resp.status(), 401);
+            assert!(seen.0.lock().unwrap().is_empty());
+        }
+    }
+}
+
 /// The axum router reads the certificate from the `PeerCertificate`
 /// extension the server it runs on inserts, here a middleware standing in
 /// for a TLS-terminating axum server.

@@ -12,15 +12,17 @@
 
 #![cfg(feature = "websocket")]
 
-use std::sync::Arc;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use a2a_protocol_server::auth::BearerTokenAuthInterceptor;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{CombinedDispatcher, WebSocketDispatcher};
 use a2a_protocol_server::serve::{Dispatcher, ServeConfig, ServeReport, Server};
-use a2a_protocol_server::{RequestHandler, agent_executor};
-use futures_util::StreamExt as _;
+use a2a_protocol_server::{CallContext, RequestHandler, ServerInterceptor, agent_executor};
+use a2a_protocol_types::error::A2aResult;
+use futures_util::{SinkExt as _, StreamExt as _};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
@@ -83,9 +85,14 @@ async fn raw_upgrade(addr: std::net::SocketAddr, extra: &str) -> u16 {
 /// A raw HTTP/1.1 `GET /` asking for a WebSocket, with `headers` after the
 /// ones every upgrade carries; the status code of the answer.
 async fn raw(addr: std::net::SocketAddr, headers: &str) -> u16 {
+    raw_at(addr, "/", headers).await
+}
+
+/// [`raw`] at `path`.
+async fn raw_at(addr: std::net::SocketAddr, path: &str, headers: &str) -> u16 {
     let mut s = tokio::net::TcpStream::connect(addr).await.expect("connect");
     let req = format!(
-        "GET / HTTP/1.1\r\nHost: {addr}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+        "GET {path} HTTP/1.1\r\nHost: {addr}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
          Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n{headers}\r\n"
     );
     s.write_all(req.as_bytes()).await.expect("write");
@@ -331,4 +338,156 @@ async fn the_axum_router_upgrades_and_its_handle_closes() {
     assert!(matches!(next, Message::Close(_)), "{next:?}");
     drop(ws);
     assert!(closing.await.expect("join"), "closed within the deadline");
+    assert_eq!(
+        raw_upgrade(addr, "").await,
+        503,
+        "an upgrade after the close is refused"
+    );
+}
+
+/// Records each call's method and peer address, and holds a `stall` call in
+/// `before` until the test ends, signalling `entered` when it does.
+#[derive(Clone, Default)]
+struct Watch {
+    calls: Arc<Mutex<Vec<(String, Option<SocketAddr>)>>>,
+    stall: Option<&'static str>,
+    entered: Arc<tokio::sync::Notify>,
+}
+
+impl ServerInterceptor for Watch {
+    fn before<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.calls
+            .lock()
+            .expect("lock")
+            .push((ctx.method().to_owned(), ctx.peer_addr()));
+        let stall = self.stall == Some(ctx.method());
+        Box::pin(async move {
+            if stall {
+                self.entered.notify_one();
+                std::future::pending::<()>().await;
+            }
+            Ok(())
+        })
+    }
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+fn watched(watch: &Watch) -> Arc<RequestHandler> {
+    Arc::new(
+        RequestHandlerBuilder::new(Idle)
+            .without_agent_card()
+            .with_interceptor(watch.clone())
+            .build()
+            .expect("handler"),
+    )
+}
+
+/// The chain sees the upgrade as a call to `WebSocketUpgrade` from the
+/// client's own address, and the calls on the connection from the same one.
+#[tokio::test]
+async fn the_upgrade_is_admitted_with_its_peer_address() {
+    let watch = Watch::default();
+    let running = start(watched(&watch), |ws| ws, ServeConfig::default()).await;
+    let mut ws = connect(running.addr).await;
+    let client = ws.get_ref().local_addr().expect("local addr");
+    ws.send(Message::Text(
+        r#"{"jsonrpc":"2.0","id":1,"method":"GetTask","params":{"id":"nope"}}"#.into(),
+    ))
+    .await
+    .expect("send");
+    let answer = tokio::time::timeout(DEADLINE, ws.next())
+        .await
+        .expect("an answer")
+        .expect("open")
+        .expect("a frame");
+    assert!(matches!(answer, Message::Text(_)), "{answer:?}");
+    assert_eq!(
+        watch.calls.lock().expect("lock").clone(),
+        [
+            ("WebSocketUpgrade".to_owned(), Some(client)),
+            ("GetTask".to_owned(), Some(client)),
+        ]
+    );
+}
+
+/// Only the JSON-RPC path upgrades; an upgrade asked of another path is the
+/// HTTP+JSON binding's request, which is not answered `101`.
+#[tokio::test]
+async fn only_the_jsonrpc_path_upgrades() {
+    let running = start(handler(None), |ws| ws, ServeConfig::default()).await;
+    let base = "Sec-WebSocket-Version: 13\r\nA2A-Version: 1.0\r\n";
+    assert_eq!(raw_at(running.addr, "/", base).await, 101);
+    for path in ["/tasks", "/ws", "/.well-known/agent-card.json"] {
+        assert_ne!(raw_at(running.addr, path, base).await, 101, "{path}");
+    }
+}
+
+/// A connection that cannot close inside the drain, because a request on it
+/// never ends, is reported: the drain is not complete.
+#[tokio::test]
+async fn an_upgraded_connection_that_does_not_close_is_reported() {
+    let watch = Watch {
+        stall: Some("GetTask"),
+        ..Watch::default()
+    };
+    let running = start(
+        watched(&watch),
+        WebSocketDispatcher::without_idle_timeout,
+        ServeConfig::default().with_drain_timeout(Duration::from_millis(300)),
+    )
+    .await;
+    let mut ws = connect(running.addr).await;
+    ws.send(Message::Text(
+        r#"{"jsonrpc":"2.0","id":1,"method":"GetTask","params":{"id":"nope"}}"#.into(),
+    ))
+    .await
+    .expect("send");
+    tokio::time::timeout(DEADLINE, watch.entered.notified())
+        .await
+        .expect("the request is in flight");
+    running.stop.send(()).expect("signal");
+    let report = tokio::time::timeout(DEADLINE, running.served)
+        .await
+        .expect("the server returned at its drain timeout")
+        .expect("join");
+    assert!(!report.drained, "{report:?}");
+}
+
+/// While upgraded, the HTTP server's idle timeout does not close the
+/// connection: the WebSocket's own bound governs, here none, and the
+/// connection still answers after twice the HTTP idle timeout.
+#[tokio::test]
+async fn the_http_idle_timeout_does_not_close_an_upgraded_connection() {
+    let running = start(
+        handler(None),
+        WebSocketDispatcher::without_idle_timeout,
+        ServeConfig::default().with_idle_timeout(Some(Duration::from_millis(300))),
+    )
+    .await;
+    let mut ws = connect(running.addr).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(900), ws.next())
+            .await
+            .is_err(),
+        "nothing arrives and nothing closes"
+    );
+    ws.send(Message::Text(
+        r#"{"jsonrpc":"2.0","id":1,"method":"GetTask","params":{"id":"nope"}}"#.into(),
+    ))
+    .await
+    .expect("still open");
+    let answer = tokio::time::timeout(DEADLINE, ws.next())
+        .await
+        .expect("an answer")
+        .expect("open")
+        .expect("a frame");
+    assert!(matches!(answer, Message::Text(_)), "{answer:?}");
 }
