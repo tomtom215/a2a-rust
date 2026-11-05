@@ -893,7 +893,7 @@
    "status": "TESTED",
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:96 RequestHandler::subscribe_reattach_hook",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:465 HandlerLimits::default",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:14 HandlerLimits::default",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1396 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:204 TerminalTracking::cancel_with"
    ],
@@ -3461,7 +3461,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:166 DEFAULT_PUSH_REQUEST_TIMEOUT",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:465 HandlerLimits::default",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:14 HandlerLimits::default",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:224 deliver_once"
    ],
    "test_evidence": [
@@ -7105,7 +7105,7 @@
    "requirement": "MAY optionally resend a final Task snapshot before closing",
    "status": "TESTED",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:30 HandlerLimits",
+    "crates/a2a-protocol-server/src/handler/limits/fields.rs:33 HandlerLimits",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:517 RequestHandler::final_snapshot_hook",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1138 InMemoryQueueReader::final_snapshot",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1396 InMemoryQueueReader::next_frame",
@@ -8591,7 +8591,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:27 RequestHandler::on_list_tasks",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:30 HandlerLimits",
+    "crates/a2a-protocol-server/src/handler/limits/fields.rs:33 HandlerLimits",
     "crates/a2a-protocol-server/src/handler/push_config.rs:73 RequestHandler::validate_and_store_push_config",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:65 parse_query_param_u32",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:245 parse_list_tasks_query"
@@ -8619,7 +8619,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/params.rs:126 RestDispatcher::read_params",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:162 JsonRpcDispatcher::dispatch_inner",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:338 GrpcDispatcher::into_service",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:30 HandlerLimits",
+    "crates/a2a-protocol-server/src/handler/limits/fields.rs:33 HandlerLimits",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:150 read_body_limited"
    ],
    "test_evidence": [
