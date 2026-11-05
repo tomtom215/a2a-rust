@@ -60,11 +60,17 @@ pub(super) fn task(id: &str, state: TaskState) -> Task {
 type Age = Box<dyn Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 /// The scenario, with tasks in partition `scope`; `age(id)` makes a task
-/// look unwritten for a minute.
+/// look unwritten for an hour.
+///
+/// The claim time to live is ten minutes: an aged task is six times past it,
+/// and the task written just now stays inside it unless the run takes ten
+/// minutes. Until 2026-11-05 it was 3 s against a minute's age, and a run of
+/// 9 to 17 s on a loaded machine turned the fresh task into an orphan (9 of
+/// 10 runs failed under load).
 #[allow(clippy::too_many_lines)] // one scenario: four tasks, then each pass checked in turn
 async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope: &str, age: Age) {
     let claims_store = store.turn_claims().expect("SQL stores claim turns");
-    let ttl = Duration::from_secs(3);
+    let ttl = Duration::from_secs(600);
     let run = |id: &str| format!("{id}-{}", uuid::Uuid::new_v4());
     let (orphan, running, fresh, parked, mine) = (
         run("orphan"),
@@ -95,7 +101,13 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
         age(running.clone()).await;
         assert!(
             claims_store
-                .claim(scope, &running, "alive", &run("t"), Duration::from_secs(60))
+                .claim(
+                    scope,
+                    &running,
+                    "alive",
+                    &run("t"),
+                    Duration::from_secs(3_600)
+                )
                 .await
                 .unwrap()
         );
@@ -327,7 +339,7 @@ pub(super) fn sqlite_age(pool: sqlx::SqlitePool, table: &'static str) -> Age {
         Box::pin(async move {
             // `table` is one of this file's constants.
             sqlx::query(sqlx::AssertSqlSafe(format!(
-                "UPDATE {table} SET updated_at = strftime('%Y-%m-%d %H:%M:%f','now','-60 seconds') WHERE id = ?1"
+                "UPDATE {table} SET updated_at = strftime('%Y-%m-%d %H:%M:%f','now','-3600 seconds') WHERE id = ?1"
             )))
             .bind(id)
             .execute(&pool)
@@ -371,7 +383,7 @@ fn pg_age(pool: sqlx::PgPool, table: &'static str) -> Age {
             // the stores make is: unmarked, the upgrade guard would read it
             // as a 0.15 replica's turn and hold the task for it.
             sqlx::query(sqlx::AssertSqlSafe(format!(
-                "UPDATE {table} SET updated_at = now() - interval '60 seconds' \
+                "UPDATE {table} SET updated_at = now() - interval '3600 seconds' \
                  WHERE id = $1 AND set_config('a2a.claims', 'on', true) = 'on'"
             )))
             .bind(id)
