@@ -84,8 +84,11 @@ fn send_params(args: &SendArgs) -> MessageSendParams {
 
 /// `a2a send <url> <text>`
 pub async fn send(opts: &GlobalOpts, args: &SendArgs) -> Result<(), CliError> {
-    let client = connect(&args.url, opts).await?;
-    let response = client.send_message(send_params(args)).await?;
+    let (client, route) = connect(&args.url, opts).await?;
+    let response = client
+        .send_message(send_params(args))
+        .await
+        .map_err(|e| route.explain(e))?;
     print_pretty(&response)
 }
 
@@ -109,10 +112,13 @@ fn is_terminal(event: &StreamResponse) -> bool {
 /// well-behaved agent closes right after the terminal event, but this tool
 /// does not wait to find out.
 pub async fn stream(opts: &GlobalOpts, args: &SendArgs) -> Result<(), CliError> {
-    let client = connect(&args.url, opts).await?;
-    let mut events = client.stream_message(send_params(args)).await?;
+    let (client, route) = connect(&args.url, opts).await?;
+    let mut events = client
+        .stream_message(send_params(args))
+        .await
+        .map_err(|e| route.explain(e))?;
     while let Some(event) = events.next().await {
-        let event = event?;
+        let event = event.map_err(|e| route.explain(e))?;
         print_line(&event)?;
         if is_terminal(&event) {
             break;
@@ -143,13 +149,14 @@ pub async fn task_subscribe(
     task_id: &str,
     from: Option<&str>,
 ) -> Result<(), CliError> {
-    let client = connect(url, opts).await?;
+    let (client, route) = connect(url, opts).await?;
     let mut events = match from {
-        Some(after) => client.subscribe_to_task_from(task_id, after).await?,
-        None => client.subscribe_to_task(task_id).await?,
-    };
+        Some(after) => client.subscribe_to_task_from(task_id, after).await,
+        None => client.subscribe_to_task(task_id).await,
+    }
+    .map_err(|e| route.explain(e))?;
     while let Some(event) = events.next().await {
-        let event = event?;
+        let event = event.map_err(|e| route.explain(e))?;
         print_line(&event)?;
         if ends_subscription(&event) {
             break;
@@ -160,28 +167,35 @@ pub async fn task_subscribe(
 
 /// `a2a task get <url> <task-id>`
 pub async fn task_get(opts: &GlobalOpts, url: &str, task_id: &str) -> Result<(), CliError> {
-    let client = connect(url, opts).await?;
+    let (client, route) = connect(url, opts).await?;
     let task = client
         .get_task(TaskQueryParams::new(task_id.to_owned()))
-        .await?;
+        .await
+        .map_err(|e| route.explain(e))?;
     print_pretty(&task)
 }
 
 /// `a2a task cancel <url> <task-id>`
 pub async fn task_cancel(opts: &GlobalOpts, url: &str, task_id: &str) -> Result<(), CliError> {
-    let client = connect(url, opts).await?;
-    let task = client.cancel_task(task_id).await?;
+    let (client, route) = connect(url, opts).await?;
+    let task = client
+        .cancel_task(task_id)
+        .await
+        .map_err(|e| route.explain(e))?;
     print_pretty(&task)
 }
 
 /// `a2a task list <url>`
 pub async fn task_list(opts: &GlobalOpts, args: &ListArgs) -> Result<(), CliError> {
-    let client = connect(&args.url, opts).await?;
+    let (client, route) = connect(&args.url, opts).await?;
     let mut params = ListTasksParams::new();
     params.context_id.clone_from(&args.context_id);
     params.page_size = args.page_size;
     params.page_token.clone_from(&args.page_token);
-    let page = client.list_tasks(params).await?;
+    let page = client
+        .list_tasks(params)
+        .await
+        .map_err(|e| route.explain(e))?;
     print_pretty(&page)
 }
 
