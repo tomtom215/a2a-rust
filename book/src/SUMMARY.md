@@ -183,6 +183,7 @@
 
 - [Configuration Reference](./reference/configuration.md)
 - [API Quick Reference](./reference/api-reference.md)
+- [Swarm Extensions: the Wire Contract](./reference/swarm-extensions.md)
 - [Generated API Docs](./reference/api-docs.md)
 - [Upgrading Between Minor Versions](./reference/upgrading.md)
     - [0.15 → 0.16](./reference/upgrading/0.15-to-0.16.md)

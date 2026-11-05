@@ -47,6 +47,7 @@ are rustdoc's job.
 | `idempotency` | Client-supplied idempotency keys for `message/send`, as a declared extension |
 | `jsonrpc` | JSON-RPC 2.0 envelope types |
 | `lease` | The lease extension: `Lease`, a delegated task's time to live, granted on the message that starts it and renewed by a `GetTask` that activates the extension |
+| `lineage` | The lineage extension: `Lineage` (`root`, `depth`, `parentTaskId`), the job a task belongs to; `Lineage::child` for a delegated task; `tree` arranges tasks into a job's tree (ADR 0034) |
 | `message` | Message types for the A2A protocol |
 | `method` | The A2A v1.0 service methods, mirrored from the ratified specification |
 | `params` | JSON-RPC method parameter types |
@@ -228,7 +229,7 @@ are rustdoc's job.
 | `builder` | Fluent builder for `A2aClient` |
 | `client` | The `A2aClient` itself |
 | `config` | Client configuration types |
-| `delegation` | `Delegation`: a task sent to another agent and cancelled with its parent — on the parent's cancel, a lost stream, or a dropped handle |
+| `delegation` | `Delegation`: a task sent to another agent and cancelled with its parent — on the parent's cancel, a lost stream, or a dropped handle; `DelegationOptions::with_lineage` gives the child its job's lineage |
 | `discovery` | Agent card discovery with HTTP caching |
 | `error` | Client error types |
 | `interceptor` | Request/response interceptor infrastructure |
@@ -388,7 +389,10 @@ are rustdoc's job.
 | `SendMessageResult` | Result of `RequestHandler::on_send_message`: a synchronous response or a streaming reader |
 | `ShutdownReport` | What a shutdown actually managed to do (live queues it had to destroy, whether executor cleanup completed) |
 | `InFlightReport` | What `RequestHandler::finish_in_flight` / `cancel_in_flight` did: tasks that completed on their own, tasks cancelled, still running at the end of the grace period, whether everything finished |
-| `HaltScope` | What `RequestHandler::halt` applies to: one tenant, or all |
+| `HaltScope` | What `RequestHandler::halt` applies to: one job (`HaltScope::root(tenant, root)`, ADR 0034), one tenant, or all |
+| `RequestHandler::running_in_root` / `halt_reason_for_root` | The turns of one job running in this process, with their lineage; why a job's sends are refused |
+| `RequestContext::lineage` / `child_lineage` | The turn's job, and the lineage to give a task it delegates |
+| `HALTED_REASON`, `A2A_RUST_ERROR_DOMAIN` | The `ErrorInfo` reason (`HALTED`) and domain (`a2a-rust.com`) a halt refusal carries on every binding (ADR 0049) |
 | `HaltReport` | What a halt did: `stopped`, the ids of the tasks whose token it fired, and `persisted`, whether the halt store took it (`None` without a store) |
 | `ConnectionPoolStats` | Statistics about the HTTP connection pool |
 | `RpcCall` | One finished inbound call as `Metrics::on_rpc_call` reports it: binding, method, duration, status (`rpc.server.call.duration`) |

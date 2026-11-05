@@ -21,6 +21,7 @@ use a2a_protocol_types::budget::ChildGrant;
 use a2a_protocol_types::delegation_journal::DelegationJournal;
 use a2a_protocol_types::idempotency;
 use a2a_protocol_types::lease::Lease;
+use a2a_protocol_types::lineage::Lineage;
 
 use super::renewal::Renewal;
 use super::{Delegation, ResumePolicy, fresh_key, journal, refused};
@@ -52,6 +53,7 @@ pub struct DelegationOptions {
     journal: Option<JournalChoice>,
     resume: Option<ResumePolicy>,
     id_wait: Option<Duration>,
+    lineage: Option<Lineage>,
 }
 
 impl std::fmt::Debug for DelegationOptions {
@@ -62,6 +64,7 @@ impl std::fmt::Debug for DelegationOptions {
             .field("journal", &self.journal.is_some())
             .field("resume", &self.resume)
             .field("id_wait", &self.id_wait)
+            .field("lineage", &self.lineage)
             .finish()
     }
 }
@@ -123,6 +126,18 @@ impl DelegationOptions {
         self
     }
 
+    /// Gives the child `lineage`, the job it belongs to (ADR 0034): from an
+    /// executor, `RequestContext::child_lineage` in `a2a-protocol-server`,
+    /// which names this turn's job one level down with this task as the
+    /// parent. Then halting the job by its root stops the child on an agent
+    /// that honours the extension, as it stops this turn. An agent that does
+    /// not ignores it. A reattach sends no message, so it carries none.
+    #[must_use]
+    pub fn with_lineage(mut self, lineage: Lineage) -> Self {
+        self.lineage = Some(lineage);
+        self
+    }
+
     /// Sets how a lost stream is resumed (see [`ResumePolicy`]).
     #[must_use]
     pub const fn with_resume(mut self, policy: ResumePolicy) -> Self {
@@ -164,8 +179,12 @@ impl Delegation {
             journal,
             resume,
             id_wait,
+            lineage,
         } = options;
         let new_record = new_record_of(journal)?;
+        if let Some(lineage) = &lineage {
+            lineage.attach(&mut params.message);
+        }
         prepare(&client, &mut params, budget.as_ref(), lease);
         let tenant = params.tenant.clone();
         let record = begin_record(new_record, &params).await?;

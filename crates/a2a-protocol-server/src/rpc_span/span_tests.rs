@@ -355,3 +355,36 @@ fn reference_task_ids_are_exported_as_a_string_array() {
         "spans: {names:?}"
     );
 }
+
+/// The turn's job goes on the executor span (ADR 0034), the root and the
+/// depth as they are.
+#[test]
+fn the_executor_span_records_the_turns_lineage() {
+    use tracing_subscriber::layer::SubscriberExt as _;
+    let fields = Fields::default();
+    tracing::subscriber::with_default(tracing_subscriber::registry().with(fields.clone()), || {
+        let span = ExecutorSpan::open(
+            "t",
+            "c",
+            None,
+            SpanSettings {
+                agent: true,
+                content: false,
+            },
+            &Message::user("m", vec![Part::text("question")]),
+        );
+        let lineage = a2a_protocol_types::lineage::Lineage::origin("job-42")
+            .child("p")
+            .unwrap();
+        span.record_lineage(&lineage);
+    });
+    let recorded = fields.0.lock().unwrap();
+    assert_eq!(
+        recorded.get("a2a.lineage.root").map(String::as_str),
+        Some("job-42")
+    );
+    assert_eq!(
+        recorded.get("a2a.lineage.depth").map(String::as_str),
+        Some("1")
+    );
+}

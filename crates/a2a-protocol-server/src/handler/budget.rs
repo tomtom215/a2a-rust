@@ -53,8 +53,9 @@ pub fn requested(message: &Message, received: Instant) -> ServerResult<Option<Bu
 
 /// The extensions every card declares, whatever the handler is built with:
 /// the failure taxonomy (every server classifies, in this crate's own
-/// failure path) and the budget (every server honours one).
-pub fn always_declared() -> [AgentExtension; 2] {
+/// failure path), the budget (every server honours one) and the lineage
+/// (every server checks one and halts by its root, ADR 0034).
+pub fn always_declared() -> [AgentExtension; 3] {
     let declare = |uri: &str, description: &str| {
         AgentExtension::new(uri.to_owned())
             .with_description(description.to_owned())
@@ -69,6 +70,11 @@ pub fn always_declared() -> [AgentExtension; 2] {
             BUDGET_EXTENSION_URI,
             "A turn is held to the caller's deadline and named meters; each status update \
              says what is left and spent.",
+        ),
+        declare(
+            a2a_protocol_types::lineage::LINEAGE_EXTENSION_URI,
+            "A task names the job it belongs to; an operator can halt one job across \
+             every replica, and the job's tree is built from its tasks.",
         ),
     ]
 }

@@ -19,6 +19,17 @@ fn a_halt_maps_to_unavailable_on_every_binding() {
     assert_eq!(wire.code, ErrorCode::InternalError);
     assert_eq!(wire.message, "halted: incident 42");
     assert_eq!(err.to_string(), "halted: incident 42");
+    // Machine-readable on every binding (ADR 0049): the typed detail goes
+    // out as it is, in JSON-RPC's `error.data` and HTTP+JSON's `details`.
+    let halted = serde_json::json!({
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "HALTED",
+        "domain": "a2a-rust.com",
+    });
+    assert_eq!(wire.data.as_ref(), Some(&halted));
+    assert_eq!(crate::streaming::sse::error_details(&wire), vec![halted]);
+    assert_eq!(super::HALTED_REASON, "HALTED");
+    assert_eq!(super::A2A_RUST_ERROR_DOMAIN, "a2a-rust.com");
 }
 
 /// §3.3.2: a temporary failure (a store whose database cannot answer for

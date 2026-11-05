@@ -33,6 +33,7 @@ mod introspection;
 pub(crate) mod lease;
 mod lifecycle;
 mod limits;
+pub(crate) mod lineage;
 /// Per-key locks shared by the messaging and push-config paths.
 mod locks;
 mod messaging;
@@ -229,6 +230,8 @@ pub(crate) struct CancellationEntry {
     /// The tenant the task belongs to (`""` without one), so a
     /// [`halt`](RequestHandler::halt) of one tenant finds its tasks.
     pub(crate) tenant: String,
+    /// The turn's lineage (ADR 0034), so a halt of one job finds its tasks.
+    pub(crate) lineage: a2a_protocol_types::lineage::Lineage,
 }
 
 /// The state of one executor turn, shared by the executor's writer, its

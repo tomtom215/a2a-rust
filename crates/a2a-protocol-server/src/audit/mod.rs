@@ -182,7 +182,7 @@ pub(crate) async fn record_halt(
     chain: &str,
     by: &str,
     action: &str,
-    all: bool,
+    scope: &crate::handler::HaltScope,
     reason: Option<&str>,
     stopped: Option<&[String]>,
 ) {
@@ -192,10 +192,15 @@ pub(crate) async fn record_halt(
         Some("operator".to_owned()),
     ));
     r.detail.insert("action".to_owned(), action.into());
-    r.detail.insert(
-        "scope".to_owned(),
-        if all { "all" } else { "tenant" }.into(),
-    );
+    let kind = match scope {
+        crate::handler::HaltScope::All => "all",
+        crate::handler::HaltScope::Root { root, .. } => {
+            r.detail.insert("root".to_owned(), root.as_str().into());
+            "root"
+        }
+        crate::handler::HaltScope::Tenant(_) => "tenant",
+    };
+    r.detail.insert("scope".to_owned(), kind.into());
     if let Some(reason) = reason {
         r.detail.insert("reason".to_owned(), reason.into());
     }

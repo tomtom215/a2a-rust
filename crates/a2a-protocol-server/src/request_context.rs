@@ -9,6 +9,7 @@
 //! and any previously stored task snapshot so that the executor has all the
 //! information it needs to process a request.
 
+use a2a_protocol_types::lineage::Lineage;
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::task::{ContextId, Task, TaskId};
 use tokio_util::sync::CancellationToken;
@@ -82,6 +83,9 @@ pub struct RequestContext {
     /// See [`budget`](Self::budget).
     pub(crate) budget: Option<a2a_protocol_types::budget::BudgetHandle>,
 
+    /// See [`lineage`](Self::lineage).
+    pub(crate) lineage: Lineage,
+
     /// See [`accepted_output_modes`](Self::accepted_output_modes).
     accepted_output_modes: Vec<String>,
 
@@ -96,10 +100,12 @@ impl RequestContext {
     /// Creates a new [`RequestContext`].
     #[must_use]
     pub fn new(message: Message, task_id: TaskId, context_id: impl Into<ContextId>) -> Self {
+        let context_id = context_id.into();
         Self {
             message,
             task_id,
-            context_id: context_id.into(),
+            lineage: Lineage::origin(context_id.as_ref()),
+            context_id,
             stored_task: None,
             metadata: None,
             cancellation_token: CancellationToken::new(),
@@ -179,6 +185,39 @@ impl RequestContext {
     #[must_use]
     pub fn with_budget(mut self, budget: a2a_protocol_types::budget::BudgetHandle) -> Self {
         self.budget = Some(budget);
+        self
+    }
+
+    /// The job this turn belongs to (ADR 0034): the lineage its task was
+    /// created with, or, for a task sent without one, a job of its own whose
+    /// root is its `contextId`, at depth 0. The handler checked it before the
+    /// executor ran; a halt of its root
+    /// ([`HaltScope::Root`](crate::HaltScope::Root)) stops this turn.
+    #[must_use]
+    pub const fn lineage(&self) -> &Lineage {
+        &self.lineage
+    }
+
+    /// The lineage to give a task this turn delegates: the same root, one
+    /// level deeper, with this task as its parent. Attach it to the child's
+    /// message ([`Lineage::attach`], or
+    /// `a2a_protocol_client::delegation::DelegationOptions::with_lineage`), so
+    /// that halting this job stops the child too.
+    ///
+    /// # Errors
+    ///
+    /// Invalid params when this turn is at
+    /// [`MAX_LINEAGE_DEPTH`](a2a_protocol_types::lineage::MAX_LINEAGE_DEPTH):
+    /// the job may delegate no deeper.
+    pub fn child_lineage(&self) -> a2a_protocol_types::error::A2aResult<Lineage> {
+        self.lineage.child(self.task_id.0.clone())
+    }
+
+    /// Sets the turn's lineage, as the handler does; for an executor driven
+    /// directly, as in a test.
+    #[must_use]
+    pub fn with_lineage(mut self, lineage: Lineage) -> Self {
+        self.lineage = lineage;
         self
     }
 

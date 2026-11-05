@@ -1,0 +1,259 @@
+{
+ "description": "Conformance vectors for https://a2a-rust.com/extensions/lineage/v1. Each 'valid' value is accepted and reads back as 'reads'; its child, made by a task with id 'child.parentTaskId', is 'child.expect', or is refused when 'child.expect' is null. Each 'invalid' value is refused as InvalidParams (-32602) before any work. Run by crates/a2a-protocol-types/src/lineage/vectors_tests.rs and checked against schema.json.",
+ "valid": [
+  {
+   "name": "the job's first task",
+   "value": {
+    "root": "job-42",
+    "depth": 0
+   },
+   "reads": {
+    "root": "job-42",
+    "depth": 0
+   },
+   "child": {
+    "parentTaskId": "t-1",
+    "expect": {
+     "root": "job-42",
+     "depth": 1,
+     "parentTaskId": "t-1"
+    }
+   }
+  },
+  {
+   "name": "a delegated task",
+   "value": {
+    "root": "job-42",
+    "depth": 3,
+    "parentTaskId": "t-9"
+   },
+   "reads": {
+    "root": "job-42",
+    "depth": 3,
+    "parentTaskId": "t-9"
+   },
+   "child": {
+    "parentTaskId": "t-10",
+    "expect": {
+     "root": "job-42",
+     "depth": 4,
+     "parentTaskId": "t-10"
+    }
+   }
+  },
+  {
+   "name": "unknown members are ignored",
+   "value": {
+    "root": "job-42",
+    "depth": 1,
+    "futureField": true
+   },
+   "reads": {
+    "root": "job-42",
+    "depth": 1
+   },
+   "child": {
+    "parentTaskId": "t-2",
+    "expect": {
+     "root": "job-42",
+     "depth": 2,
+     "parentTaskId": "t-2"
+    }
+   }
+  },
+  {
+   "name": "a root holding a colon, a space and non-ASCII (a context id may)",
+   "value": {
+    "root": "ctx:42 ü",
+    "depth": 0
+   },
+   "reads": {
+    "root": "ctx:42 ü",
+    "depth": 0
+   },
+   "child": {
+    "parentTaskId": "t-1",
+    "expect": {
+     "root": "ctx:42 ü",
+     "depth": 1,
+     "parentTaskId": "t-1"
+    }
+   }
+  },
+  {
+   "name": "a root of exactly 1024 bytes",
+   "value": {
+    "root": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+    "depth": 0
+   },
+   "reads": {
+    "root": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+    "depth": 0
+   },
+   "child": {
+    "parentTaskId": "t-1",
+    "expect": {
+     "root": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+     "depth": 1,
+     "parentTaskId": "t-1"
+    }
+   }
+  },
+  {
+   "name": "the deepest a task may be, which delegates no further",
+   "value": {
+    "root": "job-42",
+    "depth": 16,
+    "parentTaskId": "t-15"
+   },
+   "reads": {
+    "root": "job-42",
+    "depth": 16,
+    "parentTaskId": "t-15"
+   },
+   "child": {
+    "parentTaskId": "t-16",
+    "expect": null
+   }
+  },
+  {
+   "name": "a depth one short of the cap, whose child is at the cap",
+   "value": {
+    "root": "job-42",
+    "depth": 15
+   },
+   "reads": {
+    "root": "job-42",
+    "depth": 15
+   },
+   "child": {
+    "parentTaskId": "t-15",
+    "expect": {
+     "root": "job-42",
+     "depth": 16,
+     "parentTaskId": "t-15"
+    }
+   }
+  }
+ ],
+ "invalid": [
+  {
+   "name": "not an object",
+   "value": "job-42"
+  },
+  {
+   "name": "no root",
+   "value": {
+    "depth": 0
+   }
+  },
+  {
+   "name": "no depth",
+   "value": {
+    "root": "job-42"
+   }
+  },
+  {
+   "name": "an empty root",
+   "value": {
+    "root": "",
+    "depth": 0
+   }
+  },
+  {
+   "name": "a root of 1025 bytes",
+   "value": {
+    "root": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+    "depth": 0
+   }
+  },
+  {
+   "name": "a root of 513 two-byte characters (1026 bytes)",
+   "value": {
+    "root": "üüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüü",
+    "depth": 0
+   }
+  },
+  {
+   "name": "a root holding a newline",
+   "value": {
+    "root": "job\n42",
+    "depth": 0
+   }
+  },
+  {
+   "name": "a root holding DEL",
+   "value": {
+    "root": "job42",
+    "depth": 0
+   }
+  },
+  {
+   "name": "a depth past the cap",
+   "value": {
+    "root": "job-42",
+    "depth": 17
+   }
+  },
+  {
+   "name": "a negative depth",
+   "value": {
+    "root": "job-42",
+    "depth": -1
+   }
+  },
+  {
+   "name": "a fractional depth",
+   "value": {
+    "root": "job-42",
+    "depth": 1.5
+   }
+  },
+  {
+   "name": "a depth as a string",
+   "value": {
+    "root": "job-42",
+    "depth": "1"
+   }
+  },
+  {
+   "name": "a root that is not a string",
+   "value": {
+    "root": 42,
+    "depth": 0
+   }
+  },
+  {
+   "name": "a parentTaskId at depth 0",
+   "value": {
+    "root": "job-42",
+    "depth": 0,
+    "parentTaskId": "t-1"
+   }
+  },
+  {
+   "name": "an empty parentTaskId",
+   "value": {
+    "root": "job-42",
+    "depth": 1,
+    "parentTaskId": ""
+   }
+  },
+  {
+   "name": "a parentTaskId of 1025 bytes",
+   "value": {
+    "root": "job-42",
+    "depth": 1,
+    "parentTaskId": "ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+   }
+  },
+  {
+   "name": "a parentTaskId holding a tab",
+   "value": {
+    "root": "job-42",
+    "depth": 1,
+    "parentTaskId": "t\t1"
+   }
+  }
+ ]
+}

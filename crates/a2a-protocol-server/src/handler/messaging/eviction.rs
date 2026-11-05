@@ -33,6 +33,7 @@ impl RequestHandler {
         &self,
         task_id: &TaskId,
         token: CancellationToken,
+        lineage: a2a_protocol_types::lineage::Lineage,
     ) -> Arc<ExecutorTurn> {
         // Phase 1.
         let (cancelled_ids, aged_candidates) = self.collect_stale_candidates().await;
@@ -54,6 +55,7 @@ impl RequestHandler {
                 created_at: Instant::now(),
                 turn: Arc::clone(&turn),
                 tenant: crate::store::tenant::TenantContext::current(),
+                lineage,
             },
         );
         turn

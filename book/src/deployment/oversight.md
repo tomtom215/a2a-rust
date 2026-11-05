@@ -6,7 +6,7 @@
 This chapter covers three ways a person stays in control of agents built on
 this SDK:
 
-- **Stop it:** halt one tenant or the whole server.
+- **Stop it:** halt one job, one tenant or the whole server.
 - **Ask first:** an agent waits for a named person to approve an exact action.
 - **Stop what it started:** cancelling a task cancels the tasks it delegated to
   other agents.
@@ -41,7 +41,11 @@ While a scope is halted:
 
 - **New sends are refused,** including sends that would continue a waiting task.
   HTTP+JSON answers `503` with status `UNAVAILABLE`, gRPC and SLIMRPC
-  `UNAVAILABLE`, and JSON-RPC an internal error. Each message reads `halted: <reason>`.
+  `UNAVAILABLE`, and JSON-RPC an internal error. Each message reads `halted: <reason>`,
+  and on every binding the error carries a `google.rpc.ErrorInfo` detail with
+  `reason` `HALTED` and `domain` `a2a-rust.com`
+  (`a2a_protocol_server::HALTED_REASON`), so a caller in any language can tell
+  a halt from a fault.
 - **Running tasks are stopped.** Each task's cancellation token fires. An
   executor that returns on it without a terminal state has its task ended
   `canceled` by its `cancel` hook. (A shutdown, by contrast, ends such a task
@@ -54,6 +58,57 @@ While a scope is halted:
 With the [audit trail](./audit.md), each halt is a `halt` record naming the
 operator (`by`), the reason, and the ids of the tasks it stopped. A resume
 that lifts a halt is a `halt` record with `action` `resume` and the operator.
+
+### Halting one job
+
+A job is a tree of tasks across agents. Each task carries its job's
+**lineage** (ADR 0034): the job's `root`, its `depth` below the first task,
+and optionally its parent task's id, in `Message.metadata` under
+`a2a-rust.com/lineage`. A task sent without one starts a job of its own,
+whose root is its `contextId`, so a job needs no setup. Halting the root
+stops the job's running tasks on every replica sharing the halt store, and
+refuses its new sends, without touching any other job of the tenant:
+
+```rust,no_run
+use a2a_protocol_server::{HaltScope, RequestHandler};
+# async fn admin(handler: &RequestHandler) -> Result<(), a2a_protocol_server::ServerError> {
+// What would stop here, with each task's depth and parent:
+for (task, lineage) in handler.running_in_root("acme", "job-42").await {
+    println!("{task} at depth {}", lineage.depth);
+}
+handler
+    .halt(HaltScope::root("acme", "job-42"), "oncall:alice", "job loops, INC-4412")
+    .await;
+handler.resume(HaltScope::root("acme", "job-42"), "oncall:alice").await?;
+# Ok(())
+# }
+```
+
+For the halt to reach a child on another agent, the parent gives the child
+its lineage. In an executor, `ctx.child_lineage()?` is the job's lineage one
+level down with this task as the parent; pass it to
+`DelegationOptions::with_lineage`, or attach it to the child's message with
+`Lineage::attach`. A child server that shares the halt store stops the child
+itself; one that does not still loses it to the parent's cascade, since the
+halted parent's `Delegation` cancels its children.
+
+- The scope is `(tenant, root)`: tenant B's halt of a root never stops
+  tenant A's job of the same name.
+- A lineage is the caller's claim. It scopes halts and labels spans
+  (`a2a.lineage.root`, `a2a.lineage.depth`); it authorizes nothing.
+- A task's lineage is fixed when it is created and recorded in its
+  `Task.metadata`; a continuation that names another root is refused. A
+  lineage deeper than 16, or malformed, is refused as invalid params before
+  any work.
+- `a2a_protocol_types::lineage::tree` arranges tasks gathered from every
+  agent (from `ListTasks`, say) into the job's tree.
+- **Upgrading:** a replica of 0.15 or older cannot read a root halt's row in
+  a shared halt store and stops reading the store. Give root halts only once
+  every replica sharing the store runs 0.16. A 0.16 replica reads a scope it
+  does not know as a halt of everything.
+
+The wire contract, for an agent written in another language, is the
+[swarm extensions reference](../reference/swarm-extensions.md).
 
 The SDK has no admin endpoint of its own. Call `halt` from one you already
 guard, such as an internal route, a signal handler, or a feature-flag

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2a-rust.com/extensions/lineage/v1/schema.json",
+  "title": "a2a-rust lineage extension v1: the value under Message.metadata[\"a2a-rust.com/lineage\"] and Task.metadata[\"a2a-rust.com/lineage\"]",
+  "description": "Which job a task belongs to (root), how far down the job's tree it is (depth), and optionally the delegating task (parentTaskId). Unknown members are ignored. The rule 'parentTaskId requires depth >= 1' is expressed below; 'at most 1024 bytes' is in UTF-8 bytes, which maxLength (in characters) cannot express, so a receiver also checks the byte length.",
+  "type": "object",
+  "required": ["root", "depth"],
+  "properties": {
+    "root": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "depth": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 16
+    },
+    "parentTaskId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    }
+  },
+  "if": { "required": ["parentTaskId"] },
+  "then": { "properties": { "depth": { "minimum": 1 } } }
+}

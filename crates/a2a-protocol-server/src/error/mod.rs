@@ -351,10 +351,33 @@ impl ServerError {
             // with `Retry-After`.
             Self::Overloaded(msg) => A2aError::rate_limited(msg.clone(), OVERLOAD_RETRY_AFTER),
             // No A2A code means "stopped by an operator" either; the message
-            // says so, and the HTTP and gRPC bindings answer 503/UNAVAILABLE.
-            Self::Halted(msg) => A2aError::internal(format!("halted: {msg}")),
+            // says so, the HTTP and gRPC bindings answer 503/UNAVAILABLE, and
+            // an `ErrorInfo` detail with reason `HALTED` says it on every
+            // binding, JSON-RPC's `-32603` included, for a peer in any
+            // language (ADR 0049).
+            Self::Halted(msg) => A2aError::with_data(
+                ErrorCode::InternalError,
+                format!("halted: {msg}"),
+                halted_detail(),
+            ),
         }
     }
+}
+
+/// The `ErrorInfo` `reason` a halt refusal carries (ADR 0049).
+pub const HALTED_REASON: &str = "HALTED";
+
+/// The `ErrorInfo` `domain` of the reasons this SDK defines, where A2A
+/// defines none (ADR 0049).
+pub const A2A_RUST_ERROR_DOMAIN: &str = "a2a-rust.com";
+
+/// The typed detail of a halt refusal.
+fn halted_detail() -> serde_json::Value {
+    serde_json::json!({
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": HALTED_REASON,
+        "domain": A2A_RUST_ERROR_DOMAIN,
+    })
 }
 
 /// How long a caller refused by [`ServerError::Overloaded`] is asked to wait

@@ -2415,6 +2415,7 @@ mod tests {
             AgentExtension::new(idempotency::IDEMPOTENCY_EXTENSION_URI),
             AgentExtension::new(a2a_protocol_types::failure::FAILURE_EXTENSION_URI),
             AgentExtension::new(a2a_protocol_types::budget::BUDGET_EXTENSION_URI),
+            AgentExtension::new(a2a_protocol_types::lineage::LINEAGE_EXTENSION_URI),
         ]);
         card.signatures = Some(vec![a_signature()]);
 

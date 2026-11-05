@@ -259,6 +259,9 @@ impl RequestHandler {
     /// and readers see EOF — when the executor finishes. It also owns the
     /// tenant's concurrency permit, which is returned when the future ends,
     /// however it ends: dropping the future drops the permit.
+    // 61 of an allowed 60, crossed by recording the turn's lineage on its span
+    // (ADR 0034): one statement, which belongs beside the span's opening.
+    #[allow(clippy::too_many_lines)]
     fn executor_future(
         &self,
         ctx: RequestContext,
@@ -306,6 +309,7 @@ impl RequestHandler {
             self.span_settings,
             &ctx.message,
         );
+        span.record_lineage(ctx.lineage());
         #[cfg(feature = "tracing")]
         let recorder = span.recorder(continues(&ctx.task_id, ctx.stored_task.as_ref()));
         span.instrument(tenant.scope(async move {

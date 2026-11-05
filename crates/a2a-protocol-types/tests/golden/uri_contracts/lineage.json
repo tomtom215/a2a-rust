@@ -1,0 +1,30 @@
+{
+  "contract": {
+    "defaultRoot": "the task's contextId, at depth 0, when the message carries none",
+    "fields": {
+      "Lineage": [
+        "depth",
+        "parentTaskId",
+        "root"
+      ]
+    },
+    "malformed": "refused as invalid params before any work",
+    "maxDepth": 16,
+    "maxIdBytes": 1024,
+    "message": {
+      "extensions": [
+        "https://a2a-rust.com/extensions/lineage/v1"
+      ],
+      "metadata": {
+        "a2a-rust.com/lineage": {
+          "depth": 1,
+          "parentTaskId": "t-9",
+          "root": "job-42"
+        }
+      }
+    },
+    "metadataKey": "a2a-rust.com/lineage",
+    "recordedOn": "Task.metadata of a new task, under the same key"
+  },
+  "uri": "https://a2a-rust.com/extensions/lineage/v1"
+}

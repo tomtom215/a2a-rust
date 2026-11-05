@@ -121,6 +121,18 @@ impl ExecutorSpan {
         }
     }
 
+    /// Records the turn's job (ADR 0034) as `a2a.lineage.root` and
+    /// `a2a.lineage.depth`. On the span only: an id per job on a metric label
+    /// would be unbounded cardinality (audit H11).
+    #[cfg_attr(not(feature = "tracing"), allow(unused_variables, clippy::unused_self))]
+    pub fn record_lineage(&self, lineage: &a2a_protocol_types::lineage::Lineage) {
+        #[cfg(feature = "tracing")]
+        {
+            self.span.record("a2a.lineage.root", lineage.root.as_str());
+            self.span.record("a2a.lineage.depth", lineage.depth);
+        }
+    }
+
     /// What watches the executor's writes on this span's behalf; `None` when
     /// nothing is recorded. A run that `continues` a task has no direct reply.
     #[cfg(feature = "tracing")]
@@ -159,6 +171,8 @@ fn executor_span(
         a2a.task.id = task_id,
         a2a.context.id = context_id,
         a2a.task.state = tracing::field::Empty,
+        a2a.lineage.root = tracing::field::Empty,
+        a2a.lineage.depth = tracing::field::Empty,
         otel.status_code = tracing::field::Empty,
         error.type = tracing::field::Empty,
         gen_ai.operation.name = tracing::field::Empty,

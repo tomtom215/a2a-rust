@@ -131,6 +131,7 @@ pub mod failure;
 pub mod idempotency;
 pub mod jsonrpc;
 pub mod lease;
+pub mod lineage;
 pub mod message;
 pub mod method;
 mod oneof;

@@ -210,7 +210,7 @@ pub use dispatch::{
 };
 #[cfg(feature = "grpc")]
 pub use dispatch::{GrpcConfig, GrpcDispatcher};
-pub use error::{ServerError, ServerResult};
+pub use error::{A2A_RUST_ERROR_DOMAIN, HALTED_REASON, ServerError, ServerResult};
 pub use executor::AgentExecutor;
 pub use executor_helpers::{EventEmitter, boxed_future};
 pub use handler::{

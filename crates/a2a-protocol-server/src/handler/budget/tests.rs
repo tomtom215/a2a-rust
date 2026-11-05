@@ -206,6 +206,11 @@ fn the_card_declares_the_extension() {
         .find(|e| e.uri == BUDGET_EXTENSION_URI)
         .expect("declared");
     assert_eq!(budget.required, Some(false), "never required");
+    let lineage = declared
+        .iter()
+        .find(|e| e.uri == a2a_protocol_types::lineage::LINEAGE_EXTENSION_URI)
+        .expect("the lineage extension is declared too (ADR 0034)");
+    assert_eq!(lineage.required, Some(false), "never required");
 }
 
 fn ctx_with(budget: Option<Budget>) -> RequestContext {

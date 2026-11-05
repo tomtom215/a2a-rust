@@ -100,7 +100,7 @@ fn what_the_options_hold_is_printed_and_what_they_carry_is_not() {
     assert_eq!(
         format!("{:?}", DelegationOptions::new()),
         "DelegationOptions { lease: None, budget: false, journal: false, resume: None, \
-         id_wait: None }"
+         id_wait: None, lineage: None }"
     );
     let full = DelegationOptions::new()
         .with_lease(Duration::from_secs(2))
@@ -112,6 +112,7 @@ fn what_the_options_hold_is_printed_and_what_they_carry_is_not() {
         format!("{full:?}"),
         "DelegationOptions { lease: Some(2s), budget: true, journal: true, \
          resume: Some(ResumePolicy { attempts: 0, backoff: 0ns, max_backoff: 0ns, \
-         deadline: 0ns, healthy_after: 0ns, jitter: false }), id_wait: Some(500ms) }"
+         deadline: 0ns, healthy_after: 0ns, jitter: false }), id_wait: Some(500ms), \
+         lineage: None }"
     );
 }

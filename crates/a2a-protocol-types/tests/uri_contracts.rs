@@ -49,6 +49,9 @@ use a2a_protocol_types::idempotency::{
     IDEMPOTENCY_EXTENSION_URI, IDEMPOTENCY_METADATA_KEY, key_of, set_key, validate_key,
 };
 use a2a_protocol_types::lease::{LEASE_EXTENSION_URI, LEASE_METADATA_KEY, Lease};
+use a2a_protocol_types::lineage::{
+    LINEAGE_EXTENSION_URI, LINEAGE_METADATA_KEY, Lineage, MAX_LINEAGE_DEPTH, MAX_LINEAGE_ID_BYTES,
+};
 use a2a_protocol_types::message::{Message, Part};
 use a2a_protocol_types::provenance::{
     ContentSignature, PROVENANCE_EXTENSION_URI, PROVENANCE_METADATA_KEY, Provenance,
@@ -272,6 +275,30 @@ fn lease_extension_contract() {
                 "effect": "the task's deadline moves to now + ttlMs",
             },
             "lapse": "the task is stopped and ends TASK_STATE_CANCELED",
+        }),
+    );
+}
+
+#[test]
+fn lineage_extension_contract() {
+    let mut message = Message::user_text("m1", "summarise these");
+    Lineage::origin("job-42")
+        .child("t-9")
+        .expect("a child")
+        .attach(&mut message);
+
+    golden::check(
+        "lineage",
+        LINEAGE_EXTENSION_URI,
+        json!({
+            "metadataKey": LINEAGE_METADATA_KEY,
+            "fields": { "Lineage": wire_names::<Lineage>() },
+            "message": carried(&message),
+            "maxDepth": MAX_LINEAGE_DEPTH,
+            "maxIdBytes": MAX_LINEAGE_ID_BYTES,
+            "defaultRoot": "the task's contextId, at depth 0, when the message carries none",
+            "recordedOn": "Task.metadata of a new task, under the same key",
+            "malformed": "refused as invalid params before any work",
         }),
     );
 }
