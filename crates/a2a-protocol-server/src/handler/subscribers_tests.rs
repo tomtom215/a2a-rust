@@ -92,6 +92,11 @@ async fn refusals_count_nothing() {
     assert_eq!(h.subscribers.open("", &TaskId::new("a")), (1, 1));
     drop(held);
     assert_eq!(h.subscribers.open("", &TaskId::new("a")), (0, 0));
+    assert_eq!(
+        h.subscribers.tasks_tracked(),
+        0,
+        "no entry is kept for a task"
+    );
 }
 
 /// The defaults are generous: 256 a task, 10,000 in all.

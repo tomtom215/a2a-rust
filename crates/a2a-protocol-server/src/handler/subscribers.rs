@@ -92,6 +92,12 @@ impl Subscribers {
             counts.per_task.get(&key).copied().unwrap_or(0),
         )
     }
+
+    /// How many tasks have an entry: those with a subscription open.
+    #[cfg(test)]
+    pub fn tasks_tracked(&self) -> usize {
+        self.counts().per_task.len()
+    }
 }
 
 impl super::RequestHandler {

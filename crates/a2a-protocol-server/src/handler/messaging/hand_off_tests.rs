@@ -198,3 +198,43 @@ fn the_hand_off_window_defaults_to_ten_minutes() {
         crate::executor::HAND_OFF_WINDOW
     );
 }
+
+/// The reaper reads the window from the handler's limits: with a 30 s
+/// window, a turn handed back a minute ago that nobody continued is ended
+/// `Failed`/`transient` (with the default ten minutes it would wait).
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn the_reaper_uses_the_configured_window() {
+    let (url, path) = sqlite_url();
+    let store: Arc<dyn TaskStore> =
+        Arc::new(crate::store::SqliteTaskStore::new(&url).await.unwrap());
+    let mut note = Message::new(
+        MessageId::new("note"),
+        MessageRole::Agent,
+        vec![Part::text("handed back")],
+    );
+    note.metadata = Some(serde_json::json!({ HAND_OFF_METADATA_KEY: true }));
+    let mut status =
+        a2a_protocol_types::task::TaskStatus::new(TaskState::Working).with_message(note);
+    let minute_ago = crate::store::lease::now_unix_ms() - 60_000;
+    status.timestamp = Some(a2a_protocol_types::unix_millis_to_iso8601(minute_ago));
+    store
+        .save(&Task::new("handed", "ctx", status))
+        .await
+        .unwrap();
+    let ttl = crate::handler::MIN_TURN_CLAIM_TTL;
+    let h = RequestHandlerBuilder::new(Resumable(true))
+        .with_task_store_arc(Arc::clone(&store))
+        .with_turn_claim_timing(ttl, ttl / 3)
+        .with_handler_limits(
+            crate::handler::HandlerLimits::default().with_hand_off_window(Duration::from_secs(30)),
+        )
+        .without_agent_card()
+        .build()
+        .unwrap();
+    let ended = reaches(&store, "handed", TaskState::Failed).await;
+    let note = ended.status.message.as_ref().expect("a reason");
+    assert_eq!(class_of(note), Some(FailureClass::Transient));
+    drop(h);
+    remove_sqlite(&path);
+}
