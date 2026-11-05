@@ -10,8 +10,8 @@
 > done, a count may have moved, a line citation may point elsewhere. For what
 > holds now, read [`handoff.md`](handoff.md); for what shipped, `CHANGELOG.md`.
 > The section headings are unchanged, so links to a section of the old handoff
-> resolve here. One section is appended at the end, after a rule: the "Now"
-> section as it stood on 2026-11-03, moved verbatim.
+> resolve here. Two sections are appended at the end, each after a rule: the "Now"
+> section as it stood on 2026-11-03 and as it stood on 2026-11-04, moved verbatim.
 
 Working state between sessions: which branches exist and why, what is in flight
 outside this repository, and what the next session should pick up.
@@ -5461,3 +5461,148 @@ Langfuse docs draft goes anywhere.
   (`8d7e878` the last) and OSV-Scanner passed on the merge.
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
   no other trailers (`CONTRIBUTING.md`, `PROVENANCE.md` §3.2).
+
+---
+
+## Superseded: the "Now" section of `handoff.md` as it stood on 2026-11-04
+
+> Moved here verbatim, byte for byte, when the section was rewritten for the 0.16.0 integration (branch
+> `claude/inspiring-mccarthy-rgpntj-rest`, on `main` at `1f6dd965`). It holds the state after pull request #195 and the entry for
+> the client branch that became #196, with each pull request's local evidence. The same caveat as above applies.
+
+### Now (as it stood)
+
+State on 2026-11-04. Each figure was read from a command or a file in the session that wrote it; the
+command is named so the next session re-runs it instead of copying the number.
+
+- **Where the code is.** `main` is `3685b8f9` (pull request #195, merged by the maintainer at 14:39 UTC on
+  2026-11-04; `git rev-parse origin/main`). Its description records all 14 workflows green on its head
+  `d445bde6`, the mutation run 461 aggregating 0 surviving mutants. Nothing is tagged or
+  published: crates.io, the GitHub releases and the tags end at 0.15.0; 0.15.1 was never released and its
+  notes are 0.16.0's. The workspace reads 0.16.0. Pull requests #187 to #190 are Dependabot's and not part
+  of this work.
+- **What is open.** The audit register (`docs/audits/2026-10-29/README.md`) has 287 rows and none is
+  `open` (the findings-triage skill's `table_counts.py --by Status`). Of the 191 items in
+  `docs/audits/2026-11-01-triage/PLAN.md`, 122 have a commit and 69 do not (after this pull request, which adds B-11 to
+  section O of the audit register): run
+  `python3 scripts/audit/plan_status.py`, which lists the open IDs per group. `PLAN.md`'s per-group table
+  names what each partly done group still lacks.
+- **Decisions of the maintainer, 2026-11-03**, recorded in the table at the top of
+  `docs/audits/2026-11-01-triage/DECISIONS.md`: the other 26 wire structs go into 0.16.0 as a pull request
+  of their own; ADR 0035 (agent skills) and ADR 0036 (steering) are implemented and merged after the 0.16.0
+  tag; F13, F14, F15, D-05, E-F18, E-F25 and D-18 are accepted at the positions written in their entries;
+  F16 stays deferred and documented; downloading and running `promtool` is allowed. F1 to F12 stand.
+- **The previous session's work is lost.** Its branch `claude/elegant-maxwell-3dt00m` never reached the
+  remote (`git ls-remote origin`) and its commits and scratchpad are not in the container this session
+  ran in (`git fsck --lost-found` found only old dangling commits, none from it). Pull request 1 below
+  was rebuilt from the maintainer's description of it, not recovered.
+- **Pull requests, as a batch.** The maintainer asked for a batch done correctly, with no piecemeal CI
+  iteration: a pull request is pushed when its local gates, mutation work and live probes are done, and
+  its fixes go in together. State on 2026-11-03, evening:
+  1. CI hygiene: **#191**, merged by the maintainer on 2026-11-03 (merge commit `67a7413f`). All 13
+     workflow runs on its head `65adf836` completed before the merge; 12 succeeded and Mutation Testing run
+     448 failed in 7 s because the label was added after the PR opened, and run 449 on the same commit
+     succeeded (Actions API).
+  2. The other 26 wire structs: **#192**, merged on 2026-11-03 (merge commit `045146ec`), after every job
+     on its head `bb82bce7` was green; one job (`example-surface`, see First, next 6) hit its 20-minute
+     limit while compiling and passed on its single re-run.
+  3. The client crate: **#193**, merged by the maintainer on 2026-11-04 (merge commit `bcb7f971`) after every
+     job on its head `05b23923` was green. Delegation hand-off on shutdown (`wait_or_hand_off`,
+     `Outcome::HandedOff`), `DelegationOptions`, the stream health rule and jitter, bounded journal writes
+     (M); a retry budget, `max_elapsed`, a cap on calls in flight, the `Retry-After` fail-fast rule (O,
+     D-10); `follow_task` resume (D-11); opt-in gRPC HTTP/2 keep-alive (B-10, D-12 in part). **Not in it,
+     deliberately, and so the next client pull request:** `HttpPool` (ADR 0032), HTTP/2 PING and a
+     connection lifetime for the HTTP bindings (D-12), B-11, and the live proof of M (kill -9 a supervisor
+     with a PostgreSQL journal and 50 children).
+  4. The server crate, first batch (L, fleet correctness): **#194**, merged on 2026-11-04 (merge commit
+     `b5a5e5eb`). E-F21 (the three PostgreSQL batch deletes take `FOR UPDATE SKIP LOCKED`), E-F16 (the
+     rate-limit window and sweep use the database clock), E-F17 (the lease deadline is written and judged on
+     one clock; additive `LeaseStore::lapsed`), E-F26 (a warning when a SQLite file is on NFS, SMB or FUSE),
+     E-F14 (the push-config cap is re-counted after the store), E-F19 (a parked turn ends its audit run
+     entry), E-F18 (replicas queue for an audit chain under an advisory lock; additive
+     `AuditStore::append_next`), the E-F12 documentation, `scripts/hand_mutate.py`. 71 hand mutants, 0
+     missed. Its first CI run (on `980918eb`) had two red jobs and 19 green: `Test (stable, ubuntu-latest)`
+     lost its runner 20 seconds into its ninth step, and `Test (stable, windows-latest)` failed
+     `a_cut_subscription_is_reopened_and_the_follow_goes_on_to_the_end`, a test from #193 whose gate opened
+     when the proxy had accepted a TCP connection, not when the server had registered the subscription;
+     `e1e9d48b` fixed it (the proxy can lag new connections: the old body over a 150 ms lag fails every run
+     with the CI message; the fixed test passed 40 runs of 5 tests). The push started a fresh run and both
+     passed. **Not in it:** E-F15 and F14 (deferred as recorded), a count of `max_concurrent_tasks` across
+     replicas and a build warning for it (E-F12 is documentation only), E-F18's throughput at several
+     replicas (report X17).
+  5. The server crate, second batch: **#195**, merged by the maintainer on 2026-11-04 (merge commit
+     `3685b8f9`, head `d445bde6`). E-F22 (a card's `Last-Modified`
+     is the same on every replica of one build), D-18 (the in-memory store never evicts a task waiting for a
+     person; an abandoned one never expires, which is the maintainer's call), the F13 documentation (E-F8's
+     event-position window), E-F25(a) (the idle subscribe poll backs off to a ceiling), E-F24 (the turn is
+     claimed before the idempotency key, so a waiting send holds none; additive
+     `TaskStore::idempotency_holder`), E-F23 (a waiting send gives up the per-context lock for the wait), and
+     D-05's dead-webhook policy (a `410` removes the config; five failures in a row suspend it, with a probe;
+     ending events are always tried; ADR 0037 records the outbox, not built). **99 hand mutants, 0 missed**
+     (E-F22 7, D-18 19, E-F25(a) 13, E-F24 29, E-F23 6, D-05 25); the planning of them found three gaps that
+     tests now close, and self-review found one real defect before the push: a webhook that never answers is
+     cut off by `push_delivery_timeout` and so never returned an error, and would never have been
+     suspended (a drop guard counts it). Local evidence on its first head `e8014445`, each read from a gate's own exit code (numbers as `preflight.sh --list` prints them): gates 1 to 45, 58 (nextest, default features: **6561 passed, 192 skipped**) and 71 to 84 exit 0; 71 is `--all-features` (**6577 passed, 192 skipped**), 72 `--no-default-features` (6556), 73 to 75 the doc tests (482, 483, 482), 76 to 81 the PostgreSQL 16 suites, 82 and 83 `cargo doc`, 84 `cargo package` (after clearing a stale local cache: see *Environment*). The clippy gates 46 to 57 ran on the tree before the rebase onto `b5a5e5eb` and the last two changes. Not run locally, CI's: gates 59 to 70 (nextest one feature set at a time) and 85 to 102 (the examples, the slimrpc binding, the Go interop). **CI on `e8014445`:** the labelled mutation run (460) graded one survivor, in shard 7: an equivalent mutant of the default `TaskStore::idempotency_holder`, the same shape as `HaltStore::publish_cancel`. It is closed with `#[mutants::skip]` and its proof, and registered in `ROADMAP.md`. Run 459, started before the label was added, was cancelled and reported "has not run".  **Not in it:** E-F25(b) and (c) (`LISTEN`/`NOTIFY`, a
+     read pool), the durable outbox, E-F15 and F14, and the observability, deploy and docs group (the rest of
+     I, J with `promtool` in CI, G, H, N): not started.
+  6. The client crate, second batch: branch `claude/inspiring-mccarthy-rgpntj-client2`, on `main` at `3685b8f9`;
+     the pull request from it is the one that carries this note. **`HttpPool`** (ADR 0032, amended): one set of
+     HTTP connections many clients share (`ClientBuilder::with_pool`, `HttpPool::shared()`), a maximum
+     connection lifetime spread 10% either way, HTTP/2 PING, a cap on idle connections per host, an idle
+     timeout, HTTP/2 prior knowledge, one TLS configuration per pool (a client that sets its own as well fails
+     at `build()`); against this repository's server behind a connection-counting tap, ten clients on one
+     pool made one connection and ten without a pool made ten. **B-11**: the book page "Behind a load
+     balancer". **The idle sweeper** (found on the way): the client set `pool_idle_timeout` without the timer
+     hyper-util needs to start it (hyper-util 0.1.21, `pool.rs:436`), and hyper panics ("You must supply a
+     timer") on HTTP/2 keep-alive without one; both timers are now installed. **The live proof of M**
+     (`scripts/live/delegation`, evidence in `docs/audits/2026-11-01-triage/evidence/m-live-proof/`; PostgreSQL
+     16.15, 50 children): `kill -9` recovery 50 of 50 (3 of 3), SIGTERM hand-off 50 of 50 for a bare supervisor
+     and for one behind `serve_with_shutdown` (3 of 3 each), the control that cancels 50 of 50 (3 of 3), the
+     gRPC idle child resumed 8 times and completed (3 of 3, scaled timers). It found three defects, all fixed
+     here: the book's recovery loop lost leased children (it waited on each before it reattached the next:
+     49 or 50 of 50 lost); a reattach waited a third of the lease for its first renewal (`Renewal::spawn`
+     takes the child's id now); and the corrected loop's `?` cancelled every child already held when one
+     record could not be reattached (26 of 26; the book matches now). A restart after the agent has noticed
+     the lapse still loses the child: 15 s leases kept 50 of 50 at 9.5 s (6 of 6) and none at 12 s (3 of 3),
+     in memory only (`PostgresLeaseStore` not run). **Local evidence on the head `a3696155`**, each read from a
+     gate's own exit status (numbers as `preflight.sh --list` prints them): gates 1 to 45 (formatting, the
+     documentation and repository-rule scripts, the spec ledger, the file-length ratchet, clippy with default
+     features and with `signing`) and 84 (`cargo package`, all four crates verified) exit 0 on a clean tree at
+     `a3696155`; on its parent gates 15 (a CHANGELOG line the ledger cites had moved) and 18 (the OTel wiring
+     check found the three new live-harness binaries) failed, both caused by this branch, and `a3696155`
+     is their fix. Gates 46 to 57 (the rest of clippy, `cargo hack clippy --each-feature` included), 58
+     (nextest, default features: **6607 passed, 192 skipped**), 61 (the client crate with `tls-rustls`), 71
+     (`--all-features`: **6623 passed, 192 skipped**), 72 (`--no-default-features`: 6602 passed, 192 skipped),
+     73 to 75 (doc tests: 485, 486, 485 passed, 0 failed, 4 ignored in each), 76 to 81 (PostgreSQL 16.15,
+     `ssl = off`: 76, 7, 19, 23, 1 and 6 tests passed) and 82 and 83 (`cargo doc`, `-D warnings`) exit 0 on
+     `0247db0c`; `crates/` and `book/` do not differ between it and `a3696155` (`git diff --stat`). Workspace
+     nextest was 6600 and 6616 before the seven renewal tests. `scripts/check_dco.sh origin/main HEAD`: all
+     ok. Kill-proof: hand mutants, 0 missed (49 for the first version of the pool, 19 after the client moved
+     to `https_client.rs`, 12 for the renewal), and `cargo mutants --in-diff` on the client crate at
+     `a3696155`: 58 mutants, 14 caught, 44 unviable, 0 missed, 0 timed out, in 19 minutes. The pool's flaky
+     idle test, fixed with a key per test: 0 failures in 300 runs of `idle::` and 100 of the whole
+     `http_pool` binary. **Not run locally:** gates 59, 60, 62 to 70 (nextest one feature set at a time) and
+     85 to 102 (the examples, the slimrpc binding and its packaging, the Go interop), the Windows and macOS
+     jobs, the TCK, ITK and ACTS workflows, Kubernetes, the sharded mutation job.
+     **Not in it:** the per-origin in-flight cap, circuit breaker and retry budget
+     (ADR 0032 decision 5), the card resolver sharing the pool (decision 6), client-side balancing (H12), B-11's
+     option 2 (the client folding a blocking send into a stream: the maintainer's call), E-F15, F14, E-F25
+     (b) and (c), and the observability, deploy and docs group.
+     **CI on its first head `5fa46675`** (Actions API, read after every run had completed): 12 of the 14
+     workflow runs concluded success, the main `CI` run (1805: 21 jobs passed, 1 skipped) and the labelled
+     mutation run (463, 27 jobs, no survivors) among them. The two failures were not the diff's: the first mutation
+     run (462) failed in seconds because the PR was opened before its `mutation-test` label, and `Official TCK`
+     (run 540) failed at step 11, where `scripts/check_slimrpc_spec.sh` found upstream's
+     `a2a-collaborative-task.md` changed. `main` failed at the same step from the #195 merge on (run 539; run 536
+     at 08:13 UTC had passed). The next commit re-vendors the file with the binding unchanged, the decision
+     recorded in `spec/slimrpc_v1/README.md`.
+  After the tag: ADR 0035 and ADR 0036, each its own pull request. The workflows run only on pull
+  requests to `main`, so a pull request that needs an earlier one waits for its merge and is rebased
+  (`git rebase --onto origin/main <the earlier head>`), as the client branch was after #192.
+  **How the time went, so the next session spends it differently:** a full `cargo mutants --in-diff` on the
+  server crate took 88 minutes for 24 mutants (16 unviable, 8 `TIMEOUT`) and decided nothing, because
+  other builds shared the 4 cores and a mutant run that exceeds `--timeout` is `TIMEOUT`, which CI's
+  scoring counts as neither caught nor missed. The maintainer's brief says server: `--list` and
+  hand-test, with CI's sharded run as the arbiter. Re-running only the timed-out mutants alone with
+  `--timeout 1200` took 63 minutes and gave 8 caught, 0 missed. Run no other cargo command while a
+  mutation run is in progress, and push a pull request as soon as its own gates pass.
