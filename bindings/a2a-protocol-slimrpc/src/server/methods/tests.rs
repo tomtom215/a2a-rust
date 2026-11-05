@@ -319,9 +319,11 @@ async fn only_server_side_statuses_are_errors() {
 }
 
 /// A streaming call ends with its stream: recorded when the reader ends, not
-/// when the handler returned it, and as cancelled when the stream is dropped
-/// unfinished (ADR 0013; `rpc-spans.md`, "the span SHOULD cover the full
-/// lifetime of the request and/or response streams").
+/// when the handler returned it, and as abandoned when the stream is dropped
+/// unfinished: no `rpc.status_code` (SLIMRPC has none for a call that never
+/// answered) and `error.type` `cancelled`, as ADR 0038 section 2 decides
+/// (ADR 0013; `rpc-spans.md`, "the span SHOULD cover the full lifetime of the
+/// request and/or response streams").
 #[tokio::test]
 async fn a_streaming_call_is_recorded_when_its_stream_ends() {
     use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
@@ -349,10 +351,9 @@ async fn a_streaming_call_is_recorded_when_its_stream_ends() {
 
     let (_writer, reader) = new_in_memory_queue();
     drop(open(reader).await);
-    let cancelled = Some("cancelled".to_owned());
     assert_eq!(
         recorded.lock().unwrap()[1..],
-        [(cancelled.clone(), cancelled)]
+        [(None, Some("cancelled".to_owned()))]
     );
 }
 
