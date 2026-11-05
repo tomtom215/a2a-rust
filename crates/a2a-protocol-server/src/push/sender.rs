@@ -450,12 +450,10 @@ impl HttpPushSender {
         let proxied = url
             .parse::<hyper::Uri>()
             .is_ok_and(|uri| self.client.proxied(&uri));
-        if !proxied {
-            return validate_webhook_url_with_dns(url, self.dns_timeout).await;
-        }
         preflight_with(
             url,
             self.dns_timeout,
+            proxied,
             self.proxy_resolved_names,
             crate::url_guard::system_lookup,
         )
@@ -489,16 +487,17 @@ pub(crate) fn validate_webhook_url(url: &str) -> A2aResult<()> {
     crate::url_guard::check(url, "webhook URL")
 }
 
-/// The SSRF pre-flight for a webhook a proxy carries, with the resolver as a
-/// parameter: [`resolve`], except that a lookup that gets no answer is
-/// `Ok(None)` (the proxy resolves the name) when `proxy_resolved_names`, and
-/// otherwise an error that names the option. An answer, when there is one,
-/// is checked as always.
+/// The SSRF pre-flight, with the resolver as a parameter: [`resolve`] when
+/// the request goes direct. When a proxy carries it (`proxied`), a lookup
+/// that gets no answer is `Ok(None)` (the proxy resolves the name) when
+/// `proxy_resolved_names`, and otherwise an error that names the option. An
+/// answer, when there is one, is checked as always.
 ///
 /// [`resolve`]: crate::url_guard::resolve_with
 pub(crate) async fn preflight_with<F, Fut>(
     url: &str,
     dns_timeout: std::time::Duration,
+    proxied: bool,
     proxy_resolved_names: bool,
     resolve: F,
 ) -> A2aResult<Option<Vec<SocketAddr>>>
@@ -506,6 +505,9 @@ where
     F: FnOnce(String) -> Fut,
     Fut: std::future::Future<Output = std::io::Result<Vec<SocketAddr>>>,
 {
+    if !proxied {
+        return crate::url_guard::resolve_with(url, "webhook URL", dns_timeout, resolve).await;
+    }
     // Whether the lookup ran, and whether it answered with an address. Only an
     // error from a lookup that ran and found nothing is the name this process
     // cannot resolve; the screen refusing the URL's form before any lookup,
@@ -558,7 +560,9 @@ use crate::url_guard::{embedded_ipv4, is_private_v4, parse_numeric_ipv4, webhook
 use std::net::Ipv4Addr;
 
 /// Validates a webhook URL with DNS resolution to prevent DNS rebinding:
-/// [`resolve_public_url`](crate::url_guard::resolve_public_url).
+/// [`resolve_public_url`](crate::url_guard::resolve_public_url). What
+/// [`preflight_with`] does for a webhook no proxy carries; the tests call it.
+#[cfg(test)]
 pub(crate) async fn validate_webhook_url_with_dns(
     url: &str,
     dns_timeout: std::time::Duration,

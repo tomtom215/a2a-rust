@@ -82,10 +82,8 @@ impl PostgresPushOutbox {
     ///
     /// The database cannot be reached, or the table created.
     pub async fn new(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = pg_retry::pool_options()
-            .max_connections(crate::store::DEFAULT_POOL_SIZE)
-            .connect(url)
-            .await?;
+        // sqlx's default pool size, 10: `DEFAULT_POOL_SIZE`, as every store's.
+        let pool = pg_retry::pool_options().connect(url).await?;
         Self::from_pool(pool).await
     }
 

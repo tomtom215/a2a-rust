@@ -356,7 +356,7 @@ async fn an_ipv6_address_is_pinned_as_it_is() {
 #[tokio::test]
 async fn behind_a_proxy_a_refused_form_is_not_left_to_the_proxy() {
     let looked = std::sync::atomic::AtomicBool::new(false);
-    let err = preflight_with("http://metadata.internal/h", TEN, true, |_| {
+    let err = preflight_with("http://metadata.internal/h", TEN, true, true, |_| {
         looked.store(true, std::sync::atomic::Ordering::SeqCst);
         answers(&[])
     })
@@ -407,7 +407,7 @@ fn answers(addrs: &'static [&'static str]) -> std::future::Ready<std::io::Result
 /// somewhere they must not.
 #[tokio::test]
 async fn behind_a_proxy_a_private_answer_is_still_refused() {
-    let err = preflight_with("http://hooks.example.com/h", TEN, true, |_| {
+    let err = preflight_with("http://hooks.example.com/h", TEN, true, true, |_| {
         answers(&["10.0.0.7:80"])
     })
     .await
@@ -419,7 +419,7 @@ async fn behind_a_proxy_a_private_answer_is_still_refused() {
 /// always.
 #[tokio::test]
 async fn behind_a_proxy_a_public_answer_is_checked_as_always() {
-    let got = preflight_with("http://hooks.example.com/h", TEN, true, |_| {
+    let got = preflight_with("http://hooks.example.com/h", TEN, true, true, |_| {
         answers(&["203.0.113.7:80"])
     })
     .await
@@ -431,12 +431,15 @@ async fn behind_a_proxy_a_public_answer_is_checked_as_always() {
 /// the name to the proxy.
 #[tokio::test]
 async fn behind_a_proxy_no_answer_leaves_the_name_to_the_proxy() {
-    let refused = preflight_with("http://hooks.example.com/h", TEN, true, |_| async {
+    let refused = preflight_with("http://hooks.example.com/h", TEN, true, true, |_| async {
         Err(std::io::Error::other("NXDOMAIN"))
     })
     .await;
     assert_eq!(refused.unwrap(), None);
-    let empty = preflight_with("http://hooks.example.com/h", TEN, true, |_| answers(&[])).await;
+    let empty = preflight_with("http://hooks.example.com/h", TEN, true, true, |_| {
+        answers(&[])
+    })
+    .await;
     assert_eq!(empty.unwrap(), None);
 }
 
@@ -445,7 +448,7 @@ async fn behind_a_proxy_no_answer_leaves_the_name_to_the_proxy() {
 #[tokio::test(start_paused = true)]
 async fn behind_a_proxy_a_lookup_that_hangs_leaves_the_name_to_the_proxy() {
     let started = tokio::time::Instant::now();
-    let got = preflight_with("http://hooks.example.com/h", TEN, true, |_| {
+    let got = preflight_with("http://hooks.example.com/h", TEN, true, true, |_| {
         std::future::pending::<std::io::Result<Vec<SocketAddr>>>()
     })
     .await;
@@ -459,14 +462,14 @@ async fn behind_a_proxy_a_lookup_that_hangs_leaves_the_name_to_the_proxy() {
 #[tokio::test]
 async fn the_hint_is_given_only_behind_a_proxy_and_without_the_option() {
     let fail = |_| async { Err(std::io::Error::other("NXDOMAIN")) };
-    let behind = preflight_with("http://hooks.example.com/h", TEN, false, fail)
+    let behind = preflight_with("http://hooks.example.com/h", TEN, true, false, fail)
         .await
         .expect_err("not resolvable");
     assert!(
         behind.to_string().contains("with_proxy_resolved_names"),
         "{behind}"
     );
-    let direct = validate_webhook_url_with_resolver("http://hooks.example.com/h", TEN, fail)
+    let direct = preflight_with("http://hooks.example.com/h", TEN, false, true, fail)
         .await
         .expect_err("not resolvable");
     assert!(

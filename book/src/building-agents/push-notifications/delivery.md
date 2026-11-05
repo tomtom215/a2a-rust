@@ -135,18 +135,9 @@ replica was refused as "already being processed".
 Everything above is held in memory: a delivery waiting in a lane, or being
 retried, when the process stops is not delivered by this replica or any
 other, terminal events included. `RequestHandlerBuilder::with_push_outbox`
-keeps them in a store instead (ADR 0037):
-
-```rust,ignore
-use std::sync::Arc;
-use a2a_protocol_server::push::{PostgresPushOutbox, PushOutbox};
-
-let outbox = PostgresPushOutbox::new(&database_url).await?;
-let handler = RequestHandlerBuilder::new(executor)
-    .with_push_sender(HttpPushSender::new())
-    .with_push_outbox(Arc::new(outbox) as Arc<dyn PushOutbox>)
-    .build()?;
-```
+keeps them in a store instead (ADR 0037): open one, for example
+`PostgresPushOutbox::new(&database_url).await?`, and pass it as
+`.with_push_outbox(Arc::new(outbox))` next to `.with_push_sender(...)`.
 
 - **What is stored.** One row per event and webhook (`a2a_push_outbox`),
   written by the task's lane once the event is stored, in order. A row names

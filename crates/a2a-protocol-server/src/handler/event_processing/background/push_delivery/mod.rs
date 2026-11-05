@@ -268,7 +268,7 @@ pub async fn attempt(
     let _ = task_id;
     let admission = Admission::new(push_delivery_timeout);
     let send = admission.scope(sender.send(&config.url, event, config));
-    let (outcome, settled) = match within(&admission, send).await {
+    let (outcome, settled) = match within(&admission, push_delivery_timeout, send).await {
         Some(Ok(())) => (push_outcome::DELIVERED, true),
         // Skipped, not failed: the webhook is suspended, and says so once
         // when it is (`push::health`), not on every event it skips.
@@ -322,16 +322,32 @@ pub async fn attempt(
 
 /// Runs `send` until it ends or `admission`'s deadline passes, a deadline the
 /// gate moves each time it lets the delivery through. `None` when cut off.
-async fn within<F: std::future::Future>(admission: &Admission, send: F) -> Option<F::Output> {
+///
+/// The first window is `push_delivery_timeout` from now, which is when the
+/// admission was made: a delivery let through at once has exactly that. Each
+/// later window ends at the deadline the gate set when it let the delivery
+/// through. A window that ends with the deadline where it was is the end.
+async fn within<F: std::future::Future>(
+    admission: &Admission,
+    push_delivery_timeout: std::time::Duration,
+    send: F,
+) -> Option<F::Output> {
     let mut send = std::pin::pin!(send);
+    let mut deadline = admission.deadline();
+    if let Ok(answer) = tokio::time::timeout(push_delivery_timeout, send.as_mut()).await {
+        return Some(answer);
+    }
     loop {
-        let Some(deadline) = admission.deadline() else {
+        let moved = admission.deadline();
+        if moved == deadline {
+            return None;
+        }
+        deadline = moved;
+        let Some(until) = deadline else {
             return Some(send.await);
         };
-        match tokio::time::timeout_at(deadline, send.as_mut()).await {
-            Ok(answer) => return Some(answer),
-            Err(_) if admission.deadline() == Some(deadline) => return None,
-            Err(_) => {}
+        if let Ok(answer) = tokio::time::timeout_at(until, send.as_mut()).await {
+            return Some(answer);
         }
     }
 }
