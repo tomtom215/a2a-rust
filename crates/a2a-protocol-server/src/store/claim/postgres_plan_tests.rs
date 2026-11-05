@@ -35,7 +35,7 @@ async fn the_reapers_tenant_query_reads_the_state_index_not_the_table() {
 
     let (plan,): (serde_json::Value,) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "EXPLAIN (FORMAT JSON) {}",
-        super::ABANDONED_TENANT_SQL
+        super::postgres::ABANDONED_TENANT_SQL
     )))
     .bind(15_000_i64)
     .bind(32_i64)
@@ -43,7 +43,7 @@ async fn the_reapers_tenant_query_reads_the_state_index_not_the_table() {
     .await
     .unwrap();
     // The reaper finds exactly the two running rows through that plan.
-    let found: Vec<(String, String)> = sqlx::query_as(super::ABANDONED_TENANT_SQL)
+    let found: Vec<(String, String)> = sqlx::query_as(super::postgres::ABANDONED_TENANT_SQL)
         .bind(15_000_i64)
         .bind(32_i64)
         .fetch_all(&pool)

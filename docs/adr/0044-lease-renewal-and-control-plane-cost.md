@@ -99,7 +99,7 @@ index. No partial index now: one on `(updated_at) WHERE state IN
 ('TASK_STATE_SUBMITTED', 'TASK_STATE_WORKING')` would make the look
 proportional to running tasks, for one more index write per write of a
 running task, and pays at tens of millions of retained rows. The test
-`store::claim::postgres::plan_tests` keeps the measured plan from regressing.
+`store::claim::postgres_plan_tests` keeps the measured plan from regressing.
 
 ## The SQL stores' history append (NEW-h-designs-6)
 

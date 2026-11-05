@@ -60,7 +60,7 @@ const ABANDONED_PLAIN_SQL: &str = "SELECT '' AS scope, t.id FROM tasks t
                        AND t.updated_at > now() - interval '600 seconds', FALSE)
     ORDER BY t.updated_at LIMIT $2";
 
-const ABANDONED_TENANT_SQL: &str = "SELECT t.tenant_id, t.id FROM tenant_tasks t
+pub(super) const ABANDONED_TENANT_SQL: &str = "SELECT t.tenant_id, t.id FROM tenant_tasks t
     WHERE t.state IN ('TASK_STATE_SUBMITTED', 'TASK_STATE_WORKING')
       AND t.updated_at < now() - $1 * interval '1 millisecond'
       AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c
@@ -329,7 +329,3 @@ impl TurnClaimStore for PostgresTurnClaims {
         })
     }
 }
-
-#[cfg(test)]
-#[path = "postgres_plan_tests.rs"]
-mod plan_tests;

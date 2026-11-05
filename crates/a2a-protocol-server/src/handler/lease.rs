@@ -169,3 +169,5 @@ mod cost_tests;
 mod renewal_only_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod watch_tests;

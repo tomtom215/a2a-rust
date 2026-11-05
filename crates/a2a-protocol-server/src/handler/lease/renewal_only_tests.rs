@@ -5,12 +5,13 @@
 //! NEW-h-designs-3).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_types::lease::{LEASE_EXTENSION_URI, LEASE_RENEWAL_ONLY_URI};
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::params::TaskQueryParams;
-use a2a_protocol_types::task::TaskState;
+use a2a_protocol_types::task::{TaskId, TaskState};
 
 use super::tests::{TTL, reaches, start, tasks};
 use crate::builder::RequestHandlerBuilder;
@@ -35,14 +36,20 @@ agent_executor!(Produces, |ctx, queue| async {
 #[tokio::test]
 async fn a_renewal_only_read_renews_and_answers_with_the_status_alone() {
     let leases = InMemoryLeaseStore::new();
+    let store = tasks();
     let h = RequestHandlerBuilder::new(Produces)
         .without_agent_card()
-        .with_task_store_arc(tasks())
+        .with_task_store_arc(Arc::clone(&store))
         .with_lease_store(leases.clone())
         .build()
         .expect("handler");
     let id = start(&h, Some(TTL)).await.unwrap();
     reaches(&h, &id, TaskState::Working, Duration::from_secs(5)).await;
+    // The task has metadata too, so that leaving it out is visible. The
+    // executor writes nothing more once it is working.
+    let mut stored = store.get(&TaskId::new(&*id)).await.unwrap().unwrap();
+    stored.metadata = Some(serde_json::json!({ "k": 1 }));
+    store.save(&stored).await.unwrap();
     let get = |uris: &str| {
         let headers = HashMap::from([("a2a-extensions".to_owned(), uris.to_owned())]);
         let h = &h;
@@ -74,5 +81,10 @@ async fn a_renewal_only_read_renews_and_answers_with_the_status_alone() {
         let whole = get(uris).await;
         assert_eq!(whole.artifacts.map(|a| a.len()), Some(1), "{uris:?}");
         assert!(whole.history.is_some_and(|h| !h.is_empty()), "{uris:?}");
+        assert_eq!(
+            whole.metadata,
+            Some(serde_json::json!({ "k": 1 })),
+            "{uris:?}"
+        );
     }
 }
