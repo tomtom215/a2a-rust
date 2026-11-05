@@ -53,7 +53,7 @@ impl ForwardedHeader {
                 .filter(|e| !e.is_empty())
                 .map(|e| Some(e.to_owned()))
                 .collect(),
-            Self::Forwarded => split_unquoted(value, ',')
+            Self::Forwarded => split_unquoted(value, b',')
                 .into_iter()
                 .filter(|element| !element.trim().is_empty())
                 .map(for_parameter)
@@ -65,7 +65,7 @@ impl ForwardedHeader {
 /// The value of an element's `for` parameter (RFC 7239 §4, §6), unquoted.
 /// `None` when the element has none, or it is `unknown` (§6.2).
 fn for_parameter(element: &str) -> Option<String> {
-    split_unquoted(element, ';').into_iter().find_map(|pair| {
+    split_unquoted(element, b';').into_iter().find_map(|pair| {
         let (name, value) = pair.split_once('=')?;
         if !name.trim().eq_ignore_ascii_case("for") {
             return None;
@@ -76,21 +76,25 @@ fn for_parameter(element: &str) -> Option<String> {
 }
 
 /// `s` split at each `separator` that is outside a quoted string.
-fn split_unquoted(s: &str, separator: char) -> Vec<&str> {
+///
+/// Walked by bytes: the separator, the quote and the backslash are ASCII, and
+/// no byte of a multi-byte UTF-8 character is, so every cut is at a character
+/// boundary and the part after a separator starts one byte on.
+fn split_unquoted(s: &str, separator: u8) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut start = 0;
     let mut quoted = false;
     let mut escaped = false;
-    for (i, c) in s.char_indices() {
+    for (i, b) in s.bytes().enumerate() {
         if escaped {
             escaped = false;
-        } else if quoted && c == '\\' {
+        } else if quoted && b == b'\\' {
             escaped = true;
-        } else if c == '"' {
+        } else if b == b'"' {
             quoted = !quoted;
-        } else if c == separator && !quoted {
+        } else if b == separator && !quoted {
             parts.push(&s[start..i]);
-            start = i + c.len_utf8();
+            start = i + 1;
         }
     }
     parts.push(&s[start..]);
@@ -198,6 +202,13 @@ mod tests {
             [Some(hop(r#"_a"b,c"#)), Some(hop("10.0.0.1"))]
         );
         assert_eq!(fwd(r#"for="\\x"#), [Some(hop(r"\x"))], "an unclosed quote");
+        // A quoted pair exists only inside a quoted string (RFC 9110
+        // §5.6.4): outside one a backslash is text, and the comma after it
+        // still separates.
+        assert_eq!(
+            fwd(r"for=a\, for=10.0.0.1"),
+            [Some(hop(r"a\")), Some(hop("10.0.0.1"))]
+        );
         assert_eq!(fwd(r#"for="x\"#), [Some(hop("x"))], "a trailing backslash");
     }
 

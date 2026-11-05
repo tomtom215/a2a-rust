@@ -113,8 +113,8 @@ impl ForwardedClientCert {
 
 /// The `Cert` value of the last element of an XFCC header, unquoted.
 fn xfcc_cert(value: &str) -> Option<String> {
-    let last = split_unquoted(value, ',').pop()?;
-    split_unquoted(last, ';').into_iter().find_map(|pair| {
+    let last = split_unquoted(value, b',').pop()?;
+    split_unquoted(last, b';').into_iter().find_map(|pair| {
         let (key, value) = pair.split_once('=')?;
         key.trim()
             .eq_ignore_ascii_case("cert")
@@ -124,16 +124,19 @@ fn xfcc_cert(value: &str) -> Option<String> {
 
 /// `s` split at each `separator` outside a double-quoted string. XFCC values
 /// that hold `,` or `;` are quoted; a URL-encoded certificate holds neither.
-fn split_unquoted(s: &str, separator: char) -> Vec<&str> {
+///
+/// Walked by bytes, as `rate_limit::forwarded` walks its header: the separator
+/// and the quote are ASCII, so every cut is at a character boundary.
+fn split_unquoted(s: &str, separator: u8) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut start = 0;
     let mut quoted = false;
-    for (i, c) in s.char_indices() {
-        if c == '"' {
+    for (i, b) in s.bytes().enumerate() {
+        if b == b'"' {
             quoted = !quoted;
-        } else if c == separator && !quoted {
+        } else if b == separator && !quoted {
             parts.push(&s[start..i]);
-            start = i + c.len_utf8();
+            start = i + 1;
         }
     }
     parts.push(&s[start..]);
