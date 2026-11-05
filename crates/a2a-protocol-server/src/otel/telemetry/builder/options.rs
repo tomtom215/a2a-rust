@@ -8,7 +8,8 @@ use super::TelemetryBuilder;
 
 impl TelemetryBuilder {
     /// Under `OTEL_METRICS_EXPORTER=prometheus`, binds no listener of its
-    /// own: the application serves [`Telemetry::prometheus`]'s text on its own
+    /// own: the application serves the text of
+    /// [`Telemetry::prometheus`](crate::otel::Telemetry::prometheus) on its own
     /// port, behind its own authentication and connection limits (audit
     /// C-16). `OTEL_EXPORTER_PROMETHEUS_HOST` and `_PORT` are then not read.
     #[cfg(feature = "otel-prometheus")]
