@@ -226,6 +226,7 @@ are rustdoc's job.
 | Module | Contents |
 |--------|----------|
 | `auth` | Authentication interceptor and credential storage |
+| `balance` | Calls spread over the endpoints of one agent (`EndpointSource`, `StaticEndpoints`, `DnsEndpoints`), with ejection and opt-in hedging (`BalancePolicy`, `Ejection`, `Hedge`; `ClientBuilder::with_balancing`, ADR 0050) |
 | `builder` | Fluent builder for `A2aClient` |
 | `client` | The `A2aClient` itself |
 | `config` | Client configuration types |
@@ -257,8 +258,9 @@ are rustdoc's job.
 | `EventStream` | Async SSE event stream |
 | `RetryPolicy` | Configurable retry with exponential backoff |
 | `RetryBudget` | Retries as a bounded fraction of calls, so retries cannot multiply an overload (`RetryPolicy::with_budget`) |
-| `HttpPool` | One set of HTTP connections many clients share, with an optional maximum connection lifetime, HTTP/2 PING and idle limits (`ClientBuilder::with_pool`, `HttpPool::shared()`); needs `tls-rustls` |
+| `HttpPool` | One set of HTTP connections many clients share, with an optional maximum connection lifetime, HTTP/2 PING and idle limits (`ClientBuilder::with_pool`, `HttpPool::shared()`), and per-origin state: a circuit breaker, an in-flight cap and a retry budget shared by its clients (`HttpPool::origins()`); needs `tls-rustls` |
 | `HttpPoolBuilder` | Builds an `HttpPool`: TLS configuration, connect and idle timeouts, idle connections per host, connection lifetime, HTTP/2 keep-alive (`HttpPool::builder()`) |
+| `OriginSnapshot` | One origin's state from `HttpPool::origins()`: calls in flight, how much longer it is ejected, failures and ejections in a row |
 | `CredentialPreflight` | What a client built from a card does with a call whose credential matches none of the card's security requirements (§3.1.11): off, warn (default) or refuse |
 | `CurrentTrace` | The trace the current task runs under, and how to start one |
 | `TracePropagationInterceptor` | Writes `traceparent` onto every outbound request |

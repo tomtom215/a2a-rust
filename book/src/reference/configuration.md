@@ -270,6 +270,22 @@ Every setting is fixed when `build()` is called. A zero duration is refused.
 | `with_max_connection_lifetime` | `Duration` | not recycled | Use new connections once the current ones are this old, spread by up to 10% either way; calls and streams already running are not cut |
 | `with_http2_keep_alive` | `(Duration, Duration)` | no PING | `(interval, timeout)`: an HTTP/2 PING every `interval`, idle or not, and a connection that does not answer within `timeout` is closed. Applies to connections that speak HTTP/2 |
 | `with_http2_prior_knowledge` | — | negotiate | Speak HTTP/2 without negotiating it, including over plain `http://` |
+| `with_ejection` | `Ejection` | off | A circuit breaker per origin shared by the pool's clients: `consecutive_failures` failures in a row open it for `base`, doubling up to `max` while its probe fails; calls are refused with `CircuitOpen` while open |
+| `with_max_in_flight_per_origin` | `usize` | no cap | Calls waiting for a response from one origin across the pool's clients; one more is refused with `TooManyPendingRequests`. Zero is refused |
+| `with_retry_budget` | `RetryBudget` | none | One retry budget per origin for every client of the pool, besides each client's own |
+
+### BalancePolicy (`ClientBuilder::with_balancing`)
+
+How a client spreads calls over the endpoints of an `EndpointSource`
+(see [Behind a load balancer](../client/load-balancers.md#balancing-in-the-client)).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `ejection` | `Option<Ejection>` | `Ejection::default()`: 5 failures in a row, 30 s doubling to 300 s | When an endpoint is taken out of rotation; on a pool, the pool's policy applies and setting this is refused |
+| `max_ejected_percent` | `u8` | 50 | The most of the set out of rotation at once, rounded down; 100 lets every endpoint out, and calls then fail with `CircuitOpen` |
+| `hedge` | `Option<Hedge>` | None (off) | `Hedge { delay, budget }`: a slow idempotent unary call is copied to a second endpoint after `delay`, paid from `budget` (default 5% of calls, reserve 1) |
+
+`DnsEndpoints` resolves its name again every 30 s by default (`with_refresh_every`).
 
 ### SSE Parser Limits
 

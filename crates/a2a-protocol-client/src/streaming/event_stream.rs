@@ -424,8 +424,11 @@ impl EventStream {
     /// usefulness is the consumer dropping this stream. A server that accepts a
     /// subscription and then answers nothing produces no terminal event and no
     /// closed channel, so nothing else was ever going to remove it.
+    ///
+    /// The balancer parks the guard that counts the stream in flight to its
+    /// endpoint here too (ADR 0050), so a stream can hold more than one: what
+    /// was held already is kept with the new resource.
     #[must_use]
-    #[cfg(feature = "websocket")]
     pub(crate) fn holding(
         mut self,
         resource: impl std::any::Any
@@ -435,7 +438,7 @@ impl EventStream {
         + std::panic::RefUnwindSafe
         + 'static,
     ) -> Self {
-        self.held = Some(Box::new(resource));
+        self.held = Some(Box::new((self.held.take(), resource)));
         self
     }
 

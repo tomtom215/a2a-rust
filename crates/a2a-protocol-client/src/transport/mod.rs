@@ -30,6 +30,8 @@ mod empty_result;
 pub mod grpc;
 pub(crate) mod in_flight;
 pub mod jsonrpc;
+#[cfg(feature = "tls-rustls")]
+pub(crate) mod resolver;
 pub mod rest;
 #[cfg(feature = "websocket")]
 pub mod websocket;

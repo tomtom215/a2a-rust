@@ -70,6 +70,19 @@ Everything is off, or what a client without a pool has, until asked for.
 | `with_max_connection_lifetime` | connections are not recycled | New connections are used once the current ones are this old, spread by up to 10% either way. |
 | `with_http2_keep_alive(interval, timeout)` | no PING | An HTTP/2 PING every `interval`, idle or not; a connection that does not answer within `timeout` is closed. |
 | `with_http2_prior_knowledge` | negotiate | Speak HTTP/2 without negotiating it, including over plain `http://`. For agents known to accept it. |
+| `with_ejection(Ejection)` | off | A circuit breaker per origin, shared by the pool's clients: after a number of failures in a row the origin's calls are refused with `ClientError::CircuitOpen` until one probe succeeds. |
+| `with_max_in_flight_per_origin(n)` | no cap | Calls waiting for a response from one origin, across the pool's clients; one more is refused with `TooManyPendingRequests`. Zero is refused. |
+| `with_retry_budget(RetryBudget)` | none | One retry budget per origin for every client of the pool, besides each client's own. |
+
+### Per-origin state
+
+A pool keeps, for each origin (scheme, host and port) its clients call, the
+calls in flight and whether the origin is failing (ADR 0050). The three
+settings above use it, and each is off by default. `HttpPool::origins()`
+returns a snapshot per origin: calls in flight, how much longer it is ejected,
+and how many failures and ejections in a row. A
+[balanced client](../load-balancers.md#balancing-in-the-client) on the pool
+uses the same state for its rotation, and the pool's ejection policy.
 
 ### Recycling connections
 

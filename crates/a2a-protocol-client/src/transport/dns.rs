@@ -38,6 +38,12 @@ pub struct BoundedResolver<R = GaiResolver> {
 
 impl BoundedResolver {
     /// The system resolver, bounded by `timeout`.
+    #[cfg(any(
+        not(feature = "tls-rustls"),
+        feature = "websocket",
+        feature = "grpc",
+        test
+    ))]
     pub fn system(timeout: Duration) -> Self {
         Self::new(GaiResolver::new(), timeout)
     }

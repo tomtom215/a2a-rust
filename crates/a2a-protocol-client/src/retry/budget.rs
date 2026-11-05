@@ -127,6 +127,12 @@ impl Ledger {
         state.tokens = (state.tokens + self.budget.ratio).min(self.budget.reserve);
     }
 
+    /// Gives back one retry spent on a retry that was not made.
+    pub(crate) fn refund(&self) {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.tokens = (state.tokens + 1.0).min(self.budget.reserve);
+    }
+
     /// Spends one retry if there is one to spend.
     pub(crate) fn withdraw(&self) -> bool {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);

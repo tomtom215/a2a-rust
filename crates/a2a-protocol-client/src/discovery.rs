@@ -28,8 +28,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-#[cfg(not(feature = "tls-rustls"))]
-use crate::transport::connector::TcpConnector;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::Bytes;
 use hyper::header;

@@ -14,6 +14,13 @@ client-side load balancing (H12) is not built and stays conditional on a
 measurement, as written below. The shape (opt-in, not the default) was
 recommended to the maintainer, who decided on 2026-11-03 to build the opt-in
 pool (fork F7).
+Amended again 2026-11-04: decision 5, decision 6 and the H12 section are
+built, by [ADR 0050](0050-client-balancing-ejection-hedging.md) (per-origin
+state, breaker, in-flight cap, retry budget, balancing, ejection, hedging) and
+[ADR 0051](0051-card-discovery-at-fleet-scale.md) (the card resolver on the
+pool, single-flight, jittered expiry), on the maintainer's instruction that
+every open item is in 0.16.0. The "not built" list of the amendment below is
+superseded by those two records.
 **Author:** Tom F.
 
 ---

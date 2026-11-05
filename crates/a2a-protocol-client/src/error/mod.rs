@@ -170,6 +170,19 @@ pub enum ClientError {
     /// An agent's object that does not parse at all is still
     /// [`Serialization`](Self::Serialization).
     InvalidAgentResponse(String),
+
+    /// Not sent: the origin's circuit is open, or every endpoint of a
+    /// balanced client is out of rotation (ADR 0050). An origin is ejected
+    /// after failing a number of calls in a row, and one call is let through
+    /// to probe it once the ejection ends. Retryable, and safe to retry for
+    /// any method, since nothing was sent.
+    CircuitOpen {
+        /// The origin (`scheme://host:port`), or the client's endpoint for a
+        /// balanced set. Never a user name, password, path or query.
+        origin: String,
+        /// How long until the ejection ends; `None` while a probe is running.
+        retry_after: Option<std::time::Duration>,
+    },
 }
 
 impl fmt::Display for ClientError {
@@ -225,6 +238,9 @@ impl fmt::Display for ClientError {
                 )
             }
             Self::InvalidAgentResponse(why) => write!(f, "invalid agent response: {why}"),
+            Self::CircuitOpen { origin, .. } => {
+                write!(f, "call not sent: circuit open for {origin}")
+            }
             Self::InsecureWebhook(origin) => write!(
                 f,
                 "push config not sent: webhook {origin} is plaintext http:// to a \
@@ -252,7 +268,9 @@ impl ClientError {
     #[must_use]
     pub const fn retry_after(&self) -> Option<std::time::Duration> {
         match self {
-            Self::UnexpectedStatus { retry_after, .. } => *retry_after,
+            Self::UnexpectedStatus { retry_after, .. } | Self::CircuitOpen { retry_after, .. } => {
+                *retry_after
+            }
             Self::Protocol(e) => e.retry_after(),
             _ => None,
         }

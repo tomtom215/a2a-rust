@@ -51,14 +51,14 @@ pub(super) fn protocol_major(version: &str) -> Option<u32> {
 
 /// Whether an interface advertising `version` speaks this SDK's protocol.
 /// An empty version has no major, so it does not.
-pub(super) fn is_compatible(version: &str) -> bool {
+pub fn is_compatible(version: &str) -> bool {
     protocol_major(version) == Some(SUPPORTED_PROTOCOL_MAJOR)
 }
 
 /// The canonical name of a binding this SDK implements, matched ignoring
 /// ASCII case, as the selector matches. `REST` is the legacy spelling of
 /// `HTTP+JSON`.
-pub(super) fn canonical_binding(binding: &str) -> Option<&'static str> {
+pub fn canonical_binding(binding: &str) -> Option<&'static str> {
     [BINDING_JSONRPC, BINDING_HTTP_JSON, BINDING_GRPC]
         .into_iter()
         .find(|b| b.eq_ignore_ascii_case(binding))

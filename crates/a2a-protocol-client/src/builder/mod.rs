@@ -31,7 +31,7 @@
 //! # }
 //! ```
 
-mod selection;
+pub(crate) mod selection;
 mod transport_factory;
 
 #[cfg(test)]
@@ -149,6 +149,12 @@ pub struct ClientBuilder {
     /// Whether the caller set the connect timeout, which a pool owns.
     #[cfg(feature = "tls-rustls")]
     pub(super) connect_timeout_set: bool,
+    /// The endpoints and policy [`with_balancing`](Self::with_balancing)
+    /// gave.
+    pub(super) balancing: Option<(
+        std::sync::Arc<dyn crate::balance::EndpointSource>,
+        crate::balance::BalancePolicy,
+    )>,
 }
 
 impl ClientBuilder {
@@ -184,6 +190,7 @@ impl ClientBuilder {
             tls_setter: None,
             #[cfg(feature = "tls-rustls")]
             connect_timeout_set: false,
+            balancing: None,
         }
     }
 
@@ -317,6 +324,7 @@ impl ClientBuilder {
             tls_setter: None,
             #[cfg(feature = "tls-rustls")]
             connect_timeout_set: false,
+            balancing: None,
         })
     }
 
@@ -668,6 +676,28 @@ impl ClientBuilder {
         self
     }
 
+    /// Spreads the HTTP bindings' (JSON-RPC, HTTP+JSON) calls over the
+    /// endpoints `source` gives, as `policy` says (ADR 0050; see
+    /// [`balance`](crate::balance)): each call goes to the endpoint with the
+    /// fewest calls in flight, an endpoint that keeps failing is taken out of
+    /// rotation for a while, and slow idempotent calls may be hedged.
+    ///
+    /// The builder's own endpoint stays the client's name (in spans, errors
+    /// and the plaintext check), and an endpoint of another scheme is not
+    /// used. With [`with_pool`](Self::with_pool), the pool's connections and
+    /// per-origin state are used, and the pool's ejection policy:
+    /// [`build`](Self::build) refuses a `policy` that sets its own. A custom
+    /// transport and [`build_grpc`](Self::build_grpc) refuse balancing.
+    #[must_use]
+    pub fn with_balancing(
+        mut self,
+        source: impl crate::balance::EndpointSource,
+        policy: crate::balance::BalancePolicy,
+    ) -> Self {
+        self.balancing = Some((std::sync::Arc::new(source), policy));
+        self
+    }
+
     /// Refuses a push-notification config whose webhook URL is `http://`
     /// to a host other than loopback, before sending it (spec §13.2).
     ///
@@ -867,6 +897,7 @@ impl std::fmt::Debug for ClientBuilder {
         f.debug_struct("ClientBuilder")
             .field("endpoint", &self.endpoint)
             .field("preferred_binding", &self.preferred_binding)
+            .field("balanced", &self.balancing.is_some())
             .finish_non_exhaustive()
     }
 }

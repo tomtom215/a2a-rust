@@ -296,6 +296,13 @@ pub fn replicate(e: &ClientError) -> ClientError {
             last_event_id: last_event_id.clone(),
             detail: detail.clone(),
         },
+        ClientError::CircuitOpen {
+            origin,
+            retry_after,
+        } => ClientError::CircuitOpen {
+            origin: origin.clone(),
+            retry_after: *retry_after,
+        },
     }
 }
 

@@ -28,7 +28,7 @@ use hyper_util::client::proxy::matcher::Matcher;
 use tokio::time::Instant;
 
 use super::Settings;
-use crate::tls::{ClientConfig, Inner, build_inner};
+use crate::tls::{ClientConfig, Inner, Pin, build_inner};
 
 /// The spread applied to a generation's lifetime: this fraction either way.
 const SPREAD: f64 = 0.10;
@@ -40,6 +40,9 @@ pub struct Generations {
     rules: Arc<Matcher>,
     /// `None`: a generation never expires.
     lifetime: Option<Duration>,
+    /// The host and address every connection goes to, for a pinned
+    /// endpoint (ADR 0050); `None`: resolved as usual.
+    pin: Option<Pin>,
     /// A uniform 64-bit draw, which spreads each generation's lifetime. A
     /// parameter so that a test can fix an expiry to the nanosecond.
     draw: fn() -> u64,
@@ -64,12 +67,45 @@ impl Generations {
         lifetime: Option<Duration>,
         draw: fn() -> u64,
     ) -> Self {
-        let first = Self::generation(&tls, &settings, &rules, lifetime, draw, Instant::now());
+        Self::with_pin(tls, settings, rules, lifetime, draw, None)
+    }
+
+    /// The same as `self`, with every connection to `pin`'s host going to
+    /// its address.
+    pub(super) fn pinned(&self, pin: Pin) -> Self {
+        Self::with_pin(
+            self.tls.clone(),
+            self.settings.clone(),
+            Arc::clone(&self.rules),
+            self.lifetime,
+            self.draw,
+            Some(pin),
+        )
+    }
+
+    fn with_pin(
+        tls: ClientConfig,
+        settings: Settings,
+        rules: Arc<Matcher>,
+        lifetime: Option<Duration>,
+        draw: fn() -> u64,
+        pin: Option<Pin>,
+    ) -> Self {
+        let first = Self::generation(
+            &tls,
+            &settings,
+            &rules,
+            lifetime,
+            draw,
+            pin.as_ref(),
+            Instant::now(),
+        );
         Self {
             tls,
             settings,
             rules,
             lifetime,
+            pin,
             draw,
             current: Mutex::new(first),
             rotations: AtomicU64::new(0),
@@ -82,10 +118,11 @@ impl Generations {
         rules: &Arc<Matcher>,
         lifetime: Option<Duration>,
         draw: fn() -> u64,
+        pin: Option<&Pin>,
         now: Instant,
     ) -> Generation {
         Generation {
-            inner: build_inner(tls.clone(), settings, Arc::clone(rules)),
+            inner: build_inner(tls.clone(), settings, Arc::clone(rules), pin),
             expires: lifetime.map(|life| now + spread_lifetime(life, draw())),
         }
     }
@@ -103,6 +140,7 @@ impl Generations {
                     &self.rules,
                     self.lifetime,
                     self.draw,
+                    self.pin.as_ref(),
                     now,
                 );
                 self.rotations.fetch_add(1, Ordering::Relaxed);
@@ -157,6 +195,7 @@ impl std::fmt::Debug for Generations {
         f.debug_struct("Generations")
             .field("settings", &self.settings)
             .field("lifetime", &self.lifetime)
+            .field("pin", &self.pin)
             .field("rotations", &self.rotations.load(Ordering::Relaxed))
             .finish_non_exhaustive()
     }

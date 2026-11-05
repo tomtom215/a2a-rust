@@ -17,6 +17,12 @@ use super::dns::BoundedResolver;
 
 /// The TCP connector the HTTP transports dial through: hyper-util's, with the
 /// name lookup bounded by the connect timeout ([`BoundedResolver`]).
+#[cfg(any(
+    not(feature = "tls-rustls"),
+    feature = "websocket",
+    feature = "grpc",
+    test
+))]
 pub type TcpConnector = HttpConnector<BoundedResolver>;
 
 /// Idle time before the first TCP keepalive probe: 60 seconds.
@@ -48,9 +54,38 @@ pub const TCP_KEEPALIVE_RETRIES: u32 = 4;
 ///
 /// `enforce_http` is left at its default (`true`); the HTTPS client turns it
 /// off because its TLS wrapper handles `https://`.
+#[cfg(any(
+    not(feature = "tls-rustls"),
+    feature = "websocket",
+    feature = "grpc",
+    test
+))]
 pub fn http_connector(connection_timeout: Duration) -> TcpConnector {
-    let mut connector =
-        HttpConnector::new_with_resolver(BoundedResolver::system(connection_timeout));
+    configured(
+        HttpConnector::new_with_resolver(BoundedResolver::system(connection_timeout)),
+        connection_timeout,
+    )
+}
+
+/// [`http_connector`] resolving names through `resolver`: the system's, or
+/// one that pins a host to an address (ADR 0050). The lookup is bounded by
+/// `connection_timeout` either way (audit B-28).
+#[cfg(feature = "tls-rustls")]
+pub fn resolving_connector(
+    connection_timeout: Duration,
+    resolver: super::resolver::Resolver,
+) -> super::resolver::Tcp {
+    configured(
+        HttpConnector::new_with_resolver(BoundedResolver::new(resolver, connection_timeout)),
+        connection_timeout,
+    )
+}
+
+/// The options every HTTP transport's connector carries.
+fn configured<R>(
+    mut connector: HttpConnector<R>,
+    connection_timeout: Duration,
+) -> HttpConnector<R> {
     connector.set_connect_timeout(Some(connection_timeout));
     connector.set_nodelay(true);
     connector.set_keepalive(Some(TCP_KEEPALIVE_TIME));
