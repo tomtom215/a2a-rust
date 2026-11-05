@@ -136,5 +136,5 @@ impl std::fmt::Debug for HttpsClient {
     }
 }
 
-#[cfg(all(test, feature = "tls-rustls"))]
+#[cfg(test)]
 mod tests;

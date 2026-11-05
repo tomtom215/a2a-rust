@@ -18,6 +18,29 @@ use super::webhook::{
     DELIVERY_ID_HEADER, NOTIFICATION_TOKEN_HEADER, NOTIFICATION_TOKEN_HEADER_UNPREFIXED,
 };
 
+tokio::task_local! {
+    /// The delivery id the request being prepared is to carry, set by
+    /// [`with_delivery_id`] (the outbox's worker); absent, a new one.
+    static DELIVERY_ID: String;
+}
+
+/// Runs `f` with `id` as the `A2A-Delivery-Id` of the deliveries it makes.
+///
+/// It is the outbox's row id, the same from every replica and across a
+/// restart (ADR 0037). The bundled sender sends it; a custom sender reads it
+/// with [`current_delivery_id`].
+pub async fn with_delivery_id<F: std::future::Future>(id: String, f: F) -> F::Output {
+    DELIVERY_ID.scope(id, f).await
+}
+
+/// The delivery id [`with_delivery_id`] set for the delivery being made, if
+/// any: what a custom [`PushSender`](super::PushSender) sends as
+/// `A2A-Delivery-Id` to keep the outbox's guarantee.
+#[must_use]
+pub fn current_delivery_id() -> Option<String> {
+    DELIVERY_ID.try_with(Clone::clone).ok()
+}
+
 /// What every attempt of one delivery sends: the checked credentials, the
 /// serialised event and the id that tells a receiver two attempts are one
 /// delivery.
@@ -63,8 +86,12 @@ impl Prepared {
             authorization,
             token: config.token.clone(),
             body,
-            // One per delivery, the same on every attempt of it (audit D-05).
-            delivery_id: uuid::Uuid::new_v4().to_string(),
+            // One per delivery, the same on every attempt of it (audit D-05),
+            // and on every attempt from every replica when the delivery is an
+            // outbox row's (ADR 0037).
+            delivery_id: DELIVERY_ID
+                .try_with(Clone::clone)
+                .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string()),
         })
     }
 

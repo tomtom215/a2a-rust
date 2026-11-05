@@ -223,6 +223,22 @@ impl HandlerLimits {
         self
     }
 
+    /// Sets how long the push outbox keeps trying a delivery; see
+    /// [`push_outbox_max_age`](Self::push_outbox_max_age).
+    #[must_use]
+    pub const fn with_push_outbox_max_age(mut self, max_age: Duration) -> Self {
+        self.push_outbox_max_age = max_age;
+        self
+    }
+
+    /// Sets the longest wait between two attempts of an outbox delivery; see
+    /// [`push_outbox_backoff_max`](Self::push_outbox_backoff_max).
+    #[must_use]
+    pub const fn with_push_outbox_backoff_max(mut self, max: Duration) -> Self {
+        self.push_outbox_backoff_max = max;
+        self
+    }
+
     /// Sets the maximum number of push notification configs per task.
     #[must_use]
     pub const fn with_max_push_configs_per_task(mut self, max: usize) -> Self {

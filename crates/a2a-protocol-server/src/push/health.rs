@@ -77,6 +77,13 @@ fn status_of(err: &A2aError) -> Option<u64> {
     err.data.as_ref()?.get(STATUS_KEY)?.as_u64()
 }
 
+/// Whether the webhook refused the delivery with a status no retry will
+/// change (a `4xx` other than `408` and `429`, as `request::judge` decides):
+/// the outbox ends such a row rather than retrying it (ADR 0037).
+pub fn refused_for_good(err: &A2aError) -> bool {
+    status_of(err).is_some()
+}
+
 /// The outcome label an error from [`watched`]'s sender stands for, if it is
 /// one of the two this module decides.
 pub fn outcome_of(err: &A2aError) -> Option<&'static str> {

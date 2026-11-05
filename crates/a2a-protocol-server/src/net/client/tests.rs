@@ -5,6 +5,8 @@
 //! trusted, the proxy's login sent) is tested end to end in
 //! `tests/outbound_proxy_and_roots.rs`; this is what a unit test can see.
 
+#![cfg(feature = "tls-rustls")]
+
 use super::*;
 
 /// `HttpsClient` sits inside `HttpPushSender`, which derives `Debug` and is

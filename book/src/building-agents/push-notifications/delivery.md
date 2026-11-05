@@ -130,6 +130,55 @@ answer held each later event out of the store for up to
 buffered, and held the turn's claim, so a continuation sent to another
 replica was refused as "already being processed".
 
+## Durable delivery: the outbox
+
+Everything above is held in memory: a delivery waiting in a lane, or being
+retried, when the process stops is not delivered by this replica or any
+other, terminal events included. `RequestHandlerBuilder::with_push_outbox`
+keeps them in a store instead (ADR 0037):
+
+```rust,ignore
+use std::sync::Arc;
+use a2a_protocol_server::push::{PostgresPushOutbox, PushOutbox};
+
+let outbox = PostgresPushOutbox::new(&database_url).await?;
+let handler = RequestHandlerBuilder::new(executor)
+    .with_push_sender(HttpPushSender::new())
+    .with_push_outbox(Arc::new(outbox) as Arc<dyn PushOutbox>)
+    .build()?;
+```
+
+- **What is stored.** One row per event and webhook (`a2a_push_outbox`),
+  written by the task's lane once the event is stored, in order. A row names
+  the config, not its credentials, so a config that is deleted, or removed
+  after a `410`, ends its rows. The event body is in the row; `with_cipher`
+  seals it with the push configs' `PushConfigCipher`. The write is not in the
+  event's own transaction: a crash between the two writes loses that event's
+  deliveries, one write's window where without the outbox it is everything
+  queued.
+- **Who delivers.** A worker per handler claims rows that are due, under a
+  lease (three times `push_delivery_timeout` plus 30 s), from whichever
+  replica: PostgreSQL's claim is `FOR UPDATE SKIP LOCKED`, so replicas never
+  take the same row or wait on each other. A webhook's later row is not
+  claimed while an earlier one is unfinished, so it sees a task's events in
+  order. At shutdown the worker releases what it holds; a process that is
+  killed leaves its rows to the next claim after their lease.
+- **Retries.** A delivery that fails, times out or is throttled is due again
+  after 1 s, doubling to `push_outbox_backoff_max` (1 h), less up to a fifth
+  of jitter; a suspended webhook's rows wait the same way. A `2xx` ends the
+  row, and so does a refusal no retry will change (a `4xx` other than `408`
+  and `429`). A row older than `push_outbox_max_age` (24 h) when it is next
+  due is dropped and counted `expired`. At most `push_queue_capacity` rows
+  wait per webhook of a task, dropping as the lanes drop.
+- **At least once.** A delivery whose answer was lost, or whose process
+  stopped after sending it, is sent again, from any replica, with the same
+  `A2A-Delivery-Id`: deduplicate on it. A custom `PushSender` reads the row's
+  id with `push::current_delivery_id()`.
+- **Stores.** `PostgresPushOutbox` for a fleet, `SqlitePushOutbox` for one
+  process with a file, `InMemoryPushOutbox` where nothing survives a restart
+  anyway (its retries still outlast one delivery). `PushOutbox::pending`
+  counts what waits, for a gauge.
+
 ## Outcomes
 
 Each delivery is counted once in `a2a.server.push_deliveries`, labelled with
@@ -144,6 +193,8 @@ its outcome:
 | `timeout_truncated` | The same, for a sender whose own schedule (`PushSender::max_delivery_duration`) is longer than `push_delivery_timeout`, so its last attempts could never run in full. At the defaults (38 s against 30 s) every timeout is this one; the fix is to lengthen the timeout or shorten the schedule. |
 | `suspended` | Not attempted: the webhook failed `push_suspend_after` deliveries in a row and is inside its pause. Counted once per skipped delivery. |
 | `gone` | The webhook answered `410 Gone` and its config was removed (`push_remove_gone`). Counted for each delivery that learned it: a blocking send's batch reads its configs once, so the rest of that batch's events also reach the webhook and are counted. |
+| `throttled` | Not attempted: the delivery waited `push_delivery_timeout` for a slot in the push gate and was not let through. Not held against the webhook. |
+| `expired` | The push outbox gave up on it: older than `push_outbox_max_age` when next due. |
 
 `suspended` and `gone` are in `a2a:push_delivery_failure_ratio:rate5m` with
 `failed`, as `dropped` is: it is the share of deliveries that did not reach a

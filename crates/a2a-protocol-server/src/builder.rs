@@ -170,6 +170,7 @@ pub struct RequestHandlerBuilder {
     task_store_config: TaskStoreConfig,
     push_config_store: Option<Arc<dyn PushConfigStore>>,
     push_sender: Option<Arc<dyn PushSender>>,
+    push_outbox: Option<Arc<dyn crate::push::outbox::PushOutbox>>,
     interceptors: ServerInterceptorChain,
     agent_card: CardSetting,
     extended_agent_card: Option<Box<AgentCard>>,
@@ -240,6 +241,7 @@ impl RequestHandlerBuilder {
             task_store_config: TaskStoreConfig::default(),
             push_config_store: None,
             push_sender: None,
+            push_outbox: None,
             interceptors: ServerInterceptorChain::new(),
             agent_card: CardSetting::Unset,
             extended_agent_card: None,
@@ -394,6 +396,24 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub fn with_push_sender(mut self, sender: impl PushSender + 'static) -> Self {
         self.push_sender = Some(Arc::new(sender));
+        self
+    }
+
+    /// Keeps webhook deliveries in `outbox` until they are delivered, instead
+    /// of in memory (ADR 0037): a delivery waiting or being retried when the
+    /// process stops is delivered after it, by this replica or any other that
+    /// shares the outbox, with the same `A2A-Delivery-Id`, and a webhook that
+    /// is down is retried with backoff for up to
+    /// [`push_outbox_max_age`](crate::handler::HandlerLimits::push_outbox_max_age).
+    /// Delivery is then at least once. Needs a push sender; without one there
+    /// is nothing to deliver with and the outbox is not used.
+    ///
+    /// The handler's worker claims rows from the moment the handler is built
+    /// inside a Tokio runtime (or, built outside one, from its first event),
+    /// so a replica that restarts delivers what an earlier process left.
+    #[must_use]
+    pub fn with_push_outbox(mut self, outbox: Arc<dyn crate::push::outbox::PushOutbox>) -> Self {
+        self.push_outbox = Some(outbox);
         self
     }
 
@@ -1568,12 +1588,14 @@ impl RequestHandlerBuilder {
             )
         });
         let in_flight = crate::handler::InFlight::default();
-        let push_lanes = crate::handler::PushLanes::new(
+        let push_lanes = crate::handler::PushLanes::with_outbox(
             Arc::clone(&push_config_store),
             push_sender.clone(),
             self.handler_limits.clone(),
             Arc::clone(&self.metrics),
             in_flight.background().clone(),
+            self.push_outbox
+                .map(|outbox| (outbox, in_flight.shutdown_token())),
         );
         let handler = RequestHandler {
             executor: self.executor,
@@ -1741,6 +1763,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("task_store_config", &self.task_store_config)
             .field("push_config_store", &self.push_config_store.is_some())
             .field("push_sender", &self.push_sender.is_some())
+            .field("push_outbox", &self.push_outbox.is_some())
             .field("interceptors", &self.interceptors)
             .field(
                 "agent_card",

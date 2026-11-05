@@ -17,6 +17,7 @@ use crate::push::gate::admission::Admission;
 use crate::push::{PushConfigStore, PushSender};
 
 mod lanes;
+mod outbox_worker;
 pub use lanes::{PushLanes, ends_turn};
 
 /// Which timeout label a cut-off delivery deserves.
@@ -219,11 +220,7 @@ pub async fn deliver_to_every_config(
     }
 }
 
-/// One delivery to one config; its outcome label.
-///
-/// The delivery has `push_delivery_timeout` to be let through the push gate,
-/// and its webhook has the whole of it again from then (ADR 0043). One cut
-/// off while it still waited made no request: [`push_outcome::THROTTLED`].
+/// One delivery to one config; its outcome label. See [`attempt`].
 async fn deliver_once(
     task_id: &TaskId,
     sender: &dyn PushSender,
@@ -232,17 +229,53 @@ async fn deliver_once(
     push_delivery_timeout: std::time::Duration,
     timeout_label: &'static str,
 ) -> &'static str {
+    attempt(
+        task_id,
+        sender,
+        config,
+        event,
+        push_delivery_timeout,
+        timeout_label,
+    )
+    .await
+    .outcome
+}
+
+/// What became of one delivery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Attempted {
+    /// Its [`push_outcome`] label.
+    pub outcome: &'static str,
+    /// Nothing more is to be done for it: delivered, the webhook is gone, or
+    /// it refused the delivery with a status no retry will change. The
+    /// outbox ends such a row and makes any other due again (ADR 0037).
+    pub settled: bool,
+}
+
+/// One delivery to one config.
+///
+/// The delivery has `push_delivery_timeout` to be let through the push gate,
+/// and its webhook has the whole of it again from then (ADR 0043). One cut
+/// off while it still waited made no request: [`push_outcome::THROTTLED`].
+pub async fn attempt(
+    task_id: &TaskId,
+    sender: &dyn PushSender,
+    config: &a2a_protocol_types::push::TaskPushNotificationConfig,
+    event: &StreamResponse,
+    push_delivery_timeout: std::time::Duration,
+    timeout_label: &'static str,
+) -> Attempted {
     let _ = task_id;
     let admission = Admission::new(push_delivery_timeout);
     let send = admission.scope(sender.send(&config.url, event, config));
-    match within(&admission, send).await {
-        Some(Ok(())) => push_outcome::DELIVERED,
+    let (outcome, settled) = match within(&admission, send).await {
+        Some(Ok(())) => (push_outcome::DELIVERED, true),
         // Skipped, not failed: the webhook is suspended, and says so once
         // when it is (`push::health`), not on every event it skips.
         Some(Err(err))
             if crate::push::health::outcome_of(&err) == Some(push_outcome::SUSPENDED) =>
         {
-            push_outcome::SUSPENDED
+            (push_outcome::SUSPENDED, false)
         }
         Some(Err(err)) if crate::push::health::outcome_of(&err) == Some(push_outcome::GONE) => {
             trace_warn!(
@@ -250,18 +283,21 @@ async fn deliver_once(
                 url = %crate::push::webhook::origin_for_log(&config.url),
                 "push webhook answered 410 Gone; its config was removed"
             );
-            push_outcome::GONE
+            (push_outcome::GONE, true)
         }
-        Some(Err(_err)) => {
+        Some(Err(err)) => {
             trace_warn!(
                 task_id = %task_id,
                 // The origin only: a webhook's path or query is often its
                 // receiver's secret. Until 2026-10-14 the whole URL went out.
                 url = %crate::push::webhook::origin_for_log(&config.url),
-                error = %_err,
+                error = %err,
                 "push notification delivery failed"
             );
-            push_outcome::FAILED
+            (
+                push_outcome::FAILED,
+                crate::push::health::refused_for_good(&err),
+            )
         }
         None if admission.waiting() => {
             trace_warn!(
@@ -269,7 +305,7 @@ async fn deliver_once(
                 url = %crate::push::webhook::origin_for_log(&config.url),
                 "push notification not sent: it waited push_delivery_timeout for a slot in the push gate"
             );
-            push_outcome::THROTTLED
+            (push_outcome::THROTTLED, false)
         }
         None => {
             trace_warn!(
@@ -278,9 +314,10 @@ async fn deliver_once(
                 outcome = timeout_label,
                 "push notification delivery timed out"
             );
-            timeout_label
+            (timeout_label, false)
         }
-    }
+    };
+    Attempted { outcome, settled }
 }
 
 /// Runs `send` until it ends or `admission`'s deadline passes, a deadline the

@@ -4,10 +4,11 @@
 # ADR 0037: Push notifications get a durable outbox, claimed per webhook, where the store is shared
 
 **Date:** 2026-11-04
-**Status:** Proposed. Nothing here is built or run. It records the third
-option of audit D-05 (a durable outbox), which the maintainer's accepted
-position for D-05 (2026-11-03) said to write down rather than build: the
-delivery id and the dead-webhook policy first, then this.
+**Status:** Accepted and built in 0.16.0, amended 2026-11-05 (the
+amendment below is what was built; where it departs from the proposal, it
+says why). Proposed 2026-11-04 as the third option of audit D-05, which the
+maintainer's position for D-05 (2026-11-03) said to write down rather than
+build; the maintainer's instruction of 2026-11-04 put it in 0.16.0 (H14).
 **Author:** Tom F.
 
 ---
@@ -138,3 +139,73 @@ Mutation tests for the claim and the ordering rule, and a PostgreSQL suite in
   possible.
 * A schema addition that older replicas ignore, and an opt-in switch, so it
   can be tried on a fleet before it is the default.
+
+## Amendment, 2026-11-05: what is built
+
+`push::outbox` holds the trait and three stores, and
+`RequestHandlerBuilder::with_push_outbox` turns it on. Without it nothing
+changes: the lanes deliver from memory as before.
+
+1. **`PushOutbox`**, with `InMemoryPushOutbox`, `SqlitePushOutbox` and
+   `PostgresPushOutbox` (table `a2a_push_outbox`, created under the schema
+   lock, additive). The in-memory one keeps nothing across a restart; it is
+   there so a deployment and its tests run one code path whichever store
+   they use, and it is what the proposal called "the lanes as they are" for
+   a process-local store, with retries that outlast one delivery.
+2. **Written after the event is stored, not in its transaction** (departs
+   from decision 1). The event log and the outbox are in different stores,
+   which the handler composes but cannot enlist in one transaction without
+   a cross-store API every `TaskStore` would have to implement. The record
+   is written by the task's lane, in order, as soon as the event is stored:
+   a crash between the two writes loses that event's deliveries, a window
+   of one write, where before it was every queued delivery and every retry.
+3. **The event body is in the row** (departs from decision 1). Reading it
+   back from the log by position would tie the outbox's life to the log's
+   retention and to an API of every task store. The body is sealed with the
+   store's `PushConfigCipher` when one is set (`with_cipher`), as configs
+   are, bound to the row's tenant, task and delivery id; without one it is
+   stored as the event log stores it.
+4. **One row per event and config** (the open question: fan-out at write),
+   carrying the tenant and caller the delivery runs as, the task, the
+   config's id (not the config: credentials stay in the config store, and a
+   config deleted or removed by a `410` ends its rows when they are next
+   claimed), and a delivery id, sent as `A2A-Delivery-Id` on every attempt,
+   from every replica.
+5. **Claimed per webhook, in order.** A worker per handler claims rows whose
+   due time has come and which have no earlier unfinished row of the same
+   tenant, caller, task and config, with a lease (`FOR UPDATE SKIP LOCKED`
+   on PostgreSQL; one `UPDATE ... RETURNING` on SQLite; a lock in memory). A
+   lease is three times `push_delivery_timeout` plus 30 s (the open
+   question): a delivery's wait for the gate, its webhook's time, a wait for
+   an address and its time again fit inside it, so a lease that lapses
+   belonged to a replica that is gone. At shutdown the worker releases what
+   it holds at once. A row whose body cannot be read (sealed under another
+   row's context or a key the store does not hold) is skipped by the claim,
+   left in place and logged, rather than failing every claim; its webhook's
+   later rows wait behind it until an operator acts.
+6. **Retries.** A delivery that fails, times out or is throttled is due
+   again after a backoff that doubles from 1 s to `push_outbox_backoff_max`
+   (1 h), with up to a fifth of jitter; a suspended webhook's row waits the
+   same way. A `2xx` ends the row, and so does a refusal no retry will
+   change (a `4xx` other than `408` and `429`), as it ends a delivery today.
+   A row older than `push_outbox_max_age` (24 h) when it is claimed is
+   dropped and counted `expired`.
+7. **Bounds.** At most `push_queue_capacity` rows wait per webhook of a task;
+   recording one more drops the oldest that does not end a turn and is not
+   claimed (`dropped`), as the lanes do.
+8. **Metrics**: every attempt reports its outcome as today, and the new
+   outcome `expired`; `PushOutbox::pending` counts what waits, for a gauge.
+
+### Not built, and why
+
+* **The dead-webhook state in the database** (decision 6). Suspension stays
+  per replica (D-05): a suspended webhook's rows wait out the backoff, so a
+  replica that has not seen the failures tries it again sooner, which is
+  what spec section 4.3.3 asks for anyway. Sharing it is a schema of its
+  own for a gain in politeness, not delivery.
+* **A dead-letter table.** An expired row is counted and logged; the event
+  itself is in the task's log, which the receiver reads with `GetTask` or
+  `SubscribeToTask` after a gap, as the spec tells it to.
+* **A ceiling on the table across webhooks.** The per-webhook cap times
+  `max_push_configs_per_task` times the tasks with rows bounds it; a
+  ceiling would have to choose whose events to drop.

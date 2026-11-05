@@ -25,6 +25,8 @@ fn default_values() {
     assert_eq!(limits.push_max_in_flight, 512);
     assert_eq!(limits.push_max_in_flight_per_host, 64);
     assert_eq!(limits.push_max_in_flight_per_partition, 256);
+    assert_eq!(limits.push_outbox_max_age, Duration::from_hours(24));
+    assert_eq!(limits.push_outbox_backoff_max, Duration::from_hours(1));
     assert_eq!(limits.executor_drain_timeout, Duration::from_secs(5));
     assert_eq!(limits.max_artifacts_per_task, 1000);
     assert_eq!(limits.max_context_locks, 10_000);
@@ -124,4 +126,13 @@ fn debug_format() {
 fn with_push_max_in_flight_per_partition_sets_value() {
     let limits = HandlerLimits::default().with_push_max_in_flight_per_partition(7);
     assert_eq!(limits.push_max_in_flight_per_partition, 7);
+}
+
+#[test]
+fn with_push_outbox_limits_set_values() {
+    let limits = HandlerLimits::default()
+        .with_push_outbox_max_age(Duration::from_secs(5))
+        .with_push_outbox_backoff_max(Duration::from_secs(7));
+    assert_eq!(limits.push_outbox_max_age, Duration::from_secs(5));
+    assert_eq!(limits.push_outbox_backoff_max, Duration::from_secs(7));
 }

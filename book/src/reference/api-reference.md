@@ -472,6 +472,10 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `EncryptedTaskStore` | Wraps any `TaskStore` and seals every part at rest, bound to where it sits (`store::encrypted`; `encryption` feature) |
 | `Aes256GcmCipher` | AES-256-GCM over a key ring for `EncryptedTaskStore`, and a `PushConfigCipher` (`encryption` feature) |
 | `InMemoryPushConfigStore` | In-memory push config store |
+| `PushOutbox` | Where webhook deliveries wait until delivered (`push::outbox`, ADR 0037); `RequestHandlerBuilder::with_push_outbox` |
+| `InMemoryPushOutbox` | In-memory `PushOutbox`: retries outlast a delivery, not a restart |
+| `SqlitePushOutbox` | SQLite `PushOutbox`, table `a2a_push_outbox` (`sqlite` feature); `with_cipher` seals event bodies |
+| `PostgresPushOutbox` | PostgreSQL `PushOutbox` shared by every replica, claims with `FOR UPDATE SKIP LOCKED` (`postgres` feature); `with_cipher` |
 | `HttpPushSender` | HTTP webhook delivery with SSRF protection; follows the proxy variables in every build, and `with_proxy_resolved_names()` lets a proxy resolve names this process cannot (ADR 0043) |
 | `SqliteTaskStore` | SQLite task store (`sqlite` feature) |
 | `SqlitePushConfigStore` | SQLite push config store (`sqlite` feature) |

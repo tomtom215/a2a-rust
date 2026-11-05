@@ -5,6 +5,8 @@
 //! The wire behaviour (a forward request, a `CONNECT` tunnel) is tested
 //! against a real forward proxy in `tests/telemetry_export/proxy.rs`.
 
+#![cfg(any(feature = "tls-rustls", feature = "otlp"))]
+
 use std::collections::HashMap;
 
 use super::*;

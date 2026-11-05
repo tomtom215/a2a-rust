@@ -225,6 +225,20 @@ pub struct HandlerLimits {
     /// a deployment with one partition runs at most this many at once, so
     /// raise it with `push_max_in_flight` there.
     pub push_max_in_flight_per_partition: usize,
+    /// How long the push outbox keeps trying a delivery (ADR 0037): a row
+    /// older than this when it is next due is dropped and counted as
+    /// [`push_outcome::EXPIRED`](crate::metrics::push_outcome::EXPIRED).
+    /// Default: 24 hours. Only with
+    /// [`with_push_outbox`](crate::RequestHandlerBuilder::with_push_outbox).
+    ///
+    /// A choice, not a measurement: long enough for a receiver that is down
+    /// overnight, short enough that a webhook gone for good does not keep
+    /// its rows for a week.
+    pub push_outbox_max_age: Duration,
+    /// The longest the push outbox waits between two attempts of one
+    /// delivery: the wait doubles from 1 second up to this, less up to a
+    /// fifth of jitter. Default: 1 hour.
+    pub push_outbox_backoff_max: Duration,
     /// How long the blocking send path waits, after the executor has
     /// finished, for the event queue to close. Also how long a send that
     /// continues a parked task waits for the task's previous turn to finish.
@@ -433,6 +447,8 @@ impl Default for HandlerLimits {
             push_max_in_flight: 512,
             push_max_in_flight_per_host: 64,
             push_max_in_flight_per_partition: 256,
+            push_outbox_max_age: Duration::from_hours(24),
+            push_outbox_backoff_max: Duration::from_hours(1),
             executor_drain_timeout: Duration::from_secs(5),
             max_artifacts_per_task: 1000,
             max_context_locks: 10_000,

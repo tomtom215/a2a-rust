@@ -393,8 +393,9 @@ impl tower_service::Service<http::Uri> for ProxyConnector {
     }
 }
 
-// The connector tests need rustls; the rules tests run in every build.
-#[cfg(all(test, any(feature = "tls-rustls", feature = "otlp")))]
+// The connector tests need rustls (`tests.rs` says so); the rules tests run
+// in every build.
+#[cfg(test)]
 mod tests;
 
 #[cfg(test)]
