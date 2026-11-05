@@ -152,3 +152,134 @@ async fn the_call_is_recorded_with_the_tenant_it_was_resolved_to() {
         .await;
     assert_eq!(seen.lines(), ["rpc acme", "rpc -"]);
 }
+
+/// An idempotency index at its cap answers "unavailable": counted as the
+/// idempotency store's refusal.
+#[tokio::test]
+async fn an_unavailable_idempotency_store_is_counted_as_its_refusal() {
+    use crate::store::{InMemoryTaskStore, TaskStoreConfig};
+    let seen = Seen::default();
+    let h = RequestHandlerBuilder::new(Forever)
+        .without_agent_card()
+        .with_task_store(InMemoryTaskStore::with_config(
+            TaskStoreConfig::default().with_max_idempotency_keys(Some(0)),
+        ))
+        .with_metrics(seen.clone())
+        .build()
+        .unwrap();
+    let mut message = Message::new(
+        MessageId::new(uuid::Uuid::new_v4().to_string()),
+        MessageRole::User,
+        vec![Part::text("work")],
+    );
+    message.metadata = Some(serde_json::json!({
+        a2a_protocol_types::idempotency::IDEMPOTENCY_METADATA_KEY: uuid::Uuid::new_v4().to_string()
+    }));
+    let refused = h
+        .on_send_message(MessageSendParams::new(message), false, None)
+        .await;
+    assert!(
+        matches!(refused, Err(ServerError::Overloaded(_))),
+        "{refused:?}"
+    );
+    assert_eq!(seen.lines(), ["refusal idempotency_store"]);
+}
+
+#[tokio::test]
+async fn a_server_at_its_push_config_cap_is_refused_with_its_cause() {
+    use a2a_protocol_types::push::TaskPushNotificationConfig;
+    use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+    struct Accepts;
+    impl crate::push::PushSender for Accepts {
+        fn send<'a>(
+            &'a self,
+            _url: &'a str,
+            _event: &'a a2a_protocol_types::events::StreamResponse,
+            _config: &'a TaskPushNotificationConfig,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Ok(()) })
+        }
+    }
+    let seen = Seen::default();
+    let h = RequestHandlerBuilder::new(Forever)
+        .without_agent_card()
+        .with_push_sender(Accepts)
+        .with_handler_limits(
+            crate::handler::HandlerLimits::default().with_max_total_push_configs(1),
+        )
+        .with_metrics(seen.clone())
+        .build()
+        .unwrap();
+    for id in ["t-0", "t-1"] {
+        let task = Task::new(
+            TaskId::new(id),
+            ContextId::new("c"),
+            TaskStatus::new(TaskState::Submitted),
+        );
+        h.task_store.save(&task).await.unwrap();
+    }
+    let config = |task: &str| {
+        TaskPushNotificationConfig::new(task.to_owned(), "https://example.com/hook".to_owned())
+            .with_id(format!("cfg-{task}"))
+    };
+    h.on_set_push_config(config("t-0"), None)
+        .await
+        .expect("under the cap");
+    assert_eq!(seen.lines(), Vec::<String>::new());
+    let refused = h.on_set_push_config(config("t-1"), None).await;
+    assert!(
+        matches!(refused, Err(ServerError::Overloaded(_))),
+        "{refused:?}"
+    );
+    assert_eq!(seen.lines(), ["refusal push_config_cap"]);
+}
+
+/// A halt store that cannot be read refuses the send, and the refusal is
+/// counted with its cause.
+#[tokio::test]
+async fn an_unreadable_halt_store_is_counted_as_its_refusal() {
+    use std::future::Future;
+    use std::pin::Pin;
+
+    use a2a_protocol_types::error::{A2aError, A2aResult};
+
+    use crate::store::{HaltStore, StoredHalt};
+
+    struct Down;
+    impl HaltStore for Down {
+        fn load(&self) -> Pin<Box<dyn Future<Output = A2aResult<Vec<StoredHalt>>> + Send + '_>> {
+            Box::pin(async { Err(A2aError::internal("store down")) })
+        }
+        fn put<'a>(
+            &'a self,
+            _halt: &'a StoredHalt,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async { Err(A2aError::internal("store down")) })
+        }
+        fn remove<'a>(
+            &'a self,
+            _scope: &'a HaltScope,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+            Box::pin(async { Err(A2aError::internal("store down")) })
+        }
+    }
+    let seen = Seen::default();
+    let h = RequestHandlerBuilder::new(Forever)
+        .without_agent_card()
+        .with_halt_store(Down)
+        .with_metrics(seen.clone())
+        .build()
+        .unwrap();
+    let refused = admitted(&h, "").await;
+    assert!(
+        matches!(refused, Err(ServerError::Overloaded(_))),
+        "{refused:?}"
+    );
+    assert_eq!(seen.lines(), ["refusal halt_store"]);
+}

@@ -229,3 +229,18 @@ fn the_wrappers_forward_the_control_hooks() {
     assert_eq!(first.0.load(std::sync::atomic::Ordering::SeqCst), 1111);
     assert_eq!(second.0.load(std::sync::atomic::Ordering::SeqCst), 1111);
 }
+
+/// The executor's run is labelled with the tenant it ran for.
+#[tokio::test]
+async fn the_executor_metric_takes_the_tenant_it_ran_for() {
+    let (m, reader, _p) = metrics();
+    let m = m.with_tenant_dimension(["acme"]);
+    TenantContext::scope("acme", async {
+        m.on_executor_run("completed", Duration::from_millis(1));
+    })
+    .await;
+    assert_eq!(
+        points(&reader, "a2a.server.executor.duration"),
+        [kv("a2a.tenant=acme,outcome=completed", 1.0)]
+    );
+}
