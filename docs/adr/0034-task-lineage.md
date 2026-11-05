@@ -220,4 +220,8 @@ The checks the section "What would settle it" asked for, as tests:
   halts the root on the child's server and the parent's `Delegation` sees
   the child canceled.
 * The key encoding: `store::halt::tests::scope_keys_round_trip_and_do_not_collide`.
+* From other languages: the a2a-python and a2a-go interop clients carry a
+  lineage to the echo agent and read it back (ADR 0049). The Python run found
+  that a protobuf-`Struct` SDK writes the depth as `2.0`; `depth` now reads any
+  whole JSON number, and the vectors include that case.
 * The swarm example with a killed parent is not run.

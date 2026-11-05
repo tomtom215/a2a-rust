@@ -75,9 +75,19 @@ maintainer's say-so; C is out of scope.
      any language with a PostgreSQL driver can honour root halts directly.
 5. **Interop is tested where the harnesses can express it.** The Python
    (a2a-sdk) and Go (a2a-go) clients send a message carrying lineage to this
-   repository's echo agent and read it back from the task, and send a
-   malformed lineage and get `InvalidParams`: the contract is implemented by
-   hand in another language and this server honours it.
+   repository's echo agent and read it back from the task, and send a lineage
+   past the depth cap and see it refused: the contract is implemented by hand
+   in another language and this server honours it. On JSON-RPC the refusal
+   reads as `InvalidParams` in both SDKs. On HTTP+JSON it is `400
+   INVALID_ARGUMENT` without an `a2a-protocol.org` `ErrorInfo` (the server adds
+   one only for A2A's own codes, for every invalid-params error), which a2a-go
+   reads as an internal error and a2a-python as a bare HTTP 400; that is a
+   server-wide gap, recorded for its own fix, not a lineage rule.
+
+   The first Python run found that a2a-python keeps metadata in a protobuf
+   `Struct` and so writes the depth `2` as `2.0`. The contract therefore says a
+   receiver MUST accept a whole number written as a float, and the vectors
+   include one.
 
 ## What is not built
 
