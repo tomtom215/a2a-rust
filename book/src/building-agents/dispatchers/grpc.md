@@ -95,7 +95,11 @@ let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default())
 # }
 ```
 
-All three are opt-in. `with_max_connections` is the ceiling the other two do
+HTTP/2 keepalive is **on by default since 0.16.0**: a PING after 60 s of
+silence, the connection closed if it is not answered within 20 s
+(`DEFAULT_GRPC_KEEPALIVE_INTERVAL`, `DEFAULT_GRPC_KEEPALIVE_TIMEOUT`;
+`without_http2_keepalive()` turns it off; [ADR 0042](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0042-listener-liveness-defaults.md)).
+The other two are opt-in. `with_max_connections` is the ceiling the other two do
 not provide — keepalive closes a peer that stops answering, and nothing bounded
 how many peers could be answering at once. As on the WebSocket dispatcher, the
 permit is taken before `accept()`, so load past the ceiling waits in the

@@ -14,6 +14,14 @@ use super::native::A2aServiceImpl;
 use super::{A2aServiceServer, GrpcConfig};
 use crate::handler::RequestHandler;
 
+/// How often [`GrpcDispatcher`] sends an HTTP/2 PING on a connection that has
+/// carried nothing, by default: 60 s (ADR 0042).
+pub const DEFAULT_GRPC_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(60);
+
+/// How long [`GrpcDispatcher`] waits for a PING to be answered before it
+/// closes the connection, by default: 20 s (ADR 0042).
+pub const DEFAULT_GRPC_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(20);
+
 /// gRPC dispatcher that routes A2A requests to a [`RequestHandler`].
 ///
 /// Serves the canonical `lf.a2a.v1.A2AService` (protobuf-native, wire
@@ -44,7 +52,10 @@ impl GrpcDispatcher {
         Self {
             handler,
             config,
-            keepalive: None,
+            keepalive: Some((
+                DEFAULT_GRPC_KEEPALIVE_INTERVAL,
+                DEFAULT_GRPC_KEEPALIVE_TIMEOUT,
+            )),
             max_connection_age: None,
             max_connections: None,
             completion_grace: crate::serve::DEFAULT_COMPLETION_GRACE,
@@ -125,7 +136,11 @@ impl GrpcDispatcher {
     }
 
     /// Sends an HTTP/2 PING every `interval` on an idle connection and closes
-    /// it if no answer arrives within `timeout`. Default: **off**.
+    /// it if no answer arrives within `timeout`. Default: **on**, every
+    /// [`DEFAULT_GRPC_KEEPALIVE_INTERVAL`] (60 s), closing after
+    /// [`DEFAULT_GRPC_KEEPALIVE_TIMEOUT`] (20 s) unanswered; it was off until
+    /// 0.16.0 (audit D-20, ADR 0042).
+    /// [`without_http2_keepalive`](Self::without_http2_keepalive) turns it off.
     ///
     /// [`GrpcConfig`] bounds message size and per-connection concurrency, and
     /// nothing bounded a connection that is simply *there*. MEASURED
@@ -143,14 +158,21 @@ impl GrpcDispatcher {
     /// RPC that is waiting for its next event is quiet and healthy, and this
     /// leaves it alone.
     ///
-    /// Off by default, matching this workspace's other connection knobs: a
-    /// deployment may have clients that are configured to object to PINGs, and
-    /// choosing an interval for someone is choosing their traffic profile.
-    /// `(Duration::from_secs(30), Duration::from_secs(10))` is a conventional
-    /// starting point.
+    /// On by default since 0.16.0, as the HTTP listener's idle bound is: a
+    /// client's HTTP/2 stack answers a server's PING without being asked to,
+    /// and the "too many pings" policies gRPC implementations enforce apply to
+    /// PINGs a client sends, not to the server's.
     #[must_use]
     pub const fn with_http2_keepalive(mut self, interval: Duration, timeout: Duration) -> Self {
         self.keepalive = Some((interval, timeout));
+        self
+    }
+
+    /// Turns HTTP/2 keep-alive off: a peer that stops answering keeps its
+    /// connection until the TCP stack notices, which takes hours by default.
+    #[must_use]
+    pub const fn without_http2_keepalive(mut self) -> Self {
+        self.keepalive = None;
         self
     }
 
@@ -394,107 +416,4 @@ impl std::fmt::Debug for GrpcDispatcher {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Whether the listener serves TLS, which the agent card's span records
-    /// as `url.scheme`, is whether it was given a TLS configuration.
-    #[cfg(feature = "grpc-tls")]
-    #[test]
-    fn it_serves_tls_exactly_when_given_a_tls_configuration() {
-        use crate::RequestHandlerBuilder;
-        use crate::agent_executor;
-        struct DummyExec;
-        agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
-        let handler = Arc::new(
-            RequestHandlerBuilder::new(DummyExec)
-                .without_agent_card()
-                .build()
-                .unwrap(),
-        );
-        let plain = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default());
-        assert!(!plain.serves_tls());
-        let tls = plain.with_tls(tonic::transport::ServerTlsConfig::new());
-        assert!(tls.serves_tls());
-    }
-
-    // ── Connection-level bounds ──────────────────────────────────────────
-    //
-    // `GrpcConfig` bounds message size and per-connection concurrency, and
-    // until 2026-08-19 nothing bounded a connection that simply exists.
-    // MEASURED then: 400 TCP connections opened against this dispatcher and
-    // left silent were all accepted, none refused, and the oldest was still
-    // alive twelve seconds later. Same shape as the WebSocket dispatcher's
-    // missing post-handshake bounds, one binding over.
-
-    /// The defaults are off, and both knobs record what they were asked for.
-    ///
-    /// Asserted on the fields rather than behaviourally. tonic owns the actual
-    /// PING timing, so a behavioural test here would be testing tonic; what
-    /// this dispatcher is responsible for is recording the operator's choice
-    /// and *not* inventing one. See the note at the `build_router` call for
-    /// what this does not cover. A default that nothing asserts is a
-    /// default that changes by accident — and defaulting a keepalive on would
-    /// start sending PINGs to every existing deployment's clients.
-    #[test]
-    fn connection_knobs_are_off_by_default_and_carry_what_they_are_given() {
-        use crate::RequestHandlerBuilder;
-        use crate::agent_executor;
-        use std::sync::Arc;
-        struct DummyExec;
-        agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
-        let handler = Arc::new(
-            RequestHandlerBuilder::new(DummyExec)
-                .without_agent_card()
-                .build()
-                .unwrap(),
-        );
-
-        let default = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default());
-        assert!(
-            default.keepalive.is_none(),
-            "HTTP/2 keepalive must be opt-in: enabling it by default would start \
-             pinging the clients of every deployment that upgrades"
-        );
-        assert!(
-            default.max_connection_age.is_none(),
-            "and so must connection ageing, which forces reconnects"
-        );
-
-        let tuned = GrpcDispatcher::new(handler, GrpcConfig::default())
-            .with_http2_keepalive(Duration::from_secs(30), Duration::from_secs(10))
-            .with_max_connection_age(Duration::from_secs(600));
-        assert_eq!(
-            tuned.keepalive,
-            Some((Duration::from_secs(30), Duration::from_secs(10)))
-        );
-        assert_eq!(tuned.max_connection_age, Some(Duration::from_secs(600)));
-
-        // Build the router with them set. This catches a tonic rename or a
-        // signature change, at compile time — it does **not** catch the
-        // passthrough being dropped, because tonic exposes no way to read a
-        // `Router`'s keepalive back. Verified by mutation: deleting the two
-        // `http2_keepalive_*` calls leaves this test green. Covering that would
-        // need a client that deliberately stops answering PINGs, which is a
-        // raw HTTP/2 exercise rather than a dispatcher one; recorded here
-        // rather than implied by a passing test.
-        let _router = tuned.build_router();
-    }
-
-    #[test]
-    fn grpc_dispatcher_debug_does_not_panic() {
-        use crate::RequestHandlerBuilder;
-        use crate::agent_executor;
-        use std::sync::Arc;
-        struct DummyExec;
-        agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
-        let handler = Arc::new(
-            RequestHandlerBuilder::new(DummyExec)
-                .without_agent_card()
-                .build()
-                .unwrap(),
-        );
-        let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default());
-        let _ = format!("{dispatcher:?}");
-    }
-}
+mod tests;

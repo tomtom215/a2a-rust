@@ -53,7 +53,7 @@ dispatcher.serve("0.0.0.0:443").await?;
 | **Incoming message size** | 4 MiB | Oversized WebSocket frames are rejected at the protocol level |
 | **Handshake timeout** | 10 s (configurable via `with_handshake_timeout`) | A peer that never completes the upgrade is disconnected instead of pinning a connection |
 | **Concurrent connections** | unbounded (`with_max_connections`) | The permit is taken before `accept()`, so load past the ceiling waits in the kernel's listen backlog rather than as spawned tasks |
-| **Idle connection** | off (`with_idle_timeout`) | Closes a connection carrying no traffic in either direction for the given period |
+| **Idle connection** | 75 s, pinging at half (`with_idle_timeout`, `without_idle_timeout`) | Closes a connection that answers nothing for the given period; off until 0.16.0 |
 
 Transient `accept()` errors (per-connection aborts, fd-table exhaustion)
 never terminate the accept loop — it retries with the same backoff policy
@@ -89,13 +89,14 @@ let dispatcher = Arc::new(
 # }
 ```
 
-`with_idle_timeout` is **off by default**, unlike the equivalent on
-`ServeConfig` for the HTTP bindings, and the difference is
-deliberate. On HTTP, silence means nothing is happening. On a WebSocket it may
-mean a subscription is waiting for its next event, which is a legitimate thing
-to do for hours — a default that closed those would be a knob nobody enables.
+The idle bound is **on by default since 0.16.0**, at `DEFAULT_WS_IDLE_TIMEOUT`
+(75 s), as `ServeConfig`'s is for the HTTP bindings; it was off until then
+([ADR 0042](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0042-listener-liveness-defaults.md)),
+and `without_idle_timeout()` turns it off. On a WebSocket, silence may mean a
+subscription is waiting for its next event, which is a legitimate thing to do
+for hours, so a plain idle timeout would close healthy connections.
 
-What makes it safe to enable: at the halfway point of the budget the server
+What makes it safe on by default: at the halfway point of the budget the server
 sends a WebSocket Ping. Every conformant client library answers it
 automatically, and that Pong is traffic. So the timeout closes peers that are
 **unresponsive**, not peers that are merely quiet. Outbound frames count too,

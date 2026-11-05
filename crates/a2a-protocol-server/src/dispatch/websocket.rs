@@ -110,9 +110,9 @@ const MAX_REQUESTS_PER_CONNECTION: u32 = 64;
 /// HTTP bindings, and like it counts traffic in *both* directions so a
 /// subscription pushing events out is not mistaken for a dead connection.
 ///
-/// Unlike the HTTP default it is **off** unless asked for — see
-/// [`WebSocketDispatcher::with_idle_timeout`] for why a WebSocket cannot
-/// safely assume silence means death.
+/// The default since 0.16.0 (audit D-20, ADR 0042); until then it was off
+/// unless asked for. It closes only a peer that does not answer the Ping sent
+/// at half the budget — see [`WebSocketDispatcher::with_idle_timeout`].
 pub const DEFAULT_WS_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
 
 /// WebSocket-based A2A dispatcher.
@@ -196,7 +196,7 @@ impl WebSocketDispatcher {
             handshake_timeout: DEFAULT_HANDSHAKE_TIMEOUT,
             require_version_header: true,
             max_connections: None,
-            idle_timeout: None,
+            idle_timeout: Some(DEFAULT_WS_IDLE_TIMEOUT),
             write_timeout: DEFAULT_WS_WRITE_TIMEOUT,
             completion_grace: crate::serve::DEFAULT_COMPLETION_GRACE,
             task_grace: crate::serve::DEFAULT_TASK_GRACE,
@@ -368,13 +368,16 @@ impl WebSocketDispatcher {
     ///
     /// # Why this is off by default when the HTTP one is on
     ///
+    /// Default: [`DEFAULT_WS_IDLE_TIMEOUT`] (75 s) since 0.16.0; it was off
+    /// until then (audit D-20, ADR 0042).
+    /// [`without_idle_timeout`](Self::without_idle_timeout) turns it off.
+    ///
     /// On HTTP, silence means nothing is happening. On a WebSocket it may mean
     /// a subscription is waiting for its next event, which is a legitimate
-    /// thing to do for hours. A timeout defaulted on would close healthy
-    /// subscriptions, and a knob that breaks correct programs is a knob nobody
-    /// turns on.
+    /// thing to do for hours, so a plain idle timeout would close healthy
+    /// subscriptions.
     ///
-    /// What makes it *safe* to turn on: at the halfway point of the budget the
+    /// What makes it *safe* on by default: at the halfway point of the budget the
     /// server sends a WebSocket Ping. Every conformant client library — this
     /// SDK's included, via tungstenite — answers automatically, and that Pong
     /// is traffic. So the timeout closes peers that are **unresponsive**, not
@@ -384,11 +387,18 @@ impl WebSocketDispatcher {
     /// Outbound frames count too, so a stream pushing events to a silent
     /// consumer keeps its own connection alive.
     ///
-    /// [`DEFAULT_WS_IDLE_TIMEOUT`] (75s, matching the HTTP default) is a
-    /// reasonable starting point.
     #[must_use]
     pub const fn with_idle_timeout(mut self, timeout: Duration) -> Self {
         self.idle_timeout = Some(timeout);
+        self
+    }
+
+    /// Turns the idle bound off: a peer that goes away without a close frame
+    /// keeps its connection, and its slot, until the TCP stack notices, which
+    /// takes hours by default.
+    #[must_use]
+    pub const fn without_idle_timeout(mut self) -> Self {
+        self.idle_timeout = None;
         self
     }
 
@@ -1704,25 +1714,33 @@ mod tests {
     /// does not check. The behavioural half stays, because the field being
     /// `None` is only interesting if `None` means what it should.
     #[tokio::test(flavor = "multi_thread")]
-    async fn the_defaults_are_no_idle_timeout_and_no_connection_ceiling() {
+    async fn the_defaults_are_the_idle_bound_and_no_connection_ceiling() {
         let handler = Arc::new(
             RequestHandlerBuilder::new(EchoExec)
                 .without_agent_card()
                 .build()
                 .unwrap(),
         );
-        let default = WebSocketDispatcher::new(handler);
-        assert!(
-            default.idle_timeout.is_none(),
-            "the idle timeout is opt-in: a WebSocket subscription may be legitimately \
-             silent for hours, and a default that closes it is a knob nobody enables"
+        let default = WebSocketDispatcher::new(Arc::clone(&handler));
+        assert_eq!(
+            default.idle_timeout,
+            Some(DEFAULT_WS_IDLE_TIMEOUT),
+            "on by default since 0.16.0 (ADR 0042): it pings at half and closes \
+             only a peer that does not answer"
+        );
+        assert_eq!(DEFAULT_WS_IDLE_TIMEOUT, Duration::from_secs(75));
+        assert_eq!(
+            WebSocketDispatcher::new(handler)
+                .without_idle_timeout()
+                .idle_timeout,
+            None
         );
         assert!(
             default.max_connections.is_none(),
             "unbounded by default, matching ServeConfig::max_connections"
         );
 
-        let addr = spawn_ws_server().await;
+        let addr = spawn_ws_server_with(WebSocketDispatcher::without_idle_timeout).await;
         let mut ws = ws_connect(addr).await;
         let died = tokio::time::timeout(Duration::from_secs(3), ws.next()).await;
         assert!(
