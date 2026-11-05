@@ -360,6 +360,12 @@ pub struct HandlerLimits {
     /// seconds; nothing else bounds how many there are unless the server's
     /// `max_connections` is set.
     pub max_subscribers: usize,
+    /// How long the reaper leaves a turn a shutdown handed back to its caller
+    /// (ADR 0054) before it ends the task `failed`/`transient` (default 600 s,
+    /// [`HAND_OFF_WINDOW`](crate::executor::HAND_OFF_WINDOW)). Long enough for
+    /// a caller to notice the hand-off and send the turn again; past it, a task
+    /// nobody continued is the reaper's.
+    pub hand_off_window: Duration,
     /// How many logged events one read of the task's event log returns at
     /// most. Default: 1,000.
     ///

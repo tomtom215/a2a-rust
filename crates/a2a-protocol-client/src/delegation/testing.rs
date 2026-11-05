@@ -36,6 +36,11 @@ pub(super) fn parked() -> Delegation {
         resumed_at: None,
         opened_at: None,
         events_since_open: 0,
+        message: None,
+        context_id: None,
+        handed_back: false,
+        continued: 0,
+        hand_off_policy: super::HandOffPolicy::default(),
         journal: None,
     }
 }

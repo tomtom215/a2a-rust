@@ -181,9 +181,9 @@ pub const HAND_OFF_METADATA_KEY: &str = "a2a-rust.com/hand-off";
 
 /// How long a handed-off task waits for its caller (ADR 0054).
 ///
-/// Counted from the hand-off's status timestamp; after it the reaper ends a
-/// task nobody continued `Failed`/`transient`. The SQL claim stores'
-/// `abandoned` statements spell it as `600 seconds`.
+/// The default of `HandlerLimits::hand_off_window`, which the reaper uses:
+/// counted from the hand-off's status timestamp, after it the reaper ends a
+/// task nobody continued `Failed`/`transient`.
 pub const HAND_OFF_WINDOW: std::time::Duration = std::time::Duration::from_secs(600);
 
 /// Writes the terminal `Canceled` status for `ctx`'s task: what the default

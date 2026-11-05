@@ -44,6 +44,7 @@ async fn the_reapers_tenant_query_reads_the_state_index_not_the_table() {
             sqlx::query_as(sqlx::AssertSqlSafe(explain.as_str()))
                 .bind(15_000_i64)
                 .bind(32_i64)
+                .bind(600_000_i64)
                 .fetch_one(&pool)
         })
         .await
@@ -54,6 +55,7 @@ async fn the_reapers_tenant_query_reads_the_state_index_not_the_table() {
             sqlx::query_as(super::postgres::ABANDONED_TENANT_SQL)
                 .bind(15_000_i64)
                 .bind(32_i64)
+                .bind(600_000_i64)
                 .fetch_all(&pool)
         })
         .await

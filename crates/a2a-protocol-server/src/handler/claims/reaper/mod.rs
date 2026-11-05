@@ -100,7 +100,11 @@ impl Reaper {
     /// One look: ends what it finds. `None` once the handler is gone.
     pub async fn look(&self) -> Option<usize> {
         let claims = self.claims.upgrade()?;
-        let found = match claims.store.abandoned(claims.ttl, BATCH).await {
+        let found = match claims
+            .store
+            .abandoned_except_handed_off(claims.ttl, self.limits.hand_off_window, BATCH)
+            .await
+        {
             Ok(found) => found,
             Err(_e) => {
                 trace_warn!(error = %_e, "abandoned tasks not looked for; retrying next interval");

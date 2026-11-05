@@ -91,6 +91,32 @@ caller's.
   32, does not crowd genuinely abandoned tasks out of every look). After the
   window, a task nobody continued is ended `Failed`/`transient`, as today.
 
+## The caller's side: `Delegation` continues a handed-back child (added 2026-11-05)
+
+The lead's decision of 2026-11-05: this crate's `Delegation` acts on the mark
+by default. When an event of the child carries `a2a-rust.com/hand-off` on a
+`working` status, the delegation drops the stream and, after a wait, sends
+the message it started the child with again: a new message id, the same task
+and context ids, a new idempotency key (the first would be answered with the
+task, not run), and the supervisor's own client, so its own credentials. It
+follows the new stream as before.
+
+* Bounded by `HandOffPolicy` (`DelegationOptions::with_hand_off`): at most 3
+  continuations per child by default, after 1 s, 2 s and 4 s (each wait
+  doubles, up to 8 s). Past the bound, or when a send fails each time, the
+  mark is treated as a lost stream: resumed under the `ResumePolicy`, then
+  the child is cancelled with `Outcome::Lost`. A task nobody runs is ended
+  `failed`/`transient` by the reaper after the window.
+* `HandOffPolicy::never()` opts out.
+* Safe as a default: the mark is only ever written by a server whose executor
+  opted in, on a store with claims; against any other server nothing changes.
+
+The window is `HandlerLimits::hand_off_window` (default 600 s,
+`HAND_OFF_WINDOW`), in the configuration reference. The reaper passes it to
+`TurnClaimStore::abandoned_except_handed_off` (a new method whose default
+ignores the window and asks `abandoned`, so claim stores of your own keep
+working); the SQL stores bind it.
+
 ## What this covers, and what it does not
 
 Covers: turns of an executor that opts in, on a handler with turn claims, on
@@ -104,11 +130,12 @@ Does not cover, and says so:
 
 * **A crash** (SIGKILL, out of memory, a lost node). No mark is written; the
   reaper ends the task `Failed`/`transient` as today.
-* **Callers that do not act on the mark.** A client that is not told (any A2A
-  client other than one that reads the status message) sees `working`, then
-  `failed`/`transient` after the window, as before plus the window. This
-  crate's `Delegation` does not yet send the message again on its own: a
-  supervisor that wants it reads the mark and continues the task itself.
+* **Callers that do not act on the mark.** A client that is not this crate's
+  `Delegation` and does not read the status message sees `working`, then
+  `failed`/`transient` after the window, as before plus the window.
+* **A delegation that reattached after a restart.** The journal keeps no
+  message text, so a reattached handle has nothing to send again; it treats
+  the mark as a lost stream (resume, then cancel).
 * **Progress inside the turn.** The turn runs again from its input; an
   executor that wants to resume from a checkpoint keeps it itself.
 * **Open streams on the stopping replica.** They see the `working` hand-off

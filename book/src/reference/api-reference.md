@@ -230,6 +230,7 @@ are rustdoc's job.
 | `client` | The `A2aClient` itself |
 | `config` | Client configuration types |
 | `delegation` | `Delegation`: a task sent to another agent and cancelled with its parent — on the parent's cancel, a lost stream, or a dropped handle; `DelegationOptions::with_lineage` gives the child its job's lineage |
+| `delegation` | `Delegation`: a task sent to another agent and cancelled with its parent — on the parent's cancel, a lost stream, or a dropped handle; `HandOffPolicy` bounds how often it continues a child whose server handed its turn back (ADR 0054) |
 | `discovery` | Agent card discovery with HTTP caching |
 | `error` | Client error types |
 | `interceptor` | Request/response interceptor infrastructure |

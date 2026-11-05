@@ -56,6 +56,17 @@ async fn the_window_holds_a_handed_off_task_back(store: Arc<dyn TaskStore>) {
         .collect();
     found.sort();
     assert_eq!(found, [id("expired"), id("plain")]);
+    // A window of 30 s: the hand-off of 60 s ago has run out too.
+    let mut found: Vec<String> = claims
+        .abandoned_except_handed_off(Duration::from_secs(3), Duration::from_secs(30), 1_000)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(_, task)| task)
+        .filter(|task| task.starts_with(&tag))
+        .collect();
+    found.sort();
+    assert_eq!(found, [id("expired"), id("plain"), id("waiting")]);
 }
 
 #[cfg(feature = "sqlite")]

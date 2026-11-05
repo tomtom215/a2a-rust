@@ -189,8 +189,12 @@ fn shared_case() -> std::future::Ready<Option<Case>> {
     std::future::ready(None)
 }
 
-/// The SQL statements spell the window as 600 seconds.
+/// The window defaults to ten minutes, and the handler's limits carry it.
 #[test]
-fn the_hand_off_window_is_the_one_the_sql_spells() {
+fn the_hand_off_window_defaults_to_ten_minutes() {
     assert_eq!(crate::executor::HAND_OFF_WINDOW, Duration::from_secs(600));
+    assert_eq!(
+        crate::handler::HandlerLimits::default().hand_off_window,
+        crate::executor::HAND_OFF_WINDOW
+    );
 }

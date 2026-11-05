@@ -91,6 +91,14 @@ impl HandlerLimits {
         self
     }
 
+    /// Sets how long a handed-back turn waits for its caller; see
+    /// [`hand_off_window`](Self::hand_off_window).
+    #[must_use]
+    pub const fn with_hand_off_window(mut self, window: Duration) -> Self {
+        self.hand_off_window = window;
+        self
+    }
+
     /// Sets how many logged events one read of the event log returns; see
     /// [`subscribe_replay_limit`](Self::subscribe_replay_limit).
     #[must_use]

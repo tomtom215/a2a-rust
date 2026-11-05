@@ -177,7 +177,8 @@ pub trait TurnClaimStore: Send + Sync + 'static {
     /// A task a shutdown handed back to its caller (its status message's
     /// metadata carries `executor::HAND_OFF_METADATA_KEY`) is left out until
     /// its status is [`HAND_OFF_WINDOW`](crate::executor::HAND_OFF_WINDOW)
-    /// old: its caller continues it, and only one nobody continued is the
+    /// old (or the window [`abandoned_except_handed_off`](Self::abandoned_except_handed_off)
+    /// is given): its caller continues it, and only one nobody continued is the
     /// reaper's (ADR 0054). Without this a deploy that hands off more turns
     /// than a look ends would fill every look with tasks it must leave.
     ///
@@ -190,6 +191,26 @@ pub trait TurnClaimStore: Send + Sync + 'static {
     fn abandoned(&self, quiet: Duration, limit: usize) -> Fut<'_, Vec<(String, String)>> {
         let _ = (quiet, limit);
         Box::pin(async { Ok(Vec::new()) })
+    }
+
+    /// [`abandoned`](Self::abandoned), leaving out a task handed back to its
+    /// caller less than `hand_off_window` ago (ADR 0054). The reaper calls
+    /// this, with `HandlerLimits::hand_off_window`. The default ignores the
+    /// window and asks `abandoned`, so a claim store of your own keeps
+    /// working; the SQL stores bind it, and their `abandoned` uses
+    /// [`HAND_OFF_WINDOW`](crate::executor::HAND_OFF_WINDOW).
+    ///
+    /// # Errors
+    ///
+    /// The storage's.
+    fn abandoned_except_handed_off(
+        &self,
+        quiet: Duration,
+        hand_off_window: Duration,
+        limit: usize,
+    ) -> Fut<'_, Vec<(String, String)>> {
+        let _ = hand_off_window;
+        self.abandoned(quiet, limit)
     }
 }
 

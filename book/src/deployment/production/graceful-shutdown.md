@@ -71,9 +71,10 @@ released. The caller sends the turn's message again, with a new message id,
 to the same task id; whichever replica receives it runs the turn with the
 caller's own credentials and the stored task in `ctx.stored_task`. A task
 nobody continues is ended `failed`/`transient` by the reaper once
-`HAND_OFF_WINDOW` (ten minutes) has passed. A crash hands nothing back: the
-reaper ends the task as before. This SDK's `Delegation` does not yet continue
-a handed-back child by itself.
+`HandlerLimits::hand_off_window` (ten minutes by default) has passed. A crash
+hands nothing back: the reaper ends the task as before. This SDK's
+`Delegation` continues a handed-back child by itself, at most three times by
+default (`HandOffPolicy`, [delegation](../../client/delegation.md)).
 
 <figure class="diagram">
 <a href="../../images/diagrams/dep-shutdown-order.light.svg"><img class="diagram-light" src="../../images/diagrams/dep-shutdown-order.light.svg" alt="The shutdown sequence of Server::serve_with_shutdown: stop accepting, let tasks finish for up to 5 s, cancel the rest and wait up to 10 s, drain connections for up to 15 s, then handler.shutdown and the telemetry flush, all before Kubernetes sends SIGKILL."></a>

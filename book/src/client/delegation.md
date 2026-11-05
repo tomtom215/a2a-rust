@@ -235,6 +235,19 @@ survive its own death use `PostgresDelegationJournal` (the server crate's
 a file that outlives the process, or implement the trait over a store of your
 own. Both keep the table `a2a_delegations`, with the same columns.
 
+### When the child's server hands its turn back
+
+A worker whose executor opts in (`AgentExecutor::resumes_after_hand_off`, on
+a store with turn claims) does not fail a long turn when it is redeployed: it
+leaves the task `working`, marked `a2a-rust.com/hand-off`, and the turn runs
+again when its caller sends it again (ADR 0054). A `Delegation` does that by
+itself: it sends the message it started the child with again, with a new
+message id, to the same task, and follows the new stream, at most three times
+per child by default, after 1, 2 and 4 seconds. Set the bound with
+`DelegationOptions::with_hand_off(HandOffPolicy::new(..))`, or opt out with
+`HandOffPolicy::never()`. A handle that reattached after a restart has no
+message to send (the journal keeps none) and treats the mark as a lost stream.
+
 ### Shutting down on purpose: hand the children over
 
 A parent that is stopped for a redeploy fires its cancellation token, and a
