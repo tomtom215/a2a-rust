@@ -58,6 +58,44 @@ tests:
         eval_time: 25m
         exp_samples: []
 
+  # Audit C-09, gRPC. A gRPC call the peer abandons is recorded with
+  # rpc.status_code=CANCELLED and no error.type (semantic conventions,
+  # grpc.md); the other bindings keep error.type=cancelled. The cancelled
+  # rule sees both, whichever binding a job serves, and neither is an error.
+  - interval: 1m
+    input_series:
+      - series: 'rpc_server_call_duration_seconds_count{job="impatient-both",rpc_system_name="grpc",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage",rpc_status_code="OK"}'
+        values: '0+8x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="impatient-both",rpc_system_name="grpc",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage",rpc_status_code="CANCELLED"}'
+        values: '0+2x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="impatient-both",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage"}'
+        values: '0+8x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="impatient-both",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage",error_type="cancelled"}'
+        values: '0+3x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2AServerErrorRatioHigh
+        exp_alerts: []
+    promql_expr_test:
+      - expr: count(a2a:rpc_server_cancelled:rate5m > 0)
+        eval_time: 25m
+        exp_samples:
+          - labels: '{}'
+            value: 2
+      - expr: sum(a2a:rpc_server_cancelled:rate5m{rpc_system_name="grpc"})
+        eval_time: 25m
+        exp_samples:
+          - labels: '{}'
+            value: 0.03333333333333333
+      - expr: sum(a2a:rpc_server_cancelled:rate5m{rpc_system_name="jsonrpc"})
+        eval_time: 25m
+        exp_samples:
+          - labels: '{}'
+            value: 0.05
+      - expr: count(a2a:rpc_server_errors:rate5m)
+        eval_time: 25m
+        exp_samples: []
+
   # Audit C-09. Half of the calls failed, but at 0.03 a second: too little
   # traffic for a ratio to mean anything, so no page.
   - interval: 1m

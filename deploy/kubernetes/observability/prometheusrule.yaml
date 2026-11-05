@@ -178,7 +178,10 @@ spec:
     - record: a2a:rpc_server_caller_errors:rate5m
       expr: sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{rpc_status_code=~"-32700|-32600|-32601|-32602|-32001|-32002|-32003|-32004|-32005|-32007|-32008|-32009|4[0-9][0-9]|CANCELLED|INVALID_ARGUMENT|NOT_FOUND|ALREADY_EXISTS|PERMISSION_DENIED|RESOURCE_EXHAUSTED|FAILED_PRECONDITION|ABORTED|OUT_OF_RANGE|UNAUTHENTICATED"}[5m]))
     - record: a2a:rpc_server_cancelled:rate5m
-      expr: sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{error_type="cancelled"}[5m]))
+      expr: |
+        sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{error_type="cancelled"}[5m]))
+          or
+        sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{rpc_status_code="CANCELLED"}[5m]))
     - record: a2a:rpc_server_error_ratio:rate5m
       expr: |
         sum by (job) (a2a:rpc_server_errors:rate5m)
