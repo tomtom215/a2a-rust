@@ -31,7 +31,7 @@ use a2a_protocol_sdk::server::{
 use a2a_protocol_sdk::types::{
     AgentCapabilities, AgentCard, AgentInterface, AgentSkill, TaskState,
 };
-use opentelemetry::trace::SpanKind;
+use opentelemetry::trace::{SpanKind, Status};
 use opentelemetry_sdk::trace::SpanData;
 
 use crate::fixtures::{attr, message};
@@ -225,12 +225,26 @@ pub fn check_spans(spans: &[SpanData], gaps: &mut Vec<String>) {
     }
     match server_span(spans, "stream-cancel") {
         None => gaps.push("stream-cancel: no SERVER span".to_owned()),
+        // A call the peer abandons is not the server failing (audit C-09, ADR 0038 section 2):
+        // over gRPC its span has the status CANCELLED, no error.type, and is not marked Error.
         Some(span) => {
-            if attr(span, "error.type").as_deref() != Some("cancelled") {
+            if attr(span, "rpc.status_code").as_deref() != Some("CANCELLED") {
                 gaps.push(format!(
-                    "stream-cancel: a stream its client dropped has error.type {:?}, not \
-                     \"cancelled\"",
-                    attr(span, "error.type")
+                    "stream-cancel: a stream its client dropped has rpc.status_code {:?}, not \
+                     \"CANCELLED\"",
+                    attr(span, "rpc.status_code")
+                ));
+            }
+            if let Some(error) = attr(span, "error.type") {
+                gaps.push(format!(
+                    "stream-cancel: a stream its client dropped has error.type {error}; an \
+                     abandoned call is not a failure"
+                ));
+            }
+            if matches!(span.status, Status::Error { .. }) {
+                gaps.push(format!(
+                    "stream-cancel: a stream its client dropped is marked {:?}",
+                    span.status
                 ));
             }
         }
