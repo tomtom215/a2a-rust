@@ -116,6 +116,9 @@ pub fn boxed_future<'a, T>(
 #[macro_use]
 mod agent_executor_macro;
 
+mod artifacts;
+pub use artifacts::ArtifactChunk;
+
 // ── EventEmitter ─────────────────────────────────────────────────────────────
 
 /// Ergonomic helper for emitting status and artifact events from an executor.
@@ -125,17 +128,36 @@ mod agent_executor_macro;
 ///
 /// # Example
 ///
+/// The common agent answers in one call:
+/// [`complete_with_text`](Self::complete_with_text) emits the result
+/// artifact and then the terminal `Completed` status.
+///
 /// ```rust
 /// use a2a_protocol_server::executor_helpers::EventEmitter;
-/// use a2a_protocol_types::task::TaskState;
+/// # use a2a_protocol_server::{RequestContext, streaming::EventQueueWriter};
+/// # use a2a_protocol_types::error::A2aResult;
+/// # async fn run(ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
+///
+/// EventEmitter::new(ctx, queue).complete_with_text("hello").await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// Each step on its own, for an agent that reports progress or streams its
+/// result in chunks ([`ArtifactChunk`]):
+///
+/// ```rust
+/// use a2a_protocol_server::executor_helpers::{ArtifactChunk, EventEmitter};
 /// use a2a_protocol_types::message::Part;
+/// use a2a_protocol_types::task::TaskState;
 /// # use a2a_protocol_server::{RequestContext, streaming::EventQueueWriter};
 /// # use a2a_protocol_types::error::A2aResult;
 /// # async fn run(ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
 ///
 /// let emit = EventEmitter::new(ctx, queue);
 /// emit.status(TaskState::Working).await?;
-/// emit.artifact("result", vec![Part::text("hello")], None, Some(true)).await?;
+/// emit.artifact_chunk("result", vec![Part::text("hel")], ArtifactChunk::first()).await?;
+/// emit.artifact_chunk("result", vec![Part::text("lo")], ArtifactChunk::last()).await?;
 /// emit.status(TaskState::Completed).await?;
 /// # Ok(())
 /// # }
@@ -279,7 +301,14 @@ impl<'a> EventEmitter<'a> {
         Ok(request)
     }
 
-    /// Emits an artifact update event.
+    /// Emits an artifact update event with `append` and `lastChunk` exactly
+    /// as given (`None` leaves the field out).
+    ///
+    /// The wire-faithful form. [`artifact_chunk`](Self::artifact_chunk) names
+    /// the four combinations a chunked artifact uses ([`ArtifactChunk`]) and
+    /// [`text_artifact`](Self::text_artifact) sends a complete one; this one
+    /// remains for an explicit `append: Some(false)` or a missing
+    /// `lastChunk`.
     ///
     /// # Errors
     ///

@@ -186,13 +186,11 @@ struct MyAgent;
 // `agent_executor!` writes the `AgentExecutor` impl: no `Pin<Box<dyn Future>>`
 // by hand.
 agent_executor!(MyAgent, |ctx, queue| async {
-    let emit = EventEmitter::new(ctx, queue);
-    emit.status(TaskState::Working).await?;
     let who = ctx.message.text().unwrap_or("world");
-    emit.artifact("greeting", vec![Part::text(format!("Hello, {who}!"))], None, Some(true))
-        .await?;
-    emit.status(TaskState::Completed).await?;
-    Ok(())
+    // The answer as the task's artifact, then the terminal `Completed` status.
+    EventEmitter::new(ctx, queue)
+        .complete_with_text(format!("Hello, {who}!"))
+        .await
 });
 
 #[tokio::main]

@@ -5,7 +5,6 @@
 
 use a2a_example_harness::{Endpoints, interfaces};
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentSkill};
-use a2a_protocol_types::message::Part;
 use a2a_protocol_types::task::TaskState;
 
 use a2a_protocol_server::agent_executor;
@@ -38,14 +37,8 @@ agent_executor!(EchoExecutor, |ctx, queue| async {
         tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     }
 
-    let echo_text = format!("Echo: {input_text}");
-    emit.artifact(
-        "echo-artifact",
-        vec![Part::text(&echo_text)],
-        None,
-        Some(true),
-    )
-    .await?;
+    emit.text_artifact("echo-artifact", format!("Echo: {input_text}"))
+        .await?;
 
     emit.status(TaskState::Completed).await?;
     Ok(())

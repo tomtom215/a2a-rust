@@ -44,13 +44,8 @@ agent_executor!(CalcExecutor, |ctx, queue| async {
     // Evaluate (very basic: one `a op b` expression with + - * /)
     let result = evaluate(expr);
 
-    // Send the result as an artifact
-    emit.artifact("result", vec![Part::text(&result)], None, Some(true))
-        .await?;
-
-    // Done
-    emit.status(TaskState::Completed).await?;
-    Ok(())
+    // Send the result as an artifact, then the terminal `Completed` status
+    emit.complete_with_text(result).await
 });
 
 fn evaluate(expr: &str) -> String {
@@ -200,7 +195,7 @@ Almost every executor follows this pattern:
 
 For streaming clients, these arrive as individual SSE events. For synchronous clients, the handler collects them into a final `Task` response.
 
-`EventEmitter` exists for exactly this pattern: it caches `task_id` and `context_id` off the `RequestContext` so each of the three steps is one line rather than a struct literal of four to six fields. Build the `StreamResponse` values yourself only when you need a field `EventEmitter` does not expose — per-event `metadata`, say.
+`EventEmitter` exists for exactly this pattern: it caches `task_id` and `context_id` off the `RequestContext` so each of the three steps is one line rather than a struct literal of four to six fields, and `complete_with_text` (or `complete_with`, for parts other than text) is steps 2 and 3 together. The steps one at a time are `status`, `text_artifact` (one complete text artifact) and `artifact_chunk` (one chunk of an artifact streamed in several, placed by `ArtifactChunk::first()`, `append()`, `last()` or `whole()`). Build the `StreamResponse` values yourself only when you need a field `EventEmitter` does not expose — per-event `metadata`, say.
 
 ## Next Steps
 

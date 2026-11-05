@@ -213,7 +213,7 @@ pub use dispatch::{GrpcConfig, GrpcDispatcher};
 pub use dispatch::{WebSocketDispatcher, WebSocketUpgrades};
 pub use error::{A2A_RUST_ERROR_DOMAIN, HALTED_REASON, ServerError, ServerResult};
 pub use executor::AgentExecutor;
-pub use executor_helpers::{EventEmitter, boxed_future};
+pub use executor_helpers::{ArtifactChunk, EventEmitter, boxed_future};
 pub use handler::{
     HaltReport, HaltScope, HandlerLimits, InFlightReport, InboundTracePolicy, LOAD_HEADER,
     LoadReport, RequestHandler, SendMessageResult, ShutdownReport,

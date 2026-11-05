@@ -538,7 +538,8 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 
 | Name | Kind | Description |
 |------|------|-------------|
-| `EventEmitter` | struct | Ergonomic event emission helper (wraps an `EventQueueWriter`) |
+| `EventEmitter` | struct | Ergonomic event emission helper (wraps an `EventQueueWriter`): `status`, `text_artifact`, `artifact_chunk`, `complete_with` and `complete_with_text` (the result artifact then `Completed`), `fail`, `auth_required`, `request_approval` |
+| `ArtifactChunk` | struct | Where an artifact update sits in its artifact (`append`, `last`), for `EventEmitter::artifact_chunk`: `whole()`, `first()`, `append()`, `last()` |
 | `EventQueueWriter` | trait | Write events to a task's event stream |
 | `EventQueueReader` | trait | Read events from a task's event stream |
 | `EventQueueManager` | struct | Per-task queue lifecycle manager (create / lookup / destroy); `with_max_buffered_bytes` bounds the bytes all its queues hold at once and `buffered_bytes` reports them (ADR 0047) |

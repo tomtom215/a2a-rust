@@ -35,16 +35,13 @@ use std::sync::Arc;
 use a2a_protocol_server::{
     EventEmitter, JsonRpcDispatcher, RequestHandlerBuilder, agent_executor, serve,
 };
-use a2a_protocol_types::{AgentCard, AgentInterface, AgentSkill, Part, TaskState};
+use a2a_protocol_types::{AgentCard, AgentInterface, AgentSkill};
 
 struct MyAgent;
 
+// The answer as the task's artifact, then the terminal `Completed` status.
 agent_executor!(MyAgent, |ctx, queue| async {
-    let emit = EventEmitter::new(ctx, queue);
-    emit.status(TaskState::Working).await?;
-    emit.artifact("result", vec![Part::text("Hello!")], None, Some(true)).await?;
-    emit.status(TaskState::Completed).await?;
-    Ok(())
+    EventEmitter::new(ctx, queue).complete_with_text("Hello!").await
 });
 
 # #[tokio::main]

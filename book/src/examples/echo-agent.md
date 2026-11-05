@@ -124,8 +124,7 @@ agent_executor!(EchoExecutor, |ctx, queue| async {
         tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     }
 
-    let echo_text = format!("Echo: {input_text}");
-    emit.artifact("echo-artifact", vec![Part::text(&echo_text)], None, Some(true))
+    emit.text_artifact("echo-artifact", format!("Echo: {input_text}"))
         .await?;
 
     emit.status(TaskState::Completed).await?;

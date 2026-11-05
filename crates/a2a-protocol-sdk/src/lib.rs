@@ -82,7 +82,8 @@ pub mod server {
 ///   `RequestContext`, `EventQueueWriter`, `JsonRpcDispatcher`, `RestDispatcher`,
 ///   `Dispatcher`, `Server`, `serve`, `serve_with_addr`, `shutdown_signal`, and
 ///   the auth and rate-limit interceptors
-/// - **Executor ergonomics**: `agent_executor!`, `boxed_future`, `EventEmitter`
+/// - **Executor ergonomics**: `agent_executor!`, `boxed_future`, `EventEmitter`,
+///   `ArtifactChunk`
 /// - **Errors**: `A2aError`, `A2aResult`, `ClientError`, `ClientResult`,
 ///   `ServerError`, `ServerResult`
 /// - **Telemetry** (feature `otlp`): `Telemetry`; **Axum** (feature `axum`):
@@ -123,10 +124,11 @@ pub mod prelude {
 
     // ── Server ───────────────────────────────────────────────────────────
     pub use a2a_protocol_server::{
-        AgentExecutor, ApiKeyAuthInterceptor, BearerTokenAuthInterceptor, Dispatcher, EventEmitter,
-        EventQueueWriter, JsonRpcDispatcher, RateLimitConfig, RateLimitInterceptor, RequestContext,
-        RequestHandler, RequestHandlerBuilder, RestDispatcher, Server, ServerError, ServerResult,
-        boxed_future, serve, serve_with_addr, shutdown_signal,
+        AgentExecutor, ApiKeyAuthInterceptor, ArtifactChunk, BearerTokenAuthInterceptor,
+        Dispatcher, EventEmitter, EventQueueWriter, JsonRpcDispatcher, RateLimitConfig,
+        RateLimitInterceptor, RequestContext, RequestHandler, RequestHandlerBuilder,
+        RestDispatcher, Server, ServerError, ServerResult, boxed_future, serve, serve_with_addr,
+        shutdown_signal,
     };
 
     // `agent_executor!` generates the whole `AgentExecutor` impl, so it is the

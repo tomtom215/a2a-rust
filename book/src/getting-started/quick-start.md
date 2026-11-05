@@ -22,7 +22,7 @@ curl -X POST http://127.0.0.1:3000 \
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{"task":{
-  "artifacts":[{"artifactId":"greeting","parts":[{"text":"Hello, Tom!"}]}],
+  "artifacts":[{"artifactId":"9b1f2c4e-...","parts":[{"text":"Hello, Tom!"}]}],
   "status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-...Z"}, ...}}}
 ```
 
@@ -44,15 +44,10 @@ use a2a_protocol_sdk::prelude::*;
 struct HelloAgent;
 
 agent_executor!(HelloAgent, |ctx, queue| async {
-    let emit = EventEmitter::new(ctx, queue);
-    emit.status(TaskState::Working).await?;
-
     let who = ctx.message.text().unwrap_or("world");
-    emit.artifact("greeting", vec![Part::text(format!("Hello, {who}!"))], None, Some(true))
-        .await?;
-
-    emit.status(TaskState::Completed).await?;
-    Ok(())
+    EventEmitter::new(ctx, queue)
+        .complete_with_text(format!("Hello, {who}!"))
+        .await
 });
 
 #[tokio::main]
@@ -81,6 +76,9 @@ Three things carry the weight:
   returns `Pin<Box<dyn Future>>` for object safety; the macro hides that.
 - **`EventEmitter`** caches `task_id` and `context_id` off the context, turning
   each event into a one-liner instead of a struct literal.
+  `complete_with_text` is the whole answer of a one-shot agent: the result
+  artifact (under a fresh UUID), then the terminal `Completed` status, in the
+  order the protocol needs.
 - **`ctx.message.text()`** returns the first text part, skipping any file or
   URL parts before it. No `PartContent` match needed for the common case.
 
@@ -148,8 +146,7 @@ agent_executor!(EchoExecutor, |ctx, queue| async {
         tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     }
 
-    let echo_text = format!("Echo: {input_text}");
-    emit.artifact("echo-artifact", vec![Part::text(&echo_text)], None, Some(true))
+    emit.text_artifact("echo-artifact", format!("Echo: {input_text}"))
         .await?;
 
     emit.status(TaskState::Completed).await?;

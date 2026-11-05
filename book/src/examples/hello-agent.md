@@ -35,12 +35,12 @@ or with the `a2a` CLI: `cargo run -p a2a-cli -- card http://127.0.0.1:3000`.
 ## What you'll see
 
 The agent prints `hello-agent listening on http://127.0.0.1:3000`. The `curl`
-call answers with a completed task carrying a `greeting` artifact (abridged:
+call answers with a completed task carrying the greeting as its artifact (abridged:
 ids, timestamps and the history are cut):
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{"task":{
-  "artifacts":[{"artifactId":"greeting","parts":[{"text":"Hello, Tom!"}]}],
+  "artifacts":[{"artifactId":"9b1f2c4e-...","parts":[{"text":"Hello, Tom!"}]}],
   "contextId":"6cac14dc-...","id":"82c82725-...",
   "status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-...Z"}, ...}}}
 ```
@@ -68,16 +68,15 @@ use a2a_protocol_sdk::prelude::*;
 struct HelloAgent;
 
 agent_executor!(HelloAgent, |ctx, queue| async {
-    let emit = EventEmitter::new(ctx, queue);
-    emit.status(TaskState::Working).await?;
-
+    // `Message::text()` is the first text part, or `None` if the caller sent
+    // only files.
     let who = ctx.message.text().unwrap_or("world");
-    let greeting = Part::text(format!("Hello, {who}!"));
 
-    emit.artifact("greeting", vec![greeting], None, Some(true)).await?;
-
-    emit.status(TaskState::Completed).await?;
-    Ok(())
+    // The greeting as the task's artifact, then the terminal `Completed`
+    // status, in that order.
+    EventEmitter::new(ctx, queue)
+        .complete_with_text(format!("Hello, {who}!"))
+        .await
 });
 
 /// The card a client discovers at `/.well-known/agent-card.json`.
