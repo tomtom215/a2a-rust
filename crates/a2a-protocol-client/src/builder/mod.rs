@@ -687,7 +687,7 @@ impl ClientBuilder {
     /// used. With [`with_pool`](Self::with_pool), the pool's connections and
     /// per-origin state are used, and the pool's ejection policy:
     /// [`build`](Self::build) refuses a `policy` that sets its own. A custom
-    /// transport and [`build_grpc`](Self::build_grpc) refuse balancing.
+    /// transport and `build_grpc` (`grpc` feature) refuse balancing.
     #[must_use]
     pub fn with_balancing(
         mut self,
