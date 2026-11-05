@@ -33,9 +33,9 @@
 //!
 //! - [`check_store`] grades the [`HaltStore`] contract: a write replaces the
 //!   halt of its scope, a removal removes exactly its scope, scopes do not
-//!   collide (two job halts, [`HaltScope::Root`],
-//!   whose tenant and root read alike joined by a `:` included), another handle (a replica, a restarted process) reads what
-//!   was written, and a store that pushes delivers each write and each
+//!   collide (two job halts, [`HaltScope::Root`], whose tenant and root read
+//!   alike joined by a `:` included), another handle (a replica, a restarted
+//!   process) reads what was written, and a store that pushes delivers each write and each
 //!   cancel to the other handle.
 //! - [`check_handlers`] builds handlers on the store, as replicas, and grades
 //!   the kill switch end to end: a halt stops the tasks running on this
