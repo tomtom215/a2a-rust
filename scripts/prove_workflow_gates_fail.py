@@ -779,6 +779,68 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "on a shallow clone rather than reporting a flattering figure"
     )
 
+    # ── deploy.yml ───────────────────────────────────────────────────────────
+    #
+    # The step runs the image the job just built, which a fixture cannot have.
+    # What it decides is still a verdict over data: the health status Docker
+    # reports, the card and the reply the agent serves, the exit code `docker
+    # stop` leaves. So the fixture puts a `docker` and a `curl` on PATH that
+    # answer with those data, healthy or with one thing wrong, and the step's
+    # real body runs against them.
+    _FAKE_DOCKER = """#!/bin/bash
+    case "$1" in
+      run|stop) echo fake ;;
+      logs) echo "fake log line" ;;
+      inspect) case "$3" in
+        *Health*) echo "${FAKE_HEALTH:-healthy}" ;;
+        *ExitCode*) echo "${FAKE_EXIT:-0}" ;;
+      esac ;;
+    esac
+    """
+    _FAKE_CURL = """#!/bin/bash
+    for a in "$@"; do url=$a; case "$a" in http*) break ;; esac; done
+    case "$url" in
+      */ready) [ "${FAKE_READY:-200}" = 200 ] || exit 22; echo '{"status":"ready"}' ;;
+      */.well-known/agent-card.json)
+        echo "{\\"url\\":\\"${FAKE_URL:-http://localhost:8080}\\",\\"version\\":\\"${FAKE_VERSION:-0.0.0-ci}\\"}" ;;
+      */message:send) [ "${FAKE_SEND:-200}" = 200 ] || exit 22; echo "${FAKE_REPLY:-Hello, CI!}" ;;
+    esac
+    """
+
+    def _deploy_image(**fake):
+        def setup(d):
+            bin_dir = d / "bin"
+            bin_dir.mkdir()
+            for name, body in (("docker", _FAKE_DOCKER), ("curl", _FAKE_CURL)):
+                f = bin_dir / name
+                f.write_text(body)
+                f.chmod(0o755)
+            env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+            env.update({f"FAKE_{k.upper()}": v for k, v in fake.items()})
+            return {"__cwd__": str(d), "__env__": env}
+
+        return setup
+
+    reg["deploy.yml::image::Run it, wait for its health check, call it, stop it"] = Probe(
+        healthy=_deploy_image(),
+        defects=[
+            Defect("the health check fails", _deploy_image(health="unhealthy"),
+                   "health check says unhealthy"),
+            Defect("/ready does not answer", _deploy_image(ready="503"),
+                   "/ready did not answer 200"),
+            Defect("the card has another version", _deploy_image(version="0.16.0"),
+                   "does not carry the build's AGENT_VERSION"),
+            Defect("the card advertises the bind address", _deploy_image(url="http://0.0.0.0:8080"),
+                   "does not advertise AGENT_URL"),
+            Defect("message:send is refused", _deploy_image(send="500"),
+                   "message:send was refused"),
+            Defect("the agent answers something else", _deploy_image(reply="Hi"),
+                   "did not answer the message"),
+            Defect("SIGTERM kills it instead of draining it", _deploy_image(exit="137"),
+                   "exited 137 on SIGTERM"),
+        ],
+    )
+
     # ── docs.yml ─────────────────────────────────────────────────────────────
     #
     # The step stages rustdoc under /api/ and then asserts each crate's

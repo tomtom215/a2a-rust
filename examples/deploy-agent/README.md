@@ -13,7 +13,7 @@ from the `OTEL_*` environment, and nothing else.
 
 | Concern | Here | Why examples never show it |
 |---|---|---|
-| Configuration | `PORT`, `AGENT_URL`, `DATABASE_URL`, `DRAIN_DELAY_SECONDS` from the environment, checked before anything binds | Examples hardcode a port; a scheduler assigns one |
+| Configuration | `PORT`, `AGENT_URL`, `A2A_DATABASE_URL`, `DRAIN_DELAY_SECONDS` from the environment, checked before anything binds | Examples hardcode a port; a scheduler assigns one |
 | Health checks | `GET /health` (liveness: a constant), `GET /ready` (readiness: the task store answers and the process is not draining) | Nothing probes an example, so nobody notices there is no probe endpoint |
 | Graceful shutdown | `SIGTERM`: not ready at once, still serving for `DRAIN_DELAY_SECONDS`, then in-flight tasks end, then connections drain, each step bounded | Examples die to Ctrl-C and nobody minds the truncated stream |
 | Bind address | every address: `[::]`, IPv6 and IPv4, or `0.0.0.0` where the host has no IPv6 | A loopback bind works locally and is unreachable in a container |
@@ -49,10 +49,12 @@ Configuration:
 | `PORT` | `8080` | Rejected at startup if it is not a port from 1 to 65535 — a process that ignores its configuration is worse than one that refuses to start |
 | `AGENT_URL` | `http://localhost:$PORT` | The **externally reachable** URL, `http://` or `https://`. Goes on the agent card |
 | `DRAIN_DELAY_SECONDS` | `0` | After `SIGTERM`, how long to answer `/ready` with 503 and go on serving before stopping, while load balancers learn the pod is leaving. `deployment.yaml` sets 5 |
-| `DATABASE_URL` | unset: tasks in memory | A PostgreSQL URL. Tasks and push configs go there, which is what lets several replicas serve the agent; unset, run one replica (the process says so at startup). TLS to the database: `?sslmode=verify-full&sslrootcert=/path/ca.pem` (or `require`), as hosted PostgreSQL documents |
+| `A2A_DATABASE_URL` | unset: tasks in memory | A PostgreSQL URL. Tasks and push configs go there, which is what lets several replicas serve the agent; unset, run one replica (the process says so at startup). TLS to the database: `?sslmode=verify-full&sslrootcert=/path/ca.pem` (or `require`), as hosted PostgreSQL documents. A schema of its own: `&options=-c%20search_path%3Da2a` (below) |
+| `DATABASE_URL` | unset | Read only when `A2A_DATABASE_URL` is unset, because platforms (Heroku, Render, Railway, Fly) inject it; the start then warns, since sqlx-cli, Diesel, Rails and Django read the same name and a shell that exports it for another application would otherwise send this agent's tables there (audit A14, [ADR 0040](../../docs/adr/0040-first-run-configuration-and-scope.md)). Until 0.16.0 it was the only name |
 | `AGENT_VERSION` | this crate's own version | What the agent card reports as its `version`, so rollouts can be told apart from the card alone. The published image sets it to the release; refused at startup if it contains whitespace |
-| `TASK_RETENTION_HOURS` | `168` | With `DATABASE_URL`, how long a finished task (completed, failed, canceled, rejected) is kept after its last update: the agent deletes older ones, and the idempotency keys that outlived them, every hour, in bounded batches, from every replica (safe: each batch picks its own rows). A task still working or waiting for input is never deleted. `0` keeps everything, and says so at startup: then schedule your own `PostgresTaskStore::purge_expired`. Until 2026-11-01 nothing deleted, so a database-backed deployment grew without bound where the in-memory one kept an hour. Refused at startup unless a whole number of hours |
-| `DATABASE_POOL_SIZE` | `10` | Connections in the task store's pool; the push-config store's is 2, so a replica uses this plus 2, logged at startup. Replicas × that, with a surge pod during a rollout, must stay under PostgreSQL's `max_connections` (97 usable by default). Refused at startup unless a whole number from 1 |
+| `TASK_RETENTION_HOURS` | `168` | With a database, how long a finished task (completed, failed, canceled, rejected) is kept after its last update: the agent deletes older ones, and the idempotency keys that outlived them, every hour, in bounded batches, from every replica (safe: each batch picks its own rows). A task still working or waiting for input is never deleted. `0` keeps everything, and says so at startup: then schedule your own `PostgresTaskStore::purge_expired`. Until 2026-11-01 nothing deleted, so a database-backed deployment grew without bound where the in-memory one kept an hour. Refused at startup unless a whole number of hours |
+| `DATABASE_POOL_SIZE` | `10` | Connections in the task store's pool; a replica uses this plus `DATABASE_PUSH_POOL_SIZE`, logged at startup. Replicas × that, with a surge pod during a rollout, must stay under PostgreSQL's `max_connections` (97 usable by default). Refused at startup unless a whole number from 1 |
+| `DATABASE_PUSH_POOL_SIZE` | `2` | Connections in the push-config store's pool, which reads a task's configs once per delivery. A pool of its own, not a share of the task store's: the task store's pool skips a ping that the push-config store's statements need (`PostgresTaskStore::pool_options`). `/ready` probes the task store's pool only: both reach the same database, and a push pool that is merely busy should not take the replica out of the balancer. Refused at startup unless a whole number from 1 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset: nothing exported | A collector's OTLP/HTTP URL, e.g. `http://localhost:4318` for [`deploy/observability`](../../deploy/observability)'s stack; traces, metrics and logs all go there |
 
 ## Container
@@ -84,7 +86,14 @@ docker run --rm -p 8080:8080 --network a2a-observability_default \
 Two stages: build with the toolchain, ship without it. Runs as uid 10001 with
 no shell in the entrypoint, so the binary is PID 1 and receives `SIGTERM`
 directly — the shell form puts `/bin/sh` there, which does not forward signals,
-and graceful shutdown silently stops working.
+and graceful shutdown silently stops working. A `HEALTHCHECK` (`GET /health`
+over bash's `/dev/tcp`; the image has no curl) gives `docker ps` and Compose a
+health status; Kubernetes uses the manifest's probes instead. The build context
+is what [`Dockerfile.dockerignore`](Dockerfile.dockerignore) leaves in: no
+secrets or history, and not the book or the docs, whose edits no longer
+rebuild the agent. `--build-arg PACKAGE=my-agent` builds another crate with
+the same file (the book's *Docker and Kubernetes* page lists what a copy
+needs).
 
 ## Kubernetes
 
@@ -92,6 +101,9 @@ and graceful shutdown silently stops working.
 kubectl create secret generic deploy-agent-db \
   --from-literal=url='postgres://USER:PASSWORD@HOST:5432/DB?sslmode=verify-full&sslrootcert=/path/ca.pem'
 kubectl apply -f examples/deploy-agent/deployment.yaml
+# Optional: only the ingress controller may reach the pods, and an Ingress with
+# TLS for AGENT_URL's host. Edit the two marked values first.
+kubectl apply -f examples/deploy-agent/network.yaml
 ```
 
 The manifest names the image the release workflow publishes,
@@ -104,7 +116,7 @@ image could not be pulled. Two things to set:
 
 - **`AGENT_URL`.** The manifest sets the in-cluster Service URL. Set it to the
   URL callers will use (see the trap below).
-- **The database.** The manifest runs two replicas and takes `DATABASE_URL`
+- **The database.** The manifest runs two replicas and takes `A2A_DATABASE_URL`
   from the Secret `deploy-agent-db`, which the first command creates.
   Keep the `sslmode`: the driver's default, `prefer`, falls back to plaintext
   and does not check who answered, while `verify-full` checks the server's
@@ -120,6 +132,29 @@ cluster can reach and set `image:` to it, or on kind run
 deploy-agent:dev`) and set `image: deploy-agent:dev`. A built-from-source
 image reports the crate's version on its agent card; the published one
 reports the release it was built for (`AGENT_VERSION`).
+
+### A schema of its own
+
+The stores create unprefixed tables (`tasks`, `task_events`,
+`idempotency_keys`, `push_configs`, `schema_versions`, beside the prefixed
+`a2a_*` ones) in the first schema of the connection's `search_path`. In a
+database another application also uses, give the agent a schema and put it on
+the path in the URL:
+
+```sql
+CREATE SCHEMA a2a AUTHORIZATION agent;
+```
+
+```text
+postgres://agent:PASSWORD@HOST:5432/DB?sslmode=verify-full&options=-c%20search_path%3Da2a
+```
+
+Every table, index and function the agent creates then lands in `a2a`, and
+`search_path=a2a,public` works as well beside another application's
+`public.tasks`. Until 0.16.0 that second form did not: the start looked for
+`tasks` along the whole path, found the other application's, and failed
+("foreign key constraint ... cannot be implemented") or wrote into it (audit
+NEW-a-l-2; `pg_schema::search_path_tests` pins both forms).
 
 ### Verify the image
 
@@ -167,7 +202,7 @@ shutdown is decorative.
 
 **The agent card must advertise the public URL, not the bind address.**
 
-A container binds `0.0.0.0:8080`; callers reach it at
+A container binds every address (`[::]:8080`); callers reach it at
 `https://agent.example.com`. Publish the bind address on the card and clients
 read it, call it, and fail — with an error that points at the client rather than
 at the card. It cannot be derived from inside the process, which is why
@@ -198,6 +233,11 @@ freed holes, and glibc's allocator is slow there: on the echo benchmark
 jemalloc took unary throughput from 7,189 to 11,862 requests/s at the same
 resident memory. The book's production chapter has the measurement.
 
+`deployment.yaml` sets `_RJEM_MALLOC_CONF=narenas:2,background_thread:true`
+and `TOKIO_WORKER_THREADS=2`: without them both follow the CPUs of the node,
+not of the pod, and jemalloc does so even under a CPU limit. Raise them with
+the CPU the pod is given.
+
 To confirm a running build uses it, start it with
 `_RJEM_MALLOC_CONF=stats_print:true`; jemalloc prints its statistics when
 the process exits. Windows (MSVC) builds keep the system allocator, which
@@ -213,17 +253,19 @@ these reads as an endorsement:
 - **Authentication.** No interceptor is installed, so every request is
   anonymous. See [Authentication](https://a2a-rust.com/building-agents/authentication.html)
   and the `harden` act of [`incident-response`](../incident-response).
-- **The database itself.** `DATABASE_URL` names a PostgreSQL you run; its
+- **The database itself.** `A2A_DATABASE_URL` names a PostgreSQL you run; its
   backups, upgrades and connection limits are yours. A server certificate
   signed by a CA outside Mozilla's roots (an internal CA, or a provider's own)
   needs `sslrootcert` and the CA file mounted in the pod; `deployment.yaml`
   carries the ConfigMap volume as a commented example. Without it the store is
   in memory: tasks do not survive a restart, and the agent must run as one
   replica.
-- **Network policy, ingress and scraping.** The manifest ships no
-  `NetworkPolicy`, no `Ingress` with TLS and no `ServiceMonitor`. A cluster
-  with a default-deny policy needs one allowing the ingress namespace to reach
-  port 8080; metrics reach a Prometheus Operator only through a Collector,
+- **Network policy, ingress and scraping, by default.** `deployment.yaml`
+  ships none of them; [`network.yaml`](network.yaml) has a `NetworkPolicy`
+  admitting only the ingress controller's namespace to port 8080 and an
+  `Ingress` ending TLS for `AGENT_URL`'s host, to edit (two marked values) and
+  apply after it. Egress is not restricted. There is no `ServiceMonitor`:
+  metrics reach a Prometheus Operator only through a Collector,
   because this binary is built without `otel-prometheus` (asking for it makes
   the process start without it and say so at `WARN`).
 - **The observability stack in Kubernetes.** With `OTEL_EXPORTER_OTLP_ENDPOINT`

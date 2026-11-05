@@ -278,6 +278,13 @@ advertises the **public** URL and never leaks the bind address — the deploymen
 bug whose only symptom is clients failing to call back. See
 [`examples/deploy-agent`](examples/deploy-agent).
 
+The published image is the ready-to-run server: it runs that trivial agent, and
+what is ready is the wrapper around it. There is no configurable gateway
+binary; an agent of your own is a crate built with the same Dockerfile
+(`--build-arg PACKAGE=`), as the book's
+[Docker and Kubernetes](https://a2a-rust.com/deployment/containers.html) page
+lists ([ADR 0040](docs/adr/0040-first-run-configuration-and-scope.md)).
+
 ### Echo Agent
 
 Serves all four bindings behind one handler, drives all eleven methods over each and prints the coverage matrix (exit `2` on a gap), then runs counter-tests against an agent that declares no optional capabilities:

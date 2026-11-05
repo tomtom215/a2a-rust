@@ -84,6 +84,8 @@ CI_ONLY: dict[tuple[str, str], str] = {
     ("benchmarks.yml", "bench-regression"): "pull requests only: runs the benchmarks on the base branch and on the PR and compares them; not run here",
     ("codeql.yml", "analyze"): "the CodeQL action; results go to GitHub code scanning",
     ("coverage.yml", "coverage"): "uploads to Codecov with a secret token and needs a PostgreSQL service",
+    ("deploy.yml", "image"): "builds its image with docker/build-push-action, an action step this runner cannot run, then runs the container",
+    ("deploy.yml", "manifests"): "downloads a pinned kubeconform release from GitHub and the Kubernetes JSON schemas at run time",
     ("docs.yml", "build"): _REL + "; builds the Pages site",
     ("docs.yml", "deploy"): _REL + "; deploys the Pages site",
     ("fuzz.yml", "fuzz"): "needs the nightly toolchain and cargo-fuzz, one matrix entry per target (check_fuzz_matrix.py gates the matrix)",
