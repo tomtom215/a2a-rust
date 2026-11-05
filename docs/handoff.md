@@ -54,8 +54,9 @@ command is named so the next session re-runs it instead of copying the number. A
   8 major findings, each mentioned in `### Breaking Changes` (checked by keyword, not by reading each entry against its finding): types,
   `sign_agent_card` removed and the wire structs `#[non_exhaustive]`; client, `TlsConfig` (now a non-exhaustive enum, no longer `UnwindSafe`, and `ClientConfig`
   and `CardFetchOptions` with it) and two builder methods no longer `const`; server, `JwtAuthInterceptor::new` and `Server::with_config` no longer
-  `const` and `Telemetry::install_subscriber` returning `()`; the SDK crate has none. The minor findings are deprecations, 23 of them from the
-  API-shape package (22 server, 1 client: the same 23 the CHANGELOG lists), and `#[must_use]` on `ServeReport` and `Telemetry`.
+  `const` and `Telemetry::install_subscriber` returning `()`; the SDK crate has none. The minor findings are deprecations (26 `#[deprecated(since = "0.16.0")]`
+  attributes under `crates/`: 23 from the API-shape package, 22 server and 1 client, which is the table in the upgrade guide, and 3 from
+  other packages: `init_otlp_pipeline`, `init_otlp_pipeline_with_endpoint` and `BearerTokenTenantResolver::new`), and `#[must_use]` on `ServeReport` and `Telemetry`.
 - **CI on this branch** (every run a `workflow_dispatch`, read from the Actions API): run 1811 (head `781a4eaa`) failed 10 of 22 jobs on five causes
   (under *Withdrawn or corrected*, below); 1812 (`39eef510`) 20 of 22 green, the two macOS Test legs failing one test; it was the first run in which Windows and macOS ran tests of a tree
   with the observability SDK package and client balancing (run 1809, the last green one before it, has neither, and 1811 never got past compile

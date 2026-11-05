@@ -33,7 +33,7 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **Observability:** control-plane, process and runtime metrics, baggage and `OTEL_PROPAGATORS` on the A2A wire, JSON console logs with the trace context, alerts that watch the stack itself, and the stack on Kubernetes and in CI.
 - **A task's ending always reaches its webhooks, its log and its caller;** an executor that panics leaves the task `failed`; a blocking send over gRPC is no longer cut at the request timeout; credentials go only to the host the caller named; a private CA and mutual TLS reach every binding, the token provider included.
 - **Shipping:** a signed `deploy-agent` image on GHCR with build provenance, a card that reports its version, and retention of finished tasks; OpenTelemetry export through proxies with gzip, console and Prometheus exporters, resource detection and lost-export warnings; WebSocket connections that detect a dead peer.
-- **Serving and API shape:** every listener has one graceful `serve_with_shutdown` and takes `ServeConfig` (the axum router now runs on `Server`), `EventStream` is a `futures_core::Stream`, a one-shot agent answers with `complete_with_text`, and 23 names are deprecated, to be removed no earlier than 0.17.0.
+- **Serving and API shape:** every listener has one graceful `serve_with_shutdown` and takes `ServeConfig` (the axum router now runs on `Server`), `EventStream` is a `futures_core::Stream`, a one-shot agent answers with `complete_with_text`, and 23 names are deprecated (26 in the release, counting the ones under `### Deprecated` that this package did not add), to be removed no earlier than 0.17.0.
 - **Not in this release:** agent skills (ADR 0035) and steering (ADR 0036), the parts listed under Known Limitations, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
 
 ### Added
@@ -2501,6 +2501,8 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 ### Deprecated
 
 - `init_otlp_pipeline` and `init_otlp_pipeline_with_endpoint` (audit C-12), to be removed no earlier than 0.17.0; the book's Telemetry page gives the `Telemetry` equivalent.
+
+- `BearerTokenTenantResolver::new()` (audit SEC-11), `since = "0.16.0"` and removed no earlier than 0.17.0: it is `default()` under another name and, like it, trusts the token it is given. `with_mapper` with a closure that checks the token is the replacement; the upgrade guide has the paragraph.
 
 - **The serve entry points that cannot be stopped** (audit G-09, ADR 0052), each `since = "0.16.0"` and removed no earlier than 0.17.0: `serve::serve` and `serve::serve_with_addr` (also at the crate root and in the SDK prelude), for `Server::bind(addr).await?.serve_with_shutdown(dispatcher, shutdown_signal())`; `GrpcDispatcher::{serve, serve_with_addr, serve_with_listener}` and `WebSocketDispatcher::{serve, serve_with_addr}`, for `serve_with_shutdown(listener, signal)`.
 
