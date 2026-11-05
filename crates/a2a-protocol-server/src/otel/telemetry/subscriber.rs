@@ -84,13 +84,20 @@ impl Telemetry {
     /// turns off the OpenTelemetry SDK, and says nothing about a process's own
     /// warnings and errors. Until 2026-10-31 it installed nothing, so a process
     /// told to export nothing also lost every warning, its own and the SDK's
-    /// (audit C-07). Returns whether it installed a
-    /// subscriber: `false` when a global subscriber was already set,
-    /// which this never replaces. A process with its own subscriber adds
+    /// (audit C-07). It never replaces a global subscriber that was already
+    /// set; [`try_install_subscriber`](Self::try_install_subscriber) says
+    /// whether it installed one. A process with its own subscriber adds
     /// `layer()` to it instead.
-    // Called for its effect; the result is for a caller that cares.
-    #[allow(clippy::must_use_candidate)]
-    pub fn install_subscriber(&self) -> bool {
+    pub fn install_subscriber(&self) {
+        let _installed = self.try_install_subscriber();
+    }
+
+    /// [`install_subscriber`](Self::install_subscriber), saying whether it
+    /// installed the subscriber: `false` when a global subscriber was already
+    /// set. Until 0.16.0 `install_subscriber` returned this, which every
+    /// caller but the tests ignored.
+    #[must_use]
+    pub fn try_install_subscriber(&self) -> bool {
         use tracing_subscriber::layer::SubscriberExt as _;
         use tracing_subscriber::util::SubscriberInitExt as _;
         let rust_log = std::env::var("RUST_LOG").ok();

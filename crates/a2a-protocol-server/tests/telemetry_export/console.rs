@@ -28,7 +28,10 @@ fn record_as_the_child_process() {
         builder = builder.without_startup_summary();
     }
     let telemetry = builder.build().expect("build from the environment");
-    assert!(telemetry.install_subscriber(), "a fresh process has none");
+    assert!(
+        telemetry.try_install_subscriber(),
+        "a fresh process has none"
+    );
     {
         let span = tracing::info_span!("unit-of-work", answer = 42);
         let _entered = span.enter();
