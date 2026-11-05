@@ -69,7 +69,8 @@
 // without a backend it is dead code under `-D warnings`.
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 pub(crate) mod compact;
-#[cfg(all(test, any(feature = "sqlite", feature = "postgres")))]
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+#[cfg(test)]
 mod compact_tests;
 #[cfg(feature = "postgres")]
 pub(crate) mod postgres;

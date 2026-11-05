@@ -228,7 +228,7 @@ impl TenantAwarePostgresTaskStore {
         )
         .await
         .map_err(|e| to_a2a_error(&e))?;
-        if let Some(keep) = policy.max_events_per_live_task {
+        if let Some(keep) = super::retention::compact::live_log_bound(policy) {
             let over: Vec<(String, String)> = crate::store::pg_retry::retry(&*self.metrics, || {
                 sqlx::query_as(crate::store::tenant_event_log::PG_OVER)
                     .bind(super::retention::compact::over(keep))

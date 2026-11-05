@@ -272,7 +272,7 @@ impl PostgresTaskStore {
             super::retention::postgres::purge(&self.pool, "tasks", idempotency::EXPIRE_SQL, policy)
                 .await
                 .map_err(to_a2a_error)?;
-        if let Some(keep) = policy.max_events_per_live_task {
+        if let Some(keep) = super::retention::compact::live_log_bound(policy) {
             let over: Vec<(String,)> = crate::store::pg_retry::retry(&*self.metrics, || {
                 sqlx::query_as(event_log::OVER_SQL)
                     .bind(super::retention::compact::over(keep))

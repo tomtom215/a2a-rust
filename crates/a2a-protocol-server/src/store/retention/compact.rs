@@ -47,6 +47,17 @@ pub async fn compact_task<S: TaskStore + ?Sized>(
         .await
 }
 
+/// The bound a sweep under `policy` compacts live logs to, if any.
+///
+/// The SQL stores' `purge_expired` read it here rather than each reading the
+/// field: it is the sweep's setting, applied by one function for all four,
+/// not a bound each `TaskStore` implementation honours on its own (the
+/// in-memory stores bound their logs with
+/// `TaskStoreConfig::max_events_per_task`).
+pub const fn live_log_bound(policy: &super::RetentionPolicy) -> Option<u64> {
+    policy.max_events_per_live_task
+}
+
 /// The count a log must exceed to be compacted, as a SQL parameter.
 pub fn over(keep: u64) -> i64 {
     i64::try_from(keep.max(1)).unwrap_or(i64::MAX)

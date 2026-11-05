@@ -242,7 +242,7 @@ impl TenantAwareSqliteTaskStore {
         )
         .await
         .map_err(|e| to_a2a_error(&e))?;
-        if let Some(keep) = policy.max_events_per_live_task {
+        if let Some(keep) = super::retention::compact::live_log_bound(policy) {
             let over: Vec<(String, String)> = sqlx::query_as(evlog::SQLITE_OVER)
                 .bind(super::retention::compact::over(keep))
                 .fetch_all(&self.pool)
