@@ -175,6 +175,7 @@ impl A2aRouter {
         // (2 MiB) and silently ignores `max_request_body_size`, so the knob that
         // works on the JSON-RPC/REST dispatchers would be a no-op here.
         let max_body = self.config.max_request_body_size;
+        let base_path = self.config.base_path.clone();
         self.handler.warn_if_undeclared("HTTP+JSON"); // §5.2, as every other listener does
         let card_handler = card_handler(&self.handler, self.config.agent_card_max_age);
         let state = A2aState {
@@ -184,7 +185,7 @@ impl A2aRouter {
         };
         let checks = state.clone();
 
-        Router::new()
+        let router = Router::new()
             // Messaging (colon-suffixed paths are literal — no conflict)
             .route("/message:send", post(handle_send_message))
             .route("/message:stream", post(handle_stream_message))
@@ -211,7 +212,14 @@ impl A2aRouter {
                 checks,
                 validate::validate_a2a_request,
             ))
-            .layer(axum::middleware::from_fn(negotiate_media_type))
+            .layer(axum::middleware::from_fn(negotiate_media_type));
+        // `DispatchConfig::base_path` (audit B-08): the same routes under the
+        // prefix, which `nest` strips before they see the path, and at the
+        // root, as the hyper dispatchers serve both.
+        match base_path {
+            Some(base) => Router::new().nest(&base, router.clone()).merge(router),
+            None => router,
+        }
     }
 }
 

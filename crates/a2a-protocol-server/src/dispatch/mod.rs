@@ -103,6 +103,13 @@ pub struct DispatchConfig {
     /// served with: spec §8.6.1 asks for one "appropriate for the agent's
     /// expected update frequency". Default: 3600.
     pub agent_card_max_age: u32,
+    /// The path prefix a reverse proxy keeps in front of every route
+    /// (`/agents/billing`), taken off a request's path before it is routed:
+    /// the card is then at `{prefix}/.well-known/agent-card.json` and a tenant
+    /// segment comes after the prefix (audit B-08). A request outside it is
+    /// routed as before. Default: none. Read by [`RestDispatcher`],
+    /// [`JsonRpcDispatcher`], [`CombinedDispatcher`] and the axum `A2aRouter`.
+    pub base_path: Option<String>,
 }
 
 /// The default `max-age`, in seconds, of the agent card's `Cache-Control`
@@ -121,6 +128,7 @@ impl Default for DispatchConfig {
             max_batch_size: 100,
             require_version_header: true,
             agent_card_max_age: DEFAULT_AGENT_CARD_MAX_AGE,
+            base_path: None,
         }
     }
 }
@@ -199,6 +207,9 @@ impl DispatchConfig {
         self
     }
 }
+
+mod base_path;
+pub(crate) use base_path::strip_base_path;
 
 /// Refuses a request body in a media type A2A does not define.
 ///

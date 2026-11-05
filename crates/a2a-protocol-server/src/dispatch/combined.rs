@@ -60,6 +60,10 @@ pub struct CombinedDispatcher {
     jsonrpc: JsonRpcDispatcher,
     rest: RestDispatcher,
     jsonrpc_path: String,
+    /// [`DispatchConfig::base_path`], stripped here once; the two inner
+    /// dispatchers are given none, so a path that repeats the prefix is not
+    /// stripped twice.
+    base_path: Option<String>,
 }
 
 impl CombinedDispatcher {
@@ -73,17 +77,20 @@ impl CombinedDispatcher {
     /// Both bindings for `handler`, each with `config`, and JSON-RPC at
     /// [`DEFAULT_JSONRPC_PATH`].
     #[must_use]
-    pub fn with_config(handler: Arc<RequestHandler>, config: DispatchConfig) -> Self {
+    pub fn with_config(handler: Arc<RequestHandler>, mut config: DispatchConfig) -> Self {
         handler.warn_if_undeclared("JSONRPC");
         handler.warn_if_undeclared("HTTP+JSON");
+        let base_path = config.base_path.take();
         Self {
             jsonrpc: JsonRpcDispatcher::with_config(Arc::clone(&handler), config.clone()),
             rest: RestDispatcher::with_config(handler, config),
             jsonrpc_path: DEFAULT_JSONRPC_PATH.to_owned(),
+            base_path,
         }
     }
 
-    /// Serves JSON-RPC at `path` instead of [`DEFAULT_JSONRPC_PATH`].
+    /// Serves JSON-RPC at `path` instead of [`DEFAULT_JSONRPC_PATH`]. With a
+    /// [`base_path`](DispatchConfig::base_path), `path` is below it.
     ///
     /// # Errors
     ///
@@ -125,8 +132,9 @@ impl CombinedDispatcher {
     /// Dispatches `req` to the binding it is for.
     pub async fn dispatch(
         &self,
-        req: hyper::Request<Incoming>,
+        mut req: hyper::Request<Incoming>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        super::strip_base_path(&mut req, self.base_path.as_deref());
         if self.is_jsonrpc(&req) {
             self.jsonrpc.dispatch(req).await
         } else {
@@ -139,6 +147,7 @@ impl std::fmt::Debug for CombinedDispatcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CombinedDispatcher")
             .field("jsonrpc_path", &self.jsonrpc_path)
+            .field("base_path", &self.base_path)
             .finish_non_exhaustive()
     }
 }

@@ -101,8 +101,9 @@ impl RestDispatcher {
     /// The agent card and the health probes are always `application/json`.
     pub async fn dispatch(
         &self,
-        req: hyper::Request<Incoming>,
+        mut req: hyper::Request<Incoming>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        super::strip_base_path(&mut req, self.config.base_path.as_deref());
         let started = std::time::Instant::now();
         let media = media_type::ResponseMediaType::from_headers(req.headers());
         let negotiable = media_type::is_negotiable_path(req.uri().path());

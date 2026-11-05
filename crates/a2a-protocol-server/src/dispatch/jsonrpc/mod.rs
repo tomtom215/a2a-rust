@@ -100,8 +100,9 @@ impl JsonRpcDispatcher {
     /// a2a-go's divergence, pinned by `scripts/go_sdk_interop.sh`.
     pub async fn dispatch(
         &self,
-        req: hyper::Request<Incoming>,
+        mut req: hyper::Request<Incoming>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        super::strip_base_path(&mut req, self.config.base_path.as_deref());
         // Handle CORS preflight requests.
         if req.method() == "OPTIONS" {
             if let Some(ref cors) = self.cors {
