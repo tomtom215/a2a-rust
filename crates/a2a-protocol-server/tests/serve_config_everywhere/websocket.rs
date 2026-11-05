@@ -126,3 +126,19 @@ async fn the_drain_delay_keeps_the_websocket_listener_accepting() {
     assert_eq!(report.accepted, 1, "{report:?}");
     drop(late);
 }
+
+/// Under `production`, plaintext `ws://` beyond loopback refuses to start:
+/// the listener's own TLS is what would allow it.
+#[tokio::test]
+async fn production_refuses_plaintext_websocket_beyond_loopback() {
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:0")
+        .await
+        .expect("bind");
+    let handler = handler_declaring("ws://agent.example:80", &[WEBSOCKET_BINDING_URI]);
+    let report =
+        Arc::new(WebSocketDispatcher::new(handler).with_serve_config(ServeConfig::production()))
+            .serve_with_shutdown(listener, std::future::pending())
+            .await;
+    let why = report.refused.expect("refused");
+    assert!(why.contains("§7.1"), "{why}");
+}
