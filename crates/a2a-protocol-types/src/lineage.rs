@@ -208,8 +208,7 @@ fn parse(metadata: Option<&serde_json::Value>) -> A2aResult<Option<Lineage>> {
     let Some(value) = metadata.and_then(|m| m.get(LINEAGE_METADATA_KEY)) else {
         return Ok(None);
     };
-    let lineage: Lineage = serde_json::from_value(value.clone())
-        .map_err(|e| A2aError::invalid_params(format!("malformed lineage: {e}")))?;
+    let lineage: Lineage = crate::extension_value::read_object(value, "lineage")?;
     lineage.validate()?;
     Ok(Some(lineage))
 }

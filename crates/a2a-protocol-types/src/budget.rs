@@ -177,8 +177,7 @@ impl Budget {
         else {
             return Ok(None);
         };
-        let budget: Self = serde_json::from_value(value.clone())
-            .map_err(|e| A2aError::invalid_params(format!("malformed budget: {e}")))?;
+        let budget: Self = crate::extension_value::read_object(value, "budget")?;
         budget.validate()?;
         Ok(Some(budget))
     }
@@ -245,9 +244,7 @@ impl BudgetStatus {
         let Some(value) = metadata.and_then(|m| m.get(BUDGET_METADATA_KEY)) else {
             return Ok(None);
         };
-        serde_json::from_value(value.clone())
-            .map(Some)
-            .map_err(|e| A2aError::invalid_params(format!("malformed budget status: {e}")))
+        crate::extension_value::read_object(value, "budget status").map(Some)
     }
 }
 

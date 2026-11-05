@@ -56,7 +56,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::artifact::Artifact;
-use crate::error::{A2aError, A2aResult};
+use crate::error::A2aResult;
 use crate::message::Message;
 
 /// The extension URI a card declares and content names in `extensions`.
@@ -154,9 +154,12 @@ pub fn provenance_of<C: Content>(content: &C) -> A2aResult<Option<Provenance>> {
     else {
         return Ok(None);
     };
-    serde_json::from_value(v.clone())
-        .map(Some)
-        .map_err(|e| A2aError::invalid_params(format!("malformed provenance: {e}")))
+    // `signature` is an object too; serde would read `[header, sig]` as one.
+    if let Some(signature) = v.get("signature").filter(|s| !s.is_null()) {
+        let _: ContentSignature =
+            crate::extension_value::read_object(signature, "provenance signature")?;
+    }
+    crate::extension_value::read_object(v, "provenance").map(Some)
 }
 
 fn set<C: Content>(content: &mut C, provenance: &Provenance) {

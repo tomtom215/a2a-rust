@@ -55,7 +55,7 @@ fn every_valid_vector_reads_back_and_makes_its_child() {
 fn every_invalid_vector_is_refused_as_invalid_params() {
     let vectors: Value = serde_json::from_str(VECTORS).unwrap();
     let invalid = vectors["invalid"].as_array().unwrap();
-    assert_eq!(invalid.len(), 18, "the count the vectors file holds");
+    assert_eq!(invalid.len(), 19, "the count the vectors file holds");
     for case in invalid {
         let name = case["name"].as_str().unwrap();
         let err = Lineage::read(&message_with(&case["value"])).expect_err(name);

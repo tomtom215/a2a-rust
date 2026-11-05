@@ -163,6 +163,13 @@
    "value": "job-42"
   },
   {
+   "name": "an array in field order",
+   "value": [
+    "job-42",
+    0
+   ]
+  },
+  {
    "name": "no root",
    "value": {
     "depth": 0

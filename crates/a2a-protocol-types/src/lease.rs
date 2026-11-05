@@ -49,7 +49,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{A2aError, A2aResult};
+use crate::error::A2aResult;
 use crate::message::Message;
 
 /// The extension URI a card declares, a message names in `extensions`, and a
@@ -119,9 +119,7 @@ impl Lease {
         else {
             return Ok(None);
         };
-        serde_json::from_value(value.clone())
-            .map(Some)
-            .map_err(|e| A2aError::invalid_params(format!("malformed lease: {e}")))
+        crate::extension_value::read_object(value, "lease").map(Some)
     }
 }
 

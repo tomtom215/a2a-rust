@@ -126,6 +126,7 @@ pub mod budget;
 pub mod delegation_journal;
 pub mod error;
 pub mod events;
+mod extension_value;
 pub mod extensions;
 pub mod failure;
 pub mod idempotency;
