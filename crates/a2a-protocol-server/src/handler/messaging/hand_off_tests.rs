@@ -112,7 +112,6 @@ fn sqlite_url() -> (String, std::path::PathBuf) {
 }
 
 /// Removes the database and the files the pool leaves beside it.
-#[cfg(feature = "sqlite")]
 fn remove_sqlite(path: &std::path::Path) {
     for suffix in ["", "-wal", "-shm"] {
         let mut name = path.as_os_str().to_owned();
@@ -156,14 +155,7 @@ async fn a_resumable_turn_is_handed_off_and_another_replica_runs_it() {
 #[tokio::test]
 async fn without_opt_in_or_claims_a_shutdown_still_fails_the_turn() {
     let in_memory: Arc<dyn TaskStore> = Arc::new(crate::store::InMemoryTaskStore::new());
-    let mut cases = vec![(in_memory, true, None)];
-    #[cfg(feature = "sqlite")]
-    {
-        let (url, path) = sqlite_url();
-        let shared: Arc<dyn TaskStore> =
-            Arc::new(crate::store::SqliteTaskStore::new(&url).await.unwrap());
-        cases.push((shared, false, Some(path)));
-    }
+    let cases = std::iter::once((in_memory, true, None)).chain(shared_case().await);
     for (store, resumes, path) in cases {
         let h = handler(&store, resumes);
         let id = started(&h).await;
@@ -178,6 +170,23 @@ async fn without_opt_in_or_claims_a_shutdown_still_fails_the_turn() {
             remove_sqlite(&path);
         }
     }
+}
+
+/// A case on a shared SQLite file, which hands out claims, with an executor
+/// that does not opt in: none without the `sqlite` feature.
+type Case = (Arc<dyn TaskStore>, bool, Option<std::path::PathBuf>);
+
+#[cfg(feature = "sqlite")]
+async fn shared_case() -> Option<Case> {
+    let (url, path) = sqlite_url();
+    let shared: Arc<dyn TaskStore> =
+        Arc::new(crate::store::SqliteTaskStore::new(&url).await.unwrap());
+    Some((shared, false, Some(path)))
+}
+
+#[cfg(not(feature = "sqlite"))]
+fn shared_case() -> std::future::Ready<Option<Case>> {
+    std::future::ready(None)
 }
 
 /// The SQL statements spell the window as 600 seconds.
