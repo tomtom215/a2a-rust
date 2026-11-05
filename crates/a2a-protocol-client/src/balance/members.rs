@@ -195,3 +195,6 @@ impl std::fmt::Debug for Members {
 pub fn next_pick(counter: &AtomicU64) -> u64 {
     counter.fetch_add(1, Ordering::Relaxed) + 1
 }
+
+#[cfg(test)]
+mod tests;

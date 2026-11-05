@@ -59,15 +59,9 @@ pub fn choose(
     let mut candidates: Vec<(&Arc<Member>, bool)> = set
         .iter()
         .filter(others)
-        .filter_map(|m| {
-            if forced.iter().any(|f| Arc::ptr_eq(f, m)) {
-                Some((m, true))
-            } else if ejected.iter().any(|e| Arc::ptr_eq(e, m)) {
-                None
-            } else {
-                Some((m, false))
-            }
-        })
+        // An ejected endpoint that is not forced stays a candidate: the
+        // `standing` check below turns it away, as it does one ejected since.
+        .map(|m| (m, forced.iter().any(|f| Arc::ptr_eq(f, m))))
         .collect();
 
     while !candidates.is_empty() {
