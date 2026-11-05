@@ -97,6 +97,14 @@ impl TelemetryBuilder {
                 meter,
                 telemetry.failed_totals.clone(),
             );
+            if self.process_metrics {
+                super::super::process::observe(
+                    meter,
+                    self.runtime
+                        .clone()
+                        .or_else(|| tokio::runtime::Handle::try_current().ok()),
+                );
+            }
         }
         telemetry.runtime = runtime;
         telemetry.notices.extend(self.base_endpoint_notice([

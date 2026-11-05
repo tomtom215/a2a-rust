@@ -12,6 +12,7 @@ use super::{
 };
 
 mod assemble;
+mod options;
 mod resource;
 
 /// Configures and builds a [`Telemetry`]; see [`Telemetry::builder`].
@@ -38,8 +39,13 @@ pub struct TelemetryBuilder {
     install_globally: bool,
     where_configured: bool,
     /// Whether `OTEL_METRICS_EXPORTER=prometheus` binds a listener of its own.
-    #[cfg_attr(not(feature = "otel-prometheus"), allow(dead_code))]
+    #[cfg(feature = "otel-prometheus")]
     prometheus_listener: bool,
+    /// Whether process and runtime metrics are reported (audit C-13).
+    process_metrics: bool,
+    /// The runtime whose metrics are reported; the one `build` runs in when
+    /// `None`.
+    runtime: Option<tokio::runtime::Handle>,
     env: Arc<Env>,
     /// What the environment said that was not acted on; see [`config::Notes`].
     notes: config::Notes,
@@ -84,7 +90,10 @@ impl TelemetryBuilder {
             langfuse: None,
             install_globally: true,
             where_configured: false,
+            #[cfg(feature = "otel-prometheus")]
             prometheus_listener: true,
+            process_metrics: true,
+            runtime: None,
             env,
             notes: config::Notes::default(),
         }
@@ -298,27 +307,6 @@ impl TelemetryBuilder {
     #[must_use]
     pub const fn install_globally(mut self, on: bool) -> Self {
         self.install_globally = on;
-        self
-    }
-
-    /// Under `OTEL_METRICS_EXPORTER=prometheus`, binds no listener of its
-    /// own: the application serves [`Telemetry::prometheus`]'s text on its own
-    /// port, behind its own authentication and connection limits (audit
-    /// C-16). `OTEL_EXPORTER_PROMETHEUS_HOST` and `_PORT` are then not read.
-    #[cfg(feature = "otel-prometheus")]
-    #[must_use]
-    pub const fn without_prometheus_listener(mut self) -> Self {
-        self.prometheus_listener = false;
-        self
-    }
-
-    /// The format `install_subscriber` prints in: text (the default) or one
-    /// JSON object per line with `trace_id`, `span_id` and `trace_flags`
-    /// inside a span (audit C-06). Wins over `A2A_LOG_FORMAT` (`json` or
-    /// `text`), which applies when this is not called.
-    #[must_use]
-    pub const fn with_console_format(mut self, format: super::ConsoleFormat) -> Self {
-        self.console_format = Some(format);
         self
     }
 

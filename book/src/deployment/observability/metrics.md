@@ -325,6 +325,37 @@ The metrics go to the global meter provider as it is when each is recorded,
 so `Telemetry` installed after the loop is built still receives them;
 `ToolLoop::with_meter` sends them elsewhere.
 
+## Process and runtime
+
+When metrics are exported, `Telemetry` also reports the process itself, under
+the semantic conventions' process metrics (audit C-13):
+
+| Instrument | Kind, unit | What |
+|---|---|---|
+| `process.cpu.time` | counter, `s`, `cpu.mode` = `user` \| `system` | CPU time used, from `/proc/self/stat` (`USER_HZ` = 100) |
+| `process.memory.usage` | up-down counter, `By` | Resident memory (`VmRSS`) |
+| `process.memory.virtual` | up-down counter, `By` | Virtual memory (`VmSize`) |
+| `process.thread.count` | up-down counter, `{thread}` | Threads (`Threads`) |
+| `process.unix.file_descriptor.count` | up-down counter, `{file_descriptor}` | Entries in `/proc/self/fd` |
+
+They are read on Linux only; on macOS and Windows they are not reported (no
+series rather than a wrong one), so nothing needs a new dependency or
+`unsafe`. The Tokio runtime `Telemetry::builder().build()` runs in (or the
+one given to `with_tokio_runtime`) reports three of Tokio's stable
+`RuntimeMetrics`, no `tokio_unstable` needed:
+
+| Instrument | Unit | What |
+|---|---|---|
+| `tokio.runtime.worker.count` | `{thread}` | Worker threads |
+| `tokio.runtime.task.count` | `{task}` | Tasks alive |
+| `tokio.runtime.global_queue.depth` | `{task}` | Tasks waiting in the global queue |
+
+The conventions name no Tokio metric; these names are this crate's. A
+`Telemetry` built before the runtime starts reports none unless given its
+handle. `without_process_metrics()` turns both tables off. In Prometheus they
+are `process_cpu_time_seconds_total`, `process_memory_usage_bytes`,
+`process_thread_count`, `tokio_runtime_task_count` and so on.
+
 ## Prometheus names
 
 Prometheus, fed over OTLP with `UnderscoreEscapingWithSuffixes` (the shipped

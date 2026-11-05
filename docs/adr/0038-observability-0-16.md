@@ -151,8 +151,21 @@ while the event is being delivered.
 observable counter of exports that failed after the exporter's retries, fed
 by the same wrapper that drives the warnings and `shutdown`'s error. It is
 this crate's name, not `otel.sdk.exporter.*.exported`, because those count
-items with an `error.type` and the wrapper sees batches. Process metrics (RSS,
-CPU time, open descriptors) are not built.
+items with an `error.type` and the wrapper sees batches.
+
+Process metrics follow the conventions' `docs/system/process-metrics.md`
+(`process.cpu.time`, `process.memory.usage`, `process.memory.virtual`,
+`process.thread.count`, `process.unix.file_descriptor.count`), read from
+`/proc/self` on Linux and absent elsewhere: no dependency (`sysinfo`, `procfs`)
+and no `unsafe` for `sysconf`/`getrusage`, at the cost of no series on macOS
+and Windows, which is what an absent reading should be rather than a wrong
+one. `USER_HZ` is taken as 100, the kernel's user-space ABI value on every
+Linux target this crate builds for. The Tokio runtime reports its three
+stable `RuntimeMetrics` (workers, alive tasks, global queue depth) under
+`tokio.runtime.*`; the per-worker and poll-time metrics need
+`tokio_unstable` and are not reported. Both are on by default when metrics
+are exported (a process's health is what an operator wants without asking;
+eight small series), and `without_process_metrics()` turns them off.
 
 ## What is not built, and why
 
@@ -171,5 +184,6 @@ CPU time, open descriptors) are not built.
   before `Telemetry` installs its provider, so in this crate they would record
   into the no-op meter. `a2a.telemetry.export.failed` (section 7) stands in
   for the export half.
-* **Process metrics** (RSS, CPU time, open descriptors; C-13's other half).
-* **Tokio runtime metrics** need `--cfg tokio_unstable`; not built.
+* **Tokio's unstable runtime metrics** (per-worker busy time, poll counts,
+  steals) need `--cfg tokio_unstable`; only the stable three are reported.
+* **Process metrics outside Linux**: not read (see section 7).

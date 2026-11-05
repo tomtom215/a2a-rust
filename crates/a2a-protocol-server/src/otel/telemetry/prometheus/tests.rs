@@ -321,3 +321,65 @@ fn without_prometheus_there_is_no_handle() {
         .expect("builds");
     assert!(telemetry.prometheus().is_none());
 }
+
+/// Built inside a runtime, `Telemetry` reports the process metrics (on
+/// Linux) and that runtime's; `without_process_metrics` reports neither
+/// (audit C-13).
+#[test]
+fn process_and_runtime_metrics_are_reported_by_default_and_can_be_turned_off() {
+    let build = |off: bool| {
+        let builder = Telemetry::builder()
+            .install_globally(false)
+            .without_prometheus_listener()
+            .with_env(env(&[
+                ("OTEL_TRACES_EXPORTER", "none"),
+                ("OTEL_LOGS_EXPORTER", "none"),
+                ("OTEL_METRICS_EXPORTER", "prometheus"),
+            ]));
+        if off {
+            builder.without_process_metrics()
+        } else {
+            builder
+        }
+        .build()
+        .expect("builds")
+    };
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let on = runtime.block_on(async { build(false) });
+    let text = on
+        .prometheus()
+        .expect("a handle")
+        .render()
+        .expect("renders");
+    assert!(text.contains("tokio_runtime_worker_count"), "{text}");
+    assert!(text.contains("tokio_runtime_task_count"), "{text}");
+    assert!(text.contains("tokio_runtime_global_queue_depth"), "{text}");
+    #[cfg(target_os = "linux")]
+    for name in [
+        "process_cpu_time_seconds_total{cpu_mode=\"user\"",
+        "process_memory_usage_bytes",
+        "process_memory_virtual_bytes",
+        "process_thread_count",
+        "process_unix_file_descriptor_count",
+    ] {
+        assert!(text.contains(name), "{name}: {text}");
+    }
+    let off = runtime.block_on(async { build(true) });
+    let text = off
+        .prometheus()
+        .expect("a handle")
+        .render()
+        .expect("renders");
+    assert!(!text.contains("# TYPE process_"), "{text}");
+    assert!(!text.contains("# TYPE tokio_runtime"), "{text}");
+    // Built outside any runtime: the process metrics, no runtime's.
+    let outside = build(false);
+    let text = outside
+        .prometheus()
+        .expect("a handle")
+        .render()
+        .expect("renders");
+    assert!(!text.contains("tokio_runtime"), "{text}");
+}

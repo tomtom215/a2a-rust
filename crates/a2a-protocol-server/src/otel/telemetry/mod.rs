@@ -47,6 +47,7 @@ mod exporters;
 mod hints;
 mod http;
 mod langfuse;
+mod process;
 #[cfg(feature = "otel-prometheus")]
 mod prometheus;
 mod propagators;

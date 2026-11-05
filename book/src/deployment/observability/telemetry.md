@@ -140,6 +140,10 @@ says which one wins.
 | `without_startup_summary()` | Leaves the startup line out of what `install_subscriber` logs; warnings still print | Logged |
 | `with_langfuse(Langfuse)` | Traces to Langfuse ([Langfuse](../langfuse.md#what-the-preset-sets)) | Off |
 | `install_globally(bool)` | Whether the providers and the W3C propagators become the process-global ones | On |
+| `with_console_format(ConsoleFormat)` | `Text`, or `Json`: one JSON object per line with `trace_id`, `span_id`, `trace_flags` ([Logs](./logs.md#json-lines-with-the-trace-context)) | `A2A_LOG_FORMAT`, else `Text` |
+| `without_prometheus_listener()` | Under `OTEL_METRICS_EXPORTER=prometheus`, binds nothing; serve `Telemetry::prometheus()`'s text yourself ([Prometheus](./prometheus.md#on-the-applications-own-port)) | A listener on `OTEL_EXPORTER_PROMETHEUS_HOST`:`_PORT` |
+| `without_process_metrics()` | Reports no `process.*` or `tokio.runtime.*` metrics ([Metrics](./metrics.md#process-and-runtime)) | Reported when metrics are exported |
+| `with_tokio_runtime(Handle)` | The runtime whose `tokio.runtime.*` metrics are reported | The runtime `build` runs in, if any |
 | `build()` | Builds the exporters; fails on a value it cannot do without (an endpoint with no scheme, an unreadable certificate file); a wrong exporter name, protocol, compression, timeout or port is a line in `notices()` instead | — |
 
 ## Without global providers
