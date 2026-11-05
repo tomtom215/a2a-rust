@@ -105,11 +105,13 @@ impl ToolLoop {
     /// Records the loop's metrics (`gen_ai.client.inference.duration` and
     /// the rest; ADR 0013) to `meter` rather than to the global provider's
     /// meter, which is looked up each time one is recorded.
+    ///
+    /// Takes the meter by reference since 0.16.0: the instruments are built
+    /// from it once, here, and the meter itself is not kept (audit C-23).
     #[cfg(feature = "otel")]
     #[must_use]
-    #[allow(clippy::needless_pass_by_value)] // the public signature, kept
-    pub fn with_meter(mut self, meter: opentelemetry::metrics::Meter) -> Self {
-        self.meter = GenAiMeter::new(&meter);
+    pub fn with_meter(mut self, meter: &opentelemetry::metrics::Meter) -> Self {
+        self.meter = GenAiMeter::new(meter);
         self
     }
 

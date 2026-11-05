@@ -181,7 +181,7 @@ fn build_pipeline(
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(deprecated)] // the deprecated pipeline's own tests, until its removal
+#[allow(deprecated)] // the deprecated pipeline's own tests, until its removal (no earlier than 0.17.0)
 mod tests {
     /// The `service.name` a resource carries.
     fn service_name(resource: &opentelemetry_sdk::Resource) -> String {

@@ -84,7 +84,7 @@ fn a_turn_exports_its_chat_span_and_the_genai_metrics() {
         .meter("a2a.server");
     let tool_loop = ToolLoop::new(Reporting, ToolSet::new())
         .with_agent_name("reporter")
-        .with_meter(meter);
+        .with_meter(&meter);
     let subscriber = tracing_subscriber::registry().with(telemetry.layer());
     tracing::subscriber::with_default(subscriber, || {
         let rt = tokio::runtime::Builder::new_current_thread()

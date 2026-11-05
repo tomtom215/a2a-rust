@@ -243,7 +243,7 @@ async fn a_run_records_its_duration_and_how_many_turns_and_calls_it_took() {
     let tools = ToolSet::new().with(Status).unwrap();
     let tool_loop = ToolLoop::new(TwoCalls(AtomicUsize::new(0)), tools)
         .with_agent_name("status-agent")
-        .with_meter(meter);
+        .with_meter(&meter);
     tool_loop
         .run("hi", &CancellationToken::new())
         .await
@@ -311,7 +311,7 @@ async fn a_run_that_fails_records_why() {
     let tools = ToolSet::new().with(Status).unwrap();
     let tool_loop = ToolLoop::new(Insists, tools)
         .with_max_turns(2)
-        .with_meter(meter);
+        .with_meter(&meter);
     let result = tool_loop.run("hi", &CancellationToken::new()).await;
     assert!(matches!(result, Err(LoopError::TurnLimit(2))), "{result:?}");
     let rm = collect(&reader);
@@ -343,7 +343,7 @@ impl ToolModel for Silent {
 #[tokio::test]
 async fn a_run_dropped_mid_turn_is_recorded_as_cancelled() {
     let (meter, reader, _provider) = recording_meter();
-    let tool_loop = ToolLoop::new(Silent, ToolSet::new()).with_meter(meter);
+    let tool_loop = ToolLoop::new(Silent, ToolSet::new()).with_meter(&meter);
     let cancel = CancellationToken::new();
     let timed_out = tokio::time::timeout(
         std::time::Duration::from_millis(20),
@@ -367,7 +367,7 @@ async fn a_run_dropped_mid_turn_is_recorded_as_cancelled() {
 #[tokio::test]
 async fn a_run_cancelled_mid_turn_is_recorded_as_cancelled() {
     let (meter, reader, _provider) = recording_meter();
-    let tool_loop = ToolLoop::new(Silent, ToolSet::new()).with_meter(meter);
+    let tool_loop = ToolLoop::new(Silent, ToolSet::new()).with_meter(&meter);
     let cancel = CancellationToken::new();
     let trigger = cancel.clone();
     tokio::spawn(async move {
