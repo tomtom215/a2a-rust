@@ -279,3 +279,104 @@ fn the_child_lineage_of_a_turn_is_one_level_down_with_the_turn_as_parent() {
         ErrorCode::InvalidParams
     );
 }
+
+/// The poll that first reads a job's halt stops that job's turns, in its
+/// tenant only; a later poll that reads the same halts stops nothing new
+/// (admission refuses the job's later sends, `stop_if_halted`). The mutation
+/// gate found the "already held" test of a root halt untested.
+#[tokio::test]
+async fn only_the_poll_that_first_reads_a_halt_stops_what_it_covers() {
+    use crate::handler::{CancellationEntry, ExecutorTurn};
+    use crate::store::{HaltStore, StoredHalt};
+    use a2a_protocol_types::task::TaskId;
+    use tokio_util::sync::CancellationToken;
+
+    let store = InMemoryHaltStore::new();
+    let sync = super::sync::HaltSync::new(Arc::new(store.clone()), Duration::from_secs(3600));
+    let halts = std::sync::RwLock::default();
+    let tokens = tokio::sync::RwLock::new(std::collections::HashMap::new());
+    let register = |id: &str, tenant: &str, root: &str| {
+        let token = CancellationToken::new();
+        let entry = CancellationEntry {
+            token: token.clone(),
+            created_at: std::time::Instant::now(),
+            turn: Arc::new(ExecutorTurn::default()),
+            tenant: tenant.to_owned(),
+            lineage: Lineage::origin(root),
+        };
+        (TaskId::new(id), entry, token)
+    };
+    let mut fired = Vec::new();
+    for (id, tenant, root) in [("a", "x", "job"), ("b", "x", "other"), ("c", "y", "job")] {
+        let (id, entry, token) = register(id, tenant, root);
+        tokens.write().await.insert(id, entry);
+        fired.push(token);
+    }
+    store
+        .put(&StoredHalt::new(HaltScope::root("x", "job"), "r", "b"))
+        .await
+        .unwrap();
+    store
+        .put(&StoredHalt::new(HaltScope::Tenant("z".into()), "r", "b"))
+        .await
+        .unwrap();
+    sync.apply(&halts, &tokens).await.unwrap();
+    let cancelled: Vec<bool> = fired.iter().map(CancellationToken::is_cancelled).collect();
+    assert_eq!(cancelled, [true, false, false], "only job of tenant x");
+
+    // Turns registered while the halts are held, as no admission would let
+    // through: the next poll reads nothing new and stops neither.
+    let mut late = Vec::new();
+    for (id, tenant, root) in [("d", "x", "job"), ("e", "z", "any")] {
+        let (id, entry, token) = register(id, tenant, root);
+        tokens.write().await.insert(id, entry);
+        late.push(token);
+    }
+    sync.apply(&halts, &tokens).await.unwrap();
+    assert!(
+        late.iter().all(|t| !t.is_cancelled()),
+        "a halt already held is not newly halted"
+    );
+}
+
+/// `running_in_root` lists the job's live turns in task-id order, leaving out
+/// one whose token already fired (stopped, not yet gone) and the turns of
+/// other jobs and tenants. Entries are put in the registry directly, so the
+/// view is read with no executor racing it.
+#[tokio::test]
+async fn running_in_root_lists_the_live_turns_of_one_job_in_id_order() {
+    use crate::handler::{CancellationEntry, ExecutorTurn};
+    use a2a_protocol_types::task::TaskId;
+    use tokio_util::sync::CancellationToken;
+
+    let (h, _rx) = replica(None);
+    let job = Lineage::origin("job").child("p").unwrap();
+    for (id, tenant, root, cancelled) in [
+        ("t-3", "x", "job", false),
+        ("t-1", "x", "job", false),
+        ("t-2", "x", "job", true),
+        ("t-4", "x", "other", false),
+        ("t-5", "y", "job", false),
+    ] {
+        let token = CancellationToken::new();
+        if cancelled {
+            token.cancel();
+        }
+        let mut lineage = job.clone();
+        lineage.root = root.to_owned();
+        h.cancellation_tokens.write().await.insert(
+            TaskId::new(id),
+            CancellationEntry {
+                token,
+                created_at: std::time::Instant::now(),
+                turn: Arc::new(ExecutorTurn::default()),
+                tenant: tenant.to_owned(),
+                lineage,
+            },
+        );
+    }
+    assert_eq!(
+        h.running_in_root("x", "job").await,
+        vec![("t-1".into(), job.clone()), ("t-3".into(), job)]
+    );
+}
