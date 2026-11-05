@@ -425,7 +425,7 @@ are rustdoc's job.
 | `RestDispatcher` | RESTful HTTP dispatcher (implements `Dispatcher`) |
 | `CombinedDispatcher` | JSON-RPC and REST on one listener: a `POST` to the JSON-RPC path is JSON-RPC, the rest is REST (implements `Dispatcher`) |
 | `WebSocketDispatcher` | WebSocket dispatcher (`websocket` feature) |
-| `GrpcDispatcher` | gRPC dispatcher (`grpc` feature) |
+| `GrpcDispatcher` | gRPC dispatcher (`grpc` feature); `with_rustls(rustls::ServerConfig)` serves TLS through this crate's handshake, so a `ReloadingCertResolver` rotates it (`grpc-tls` and `tls-rustls`) |
 | `A2aRouter` | Axum framework adapter (`axum` feature) |
 
 ### Server Startup
@@ -438,7 +438,7 @@ are rustdoc's job.
 | `ServeConfig` | Limits applied to a `Server`; `ServeConfig::production()` makes it refuse plaintext beyond loopback and a binding the agent card does not declare (ADR 0025) |
 | `ServeReport` | What a shutdown did — `Server::serve_with_shutdown`, or the gRPC and WebSocket dispatchers' `serve_with_shutdown`: connections accepted, drained or abandoned, and (with a handler-backed dispatcher) the `InFlightReport` for its tasks; `refused` says why a `ServeConfig::production()` server declined to start |
 | `shutdown_signal() -> impl Future<Output = ()>` | Resolves on SIGTERM or SIGINT (Ctrl-C on non-Unix); pass it to `Server::serve_with_shutdown` so a pod stop drains in-flight work, returns from `main`, and lets a live `Telemetry` guard flush |
-| `DispatchConfig` | Configuration for dispatch-layer limits shared by both JSON-RPC and REST dispatchers |
+| `DispatchConfig` | Configuration for dispatch-layer limits shared by both JSON-RPC and REST dispatchers; `with_base_path` names a reverse proxy's path prefix |
 | `GrpcConfig` | Configuration for the gRPC dispatcher (`grpc` feature) |
 | `validate_version_metadata(metadata, required)` | Validates the A2A version carried in a binding's request metadata |
 
@@ -495,6 +495,9 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `ApiKeyAuthInterceptor` | Rejects requests whose API-key header is absent or not in the allowed set |
 | `BearerTokenAuthInterceptor` | Rejects requests whose bearer token is absent or not in the allowed set |
 | `AuthFailureThrottle` | Refuses a peer whose credentials were refused too often, until its window ends |
+| `auth::MutualTlsAuthInterceptor::with_forwarded` | Also names a caller from the client certificate a trusted TLS-terminating proxy forwarded (`tls-rustls` or `grpc-tls`) |
+| `auth::ForwardedClientCert` | Where a proxy forwards the client certificate and which peers may: `envoy` (`x-forwarded-client-cert`), `url_encoded_pem(header, ..)` (nginx), `aws_alb` (`x-amzn-mtls-clientcert`) |
+| `ReloadingCertResolver` | A `rustls` certificate resolver that serves two PEM files and replaces the certificate on `reload()` or `watch(interval)`; `server_config()` builds a configuration around it (`tls-rustls`) |
 | `PeerAddr` | Request extension carrying the connection's address, which the dispatchers copy to `CallContext::peer_addr` |
 | `PeerCertificate` | Request extension carrying the client's mutual-TLS certificate (DER), which the dispatchers pass to `CallContext::peer_certificate` |
 | `ServerInterceptorChain` | An ordered chain of `ServerInterceptor` instances |
@@ -528,7 +531,8 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `PerTenantConfig` | Per-tenant configuration for timeouts, capacity limits, and executor selection |
 | `TenantLimits` | Resource limits declared for a single tenant |
 | `RateLimitConfig` | Configuration for `RateLimitInterceptor` |
-| `TrustedProxy` | An address range (`10.0.0.0/8`) of reverse proxies whose `X-Forwarded-For` is believed; set on `RateLimitConfig` and `AuthFailureThrottleConfig` |
+| `TrustedProxy` | An address range (`10.0.0.0/8`) of reverse proxies whose forwarded header is believed; set on `RateLimitConfig` and `AuthFailureThrottleConfig`, and on `ForwardedClientCert` |
+| `ForwardedHeader` | The header the trusted proxies write the client address into: `XForwardedFor` (default) or RFC 7239 `Forwarded`; `with_forwarded_header` on `RateLimitConfig` and `AuthFailureThrottleConfig` |
 | `InvalidTrustedProxy` | Why a string is not a `TrustedProxy` |
 | `AuthFailureThrottleConfig` | Configuration for `AuthFailureThrottle` |
 | `PushRetryPolicy` | Retry policy for push notification delivery |

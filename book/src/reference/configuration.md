@@ -108,6 +108,7 @@ Shared configuration for JSON-RPC, REST, and Axum dispatchers. Pass to
 | `max_batch_size` | `usize` | 100 | Maximum requests in a JSON-RPC batch |
 | `require_version_header` | `bool` | true | Reject a data-plane request with no `A2A-Version` header as `VersionNotSupported` (spec §3.6.2: absent means 0.3) |
 | `agent_card_max_age` | `u32` | 3600 | `Cache-Control: max-age`, in seconds, for the public agent card; set it to how often the card changes (spec §8.6.1) |
+| `base_path` | `Option<String>` | none | `with_base_path("/agents/billing")`: a path prefix a reverse proxy keeps, taken off a request's path before routing (the card is then under the prefix, a tenant segment after it); a request outside it is routed as before |
 
 ### GrpcConfig
 
@@ -137,7 +138,8 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `requests_per_window` | `u64` | 100 | Max requests per caller per window |
 | `window_secs` | `u64` | 60 | Window duration in seconds |
 | `trusted_proxy_hops` | `usize` | 0 | How many `X-Forwarded-For` hops to trust (0 = ignore XFF entirely) |
-| `trusted_proxies` | `Vec<TrustedProxy>` | `[]` | Address ranges the proxies connect from; when set, XFF is believed only from a peer in one (no effect while `trusted_proxy_hops` is 0) |
+| `trusted_proxies` | `Vec<TrustedProxy>` | `[]` | Address ranges the proxies connect from; when set, XFF is believed only from a peer in one (no effect while `trusted_proxy_hops` is 0). `RateLimitInterceptor::new` logs a warning when hops are set and this is empty |
+| `forwarded_header` | `ForwardedHeader` | `XForwardedFor` | The header the proxies write the client address into: `X-Forwarded-For` or RFC 7239 `Forwarded` (its `for=` parameter); only that one is read |
 | `max_buckets` | `usize` | 10,000 | Bound on tracked caller buckets. When full of live buckets, callers without one share a single `overflow` bucket holding one caller's limit (`RateLimitInterceptor::overflowed()` counts its requests); they used to be refused outright, which locked every new caller out while `max_buckets` callers stayed active |
 
 ### ServeConfig
@@ -165,7 +167,9 @@ take the same three through their own `with_completion_grace`,
 |------|----------|
 | `CorsConfig::new(origin)` | `allow_methods` `GET, POST, PUT, DELETE, OPTIONS`; `allow_headers` `content-type, authorization, a2a-version, a2a-extensions, last-event-id, x-a2a-notification-token`; `max_age_secs` 86400 |
 | `TenantStoreConfig` | `max_tenants` 1,000 partitions (each caller's partition counts when tasks are isolated by caller); `max_total_tasks` none |
-| `WebSocketDispatcher` | handshake timeout 10s (`with_handshake_timeout`); write timeout 30s (`with_write_timeout`: a peer that stops reading is dropped at it, and the connection with it); idle timeout off (`with_idle_timeout`; `DEFAULT_WS_IDLE_TIMEOUT` is 75s); `with_max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
+| `WebSocketDispatcher` | handshake timeout 10s (`with_handshake_timeout`); write timeout 30s (`with_write_timeout`: a peer that stops reading is dropped at it, and the connection with it); idle timeout `DEFAULT_WS_IDLE_TIMEOUT`, 75s, pinging at half (`with_idle_timeout`, `without_idle_timeout`; off until 0.16.0); `with_max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
+| `GrpcDispatcher` | HTTP/2 keep-alive: a PING after 60s idle (`DEFAULT_GRPC_KEEPALIVE_INTERVAL`), closing at 20s unanswered (`DEFAULT_GRPC_KEEPALIVE_TIMEOUT`; `with_http2_keepalive`, `without_http2_keepalive`; off until 0.16.0); `with_max_connections` unbounded; `with_max_connection_age` off; under `with_rustls` a 10s TLS handshake bound |
+| `ReloadingCertResolver` | nothing re-read until `reload()`, or every interval given to `watch(interval)` |
 | `HttpPushSender` | 10s request timeout (`HttpPushSender::with_timeout`), 5s DNS lookup bound (`with_dns_timeout`), `PushRetryPolicy` above; SSRF guard on unless `allow_private_urls()` |
 | `JwtValidator`, `JwtAuthInterceptor` | clock-skew leeway 60s (`JwtValidator::with_leeway`); a remote JWKS is cached for 3,600s (`JwtAuthInterceptor::with_jwks_ttl`) and refetched for an unknown key id at most every 10s (`with_jwks_refetch_interval`) |
 
