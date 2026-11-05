@@ -288,7 +288,7 @@ async fn an_https_delivery_goes_on_to_the_next_validated_address() {
 /// attempt, and the second attempt reached the second address; the test
 /// asserted the same outcome then, with two attempts.)
 #[tokio::test]
-async fn an_http_delivery_tries_the_next_validated_address_on_each_attempt() {
+async fn an_http_delivery_goes_on_to_the_next_validated_address() {
     let (pki, _) = pki("unused.test");
     let seen = Arc::new(Seen::default());
     let port = plain_receiver(Arc::clone(&seen)).await;
