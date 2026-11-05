@@ -350,6 +350,18 @@ jobs:
         with:
           python-version: '3.12'
 
+      # observability.yml's `promtool test rules` is proved here like every
+      # other gate, so the harness needs promtool: the same pinned release
+      # tarball, digest-checked, by the script observability.yml uses.
+      - name: Install promtool for the harness (pinned by SHA-256)
+        run: |
+          # Outside a runner (scripts/preflight.sh) RUNNER_TEMP and GITHUB_PATH
+          # are unset: install to the temp directory, and the harness reports
+          # the probe NOT RUN unless promtool is on your PATH.
+          bin="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/a2a-obs-bin"
+          deploy/observability/scripts/install_tools.sh "$bin" promtool
+          echo "$bin" >> "${GITHUB_PATH:-/dev/null}"
+
       - name: Workflow verdict gates can fail
         run: python3 -m pip install --quiet --require-hashes -r .github/requirements/pyyaml.txt && ./scripts/prove_workflow_gates_fail.py
 

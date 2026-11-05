@@ -14,7 +14,10 @@ Kubernetes manifests generated from it.
    say which side it is on.
 2. prometheus/prometheus-compose.yml has prometheus.yml's `global`, `otlp`,
    `storage` and `rule_files` blocks unchanged.
-3. Every image in docker-compose.yml is pinned by digest (audit C-19).
+3. Every image in docker-compose.yml is pinned by digest (audit C-19), and
+   the Prometheus and Alertmanager tags are the versions install_tools.sh
+   installs promtool and amtool from, so CI checks with the tools the stack
+   runs (a Dependabot image bump fails until the tool pins move too).
 4. deploy/kubernetes/observability/ holds exactly what --write-kubernetes
    generates from the rules and dashboards (audit C-22): a PrometheusRule and
    one dashboard ConfigMap per dashboard.
@@ -112,9 +115,17 @@ def check_compose_prometheus(problems: list[str]) -> None:
 
 def check_image_pins(problems: list[str]) -> None:
     doc = yaml.safe_load((OBS / "docker-compose.yml").read_text(encoding="utf-8"))
+    tools = (OBS / "scripts/install_tools.sh").read_text(encoding="utf-8")
+    pins = dict(re.findall(r"^(PROMETHEUS|ALERTMANAGER)_VERSION=(\S+)$", tools, re.M))
     for name, svc in doc["services"].items():
-        if not re.fullmatch(r"[\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}", svc.get("image", "")):
-            problems.append(f"docker-compose.yml: service {name}: image {svc.get('image')!r} is not pinned by tag and digest")
+        image = svc.get("image", "")
+        if not re.fullmatch(r"[\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}", image):
+            problems.append(f"docker-compose.yml: service {name}: image {image!r} is not pinned by tag and digest")
+        for repo, key in (("prom/prometheus", "PROMETHEUS"), ("prom/alertmanager", "ALERTMANAGER")):
+            if image.startswith(repo + ":") and not image.startswith(f"{repo}:v{pins.get(key)}@"):
+                problems.append(
+                    f"docker-compose.yml: service {name} runs {image.split('@')[0]}, but install_tools.sh "
+                    f"installs {key.lower()} {pins.get(key)}; move the pin and its SHA-256 together")
 
 
 class _Block(str):

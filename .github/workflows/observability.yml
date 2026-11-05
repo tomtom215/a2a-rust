@@ -8,9 +8,10 @@
 #
 # promtool and amtool come from the Prometheus and Alertmanager release
 # tarballs at the versions the compose stack runs, each checked against the
-# SHA-256 that release's sha256sums.txt lists (copied here on 2026-11-04;
-# change version and digest together, and the image pins in
-# docker-compose.yml with them).
+# SHA-256 its release lists, by deploy/observability/scripts/install_tools.sh
+# (the one place those pins live; ci.yml uses it too, so the harness there
+# can prove `promtool test rules` fails on an empty tests directory, an unmet
+# expectation and a broken rule).
 #
 # check_stack.py: the caller-class pattern in the rules matches the codes the
 # crates define (NEW-c-1), prometheus-compose.yml keeps prometheus.yml's
@@ -38,27 +39,13 @@ jobs:
     name: Prometheus rules and stack configuration
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      PROMETHEUS_VERSION: "3.15.1"
-      PROMETHEUS_SHA256: 6a726885328ad9efebbf36e876ce2fb6225468a71fd1e7ce3ba666d5f4d97a84
-      ALERTMANAGER_VERSION: "0.34.2"
-      ALERTMANAGER_SHA256: 17ee14acd0f6ba6e25a436ff223d9c17ddd5cf484f543ad12f0932eaa89ba186
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install promtool and amtool (pinned by SHA-256)
         run: |
-          set -euo pipefail
-          bin="$RUNNER_TEMP/obs-bin"; mkdir -p "$bin"; cd "$RUNNER_TEMP"
-          p="prometheus-${PROMETHEUS_VERSION}.linux-amd64"
-          curl -fsSL -o prometheus.tar.gz "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/${p}.tar.gz"
-          echo "${PROMETHEUS_SHA256}  prometheus.tar.gz" | sha256sum -c -
-          tar xzf prometheus.tar.gz "${p}/promtool" && mv "${p}/promtool" "$bin/"
-          a="alertmanager-${ALERTMANAGER_VERSION}.linux-amd64"
-          curl -fsSL -o alertmanager.tar.gz "https://github.com/prometheus/alertmanager/releases/download/v${ALERTMANAGER_VERSION}/${a}.tar.gz"
-          echo "${ALERTMANAGER_SHA256}  alertmanager.tar.gz" | sha256sum -c -
-          tar xzf alertmanager.tar.gz "${a}/amtool" && mv "${a}/amtool" "$bin/"
-          echo "$bin" >> "$GITHUB_PATH"
+          deploy/observability/scripts/install_tools.sh "$RUNNER_TEMP/obs-bin" promtool amtool
+          echo "$RUNNER_TEMP/obs-bin" >> "$GITHUB_PATH"
 
       - name: promtool check config
         working-directory: deploy/observability/prometheus

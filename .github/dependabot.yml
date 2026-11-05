@@ -74,3 +74,25 @@ updates:
     open-pull-requests-limit: 2
     commit-message:
       prefix: "deps(docker)"
+
+  # The observability stack's images are pinned by tag and digest
+  # (deploy/observability/docker-compose.yml; the prod overlay names no
+  # image), so a re-pushed tag cannot change what runs, and nothing else
+  # refreshes them. Dependabot's docker-compose ecosystem updates the tag and
+  # the digest together. A Prometheus or Alertmanager bump must move the
+  # promtool/amtool pins in deploy/observability/scripts/install_tools.sh
+  # too; check_stack.py fails the PR until it does.
+  - package-ecosystem: docker-compose
+    directory: /deploy/observability
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    groups:
+      observability-images:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps(observability)"
