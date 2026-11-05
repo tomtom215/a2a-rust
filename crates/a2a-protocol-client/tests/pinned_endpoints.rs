@@ -127,10 +127,12 @@ fn pinned_endpoints_keep_their_name() {
         }
     }
     tokio::runtime::Runtime::new().unwrap().block_on(async {
-        // Two loopback addresses: all of 127.0.0.0/8 is the loopback
-        // interface. No port in the URL: each pinned address's own is used.
+        // Two addresses: 127.0.0.1 on two ports. Not 127.0.0.2: Linux and
+        // Windows answer for all of 127.0.0.0/8, but macOS configures only
+        // 127.0.0.1 and refuses to bind another (`AddrNotAvailable`). No port
+        // in the URL: each pinned address's own is used.
         let (a, (a_hosts, a_accepted)) = replica("a", "127.0.0.1").await;
-        let (b, (b_hosts, _)) = replica("b", "127.0.0.2").await;
+        let (b, (b_hosts, _)) = replica("b", "127.0.0.1").await;
         let url = "http://replica.invalid";
         let client = ClientBuilder::new(url)
             .with_balancing(
