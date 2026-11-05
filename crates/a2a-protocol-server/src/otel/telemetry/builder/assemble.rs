@@ -168,6 +168,9 @@ impl TelemetryBuilder {
         if chosen[1].otlp || chosen[1].console {
             upstream::note_metric_interval(&*self.env, &self.notes);
         }
+        if chosen[1].any() {
+            upstream::note_exemplar_filter(&*self.env, &self.notes);
+        }
     }
 
     fn tracer_provider(

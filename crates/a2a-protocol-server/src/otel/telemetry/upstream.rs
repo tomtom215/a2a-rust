@@ -118,6 +118,27 @@ pub(super) fn note_temporality(env: &Env, notes: &Notes) {
 
 /// A note on `OTEL_METRIC_EXPORT_INTERVAL`, which `PeriodicReader` reads and
 /// this crate's startup line shows, when it is not a number of milliseconds.
+/// `OTEL_METRICS_EXEMPLAR_FILTER` asks for exemplars (`trace_based`, the
+/// specification's default, or `always_on`), but `opentelemetry_sdk` 0.33.1
+/// records none — every data point is built with `exemplars: vec![]` and the
+/// variable is not read — so a value that asks for them is noted rather than
+/// silently having no effect (ADR 0038, "What is not built"; audit C-05).
+/// `always_off`, which is what happens anyway, is not noted.
+pub(super) fn note_exemplar_filter(env: &Env, notes: &Notes) {
+    const VAR: &str = "OTEL_METRICS_EXEMPLAR_FILTER";
+    if let Some(value) = env(VAR)
+        && !value.trim().is_empty()
+        && !value.trim().eq_ignore_ascii_case("always_off")
+    {
+        notes.ignored(
+            VAR,
+            &value,
+            "asks for exemplars, which opentelemetry_sdk 0.33.1 does not record",
+            "metrics are exported without exemplars",
+        );
+    }
+}
+
 pub(super) fn note_metric_interval(env: &Env, notes: &Notes) {
     const VAR: &str = "OTEL_METRIC_EXPORT_INTERVAL";
     if let Some(value) = env(VAR)
@@ -278,6 +299,32 @@ mod tests {
         note_metric_interval(&*env(&[("OTEL_METRIC_EXPORT_INTERVAL", " 5000 ")]), &notes);
         assert_eq!(notes.take(), Vec::<String>::new());
         note_metric_interval(&*env(&[]), &notes);
+        assert_eq!(notes.take(), Vec::<String>::new());
+    }
+
+    /// Specification, Metrics SDK "Exemplar": `OTEL_METRICS_EXEMPLAR_FILTER`
+    /// is `always_on`, `always_off` or `trace_based`; the pinned SDK honours
+    /// none of them (it records no exemplars), so a value asking for any is
+    /// said out loud, and `always_off` or unset is not.
+    #[test]
+    fn an_exemplar_filter_that_asks_for_exemplars_is_noted() {
+        let notes = Notes::default();
+        for asks in ["trace_based", "always_on", "ALWAYS_ON"] {
+            note_exemplar_filter(&*env(&[("OTEL_METRICS_EXEMPLAR_FILTER", asks)]), &notes);
+            let got = notes.take();
+            assert_eq!(got.len(), 1, "{asks}: {got:?}");
+            assert!(
+                got[0].starts_with(&format!(
+                    "OTEL_METRICS_EXEMPLAR_FILTER={asks:?} asks for exemplars"
+                )),
+                "{got:?}"
+            );
+        }
+        for quiet in ["always_off", " Always_Off ", ""] {
+            note_exemplar_filter(&*env(&[("OTEL_METRICS_EXEMPLAR_FILTER", quiet)]), &notes);
+            assert_eq!(notes.take(), Vec::<String>::new(), "{quiet:?}");
+        }
+        note_exemplar_filter(&*env(&[]), &notes);
         assert_eq!(notes.take(), Vec::<String>::new());
     }
 }

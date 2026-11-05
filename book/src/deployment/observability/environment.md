@@ -25,7 +25,9 @@ trace) and `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` (anything but
 `Telemetry` checks those values by the crates' own rules and notes each it
 falls back on, as it does `OTEL_METRIC_EXPORT_INTERVAL` when that is not a
 number (audit NEW-c-3); the sampler only when traces are built, the
-temporality only when metrics go over OTLP. What stays an error naming the variable, and `build`
+temporality only when metrics go over OTLP. `OTEL_METRICS_EXEMPLAR_FILTER`
+set to anything but `always_off` is noted as well: the pinned OpenTelemetry SDK
+(0.33.1) records no exemplars, whatever it says (audit C-05). What stays an error naming the variable, and `build`
 fails, is what it cannot do without: an OTLP/HTTP endpoint with no scheme or
 that is not a URL, a certificate or key file that cannot be read or is not PEM,
 a client certificate without its key, a header name that is not one, a
