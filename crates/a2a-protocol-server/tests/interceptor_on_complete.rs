@@ -30,7 +30,7 @@ use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::interceptor::{CallOutcome, ServerInterceptor};
 use a2a_protocol_server::metrics::{Metrics, RpcCall};
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_server::{CallContext, RequestHandler};
 use a2a_protocol_types::error::A2aResult;
@@ -199,13 +199,23 @@ async fn disconnect_mid_call(rest: bool) -> (Vec<Option<String>>, Vec<(String, S
             .expect("handler"),
     );
     let addr = if rest {
-        serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler))
-            .await
-            .expect("serve")
+        {
+            let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+            let addr = bound.local_addr().expect("serve");
+            tokio::spawn(
+                bound.serve_with_shutdown(RestDispatcher::new(handler), std::future::pending()),
+            );
+            addr
+        }
     } else {
-        serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-            .await
-            .expect("serve")
+        {
+            let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+            let addr = bound.local_addr().expect("serve");
+            tokio::spawn(
+                bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+            );
+            addr
+        }
     };
     let (path, body) = if rest {
         ("/message:send", REST_BODY)

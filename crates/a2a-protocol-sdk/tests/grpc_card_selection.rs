@@ -57,9 +57,15 @@ async fn build_grpc_dials_the_cards_grpc_interface_not_its_first() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
-    let addr = GrpcDispatcher::new(handler, GrpcConfig::default())
-        .serve_with_listener(listener)
-        .expect("serve");
+    let addr = {
+        let listener = listener;
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(
+            GrpcDispatcher::new(handler, GrpcConfig::default())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
 
     let client = ClientBuilder::from_card(&card(&format!("http://{addr}")))
         .expect("from_card")

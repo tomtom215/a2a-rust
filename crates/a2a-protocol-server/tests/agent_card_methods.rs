@@ -28,7 +28,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher, WebSocketDispatcher};
 use a2a_protocol_server::handler::RequestHandler;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{EventEmitter, agent_executor};
 use a2a_protocol_types::TaskState;
 use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
@@ -97,24 +97,44 @@ async fn ask(addr: SocketAddr, method: &str, extra: &str) -> (u16, Option<String
 }
 
 async fn listeners() -> Vec<(&'static str, SocketAddr)> {
-    let jsonrpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .unwrap();
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let jsonrpc = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let axum_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let axum = axum_listener.local_addr().unwrap();
     let app = A2aRouter::new(handler()).into_router();
     tokio::spawn(async move { axum::serve(axum_listener, app).await });
-    let websocket = Arc::new(WebSocketDispatcher::new(handler()))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap();
-    let grpc = GrpcDispatcher::new(handler(), GrpcConfig::default())
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap();
+    let websocket = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler()))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
+    let grpc = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            GrpcDispatcher::new(handler(), GrpcConfig::default())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     vec![
         ("JSON-RPC", jsonrpc),
         ("REST", rest),

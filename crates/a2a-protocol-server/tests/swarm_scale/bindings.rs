@@ -95,10 +95,14 @@ mod websocket {
                 .expect("handler builds"),
         );
         let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
-        let addr = dispatcher
-            .serve_with_addr("127.0.0.1:0")
-            .await
-            .expect("WebSocket server starts");
+        let addr = {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("WebSocket server starts");
+            let addr = listener.local_addr().expect("WebSocket server starts");
+            tokio::spawn(dispatcher.serve_with_shutdown(listener, std::future::pending()));
+            addr
+        };
 
         println!("\n── the uncontended send, over WebSocket ───────────────────");
         println!("one connection per agent, each posting to its own channel");

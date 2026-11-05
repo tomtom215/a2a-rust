@@ -153,8 +153,8 @@ fails closes the connection and counts as failed in the connection-pool
 metrics. The WebSocket listener terminates TLS itself with
 `WebSocketDispatcher::with_tls` or `with_tls_pem` (`tls-rustls`), and the gRPC
 listener with `GrpcDispatcher::with_tls` (`grpc-tls`); without those calls they
-are plaintext too. So are the quick-start `serve` and `serve_with_addr`: run
-those behind a TLS-terminating reverse proxy (nginx, Caddy, a cloud load
+are plaintext too. So is a `Server` without `with_tls`: run it behind a
+TLS-terminating reverse proxy (nginx, Caddy, a cloud load
 balancer), as is also the usual choice when certificates are managed outside
 the process:
 

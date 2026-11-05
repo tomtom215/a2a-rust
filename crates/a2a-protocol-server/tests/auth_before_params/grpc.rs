@@ -142,10 +142,17 @@ async fn calls(channel: &Channel, token: Option<&str>) -> Vec<(&'static str, ton
 #[tokio::test]
 async fn grpc_malformed_request_is_refused_unauthenticated_without_credential() {
     let (handler, checked) = gated();
-    let addr = GrpcDispatcher::new(handler, GrpcConfig::default())
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("serve");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(
+            GrpcDispatcher::new(handler, GrpcConfig::default())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let channel = Channel::from_shared(format!("http://{addr}"))
         .expect("uri")
         .connect()

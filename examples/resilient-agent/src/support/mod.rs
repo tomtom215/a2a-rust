@@ -5,7 +5,7 @@
 //! building messages, and the fault injectors.
 //!
 //! Everything here is deliberately plain. The agents are real
-//! [`RequestHandler`]s served by the SDK's own [`serve_with_addr`]; the
+//! [`RequestHandler`]s served by the SDK's own [`Server`]; the
 //! faults are injected by ordinary hyper servers on real sockets, so a passing
 //! act proves the SDK rode out a fault it actually met rather than one a stub
 //! returned in-process.
@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use a2a_protocol_client::{A2aClient, ClientBuilder, ClientError};
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::{CallContext, RequestHandler, ServerInterceptor, serve_with_addr};
+use a2a_protocol_server::{CallContext, RequestHandler, Server, ServerInterceptor};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
 use a2a_protocol_types::params::{MessageSendParams, SendMessageConfiguration};
 use a2a_protocol_types::push::TaskPushNotificationConfig;
@@ -41,9 +41,17 @@ use a2a_protocol_types::task::Task;
 /// second port rather than pretending the first one is gone.
 pub async fn serve(handler: RequestHandler) -> Result<(Arc<RequestHandler>, String), String> {
     let handler = Arc::new(handler);
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&handler)))
-        .await
-        .map_err(|e| format!("binding a loopback port: {e}"))?;
+    let addr = async {
+        let bound = Server::bind("127.0.0.1:0").await?;
+        let addr = bound.local_addr()?;
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        Ok::<_, std::io::Error>(addr)
+    }
+    .await
+    .map_err(|e| format!("binding a loopback port: {e}"))?;
     Ok((handler, format!("http://{addr}")))
 }
 

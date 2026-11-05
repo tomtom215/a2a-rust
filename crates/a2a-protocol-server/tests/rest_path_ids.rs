@@ -17,7 +17,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::RestDispatcher;
 use a2a_protocol_server::handler::RequestHandler;
 use a2a_protocol_server::push::PushSender;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{EventEmitter, agent_executor};
 use a2a_protocol_types::TaskState;
 use a2a_protocol_types::error::A2aResult;
@@ -125,9 +125,14 @@ async fn round_trip(base: String) {
 
 #[tokio::test]
 async fn an_encoded_config_id_is_found_over_rest() {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     round_trip(format!("http://{addr}")).await;
 }
 

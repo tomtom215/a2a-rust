@@ -303,9 +303,12 @@ pub fn serve_grpc(
 
     let config = GrpcConfig::default();
     let dispatcher = GrpcDispatcher::new(handler, config);
-    dispatcher
-        .serve_with_listener(listener)
-        .expect("start gRPC server")
+    {
+        let listener = listener;
+        let addr = listener.local_addr().expect("start gRPC server");
+        tokio::spawn(dispatcher.serve_with_shutdown(listener, std::future::pending()));
+        addr
+    }
 }
 
 pub fn serve_rest(

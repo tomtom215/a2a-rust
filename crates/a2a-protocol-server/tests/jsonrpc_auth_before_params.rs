@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use a2a_protocol_server::call_context::CallContext;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{RequestHandlerBuilder, ServerInterceptor, agent_executor};
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use http_body_util::{BodyExt, Full};
@@ -70,9 +70,15 @@ async fn start() -> (std::net::SocketAddr, Arc<AtomicUsize>) {
         .with_interceptor(TokenGate(Arc::clone(&checked)))
         .build()
         .expect("handler");
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::new(handler)))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     (addr, checked)
 }
 

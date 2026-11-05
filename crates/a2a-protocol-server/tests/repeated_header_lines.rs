@@ -17,7 +17,7 @@ use std::sync::Arc;
 use a2a_protocol_server::agent_executor;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandler};
 use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::extensions::AgentExtension;
@@ -99,9 +99,14 @@ fn get_task() -> Bytes {
 
 #[tokio::test]
 async fn json_rpc_reads_and_echoes_both_lines() {
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let (_, echoed, v) = send(two_lines("POST", format!("http://{addr}/"), get_task())).await;
     assert_eq!(v["error"]["code"], TASK_NOT_FOUND, "{v}");
     assert_eq!(echoed.as_deref(), Some(BOTH));
@@ -109,9 +114,14 @@ async fn json_rpc_reads_and_echoes_both_lines() {
 
 #[tokio::test]
 async fn rest_reads_and_echoes_both_lines() {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let (status, echoed, v) = send(two_lines(
         "GET",
         format!("http://{addr}/tasks/t"),
@@ -134,9 +144,14 @@ async fn a_credential_sent_on_two_lines_is_refused() {
             .build()
             .expect("handler"),
     );
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     let request = |lines: &[&str]| {
         let mut req = hyper::Request::builder()
             .method("POST")
@@ -182,10 +197,17 @@ async fn grpc_reads_both_lines() {
     use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
     use a2a_protocol_types::proto as pb;
 
-    let addr = GrpcDispatcher::new(handler(), GrpcConfig::default())
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("serve");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(
+            GrpcDispatcher::new(handler(), GrpcConfig::default())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let channel = tonic::transport::Channel::from_shared(format!("http://{addr}"))
         .expect("uri")
         .connect()
@@ -220,10 +242,17 @@ async fn websocket_reads_both_lines() {
     use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 
-    let addr = Arc::new(WebSocketDispatcher::new(handler()))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("serve");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler()))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let mut req = format!("ws://{addr}").into_client_request().expect("url");
     let headers = req.headers_mut();
     headers.insert("a2a-version", "1.0".parse().expect("value"));

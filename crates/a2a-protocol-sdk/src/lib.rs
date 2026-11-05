@@ -80,8 +80,8 @@ pub mod server {
 ///   `WebhookOutcome`, for receiving push notifications
 /// - **Server**: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`,
 ///   `RequestContext`, `EventQueueWriter`, `JsonRpcDispatcher`, `RestDispatcher`,
-///   `Dispatcher`, `Server`, `serve`, `serve_with_addr`, `shutdown_signal`, and
-///   the auth and rate-limit interceptors
+///   `Dispatcher`, `Server`, `ServeConfig`, `shutdown_signal`, and the auth and
+///   rate-limit interceptors (and the deprecated `serve` and `serve_with_addr`)
 /// - **Executor ergonomics**: `agent_executor!`, `boxed_future`, `EventEmitter`,
 ///   `ArtifactChunk`
 /// - **Errors**: `A2aError`, `A2aResult`, `ClientError`, `ClientResult`,
@@ -127,9 +127,14 @@ pub mod prelude {
         AgentExecutor, ApiKeyAuthInterceptor, ArtifactChunk, BearerTokenAuthInterceptor,
         Dispatcher, EventEmitter, EventQueueWriter, JsonRpcDispatcher, RateLimitConfig,
         RateLimitInterceptor, RequestContext, RequestHandler, RequestHandlerBuilder,
-        RestDispatcher, Server, ServerError, ServerResult, boxed_future, serve, serve_with_addr,
+        RestDispatcher, ServeConfig, Server, ServerError, ServerResult, boxed_future,
         shutdown_signal,
     };
+
+    // `serve` and `serve_with_addr` are deprecated since 0.16.0 (ADR 0052):
+    // re-exported until they are removed, no earlier than 0.17.0.
+    #[allow(deprecated)]
+    pub use a2a_protocol_server::{serve, serve_with_addr};
 
     // `agent_executor!` generates the whole `AgentExecutor` impl, so it is the
     // shortest path from "I have a struct" to "I have an agent". It is

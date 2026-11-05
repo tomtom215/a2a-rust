@@ -125,17 +125,19 @@ such as `SO_REUSEPORT` — use `Server::from_listener(listener)` in place of
 
 ## With Axum or another server
 
-With Axum (or anything else that owns the sockets), call
-`handler.finish_in_flight(completion, grace)` at the end of the future you pass to
-`with_graceful_shutdown`, so it runs before Axum starts draining, and
-`handler.shutdown()` after
-`serve` returns. The gRPC and WebSocket dispatchers have their own
-`serve_with_shutdown(listener, signal)`, which runs the same three steps. The
-WebSocket one (called on an `Arc<WebSocketDispatcher>`) returns a `ServeReport`;
-the gRPC one an `io::Result<ServeReport>`, whose error is a TLS configuration
-tonic rejects or the error the server stopped with. Set the three durations with
-`with_completion_grace`, `with_task_grace` and `with_drain_timeout` on the
-dispatcher. Two differences follow from the transports. gRPC connections are
+The axum router is a `Dispatcher` (ADR 0052): give `RestRouter::new(handler)`
+to `Server::serve_with_shutdown` and it gets the order above. When the router
+is merged into an application served by `axum::serve` (or anything else that
+owns the sockets), call `handler.finish_in_flight(completion, grace)` at the end
+of the future you pass to `with_graceful_shutdown`, so it runs before Axum
+starts draining, and `handler.shutdown()` after `serve` returns. The gRPC and
+WebSocket dispatchers have their own `serve_with_shutdown(listener, signal)`,
+which runs the same three steps. The WebSocket one (called on an
+`Arc<WebSocketDispatcher>`) returns a `ServeReport`; the gRPC one an
+`io::Result<ServeReport>`, whose error is a TLS configuration tonic rejects or
+the error the server stopped with. Both take the three durations, and the drain
+delay, from the `ServeConfig` given to their `with_serve_config`, as `Server`
+does. Two differences follow from the transports. gRPC connections are
 sent `GOAWAY` when accepting stops, so they take no new calls during the
 completion window, where HTTP and WebSocket connections still take reads and
 cancels (sends are refused, as above). And a

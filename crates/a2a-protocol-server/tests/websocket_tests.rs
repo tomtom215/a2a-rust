@@ -124,10 +124,14 @@ async fn start_ws_server() -> std::net::SocketAddr {
             .expect("build handler"),
     );
     let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
-    dispatcher
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("start WS server")
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("start WS server");
+        let addr = listener.local_addr().expect("start WS server");
+        tokio::spawn(dispatcher.serve_with_shutdown(listener, std::future::pending()));
+        addr
+    }
 }
 
 async fn connect(
@@ -170,6 +174,9 @@ async fn ws_send_message_returns_task() {
     );
 }
 
+// The deprecated `serve`'s own test, its only caller in the workspace;
+// removed with it, no earlier than 0.17.0 (ADR 0052).
+#[allow(deprecated)]
 #[tokio::test]
 async fn serve_binds_and_handles_connections() {
     // Exercises `serve()` (the run-forever variant) rather than
@@ -422,10 +429,17 @@ async fn ws_upgrade_last_event_id_does_not_replay_the_log() {
             .build()
             .expect("build handler"),
     );
-    let addr = Arc::new(WebSocketDispatcher::new(handler))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("start WS server");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("start WS server");
+        let addr = listener.local_addr().expect("start WS server");
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let mut req = ws_request(&format!("ws://{addr}"));
     req.headers_mut()
         .insert("last-event-id", "0".parse().expect("header value"));

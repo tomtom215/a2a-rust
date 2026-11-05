@@ -86,10 +86,16 @@ async fn the_client_certificate_names_the_caller_over_grpc() {
         ))
         .client_auth_optional(true);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = GrpcDispatcher::new(handler, GrpcConfig::default())
-        .with_tls(tls)
-        .serve_with_listener(listener)
-        .unwrap();
+    let addr = {
+        let listener = listener;
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            GrpcDispatcher::new(handler, GrpcConfig::default())
+                .with_tls(tls)
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
 
     for with_cert in [true, false] {
         let mut client_tls = ClientTlsConfig::new()

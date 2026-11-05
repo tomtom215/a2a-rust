@@ -12,7 +12,7 @@ the SDK itself are on [Benchmark Results](../../reference/benchmarks.md).
 
 Both dispatchers use hyper's HTTP/1.1 and HTTP/2 support via `hyper_util::server::conn::auto::Builder`. This automatically negotiates the best protocol version.
 
-`TCP_NODELAY` is enabled on the sockets of `serve::Server` (so `serve` and `serve_with_addr`), of the WebSocket listener, of the push sender and of the client's HTTP transports. The gRPC listener does not set it, and a listener you own (Axum) is yours to configure. This disables Nagle's algorithm, eliminating the ~40ms delayed-ACK latency that would otherwise penalize small SSE frames and JSON-RPC responses on loopback and low-latency networks.
+`TCP_NODELAY` is enabled on the sockets of `serve::Server` (and the axum router served on it), of the WebSocket listener, of the push sender and of the client's HTTP transports. The gRPC listener does not set it, and a listener you own (`axum::serve`) is yours to configure. This disables Nagle's algorithm, eliminating the ~40ms delayed-ACK latency that would otherwise penalize small SSE frames and JSON-RPC responses on loopback and low-latency networks.
 
 ## Task store performance
 

@@ -89,10 +89,15 @@ fn assert_is_card(body: &str) {
 
 #[tokio::test]
 async fn the_websocket_listener_serves_the_card_and_still_upgrades() {
-    let addr = Arc::new(WebSocketDispatcher::new(handler(true)))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap();
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler(true)))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let (status, body) = get(addr, "GET", "/.well-known/agent-card.json").await;
     assert_eq!(status, 200, "{body}");
     assert_is_card(&body);
@@ -115,20 +120,30 @@ async fn the_websocket_listener_serves_the_card_and_still_upgrades() {
 /// dispatchers.
 #[tokio::test]
 async fn the_websocket_listener_has_no_card_to_serve_without_one() {
-    let addr = Arc::new(WebSocketDispatcher::new(handler(false)))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap();
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler(false)))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let (status, _) = get(addr, "GET", "/.well-known/agent-card.json").await;
     assert_eq!(status, 404);
 }
 
 #[tokio::test]
 async fn the_grpc_listener_serves_the_card() {
-    let addr = GrpcDispatcher::new(handler(true), GrpcConfig::default())
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap();
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            GrpcDispatcher::new(handler(true), GrpcConfig::default())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let (status, body) = get(addr, "GET", "/.well-known/agent-card.json").await;
     assert_eq!(status, 200, "{body}");
     assert_is_card(&body);
@@ -140,10 +155,15 @@ async fn the_grpc_listener_serves_the_card() {
 /// WebSocket handshake on its first bytes.
 #[tokio::test]
 async fn a_card_request_sent_in_pieces_is_still_the_card() {
-    let addr = Arc::new(WebSocketDispatcher::new(handler(true)))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap();
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler(true)))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
     s.set_nodelay(true).unwrap();
     s.write_all(b"GET /.well-known/age").await.unwrap();
@@ -205,7 +225,14 @@ async fn the_websocket_and_grpc_listeners_send_a_configurable_cache_control() {
             Some(s) => d.with_agent_card_max_age(s),
             None => d,
         };
-        async move { Arc::new(d).serve_with_addr("127.0.0.1:0").await.unwrap() }
+        async move {
+            {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let addr = listener.local_addr().unwrap();
+                tokio::spawn(Arc::new(d).serve_with_shutdown(listener, std::future::pending()));
+                addr
+            }
+        }
     };
     let grpc = |max_age: Option<u32>| {
         let d = GrpcDispatcher::new(handler(true), GrpcConfig::default());
@@ -213,7 +240,14 @@ async fn the_websocket_and_grpc_listeners_send_a_configurable_cache_control() {
             Some(s) => d.with_agent_card_max_age(s),
             None => d,
         };
-        async move { d.serve_with_addr("127.0.0.1:0").await.unwrap() }
+        async move {
+            {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let addr = listener.local_addr().unwrap();
+                tokio::spawn(d.serve_with_shutdown(listener, std::future::pending()));
+                addr
+            }
+        }
     };
     for (listener, default, set) in [
         ("websocket", ws(None).await, ws(Some(60)).await),

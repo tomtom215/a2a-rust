@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{RequestHandlerBuilder, agent_executor};
 use serde_json::{Value, json};
 
@@ -36,12 +36,24 @@ async fn an_empty_list_tasks_page_carries_an_empty_tasks_array_and_page_token() 
             .build()
             .expect("handler"),
     );
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("JSON-RPC");
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("HTTP+JSON");
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("JSON-RPC");
+        let addr = bound.local_addr().expect("JSON-RPC");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("HTTP+JSON");
+        let addr = bound.local_addr().expect("HTTP+JSON");
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
 
     // Nothing stored, and a filter that matches nothing.
     for params in [json!({}), json!({"contextId": "no-such-context"})] {

@@ -18,7 +18,7 @@ use a2a_protocol_client::error::{ClientError, ClientResult};
 use a2a_protocol_client::token_provider::{BearerAuthInterceptor, TokenProvider};
 use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandler, RequestHandlerBuilder};
 use a2a_protocol_types::error::ErrorCode;
 use a2a_protocol_types::params::TaskQueryParams;
@@ -85,9 +85,14 @@ fn client(url: &str, binding: &str, provider: &Arc<RotatingProvider>) -> A2aClie
 
 #[tokio::test]
 async fn a_refused_token_is_dropped_over_json_rpc() {
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let provider = Arc::new(RotatingProvider::default());
     recovers(
         &client(&format!("http://{addr}"), "JSONRPC", &provider),
@@ -98,9 +103,14 @@ async fn a_refused_token_is_dropped_over_json_rpc() {
 
 #[tokio::test]
 async fn a_refused_token_is_dropped_over_http_json() {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let provider = Arc::new(RotatingProvider::default());
     recovers(
         &client(&format!("http://{addr}"), "HTTP+JSON", &provider),
@@ -115,10 +125,15 @@ async fn a_refused_token_is_dropped_over_grpc() {
     use a2a_protocol_client::transport::grpc::GrpcTransport;
     use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
 
-    let addr = GrpcDispatcher::new(handler(), GrpcConfig::default())
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap();
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            GrpcDispatcher::new(handler(), GrpcConfig::default())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let url = format!("http://{addr}");
     let provider = Arc::new(RotatingProvider::default());
     let client = ClientBuilder::new(&url)
@@ -144,10 +159,15 @@ async fn a_refused_token_is_a_401_over_websocket() {
     use a2a_protocol_types::message::Message;
     use a2a_protocol_types::params::MessageSendParams;
 
-    let addr = Arc::new(WebSocketDispatcher::new(handler()))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap();
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler()))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let url = format!("ws://{addr}");
     let provider = Arc::new(RotatingProvider::default());
     let connect = |token: &str| {

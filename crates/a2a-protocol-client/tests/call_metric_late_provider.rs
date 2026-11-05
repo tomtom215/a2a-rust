@@ -78,12 +78,17 @@ async fn a_client_records_to_the_global_provider_installed_after_it() {
         .without_agent_card()
         .build()
         .expect("handler");
-    let addr = a2a_protocol_server::serve_with_addr(
-        "127.0.0.1:0",
-        JsonRpcDispatcher::new(Arc::new(handler)),
-    )
-    .await
-    .expect("serve");
+    let addr = {
+        let bound = a2a_protocol_server::Server::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let client = ClientBuilder::new(format!("http://{addr}"))
         .build()
         .expect("client");

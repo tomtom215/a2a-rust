@@ -62,7 +62,7 @@
 //! | [`streaming`] | Event queues, SSE response builder |
 //! | [`push`] | Push config store, push sender |
 //! | [`agent_card`] | Static/dynamic agent card handlers |
-//! | [`serve`](mod@serve) | [`serve()`](serve::serve), [`serve_with_addr`], [`Dispatcher`] |
+//! | [`serve`](mod@serve) | [`Server`], [`ServeConfig`], [`Dispatcher`], [`shutdown_signal`] (and the deprecated [`serve()`](serve::serve), [`serve_with_addr`]) |
 //! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`], [`CombinedDispatcher`] (both on one listener), `GrpcDispatcher` (`grpc` feature), `WebSocketDispatcher` (`websocket` feature) |
 //! | [`interceptor`] | [`ServerInterceptor`], [`ServerInterceptorChain`] |
 //! | [`auth`] | [`ApiKeyAuthInterceptor`], [`BearerTokenAuthInterceptor`], `JwtAuthInterceptor` (`auth-jwt` feature), `MutualTlsAuthInterceptor` (`tls-rustls` or `grpc-tls`) |
@@ -234,9 +234,11 @@ pub use rate_limit::{
 };
 pub use request_context::RequestContext;
 pub use rpc_span::{BindingSpan, CustomBinding, StreamEnd, StreamOutcome};
-pub use serve::{
-    Dispatcher, ServeConfig, ServeReport, Server, serve, serve_with_addr, shutdown_signal,
-};
+// The two free functions are deprecated (ADR 0052); re-exported here until
+// they are removed, no earlier than 0.17.0.
+pub use serve::{Dispatcher, ServeConfig, ServeReport, Server, shutdown_signal};
+#[allow(deprecated)]
+pub use serve::{serve, serve_with_addr};
 pub use store::{
     InMemoryTaskStore, TaskStore, TaskStoreConfig, TenantAwareInMemoryTaskStore, TenantContext,
     TenantStoreConfig,

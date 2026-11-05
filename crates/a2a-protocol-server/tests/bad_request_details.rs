@@ -13,7 +13,7 @@ use std::sync::Arc;
 #[cfg(feature = "axum")]
 use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{RequestHandler, RequestHandlerBuilder, agent_executor};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
@@ -106,9 +106,14 @@ async fn check(send_url: String) {
 
 #[tokio::test]
 async fn the_rest_dispatcher_names_the_bad_field() {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     check(format!("http://{addr}/message:send")).await;
 }
 
@@ -127,9 +132,14 @@ async fn the_axum_router_names_the_bad_field() {
 /// answered `InvalidParams` with the field in its message and no detail.
 #[tokio::test]
 async fn a_handler_check_names_the_field_over_http_json() {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let (status, body) = post(&format!("http://{addr}/message:send"), NO_PARTS).await;
     assert_eq!(status, 400, "{body}");
     assert_eq!(body["error"]["status"], "INVALID_ARGUMENT", "{body}");
@@ -142,9 +152,14 @@ async fn a_handler_check_names_the_field_over_http_json() {
 
 #[tokio::test]
 async fn a_handler_check_names_the_field_over_jsonrpc() {
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let request =
         format!(r#"{{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{NO_PARTS}}}"#);
     let (status, body) = post(&format!("http://{addr}/"), &request).await;

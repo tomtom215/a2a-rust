@@ -231,10 +231,12 @@ fn bench_subscribe_fanout(c: &mut Criterion) {
     );
     let dispatcher = a2a_protocol_server::dispatch::JsonRpcDispatcher::new(handler);
     let addr = runtime
-        .block_on(a2a_protocol_server::serve::serve_with_addr(
-            "127.0.0.1:0",
-            dispatcher,
-        ))
+        .block_on(async {
+            let bound = a2a_protocol_server::serve::Server::bind("127.0.0.1:0").await?;
+            let addr = bound.local_addr()?;
+            tokio::spawn(bound.serve_with_shutdown(dispatcher, std::future::pending()));
+            Ok::<_, std::io::Error>(addr)
+        })
         .expect("serve");
     let url = format!("http://{addr}");
 
@@ -478,10 +480,12 @@ fn bench_extended_agent_card(c: &mut Criterion) {
     );
     let dispatcher = a2a_protocol_server::dispatch::JsonRpcDispatcher::new(handler);
     let addr = runtime
-        .block_on(a2a_protocol_server::serve::serve_with_addr(
-            "127.0.0.1:0",
-            dispatcher,
-        ))
+        .block_on(async {
+            let bound = a2a_protocol_server::serve::Server::bind("127.0.0.1:0").await?;
+            let addr = bound.local_addr()?;
+            tokio::spawn(bound.serve_with_shutdown(dispatcher, std::future::pending()));
+            Ok::<_, std::io::Error>(addr)
+        })
         .expect("serve");
     let url = format!("http://{addr}");
     let client = ClientBuilder::new(&url).build().expect("build client");

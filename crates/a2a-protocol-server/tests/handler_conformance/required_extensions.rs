@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use a2a_protocol_server::agent_executor;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{EventEmitter, HttpPushSender, RequestHandler, RequestHandlerBuilder};
 use a2a_protocol_types::error::{A2aError, ErrorCode};
 use a2a_protocol_types::method::Method;
@@ -277,12 +277,24 @@ fn reason(error: &Value) -> Option<String> {
 async fn both_http_bindings_refuse_every_operation_without_the_declaration() {
     let handler = handler();
     let (task, config) = seed(&handler).await;
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("JSON-RPC");
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("HTTP+JSON");
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("JSON-RPC");
+        let addr = bound.local_addr().expect("JSON-RPC");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("HTTP+JSON");
+        let addr = bound.local_addr().expect("HTTP+JSON");
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let code = ErrorCode::ExtensionSupportRequired;
     for method in Method::ALL.iter().copied() {
         let (params, verb, path, body) = route(method, &task, &config);

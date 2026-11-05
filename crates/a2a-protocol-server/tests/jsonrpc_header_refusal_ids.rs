@@ -20,7 +20,7 @@ use std::sync::Arc;
 use a2a_protocol_server::agent_executor;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{DispatchConfig, JsonRpcDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use serde_json::{Value, json};
@@ -49,12 +49,15 @@ async fn post(
             .build()
             .expect("handler"),
     );
-    let addr = serve_with_addr(
-        "127.0.0.1:0",
-        JsonRpcDispatcher::with_config(handler, config),
-    )
-    .await
-    .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::with_config(handler, config),
+            std::future::pending(),
+        ));
+        addr
+    };
     let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
         .build_http::<Full<Bytes>>();
     let mut req = hyper::Request::builder()

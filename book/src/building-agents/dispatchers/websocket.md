@@ -39,7 +39,11 @@ let dispatcher = Arc::new(
         .with_tls_pem(&std::fs::read("cert.pem")?, &std::fs::read("key.pem")?)?
         .with_allowed_origins(["https://app.example.com"]),
 );
-dispatcher.serve("0.0.0.0:443").await?;
+let listener = tokio::net::TcpListener::bind("0.0.0.0:443").await?;
+let report = dispatcher
+    .serve_with_shutdown(listener, a2a_protocol_server::serve::shutdown_signal())
+    .await;
+# let _ = report;
 # Ok(())
 # }
 # fn main() {}
@@ -93,17 +97,19 @@ What differs from the separate listener:
 - A page of the server's own origin is accepted besides the listed ones;
   any other origin is still `403`.
 - The connection keeps the HTTP server's `max_connections` slot until it
-  closes, and the dispatcher's `with_max_connections` caps upgrades (`503`
-  past it). The HTTP idle timeout is suspended for it; the WebSocket idle
+  closes, and the dispatcher's own `ServeConfig::max_connections` (through
+  `with_serve_config`) caps upgrades (`503` past it). The HTTP idle timeout is suspended for it; the WebSocket idle
   bound and its Ping govern instead.
 - `Server::serve_with_shutdown` closes it in the drain, after the tasks in
   flight have ended, with a Close frame. The `WebSocketDispatcher`'s TLS,
   handshake timeout and listener settings do not apply: the connection is the
   HTTP server's.
 
-The axum router has the same route (`RestRouter::with_websocket`, at `/`);
-`axum::serve` does not know upgraded connections, so close them in the
-application's shutdown with `RestRouter::websocket_upgrades()`'s `close`.
+The axum router has the same route (`RestRouter::with_websocket`, at `/`).
+Served by `Server` (the router is a `Dispatcher`, ADR 0052), its upgraded
+connections are closed in the drain as above. Under `axum::serve`, which does
+not know upgraded connections, close them in the application's shutdown with
+`RestRouter::websocket_upgrades()`'s `close`.
 
 ## Built-in limits
 
@@ -112,8 +118,18 @@ application's shutdown with `RestRouter::websocket_upgrades()`'s `close`.
 | **Concurrent tasks per connection** | 64 | Per-connection `Semaphore(64)` prevents unbounded task spawning |
 | **Incoming message size** | 4 MiB | Oversized WebSocket frames are rejected at the protocol level |
 | **Handshake timeout** | 10 s (configurable via `with_handshake_timeout`) | A peer that never completes the upgrade is disconnected instead of pinning a connection |
-| **Concurrent connections** | unbounded (`with_max_connections`) | The permit is taken before `accept()`, so load past the ceiling waits in the kernel's listen backlog rather than as spawned tasks |
-| **Idle connection** | 75 s, pinging at half (`with_idle_timeout`, `without_idle_timeout`) | Closes a connection that answers nothing for the given period; off until 0.16.0 |
+| **Concurrent connections** | unbounded (`ServeConfig::max_connections`, through `with_serve_config`) | The permit is taken before `accept()`, so load past the ceiling waits in the kernel's listen backlog rather than as spawned tasks |
+| **Idle connection** | 75 s, pinging at half (`ServeConfig::idle_timeout`, or `with_idle_timeout` / `without_idle_timeout`, which set the same field) | Closes a connection that answers nothing for the given period; off until 0.16.0 |
+
+`with_serve_config` takes the `ServeConfig` `Server` takes: the ceiling, the
+idle bound, the shutdown's graces, drain and `drain_delay`, and `production`
+(a card that does not declare the WebSocket binding, or `ws://` beyond
+loopback, refuses to start). `header_read_timeout` and the `Host` check do not
+apply: `with_handshake_timeout` and the `Origin` check do their work here. The
+dispatcher's own `with_max_connections`, `with_completion_grace`,
+`with_task_grace` and `with_drain_timeout`, and its `serve` and
+`serve_with_addr`, are deprecated since 0.16.0 and removed no earlier than
+0.17.0 ([ADR 0052](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0052-one-serve-shape-per-listener.md)).
 
 Transient `accept()` errors (per-connection aborts, fd-table exhaustion)
 never terminate the accept loop — it retries with the same backoff policy

@@ -28,7 +28,7 @@ use a2a_protocol_server::RequestHandler;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve::ServeReport;
+use a2a_protocol_server::serve::{ServeConfig, ServeReport};
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
@@ -82,6 +82,18 @@ fn state_of(event: &StreamResponse) -> Option<TaskState> {
     }
 }
 
+/// The run's settings, through the `ServeConfig` the HTTP server takes (ADR
+/// 0052): the completion window, the drain, and the connection ceiling.
+fn serve_config(max_connections: Option<usize>) -> ServeConfig {
+    let config = ServeConfig::new()
+        .with_completion_grace(WINDOW)
+        .with_drain_timeout(DRAIN);
+    match max_connections {
+        Some(max) => config.with_max_connections(max),
+        None => config,
+    }
+}
+
 /// Serves `handler` over `binding` on a fresh port until the sender fires.
 async fn serve(
     handler: &Arc<RequestHandler>,
@@ -105,12 +117,8 @@ async fn serve(
         #[cfg(feature = "grpc")]
         Binding::Grpc => {
             use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
-            let mut dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default())
-                .with_completion_grace(WINDOW)
-                .with_drain_timeout(DRAIN);
-            if let Some(max) = max_connections {
-                dispatcher = dispatcher.with_max_connections(max);
-            }
+            let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default())
+                .with_serve_config(serve_config(max_connections));
             tokio::spawn(async move {
                 dispatcher
                     .serve_with_shutdown(listener, signal)
@@ -121,12 +129,8 @@ async fn serve(
         #[cfg(feature = "websocket")]
         Binding::WebSocket => {
             use a2a_protocol_server::dispatch::websocket::WebSocketDispatcher;
-            let mut dispatcher = WebSocketDispatcher::new(handler)
-                .with_completion_grace(WINDOW)
-                .with_drain_timeout(DRAIN);
-            if let Some(max) = max_connections {
-                dispatcher = dispatcher.with_max_connections(max);
-            }
+            let dispatcher =
+                WebSocketDispatcher::new(handler).with_serve_config(serve_config(max_connections));
             tokio::spawn(Arc::new(dispatcher).serve_with_shutdown(listener, signal))
         }
     };

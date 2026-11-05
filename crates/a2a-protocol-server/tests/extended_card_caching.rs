@@ -16,7 +16,7 @@ use a2a_protocol_server::dispatch::RestDispatcher;
 #[cfg(feature = "axum")]
 use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
 use a2a_protocol_server::handler::RequestHandler;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{EventEmitter, agent_executor};
 use a2a_protocol_types::TaskState;
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
@@ -55,9 +55,15 @@ fn handler(version: &str) -> Arc<RequestHandler> {
 }
 
 async fn rest(version: &str) -> String {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler(version)))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(handler(version)),
+            std::future::pending(),
+        ));
+        addr
+    };
     format!("http://{addr}/extendedAgentCard")
 }
 

@@ -576,7 +576,14 @@ async fn main() {
         Arc::clone(&handler),
         a2a_protocol_server::dispatch::GrpcConfig::default(),
     );
-    match grpc.serve_with_addr(grpc_addr).await {
+    match async {
+        let listener = tokio::net::TcpListener::bind(grpc_addr).await?;
+        let addr = listener.local_addr()?;
+        tokio::spawn(grpc.serve_with_shutdown(listener, std::future::pending()));
+        Ok::<_, std::io::Error>(addr)
+    }
+    .await
+    {
         Ok(bound) => println!("a2a-rust TCK SUT gRPC listening on {bound}"),
         Err(e) => {
             // Not fatal: the JSON bindings are still worth grading. But say so
@@ -592,7 +599,14 @@ async fn main() {
                 &handler,
             )),
         );
-        match ws.serve_with_addr(ws_host.as_str()).await {
+        match async {
+            let listener = tokio::net::TcpListener::bind(ws_host.as_str()).await?;
+            let addr = listener.local_addr()?;
+            tokio::spawn(ws.serve_with_shutdown(listener, std::future::pending()));
+            Ok::<_, std::io::Error>(addr)
+        }
+        .await
+        {
             Ok(bound) => println!("a2a-rust TCK SUT WebSocket listening on ws://{bound}"),
             // Fatal, unlike the gRPC warning above: SUT_WS_HOST is only set by
             // a run that intends to grade the WebSocket binding, and a leg

@@ -8,9 +8,7 @@
 use std::sync::Arc;
 
 use a2a_protocol_client::{A2aClient, ClientBuilder};
-use a2a_protocol_server::{
-    AgentExecutor, JsonRpcDispatcher, RequestHandlerBuilder, serve_with_addr,
-};
+use a2a_protocol_server::{AgentExecutor, JsonRpcDispatcher, RequestHandlerBuilder, Server};
 use a2a_protocol_types::{AgentCard, AgentInterface, AgentSkill};
 
 /// Binds an ephemeral port, serves `executor` there over JSON-RPC, and
@@ -34,9 +32,12 @@ pub async fn spawn_agent(name: &str, executor: impl AgentExecutor + 'static) -> 
             .build()
             .expect("static handler config"),
     );
-    serve_with_addr(addr, JsonRpcDispatcher::new(handler))
-        .await
-        .expect("bind agent port");
+    {
+        let bound = Server::bind(addr).await.expect("bind agent port");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+    }
     url
 }
 

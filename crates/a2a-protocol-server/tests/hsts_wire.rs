@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use a2a_protocol_server::dispatch::{Hsts, JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::{Dispatcher, serve_with_addr};
+use a2a_protocol_server::serve::{Dispatcher, Server};
 use a2a_protocol_server::{RequestHandler, RequestHandlerBuilder, agent_executor};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
@@ -47,18 +47,24 @@ async fn sts(method: &str, url: String, body: &str) -> (u16, Option<String>) {
 
 #[tokio::test]
 async fn every_response_carries_the_header_on_both_http_bindings() {
-    let rest = serve_with_addr(
-        "127.0.0.1:0",
-        Hsts::new(RestDispatcher::new(handler()), 31_536_000, true),
-    )
-    .await
-    .unwrap();
-    let rpc = serve_with_addr(
-        "127.0.0.1:0",
-        Hsts::new(JsonRpcDispatcher::new(handler()), 600, false),
-    )
-    .await
-    .unwrap();
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            Hsts::new(RestDispatcher::new(handler()), 31_536_000, true),
+            std::future::pending(),
+        ));
+        addr
+    };
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            Hsts::new(JsonRpcDispatcher::new(handler()), 600, false),
+            std::future::pending(),
+        ));
+        addr
+    };
     let year = Some("max-age=31536000; includeSubDomains".to_owned());
 
     assert_eq!(
@@ -80,9 +86,14 @@ async fn every_response_carries_the_header_on_both_http_bindings() {
 /// Unwrapped, nothing is added: the header is opt-in.
 #[tokio::test]
 async fn without_the_wrapper_there_is_no_header() {
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     assert_eq!(
         sts("GET", format!("http://{rest}/tasks"), "").await,
         (200, None)

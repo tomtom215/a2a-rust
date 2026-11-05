@@ -111,7 +111,8 @@ let handler = Arc::new(
         .with_agent_card(card(&url))
         .build()?,
 );
-serve_with_addr(addr, JsonRpcDispatcher::new(handler)).await?;
+let server = Server::bind(addr).await?;
+tokio::spawn(server.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()));
 ```
 
 Each tool implements `Tool`: a name, a description, a JSON Schema for its

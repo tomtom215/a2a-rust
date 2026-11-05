@@ -25,13 +25,8 @@ async fn serve(
     let addr = listener.local_addr().expect("addr");
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
     let (grace, drain) = graces(setup);
-    let mut dispatcher = GrpcDispatcher::new(handler(flag, setup.stubborn), GrpcConfig::default())
-        .with_completion_grace(WINDOW)
-        .with_task_grace(grace)
-        .with_drain_timeout(drain);
-    if let Some(max) = setup.max_connections {
-        dispatcher = dispatcher.with_max_connections(max);
-    }
+    let dispatcher = GrpcDispatcher::new(handler(flag, setup.stubborn), GrpcConfig::default())
+        .with_serve_config(serve_config(setup, grace, drain));
     let serving = tokio::spawn(dispatcher.serve_with_shutdown(listener, async {
         let _ = stopped.await;
     }));

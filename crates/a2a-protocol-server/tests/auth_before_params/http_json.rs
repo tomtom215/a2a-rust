@@ -7,7 +7,7 @@
 use std::sync::atomic::Ordering;
 
 use a2a_protocol_server::dispatch::RestDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 
 use super::{Misses, TOKENS, gated, http, http_json_refusal};
 
@@ -55,9 +55,14 @@ async fn assert_refused_before_read(addr: std::net::SocketAddr) {
 #[tokio::test]
 async fn rest_malformed_request_is_refused_401_without_credential() {
     let (handler, checked) = gated();
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     assert_refused_before_read(addr).await;
     assert_eq!(checked.load(Ordering::SeqCst), 3 * MALFORMED.len());
 }
@@ -85,9 +90,15 @@ async fn rest_version_and_size_refusals_precede_admission() {
     let (handler, checked) = gated();
     let config =
         a2a_protocol_server::dispatch::DispatchConfig::default().with_max_request_body_size(64);
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::with_config(handler, config))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::with_config(handler, config),
+            std::future::pending(),
+        ));
+        addr
+    };
     let big = format!(r#"{{"pad": "{}"}}"#, "x".repeat(128));
     let a = http(addr, ("POST", "/message:send", Some(&big)), None).await;
     assert_eq!(a.status, 413, "{}", a.body);

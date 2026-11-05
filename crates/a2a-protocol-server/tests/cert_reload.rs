@@ -213,10 +213,16 @@ mod grpc {
 
     async fn serve(config: rustls::ServerConfig) -> std::net::SocketAddr {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        GrpcDispatcher::new(tls_server::handler(Arc::default()), GrpcConfig::default())
-            .with_rustls(config)
-            .serve_with_listener(listener)
-            .unwrap()
+        {
+            let listener = listener;
+            let addr = listener.local_addr().unwrap();
+            tokio::spawn(
+                GrpcDispatcher::new(tls_server::handler(Arc::default()), GrpcConfig::default())
+                    .with_rustls(config)
+                    .serve_with_shutdown(listener, std::future::pending()),
+            );
+            addr
+        }
     }
 
     #[tokio::test]

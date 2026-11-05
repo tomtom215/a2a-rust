@@ -78,10 +78,17 @@ type Ws =
 
 async fn serve(builder: RequestHandlerBuilder) -> String {
     let handler = Arc::new(builder.without_agent_card().build().expect("a handler"));
-    let addr = Arc::new(WebSocketDispatcher::new(handler))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("a listener");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a listener");
+        let addr = listener.local_addr().expect("a listener");
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     format!("ws://{addr}/")
 }
 

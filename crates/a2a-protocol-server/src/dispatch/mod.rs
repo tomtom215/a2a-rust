@@ -10,7 +10,7 @@
 pub mod axum_adapter;
 pub mod combined;
 #[cfg(any(feature = "websocket", feature = "grpc"))]
-mod connection_limit;
+pub(crate) mod connection_limit;
 pub mod cors;
 #[cfg(feature = "grpc")]
 pub mod grpc;

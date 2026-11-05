@@ -117,9 +117,15 @@ async fn a_send_refused_while_shutting_down_is_repeated_over_grpc() {
     use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
     let (handler, sends) = leaving().await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = GrpcDispatcher::new(handler, GrpcConfig::default())
-        .serve_with_listener(listener)
-        .unwrap();
+    let addr = {
+        let listener = listener;
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            GrpcDispatcher::new(handler, GrpcConfig::default())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let url = format!("http://{addr}");
 
     let client = ClientBuilder::new(&url)

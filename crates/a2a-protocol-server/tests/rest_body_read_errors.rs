@@ -21,7 +21,7 @@ use std::time::Duration;
 use a2a_protocol_server::agent_executor;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{DispatchConfig, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 struct Exec;
@@ -37,9 +37,15 @@ async fn server() -> SocketAddr {
     let config = DispatchConfig::default()
         .with_body_read_timeout(Duration::from_secs(1))
         .with_max_request_body_size(64);
-    serve_with_addr("127.0.0.1:0", RestDispatcher::with_config(handler, config))
-        .await
-        .expect("serve")
+    {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::with_config(handler, config),
+            std::future::pending(),
+        ));
+        addr
+    }
 }
 
 /// Sends `head` and then `body`, and returns the status line and the body

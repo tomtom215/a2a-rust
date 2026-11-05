@@ -40,10 +40,15 @@ async fn server() -> std::net::SocketAddr {
 }
 
 async fn serve(builder: RequestHandlerBuilder) -> std::net::SocketAddr {
-    Arc::new(WebSocketDispatcher::new(Arc::new(builder.build().unwrap())))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap()
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(Arc::new(builder.build().unwrap())))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    }
 }
 
 async fn connect(

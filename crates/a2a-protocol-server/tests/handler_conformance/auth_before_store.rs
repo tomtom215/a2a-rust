@@ -21,7 +21,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use a2a_protocol_server::call_context::CallContext;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     EventEmitter, HttpPushSender, InMemoryPushConfigStore, InMemoryTaskStore, PushConfigStore,
     RequestHandler, RequestHandlerBuilder, ServerInterceptor, TaskStore, agent_executor,
@@ -220,12 +220,24 @@ async fn a_refused_call_reads_no_store_through_the_handler() {
 #[tokio::test]
 async fn a_refused_call_reads_no_store_on_either_http_binding() {
     let (handler, tasks, configs, task, config) = setup().await;
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("JSON-RPC");
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("HTTP+JSON");
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("JSON-RPC");
+        let addr = bound.local_addr().expect("JSON-RPC");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("HTTP+JSON");
+        let addr = bound.local_addr().expect("HTTP+JSON");
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     // JSON-RPC carries a refused credential as Invalid Request.
     let unauthenticated = i64::from(ErrorCode::InvalidRequest.as_i32());
     for method in Method::ALL.iter().copied() {

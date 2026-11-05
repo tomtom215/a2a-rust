@@ -15,7 +15,7 @@ use a2a_protocol_server::dispatch::{
     CombinedDispatcher, DispatchConfig, JsonRpcDispatcher, RestDispatcher,
 };
 use a2a_protocol_server::handler::RequestHandler;
-use a2a_protocol_server::serve::{Dispatcher, serve_with_addr};
+use a2a_protocol_server::serve::{Dispatcher, Server};
 use a2a_protocol_server::{EventEmitter, agent_executor};
 use a2a_protocol_types::TaskState;
 use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
@@ -51,7 +51,12 @@ fn config() -> DispatchConfig {
 }
 
 async fn start(dispatcher: impl Dispatcher + 'static) -> std::net::SocketAddr {
-    serve_with_addr("127.0.0.1:0", dispatcher).await.unwrap()
+    {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(dispatcher, std::future::pending()));
+        addr
+    }
 }
 
 /// One HTTP/1.1 request on a fresh connection; the status and the body.

@@ -116,7 +116,7 @@ This gives you:
 - Macros and helpers: `agent_executor!`, `boxed_future`
 - Discovery and auth: `resolve_agent_card`, `ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`, `BearerAuthInterceptor`, `OAuth2ClientCredentials`, `StaticTokenProvider`, `TokenProvider`
 - Telemetry and webhooks (default features): `Telemetry`, `WebhookReceiver`, `WebhookOutcome`
-- Utilities: `serve`, `serve_with_addr`, `Server`, `shutdown_signal`, `RateLimitInterceptor`, `RateLimitConfig`
+- Utilities: `Server`, `ServeConfig`, `shutdown_signal`, `RateLimitInterceptor`, `RateLimitConfig` (and the deprecated `serve` and `serve_with_addr`)
 
 ## External Dependencies
 

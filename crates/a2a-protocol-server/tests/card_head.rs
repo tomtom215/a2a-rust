@@ -19,7 +19,7 @@ use a2a_protocol_server::RequestHandler;
 use a2a_protocol_server::agent_executor;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Empty};
@@ -92,17 +92,27 @@ async fn head_is_get_without_a_body(addr: SocketAddr, paths: &[&str]) {
 
 #[tokio::test]
 async fn json_rpc_answers_head_on_the_card() {
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     head_is_get_without_a_body(addr, &[]).await;
 }
 
 #[tokio::test]
 async fn rest_answers_head_on_the_card_and_probes() {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     head_is_get_without_a_body(addr, &["/health", "/ready"]).await;
 }
 

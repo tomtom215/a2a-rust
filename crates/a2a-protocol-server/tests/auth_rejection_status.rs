@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use a2a_protocol_server::call_context::CallContext;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     ApiKeyAuthInterceptor, BearerTokenAuthInterceptor, RequestHandler, RequestHandlerBuilder,
     ServerInterceptor, agent_executor,
@@ -113,9 +113,12 @@ const BEARER: &str = "Bearer realm=\"a2a\"";
 #[tokio::test]
 async fn rest_answers_a_missing_bearer_token_401_with_its_challenge() {
     let h = handler(BearerTokenAuthInterceptor::new(["good"]));
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(h))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(RestDispatcher::new(h), std::future::pending()));
+        addr
+    };
 
     let refused = call(addr, "GET", "/tasks/nope", None, &[]).await;
     assert_eq!(refused.status, 401, "{}", refused.body);
@@ -155,9 +158,12 @@ async fn rest_answers_a_missing_bearer_token_401_with_its_challenge() {
 #[tokio::test]
 async fn json_rpc_answers_a_missing_bearer_token_401_with_the_body_unchanged() {
     let h = handler(BearerTokenAuthInterceptor::new(["good"]));
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(h))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(JsonRpcDispatcher::new(h), std::future::pending()));
+        addr
+    };
 
     let refused = call(addr, "POST", "/", Some(get_task()), &[]).await;
     assert_eq!(refused.status, 401, "{}", refused.body);
@@ -186,9 +192,12 @@ async fn json_rpc_answers_a_missing_bearer_token_401_with_the_body_unchanged() {
 #[tokio::test]
 async fn an_api_key_refusal_names_its_header_in_the_challenge() {
     let h = handler(ApiKeyAuthInterceptor::new(["k"]));
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(h))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(RestDispatcher::new(h), std::future::pending()));
+        addr
+    };
 
     let refused = call(addr, "GET", "/tasks/nope", None, &[]).await;
     assert_eq!(refused.status, 401);
@@ -203,17 +212,29 @@ async fn an_api_key_refusal_names_its_header_in_the_challenge() {
 
 #[tokio::test]
 async fn permission_denied_answers_403_without_a_challenge_on_both_bindings() {
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler(DenyAll)))
-        .await
-        .unwrap();
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(handler(DenyAll)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let refused = call(rest, "GET", "/tasks/nope", None, &[]).await;
     assert_eq!(refused.status, 403, "{}", refused.body);
     assert_eq!(refused.challenge, None);
     assert_eq!(refused.body["error"]["status"], "PERMISSION_DENIED");
 
-    let jsonrpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler(DenyAll)))
-        .await
-        .unwrap();
+    let jsonrpc = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(handler(DenyAll)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let refused = call(jsonrpc, "POST", "/", Some(get_task()), &[]).await;
     assert_eq!(refused.status, 403, "{}", refused.body);
     assert_eq!(refused.challenge, None);

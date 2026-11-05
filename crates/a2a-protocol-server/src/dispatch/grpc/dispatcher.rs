@@ -5,11 +5,9 @@
 
 //! [`GrpcDispatcher`] — builds and serves the gRPC transport.
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::bounded_incoming::BoundedIncoming;
 use super::native::A2aServiceImpl;
 use super::{A2aServiceServer, GrpcConfig};
 use crate::handler::RequestHandler;
@@ -29,17 +27,19 @@ pub const DEFAULT_GRPC_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(20);
 /// the deprecated pre-0.7 JSON-tunnel service, and the `grpc-legacy-json`
 /// feature that gated it, were removed in 0.8.
 ///
-/// Create via [`GrpcDispatcher::new`] and serve with [`GrpcDispatcher::serve`]
-/// or build a tonic service with [`GrpcDispatcher::into_service`].
+/// Create via [`GrpcDispatcher::new`], give it the listener settings it shares
+/// with [`Server`](crate::serve::Server) with
+/// [`with_serve_config`](GrpcDispatcher::with_serve_config), and serve it with
+/// [`serve_with_shutdown`](GrpcDispatcher::serve_with_shutdown); or build a
+/// tonic service with [`GrpcDispatcher::into_service`].
 pub struct GrpcDispatcher {
     pub(super) handler: Arc<RequestHandler>,
     config: GrpcConfig,
     keepalive: Option<(Duration, Duration)>,
     max_connection_age: Option<Duration>,
-    pub(super) max_connections: Option<usize>,
-    pub(super) completion_grace: Duration,
-    pub(super) task_grace: Duration,
-    pub(super) drain_timeout: Duration,
+    /// The listener settings it shares with `Server` (ADR 0052): see
+    /// [`with_serve_config`](Self::with_serve_config).
+    pub(super) serve: crate::serve::ServeConfig,
     agent_card_max_age: u32,
     #[cfg(feature = "grpc-tls")]
     tls: Option<tonic::transport::ServerTlsConfig>,
@@ -59,10 +59,7 @@ impl GrpcDispatcher {
                 DEFAULT_GRPC_KEEPALIVE_TIMEOUT,
             )),
             max_connection_age: None,
-            max_connections: None,
-            completion_grace: crate::serve::DEFAULT_COMPLETION_GRACE,
-            task_grace: crate::serve::DEFAULT_TASK_GRACE,
-            drain_timeout: crate::serve::DEFAULT_DRAIN_TIMEOUT,
+            serve: crate::serve::ServeConfig::defaults(),
             agent_card_max_age: crate::dispatch::DEFAULT_AGENT_CARD_MAX_AGE,
             #[cfg(feature = "grpc-tls")]
             tls: None,
@@ -79,30 +76,6 @@ impl GrpcDispatcher {
     #[must_use]
     pub const fn with_agent_card_max_age(mut self, seconds: u32) -> Self {
         self.agent_card_max_age = seconds;
-        self
-    }
-
-    /// Caps the connections served at once. Default: **unbounded**.
-    ///
-    /// The same knob the WebSocket binding has had since 2026-08-19
-    /// ([`with_max_connections`](crate::dispatch::websocket::WebSocketDispatcher::with_max_connections)),
-    /// and the gap the measurement under [`with_http2_keepalive`](Self::with_http2_keepalive)
-    /// left open: keepalive closes a peer that stops *answering*, and nothing
-    /// bounded how many peers could be answering at once. tonic's server has
-    /// no connection ceiling of its own — `concurrency_limit` is per
-    /// connection — so this one is enforced in front of it: the permit is
-    /// taken **before** `accept()`, and load past the ceiling waits in the
-    /// kernel's listen backlog until a served connection ends, or is refused
-    /// by the kernel when that fills. The permit travels with the accepted
-    /// socket and is released when tonic drops it, so it covers TLS, HTTP/2
-    /// and the RPCs on it alike.
-    ///
-    /// Applied by every `serve*` method. [`into_service`](Self::into_service)
-    /// hands the service to a server the caller runs, and that server's
-    /// accept loop is the caller's to bound.
-    #[must_use]
-    pub const fn with_max_connections(mut self, max: usize) -> Self {
-        self.max_connections = Some(max);
         self
     }
 
@@ -154,7 +127,7 @@ impl GrpcDispatcher {
     /// 0041). `h2` and `http/1.1` are offered when `config` names no ALPN.
     ///
     /// The handshake is this crate's, on a task per connection, bounded to
-    /// 10 s, and counted against [`with_max_connections`](Self::with_max_connections)
+    /// 10 s, and counted against [`ServeConfig::max_connections`](crate::serve::ServeConfig::max_connections)
     /// from the accept; a client certificate reaches interceptors as
     /// [`CallContext::peer_certificate`](crate::CallContext::peer_certificate),
     /// as under [`with_tls`](Self::with_tls). The later of the two calls is
@@ -225,109 +198,6 @@ impl GrpcDispatcher {
         self
     }
 
-    /// How long in-flight tasks get to finish on their own once
-    /// [`serve_with_shutdown`](Self::serve_with_shutdown)'s signal fires,
-    /// before they are cancelled. Default
-    /// [`DEFAULT_COMPLETION_GRACE`](crate::serve::DEFAULT_COMPLETION_GRACE);
-    /// the HTTP server's [`ServeConfig::with_completion_grace`](crate::serve::ServeConfig::with_completion_grace)
-    /// is the same setting.
-    #[must_use]
-    pub const fn with_completion_grace(mut self, grace: Duration) -> Self {
-        self.completion_grace = grace;
-        self
-    }
-
-    /// How long cancelled tasks get to act on their cancellation before the
-    /// drain starts. Default [`DEFAULT_TASK_GRACE`](crate::serve::DEFAULT_TASK_GRACE).
-    #[must_use]
-    pub const fn with_task_grace(mut self, grace: Duration) -> Self {
-        self.task_grace = grace;
-        self
-    }
-
-    /// How long [`serve_with_shutdown`](Self::serve_with_shutdown) waits for
-    /// connections to close after the tasks have ended. Default
-    /// [`DEFAULT_DRAIN_TIMEOUT`](crate::serve::DEFAULT_DRAIN_TIMEOUT).
-    #[must_use]
-    pub const fn with_drain_timeout(mut self, timeout: Duration) -> Self {
-        self.drain_timeout = timeout;
-        self
-    }
-
-    /// Starts a gRPC server on the given address.
-    ///
-    /// Blocks until the server shuts down. Uses the configured message
-    /// size limits and concurrency settings.
-    ///
-    /// It takes no shutdown signal; use
-    /// [`serve_with_shutdown`](Self::serve_with_shutdown) for a graceful
-    /// stop.
-    ///
-    /// # Errors
-    ///
-    /// Returns `std::io::Error` if binding fails.
-    pub async fn serve(self, addr: impl tokio::net::ToSocketAddrs) -> std::io::Result<()> {
-        let addr = super::helpers::resolve_addr(addr).await?;
-
-        trace_info!(
-            addr = %addr,
-            "A2A gRPC server listening"
-        );
-
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        let incoming = BoundedIncoming::new(listener, self.max_connections);
-        self.serving(incoming, false)?
-            .await
-            .map_err(std::io::Error::other)
-    }
-
-    /// Starts a gRPC server and returns the bound [`SocketAddr`].
-    ///
-    /// Like [`serve`](Self::serve), but returns the address immediately
-    /// and runs the server in a background task. Useful for tests.
-    ///
-    /// # Errors
-    ///
-    /// Returns `std::io::Error` if binding fails.
-    pub async fn serve_with_addr(
-        self,
-        addr: impl tokio::net::ToSocketAddrs,
-    ) -> std::io::Result<SocketAddr> {
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        self.serve_with_listener(listener)
-    }
-
-    /// Starts a gRPC server on a pre-bound [`TcpListener`](tokio::net::TcpListener).
-    ///
-    /// This is the recommended approach when you need to know the server
-    /// address before constructing the handler (e.g., for agent cards with
-    /// correct URLs). Pre-bind the listener, extract the address, build
-    /// your handler, then pass the listener here.
-    ///
-    /// Returns the local address and runs the server in a background task.
-    ///
-    /// # Errors
-    ///
-    /// Returns `std::io::Error` if the listener's local address cannot be read.
-    pub fn serve_with_listener(
-        self,
-        listener: tokio::net::TcpListener,
-    ) -> std::io::Result<SocketAddr> {
-        let local_addr = listener.local_addr()?;
-
-        trace_info!(
-            %local_addr,
-            "A2A gRPC server listening"
-        );
-
-        let serving = self.serving(BoundedIncoming::new(listener, self.max_connections), false)?;
-        tokio::spawn(async move {
-            let _ = serving.await;
-        });
-
-        Ok(local_addr)
-    }
-
     /// Builds the canonical tonic service for use with a custom server setup.
     ///
     /// Returns an [`A2aServiceServer`] (the `lf.a2a.v1.A2AService` binding)
@@ -357,7 +227,7 @@ impl GrpcDispatcher {
     pub(super) fn build_router(&self) -> std::io::Result<tonic::transport::server::Router> {
         // Every serve path builds its router here: where a ceiling of 0 is
         // refused (audit NEW-g-api-2) and a card without gRPC is reported (§5.2).
-        crate::dispatch::connection_limit::refuse_zero(self.max_connections)?;
+        crate::dispatch::connection_limit::refuse_zero(self.serve.max_connections)?;
         self.handler.warn_if_undeclared("GRPC");
         // Spec §8.1: the agent card on this listener too; a card fetch is
         // usually HTTP/1.1. See `well_known`.
@@ -396,7 +266,7 @@ impl GrpcDispatcher {
 impl GrpcDispatcher {
     /// Whether this listener serves TLS.
     #[allow(clippy::unused_self)]
-    const fn serves_tls(&self) -> bool {
+    pub(super) const fn serves_tls(&self) -> bool {
         #[cfg(all(feature = "grpc-tls", feature = "tls-rustls"))]
         {
             self.tls.is_some() || self.rustls.is_some()
@@ -437,10 +307,7 @@ impl std::fmt::Debug for GrpcDispatcher {
             .field("config", &self.config)
             .field("keepalive", &self.keepalive)
             .field("max_connection_age", &self.max_connection_age)
-            .field("max_connections", &self.max_connections)
-            .field("completion_grace", &self.completion_grace)
-            .field("task_grace", &self.task_grace)
-            .field("drain_timeout", &self.drain_timeout)
+            .field("serve", &self.serve)
             .field("agent_card_max_age", &self.agent_card_max_age);
         s.field("tls", &self.serves_tls());
         s.finish_non_exhaustive()

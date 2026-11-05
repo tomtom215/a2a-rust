@@ -19,7 +19,7 @@ use a2a_protocol_server::audit::record::{AuditRecord, kind};
 use a2a_protocol_server::audit::{AuditLog, InMemoryAuditStore};
 use a2a_protocol_server::auth::caller_id;
 use a2a_protocol_server::dispatch::RestDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     BearerTokenAuthInterceptor, CallContext, EventEmitter, RequestHandlerBuilder,
     ServerInterceptor, agent_executor,
@@ -68,9 +68,15 @@ async fn server(log: Arc<AuditLog>) -> std::net::SocketAddr {
         .with_audit(log)
         .build()
         .unwrap();
-    serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::new(handler)))
-        .await
-        .unwrap()
+    {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    }
 }
 
 async fn send(addr: std::net::SocketAddr, body: String, token: &str) -> u16 {

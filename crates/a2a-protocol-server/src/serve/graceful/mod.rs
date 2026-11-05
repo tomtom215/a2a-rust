@@ -128,6 +128,7 @@ use connection::{Accepted, spawn_connection};
 
 mod plaintext;
 mod production;
+pub mod start;
 #[cfg(feature = "tls-rustls")]
 mod tls;
 
@@ -289,13 +290,9 @@ impl Server {
             (Some(binding), Some(handler)) => handler.undeclared_binding(binding),
             _ => None,
         };
-        let refusal = if config.max_connections == Some(0) {
-            Some("max_connections is 0: a server that may serve no connection accepts none".into())
-        } else {
-            production::refusal(&config, listener.local_addr().ok(), encrypted, undeclared)
-        };
-        if let Some(why) = refusal {
-            trace_error!(reason = %why, "listener refused to start");
+        if let Some(why) =
+            start::refusal(&config, listener.local_addr().ok(), encrypted, undeclared)
+        {
             return ServeReport {
                 accepted: 0,
                 drained: true,
@@ -308,9 +305,6 @@ impl Server {
             (dispatcher.protocol_binding(), dispatcher.request_handler())
         {
             handler.warn_if_undeclared(binding);
-        }
-        if let Some(_why) = production::warning(&config) {
-            trace_warn!(reason = _why, "production listener");
         }
         if let Ok(addr) = listener.local_addr()
             && !config.tls_terminated_in_front
@@ -340,21 +334,11 @@ impl Server {
 
         // On the signal, readiness turns to "draining" at once; accepting
         // goes on for `drain_delay`, while load balancers learn of it.
-        let draining = dispatcher.request_handler().cloned();
-        let drain_delay = config.drain_delay;
-        let shutdown = async move {
-            shutdown.await;
-            if let Some(handler) = &draining {
-                handler.begin_draining();
-            }
-            if !drain_delay.is_zero() {
-                trace_info!(
-                    delay_ms = u64::try_from(drain_delay.as_millis()).unwrap_or(u64::MAX),
-                    "shutdown signalled; not ready, still accepting for the drain delay"
-                );
-                tokio::time::sleep(drain_delay).await;
-            }
-        };
+        let shutdown = start::signalled(
+            shutdown,
+            dispatcher.request_handler().cloned(),
+            config.drain_delay,
+        );
         let mut shutdown = std::pin::pin!(shutdown);
         loop {
             // Hold the permit before accepting, so an over-limit burst waits in

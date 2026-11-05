@@ -19,7 +19,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::budget::{Budget, BudgetHandle};
 use a2a_protocol_types::error::{A2aError, A2aResult};
@@ -93,9 +93,14 @@ async fn serve(executor: impl AgentExecutor) -> Arc<A2aClient> {
             .build()
             .expect("handler"),
     );
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     Arc::new(
         ClientBuilder::new(format!("http://{addr}"))
             .build()
@@ -243,9 +248,14 @@ async fn a_refused_start_returns_the_reservation() {
     handler
         .halt(a2a_protocol_server::HaltScope::All, "oncall", "maintenance")
         .await;
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     let halted = Arc::new(
         ClientBuilder::new(format!("http://{addr}"))
             .build()

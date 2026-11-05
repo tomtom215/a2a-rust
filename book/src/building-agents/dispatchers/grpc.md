@@ -30,29 +30,26 @@ a2a-protocol-server = { version = "0.16", features = ["grpc"] }
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build()?);
 use a2a_protocol_server::{GrpcDispatcher, GrpcConfig};
-use std::sync::Arc;
+use a2a_protocol_server::serve::{ServeConfig, shutdown_signal};
 
 let config = GrpcConfig::default()
     .with_max_message_size(8 * 1024 * 1024)
     .with_concurrency_limit(128);
 
-// Blocking server (`serve` consumes the dispatcher)
-GrpcDispatcher::new(Arc::clone(&handler), config.clone())
-    .serve("0.0.0.0:50051")
-    .await?;
+// Bind first: the address is known (port 0 included) before serving, so the
+// agent card can name it.
+let listener = tokio::net::TcpListener::bind("0.0.0.0:50051").await?;
+println!("gRPC listening on {}", listener.local_addr()?);
 
-// Non-blocking (returns bound address)
-let addr = GrpcDispatcher::new(Arc::clone(&handler), config.clone())
-    .serve_with_addr("127.0.0.1:0")
+// The listener settings `Server` takes: the connection ceiling, the
+// shutdown's graces and drain, `production`.
+let report = GrpcDispatcher::new(handler, config)
+    .with_serve_config(ServeConfig::new().with_max_connections(1024))
+    .serve_with_shutdown(listener, shutdown_signal())
     .await?;
-println!("gRPC listening on {addr}");
-
-// Pre-bind pattern (when you need the address before building the handler)
-let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-let addr = listener.local_addr()?;
-// ... build handler using addr for agent card URL ...
-let dispatcher = GrpcDispatcher::new(handler, config);
-let bound = dispatcher.serve_with_listener(listener)?;
+if let Some(why) = report.refused {
+    return Err(why.into());
+}
 # Ok(())
 # }
 ```
@@ -82,6 +79,7 @@ silent were all accepted, and the oldest was still alive twelve seconds later.
 # }
 # use a2a_protocol_sdk::prelude::*;
 # use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
+# use a2a_protocol_server::serve::ServeConfig;
 # use std::sync::Arc;
 # use std::time::Duration;
 # struct MyAgent;
@@ -91,7 +89,7 @@ silent were all accepted, and the oldest was still alive twelve seconds later.
 let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default())
     .with_http2_keepalive(Duration::from_secs(30), Duration::from_secs(10))
     .with_max_connection_age(Duration::from_secs(600))
-    .with_max_connections(1024);
+    .with_serve_config(ServeConfig::new().with_max_connections(1024));
 # }
 ```
 
@@ -99,8 +97,8 @@ HTTP/2 keepalive is **on by default since 0.16.0**: a PING after 60 s of
 silence, the connection closed if it is not answered within 20 s
 (`DEFAULT_GRPC_KEEPALIVE_INTERVAL`, `DEFAULT_GRPC_KEEPALIVE_TIMEOUT`;
 `without_http2_keepalive()` turns it off; [ADR 0042](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0042-listener-liveness-defaults.md)).
-The other two are opt-in. `with_max_connections` is the ceiling the other two do
-not provide — keepalive closes a peer that stops answering, and nothing bounded
+The other two are opt-in. `ServeConfig::max_connections`, through
+`with_serve_config`, is the ceiling the other two do not provide — keepalive closes a peer that stops answering, and nothing bounded
 how many peers could be answering at once. As on the WebSocket dispatcher, the
 permit is taken before `accept()`, so load past the ceiling waits in the
 kernel's listen backlog and is refused by the kernel when that fills, rather
@@ -166,6 +164,16 @@ tonic::transport::Server::builder()
 `into_service()` applies only `GrpcConfig`'s `max_message_size`,
 `stream_channel_capacity` and `require_version_header`. `concurrency_limit`,
 `with_tls`, `with_http2_keepalive`, `with_max_connection_age`,
-`with_max_connections` and the agent card on the same port belong to the
-`serve*` methods; on your own `tonic::transport::Server`, set the equivalents
-(for example `.concurrency_limit_per_connection(256)`).
+`with_serve_config` and the agent card on the same port belong to
+`serve_with_shutdown`; on your own `tonic::transport::Server`, set the
+equivalents (for example `.concurrency_limit_per_connection(256)`).
+
+`with_serve_config` applies `max_connections`, `completion_grace`,
+`task_grace`, `drain_timeout`, `drain_delay` and `production` (a card that
+does not declare `GRPC`, or plaintext beyond loopback without TLS, refuses to
+start). It does not apply `idle_timeout` or `header_read_timeout`: HTTP/2
+keepalive is this listener's liveness bound. The dispatcher's own
+`with_max_connections`, `with_completion_grace`, `with_task_grace` and
+`with_drain_timeout`, and its `serve`, `serve_with_addr` and
+`serve_with_listener`, are deprecated since 0.16.0 and removed no earlier
+than 0.17.0 ([ADR 0052](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0052-one-serve-shape-per-listener.md)).

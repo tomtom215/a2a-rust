@@ -28,7 +28,7 @@ use std::time::Duration;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve::ServeReport;
+use a2a_protocol_server::serve::{ServeConfig, ServeReport};
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
@@ -114,6 +114,20 @@ fn graces(setup: Setup) -> (Duration, Duration) {
         (Duration::from_millis(100), Duration::from_millis(100))
     } else {
         (a2a_protocol_server::serve::DEFAULT_TASK_GRACE, DRAIN)
+    }
+}
+
+/// The settings a run is served with, through the `ServeConfig` the HTTP
+/// server takes (ADR 0052): the completion window, `grace` and `drain`, and
+/// the run's connection ceiling.
+fn serve_config(setup: Setup, grace: Duration, drain: Duration) -> ServeConfig {
+    let config = ServeConfig::new()
+        .with_completion_grace(WINDOW)
+        .with_task_grace(grace)
+        .with_drain_timeout(drain);
+    match setup.max_connections {
+        Some(max) => config.with_max_connections(max),
+        None => config,
     }
 }
 

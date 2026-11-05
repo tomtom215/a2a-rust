@@ -169,6 +169,14 @@ pub struct ServeConfig {
 
 impl Default for ServeConfig {
     fn default() -> Self {
+        Self::defaults()
+    }
+}
+
+impl ServeConfig {
+    /// [`Default::default`], in a `const` context: the gRPC and WebSocket
+    /// dispatchers hold one from their `const fn new`.
+    pub(crate) const fn defaults() -> Self {
         Self {
             max_connections: None,
             drain_timeout: DEFAULT_DRAIN_TIMEOUT,

@@ -36,7 +36,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::call_context::CallContext;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::interceptor::ServerInterceptor;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::responses::SendMessageResponse;
 
@@ -268,7 +268,12 @@ fn bench_interceptor_chain(c: &mut Criterion) {
             let handler = Arc::new(builder.build().expect("build handler"));
             let dispatcher = JsonRpcDispatcher::new(handler);
             let addr = runtime
-                .block_on(serve_with_addr("127.0.0.1:0", dispatcher))
+                .block_on(async {
+                    let bound = Server::bind("127.0.0.1:0").await?;
+                    let addr = bound.local_addr()?;
+                    tokio::spawn(bound.serve_with_shutdown(dispatcher, std::future::pending()));
+                    Ok::<_, std::io::Error>(addr)
+                })
                 .expect("serve");
             let url = format!("http://{addr}");
             let client = ClientBuilder::new(&url).build().expect("build client");

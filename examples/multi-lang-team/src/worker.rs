@@ -30,7 +30,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::executor_helpers::EventEmitter;
 use a2a_protocol_server::handler::RequestHandler;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::task::TaskState;
@@ -106,5 +106,12 @@ pub async fn start(addr: &str) -> Result<SocketAddr, Box<dyn std::error::Error>>
             .with_agent_card(make_worker_card(&format!("http://{addr}")))
             .build()?,
     );
-    Ok(serve_with_addr(addr, JsonRpcDispatcher::new(handler)).await?)
+    Ok({
+        let bound = Server::bind(addr).await?;
+        let addr = bound.local_addr()?;
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    })
 }

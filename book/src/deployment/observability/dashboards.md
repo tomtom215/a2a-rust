@@ -61,7 +61,7 @@ Tempo. It needs traces sent to Tempo. The quantiles under *Duration* are
 interpolated inside a bucket, and the default buckets jump from 1 s to 5 s,
 so a value between them is a straight-line estimate. Persistence errors are empty in the screenshot because no store
 write failed; the HTTP connections panel needs an agent served by the SDK's
-`serve`, `serve_with_addr` or `Server::serve_with_shutdown`.
+`Server::serve_with_shutdown` (or the deprecated `serve` and `serve_with_addr`, which run on it).
 
 ![The A2A server dashboard](../../images/dashboards/a2a-server.png)
 

@@ -5,8 +5,10 @@
 
 //! Axum framework integration for A2A servers.
 //!
-//! Provides [`A2aRouter`], which builds an [`axum::Router`] that handles all
-//! A2A v1.0 methods using the existing [`RequestHandler`].
+//! Provides [`A2aRouter`] (also named [`RestRouter`]), which builds an
+//! [`axum::Router`] that handles all A2A v1.0 methods using the existing
+//! [`RequestHandler`], and is itself a [`Dispatcher`](crate::serve::Dispatcher)
+//! that [`Server`](crate::serve::Server) serves (ADR 0052).
 //!
 //! # Quick start
 //!
@@ -18,7 +20,8 @@
 //! #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 //! # }
 //! use std::sync::Arc;
-//! use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
+//! use a2a_protocol_server::dispatch::axum_adapter::RestRouter;
+//! use a2a_protocol_server::serve::{Server, shutdown_signal};
 //! use a2a_protocol_server::RequestHandlerBuilder;
 //! # struct MyExecutor;
 //! # impl a2a_protocol_server::executor::AgentExecutor for MyExecutor {
@@ -37,17 +40,23 @@
 //!         .expect("build handler"),
 //! );
 //!
-//! let app = A2aRouter::new(handler).into_router();
-//!
-//! let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-//! axum::serve(listener, app).await.unwrap();
+//! // `Server` gives the router its header-read and idle timeouts, connection
+//! // cap, loopback `Host` check, production refusal and a shutdown that ends
+//! // the tasks in flight before it drains.
+//! let report = Server::bind("0.0.0.0:3000")
+//!     .await
+//!     .unwrap()
+//!     .serve_with_shutdown(RestRouter::new(handler), shutdown_signal())
+//!     .await;
+//! assert_eq!(report.refused, None);
 //! # }
 //! ```
 //!
 //! # Composability
 //!
-//! The returned router can be merged with other Axum routes, middleware, and
-//! layers:
+//! [`into_router`](A2aRouter::into_router) returns the router, to be merged
+//! with other Axum routes, middleware, and layers, and served with
+//! `axum::serve`, which then owns the timeouts and the shutdown:
 //!
 //! ```rust
 //! # use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
@@ -73,7 +82,7 @@
 //! REST dispatcher ([`crate::dispatch::rest`]), which strips that prefix and
 //! threads the tenant through. Requests to a tenant-prefixed path therefore
 //! **404 here** — fail-safe, but surprising if you are porting from
-//! `serve()`, where the same URL works.
+//! `RestDispatcher`, where the same URL works.
 //!
 //! Tenancy itself is not lost. This router forwards request headers to the
 //! handler, so a configured
@@ -108,6 +117,7 @@ use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::build_sse_response;
 use unreadable::{refuse_unreadable, send_method};
 
+mod dispatcher;
 mod unreadable;
 mod validate;
 
@@ -141,6 +151,9 @@ pub struct A2aRouter {
     config: super::DispatchConfig,
     #[cfg(feature = "websocket")]
     websocket: Option<super::websocket::WebSocketUpgrades>,
+    /// The router [`Dispatcher::dispatch`](crate::serve::Dispatcher::dispatch)
+    /// calls, built on the first request (`dispatcher.rs`).
+    router: std::sync::OnceLock<Router>,
 }
 
 /// [`A2aRouter`] under a name that says which binding it serves.
@@ -174,6 +187,7 @@ impl A2aRouter {
             config,
             #[cfg(feature = "websocket")]
             websocket: None,
+            router: std::sync::OnceLock::new(),
         }
     }
 
@@ -202,8 +216,17 @@ impl A2aRouter {
     /// Builds the Axum [`Router`] with all A2A REST routes.
     ///
     /// The router uses `Arc<RequestHandler>` as shared state (via Axum's
-    /// `State` extractor). Returns the configured `Router`.
+    /// `State` extractor). Returns the configured `Router`, for an
+    /// application that composes it with its own routes and serves it with
+    /// `axum::serve`. To serve it alone, give the `A2aRouter` itself to
+    /// [`Server`](crate::serve::Server), which it is a
+    /// [`Dispatcher`](crate::serve::Dispatcher) for (ADR 0052).
     pub fn into_router(self) -> Router {
+        self.build()
+    }
+
+    /// The router [`into_router`](Self::into_router) returns.
+    fn build(&self) -> Router {
         // Honor the configured body cap on the Axum transport too. Without this
         // the `Bytes` extractor falls back to Axum's own `DefaultBodyLimit`
         // (2 MiB) and silently ignores `max_request_body_size`, so the knob that
@@ -212,7 +235,7 @@ impl A2aRouter {
         let base_path = self.config.base_path.clone();
         self.handler.warn_if_undeclared("HTTP+JSON"); // §5.2, as every other listener does
         #[cfg(feature = "websocket")]
-        let websocket = self.websocket.map_or_else(Router::new, |upgrades| {
+        let websocket = self.websocket.clone().map_or_else(Router::new, |upgrades| {
             self.handler
                 .warn_if_undeclared(a2a_protocol_types::WEBSOCKET_BINDING_URI);
             Router::new()
@@ -224,8 +247,8 @@ impl A2aRouter {
         let websocket = Router::new();
         let card_handler = card_handler(&self.handler, self.config.agent_card_max_age);
         let state = A2aState {
-            handler: self.handler,
-            config: Arc::new(self.config),
+            handler: Arc::clone(&self.handler),
+            config: Arc::new(self.config.clone()),
             card_handler,
         };
         let checks = state.clone();

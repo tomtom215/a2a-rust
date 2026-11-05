@@ -90,9 +90,12 @@ async fn serve(executor: impl AgentExecutor, name: &str) -> AgentCard {
             .build()
             .expect("handler"),
     );
-    serve_with_addr(addr, JsonRpcDispatcher::new(handler))
-        .await
-        .expect("serve");
+    {
+        let bound = Server::bind(addr).await.expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+    }
     card
 }
 

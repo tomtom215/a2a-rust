@@ -46,7 +46,7 @@ pub struct WebSocketUpgrades {
 struct Inner {
     dispatcher: WebSocketDispatcher,
     connections: Connections,
-    /// [`WebSocketDispatcher::with_max_connections`], for upgraded
+    /// The dispatcher's `ServeConfig::max_connections`, for upgraded
     /// connections.
     limiter: Arc<Semaphore>,
 }
@@ -64,7 +64,7 @@ impl WebSocketUpgrades {
     /// check, connection cap, idle bound and write timeout.
     pub(crate) fn new(dispatcher: WebSocketDispatcher) -> Self {
         let limiter = Arc::new(Semaphore::new(crate::dispatch::connection_limit::permits(
-            dispatcher.max_connections,
+            dispatcher.serve.max_connections,
         )));
         Self {
             inner: Arc::new(Inner {

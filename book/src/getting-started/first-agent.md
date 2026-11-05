@@ -119,18 +119,26 @@ async fn main() -> std::io::Result<()> {
 
     println!("Calculator agent listening on http://127.0.0.1:3000");
 
-    // One-liner server startup (replaces ~25 lines of hyper boilerplate)
-    serve("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await
+    // Serves until SIGTERM or Ctrl-C, then lets the tasks in flight end and
+    // drains the connections.
+    let report = Server::bind("127.0.0.1:3000")
+        .await?
+        .serve_with_shutdown(JsonRpcDispatcher::new(handler), shutdown_signal())
+        .await;
+    match report.refused {
+        Some(why) => Err(std::io::Error::other(why)),
+        None => Ok(()),
+    }
 }
 ```
 
-> **Note:** `serve()` is re-exported from the prelude. It binds a TCP listener
-> and runs the accept loop until the process ends, with a 30-second header-read
-> timeout, a 75-second idle timeout, no connection ceiling, no TLS and no
-> graceful shutdown. `serve_with_addr()` is the same server spawned in the
-> background; it returns the bound address, which is what you want for port `0`
-> in tests. For a deployment that needs TLS, a connection ceiling or a draining
-> shutdown, bind a `Server` (`Server::bind`, `serve_with_shutdown`).
+> **Note:** `Server` and `shutdown_signal` are re-exported from the prelude.
+> `Server::bind` binds a TCP listener; `serve_with_shutdown` runs the accept
+> loop until the signal, with a 30-second header-read timeout, a 75-second idle
+> timeout, no connection ceiling and no TLS (`with_config` and `with_tls` change
+> those). For port `0` in a test, read `server.local_addr()` before serving. The
+> free `serve()` and `serve_with_addr()` this page used to show are deprecated
+> since 0.16.0: neither can be stopped.
 
 Steps 1 to 3 go in `src/main.rs`, in that order. Start the agent:
 

@@ -93,11 +93,13 @@ async fn serve(tls: Option<(&str, &str)>) -> u16 {
             .with_tls_pem(cert.as_bytes(), key.as_bytes())
             .unwrap();
     }
-    Arc::new(dispatcher)
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap()
-        .port()
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(Arc::new(dispatcher).serve_with_shutdown(listener, std::future::pending()));
+        addr
+    }
+    .port()
 }
 
 #[test]

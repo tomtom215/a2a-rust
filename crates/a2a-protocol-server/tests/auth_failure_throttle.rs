@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     AuthFailureThrottle, AuthFailureThrottleConfig, BearerTokenAuthInterceptor, RequestHandler,
     RequestHandlerBuilder, agent_executor,
@@ -91,9 +91,14 @@ fn retry_delay_secs(details: &serde_json::Value) -> u64 {
 
 #[tokio::test]
 async fn json_rpc_throttles_a_peer_after_its_failed_credentials() {
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let url = format!("http://{addr}/");
 
     let served = call("POST", &url, GET_TASK, "good").await;
@@ -121,9 +126,14 @@ async fn json_rpc_throttles_a_peer_after_its_failed_credentials() {
 
 #[tokio::test]
 async fn rest_throttles_a_peer_after_its_failed_credentials() {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let url = format!("http://{addr}/tasks/nope");
 
     let served = call("GET", &url, "", "good").await;
@@ -149,9 +159,14 @@ async fn rest_throttles_a_peer_after_its_failed_credentials() {
 /// however many calls it makes.
 #[tokio::test]
 async fn a_peer_with_the_right_credential_is_not_throttled() {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let url = format!("http://{addr}/tasks/nope");
     for _ in 0..(MAX_FAILURES * 3) {
         assert_eq!(call("GET", &url, "", "good").await.status, 404);

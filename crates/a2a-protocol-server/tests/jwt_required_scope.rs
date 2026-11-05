@@ -19,7 +19,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use a2a_protocol_server::auth::jwt::{Jwks, JwtAuthInterceptor, JwtValidator};
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{RequestHandler, RequestHandlerBuilder, agent_executor};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -97,12 +97,22 @@ async fn call(addr: std::net::SocketAddr, rest: bool, token: &str) -> (u16, Opti
 
 #[tokio::test]
 async fn a_valid_token_without_the_scope_is_refused_403_naming_it() {
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .expect("serve");
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .expect("serve");
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     for (addr, is_rest) in [(rpc, false), (rest, true)] {
         let binding = if is_rest { "HTTP+JSON" } else { "JSON-RPC" };
 

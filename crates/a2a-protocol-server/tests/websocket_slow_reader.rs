@@ -139,14 +139,23 @@ async fn a_peer_that_stops_reading_mid_stream_is_closed_by_the_idle_bound() {
         .build()
         .expect("build handler"),
     );
-    let addr = Arc::new(
-        WebSocketDispatcher::new(handler)
-            .with_max_connections(1)
-            .with_idle_timeout(idle),
-    )
-    .serve_with_addr("127.0.0.1:0")
-    .await
-    .expect("start WS server");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("start WS server");
+        let addr = listener.local_addr().expect("start WS server");
+        tokio::spawn(
+            Arc::new(
+                WebSocketDispatcher::new(handler)
+                    .with_serve_config(
+                        a2a_protocol_server::serve::ServeConfig::new().with_max_connections(1),
+                    )
+                    .with_idle_timeout(idle),
+            )
+            .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
 
     // The stalled peer: a small receive buffer, a stream opened, and then no
     // more reading. Kept alive for the whole test, so its socket stays open.

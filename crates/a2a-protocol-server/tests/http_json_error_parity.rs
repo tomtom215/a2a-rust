@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use a2a_protocol_server::dispatch::RestDispatcher;
 use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     BearerTokenAuthInterceptor, RequestHandler, RequestHandlerBuilder, agent_executor,
 };
@@ -74,9 +74,14 @@ async fn call(
 
 #[tokio::test]
 async fn rest_and_axum_answer_the_same_failures_identically() {
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let axum_addr = listener.local_addr().unwrap();
     let app = A2aRouter::new(handler()).into_router();
@@ -115,9 +120,14 @@ async fn rest_and_axum_answer_the_same_failures_identically() {
 /// with no version.
 #[tokio::test]
 async fn rest_and_axum_answer_operations_with_the_same_headers() {
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let axum_addr = listener.local_addr().unwrap();
     let app = A2aRouter::new(handler()).into_router();
@@ -172,9 +182,14 @@ async fn rest_and_axum_answer_operations_with_the_same_headers() {
 /// and the agent card keeps `application/json` whatever was asked.
 #[tokio::test]
 async fn rest_and_axum_negotiate_the_response_media_type() {
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let axum_addr = listener.local_addr().unwrap();
     let app = A2aRouter::new(handler()).into_router();
@@ -313,12 +328,15 @@ async fn rest_and_axum_negotiate_the_response_media_type() {
 #[tokio::test]
 async fn each_standard_error_names_its_reason_on_both_dispatchers() {
     let (rest_handler, axum_handler) = (handler(), handler());
-    let rest = serve_with_addr(
-        "127.0.0.1:0",
-        RestDispatcher::new(Arc::clone(&rest_handler)),
-    )
-    .await
-    .unwrap();
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(Arc::clone(&rest_handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let axum_addr = listener.local_addr().unwrap();
     let app = A2aRouter::new(Arc::clone(&axum_handler)).into_router();

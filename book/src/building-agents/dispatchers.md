@@ -51,15 +51,18 @@ a2a-protocol-server = { version = "0.16", features = ["websocket"] }
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build()?);
 use a2a_protocol_server::WebSocketDispatcher;
+use a2a_protocol_server::serve::{ServeConfig, shutdown_signal};
 use std::sync::Arc;
 
-let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
+let dispatcher = Arc::new(
+    WebSocketDispatcher::new(handler)
+        .with_serve_config(ServeConfig::new().with_max_connections(1024)),
+);
 
-// Blocking server
-dispatcher.clone().serve("0.0.0.0:3000").await?;
-
-// Non-blocking (returns bound address)
-let addr = dispatcher.serve_with_addr("127.0.0.1:0").await?;
+// Bind first, so the address is known (port 0 included) before serving.
+let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+let report = dispatcher.serve_with_shutdown(listener, shutdown_signal()).await;
+# let _ = report;
 # Ok(())
 # }
 ```

@@ -75,20 +75,20 @@ Test the full stack by starting a real server and using a client:
 # use a2a_protocol_sdk::prelude::*;
 # struct CalcExecutor;
 # agent_executor!(CalcExecutor, |_ctx, _queue| async { Ok(()) });
-use a2a_protocol_sdk::server::{JsonRpcDispatcher, RequestHandlerBuilder, serve_with_addr};
+use a2a_protocol_sdk::server::{JsonRpcDispatcher, RequestHandlerBuilder, Server};
 use a2a_protocol_sdk::client::ClientBuilder;
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_end_to_end() {
     // Build handler and server. Port 0 lets the OS pick a free port, and
-    // `serve_with_addr` returns the address it bound.
+    // `local_addr` says which; the server runs until the test ends.
     let handler = Arc::new(
         RequestHandlerBuilder::new(CalcExecutor).with_agent_card(card()).build().unwrap()
     );
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-        .await
-        .unwrap();
+    let server = Server::bind("127.0.0.1:0").await.unwrap();
+    let addr = server.local_addr().unwrap();
+    tokio::spawn(server.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()));
 
     // Build client
     let client = ClientBuilder::new(format!("http://{addr}"))
@@ -167,9 +167,9 @@ async fn test_streaming() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(CalcExecutor).with_agent_card(card()).build().unwrap()
     );
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-        .await
-        .unwrap();
+    let server = Server::bind("127.0.0.1:0").await.unwrap();
+    let addr = server.local_addr().unwrap();
+    tokio::spawn(server.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()));
     let client = ClientBuilder::new(format!("http://{addr}")).build().unwrap();
     let params = MessageSendParams::new(Message::user_text("m1", "10 + 20"));
 

@@ -205,10 +205,12 @@ let tls = ServerTlsConfig::new()
     // Add `.client_auth_optional(true)` to admit clients that present none.
     .client_ca_root(Certificate::from_pem(client_ca_pem));
 
-GrpcDispatcher::new(handler, GrpcConfig::default())
+let listener = tokio::net::TcpListener::bind("0.0.0.0:50051").await?;
+let report = GrpcDispatcher::new(handler, GrpcConfig::default())
     .with_tls(tls)
-    .serve("0.0.0.0:50051")
+    .serve_with_shutdown(listener, a2a_protocol_server::serve::shutdown_signal())
     .await?;
+# let _ = report;
 # Ok(())
 # }
 ```

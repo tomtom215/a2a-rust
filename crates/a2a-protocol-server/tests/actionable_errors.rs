@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{RequestHandlerBuilder, agent_executor};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
@@ -28,9 +28,14 @@ async fn send(version: &str, message: Value, metadata: Option<Value>) -> Value {
             .build()
             .unwrap(),
     );
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     let mut params = json!({ "message": message });
     if let Some(m) = metadata {
         params["metadata"] = m;

@@ -113,9 +113,15 @@ fn grpc_goes_through_the_proxy_the_environment_names() {
                     .unwrap(),
             );
             let grpc_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let addr = GrpcDispatcher::new(handler, GrpcConfig::default())
-                .serve_with_listener(grpc_listener)
-                .unwrap();
+            let addr = {
+                let listener = grpc_listener;
+                let addr = listener.local_addr().unwrap();
+                tokio::spawn(
+                    GrpcDispatcher::new(handler, GrpcConfig::default())
+                        .serve_with_shutdown(listener, std::future::pending()),
+                );
+                addr
+            };
             let client = ClientBuilder::new(format!("http://{addr}"))
                 .with_protocol_binding("GRPC")
                 .build_grpc()

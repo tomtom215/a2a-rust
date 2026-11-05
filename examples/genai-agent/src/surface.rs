@@ -74,8 +74,13 @@ pub async fn start(model: &str) -> Result<Endpoints, BoxErr> {
     serve_combined(http_l, Arc::clone(&handler));
     {
         use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
-        GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
-            .serve_with_listener(grpc_l)?;
+        {
+            let listener = grpc_l;
+            tokio::spawn(
+                GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
+                    .serve_with_shutdown(listener, std::future::pending()),
+            );
+        }
     }
     {
         let ws = Arc::new(
@@ -83,7 +88,10 @@ pub async fn start(model: &str) -> Result<Endpoints, BoxErr> {
                 &handler,
             )),
         );
-        ws.serve_with_addr(ws_a.to_string().as_str()).await?;
+        {
+            let listener = tokio::net::TcpListener::bind(ws_a.to_string().as_str()).await?;
+            tokio::spawn(ws.serve_with_shutdown(listener, std::future::pending()));
+        }
     }
 
     Ok(ep)

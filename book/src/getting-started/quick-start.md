@@ -35,8 +35,7 @@ you meant.
 That is the agent, condensed from `examples/hello-agent/src/main.rs`. The file
 builds its card in a separate `card()` function; its `main` first starts
 OpenTelemetry from the `OTEL_*` environment (it exports nothing unless an OTLP
-endpoint is set), and serves through `Server::bind` and `serve_with_shutdown`
-rather than `serve`, so that SIGTERM or Ctrl-C lets the telemetry flush. [Hello Agent](../examples/hello-agent.md) walks through it:
+endpoint is set), so that SIGTERM or Ctrl-C lets the telemetry flush. [Hello Agent](../examples/hello-agent.md) walks through it:
 
 ```rust,no_run
 use a2a_protocol_sdk::prelude::*;
@@ -66,7 +65,15 @@ async fn main() -> std::io::Result<()> {
             .build()
             .expect("build handler"),
     );
-    serve("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await
+    let report = Server::bind("127.0.0.1:3000")
+        .await?
+        .serve_with_shutdown(JsonRpcDispatcher::new(handler), shutdown_signal())
+        .await;
+    // A server that refused to start returns at once; say so.
+    match report.refused {
+        Some(why) => Err(std::io::Error::other(why)),
+        None => Ok(()),
+    }
 }
 ```
 

@@ -95,7 +95,7 @@ Auth interceptor headers were applied to JSON-RPC/REST HTTP requests but not to 
 
 The gRPC dispatcher had the same placeholder-URL bug as the HTTP dispatchers: the agent card was built before the server bound to a port, so the card contained `"http://placeholder"`. This applied to any transport that binds its own port.
 
-**Solution:** Pre-bind a `TcpListener`, extract the address, build the handler with the correct URL, then pass the listener via `serve_with_listener()` (gRPC) or the accept loop (HTTP).
+**Solution:** Pre-bind a `TcpListener`, extract the address, build the handler with the correct URL, then pass the listener to the listener's `serve_with_shutdown` (gRPC, WebSocket), or wrap it with `Server::from_listener` (HTTP).
 
 ### Background tasks cannot propagate errors — log them
 

@@ -16,7 +16,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::RestDispatcher;
 use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
 use a2a_protocol_server::handler::RequestHandler;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
@@ -78,9 +78,14 @@ async fn check(url: String) {
 
 #[tokio::test]
 async fn the_axum_agent_card_is_cacheable_like_the_rest_one() {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     check(format!("http://{addr}/.well-known/agent-card.json")).await;
 
     let app = A2aRouter::new(handler()).into_router();
@@ -98,18 +103,24 @@ async fn the_configured_card_max_age_reaches_every_http_dispatcher() {
     use a2a_protocol_server::dispatch::{DispatchConfig, JsonRpcDispatcher};
 
     let config = || DispatchConfig::default().with_agent_card_max_age(60);
-    let rest = serve_with_addr(
-        "127.0.0.1:0",
-        RestDispatcher::with_config(handler(), config()),
-    )
-    .await
-    .unwrap();
-    let jsonrpc = serve_with_addr(
-        "127.0.0.1:0",
-        JsonRpcDispatcher::with_config(handler(), config()),
-    )
-    .await
-    .unwrap();
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::with_config(handler(), config()),
+            std::future::pending(),
+        ));
+        addr
+    };
+    let jsonrpc = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::with_config(handler(), config()),
+            std::future::pending(),
+        ));
+        addr
+    };
     let app = A2aRouter::with_config(handler(), config()).into_router();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let axum = listener.local_addr().unwrap();

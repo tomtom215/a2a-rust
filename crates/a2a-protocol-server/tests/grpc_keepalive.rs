@@ -79,10 +79,16 @@ async fn an_unanswered_ping_closes_the_connection() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
-    let addr = GrpcDispatcher::new(handler, GrpcConfig::default())
-        .with_http2_keepalive(Duration::from_millis(200), Duration::from_millis(100))
-        .serve_with_listener(listener)
-        .expect("serve");
+    let addr = {
+        let listener = listener;
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(
+            GrpcDispatcher::new(handler, GrpcConfig::default())
+                .with_http2_keepalive(Duration::from_millis(200), Duration::from_millis(100))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
 
     let mut stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
     // The client preface and an empty SETTINGS frame; nothing is ever

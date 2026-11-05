@@ -171,9 +171,13 @@ Configurable retry policy for `HttpPushSender`. Pass via
 
 Limits for a `Server` (`Server::bind(addr).await?.with_config(config)`). The
 three shutdown phases run in order — `completion_grace`, then `task_grace`, then
-`drain_timeout` — and the gRPC and WebSocket dispatchers' `serve_with_shutdown`
-take the same three through their own `with_completion_grace`,
-`with_task_grace` and `with_drain_timeout`.
+`drain_timeout` — and the gRPC and WebSocket dispatchers take the same
+`ServeConfig` through `with_serve_config` (ADR 0052): both apply
+`max_connections`, the three shutdown phases, `drain_delay` and `production`;
+the WebSocket dispatcher applies `idle_timeout` as its idle bound (with a
+Ping at half); neither applies `header_read_timeout` or the `Host` check.
+Their own `with_max_connections`, `with_completion_grace`, `with_task_grace`
+and `with_drain_timeout` are deprecated since 0.16.0.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -192,8 +196,8 @@ take the same three through their own `with_completion_grace`,
 |------|----------|
 | `CorsConfig::new(origin)` | `allow_methods` `GET, POST, PUT, DELETE, OPTIONS`; `allow_headers` `content-type, authorization, a2a-version, a2a-extensions, last-event-id, x-a2a-notification-token`; `max_age_secs` 86400 |
 | `TenantStoreConfig` | `max_tenants` 1,000 partitions (each caller's partition counts when tasks are isolated by caller); `max_total_tasks` none |
-| `WebSocketDispatcher` | on its own listener (`serve`, `serve_with_shutdown`), or on the HTTP port through `CombinedDispatcher::with_websocket` / `RestRouter::with_websocket` (ADR 0055), where the listener settings (TLS, handshake timeout) are the HTTP server's and its own `with_max_connections` caps upgrades; handshake timeout 10s (`with_handshake_timeout`); write timeout 30s (`with_write_timeout`: a peer that stops reading is dropped at it, and the connection with it); idle timeout `DEFAULT_WS_IDLE_TIMEOUT`, 75s, pinging at half (`with_idle_timeout`, `without_idle_timeout`; off until 0.16.0); `with_max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
-| `GrpcDispatcher` | HTTP/2 keep-alive: a PING after 60s idle (`DEFAULT_GRPC_KEEPALIVE_INTERVAL`), closing at 20s unanswered (`DEFAULT_GRPC_KEEPALIVE_TIMEOUT`; `with_http2_keepalive`, `without_http2_keepalive`; off until 0.16.0); `with_max_connections` unbounded; `with_max_connection_age` off; under `with_rustls` a 10s TLS handshake bound |
+| `WebSocketDispatcher` | on its own listener (`serve_with_shutdown`), or on the HTTP port through `CombinedDispatcher::with_websocket` / `RestRouter::with_websocket` (ADR 0055), where the listener settings (TLS, handshake timeout) are the HTTP server's and its own `ServeConfig::max_connections` (`with_serve_config`) caps upgrades; handshake timeout 10s (`with_handshake_timeout`); write timeout 30s (`with_write_timeout`: a peer that stops reading is dropped at it, and the connection with it); idle timeout `DEFAULT_WS_IDLE_TIMEOUT`, 75s, pinging at half (`ServeConfig::idle_timeout`, or `with_idle_timeout`, `without_idle_timeout`; off until 0.16.0); `ServeConfig::max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
+| `GrpcDispatcher` | HTTP/2 keep-alive: a PING after 60s idle (`DEFAULT_GRPC_KEEPALIVE_INTERVAL`), closing at 20s unanswered (`DEFAULT_GRPC_KEEPALIVE_TIMEOUT`; `with_http2_keepalive`, `without_http2_keepalive`; off until 0.16.0); `ServeConfig::max_connections` unbounded (`with_serve_config`); `with_max_connection_age` off; under `with_rustls` a 10s TLS handshake bound |
 | `ReloadingCertResolver` | nothing re-read until `reload()`, or every interval given to `watch(interval)` |
 | `HttpPushSender` | 10s request timeout (`HttpPushSender::with_timeout`), 5s DNS lookup bound (`with_dns_timeout`), `PushRetryPolicy` above; SSRF guard on unless `allow_private_urls()` |
 | `JwtValidator`, `JwtAuthInterceptor` | clock-skew leeway 60s (`JwtValidator::with_leeway`); a remote JWKS is cached for 3,600s (`JwtAuthInterceptor::with_jwks_ttl`) and refetched for an unknown key id at most every 10s (`with_jwks_refetch_interval`) |

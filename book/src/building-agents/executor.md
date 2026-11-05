@@ -46,8 +46,7 @@ pub trait AgentExecutor: Send + Sync + 'static {
 
     /// Called by `RequestHandler::shutdown()` (bounded to 10 s) or
     /// `shutdown_with_timeout()`, which your shutdown code calls after the
-    /// server has drained. `serve`, `serve_with_addr` and
-    /// `Server::serve_with_shutdown` do not call it.
+    /// server has drained. `Server::serve_with_shutdown` does not call it.
     /// Default: no-op.
     fn on_shutdown<'a>(
         &'a self,

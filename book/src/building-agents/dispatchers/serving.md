@@ -4,14 +4,16 @@
 # Serving and combining
 
 A dispatcher on its own answers requests; something has to accept the
-connections. This page covers the `serve` helpers, wiring a dispatcher into
-hyper yourself, the transport limits every HTTP dispatcher shares
+connections. This page covers `Server`, wiring a dispatcher into hyper
+yourself, the transport limits every HTTP dispatcher shares
 (`DispatchConfig`), and serving several bindings from one handler, on separate
 ports or on one.
 
-## Using `serve()` (recommended)
+## Using `Server` (recommended)
 
-Both dispatchers implement the `Dispatcher` trait, so you can use the `serve()` helper to eliminate hyper boilerplate:
+Every HTTP dispatcher (`JsonRpcDispatcher`, `RestDispatcher`,
+`CombinedDispatcher`, and the axum `RestRouter`) implements the `Dispatcher`
+trait, so `Server` serves it, under a `ServeConfig`, until a shutdown signal:
 
 ```rust,no_run
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {
@@ -27,22 +29,46 @@ Both dispatchers implement the `Dispatcher` trait, so you can use the `serve()` 
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let handler = std::sync::Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build()?);
-use a2a_protocol_server::serve::{serve, serve_with_addr};
+use a2a_protocol_server::serve::{ServeConfig, Server, shutdown_signal};
 
-// Blocking — runs the accept loop on the current task
-serve("127.0.0.1:3000", JsonRpcDispatcher::new(handler.clone())).await?;
+let server = Server::bind("127.0.0.1:3000")
+    .await?
+    .with_config(ServeConfig::new().with_max_connections(1024));
+println!("Listening on {}", server.local_addr()?);
 
-// Non-blocking — spawns the server and returns the bound address
-let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler)).await?;
-println!("Listening on {addr}");
+// Runs until SIGTERM or Ctrl-C, then ends the tasks in flight and drains.
+let report = server
+    .serve_with_shutdown(JsonRpcDispatcher::new(handler), shutdown_signal())
+    .await;
+if let Some(why) = report.refused {
+    return Err(why.into());
+}
 # Ok(())
 # }
 ```
 
-`serve` and `serve_with_addr` run on `Server` with `ServeConfig::default()`
-(header-read and idle timeouts on, connections unbounded). For TLS, a
-connection ceiling or a graceful shutdown, use `Server`
-([Production Hardening](../../deployment/production.md)).
+`ServeConfig::default()` turns the header-read and idle timeouts on and leaves
+connections unbounded; TLS and the rest are in
+[Production Hardening](../../deployment/production.md). The gRPC and WebSocket
+dispatchers take the same `ServeConfig` through `with_serve_config` and have a
+`serve_with_shutdown` of their own: one shape per listener kind (ADR 0052).
+
+The free `serve` and `serve_with_addr`, and the gRPC and WebSocket
+dispatchers' `serve`, `serve_with_addr` and `serve_with_listener`, are
+deprecated since 0.16.0 and removed no earlier than 0.17.0: none of them can
+be stopped. In a test that wants a server on a free port for the rest of the
+test, bind first and keep the task:
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(handler: std::sync::Arc<RequestHandler>) -> std::io::Result<()> {
+let server = Server::bind("127.0.0.1:0").await?;
+let addr = server.local_addr()?;
+tokio::spawn(server.serve_with_shutdown(RestDispatcher::new(handler), std::future::pending()));
+println!("Listening on {addr}");
+# Ok(())
+# }
+```
 
 ## Manual wiring (advanced)
 
@@ -123,7 +149,7 @@ Serve JSON-RPC and REST on different ports with the same handler:
 # }
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::{Server, shutdown_signal};
 
 let handler = Arc::new(
     RequestHandlerBuilder::new(MyExecutor)
@@ -132,11 +158,14 @@ let handler = Arc::new(
         .unwrap(),
 );
 
-// JSON-RPC on port 3000
-let jsonrpc_addr = serve_with_addr("127.0.0.1:3000", JsonRpcDispatcher::new(Arc::clone(&handler))).await?;
-
-// REST on port 3001
-let rest_addr = serve_with_addr("127.0.0.1:3001", RestDispatcher::new(handler)).await?;
+// JSON-RPC on port 3000 and REST on port 3001, stopped by the same signal.
+let jsonrpc = Server::bind("127.0.0.1:3000").await?;
+let rest = Server::bind("127.0.0.1:3001").await?;
+let (jsonrpc_report, rest_report) = tokio::join!(
+    jsonrpc.serve_with_shutdown(JsonRpcDispatcher::new(Arc::clone(&handler)), shutdown_signal()),
+    rest.serve_with_shutdown(RestDispatcher::new(handler), shutdown_signal()),
+);
+# let _ = (jsonrpc_report, rest_report);
 # Ok(())
 # }
 ```
@@ -157,7 +186,7 @@ tenant-prefixed route. Declare both interfaces on the card at that one URL:
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use a2a_protocol_server::dispatch::CombinedDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::{Server, shutdown_signal};
 
 let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000/a2a"))
     .with_interface(AgentInterface::rest("http://localhost:3000"))
@@ -166,7 +195,11 @@ let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://l
 let handler = Arc::new(RequestHandlerBuilder::new(MyExecutor).with_agent_card(card).build()?);
 
 let dispatcher = CombinedDispatcher::new(handler).with_jsonrpc_path("/a2a")?;
-serve_with_addr("127.0.0.1:3000", dispatcher).await?;
+let report = Server::bind("127.0.0.1:3000")
+    .await?
+    .serve_with_shutdown(dispatcher, shutdown_signal())
+    .await;
+# let _ = report;
 # Ok(())
 # }
 ```

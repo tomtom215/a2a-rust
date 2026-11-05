@@ -76,16 +76,14 @@ mod dispatcher_tests {
             GrpcDispatcher::new(handler(), GrpcConfig::default())
         }
 
+        fn capped(max: usize) -> GrpcDispatcher {
+            dispatcher()
+                .with_serve_config(crate::serve::ServeConfig::new().with_max_connections(max))
+        }
+
         #[tokio::test]
         async fn a_ceiling_of_zero_is_refused_not_served() {
-            let refused = dispatcher()
-                .with_max_connections(0)
-                .serve_with_listener(listener().await)
-                .expect_err("a server that may serve nothing is not started");
-            assert_eq!(refused.kind(), std::io::ErrorKind::InvalidInput);
-
-            let report = dispatcher()
-                .with_max_connections(0)
+            let report = capped(0)
                 .serve_with_shutdown(listener().await, std::future::ready(()))
                 .await
                 .expect("a report");
@@ -101,9 +99,45 @@ mod dispatcher_tests {
 
         #[tokio::test]
         async fn the_largest_ceiling_serves_instead_of_panicking() {
+            let listener = listener().await;
+            let addr = listener.local_addr().expect("addr");
+            tokio::spawn(capped(usize::MAX).serve_with_shutdown(listener, std::future::pending()));
+            assert!(accepts(addr).await);
+        }
+
+        /// The entry points and the setter deprecated in 0.16.0 keep their
+        /// behaviour: a ceiling of zero is an `InvalidInput` error, the
+        /// largest one serves. Their own test; removed with them, no earlier
+        /// than 0.17.0 (ADR 0052).
+        #[tokio::test]
+        #[allow(deprecated)]
+        async fn the_deprecated_entry_points_keep_their_ceilings() {
+            let refused = dispatcher()
+                .with_max_connections(0)
+                .serve_with_listener(listener().await)
+                .expect_err("a server that may serve nothing is not started");
+            assert_eq!(refused.kind(), std::io::ErrorKind::InvalidInput);
+            let refused = dispatcher()
+                .with_max_connections(0)
+                .serve_with_addr("127.0.0.1:0")
+                .await
+                .expect_err("not started either");
+            assert_eq!(refused.kind(), std::io::ErrorKind::InvalidInput);
+            let refused = dispatcher()
+                .with_max_connections(0)
+                .serve("127.0.0.1:0")
+                .await
+                .expect_err("not started either");
+            assert_eq!(refused.kind(), std::io::ErrorKind::InvalidInput);
+
             let addr = dispatcher()
                 .with_max_connections(usize::MAX)
                 .serve_with_listener(listener().await)
+                .expect("serves");
+            assert!(accepts(addr).await);
+            let addr = dispatcher()
+                .serve_with_addr("127.0.0.1:0")
+                .await
                 .expect("serves");
             assert!(accepts(addr).await);
         }
@@ -114,15 +148,16 @@ mod dispatcher_tests {
         use super::*;
         use crate::dispatch::websocket::WebSocketDispatcher;
 
+        fn capped(max: usize) -> Arc<WebSocketDispatcher> {
+            Arc::new(
+                WebSocketDispatcher::new(handler())
+                    .with_serve_config(crate::serve::ServeConfig::new().with_max_connections(max)),
+            )
+        }
+
         #[tokio::test]
         async fn a_ceiling_of_zero_is_refused_not_served() {
-            let refused = Arc::new(WebSocketDispatcher::new(handler()).with_max_connections(0))
-                .serve_with_addr("127.0.0.1:0")
-                .await
-                .expect_err("a server that may serve nothing is not started");
-            assert_eq!(refused.kind(), std::io::ErrorKind::InvalidInput);
-
-            let report = Arc::new(WebSocketDispatcher::new(handler()).with_max_connections(0))
+            let report = capped(0)
                 .serve_with_shutdown(listener().await, std::future::ready(()))
                 .await;
             assert!(
@@ -137,6 +172,29 @@ mod dispatcher_tests {
 
         #[tokio::test]
         async fn the_largest_ceiling_serves_instead_of_panicking() {
+            let listener = listener().await;
+            let addr = listener.local_addr().expect("addr");
+            tokio::spawn(capped(usize::MAX).serve_with_shutdown(listener, std::future::pending()));
+            assert!(accepts(addr).await);
+        }
+
+        /// The entry points and the setter deprecated in 0.16.0 keep their
+        /// behaviour: a ceiling of zero is an `InvalidInput` error, the
+        /// largest one serves. Their own test; removed with them, no earlier
+        /// than 0.17.0 (ADR 0052).
+        #[tokio::test]
+        #[allow(deprecated)]
+        async fn the_deprecated_entry_points_keep_their_ceilings() {
+            let refused = Arc::new(WebSocketDispatcher::new(handler()).with_max_connections(0))
+                .serve_with_addr("127.0.0.1:0")
+                .await
+                .expect_err("a server that may serve nothing is not started");
+            assert_eq!(refused.kind(), std::io::ErrorKind::InvalidInput);
+            let refused = Arc::new(WebSocketDispatcher::new(handler()).with_max_connections(0))
+                .serve("127.0.0.1:0")
+                .await
+                .expect_err("not started either");
+            assert_eq!(refused.kind(), std::io::ErrorKind::InvalidInput);
             let addr =
                 Arc::new(WebSocketDispatcher::new(handler()).with_max_connections(usize::MAX))
                     .serve_with_addr("127.0.0.1:0")
@@ -150,10 +208,10 @@ mod dispatcher_tests {
         #[test]
         fn debug_shows_the_bounds_and_not_the_handler() {
             let dispatcher = WebSocketDispatcher::new(handler())
+                .with_serve_config(crate::serve::ServeConfig::new().with_max_connections(3))
                 .with_handshake_timeout(std::time::Duration::from_secs(7))
                 .with_idle_timeout(std::time::Duration::from_secs(41))
                 .with_write_timeout(std::time::Duration::from_secs(9))
-                .with_max_connections(3)
                 .accept_missing_version_header();
             assert_eq!(
                 format!("{dispatcher:?}"),

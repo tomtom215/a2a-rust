@@ -190,8 +190,9 @@ event (spec §4.3.3); `push_delivery_budget` only sets how many deliveries run
 at once, so there is no `skipped` outcome (the `push_outcome::SKIPPED` constant
 remains for code that matches on it, and is never reported).
 
-The `pool` instruments are reported by the servers this crate runs — `serve`,
-`serve_with_addr` and `Server::serve_with_shutdown`. A connection is *active*
+The `pool` instruments are reported by the servers this crate runs —
+`Server::serve_with_shutdown` (and the deprecated `serve` and `serve_with_addr`,
+which run on it). A connection is *active*
 while a request on it is in flight, including a response still streaming,
 and *idle* while it is open with none; `closed` counts connections that ended
 in an error or timeout. The gRPC and WebSocket dispatchers' own listeners,

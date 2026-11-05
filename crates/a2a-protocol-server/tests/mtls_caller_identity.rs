@@ -228,10 +228,15 @@ async fn the_client_certificate_names_the_caller_over_https() {
 async fn the_client_certificate_names_the_caller_over_wss() {
     let pki = pki();
     let seen = Seen::default();
-    let addr = Arc::new(WebSocketDispatcher::new(handler(&seen)).with_tls(server_config(&pki)))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap();
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler(&seen)).with_tls(server_config(&pki)))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
 
     for with_cert in [true, false] {
         let mut config = client_config(&pki, with_cert);

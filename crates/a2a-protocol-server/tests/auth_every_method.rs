@@ -21,7 +21,7 @@
 use std::sync::Arc;
 
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     BearerTokenAuthInterceptor, RequestHandler, RequestHandlerBuilder, agent_executor,
 };
@@ -146,12 +146,22 @@ async fn status(
 
 #[tokio::test]
 async fn every_method_is_refused_without_a_valid_credential_on_both_http_bindings() {
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .expect("serve");
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .expect("serve");
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
 
     for method in Method::ALL {
         let name = method.wire_name();

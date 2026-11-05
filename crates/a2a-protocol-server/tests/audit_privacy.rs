@@ -16,7 +16,7 @@ use std::sync::Arc;
 use a2a_protocol_server::audit::record::{AuditRecord, digest_of, kind};
 use a2a_protocol_server::audit::{AuditLog, AuditPrivacy, HMAC_KEY_LEN, InMemoryAuditStore};
 use a2a_protocol_server::dispatch::RestDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::store::encrypted::{AES_256_KEY_LEN, Aes256GcmCipher};
 use a2a_protocol_server::{
     BearerTokenAuthInterceptor, EventEmitter, RequestHandlerBuilder, agent_executor,
@@ -66,9 +66,15 @@ async fn send(log: Arc<AuditLog>) {
         .with_audit(log)
         .build()
         .unwrap();
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::new(handler)))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let body = serde_json::json!({
         "message": {"messageId": "m-1", "role": "ROLE_USER", "parts": [{"text": SECRET_TEXT}]}
     })

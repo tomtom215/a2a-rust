@@ -149,8 +149,9 @@ HTTP/2 PING after 60 s of silence and closes the connection if it is not
 answered within 20 s (`with_http2_keepalive`, `without_http2_keepalive`). Any
 conformant client answers without its application being involved, so a quiet
 subscription stays open; a peer that went away without closing does not.
-Neither listener caps connections by default: set `with_max_connections` for
-your fan-in ([ADR 0042](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0042-listener-liveness-defaults.md)).
+Neither listener caps connections by default: set
+`ServeConfig::with_max_connections` for your fan-in, through each dispatcher's
+`with_serve_config` ([ADR 0042](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0042-listener-liveness-defaults.md)).
 
 ## DNS inside Kubernetes
 

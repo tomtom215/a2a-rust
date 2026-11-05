@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{HaltScope, RequestHandler, RequestHandlerBuilder, agent_executor};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
@@ -44,12 +44,24 @@ async fn a_halted_server_refuses_sends_on_both_http_bindings() {
             .build()
             .expect("handler"),
     );
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::clone(&handler)))
-        .await
-        .unwrap();
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&handler)))
-        .await
-        .unwrap();
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
 
     handler.halt(HaltScope::All, "oncall", "incident 42").await;
 

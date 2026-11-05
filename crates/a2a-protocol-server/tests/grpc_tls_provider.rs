@@ -56,10 +56,14 @@ async fn serving_tls_installs_a_default_provider_when_none_is_installed() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
-    GrpcDispatcher::new(handler, GrpcConfig::default())
+    // Started and stopped at once: building the TLS listener is what
+    // installs the provider, and a failure to build it is the `Err`.
+    let report = GrpcDispatcher::new(handler, GrpcConfig::default())
         .with_tls(ServerTlsConfig::new().identity(identity))
-        .serve_with_listener(listener)
+        .serve_with_shutdown(listener, std::future::ready(()))
+        .await
         .expect("a TLS listener with no provider pre-installed must not fail");
+    assert_eq!(report.refused, None, "{report:?}");
 
     assert!(
         rustls::crypto::CryptoProvider::get_default().is_some(),

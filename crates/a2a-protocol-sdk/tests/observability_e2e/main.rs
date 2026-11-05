@@ -42,10 +42,7 @@ use a2a_protocol_sdk::client::{
 };
 use a2a_protocol_sdk::server::otel::OtelMetricsBuilder;
 use a2a_protocol_sdk::server::store::InMemoryTaskStore;
-use a2a_protocol_sdk::server::{
-    GrpcConfig, GrpcDispatcher, HttpPushSender, JsonRpcDispatcher, RequestHandlerBuilder,
-    RestDispatcher, serve_with_addr,
-};
+use a2a_protocol_sdk::server::{HttpPushSender, RequestHandlerBuilder};
 use a2a_protocol_sdk::types::params::TaskQueryParams;
 use a2a_protocol_sdk::types::trace_context::TraceContext;
 use a2a_protocol_sdk::types::{AgentCapabilities, AgentCard, AgentInterface};
@@ -60,6 +57,7 @@ mod conventions;
 mod executor_errors;
 mod fixtures;
 mod grpc_status;
+mod listeners;
 mod push;
 mod streams;
 use fixtures::*;
@@ -159,16 +157,7 @@ async fn one_server_three_bindings_what_an_operator_sees() {
             .build()
             .expect("handler"),
     );
-    let jsonrpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("jsonrpc");
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("rest");
-    let grpc = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("grpc");
+    let (jsonrpc, rest, grpc) = listeners::three(&handler).await;
 
     let mut clients: HashMap<&str, A2aClient> = HashMap::new();
     for (binding, url) in [

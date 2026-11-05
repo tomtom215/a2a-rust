@@ -16,7 +16,7 @@ use a2a_protocol_client::auth::{
 use a2a_protocol_client::error::ClientError;
 use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{ApiKeyAuthInterceptor, RequestHandler, RequestHandlerBuilder};
 use a2a_protocol_types::error::ErrorCode;
 use a2a_protocol_types::params::TaskQueryParams;
@@ -88,18 +88,28 @@ fn clients(url: &str, binding: &str) -> (A2aClient, A2aClient) {
 
 #[tokio::test]
 async fn an_api_key_reaches_the_agent_over_json_rpc() {
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let (misplaced, placed) = clients(&format!("http://{addr}"), "JSONRPC");
     placement_decides(&misplaced, &placed).await;
 }
 
 #[tokio::test]
 async fn an_api_key_reaches_the_agent_over_http_json() {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let (misplaced, placed) = clients(&format!("http://{addr}"), "HTTP+JSON");
     placement_decides(&misplaced, &placed).await;
 }
@@ -110,10 +120,15 @@ async fn an_api_key_reaches_the_agent_over_grpc() {
     use a2a_protocol_client::transport::grpc::GrpcTransport;
     use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
 
-    let addr = GrpcDispatcher::new(handler(), GrpcConfig::default())
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap();
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            GrpcDispatcher::new(handler(), GrpcConfig::default())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let url = format!("http://{addr}");
     let (store, session) = credentials();
     let misplaced = ClientBuilder::new(&url)

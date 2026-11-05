@@ -23,11 +23,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::listeners;
 use a2a_protocol_sdk::client::{A2aClient, ClientBuilder};
-use a2a_protocol_sdk::server::{
-    EventEmitter, GrpcConfig, GrpcDispatcher, JsonRpcDispatcher, RequestHandlerBuilder,
-    RestDispatcher, agent_executor, serve_with_addr,
-};
+use a2a_protocol_sdk::server::{EventEmitter, RequestHandlerBuilder, agent_executor};
 use a2a_protocol_sdk::types::{
     AgentCapabilities, AgentCard, AgentInterface, AgentSkill, TaskState,
 };
@@ -79,16 +77,7 @@ pub async fn run() {
             .build()
             .expect("handler"),
     );
-    let jsonrpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("jsonrpc");
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("rest");
-    let grpc = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("grpc");
+    let (jsonrpc, rest, grpc) = listeners::three(&handler).await;
     let client = |binding: &str, url: String| {
         ClientBuilder::new(url)
             .with_protocol_binding(binding)
@@ -143,10 +132,17 @@ async fn websocket(handler: &Arc<a2a_protocol_sdk::server::RequestHandler>) {
     use a2a_protocol_sdk::client::WebSocketTransport;
     use a2a_protocol_sdk::server::WebSocketDispatcher;
 
-    let addr = Arc::new(WebSocketDispatcher::new(Arc::clone(handler)))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("websocket");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("websocket");
+        let addr = listener.local_addr().expect("websocket");
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(Arc::clone(handler)))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let headers = std::collections::HashMap::from([(
         "traceparent".to_owned(),
         format!("00-{UPGRADE_TRACE}-{UPGRADE_SPAN}-01"),

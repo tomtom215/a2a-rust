@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use a2a_protocol_server::auth::CredentialSet;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     ApiKeyAuthInterceptor, BearerTokenAuthInterceptor, RequestHandlerBuilder, ServerInterceptor,
     agent_executor,
@@ -32,9 +32,15 @@ async fn serve(interceptor: impl ServerInterceptor) -> std::net::SocketAddr {
         .with_interceptor(interceptor)
         .build()
         .expect("handler");
-    serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::new(handler)))
-        .await
-        .expect("serve")
+    {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    }
 }
 
 /// The status of a `ListTasks` call carrying `header: value`.

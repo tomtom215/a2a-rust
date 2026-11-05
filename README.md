@@ -203,7 +203,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_skill(AgentSkill::new("greet", "Greet", "Says hello").with_tags(["greeting"]))
         .with_streaming(true);
     let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card).build()?);
-    serve_with_addr("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await?;
+    let server = Server::bind("127.0.0.1:3000").await?;
+    tokio::spawn(server.serve_with_shutdown(JsonRpcDispatcher::new(handler), shutdown_signal()));
 
     // A client for it.
     let client = ClientBuilder::new(url).build()?;
@@ -232,9 +233,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 `AgentExecutor` is object-safe — its methods return `Pin<Box<dyn Future>>` —
 so `RequestHandler` and the dispatchers are not generic over your agent; they
-hold it as `Arc<dyn AgentExecutor>`. `serve_with_addr` returns once the
-listener is bound; `serve` runs until the process ends, for a standalone
-server. `RestDispatcher` serves the HTTP+JSON binding the same way, and the
+hold it as `Arc<dyn AgentExecutor>`. `Server::bind` returns once the
+listener is bound, and `serve_with_shutdown` serves until its signal (here
+SIGTERM or Ctrl-C), then lets the tasks in flight end and drains; await it
+instead of spawning it for a standalone server. `RestDispatcher` serves the HTTP+JSON binding the same way, and the
 [book](https://a2a-rust.com/) covers the gRPC and WebSocket
 ones.
 

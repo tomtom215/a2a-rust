@@ -106,12 +106,17 @@ async fn a_handler_records_to_the_global_provider_installed_after_it() {
         .without_agent_card()
         .build()
         .expect("handler");
-    let addr = a2a_protocol_server::serve_with_addr(
-        "127.0.0.1:0",
-        JsonRpcDispatcher::new(Arc::new(handler)),
-    )
-    .await
-    .expect("serve");
+    let addr = {
+        let bound = a2a_protocol_server::Server::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     call(addr).await;
 
     // Kept: dropping a provider's last handle shuts its reader down.
@@ -219,12 +224,17 @@ async fn additional_metrics_are_reported_beside_the_default_not_instead_of_it() 
         .with_additional_metrics(Arc::clone(&requests))
         .build()
         .expect("handler");
-    let addr = a2a_protocol_server::serve_with_addr(
-        "127.0.0.1:0",
-        JsonRpcDispatcher::new(Arc::new(handler)),
-    )
-    .await
-    .expect("serve");
+    let addr = {
+        let bound = a2a_protocol_server::Server::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     call(addr).await;
     assert_eq!(
         calls(&reader),
@@ -246,12 +256,17 @@ async fn additional_metrics_are_reported_beside_the_default_not_instead_of_it() 
         .with_metrics(Arc::clone(&replaced))
         .build()
         .expect("handler");
-    let addr = a2a_protocol_server::serve_with_addr(
-        "127.0.0.1:0",
-        JsonRpcDispatcher::new(Arc::new(handler)),
-    )
-    .await
-    .expect("serve");
+    let addr = {
+        let bound = a2a_protocol_server::Server::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     call(addr).await;
     assert_eq!(replaced.0.load(Ordering::Relaxed), 1);
     assert_eq!(

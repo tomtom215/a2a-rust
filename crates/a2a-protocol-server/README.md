@@ -33,7 +33,8 @@ two that open a listener are compiled but not run.
 use std::sync::Arc;
 
 use a2a_protocol_server::{
-    EventEmitter, JsonRpcDispatcher, RequestHandlerBuilder, agent_executor, serve,
+    EventEmitter, JsonRpcDispatcher, RequestHandlerBuilder, Server, agent_executor,
+    shutdown_signal,
 };
 use a2a_protocol_types::{AgentCard, AgentInterface, AgentSkill};
 
@@ -50,19 +51,26 @@ let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://l
     .with_description("An example agent")
     .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
 let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card).build()?);
-serve("0.0.0.0:3000", JsonRpcDispatcher::new(handler)).await?;
+let report = Server::bind("0.0.0.0:3000")
+    .await?
+    .serve_with_shutdown(JsonRpcDispatcher::new(handler), shutdown_signal())
+    .await;
+if let Some(why) = report.refused {
+    return Err(why.into());
+}
 # Ok(())
 # }
 ```
 
-`serve` is the shortest path, not the production one: it runs a `Server`
-under `ServeConfig::default()` (a 30 s header-read timeout, a 75 s idle
-timeout and the loopback `Host` check, with no connection cap) and has no way
-to stop short of dropping its future. For a deployment, bind a
-`Server`, give it a `ServeConfig`, and hand it the signal that ends it;
-in-flight work finishes (or is cancelled after `completion_grace`) before the
-connections drain. `ServeConfig::default()` adds header-read and idle
-timeouts but no connection cap; set one with `with_max_connections`:
+This runs under `ServeConfig::default()` (a 30 s header-read timeout, a 75 s
+idle timeout and the loopback `Host` check, with no connection cap) until
+SIGTERM or Ctrl-C; in-flight work finishes (or is cancelled after
+`completion_grace`) before the connections drain. For a deployment, give the
+`Server` a `ServeConfig` with a connection cap (`with_max_connections`). The
+gRPC and WebSocket dispatchers take the same `ServeConfig` through
+`with_serve_config`, and the axum `RestRouter` runs on `Server` itself. The
+free `serve` and `serve_with_addr` are deprecated since 0.16.0: neither can be
+stopped.
 
 ```rust,no_run
 # use std::sync::Arc;

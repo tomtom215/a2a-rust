@@ -392,14 +392,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(grpc_addr) = std::env::var("A2A_GRPC_ADDR") {
             use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
             let grpc_listener = tokio::net::TcpListener::bind(&grpc_addr).await?;
-            let addr = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
-                .serve_with_listener(grpc_listener)?;
+            let addr = {
+                let listener = grpc_listener;
+                let addr = listener.local_addr()?;
+                tokio::spawn(
+                    GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
+                        .serve_with_shutdown(listener, std::future::pending()),
+                );
+                addr
+            };
             println!("gRPC also listening on {addr}");
         }
         if let Ok(ws_addr) = std::env::var("A2A_WS_ADDR") {
             use a2a_protocol_server::dispatch::websocket::WebSocketDispatcher;
             let ws = Arc::new(WebSocketDispatcher::new(Arc::clone(&handler)));
-            let addr = ws.serve_with_addr(ws_addr.as_str()).await?;
+            let addr = {
+                let listener = tokio::net::TcpListener::bind(ws_addr.as_str()).await?;
+                let addr = listener.local_addr()?;
+                tokio::spawn(ws.serve_with_shutdown(listener, std::future::pending()));
+                addr
+            };
             println!("WebSocket also listening on ws://{addr}");
         }
 

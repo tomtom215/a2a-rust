@@ -23,7 +23,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::message::Message;
@@ -57,9 +57,14 @@ async fn spawn_agent(observed: &Observed) -> String {
             .build()
             .expect("build handler"),
     );
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-        .await
-        .expect("bind");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("bind");
+        let addr = bound.local_addr().expect("bind");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     format!("http://{addr}")
 }
 

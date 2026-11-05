@@ -199,14 +199,19 @@ async fn the_https_listener_refuses_tls_below_1_2() {
 #[tokio::test]
 async fn the_wss_listener_refuses_tls_below_1_2() {
     let (cert, key) = cert();
-    let addr = Arc::new(
-        a2a_protocol_server::dispatch::WebSocketDispatcher::new(handler())
-            .with_tls_pem(cert.as_bytes(), key.as_bytes())
-            .unwrap(),
-    )
-    .serve_with_addr("127.0.0.1:0")
-    .await
-    .unwrap();
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            Arc::new(
+                a2a_protocol_server::dispatch::WebSocketDispatcher::new(handler())
+                    .with_tls_pem(cert.as_bytes(), key.as_bytes())
+                    .unwrap(),
+            )
+            .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     assert_tls12_floor("WebSocketDispatcher::with_tls_pem", addr).await;
 }
 
@@ -219,10 +224,14 @@ async fn the_grpc_tls_listener_refuses_tls_below_1_2() {
     let (cert, key) = cert();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    GrpcDispatcher::new(handler(), GrpcConfig::default())
-        .with_tls(ServerTlsConfig::new().identity(Identity::from_pem(cert, key)))
-        .serve_with_listener(listener)
-        .unwrap();
+    {
+        let listener = listener;
+        tokio::spawn(
+            GrpcDispatcher::new(handler(), GrpcConfig::default())
+                .with_tls(ServerTlsConfig::new().identity(Identity::from_pem(cert, key)))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+    }
     assert_tls12_floor("GrpcDispatcher::with_tls", addr).await;
 }
 

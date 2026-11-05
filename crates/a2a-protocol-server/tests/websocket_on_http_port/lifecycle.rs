@@ -13,7 +13,11 @@ use super::*;
 async fn the_websocket_connection_cap_applies_to_upgrades() {
     let running = start(
         handler(None),
-        |ws| ws.with_max_connections(1),
+        |ws| {
+            ws.with_serve_config(
+                a2a_protocol_server::serve::ServeConfig::new().with_max_connections(1),
+            )
+        },
         ServeConfig::default(),
     )
     .await;

@@ -69,10 +69,15 @@ async fn grpc_throttles_a_peer_after_its_failed_credentials() {
             .build()
             .expect("handler"),
     );
-    let addr = GrpcDispatcher::new(handler, GrpcConfig::default())
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap();
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            GrpcDispatcher::new(handler, GrpcConfig::default())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let url = format!("http://{addr}");
     let good = client(&url, "good").await;
     let guess = client(&url, "guess").await;

@@ -90,7 +90,12 @@ async fn plaintext_listener() -> SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
-    dispatcher().serve_with_listener(listener).expect("serve")
+    {
+        let listener = listener;
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(dispatcher().serve_with_shutdown(listener, std::future::pending()));
+        addr
+    }
 }
 
 /// The IPv4 address of the interface that carries this machine's default
@@ -178,10 +183,13 @@ async fn http_policy_dials_a_bare_non_loopback_target_in_plaintext() {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:0")
         .await
         .expect("bind");
-    let port = dispatcher()
-        .serve_with_listener(listener)
-        .expect("serve")
-        .port();
+    let port = {
+        let listener = listener;
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(dispatcher().serve_with_shutdown(listener, std::future::pending()));
+        addr
+    }
+    .port();
     let target = format!("{}:{port}", local_non_loopback_ip());
     let client = ClientBuilder::from_card(&card(&target))
         .expect("from_card")

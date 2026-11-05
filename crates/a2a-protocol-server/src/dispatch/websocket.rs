@@ -61,6 +61,7 @@ mod http_upgrade;
 mod io;
 mod origin;
 mod params;
+mod serve_config;
 mod shutdown;
 mod stream;
 
@@ -153,12 +154,10 @@ pub struct WebSocketDispatcher {
     handler: Arc<RequestHandler>,
     handshake_timeout: Duration,
     require_version_header: bool,
-    max_connections: Option<usize>,
-    idle_timeout: Option<Duration>,
+    /// The listener settings it shares with `Server` (ADR 0052), the idle
+    /// bound among them: see [`with_serve_config`](Self::with_serve_config).
+    serve: crate::serve::ServeConfig,
     write_timeout: Duration,
-    completion_grace: Duration,
-    task_grace: Duration,
-    drain_timeout: Duration,
     origins: origin::Origins,
     agent_card_max_age: u32,
     #[cfg(feature = "tls-rustls")]
@@ -169,9 +168,9 @@ impl std::fmt::Debug for WebSocketDispatcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WebSocketDispatcher")
             .field("handshake_timeout", &self.handshake_timeout)
-            .field("idle_timeout", &self.idle_timeout)
+            .field("idle_timeout", &self.serve.idle_timeout)
             .field("write_timeout", &self.write_timeout)
-            .field("max_connections", &self.max_connections)
+            .field("max_connections", &self.serve.max_connections)
             .field("require_version_header", &self.require_version_header)
             .finish_non_exhaustive()
     }
@@ -197,12 +196,9 @@ impl WebSocketDispatcher {
             handler,
             handshake_timeout: DEFAULT_HANDSHAKE_TIMEOUT,
             require_version_header: true,
-            max_connections: None,
-            idle_timeout: Some(DEFAULT_WS_IDLE_TIMEOUT),
+            serve: crate::serve::ServeConfig::defaults()
+                .with_idle_timeout(Some(DEFAULT_WS_IDLE_TIMEOUT)),
             write_timeout: DEFAULT_WS_WRITE_TIMEOUT,
-            completion_grace: crate::serve::DEFAULT_COMPLETION_GRACE,
-            task_grace: crate::serve::DEFAULT_TASK_GRACE,
-            drain_timeout: crate::serve::DEFAULT_DRAIN_TIMEOUT,
             origins: origin::Origins::NONE_LISTED,
             agent_card_max_age: super::DEFAULT_AGENT_CARD_MAX_AGE,
             #[cfg(feature = "tls-rustls")]
@@ -352,9 +348,14 @@ impl WebSocketDispatcher {
     /// picking its capacity.
     ///
     /// [`ServeConfig`]: crate::serve::ServeConfig
+    #[deprecated(
+        since = "0.16.0",
+        note = "use `with_serve_config(ServeConfig::new().with_max_connections(max))`; \
+                removed no earlier than 0.17.0"
+    )]
     #[must_use]
     pub const fn with_max_connections(mut self, max: usize) -> Self {
-        self.max_connections = Some(max);
+        self.serve.max_connections = Some(max);
         self
     }
 
@@ -391,7 +392,7 @@ impl WebSocketDispatcher {
     ///
     #[must_use]
     pub const fn with_idle_timeout(mut self, timeout: Duration) -> Self {
-        self.idle_timeout = Some(timeout);
+        self.serve.idle_timeout = Some(timeout);
         self
     }
 
@@ -400,7 +401,7 @@ impl WebSocketDispatcher {
     /// takes hours by default.
     #[must_use]
     pub const fn without_idle_timeout(mut self) -> Self {
-        self.idle_timeout = None;
+        self.serve.idle_timeout = None;
         self
     }
 
@@ -427,27 +428,42 @@ impl WebSocketDispatcher {
     /// the HTTP server's
     /// [`ServeConfig::with_completion_grace`](crate::serve::ServeConfig::with_completion_grace)
     /// is the same setting.
+    #[deprecated(
+        since = "0.16.0",
+        note = "use `with_serve_config(ServeConfig::new().with_completion_grace(grace))`; \
+                removed no earlier than 0.17.0"
+    )]
     #[must_use]
     pub const fn with_completion_grace(mut self, grace: Duration) -> Self {
-        self.completion_grace = grace;
+        self.serve.completion_grace = grace;
         self
     }
 
     /// How long cancelled tasks get to act on their cancellation before the
     /// connections are closed. Default
     /// [`DEFAULT_TASK_GRACE`](crate::serve::DEFAULT_TASK_GRACE).
+    #[deprecated(
+        since = "0.16.0",
+        note = "use `with_serve_config(ServeConfig::new().with_task_grace(grace))`; \
+                removed no earlier than 0.17.0"
+    )]
     #[must_use]
     pub const fn with_task_grace(mut self, grace: Duration) -> Self {
-        self.task_grace = grace;
+        self.serve.task_grace = grace;
         self
     }
 
     /// How long [`serve_with_shutdown`](Self::serve_with_shutdown) waits for
     /// connections to close once they have been told to. Default
     /// [`DEFAULT_DRAIN_TIMEOUT`](crate::serve::DEFAULT_DRAIN_TIMEOUT).
+    #[deprecated(
+        since = "0.16.0",
+        note = "use `with_serve_config(ServeConfig::new().with_drain_timeout(timeout))`; \
+                removed no earlier than 0.17.0"
+    )]
     #[must_use]
     pub const fn with_drain_timeout(mut self, timeout: Duration) -> Self {
-        self.drain_timeout = timeout;
+        self.serve.drain_timeout = timeout;
         self
     }
 
@@ -464,11 +480,16 @@ impl WebSocketDispatcher {
     /// # Errors
     ///
     /// Returns [`std::io::Error`] if the TCP listener fails to bind.
+    #[deprecated(
+        since = "0.16.0",
+        note = "it cannot be stopped: bind a `TcpListener` and use `serve_with_shutdown`; \
+                removed no earlier than 0.17.0"
+    )]
     pub async fn serve(
         self: Arc<Self>,
         addr: impl tokio::net::ToSocketAddrs,
     ) -> std::io::Result<()> {
-        super::connection_limit::refuse_zero(self.max_connections)?;
+        super::connection_limit::refuse_zero(self.serve.max_connections)?;
         let listener = TcpListener::bind(addr).await?;
 
         trace_info!(
@@ -488,11 +509,16 @@ impl WebSocketDispatcher {
     /// # Errors
     ///
     /// Returns [`std::io::Error`] if the TCP listener fails to bind.
+    #[deprecated(
+        since = "0.16.0",
+        note = "it cannot be stopped: bind a `TcpListener` and use `serve_with_shutdown`; \
+                removed no earlier than 0.17.0"
+    )]
     pub async fn serve_with_addr(
         self: Arc<Self>,
         addr: impl tokio::net::ToSocketAddrs,
     ) -> std::io::Result<SocketAddr> {
-        super::connection_limit::refuse_zero(self.max_connections)?;
+        super::connection_limit::refuse_zero(self.serve.max_connections)?;
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
 
@@ -521,7 +547,7 @@ impl WebSocketDispatcher {
         // backlog rather than as unbounded spawned tasks. `MAX_PERMITS` when no
         // ceiling was asked for keeps one code path instead of two.
         let limiter = Arc::new(tokio::sync::Semaphore::new(
-            super::connection_limit::permits(self.max_connections),
+            super::connection_limit::permits(self.serve.max_connections),
         ));
         loop {
             // `stop` is watched while waiting for a permit too: at the ceiling
@@ -745,7 +771,7 @@ impl WebSocketDispatcher {
                     return;
                 }
                 () = writer.dead.cancelled() => break,
-                next = Self::next_frame(&mut reader, writer, self.idle_timeout) => next,
+                next = Self::next_frame(&mut reader, writer, self.serve.idle_timeout) => next,
             };
             let Some(msg) = next else { break };
             writer.activity.touch();
@@ -1601,6 +1627,87 @@ mod tests {
         Ok(())
     });
 
+    /// Serves `dispatcher` on a loopback port until the test ends.
+    async fn loopback(dispatcher: Arc<WebSocketDispatcher>) -> std::net::SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind to port 0");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(dispatcher.serve_with_shutdown(listener, std::future::pending()));
+        addr
+    }
+
+    /// The two entry points deprecated in 0.16.0 still serve as they did:
+    /// `serve_with_addr` returns a port whose handshake completes and whose
+    /// requests are answered, and `serve` serves the address it binds. Their
+    /// own test, their only caller in the workspace; removed with them, no
+    /// earlier than 0.17.0 (ADR 0052).
+    #[tokio::test]
+    #[allow(deprecated)]
+    async fn the_deprecated_entry_points_still_serve() {
+        let handler = || {
+            Arc::new(
+                RequestHandlerBuilder::new(EchoExec)
+                    .without_agent_card()
+                    .build()
+                    .unwrap(),
+            )
+        };
+        let addr = Arc::new(WebSocketDispatcher::new(handler()))
+            .serve_with_addr("127.0.0.1:0")
+            .await
+            .expect("bind to port 0");
+        let mut ws = ws_connect(addr).await;
+        ws.send(WsMessage::Text(send_message_json("old-addr").into()))
+            .await
+            .expect("send");
+        assert!(read_text(&mut ws).await.contains("\"result\""));
+
+        // `serve` takes an address, not a listener: reserve a port, release
+        // it, and connect until the server has bound it (bounded).
+        let probe = TcpListener::bind("127.0.0.1:0").await.expect("reserve");
+        let addr = probe.local_addr().expect("addr");
+        drop(probe);
+        let serving = tokio::spawn(Arc::new(WebSocketDispatcher::new(handler())).serve(addr));
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while tokio::net::TcpStream::connect(addr).await.is_err() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "`serve` never bound {addr}"
+            );
+            tokio::task::yield_now().await;
+        }
+        let mut ws = ws_connect(addr).await;
+        ws.send(WsMessage::Text(send_message_json("old-serve").into()))
+            .await
+            .expect("send");
+        assert!(read_text(&mut ws).await.contains("\"result\""));
+        serving.abort();
+    }
+
+    /// The four setters deprecated in 0.16.0 write what
+    /// `with_serve_config` writes. Their own test; removed with them, no
+    /// earlier than 0.17.0 (ADR 0052).
+    #[test]
+    #[allow(deprecated)]
+    fn the_deprecated_setters_write_the_serve_config() {
+        use std::time::Duration;
+        let old = WebSocketDispatcher::new(Arc::new(
+            RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        ))
+        .with_max_connections(3)
+        .with_completion_grace(Duration::from_secs(4))
+        .with_task_grace(Duration::from_secs(5))
+        .with_drain_timeout(Duration::from_secs(6));
+        assert_eq!(old.serve.max_connections, Some(3));
+        assert_eq!(old.serve.completion_grace, Duration::from_secs(4));
+        assert_eq!(old.serve.task_grace, Duration::from_secs(5));
+        assert_eq!(old.serve.drain_timeout, Duration::from_secs(6));
+    }
+
     async fn spawn_ws_server() -> std::net::SocketAddr {
         let handler = Arc::new(
             RequestHandlerBuilder::new(EchoExec)
@@ -1609,10 +1716,7 @@ mod tests {
                 .unwrap(),
         );
         let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
-        dispatcher
-            .serve_with_addr("127.0.0.1:0")
-            .await
-            .expect("bind to port 0")
+        loopback(dispatcher).await
     }
 
     // ── Connection-level bounds ──────────────────────────────────────────
@@ -1740,7 +1844,7 @@ mod tests {
         );
         let default = WebSocketDispatcher::new(Arc::clone(&handler));
         assert_eq!(
-            default.idle_timeout,
+            default.serve.idle_timeout,
             Some(DEFAULT_WS_IDLE_TIMEOUT),
             "on by default since 0.16.0 (ADR 0042): it pings at half and closes \
              only a peer that does not answer"
@@ -1749,11 +1853,12 @@ mod tests {
         assert_eq!(
             WebSocketDispatcher::new(handler)
                 .without_idle_timeout()
+                .serve
                 .idle_timeout,
             None
         );
         assert!(
-            default.max_connections.is_none(),
+            default.serve.max_connections.is_none(),
             "unbounded by default, matching ServeConfig::max_connections"
         );
 
@@ -1784,7 +1889,10 @@ mod tests {
     async fn max_connections_bounds_accepted_connections() {
         use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 
-        let addr = spawn_ws_server_with(|d| d.with_max_connections(2)).await;
+        let addr = spawn_ws_server_with(|d| {
+            d.with_serve_config(crate::serve::ServeConfig::new().with_max_connections(2))
+        })
+        .await;
 
         let first = ws_connect(addr).await;
         let second = ws_connect(addr).await;
@@ -2019,10 +2127,7 @@ mod tests {
                 .unwrap(),
         );
         let dispatcher = Arc::new(configure(WebSocketDispatcher::new(handler)));
-        dispatcher
-            .serve_with_addr("127.0.0.1:0")
-            .await
-            .expect("bind to port 0")
+        loopback(dispatcher).await
     }
 
     async fn ws_connect(
@@ -2512,10 +2617,7 @@ mod tests {
                 .build()
                 .unwrap(),
         );
-        let addr = Arc::new(WebSocketDispatcher::new(handler))
-            .serve_with_addr("127.0.0.1:0")
-            .await
-            .expect("bind to port 0");
+        let addr = loopback(Arc::new(WebSocketDispatcher::new(handler))).await;
         let mut ws = ws_connect(addr).await;
 
         ws.send(WsMessage::Text("not json".into())).await.unwrap();
@@ -2579,10 +2681,7 @@ mod tests {
                 .unwrap(),
         );
         let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
-        let addr = dispatcher
-            .serve_with_addr("127.0.0.1:0")
-            .await
-            .expect("bind");
+        let addr = loopback(dispatcher).await;
         let mut ws = ws_connect(addr).await;
 
         // Create a task first so the push config has something to attach to.
@@ -2759,10 +2858,7 @@ mod tests {
                 .unwrap(),
         );
         let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
-        let addr = dispatcher
-            .serve_with_addr("127.0.0.1:0")
-            .await
-            .expect("bind");
+        let addr = loopback(dispatcher).await;
 
         // Without the tenant header: strict tenancy must reject the request.
         let mut ws = ws_connect(addr).await;
@@ -2878,10 +2974,7 @@ mod tests {
         );
         let dispatcher =
             Arc::new(WebSocketDispatcher::new(handler).accept_missing_version_header());
-        let addr = dispatcher
-            .serve_with_addr("127.0.0.1:0")
-            .await
-            .expect("bind to port 0");
+        let addr = loopback(dispatcher).await;
 
         let req = format!("ws://{addr}").into_client_request().unwrap();
         assert!(
@@ -2966,10 +3059,7 @@ mod tests {
                 .build()
                 .unwrap(),
         );
-        let addr = Arc::new(WebSocketDispatcher::new(handler))
-            .serve_with_addr("127.0.0.1:0")
-            .await
-            .expect("bind to port 0");
+        let addr = loopback(Arc::new(WebSocketDispatcher::new(handler))).await;
         let mut ws = ws_connect(addr).await;
 
         let req = serde_json::json!({
@@ -3045,10 +3135,7 @@ mod tests {
                 .build()
                 .unwrap(),
         );
-        let addr = Arc::new(WebSocketDispatcher::new(handler))
-            .serve_with_addr("127.0.0.1:0")
-            .await
-            .expect("bind to port 0");
+        let addr = loopback(Arc::new(WebSocketDispatcher::new(handler))).await;
         let mut ws = ws_connect(addr).await;
 
         // 64 permits exist; send one more than that.
@@ -3113,10 +3200,7 @@ mod tests {
             WebSocketDispatcher::new(handler)
                 .with_handshake_timeout(std::time::Duration::from_millis(200)),
         );
-        let addr = dispatcher
-            .serve_with_addr("127.0.0.1:0")
-            .await
-            .expect("bind");
+        let addr = loopback(dispatcher).await;
 
         // Raw TCP connect, never send the HTTP upgrade.
         let mut stream = tokio::net::TcpStream::connect(addr).await.expect("tcp");
@@ -3185,10 +3269,7 @@ mod tests {
                 .build()
                 .unwrap(),
         );
-        let addr = Arc::new(WebSocketDispatcher::new(handler))
-            .serve_with_addr("127.0.0.1:0")
-            .await
-            .expect("bind to port 0");
+        let addr = loopback(Arc::new(WebSocketDispatcher::new(handler))).await;
         let mut ws = ws_connect(addr).await;
 
         ws.send(WsMessage::Binary(vec![1, 2, 3].into()))

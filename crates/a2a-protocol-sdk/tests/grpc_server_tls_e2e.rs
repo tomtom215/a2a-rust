@@ -134,10 +134,16 @@ async fn tls_listener(tls: ServerTlsConfig) -> SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
-    dispatcher()
-        .with_tls(tls)
-        .serve_with_listener(listener)
-        .expect("serve over TLS")
+    {
+        let listener = listener;
+        let addr = listener.local_addr().expect("serve over TLS");
+        tokio::spawn(
+            dispatcher()
+                .with_tls(tls)
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    }
 }
 
 fn pinned(pems: &Pems) -> ClientTlsConfig {
@@ -277,9 +283,12 @@ async fn an_unusable_identity_is_an_error_not_a_panic() {
         .await
         .expect("bind");
     let mismatched = Identity::from_pem(&ours.server_cert, &other.server_key);
+    // Started and stopped at once: the listener is built before anything is
+    // accepted, and a configuration tonic rejects is the `Err`.
     let result = dispatcher()
         .with_tls(ServerTlsConfig::new().identity(mismatched))
-        .serve_with_listener(listener);
+        .serve_with_shutdown(listener, std::future::ready(()))
+        .await;
     assert!(
         result.is_err(),
         "a certificate/key mismatch must be reported, got {result:?}"

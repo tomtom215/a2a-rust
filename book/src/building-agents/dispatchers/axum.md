@@ -31,17 +31,30 @@ let handler = Arc::new(
         .unwrap(),
 );
 
-let app = RestRouter::new(handler).into_router();
-
-let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-axum::serve(listener, app).await?;
+// The router alone: `Server` serves it, with `ServeConfig`'s header-read and
+// idle timeouts, connection cap, loopback `Host` check and production
+// refusal, and a shutdown that ends the tasks in flight before it drains.
+let report = a2a_protocol_server::serve::Server::bind("0.0.0.0:3000")
+    .await?
+    .serve_with_shutdown(RestRouter::new(handler), a2a_protocol_server::serve::shutdown_signal())
+    .await;
+if let Some(why) = report.refused {
+    return Err(why.into());
+}
 # Ok(())
 # }
 ```
 
+`RestRouter` is a `Dispatcher` since 0.16.0 (ADR 0052). Until then it could
+only be served with `axum::serve`, which has none of `Server`'s protections.
+It is the same type as `A2aRouter`, under a name that says which binding it
+serves (ADR 0053).
+
 ## Composability
 
-The returned `Router` can be merged with other Axum routes and middleware:
+`into_router()` returns the `axum::Router`, for an application that merges it
+with its own routes and middleware and serves the result with `axum::serve`
+(which then owns the timeouts and the shutdown):
 
 ```rust
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {

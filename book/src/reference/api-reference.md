@@ -366,7 +366,7 @@ are rustdoc's job.
 | `push` | Push notification configuration storage and delivery |
 | `rate_limit` | Fixed-window rate limiter as a `ServerInterceptor` |
 | `request_context` | Request context passed to the `AgentExecutor` |
-| `serve` | `serve()`, `serve_with_addr`, `Dispatcher` |
+| `serve` | `Server`, `ServeConfig`, `ServeReport`, `Dispatcher`, `shutdown_signal` (and the deprecated `serve()`, `serve_with_addr`) |
 | `store` | Task storage backend |
 | `streaming` | Streaming infrastructure for SSE responses and event queues |
 | `tenant_config` | Per-tenant resource limits for multi-tenant A2A servers |
@@ -441,17 +441,17 @@ are rustdoc's job.
 | `RestDispatcher` | RESTful HTTP dispatcher (implements `Dispatcher`) |
 | `CombinedDispatcher` | JSON-RPC and REST on one listener: a `POST` to the JSON-RPC path is JSON-RPC, the rest is REST (implements `Dispatcher`); `with_websocket` adds the WebSocket binding on the same port, upgraded at the JSON-RPC path (`websocket` feature, ADR 0055) |
 | `WebSocketUpgrades` | The connections an HTTP dispatcher upgraded to WebSockets: `open()`, and `close(within)`, which `Server::serve_with_shutdown` calls in its drain and an axum application calls itself (`RestRouter::websocket_upgrades`) |
-| `WebSocketDispatcher` | WebSocket dispatcher (`websocket` feature) |
-| `GrpcDispatcher` | gRPC dispatcher (`grpc` feature); `with_rustls(rustls::ServerConfig)` serves TLS through this crate's handshake, so a `ReloadingCertResolver` rotates it (`grpc-tls` and `tls-rustls`) |
+| `WebSocketDispatcher` | WebSocket dispatcher (`websocket` feature); `with_serve_config(ServeConfig)` takes the listener settings `Server` takes, and `serve_with_shutdown(listener, signal)` on an `Arc` of it serves (ADR 0052) |
+| `GrpcDispatcher` | gRPC dispatcher (`grpc` feature); `with_serve_config(ServeConfig)` takes the listener settings `Server` takes, and `serve_with_shutdown(listener, signal)` serves (ADR 0052); `with_rustls(rustls::ServerConfig)` serves TLS through this crate's handshake, so a `ReloadingCertResolver` rotates it (`grpc-tls` and `tls-rustls`) |
 | `RestRouter` | Axum framework adapter (`axum` feature): an axum `Router` for the HTTP+JSON binding (`into_router`), and a `Dispatcher` that `Server` serves; `A2aRouter` is the same type under its original name (ADR 0053) |
 
 ### Server Startup
 
 | Name | Description |
 |------|-------------|
-| `serve(addr, dispatcher) -> io::Result<()>` | `async` — binds and drives the accept loop until the future is dropped |
-| `serve_with_addr(addr, dispatcher) -> io::Result<SocketAddr>` | `async` — binds, spawns the accept loop, returns the bound `SocketAddr` (useful for port-0 in tests) |
-| `Server` | A bound listener that has not started accepting yet; binding is separated from serving so the caller can learn the address |
+| `Server` | A bound listener that has not started accepting yet; binding is separated from serving so the caller can learn the address. `serve_with_shutdown(dispatcher, signal)` serves any `Dispatcher`, the axum `RestRouter` included (ADR 0052) |
+| `serve(addr, dispatcher) -> io::Result<()>` | Deprecated since 0.16.0 (removed no earlier than 0.17.0): binds and drives the accept loop until the future is dropped; use `Server` |
+| `serve_with_addr(addr, dispatcher) -> io::Result<SocketAddr>` | Deprecated since 0.16.0 (removed no earlier than 0.17.0): binds, spawns the accept loop with no way to stop it, returns the bound `SocketAddr`; use `Server` |
 | `ServeConfig` | Limits applied to a `Server`; `ServeConfig::production()` makes it refuse plaintext beyond loopback and a binding the agent card does not declare (ADR 0025) |
 | `ServeReport` | What a shutdown did — `Server::serve_with_shutdown`, or the gRPC and WebSocket dispatchers' `serve_with_shutdown`: connections accepted, drained or abandoned, and (with a handler-backed dispatcher) the `InFlightReport` for its tasks; `refused` says why a `ServeConfig::production()` server declined to start |
 | `shutdown_signal() -> impl Future<Output = ()>` | Resolves on SIGTERM or SIGINT (Ctrl-C on non-Unix); pass it to `Server::serve_with_shutdown` so a pod stop drains in-flight work, returns from `main`, and lets a live `Telemetry` guard flush |

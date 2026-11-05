@@ -78,7 +78,11 @@ pub async fn serve_agent(model: impl ToolModel) -> Result<String, Box<dyn std::e
             .with_agent_card(card(&url))
             .build()?,
     );
-    serve_with_addr(addr, JsonRpcDispatcher::new(handler)).await?;
+    // Served for the life of the process.
+    let server = Server::bind(addr).await?;
+    tokio::spawn(
+        server.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+    );
     Ok(url)
 }
 

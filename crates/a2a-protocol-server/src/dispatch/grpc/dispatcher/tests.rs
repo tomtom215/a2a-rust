@@ -150,3 +150,47 @@ fn grpc_dispatcher_debug_does_not_panic() {
     let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default());
     let _ = format!("{dispatcher:?}");
 }
+
+struct Noop;
+crate::agent_executor!(Noop, |_ctx, _queue| async { Ok(()) });
+
+/// The four setters deprecated in 0.16.0 write what `with_serve_config`
+/// writes. Their own test; removed with them, no earlier than 0.17.0 (ADR
+/// 0052).
+#[test]
+#[allow(deprecated)]
+fn the_deprecated_setters_write_the_serve_config() {
+    let handler = Arc::new(
+        crate::builder::RequestHandlerBuilder::new(Noop)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
+    let old = GrpcDispatcher::new(handler, GrpcConfig::default())
+        .with_max_connections(3)
+        .with_completion_grace(Duration::from_secs(4))
+        .with_task_grace(Duration::from_secs(5))
+        .with_drain_timeout(Duration::from_secs(6));
+    assert_eq!(old.serve.max_connections, Some(3));
+    assert_eq!(old.serve.completion_grace, Duration::from_secs(4));
+    assert_eq!(old.serve.task_grace, Duration::from_secs(5));
+    assert_eq!(old.serve.drain_timeout, Duration::from_secs(6));
+}
+
+/// `with_serve_config` replaces the whole configuration.
+#[test]
+fn with_serve_config_replaces_the_settings() {
+    let handler = Arc::new(
+        crate::builder::RequestHandlerBuilder::new(Noop)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
+    let config = crate::serve::ServeConfig::production()
+        .with_max_connections(9)
+        .with_drain_delay(Duration::from_secs(2));
+    let d = GrpcDispatcher::new(handler, GrpcConfig::default()).with_serve_config(config);
+    assert_eq!(d.serve.max_connections, Some(9));
+    assert!(d.serve.production);
+    assert_eq!(d.serve.drain_delay, Duration::from_secs(2));
+}

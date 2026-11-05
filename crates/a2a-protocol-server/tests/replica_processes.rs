@@ -109,10 +109,16 @@ async fn serve_as_a_replica_process() {
             .build()
             .expect("handler"),
     );
-    let addr =
-        a2a_protocol_server::serve::serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
+    let addr = {
+        let bound = a2a_protocol_server::serve::Server::bind("127.0.0.1:0")
             .await
             .expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     println!("listening {addr}");
     std::future::pending::<()>().await;
 }

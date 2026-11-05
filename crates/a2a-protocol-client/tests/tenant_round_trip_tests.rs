@@ -28,12 +28,12 @@ use std::time::Duration;
 use a2a_protocol_client::config::{BINDING_HTTP_JSON, BINDING_JSONRPC};
 use a2a_protocol_client::error::ClientError;
 use a2a_protocol_client::{A2aClient, ClientBuilder};
+use a2a_protocol_server::Server;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::push::TenantAwareInMemoryPushConfigStore;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve_with_addr;
 use a2a_protocol_server::store::TenantAwareInMemoryTaskStore;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
@@ -149,12 +149,23 @@ async fn start_server() -> (AgentCard, SocketAddr, SocketAddr) {
             .expect("build handler"),
     );
 
-    let jsonrpc_addr = serve_with_addr(jsonrpc_addr, JsonRpcDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("serve jsonrpc");
-    let rest_addr = serve_with_addr(rest_addr, RestDispatcher::new(handler))
-        .await
-        .expect("serve rest");
+    let jsonrpc_addr = {
+        let bound = Server::bind(jsonrpc_addr).await.expect("serve jsonrpc");
+        let addr = bound.local_addr().expect("serve jsonrpc");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
+    let rest_addr = {
+        let bound = Server::bind(rest_addr).await.expect("serve rest");
+        let addr = bound.local_addr().expect("serve rest");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     (card, jsonrpc_addr, rest_addr)
 }
 
