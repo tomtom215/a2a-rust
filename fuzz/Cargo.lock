@@ -20,6 +20,7 @@ version = "0.16.0"
 dependencies = [
  "a2a-protocol-types",
  "base64 0.23.1",
+ "futures-core",
  "futures-util",
  "http-body-util",
  "httpdate",

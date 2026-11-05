@@ -444,6 +444,7 @@ are rustdoc's job.
 | `WebSocketDispatcher` | WebSocket dispatcher (`websocket` feature); `with_serve_config(ServeConfig)` takes the listener settings `Server` takes, and `serve_with_shutdown(listener, signal)` on an `Arc` of it serves (ADR 0052) |
 | `GrpcDispatcher` | gRPC dispatcher (`grpc` feature); `with_serve_config(ServeConfig)` takes the listener settings `Server` takes, and `serve_with_shutdown(listener, signal)` serves (ADR 0052); `with_rustls(rustls::ServerConfig)` serves TLS through this crate's handshake, so a `ReloadingCertResolver` rotates it (`grpc-tls` and `tls-rustls`) |
 | `RestRouter` | Axum framework adapter (`axum` feature): an axum `Router` for the HTTP+JSON binding (`into_router`), and a `Dispatcher` that `Server` serves; `A2aRouter` is the same type under its original name (ADR 0053) |
+| `A2aRouter` | The type `RestRouter` names (`axum` feature), under its original name; not deprecated (ADR 0053) |
 
 ### Server Startup
 

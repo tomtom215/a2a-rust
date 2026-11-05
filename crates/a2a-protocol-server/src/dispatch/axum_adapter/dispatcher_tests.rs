@@ -14,6 +14,9 @@ use http_body_util::BodyExt as _;
 use super::*;
 use crate::agent_executor;
 use crate::builder::RequestHandlerBuilder;
+use crate::dispatch::axum_adapter::A2aRouter;
+use crate::handler::RequestHandler;
+use crate::serve::Dispatcher;
 
 struct Idle;
 agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });

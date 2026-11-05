@@ -295,6 +295,69 @@ impl A2aRouter {
     }
 }
 
+/// The axum router as a [`Dispatcher`](crate::serve::Dispatcher), so it
+/// runs on [`Server`](crate::serve::Server) under a
+/// [`ServeConfig`](crate::serve::ServeConfig) (audit G-09, ADR 0052): the
+/// header-read and idle timeouts, the connection cap, the loopback `Host`
+/// check, the production refusal and the shutdown that ends the tasks before
+/// it drains the connections. Under plain `axum::serve` it had none of them.
+impl crate::serve::Dispatcher for A2aRouter {
+    /// Calls the router [`into_router`](A2aRouter::into_router) would
+    /// return, built once, on the first request.
+    fn dispatch(
+        &self,
+        req: hyper::Request<hyper::body::Incoming>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = crate::serve::DispatchResponse> + Send + '_>,
+    > {
+        let mut router = self.router.get_or_init(|| self.build()).clone();
+        Box::pin(async move {
+            // An axum router is always ready and never fails: both are
+            // `Infallible`.
+            let Ok(()) = std::future::poll_fn(|cx| {
+                tower_service::Service::<hyper::Request<hyper::body::Incoming>>::poll_ready(
+                    &mut router,
+                    cx,
+                )
+            })
+            .await;
+            let Ok(response) = tower_service::Service::call(&mut router, req).await;
+            response.map(|body| {
+                http_body_util::combinators::BoxBody::new(dispatcher::Truncating::new(body))
+            })
+        })
+    }
+
+    /// The handler, so [`Server`](crate::serve::Server) ends its tasks before
+    /// it drains and stamps its load (ADR 0046) on every response.
+    fn request_handler(&self) -> Option<&Arc<RequestHandler>> {
+        Some(&self.handler)
+    }
+
+    /// `HTTP+JSON`; none when [`with_websocket`](A2aRouter::with_websocket)
+    /// makes it serve two bindings.
+    fn protocol_binding(&self) -> Option<&'static str> {
+        #[cfg(feature = "websocket")]
+        if self.websocket.is_some() {
+            return None;
+        }
+        Some("HTTP+JSON")
+    }
+
+    /// Closes the connections [`with_websocket`](A2aRouter::with_websocket)
+    /// upgraded, in [`Server`](crate::serve::Server)'s drain.
+    #[cfg(feature = "websocket")]
+    fn close_upgraded(
+        &self,
+        within: std::time::Duration,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + '_>> {
+        match &self.websocket {
+            Some(websocket) => Box::pin(websocket.close(within)),
+            None => Box::pin(std::future::ready(true)),
+        }
+    }
+}
+
 /// `GET /` with `Upgrade: websocket` (ADR 0055); any other `GET /` is not
 /// this router's.
 #[cfg(feature = "websocket")]
