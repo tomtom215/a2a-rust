@@ -61,7 +61,7 @@ const ABANDONED_PLAIN_SQL: &str = "SELECT '' AS scope, t.id FROM tasks t
       AND t.updated_at < strftime('%Y-%m-%d %H:%M:%f', 'now', ?1)
       AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c
                       WHERE c.scope = '' AND c.task_id = t.id AND c.expires_at_ms > ?2)
-      AND NOT COALESCE(json_extract(t.data, '$.status.message.metadata.\"a2a-rust.com/hand-off\"') = 1
+      AND NOT COALESCE(json_type(t.data, '$.status.message.metadata.\"a2a-rust.com/hand-off\"') = 'true'
                        AND t.updated_at > strftime('%Y-%m-%d %H:%M:%f', 'now', ?4), 0)
     ORDER BY t.updated_at LIMIT ?3";
 
@@ -70,7 +70,7 @@ const ABANDONED_TENANT_SQL: &str = "SELECT t.tenant_id, t.id FROM tenant_tasks t
       AND t.updated_at < strftime('%Y-%m-%d %H:%M:%f', 'now', ?1)
       AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c
                       WHERE c.scope = t.tenant_id AND c.task_id = t.id AND c.expires_at_ms > ?2)
-      AND NOT COALESCE(json_extract(t.data, '$.status.message.metadata.\"a2a-rust.com/hand-off\"') = 1
+      AND NOT COALESCE(json_type(t.data, '$.status.message.metadata.\"a2a-rust.com/hand-off\"') = 'true'
                        AND t.updated_at > strftime('%Y-%m-%d %H:%M:%f', 'now', ?4), 0)
     ORDER BY t.updated_at LIMIT ?3";
 

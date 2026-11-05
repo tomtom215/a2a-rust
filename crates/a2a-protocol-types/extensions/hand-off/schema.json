@@ -1,0 +1,7 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://a2a-rust.com/extensions/hand-off/schema.json",
+ "title": "Hand-off marker (ADR 0054)",
+ "description": "Written by a server on the working status message of a turn its shutdown handed back to the caller: send the message again, to any replica, within 600 s. It has no extension URI. Only the JSON boolean true marks a hand-off.",
+ "const": true
+}

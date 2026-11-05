@@ -56,7 +56,7 @@ const ABANDONED_PLAIN_SQL: &str = "SELECT '' AS scope, t.id FROM tasks t
       AND t.updated_at < now() - $1 * interval '1 millisecond'
       AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c
                       WHERE c.scope = '' AND c.task_id = t.id AND c.expires_at > now())
-      AND NOT COALESCE(t.data->'status'->'message'->'metadata'->>'a2a-rust.com/hand-off' = 'true'
+      AND NOT COALESCE(t.data->'status'->'message'->'metadata'->'a2a-rust.com/hand-off' = 'true'::jsonb
                        AND t.updated_at > now() - $3 * interval '1 millisecond', FALSE)
     ORDER BY t.updated_at LIMIT $2";
 
@@ -65,7 +65,7 @@ pub(super) const ABANDONED_TENANT_SQL: &str = "SELECT t.tenant_id, t.id FROM ten
       AND t.updated_at < now() - $1 * interval '1 millisecond'
       AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c
                       WHERE c.scope = t.tenant_id AND c.task_id = t.id AND c.expires_at > now())
-      AND NOT COALESCE(t.data->'status'->'message'->'metadata'->>'a2a-rust.com/hand-off' = 'true'
+      AND NOT COALESCE(t.data->'status'->'message'->'metadata'->'a2a-rust.com/hand-off' = 'true'::jsonb
                        AND t.updated_at > now() - $3 * interval '1 millisecond', FALSE)
     ORDER BY t.updated_at LIMIT $2";
 
