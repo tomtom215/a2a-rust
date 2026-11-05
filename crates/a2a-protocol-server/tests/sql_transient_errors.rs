@@ -26,12 +26,21 @@ use sqlx::sqlite::SqlitePoolOptions;
 struct Idle;
 agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
 
+/// How long the starved pool waits for a connection before it gives up, and
+/// so how long a test below waits for the failure it is about. The same bound
+/// covers opening the pool's first connection and every statement of the
+/// store's setup, so it is set well above what those take on a loaded machine:
+/// at 100 ms the pool timed out while being built (`expect("pool")` below, on
+/// the macOS runner of CI run 1810), a failure of the setup and not of the
+/// starvation under test. No test asserts how long the wait lasts.
+const STARVED_FOR: Duration = Duration::from_secs(2);
+
 /// A store over a one-connection pool, and that pool: holding its
 /// connection leaves the store nothing to acquire.
 async fn starved_store() -> (SqliteTaskStore, sqlx::SqlitePool) {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
-        .acquire_timeout(Duration::from_millis(100))
+        .acquire_timeout(STARVED_FOR)
         .connect("sqlite::memory:")
         .await
         .expect("pool");
