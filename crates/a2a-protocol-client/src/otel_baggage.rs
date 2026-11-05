@@ -71,8 +71,9 @@ pub(crate) fn propagate(
     use a2a_protocol_types::trace_context::baggage::{BAGGAGE_HEADER, encode};
     use opentelemetry::baggage::BaggageExt as _;
     use tracing_opentelemetry::OpenTelemetrySpanExt as _;
-    if policy.is_off()
-        || !carries_headers
+    // `Off` needs no check of its own: it allows no key, so `encode` below
+    // writes nothing.
+    if !carries_headers
         || span.is_disabled()
         || headers
             .keys()

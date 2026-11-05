@@ -151,10 +151,6 @@ impl Reaper {
             }
         }
         let ended = TenantContext::scope_partition(scope, &token, self.fail(task_id)).await;
-        if ended {
-            self.metrics
-                .on_claim(crate::metrics::control::claim::REAPED);
-        }
         if let Err(_e) = claims.store.release(&token).await {
             trace_warn!(task_id, error = %_e, "reaper's claim not released; it expires");
         }
@@ -193,6 +189,8 @@ impl Reaper {
             task_id,
             "ended a task its replica left running: failed, failure class transient"
         );
+        self.metrics
+            .on_claim(crate::metrics::control::claim::REAPED);
         self.release_lease(task_id).await;
         let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
             id.clone(),
