@@ -60,7 +60,10 @@ impl std::io::Write for Captured {
 async fn log_of(config: &Config) -> (String, String) {
     let captured = Captured::default();
     let writer = captured.clone();
+    // No ANSI: a build of the whole workspace turns `tracing-subscriber`'s `ansi`
+    // feature on, and escape codes would split `from="X"` into three pieces.
     let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
         .with_max_level(tracing::Level::INFO)
         .with_writer(move || writer.clone())
         .finish();
