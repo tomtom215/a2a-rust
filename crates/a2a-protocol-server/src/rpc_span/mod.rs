@@ -487,7 +487,7 @@ fn truncated(s: &str, max: usize) -> &str {
 mod abandoned_tests;
 mod call_tenant;
 pub use call_tenant::note as note_tenant;
-#[cfg(all(test, feature = "otel"))]
+#[cfg(test)]
 mod baggage_tests;
 #[cfg(test)]
 mod jsonrpc_tests;

@@ -352,5 +352,5 @@ const fn role(role: MessageRole) -> &'static str {
     }
 }
 
-#[cfg(all(test, feature = "tracing"))]
+#[cfg(test)]
 mod tests;

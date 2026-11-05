@@ -134,17 +134,12 @@ open as long as the client liked (audit C-16).
 ### On the application's own port
 
 To serve `/metrics` behind the application's own authentication and
-connection limits, bind nothing and serve the same text yourself:
-
-```rust,ignore
-let telemetry = Telemetry::builder()
-    .without_prometheus_listener() // OTEL_EXPORTER_PROMETHEUS_HOST/_PORT are not read
-    .build()?;
-let scrape = telemetry.prometheus().expect("OTEL_METRICS_EXPORTER=prometheus");
-// In your router, behind your auth:
-//   GET /metrics -> 200, Content-Type: PrometheusScrape::CONTENT_TYPE,
-//                   body: scrape.render()?
-```
+connection limits, bind nothing and serve the same text yourself: build with
+`Telemetry::builder().without_prometheus_listener()` (then
+`OTEL_EXPORTER_PROMETHEUS_HOST` and `_PORT` are not read), take
+`telemetry.prometheus()`, and answer `GET /metrics` in your own router, behind
+your own authentication, with `200`, a `Content-Type` of
+`PrometheusScrape::CONTENT_TYPE` and the body `scrape.render()?`.
 
 `Telemetry::prometheus()` is `None` unless the `prometheus` exporter is
 chosen, and `prometheus_addr()` is `None` without the listener. The default

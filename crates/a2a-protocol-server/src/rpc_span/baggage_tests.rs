@@ -5,6 +5,8 @@
 //! (W3C Baggage §3.3.2), only under `Continue`, and `OTEL_PROPAGATORS`
 //! honoured when the handler is built.
 
+#![cfg(feature = "otel")]
+
 use std::collections::HashMap;
 
 use a2a_protocol_types::trace_context::baggage::{BaggagePolicy, Propagators};

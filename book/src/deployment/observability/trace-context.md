@@ -128,8 +128,13 @@ would hand it whatever an upstream service put there (`user.id`, `tenant`, a
 session id). So both sides default to `BaggagePolicy::Off`, and name the keys
 that may cross:
 
-```rust,ignore
-use a2a_protocol_client::BaggagePolicy;
+```rust,no_run
+use a2a_protocol_client::{BaggagePolicy, ClientBuilder};
+use a2a_protocol_server::RequestHandlerBuilder;
+# struct Agent;
+# a2a_protocol_server::agent_executor!(Agent, |_ctx, _queue| async { Ok(()) });
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let (url, executor) = ("http://agent.example:9000", Agent);
 
 // Sending: the call span's baggage, only these keys.
 let client = ClientBuilder::new(url)
@@ -141,6 +146,9 @@ let client = ClientBuilder::new(url)
 let handler = RequestHandlerBuilder::new(executor)
     .with_baggage_propagation(BaggagePolicy::keys(["deploy"]))
     .build()?;
+# drop((client, handler));
+# Ok(())
+# }
 ```
 
 `BaggagePolicy::All` forwards every entry, for a chain wholly inside one trust

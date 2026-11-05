@@ -241,6 +241,7 @@ are rustdoc's job.
 | `testing` | `ScriptedPeer`: a misbehaving agent on any binding (stall, cut-off, mis-frame, 401), for testing a client's failure handling (`testing` feature) |
 | `tls` | TLS connector via rustls (`tls-rustls` feature) |
 | `token_provider` | Token acquisition: `TokenProvider`, OAuth 2.0 client-credentials, and OIDC discovery |
+| `otel_baggage` | W3C baggage on outbound calls, opt-in by key, and which propagators the environment turns on |
 | `trace_propagation` | Carrying W3C trace context on outbound calls |
 | `transport` | Transport abstraction for A2A client requests |
 | `version_query` | Sending `A2A-Version` as a request parameter (§3.6.1) |
@@ -261,6 +262,8 @@ are rustdoc's job.
 | `CredentialPreflight` | What a client built from a card does with a call whose credential matches none of the card's security requirements (§3.1.11): off, warn (default) or refuse |
 | `CurrentTrace` | The trace the current task runs under, and how to start one |
 | `TracePropagationInterceptor` | Writes `traceparent` onto every outbound request |
+| `BaggagePolicy` | Which W3C baggage entries cross the wire: `Off` (default), `Keys([...])`, `All` |
+| `Propagators` | Which propagators the environment's propagator list turns on: tracecontext, baggage |
 | `VersionQueryInterceptor` | Adds `A2A-Version` to every request's query parameters, beside the header |
 | `ClientError` | Errors that can occur during A2A client operations |
 | `ClientResult<T>` | Alias for `Result<T, ClientError>` |

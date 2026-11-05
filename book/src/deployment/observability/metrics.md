@@ -449,11 +449,17 @@ existing `Metrics` implementation compiles unchanged (audit H11).
 Off by default, so no series an existing dashboard reads changes. On
 `OtelMetrics` (from `OtelMetricsBuilder::build()` or `Telemetry::otel_metrics()`):
 
-```rust,ignore
+```rust,no_run
+# use a2a_protocol_sdk::server::otel::Telemetry;
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let telemetry = Telemetry::builder().build()?;
 let metrics = telemetry
     .otel_metrics()
     .with_tenant_dimension(["acme", "globex"]) // others are `_OTHER`
-    .with_agent_name("billing");               // one per handler
+    .with_agent_name("billing"); // one per handler
+# drop(metrics);
+# Ok(())
+# }
 ```
 
 `with_tenant_dimension(allowed)` adds `a2a.tenant` to

@@ -291,9 +291,10 @@ first provider and silently orphans it.
 
 The same metrics, with all of that, from `Telemetry`:
 
-```rust,ignore
-use a2a_protocol_server::otel::{OtlpProtocol, Telemetry};
+```rust,no_run
+use a2a_protocol_sdk::server::otel::{OtlpProtocol, Telemetry};
 
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
 // Was: let provider = init_otlp_pipeline(Some("my-agent"))?;
 let telemetry = Telemetry::builder()
     .with_default_service_name("my-agent") // OTEL_SERVICE_NAME still wins
@@ -306,6 +307,8 @@ let telemetry = Telemetry::builder()
 
 // Was: provider.shutdown()
 telemetry.shutdown()?; // or let it drop at the end of `main`
+# Ok(())
+# }
 ```
 
 `telemetry.meter_provider()` is the `SdkMeterProvider` the old functions
