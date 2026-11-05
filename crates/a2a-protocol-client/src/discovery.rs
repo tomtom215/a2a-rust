@@ -16,9 +16,13 @@
 //! `Expires`, `Age`) and revalidates a stale one with `If-None-Match` /
 //! `If-Modified-Since`. The free functions fetch once and cache nothing.
 
+mod cache;
 #[cfg(feature = "tracing")]
 mod card_span;
 mod freshness;
+mod stale;
+
+pub use cache::{CardCache, DEFAULT_MAX_ENTRIES};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -29,16 +33,14 @@ use crate::transport::connector::TcpConnector;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::Bytes;
 use hyper::header;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::Client;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::rt::TokioExecutor;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 
 use a2a_protocol_types::AgentCard;
 
 use crate::error::{ClientError, ClientResult};
+use crate::single_flight::SingleFlight;
+use crate::transport::HttpClient;
 use freshness::Freshness;
 
 /// The standard well-known path for agent card discovery.
@@ -348,6 +350,10 @@ struct CachedCard {
     etag: Option<String>,
     last_modified: Option<String>,
     freshness: Freshness,
+    /// The share of its lifetime this card's freshness is shortened by,
+    /// drawn when it was stored; see
+    /// [`with_refresh_jitter`](CachingCardResolver::with_refresh_jitter).
+    jitter: f64,
 }
 
 /// A caching agent card resolver: a private HTTP cache (RFC 9111) of one
@@ -360,14 +366,32 @@ struct CachedCard {
 /// revalidated with `If-None-Match` / `If-Modified-Since`, and a card marked
 /// `no-cache` or `Vary: *` is revalidated on every resolve. A `no-store`
 /// card is not stored. Directives for shared caches (`s-maxage`,
-/// `proxy-revalidate`) do not apply to it, and it never returns a stale
-/// card, so `must-revalidate` always holds.
+/// `proxy-revalidate`) do not apply to it.
 ///
 /// A card with no `max-age` and no `Expires` is revalidated on every
 /// resolve unless [`with_default_freshness`](Self::with_default_freshness)
 /// gives it a lifetime, and
 /// [`with_always_revalidate`](Self::with_always_revalidate) revalidates
 /// even a fresh card, so a card the agent changes is seen at once.
+///
+/// # At fleet scale (ADR 0051)
+///
+/// - A resolver builds its HTTP client once, so a revalidation reuses the
+///   connection of the fetch before it; [`with_pool`](Self::with_pool) uses
+///   an [`HttpPool`](crate::HttpPool)'s connections instead.
+/// - While a fetch is running, other `resolve` calls on the resolver and its
+///   clones wait for it and share its outcome: N callers holding a stale
+///   card make one request.
+/// - A revalidation that fails because the agent cannot be reached, timed
+///   out, or answered `500`/`502`/`503`/`504` returns the stored card if it
+///   went stale no longer ago than the stale-if-error window (RFC 5861):
+///   the larger of [`with_stale_if_error`](Self::with_stale_if_error) and
+///   the card's own `Cache-Control: stale-if-error`. A card marked
+///   `must-revalidate` or `no-cache` is never returned stale.
+/// - [`with_refresh_jitter`](Self::with_refresh_jitter) spreads the
+///   revalidations of processes that fetched together.
+///
+/// A [`CardCache`] holds one resolver per URL for many peers.
 ///
 /// Clones share one cache. A resolver fetches the public card only, with
 /// the same request headers every time; [`with_options`](Self::with_options)
@@ -378,14 +402,42 @@ pub struct CachingCardResolver {
     url: String,
     /// What each fetch sends and checks; see [`with_options`](Self::with_options).
     options: CardFetchOptions,
+    /// The client every fetch of this resolver and its clones uses.
+    client: HttpClient,
+    /// Whether [`with_pool`](Self::with_pool) supplied `client`.
+    #[cfg(feature = "tls-rustls")]
+    pooled: bool,
     /// See [`with_always_revalidate`](Self::with_always_revalidate).
     always_revalidate: bool,
     /// See [`with_default_freshness`](Self::with_default_freshness).
     default_freshness: Option<Duration>,
+    /// See [`with_stale_if_error`](Self::with_stale_if_error).
+    stale_if_error: Option<Duration>,
+    /// See [`with_refresh_jitter`](Self::with_refresh_jitter).
+    jitter: f64,
+    /// A uniform 64-bit draw for the jitter; a parameter so a test can fix it.
+    draw: fn() -> u64,
     cache: Arc<RwLock<Option<CachedCard>>>,
+    /// The fetch in flight, shared by the clones.
+    flight: Arc<SingleFlight<AgentCard>>,
     /// The extended card for an authenticated session; see
     /// [`install_extended_card`](Self::install_extended_card).
     extended: Arc<RwLock<Option<AgentCard>>>,
+}
+
+/// The HTTP client a fetch with these options uses, in either feature
+/// set: with `tls-rustls`, [`CardFetchOptions::https_client`]; without
+/// it, a plain-HTTP client with the same 10 s connect timeout.
+#[cfg(feature = "tls-rustls")]
+pub(crate) fn http_client(options: &CardFetchOptions) -> HttpClient {
+    options.https_client()
+}
+
+/// Without `tls-rustls` the options carry no TLS configuration: a plain-HTTP
+/// client with the same 10 s connect timeout.
+#[cfg(not(feature = "tls-rustls"))]
+pub(crate) fn http_client(_options: &CardFetchOptions) -> HttpClient {
+    crate::transport::plain_http_client(Duration::from_secs(10))
 }
 
 impl CachingCardResolver {
@@ -406,12 +458,20 @@ impl CachingCardResolver {
     /// Returns [`ClientError::InvalidEndpoint`] if `base_url` is malformed.
     pub fn with_path(base_url: &str, path: &str) -> ClientResult<Self> {
         let url = build_card_url(base_url, path)?;
+        let options = CardFetchOptions::default();
         Ok(Self {
             url,
-            options: CardFetchOptions::default(),
+            client: http_client(&options),
+            options,
+            #[cfg(feature = "tls-rustls")]
+            pooled: false,
             always_revalidate: false,
             default_freshness: None,
+            stale_if_error: None,
+            jitter: 0.0,
+            draw: stale::random_bits,
             cache: Arc::new(RwLock::new(None)),
+            flight: Arc::new(SingleFlight::default()),
             extended: Arc::new(RwLock::new(None)),
         })
     }
@@ -427,9 +487,34 @@ impl CachingCardResolver {
     /// it would otherwise keep is shared with every clone.
     #[must_use]
     pub fn with_options(mut self, options: CardFetchOptions) -> Self {
+        #[cfg(feature = "tls-rustls")]
+        if !self.pooled {
+            self.client = http_client(&options);
+        }
+        #[cfg(not(feature = "tls-rustls"))]
+        {
+            self.client = http_client(&options);
+        }
         self.options = options;
         self.cache = Arc::new(RwLock::new(None));
+        self.flight = Arc::new(SingleFlight::default());
         self.extended = Arc::new(RwLock::new(None));
+        self
+    }
+
+    /// Fetches through `pool`'s connections (ADR 0032 decision 6), shared
+    /// with every client and resolver given the same pool. The cache is
+    /// kept: the connection a response arrived on does not change it.
+    ///
+    /// A pool has one TLS configuration, so options that carry their own
+    /// ([`CardFetchOptions::with_tls_config`]) conflict with it: every
+    /// resolve then fails with [`ClientError::Config`] naming both, rather
+    /// than ignoring one.
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn with_pool(mut self, pool: &crate::HttpPool) -> Self {
+        self.client = pool.client();
+        self.pooled = true;
         self
     }
 
@@ -462,60 +547,152 @@ impl CachingCardResolver {
         self
     }
 
+    /// How long after it went stale the stored card may still be returned
+    /// when its revalidation fails because the agent could not be reached,
+    /// timed out, or answered `500`, `502`, `503` or `504` (RFC 5861 §4).
+    /// Default: none, so only the card's own `stale-if-error` directive
+    /// allows it.
+    ///
+    /// The window used is the larger of this and that directive. A card
+    /// marked `must-revalidate` or `no-cache` is never returned stale, and a
+    /// failure of another kind (a `404`, a card that does not parse or
+    /// verify) is returned as the error it is.
+    #[must_use]
+    pub const fn with_stale_if_error(mut self, window: Duration) -> Self {
+        self.stale_if_error = Some(window);
+        self
+    }
+
+    /// Shortens each stored card's freshness by a random share of up to
+    /// `fraction` of its lifetime, drawn when the card is stored, so that
+    /// processes which fetched a card together revalidate it apart. Never
+    /// lengthens it. `fraction` is clamped to `0.0..=0.5`; not a number is
+    /// `0.0`. Default: `0.0` (a [`CardCache`] uses `0.1`).
+    #[must_use]
+    pub const fn with_refresh_jitter(mut self, fraction: f64) -> Self {
+        self.jitter = stale::clamp_jitter(fraction);
+        self
+    }
+
     /// Resolves the agent card, using the stored one while it is fresh.
     ///
     /// Returns the stored card without a request while it is fresh. Otherwise
     /// fetches, with conditional request headers when a card is stored: on
     /// `304`, returns the stored card, now as fresh as the `304` says; on
-    /// `200`, stores and returns the new card.
+    /// `200`, stores and returns the new card. Concurrent calls share one
+    /// fetch, and a fetch that fails for want of the agent may return the
+    /// stored card (see [`with_stale_if_error`](Self::with_stale_if_error)).
     ///
     /// # Errors
     ///
-    /// Same conditions as [`resolve_agent_card`].
+    /// Same conditions as [`resolve_agent_card`], and
+    /// [`ClientError::Config`] when [`with_pool`](Self::with_pool) and
+    /// options with their own TLS configuration were both given.
     pub async fn resolve(&self) -> ClientResult<AgentCard> {
         let extended = self.extended.read().await.clone();
         if let Some(card) = extended {
             return Ok(card);
         }
-        let cached = self.cache.read().await.clone();
-        // RFC 9111 §4.2: a fresh stored response is used without contacting
-        // the server.
-        if let Some(cached) = &cached
-            && freshness::is_fresh(self.fresh_until(&cached.freshness), Instant::now())
-        {
+        if let Some(card) = self.fresh().await {
+            return Ok(card);
+        }
+        self.flight.run(|| self.refresh()).await
+    }
+
+    /// The stored card, when it is fresh (RFC 9111 §4.2: used without
+    /// contacting the server).
+    async fn fresh(&self) -> Option<AgentCard> {
+        let cache = self.cache.read().await;
+        let fresh = cache
+            .as_ref()
+            .filter(|cached| freshness::is_fresh(self.fresh_until(cached), Instant::now()))
+            .map(|cached| cached.card.clone());
+        drop(cache);
+        if fresh.is_some() {
             trace_debug!(url = %card_span::loggable(&self.url), "agent card fresh in cache");
-            return Ok(cached.card.clone());
+        }
+        fresh
+    }
+
+    /// One fetch, run by the single-flight leader.
+    async fn refresh(&self) -> ClientResult<AgentCard> {
+        // A fetch that ended between this caller's look at the cache and
+        // its taking the lead stored a card that may be fresh.
+        if let Some(card) = self.fresh().await {
+            return Ok(card);
+        }
+        #[cfg(feature = "tls-rustls")]
+        if self.pooled && self.options.tls.is_some() {
+            return Err(ClientError::Config(
+                "CachingCardResolver::with_pool and CardFetchOptions::with_tls_config were \
+                 both given, but a pool has one TLS configuration: set it with \
+                 HttpPool::builder().with_tls_config(..), or drop one of the two"
+                    .into(),
+            ));
         }
         trace_info!(url = %card_span::loggable(&self.url), "resolving agent card (cached)");
-        let (card, etag, last_modified, freshness) =
-            fetch_card_with_metadata(&self.url, cached.as_ref(), &self.options).await?;
+        let cached = self.cache.read().await.clone();
+        let fetched =
+            fetch_card_with_metadata(&self.client, &self.url, cached.as_ref(), &self.options).await;
+        let (card, etag, last_modified, freshness) = match fetched {
+            Ok(fetched) => fetched,
+            Err(e) => return self.stale_or(cached, e),
+        };
 
         // Kept when there is a validator to revalidate it by or a time it
         // stays fresh for; otherwise it would never be used. A `no-store`
         // response is not kept (RFC 9111 §5.2.2.5: a cache MUST NOT store
         // it), and replaces what was.
-        {
-            let mut guard = self.cache.write().await;
-            let useful =
-                etag.is_some() || last_modified.is_some() || self.fresh_until(&freshness).is_some();
-            *guard = (!freshness.no_store && useful).then(|| CachedCard {
-                card: card.clone(),
-                etag,
-                last_modified,
-                freshness,
-            });
-        }
-
+        let useful = etag.is_some()
+            || last_modified.is_some()
+            || !self.always_revalidate && freshness.fresh_until(self.default_freshness).is_some();
+        let stored = (!freshness.no_store && useful).then(|| CachedCard {
+            card: card.clone(),
+            etag,
+            last_modified,
+            freshness,
+            jitter: stale::jitter_share(self.jitter, (self.draw)()),
+        });
+        *self.cache.write().await = stored;
         Ok(card)
+    }
+
+    /// The stored card in place of `error`, when RFC 5861 allows it.
+    fn stale_or(&self, cached: Option<CachedCard>, error: ClientError) -> ClientResult<AgentCard> {
+        let usable = cached.filter(|cached| {
+            stale::unavailable(&error)
+                && cached
+                    .freshness
+                    .stale_window(self.stale_if_error)
+                    .is_some_and(|window| {
+                        let since = cached
+                            .freshness
+                            .fresh_until(self.default_freshness)
+                            .unwrap_or_else(|| cached.freshness.received());
+                        stale::within(since, window, Instant::now())
+                    })
+        });
+        match usable {
+            Some(cached) => {
+                trace_warn!(
+                    url = %card_span::loggable(&self.url),
+                    error = %error,
+                    "agent card revalidation failed; using the stored card (stale-if-error)"
+                );
+                Ok(cached.card)
+            }
+            None => Err(error),
+        }
     }
 
     /// Until when a stored card is fresh for this resolver, or `None` when
     /// it must be revalidated before every use.
-    fn fresh_until(&self, freshness: &Freshness) -> Option<Instant> {
+    fn fresh_until(&self, cached: &CachedCard) -> Option<Instant> {
         if self.always_revalidate {
             return None;
         }
-        freshness.fresh_until(self.default_freshness)
+        let until = cached.freshness.fresh_until(self.default_freshness)?;
+        Some(cached.freshness.shortened(until, cached.jitter))
     }
 
     /// Clears the internal cache, the extended card included.
@@ -538,6 +715,26 @@ impl CachingCardResolver {
     /// goes back to the public card.
     pub async fn clear_extended_card(&self) {
         *self.extended.write().await = None;
+    }
+
+    /// The card URL this resolver fetches.
+    #[must_use]
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// Whether `self` and `other` share one cache (one is a clone of the
+    /// other, or both came from one [`CardCache`] for one URL).
+    #[must_use]
+    pub fn shares_cache_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.cache, &other.cache)
+    }
+
+    /// Fixes the jitter's random draw, for a test.
+    #[cfg(test)]
+    pub(crate) fn with_draw(mut self, draw: fn() -> u64) -> Self {
+        self.draw = draw;
+        self
     }
 }
 
@@ -563,12 +760,15 @@ fn build_card_url(base_url: &str, path: &str) -> ClientResult<String> {
     Ok(format!("{base}{path}"))
 }
 
+/// A one-shot fetch: the free functions keep nothing between calls, the
+/// client included (ADR 0051).
 async fn fetch_card(
     url: &str,
     cached: Option<&CachedCard>,
     options: &CardFetchOptions,
 ) -> ClientResult<AgentCard> {
-    let (card, ..) = fetch_card_with_metadata(url, cached, options).await?;
+    let client = http_client(options);
+    let (card, ..) = fetch_card_with_metadata(&client, url, cached, options).await?;
     Ok(card)
 }
 
@@ -578,6 +778,7 @@ type Fetched = (AgentCard, Option<String>, Option<String>, Freshness);
 /// [`fetch_inner`] in the HTTP conventions' `CLIENT` span for the `GET`
 /// (`card_span.rs`).
 async fn fetch_card_with_metadata(
+    client: &HttpClient,
     url: &str,
     cached: Option<&CachedCard>,
     options: &CardFetchOptions,
@@ -585,13 +786,16 @@ async fn fetch_card_with_metadata(
     #[cfg(feature = "tracing")]
     {
         let span = card_span::open(url);
-        let result =
-            tracing::Instrument::instrument(fetch_inner(url, cached, options), span.clone()).await;
+        let result = tracing::Instrument::instrument(
+            fetch_inner(client, url, cached, options),
+            span.clone(),
+        )
+        .await;
         card_span::ended(&span, result.as_ref().err());
         result
     }
     #[cfg(not(feature = "tracing"))]
-    fetch_inner(url, cached, options).await
+    fetch_inner(client, url, cached, options).await
 }
 
 /// Fetches the card, conditionally when `cached` holds validators, and
@@ -599,20 +803,11 @@ async fn fetch_card_with_metadata(
 /// validators fall back to the stored ones).
 #[allow(clippy::too_many_lines)]
 async fn fetch_inner(
+    client: &HttpClient,
     url: &str,
     cached: Option<&CachedCard>,
     options: &CardFetchOptions,
 ) -> ClientResult<Fetched> {
-    #[cfg(not(feature = "tls-rustls"))]
-    // The transports' connector: the lookup, not only the connect, bounded
-    // by the timeout (audit B-28).
-    let client: Client<TcpConnector, Full<Bytes>> = Client::builder(TokioExecutor::new()).build(
-        crate::transport::connector::http_connector(Duration::from_secs(10)),
-    );
-
-    #[cfg(feature = "tls-rustls")]
-    let client = options.https_client();
-
     let mut builder = hyper::Request::builder()
         .method(hyper::Method::GET)
         .uri(crate::redact::without_userinfo(url))
@@ -658,7 +853,7 @@ async fn fetch_inner(
 
     let resp = tokio::time::timeout_at(deadline, client.request(req))
         .await
-        .map_err(|_| ClientError::Transport("agent card fetch timed out".into()))?
+        .map_err(|_| ClientError::Transport(stale::FETCH_TIMED_OUT.into()))?
         .map_err(|e| ClientError::HttpClient(crate::error::chain(&e)))?;
 
     let status = resp.status();
@@ -724,9 +919,7 @@ async fn fetch_inner(
     .await
     {
         Err(_) => {
-            return Err(ClientError::Transport(
-                "agent card body read timed out".into(),
-            ));
+            return Err(ClientError::Transport(stale::BODY_TIMED_OUT.into()));
         }
         Ok(Ok(collected)) => collected.to_bytes(),
         Ok(Err(err)) => {
@@ -808,6 +1001,9 @@ pub(crate) fn verify_card_signatures(
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+mod fleet_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -829,6 +1025,15 @@ mod tests {
     /// No headers, the default budget: what the plain functions send.
     fn no_options() -> CardFetchOptions {
         CardFetchOptions::default()
+    }
+
+    /// One fetch with [`no_options`], on a client of its own.
+    async fn fetch_with_no_options(
+        url: &str,
+        cached: Option<&CachedCard>,
+    ) -> ClientResult<Fetched> {
+        let options = no_options();
+        fetch_card_with_metadata(&http_client(&options), url, cached, &options).await
     }
 
     /// The freshness of a response with no caching headers: none.
@@ -930,6 +1135,7 @@ mod tests {
                 etag: Some("test-etag".into()),
                 last_modified: None,
                 freshness: unstated_freshness(),
+                jitter: 0.0,
             });
         }
 
@@ -983,7 +1189,7 @@ mod tests {
         });
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
-        let result = fetch_card_with_metadata(&url, None, &no_options()).await;
+        let result = fetch_with_no_options(&url, None).await;
         assert!(result.is_err());
         match result.unwrap_err() {
             ClientError::UnexpectedStatus { status, body, .. } => {
@@ -1050,12 +1256,11 @@ mod tests {
             etag: Some("\"abc123\"".into()),
             last_modified: None,
             freshness: unstated_freshness(),
+            jitter: 0.0,
         };
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
-        let (card, etag, ..) = fetch_card_with_metadata(&url, Some(&cached), &no_options())
-            .await
-            .unwrap();
+        let (card, etag, ..) = fetch_with_no_options(&url, Some(&cached)).await.unwrap();
         assert_eq!(card.name, "cached-agent");
         assert_eq!(etag, Some("\"abc123\"".into()));
     }
@@ -1106,9 +1311,7 @@ mod tests {
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
         let (parsed_card, etag, last_modified, _) =
-            fetch_card_with_metadata(&url, None, &no_options())
-                .await
-                .unwrap();
+            fetch_with_no_options(&url, None).await.unwrap();
         assert_eq!(parsed_card.name, "test-agent");
         assert_eq!(etag, Some("\"xyz\"".into()));
         assert_eq!(last_modified, Some("Mon, 01 Jan 2026 00:00:00 GMT".into()));
@@ -1444,7 +1647,7 @@ mod tests {
         });
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
-        let result = fetch_card_with_metadata(&url, None, &no_options()).await;
+        let result = fetch_with_no_options(&url, None).await;
         match result {
             Err(ClientError::Transport(msg)) => {
                 assert!(
@@ -1489,7 +1692,7 @@ mod tests {
         });
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
-        let result = fetch_card_with_metadata(&url, None, &no_options()).await;
+        let result = fetch_with_no_options(&url, None).await;
 
         // Should NOT get a "too large" error. Any other error (HTTP, parse) is fine.
         match &result {
@@ -1538,7 +1741,7 @@ mod tests {
         });
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
-        let result = fetch_card_with_metadata(&url, None, &no_options()).await;
+        let result = fetch_with_no_options(&url, None).await;
 
         match result {
             Err(ClientError::Transport(msg)) => {
@@ -1606,13 +1809,11 @@ mod tests {
             etag: None,
             last_modified: Some("Mon, 01 Jan 2026 00:00:00 GMT".into()),
             freshness: unstated_freshness(),
+            jitter: 0.0,
         };
 
         let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
-        let (card, _, last_modified, _) =
-            fetch_card_with_metadata(&url, Some(&cached), &no_options())
-                .await
-                .unwrap();
+        let (card, _, last_modified, _) = fetch_with_no_options(&url, Some(&cached)).await.unwrap();
         assert_eq!(card.name, "lm-cached");
         assert_eq!(last_modified, Some("Mon, 01 Jan 2026 00:00:00 GMT".into()));
     }

@@ -117,6 +117,7 @@ mod pool;
 mod proxy;
 mod received;
 mod redact;
+mod single_flight;
 #[cfg(test)]
 mod test_tracing;
 

@@ -102,7 +102,7 @@ const DEFAULT_REFRESH_LEEWAY: Duration = Duration::from_secs(30);
 const DEFAULT_FAILURE_BACKOFF: Duration = Duration::from_secs(1);
 
 mod exchange;
-mod flight;
+pub(crate) mod flight;
 mod trusted_hosts;
 
 pub use exchange::{

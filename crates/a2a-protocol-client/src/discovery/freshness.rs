@@ -30,8 +30,12 @@
 //!
 //! - `s-maxage`, `proxy-revalidate` and `public` (§5.2.2.10, §5.2.2.8,
 //!   §5.2.2.9) apply to shared caches; `private` (§5.2.2.7) permits exactly
-//!   this one. `must-revalidate` (§5.2.2.2) forbids using a stale response,
-//!   which the resolver never does: a stale card is always revalidated.
+//!   this one.
+//! - `must-revalidate` (§5.2.2.2) forbids using a stale response without
+//!   revalidating it: such a card is never served under stale-if-error.
+//! - `stale-if-error=N` (RFC 5861 §4): read, so that a card whose
+//!   revalidation fails for want of the agent may be used up to `N` seconds
+//!   after it went stale (ADR 0051).
 //! - `Vary` naming fields (§4.1): every fetch of one resolver sends the same
 //!   request fields (`CachingCardResolver::with_options` starts a new
 //!   cache), so a stored response always matches the next request. The
@@ -59,6 +63,11 @@ pub(super) struct Freshness {
     pub(super) no_store: bool,
     /// `no-cache` or `Vary: *`: never used without revalidating.
     revalidate: bool,
+    /// `must-revalidate`: never used stale, not even on an error.
+    must_revalidate: bool,
+    /// `stale-if-error=N` (RFC 5861 §4); the first one counts, and one whose
+    /// argument is not delta-seconds is ignored.
+    stale_if_error: Option<Duration>,
     /// The explicit freshness lifetime; `None` when the response has neither
     /// `max-age` nor `Expires`.
     lifetime: Option<Duration>,
@@ -111,9 +120,15 @@ impl Freshness {
             .unwrap_or(Duration::ZERO);
         let corrected_age_value = age_value + received.duration_since(requested);
 
+        let stale_if_error = directives(headers)
+            .find(|(n, _)| n.eq_ignore_ascii_case("stale-if-error"))
+            .and_then(|(_, v)| v.and_then(|v| delta_seconds(v.trim_matches('"'))));
+
         Self {
             no_store: has("no-store"),
             revalidate: has("no-cache") || vary_any,
+            must_revalidate: has("must-revalidate"),
+            stale_if_error,
             lifetime,
             age: apparent_age.max(corrected_age_value),
             received,
@@ -129,6 +144,36 @@ impl Freshness {
         }
         let lifetime = self.lifetime.or(default_lifetime)?.min(DELTA_SECONDS_MAX);
         Some(self.received + lifetime.saturating_sub(self.age))
+    }
+}
+
+impl Freshness {
+    /// When the response arrived.
+    pub(super) const fn received(&self) -> Instant {
+        self.received
+    }
+
+    /// How long after going stale the response may still be used when its
+    /// revalidation fails for want of the server: the larger of `configured`
+    /// and its own `stale-if-error`, or `None` when it may not be at all
+    /// (`must-revalidate`, `no-cache`, `Vary: *`, or neither gives a window).
+    pub(super) fn stale_window(&self, configured: Option<Duration>) -> Option<Duration> {
+        if self.must_revalidate || self.revalidate {
+            return None;
+        }
+        match (configured, self.stale_if_error) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// `until`, brought forward by `share` of the time from the response's
+    /// arrival to `until`. `share` is in `0.0..=0.5`; zero changes nothing.
+    pub(super) fn shortened(&self, until: Instant, share: f64) -> Instant {
+        until
+            - until
+                .saturating_duration_since(self.received)
+                .mul_f64(share)
     }
 }
 

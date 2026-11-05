@@ -47,6 +47,36 @@ let card = resolver.resolve().await?; // from the cache while fresh
 
 `with_always_revalidate(true)` sends a request on every resolve, as the resolver did before 0.15, for an agent whose card changes sooner than its `max-age` says; a hot-reloaded card served with the default `max-age=3600` is the usual case. `resolve_agent_card` and `fetch_card_from_url` cache nothing: each call fetches.
 
+### Many agents, many processes
+
+A fleet that starts together asks for every card at once. Since 0.16.0 (ADR 0051) the resolver is built for that:
+
+- **One connection.** A resolver builds its HTTP client once, so a revalidation reuses the connection of the fetch before it. `with_pool(&pool)` uses an [`HttpPool`](../../client/builder/pool.md)'s connections, shared with the clients on that pool; a pool has one TLS configuration, so options that carry their own make every resolve fail with a configuration error.
+- **One fetch at a time.** While a fetch is running, other `resolve` calls on the resolver and its clones wait for it and share its outcome, error included: a hundred tasks holding a stale card make one request.
+- **Stale if error** (RFC 5861). When a revalidation fails because the agent cannot be reached, timed out, or answered `500`, `502`, `503` or `504`, the stored card is returned if it went stale no longer ago than the window: the larger of `with_stale_if_error(duration)` and the card's own `Cache-Control: stale-if-error=N`. A card marked `must-revalidate` or `no-cache` is never returned stale, and a `404`, or a card that does not parse or verify, is returned as the error it is. The card's own directive is honoured without opting in.
+- **Spread revalidations.** `with_refresh_jitter(0.1)` shortens each card's freshness by a random share of up to 10% of its lifetime (never lengthens it), so processes that fetched together revalidate apart. Off by default on a resolver.
+
+`discovery::CardCache` holds one resolver per card URL, with one set of options, and hands the same resolver to every caller of one URL; clones share it. Its jitter is 10% by default, and it keeps at most 1024 URLs (`with_max_entries`), dropping the least recently used.
+
+```rust,no_run
+use std::time::Duration;
+use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_client::discovery::CardCache;
+
+# async fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
+let cards = CardCache::new()
+    .with_default_freshness(Duration::from_secs(300))
+    .with_stale_if_error(Duration::from_secs(600));
+for peer in ["https://alpha.example", "https://beta.example"] {
+    let client = ClientBuilder::from_card(&cards.resolve(peer).await?)?.build()?;
+    # drop(client);
+}
+# Ok(())
+# }
+```
+
+Every resolver of one `CardCache` sends the same request headers, so a card fetched under one credential is never served for another: use one cache per credential.
+
 ## What the client checks
 
 A card the client receives is held to the rules the server applies before it

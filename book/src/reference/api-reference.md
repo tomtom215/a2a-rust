@@ -275,6 +275,8 @@ are rustdoc's job.
 | `new_message_id()` | A fresh UUID v4 `MessageId` for a message about to be sent (in the SDK prelude too) |
 | `resolve_agent_card(base_url)` | `async` — fetches the `AgentCard` from the standard well-known path; no headers, 30 s budget |
 | `resolve_agent_card_with_options(base_url, &options)` | `async` — the same with the headers and budget in a `CardFetchOptions` (`discovery` module; `fetch_card_from_url_with_options` for an absolute URL) |
+| `CachingCardResolver` | A private RFC 9111 cache of one card: one HTTP client (or an `HttpPool`'s, `with_pool`), one fetch at a time across clones, stale-if-error (`with_stale_if_error`, and the card's own directive), opt-in refresh jitter (`discovery` module) |
+| `CardCache` | One shared `CachingCardResolver` per card URL with one set of options, bounded (`with_max_entries`, default 1024), 10% refresh jitter (`discovery` module) |
 
 ### Client Methods
 
