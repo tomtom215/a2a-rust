@@ -11,7 +11,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_protocol_client::delegation::{Delegation, DelegationOptions, ResumePolicy};
+use a2a_protocol_client::delegation::{Delegation, DelegationOptions, HandOffPolicy, ResumePolicy};
 use a2a_protocol_client::{A2aClient, ClientBuilder, ClientError};
 use a2a_protocol_types::budget::{Budget, BudgetHandle, ChildGrant};
 use a2a_protocol_types::delegation_journal::{DelegationJournal, InMemoryDelegationJournal};
@@ -100,19 +100,20 @@ fn what_the_options_hold_is_printed_and_what_they_carry_is_not() {
     assert_eq!(
         format!("{:?}", DelegationOptions::new()),
         "DelegationOptions { lease: None, budget: false, journal: false, resume: None, \
-         id_wait: None, lineage: None }"
+         id_wait: None, lineage: None, hand_off: None }"
     );
     let full = DelegationOptions::new()
         .with_lease(Duration::from_secs(2))
         .with_budget(grant())
         .with_journal(journal(), "supervisor-1", "agent-1")
         .with_resume(ResumePolicy::none())
-        .with_id_wait(Duration::from_millis(500));
+        .with_id_wait(Duration::from_millis(500))
+        .with_hand_off(HandOffPolicy::never());
     assert_eq!(
         format!("{full:?}"),
         "DelegationOptions { lease: Some(2s), budget: true, journal: true, \
          resume: Some(ResumePolicy { attempts: 0, backoff: 0ns, max_backoff: 0ns, \
          deadline: 0ns, healthy_after: 0ns, jitter: false }), id_wait: Some(500ms), \
-         lineage: None }"
+         lineage: None, hand_off: Some(HandOffPolicy { continuations: 0, backoff: 0ns, max_backoff: 0ns }) }"
     );
 }
