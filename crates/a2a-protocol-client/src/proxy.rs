@@ -39,12 +39,12 @@ use hyper::http;
 use hyper::rt::{Read, ReadBufCursor, Write};
 use hyper_util::client::legacy::connect::proxy::Tunnel;
 use hyper_util::client::legacy::connect::{Connected, Connection};
-
-use crate::transport::connector::TcpConnector;
 use hyper_util::client::proxy::matcher::{Intercept, Matcher};
 use hyper_util::rt::TokioIo;
 use pin_project_lite::pin_project;
 use tokio::net::TcpStream;
+
+use crate::transport::connector::TcpConnector;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -214,7 +214,7 @@ pub async fn tunnelled_tcp(dst: &http::Uri) -> Option<Result<TcpStream, BoxError
 /// names for `dst`, with `tcp`'s settings toward the proxy; `None` when no
 /// supported proxy applies. Tonic layers its own TLS over what this returns.
 #[cfg(feature = "grpc")]
-pub fn grpc_tunnel(dst: &http::Uri, tcp: TcpConnector) -> Option<Tunnel<TcpConnector>> {
+pub fn grpc_tunnel(dst: &http::Uri, mut tcp: TcpConnector) -> Option<Tunnel<TcpConnector>> {
     let rules = matcher_from_env();
     let proxy = intercept(&rules, dst);
     if proxy.is_none()
@@ -225,7 +225,6 @@ pub fn grpc_tunnel(dst: &http::Uri, tcp: TcpConnector) -> Option<Tunnel<TcpConne
              proxies are); connecting directly"
         );
     }
-    let mut tcp = tcp;
     tcp.enforce_http(false);
     proxy.map(|p| tunnel(&p, tcp))
 }
@@ -310,8 +309,7 @@ pub struct ProxyConnector {
 }
 
 impl ProxyConnector {
-    pub fn new(tls: rustls::ClientConfig, rules: Arc<Matcher>, tcp: TcpConnector) -> Self {
-        let mut tcp = tcp;
+    pub fn new(tls: rustls::ClientConfig, rules: Arc<Matcher>, mut tcp: TcpConnector) -> Self {
         tcp.enforce_http(false);
         let direct = hyper_rustls::HttpsConnectorBuilder::new()
             .with_tls_config(tls.clone())
