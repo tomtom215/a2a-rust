@@ -268,6 +268,7 @@ impl RequestHandler {
             self.span_settings,
             &ctx.message,
         );
+        #[cfg(feature = "tracing")]
         span.record_lineage(ctx.lineage());
         span
     }

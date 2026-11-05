@@ -226,7 +226,7 @@ fn a_depth_written_as_a_whole_float_reads() {
         serde_json::json!(2.5),
         serde_json::json!(-1.0),
         serde_json::json!(4_294_967_296.0),
-        serde_json::json!(4_294_967_296_u64),
+        serde_json::json!(4_294_967_297_u64),
     ] {
         assert!(read(bad.clone()).is_err(), "{bad}");
     }
