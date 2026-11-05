@@ -42,7 +42,11 @@ pub struct Replica {
 impl Replica {
     /// A replica on `ip`, any port.
     pub async fn start_on(name: &str, ip: &str) -> Arc<Self> {
-        let listener = TcpListener::bind((ip, 0)).await.expect("bind");
+        Self::serve(name, TcpListener::bind((ip, 0)).await.expect("bind"))
+    }
+
+    /// A replica serving on `listener`.
+    pub fn serve(name: &str, listener: TcpListener) -> Arc<Self> {
         let replica = Arc::new(Self {
             name: name.to_owned(),
             addr: listener.local_addr().expect("addr"),
