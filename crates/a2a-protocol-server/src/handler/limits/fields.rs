@@ -34,7 +34,7 @@ pub struct HandlerLimits {
     /// Maximum allowed length for task/context IDs. Default: 1024.
     ///
     /// `message.id` is bounded too, but never below
-    /// [`MIN_MESSAGE_ID_LENGTH`] — see
+    /// [`MIN_MESSAGE_ID_LENGTH`](super::MIN_MESSAGE_ID_LENGTH) — see
     /// [`effective_max_message_id_length`](Self::effective_max_message_id_length)
     /// for why it cannot simply share this number.
     pub max_id_length: usize,
