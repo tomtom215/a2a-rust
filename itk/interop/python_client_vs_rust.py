@@ -13,6 +13,9 @@ end to end over both HTTP bindings:
   * CancelTask on a completed task -> TaskNotCancelableError
   * push-notification config create/get/list/delete
   * SubscribeToTask on a completed task -> snapshot then clean end (§3.5.2)
+  * the lineage extension (ADR 0034, book "Swarm Extensions"), written by
+    hand from the wire contract: a carried lineage is recorded on the task,
+    and a malformed one is refused as InvalidParams before any work
 
 Usage: python python_client_vs_rust.py http://127.0.0.1:9090
 Exit codes: 0 all passed, 1 failures.
@@ -140,6 +143,9 @@ async def run_binding(base_url: str, binding: str) -> None:
         all(c.id != created.id for c in cfgs_after.configs),
     )
 
+    # 6. Lineage, as a non-Rust hop writes it from the published contract.
+    await check_lineage(client, binding)
+
     await client.close()
 
     # 7. Streaming SendMessage over a fresh client.
@@ -188,6 +194,62 @@ async def run_binding(base_url: str, binding: str) -> None:
             f"({type(e).__name__})",
         )
     await stream_client.close()
+
+
+LINEAGE_URI = "https://a2a-rust.com/extensions/lineage/v1"
+LINEAGE_KEY = "a2a-rust.com/lineage"
+
+
+def with_lineage(message: Message, value: dict) -> Message:
+    message.metadata.update({LINEAGE_KEY: value})
+    message.extensions.append(LINEAGE_URI)
+    return message
+
+
+async def check_lineage(client, binding: str) -> None:
+    carried = {"root": f"py-job-{binding}", "depth": 2, "parentTaskId": "py-parent-1"}
+    responses = []
+    async for resp in client.send_message(
+        SendMessageRequest(
+            message=with_lineage(user_message("lineage", f"py-{binding}-l1"), carried)
+        )
+    ):
+        responses.append(resp)
+    task = responses[-1].task
+    got = await client.get_task(GetTaskRequest(id=task.id))
+    recorded = dict(got.metadata[LINEAGE_KEY]) if LINEAGE_KEY in got.metadata else None
+    if recorded is not None and "depth" in recorded:
+        recorded["depth"] = int(recorded["depth"])
+    check(
+        "a carried lineage is recorded on the task",
+        recorded == carried,
+        f"got {recorded}",
+    )
+    try:
+        async for _ in client.send_message(
+            SendMessageRequest(
+                message=with_lineage(
+                    user_message("lineage", f"py-{binding}-l2"),
+                    {"root": "py-job", "depth": 17},
+                )
+            )
+        ):
+            pass
+        check("a lineage past the depth cap is refused", False, "no error raised")
+    except (A2AClientError, A2AError) as e:
+        # Over HTTP+JSON the server answers 400 INVALID_ARGUMENT with no
+        # a2a-protocol.org ErrorInfo (it adds one only for A2A's own codes),
+        # and the Python client then reports only the HTTP status.
+        expected = (
+            "400 Bad Request"
+            if binding == TransportProtocol.HTTP_JSON
+            else "lineage depth 17 is past the cap of 16"
+        )
+        check(
+            "a lineage past the depth cap is refused",
+            expected in str(e),
+            f"got {type(e).__name__}: {e}",
+        )
 
 
 async def main() -> int:
