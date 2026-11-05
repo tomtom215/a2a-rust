@@ -45,16 +45,24 @@ type Namer = dyn Fn(&[u8]) -> Option<String> + Send + Sync;
 /// A refusal is `401` with `WWW-Authenticate: MutualTLS` on HTTP and
 /// `UNAUTHENTICATED` on gRPC. The scheme recorded beside the identity is
 /// `"mtls"`.
+///
+/// Behind a proxy that terminates the client's TLS, the connection carries no
+/// certificate; [`with_forwarded`](Self::with_forwarded) reads the one the
+/// proxy forwards, from that proxy only.
 #[derive(Clone)]
 pub struct MutualTlsAuthInterceptor {
     namer: Option<Arc<Namer>>,
+    forwarded: Option<super::forwarded_cert::ForwardedClientCert>,
 }
 
 impl MutualTlsAuthInterceptor {
     /// Names each caller by its certificate's SHA-256 fingerprint.
     #[must_use]
     pub const fn new() -> Self {
-        Self { namer: None }
+        Self {
+            namer: None,
+            forwarded: None,
+        }
     }
 
     /// Names each caller `mtls:<name>`, where `name` is what `namer` returns
@@ -78,7 +86,28 @@ impl MutualTlsAuthInterceptor {
     pub fn with_names(namer: impl Fn(&[u8]) -> Option<String> + Send + Sync + 'static) -> Self {
         Self {
             namer: Some(Arc::new(namer)),
+            forwarded: None,
         }
+    }
+
+    /// Also names a caller whose connection carries no certificate from the
+    /// one a trusted TLS-terminating proxy forwarded (audit B-26): the header
+    /// `forwarded` names, read only from a peer in its ranges. A certificate
+    /// from the connection's own handshake is used first.
+    #[must_use]
+    pub fn with_forwarded(mut self, forwarded: super::forwarded_cert::ForwardedClientCert) -> Self {
+        self.forwarded = Some(forwarded);
+        self
+    }
+
+    /// The certificate the call came with: its own handshake's, or the one a
+    /// trusted proxy forwarded.
+    fn certificate(&self, ctx: &CallContext) -> Option<Vec<u8>> {
+        ctx.peer_certificate().or_else(|| {
+            self.forwarded
+                .as_ref()
+                .and_then(|forwarded| forwarded.certificate(ctx))
+        })
     }
 
     /// The caller `der` names, or `None` to refuse it.
@@ -107,6 +136,7 @@ impl std::fmt::Debug for MutualTlsAuthInterceptor {
                     "fingerprint"
                 },
             )
+            .field("forwarded", &self.forwarded.is_some())
             .finish()
     }
 }
@@ -117,8 +147,8 @@ impl ServerInterceptor for MutualTlsAuthInterceptor {
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let identity = ctx
-                .peer_certificate()
+            let identity = self
+                .certificate(ctx)
                 .and_then(|der| self.name(&der))
                 .ok_or_else(|| auth_rejected(CHALLENGE))?;
             ctx.set_caller_identity(identity);
@@ -206,11 +236,11 @@ mod tests {
     fn debug_names_the_naming_and_nothing_else() {
         assert_eq!(
             format!("{:?}", MutualTlsAuthInterceptor::new()),
-            r#"MutualTlsAuthInterceptor { names: "fingerprint" }"#
+            r#"MutualTlsAuthInterceptor { names: "fingerprint", forwarded: false }"#
         );
         assert_eq!(
             format!("{:?}", MutualTlsAuthInterceptor::with_names(|_| None)),
-            r#"MutualTlsAuthInterceptor { names: "custom" }"#
+            r#"MutualTlsAuthInterceptor { names: "custom", forwarded: false }"#
         );
     }
 
