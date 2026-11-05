@@ -5,7 +5,11 @@
 //! environment and overridden in code.
 
 use super::selection::{self, Selection};
-use super::*;
+use super::{
+    Arc, ClientIdentity, Env, ExportRuntime, Langfuse, OtlpCompression, OtlpProtocol, ProxySetting,
+    Resource, SdkLoggerProvider, SdkMeterProvider, SdkTracerProvider, Signal, Target, Telemetry,
+    TelemetryError, compression, config, detect, exporters, proxy, resource_env,
+};
 
 mod assemble;
 mod resource;
@@ -31,6 +35,9 @@ pub struct TelemetryBuilder {
     langfuse: Option<Langfuse>,
     install_globally: bool,
     where_configured: bool,
+    /// Whether `OTEL_METRICS_EXPORTER=prometheus` binds a listener of its own.
+    #[cfg_attr(not(feature = "otel-prometheus"), allow(dead_code))]
+    prometheus_listener: bool,
     env: Arc<Env>,
     /// What the environment said that was not acted on; see [`config::Notes`].
     notes: config::Notes,
@@ -74,6 +81,7 @@ impl TelemetryBuilder {
             langfuse: None,
             install_globally: true,
             where_configured: false,
+            prometheus_listener: true,
             env,
             notes: config::Notes::default(),
         }
@@ -287,6 +295,17 @@ impl TelemetryBuilder {
     #[must_use]
     pub const fn install_globally(mut self, on: bool) -> Self {
         self.install_globally = on;
+        self
+    }
+
+    /// Under `OTEL_METRICS_EXPORTER=prometheus`, binds no listener of its
+    /// own: the application serves [`Telemetry::prometheus`]'s text on its own
+    /// port, behind its own authentication and connection limits (audit
+    /// C-16). `OTEL_EXPORTER_PROMETHEUS_HOST` and `_PORT` are then not read.
+    #[cfg(feature = "otel-prometheus")]
+    #[must_use]
+    pub const fn without_prometheus_listener(mut self) -> Self {
+        self.prometheus_listener = false;
         self
     }
 

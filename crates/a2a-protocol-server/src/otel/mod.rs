@@ -72,6 +72,8 @@ pub(crate) use instrument::GlobalInstrument;
 #[cfg(feature = "otlp")]
 #[allow(deprecated)] // re-exported until their removal, no earlier than 0.17.0
 pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};
+#[cfg(feature = "otel-prometheus")]
+pub use telemetry::PrometheusScrape;
 #[cfg(feature = "otlp")]
 pub use telemetry::{
     LANGFUSE_SELF_HOSTED, Langfuse, OtlpCompression, OtlpProtocol, Telemetry, TelemetryBuilder,

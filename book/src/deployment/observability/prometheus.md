@@ -125,6 +125,31 @@ no other exporter named gets its default; until 2026-11-01 it was an error and
 the process did not start. The feature is off by
 default, in the SDK as well, and `deploy-agent` is built without it.
 
+The listener serves at most 16 connections at once (a further one waits in the
+listen backlog), one request per connection (`Connection: close`), and closes
+any connection after 30 seconds however far it got, with 10 seconds for the
+request's headers; until 2026-11-04 it took every connection and kept each
+open as long as the client liked (audit C-16).
+
+### On the application's own port
+
+To serve `/metrics` behind the application's own authentication and
+connection limits, bind nothing and serve the same text yourself:
+
+```rust,ignore
+let telemetry = Telemetry::builder()
+    .without_prometheus_listener() // OTEL_EXPORTER_PROMETHEUS_HOST/_PORT are not read
+    .build()?;
+let scrape = telemetry.prometheus().expect("OTEL_METRICS_EXPORTER=prometheus");
+// In your router, behind your auth:
+//   GET /metrics -> 200, Content-Type: PrometheusScrape::CONTENT_TYPE,
+//                   body: scrape.render()?
+```
+
+`Telemetry::prometheus()` is `None` unless the `prometheus` exporter is
+chosen, and `prometheus_addr()` is `None` without the listener. The default
+host stays `localhost`, the specification's (ADR 0038 §3).
+
 A scraped agent has an `up` series; one that pushes has none, which is why
 the shipped `A2AAgentSilent` alert watches `target_info` instead.
 
