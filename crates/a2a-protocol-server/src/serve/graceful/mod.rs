@@ -111,7 +111,6 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
 
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
@@ -418,11 +417,16 @@ impl Server {
             None => None,
         };
 
+        // One deadline for the drain: the HTTP connections and the upgraded
+        // ones (ADR 0055) close side by side within it, not one after the
+        // other.
+        let deadline = tokio::time::Instant::now() + config.drain_timeout;
         let mut report = drain(
             graceful,
-            dispatcher.close_upgraded(config.drain_timeout),
+            dispatcher
+                .close_upgraded(deadline.saturating_duration_since(tokio::time::Instant::now())),
             accepted.load(Ordering::Relaxed),
-            config.drain_timeout,
+            deadline,
         )
         .await;
         report.tasks = tasks;
@@ -436,7 +440,7 @@ async fn drain(
     graceful: hyper_util::server::graceful::GracefulShutdown,
     upgraded: impl Future<Output = bool>,
     accepted: u64,
-    timeout: Duration,
+    deadline: tokio::time::Instant,
 ) -> ServeReport {
     // `count()` is read before the race because `shutdown()` consumes the
     // handle: after it, there is nothing left to ask how many were open.
@@ -447,8 +451,10 @@ async fn drain(
         "shutdown signalled; draining connections"
     );
 
-    let (http, upgraded) =
-        tokio::join!(tokio::time::timeout(timeout, graceful.shutdown()), upgraded);
+    let (http, upgraded) = tokio::join!(
+        tokio::time::timeout_at(deadline, graceful.shutdown()),
+        upgraded
+    );
     if http.is_ok() && upgraded {
         ServeReport {
             accepted,
