@@ -30,6 +30,8 @@ pub struct TelemetryBuilder {
     proxy: ProxySetting,
     detect_resource: bool,
     startup_summary: bool,
+    /// Set in code; `A2A_LOG_FORMAT` otherwise.
+    console_format: Option<super::ConsoleFormat>,
     ca_pem: Vec<u8>,
     client_identity: Option<ClientIdentity>,
     langfuse: Option<Langfuse>,
@@ -76,6 +78,7 @@ impl TelemetryBuilder {
             proxy: ProxySetting::default(),
             detect_resource: true,
             startup_summary: true,
+            console_format: None,
             ca_pem: Vec::new(),
             client_identity: None,
             langfuse: None,
@@ -306,6 +309,16 @@ impl TelemetryBuilder {
     #[must_use]
     pub const fn without_prometheus_listener(mut self) -> Self {
         self.prometheus_listener = false;
+        self
+    }
+
+    /// The format `install_subscriber` prints in: text (the default) or one
+    /// JSON object per line with `trace_id`, `span_id` and `trace_flags`
+    /// inside a span (audit C-06). Wins over `A2A_LOG_FORMAT` (`json` or
+    /// `text`), which applies when this is not called.
+    #[must_use]
+    pub const fn with_console_format(mut self, format: super::ConsoleFormat) -> Self {
+        self.console_format = Some(format);
         self
     }
 

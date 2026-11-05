@@ -76,8 +76,8 @@ pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};
 pub use telemetry::PrometheusScrape;
 #[cfg(feature = "otlp")]
 pub use telemetry::{
-    LANGFUSE_SELF_HOSTED, Langfuse, OtlpCompression, OtlpProtocol, Telemetry, TelemetryBuilder,
-    TelemetryError,
+    ConsoleFormat, LANGFUSE_SELF_HOSTED, Langfuse, OtlpCompression, OtlpProtocol, Telemetry,
+    TelemetryBuilder, TelemetryError,
 };
 
 // ── OtelMetrics ──────────────────────────────────────────────────────────────

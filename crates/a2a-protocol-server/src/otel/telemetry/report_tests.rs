@@ -290,3 +290,43 @@ fn init_exports_by_default_and_init_where_configured_only_where_pointed() {
         );
     }
 }
+
+/// `A2A_LOG_FORMAT` chooses the console format unless the code does, and a
+/// value it does not know is a notice, not an error (audit C-06, F3).
+#[test]
+fn the_console_format_comes_from_the_code_then_the_variable() {
+    let off = [
+        ("OTEL_TRACES_EXPORTER", "none"),
+        ("OTEL_METRICS_EXPORTER", "none"),
+        ("OTEL_LOGS_EXPORTER", "none"),
+    ];
+    let build = |extra: &[(&str, &str)], code: Option<ConsoleFormat>| {
+        let mut pairs = off.to_vec();
+        pairs.extend_from_slice(extra);
+        let builder = with_env(&pairs);
+        match code {
+            Some(format) => builder.with_console_format(format),
+            None => builder,
+        }
+        .build()
+        .unwrap()
+    };
+    assert_eq!(build(&[], None).console_format, ConsoleFormat::Text);
+    assert_eq!(
+        build(&[("A2A_LOG_FORMAT", "json")], None).console_format,
+        ConsoleFormat::Json
+    );
+    assert_eq!(
+        build(&[("A2A_LOG_FORMAT", "json")], Some(ConsoleFormat::Text)).console_format,
+        ConsoleFormat::Text
+    );
+    let t = build(&[("A2A_LOG_FORMAT", "yaml")], None);
+    assert_eq!(t.console_format, ConsoleFormat::Text);
+    assert!(
+        t.notices()
+            .iter()
+            .any(|n| n.starts_with("A2A_LOG_FORMAT=\"yaml\"")),
+        "{:?}",
+        t.notices()
+    );
+}

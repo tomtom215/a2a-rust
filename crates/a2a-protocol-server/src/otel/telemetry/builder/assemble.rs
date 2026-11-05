@@ -132,6 +132,12 @@ impl TelemetryBuilder {
             failures: Vec::new(),
             disabled: config::sdk_disabled(&*self.env),
             startup_summary: self.startup_summary,
+            console_format: self.console_format.unwrap_or_else(|| {
+                super::super::console_format::from_env(
+                    (self.env)(super::super::console_format::VARIABLE).as_deref(),
+                    &self.notes,
+                )
+            }),
             logs_on_console: chosen[2].console,
             report: Vec::new(),
             notices: Vec::new(),

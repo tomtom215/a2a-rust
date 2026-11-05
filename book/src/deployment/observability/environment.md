@@ -60,6 +60,7 @@ signal's own form wins over the general one.
 | `OTEL_METRIC_EXPORT_INTERVAL` | — | — | — | 60 s | Milliseconds between metric exports, read by the OpenTelemetry SDK |
 | `OTEL_SPAN_*_LIMIT` | — | — | — | the SDK's | Span attribute, event and link limits, read by the OpenTelemetry SDK |
 | `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | metrics only | — | — | cumulative | `delta` for a backend that wants it, read by `opentelemetry-otlp`. **Prometheus refuses delta** unless it converts it: without `--enable-feature=otlp-deltatocumulative` its OTLP receiver answers HTTP 500 ("invalid temporality and type combination") and the series never appear, so every shipped panel and rule goes empty. The compose stack enables the conversion; [Prometheus](./prometheus.md#delta-temporality) has the details |
+| `A2A_LOG_FORMAT` | — | `with_console_format` | **The code** | `text` | `json` prints one JSON object per line with `trace_id`, `span_id`, `trace_flags`; see [Logs](./logs.md#json-lines-with-the-trace-context) |
 | `RUST_LOG` | — | — | — | `warn` | What `install_subscriber` prints to standard error, in `target=level` form, not what is exported; see [Logs](./logs.md#what-is-exported-and-what-is-printed) |
 | `NO_COLOR` | — | — | — | unset | Any non-empty value turns off colour in what `install_subscriber` prints; colour is used only on a terminal anyway |
 | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | — | `Langfuse::new` | — | base URL `http://localhost:3000` | Read by `Langfuse::from_env()`; see [Langfuse](../langfuse.md) |

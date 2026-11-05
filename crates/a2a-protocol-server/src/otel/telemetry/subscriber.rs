@@ -103,7 +103,12 @@ impl Telemetry {
             .flatten();
         let installed = tracing_subscriber::registry()
             .with(self.layer())
-            .with(diagnostics::layer(filter, self.logs_on_console, app))
+            .with(diagnostics::layer(
+                filter,
+                self.logs_on_console,
+                app,
+                self.console_format,
+            ))
             .try_init()
             .is_ok();
         if installed {

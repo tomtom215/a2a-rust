@@ -232,7 +232,7 @@ pub(super) fn span_line(span: &SpanData) -> String {
         .duration_since(span.start_time)
         .unwrap_or_default();
     let mut line = format!(
-        "{} SPAN {} {kind} {} trace={} span={}",
+        "{} SPAN {} {kind} {} trace_id={} span_id={}",
         rfc3339(span.start_time),
         text(&span.name),
         human(took),
@@ -278,7 +278,7 @@ pub(super) fn log_line(record: &opentelemetry_sdk::logs::SdkLogRecord) -> String
         None => {}
     }
     if let Some(ctx) = record.trace_context() {
-        let _ = write!(line, " trace={} span={}", ctx.trace_id, ctx.span_id);
+        let _ = write!(line, " trace_id={} span_id={}", ctx.trace_id, ctx.span_id);
     }
     for (key, v) in record.attributes_iter() {
         let _ = write!(line, " {key}={}", any_value(v));

@@ -38,6 +38,7 @@ mod builder;
 mod compression;
 mod config;
 mod console;
+mod console_format;
 mod counting;
 mod detect;
 mod diagnostics;
@@ -66,6 +67,7 @@ use opentelemetry_sdk::trace::SdkTracerProvider;
 pub use builder::TelemetryBuilder;
 pub use compression::OtlpCompression;
 pub use config::OtlpProtocol;
+pub use console_format::ConsoleFormat;
 pub use error::TelemetryError;
 pub use langfuse::{LANGFUSE_SELF_HOSTED, Langfuse};
 #[cfg(feature = "otel-prometheus")]
@@ -145,6 +147,8 @@ pub struct Telemetry {
     disabled: bool,
     /// Whether `install_subscriber` logs [`describe`](Self::describe).
     startup_summary: bool,
+    /// What `install_subscriber` prints to standard error.
+    console_format: ConsoleFormat,
     /// Log records go to standard output (`OTEL_LOGS_EXPORTER=console`), so
     /// `install_subscriber` need not print them again on standard error.
     logs_on_console: bool,
