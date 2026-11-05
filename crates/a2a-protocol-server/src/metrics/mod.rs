@@ -393,6 +393,14 @@ pub mod push_outcome {
     /// reads its configs once, so its later events are counted too, and the
     /// config takes no delivery after that (audit D-05).
     pub const GONE: &str = "gone";
+    /// A delivery not attempted: it waited for a slot in the push gate for
+    /// all of `push_delivery_timeout`.
+    ///
+    /// The gate is `HandlerLimits::push_max_in_flight`, `_per_partition` and
+    /// `_per_host`. No request was made, so the webhook is not counted as failing
+    /// (audit NEW-f-2). Until 0.16.0 the wait counted against the delivery's
+    /// timeout and such a delivery was reported as [`TIMEOUT`].
+    pub const THROTTLED: &str = "throttled";
     /// No longer reported.
     ///
     /// It counted configs the per-event delivery budget never reached; since

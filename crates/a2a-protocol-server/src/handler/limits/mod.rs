@@ -175,11 +175,16 @@ pub struct HandlerLimits {
     /// 100 x N outbound connections, for a caller who needs no credentials
     /// where the agent is anonymous (audit N-SEC-6). A delivery beyond the
     /// bound waits for one to finish, so every config is still attempted
-    /// (spec section 4.3.3); the wait counts against
-    /// [`push_delivery_timeout`](Self::push_delivery_timeout), so a gate that
-    /// stays full shows as `timeout` outcomes. Each delivery that waited is
-    /// reported once to [`Metrics::on_error`](crate::metrics::Metrics::on_error)
-    /// as `("PushDelivery", "push_throttled")`.
+    /// (spec section 4.3.3). The wait is bounded by
+    /// [`push_delivery_timeout`](Self::push_delivery_timeout) but does not
+    /// spend it: the webhook's time starts when the delivery is let through,
+    /// and one that is never let through ends as
+    /// [`push_outcome::THROTTLED`](crate::metrics::push_outcome::THROTTLED)
+    /// without a request (until 0.16.0 the wait counted against the timeout,
+    /// so a full gate showed as `timeout` outcomes; audit NEW-f-2). Each
+    /// delivery that waited is reported once to
+    /// [`Metrics::on_error`](crate::metrics::Metrics::on_error) as
+    /// `("PushDelivery", "push_throttled")`.
     ///
     /// The bound covers every sender behind a handler, a custom one
     /// included; a sender used outside a handler is not bounded. 512 is a
@@ -199,9 +204,27 @@ pub struct HandlerLimits {
     /// callbacks of every agent behind it is a legitimate single destination
     /// with a great many deliveries. A receiver that needs more raises it.
     /// Names that mean the same destination (case, a trailing dot, an
-    /// address written in decimal or hex) share one count. A delivery beyond
-    /// the bound waits, as for [`push_max_in_flight`](Self::push_max_in_flight).
+    /// address written in decimal or hex) share one count. The same bound
+    /// applies to each address the bundled sender connects to, once the name
+    /// is resolved, port aside: names that resolve to one address (a
+    /// wildcard record pointing at a victim) share that address's count
+    /// (audit NEW-d-3). A delivery beyond the bound waits, as for
+    /// [`push_max_in_flight`](Self::push_max_in_flight).
     pub push_max_in_flight_per_host: usize,
+    /// The most deliveries in flight at once for one store partition: a
+    /// tenant, or a tenant and caller where callers are isolated
+    /// ([`TenantContext::partition`](crate::store::tenant::TenantContext::partition)).
+    /// Default: 256, half of [`push_max_in_flight`](Self::push_max_in_flight).
+    /// Zero is read as one.
+    ///
+    /// Without it one caller with slow webhooks (64 per destination, so eight
+    /// ports on one tarpit) held all 512 overall permits, and every other
+    /// tenant's deliveries waited behind it (audit NEW-f-2). With it, one
+    /// partition leaves at least the other half to the rest. Callers that are
+    /// not told apart (one tenant, callers not isolated) are one partition:
+    /// a deployment with one partition runs at most this many at once, so
+    /// raise it with `push_max_in_flight` there.
+    pub push_max_in_flight_per_partition: usize,
     /// How long the blocking send path waits, after the executor has
     /// finished, for the event queue to close. Also how long a send that
     /// continues a parked task waits for the task's previous turn to finish.
@@ -409,6 +432,7 @@ impl Default for HandlerLimits {
             push_remove_gone: true,
             push_max_in_flight: 512,
             push_max_in_flight_per_host: 64,
+            push_max_in_flight_per_partition: 256,
             executor_drain_timeout: Duration::from_secs(5),
             max_artifacts_per_task: 1000,
             max_context_locks: 10_000,

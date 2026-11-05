@@ -214,6 +214,15 @@ impl HandlerLimits {
         self
     }
 
+    /// Sets how many webhook deliveries one store partition may have in
+    /// flight; see
+    /// [`push_max_in_flight_per_partition`](Self::push_max_in_flight_per_partition).
+    #[must_use]
+    pub const fn with_push_max_in_flight_per_partition(mut self, max: usize) -> Self {
+        self.push_max_in_flight_per_partition = max;
+        self
+    }
+
     /// Sets the maximum number of push notification configs per task.
     #[must_use]
     pub const fn with_max_push_configs_per_task(mut self, max: usize) -> Self {

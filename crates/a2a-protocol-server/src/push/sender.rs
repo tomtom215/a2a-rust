@@ -626,6 +626,15 @@ impl PushSender for HttpPushSender {
                 validate_webhook_url_with_dns(url, self.dns_timeout).await?
             };
 
+            // The gate's per-destination bound, on the addresses this
+            // delivery will reach rather than the name it was given (audit
+            // NEW-d-3, ADR 0043). Held until the delivery ends.
+            let addresses: Vec<std::net::IpAddr> = validated.as_ref().map_or_else(
+                || super::gate::literal_ip(url).into_iter().collect(),
+                |addrs| addrs.iter().map(SocketAddr::ip).collect(),
+            );
+            let _address_hold = super::gate::admission::hold_addresses(&addresses).await;
+
             self.deliver(url, event, config, validated).await
         })
     }

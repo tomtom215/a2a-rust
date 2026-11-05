@@ -21,6 +21,7 @@ use crate::push::{InMemoryPushConfigStore, PushConfigStore};
 
 use super::*;
 
+mod admission;
 mod budget;
 mod config_list;
 mod dead_webhook;

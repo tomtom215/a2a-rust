@@ -13,6 +13,7 @@ use a2a_protocol_types::task::TaskId;
 
 use crate::handler::limits::HandlerLimits;
 use crate::metrics::{Metrics, push_outcome};
+use crate::push::gate::admission::Admission;
 use crate::push::{PushConfigStore, PushSender};
 
 mod lanes;
@@ -218,8 +219,11 @@ pub async fn deliver_to_every_config(
     }
 }
 
-/// One delivery to one config, bounded by `timeout`; its outcome label.
+/// One delivery to one config; its outcome label.
 ///
+/// The delivery has `push_delivery_timeout` to be let through the push gate,
+/// and its webhook has the whole of it again from then (ADR 0043). One cut
+/// off while it still waited made no request: [`push_outcome::THROTTLED`].
 async fn deliver_once(
     task_id: &TaskId,
     sender: &dyn PushSender,
@@ -229,19 +233,18 @@ async fn deliver_once(
     timeout_label: &'static str,
 ) -> &'static str {
     let _ = task_id;
-    match tokio::time::timeout(
-        push_delivery_timeout,
-        sender.send(&config.url, event, config),
-    )
-    .await
-    {
-        Ok(Ok(())) => push_outcome::DELIVERED,
+    let admission = Admission::new(push_delivery_timeout);
+    let send = admission.scope(sender.send(&config.url, event, config));
+    match within(&admission, send).await {
+        Some(Ok(())) => push_outcome::DELIVERED,
         // Skipped, not failed: the webhook is suspended, and says so once
         // when it is (`push::health`), not on every event it skips.
-        Ok(Err(err)) if crate::push::health::outcome_of(&err) == Some(push_outcome::SUSPENDED) => {
+        Some(Err(err))
+            if crate::push::health::outcome_of(&err) == Some(push_outcome::SUSPENDED) =>
+        {
             push_outcome::SUSPENDED
         }
-        Ok(Err(err)) if crate::push::health::outcome_of(&err) == Some(push_outcome::GONE) => {
+        Some(Err(err)) if crate::push::health::outcome_of(&err) == Some(push_outcome::GONE) => {
             trace_warn!(
                 task_id = %task_id,
                 url = %crate::push::webhook::origin_for_log(&config.url),
@@ -249,7 +252,7 @@ async fn deliver_once(
             );
             push_outcome::GONE
         }
-        Ok(Err(_err)) => {
+        Some(Err(_err)) => {
             trace_warn!(
                 task_id = %task_id,
                 // The origin only: a webhook's path or query is often its
@@ -260,7 +263,15 @@ async fn deliver_once(
             );
             push_outcome::FAILED
         }
-        Err(_) => {
+        None if admission.waiting() => {
+            trace_warn!(
+                task_id = %task_id,
+                url = %crate::push::webhook::origin_for_log(&config.url),
+                "push notification not sent: it waited push_delivery_timeout for a slot in the push gate"
+            );
+            push_outcome::THROTTLED
+        }
+        None => {
             trace_warn!(
                 task_id = %task_id,
                 url = %crate::push::webhook::origin_for_log(&config.url),
@@ -268,6 +279,22 @@ async fn deliver_once(
                 "push notification delivery timed out"
             );
             timeout_label
+        }
+    }
+}
+
+/// Runs `send` until it ends or `admission`'s deadline passes, a deadline the
+/// gate moves each time it lets the delivery through. `None` when cut off.
+async fn within<F: std::future::Future>(admission: &Admission, send: F) -> Option<F::Output> {
+    let mut send = std::pin::pin!(send);
+    loop {
+        let Some(deadline) = admission.deadline() else {
+            return Some(send.await);
+        };
+        match tokio::time::timeout_at(deadline, send.as_mut()).await {
+            Ok(answer) => return Some(answer),
+            Err(_) if admission.deadline() == Some(deadline) => return None,
+            Err(_) => {}
         }
     }
 }
