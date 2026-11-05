@@ -268,9 +268,28 @@ impl PostgresTaskStore {
         &self,
         policy: &super::retention::RetentionPolicy,
     ) -> A2aResult<super::retention::PurgeReport> {
-        super::retention::postgres::purge(&self.pool, "tasks", idempotency::EXPIRE_SQL, policy)
+        let mut report =
+            super::retention::postgres::purge(&self.pool, "tasks", idempotency::EXPIRE_SQL, policy)
+                .await
+                .map_err(to_a2a_error)?;
+        if let Some(keep) = policy.max_events_per_live_task {
+            let over: Vec<(String,)> = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query_as(event_log::OVER_SQL)
+                    .bind(super::retention::compact::over(keep))
+                    .fetch_all(&self.pool)
+            })
             .await
-            .map_err(to_a2a_error)
+            .map_err(to_a2a_error)?;
+            for (task_id,) in over {
+                report.events_compacted += super::retention::compact::compact_task(
+                    self,
+                    &a2a_protocol_types::task::TaskId::new(task_id),
+                    keep,
+                )
+                .await?;
+            }
+        }
+        Ok(report)
     }
 }
 

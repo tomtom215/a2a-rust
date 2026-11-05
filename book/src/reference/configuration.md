@@ -94,6 +94,21 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 | `idempotency_key_ttl` | `Option<Duration>` | 24 hours | How long an idempotency key is honoured, matching the SQL stores' one day; `None` keeps keys forever |
 | `max_idempotency_keys` | `Option<usize>` | 100,000 | How many keys the index holds at once (per store, so per tenant partition); a send with a new key past it is refused with `503` / `RESOURCE_EXHAUSTED` and runs nothing, and no held key is evicted; `None` is no limit |
 
+### RetentionPolicy
+
+What `purge_expired` on the SQL stores removes; built with
+`RetentionPolicy::new(terminal_max_age)` and the `with_*` setters. See
+[Retention, Erasure and Audit](../building-agents/stores/retention.md) for why a persistent store
+deletes nothing unless asked.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `terminal_max_age` | `Duration` | — | Terminal tasks whose last update is older than this are deleted; required by `new` |
+| `batch_size` | `u32` | 1,000 | Rows per `DELETE`; zero is taken as one |
+| `idempotency_key_max_age` | `Option<Duration>` | 24 hours | Idempotency keys older than this are deleted, never below `terminal_max_age`; `None` keeps them |
+| `max_batches` | `Option<u32>` | `None` | Stop a sweep after this many batches; `None` runs until nothing is left |
+| `max_events_per_live_task` | `Option<u64>` | `None` | Compact each live task's event log to its newest this many events, dropping only events the stored task already reflects; a reader resuming from before the cut is answered with the snapshot. `0` is taken as `1`. `None` lets a live task's log grow for as long as it runs (ADR 0047) |
+
 ### InMemoryPushConfigStore
 
 | Constructor | Default | Description |

@@ -1878,6 +1878,17 @@ impl RequestHandlerBuilder {
     }
 }
 
+impl RequestHandlerBuilder {
+    /// The agent card setting, as `Debug` names it.
+    const fn card_setting(&self) -> &'static str {
+        match self.agent_card {
+            CardSetting::Unset => "unset",
+            CardSetting::Card(_) => "card",
+            CardSetting::Without => "without",
+        }
+    }
+}
+
 impl std::fmt::Debug for RequestHandlerBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut d = f.debug_struct("RequestHandlerBuilder");
@@ -1888,14 +1899,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("push_sender", &self.push_sender.is_some())
             .field("push_outbox", &self.push_outbox.is_some())
             .field("interceptors", &self.interceptors)
-            .field(
-                "agent_card",
-                &match self.agent_card {
-                    CardSetting::Unset => "unset",
-                    CardSetting::Card(_) => "card",
-                    CardSetting::Without => "without",
-                },
-            )
+            .field("agent_card", &self.card_setting())
             .field("extended_agent_card", &self.extended_agent_card.is_some())
             .field(
                 "extended_card_provider",

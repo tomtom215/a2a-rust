@@ -1,13 +1,14 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
-# ADR 0047: A process-wide byte budget over buffered events; blob offload and live-log compaction stay with the executor and the store
+# ADR 0047: A process-wide byte budget over buffered events, and compaction of live tasks' logs; blob offload stays with the executor
 
 **Date:** 2026-11-04
 **Status:** Accepted (0.16.0; audit H13). Built: the byte budget
-(`HandlerLimits::with_max_buffered_event_bytes`). Decided and not built in
-this change: blob offload (option B), live-log compaction (option C), the SQL
-`save_appending_history` overrides; each is said below, with why.
+(`HandlerLimits::with_max_buffered_event_bytes`) and live-log compaction
+(`RetentionPolicy::max_events_per_live_task`, `TaskStore::trim_event_log`;
+amended 2026-11-05). Decided and not built: blob offload (option B) and the
+SQL `save_appending_history` overrides; each is said below, with why.
 **Author:** Tom F.
 
 ---
@@ -77,15 +78,49 @@ rewriting; the book's payload page says to emit `url` parts above a size, and
 `max_event_size` refuses what is too large. A `BlobStore` hook can be added
 later without a break, should a deployment show the executor cannot do it.
 
-### C: live-log compaction (not built here)
+### C: live-log compaction (built, amended 2026-11-05)
 
 Compaction needs a store method that trims a live task's log below a
 position and a resume contract (a reader from before the trim gets the
-snapshot, not a silent gap). Both are store work (the event-log ADR 0012 and
-its stores). Decision: `RetentionPolicy::max_events_per_live_task`, compacting
-to the stored snapshot, with resume from before the trim answered by the
-snapshot frame as a lagged reader is today. Left to the store work, where the
-SQL trims and their tests belong.
+snapshot, not a silent gap). Decision: `RetentionPolicy::max_events_per_live_task`,
+compacting to the stored snapshot, with resume from before the trim answered
+by the snapshot frame as a lagged reader is today. As built:
+
+* `TaskStore::trim_event_log(task_id, below)` drops the task's events below
+  `below` and returns how many. Its **default is `unsupported_operation`**,
+  as the other event-log methods default: a sweep that asks a store which
+  cannot trim learns so, rather than reading `0` as "nothing needed
+  trimming". Nothing in the handler calls it, so the default breaks no
+  out-of-tree store. Implemented by the in-memory, tenant-aware in-memory,
+  SQLite, tenant SQLite, PostgreSQL and tenant PostgreSQL stores; the
+  traced, encrypted and audited wrappers forward it.
+* `purge_expired` on the four SQL stores, with the policy set, finds the
+  tasks whose logs hold more than `max` events and compacts each live one
+  (`store::retention::compact`): the cut is below the oldest of the newest
+  `max` events, never past the stored task's position plus one (so every
+  event dropped is one the snapshot reflects), and never the last event, from
+  which a continued task numbers on (`0` is taken as `1`). A terminal task is
+  left whole (retention purges it by age), and so is a task stored without a
+  position (what its snapshot holds is unknown). The tenant stores scope each
+  task's partition themselves, since the sweep runs outside any request.
+  `PurgeReport::events_compacted` counts the events dropped.
+* The resume contract needed no new code: `earliest_event_seq` already
+  reports the cut, `event_log_covers` answers `false` for a reader from
+  before it, and the subscription answers that reader with the snapshot and
+  a lagged live stream with `streamLagged`, as for the in-memory store's own
+  bound. The in-memory store keeps that bound
+  (`TaskStoreConfig::max_events_per_task`, 512 by default), which compacts
+  its live logs on every append; the policy is for the SQL stores, whose
+  logs had none.
+* Not built: holds (`TaskStore::hold_events`) on the SQL stores. A stream
+  that still owes events below a cut ends with `streamLagged` and resumes
+  from the snapshot; the in-memory store spares them up to its ceiling.
+
+Tests: `store::retention::compact_tests` runs one contract on all six stores
+(PostgreSQL in a schema of its own): the newest ten kept, nothing past the
+snapshot, terminal and unpositioned tasks whole, `event_log_covers` false
+before the cut and true at it, and a task that writes 50 events between five
+sweeps holding exactly its newest ten after each.
 
 ### The SQL `save_appending_history` overrides (not built here)
 
@@ -102,4 +137,5 @@ trait's doc is corrected to say the SQL stores do not override it.
 * With a budget, a stalled subscriber can no longer pin memory past it; the
   cost is that writers slow down or fail when the budget is spent, which is
   the point of a budget.
-* B, C and the SQL overrides remain open and are listed for the maintainer.
+* B and the SQL overrides remain open and are listed for the maintainer; C is
+  built (2026-11-05).

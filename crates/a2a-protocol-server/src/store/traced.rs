@@ -347,6 +347,10 @@ impl TaskStore for TracedTaskStore {
             self.inner.event_log_covers(task_id, after_seq),
         )
     }
+
+    fn trim_event_log<'a>(&'a self, task_id: &'a TaskId, below: u64) -> Fut<'a, u64> {
+        self.run("trim_event_log", self.inner.trim_event_log(task_id, below))
+    }
 }
 
 #[cfg(test)]

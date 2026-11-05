@@ -146,6 +146,25 @@ pub(super) const SQLITE_EARLIEST_SEQ: &str = "SELECT MIN(seq) FROM tenant_task_e
 pub(super) const PG_EARLIEST_SEQ: &str = "SELECT MIN(seq) FROM tenant_task_events \
      WHERE tenant_id = $1 AND task_id = $2";
 
+/// Drops a task's events below a position: `TaskStore::trim_event_log`.
+#[cfg(feature = "sqlite")]
+pub(super) const SQLITE_TRIM_BELOW: &str =
+    "DELETE FROM tenant_task_events WHERE tenant_id = ?1 AND task_id = ?2 AND seq < ?3";
+
+#[cfg(feature = "postgres")]
+pub(super) const PG_TRIM_BELOW: &str =
+    "DELETE FROM tenant_task_events WHERE tenant_id = $1 AND task_id = $2 AND seq < $3";
+
+/// The (partition, task) pairs whose logs hold more than the first
+/// parameter's events: the candidates for compaction.
+#[cfg(feature = "sqlite")]
+pub(super) const SQLITE_OVER: &str = "SELECT tenant_id, task_id FROM tenant_task_events \
+     GROUP BY tenant_id, task_id HAVING COUNT(*) > ?1 ORDER BY tenant_id, task_id";
+
+#[cfg(feature = "postgres")]
+pub(super) const PG_OVER: &str = "SELECT tenant_id, task_id FROM tenant_task_events \
+     GROUP BY tenant_id, task_id HAVING COUNT(*) > $1 ORDER BY tenant_id, task_id";
+
 /// The payload stored at a position, for classifying an append that changed
 /// no row: the same bytes are a replay, different bytes mean another writer
 /// holds the position and this event was discarded.

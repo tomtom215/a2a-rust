@@ -958,6 +958,23 @@ impl TaskStore for InMemoryTaskStore {
         })
     }
 
+    fn trim_event_log<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        below: u64,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            let mut store = self.data.write().await;
+            let dropped = store.entries.get_mut(task_id).map_or(0, |entry| {
+                let before = entry.log.len();
+                entry.log.retain(|event| event.seq >= below);
+                before - entry.log.len()
+            });
+            drop(store);
+            Ok(u64::try_from(dropped).unwrap_or(u64::MAX))
+        })
+    }
+
     fn last_event_seq<'a>(
         &'a self,
         task_id: &'a TaskId,

@@ -255,3 +255,18 @@ fn the_held_events_ceiling_is_a_multiple_of_the_bound() {
     assert_eq!(ceiling(None, Some(3)), None, "an unbounded log has none");
     assert_eq!(ceiling(Some(usize::MAX), Some(2)), Some(usize::MAX));
 }
+
+/// The default `trim_event_log` (ADR 0047): a store that cannot trim says so,
+/// rather than reporting that nothing needed trimming.
+#[tokio::test]
+async fn a_store_that_keeps_no_log_cannot_trim_it() {
+    let refused = MinimalStore
+        .trim_event_log(&TaskId::new("t"), 5)
+        .await
+        .unwrap_err();
+    assert!(
+        refused.message.contains("cannot trim"),
+        "{}",
+        refused.message
+    );
+}

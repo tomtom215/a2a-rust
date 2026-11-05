@@ -909,6 +909,46 @@ pub trait TaskStore: Send + Sync + 'static {
                 .is_none_or(|earliest| earliest <= after_seq.saturating_add(1)))
         })
     }
+
+    /// Drops this task's events at positions below `below`, and returns how
+    /// many it dropped: the compaction of a live task's log (audit H13, ADR
+    /// 0047, option C), which
+    /// [`RetentionPolicy::max_events_per_live_task`](crate::store::RetentionPolicy::max_events_per_live_task)
+    /// drives from the SQL stores' `purge_expired`.
+    ///
+    /// The store trims exactly what it is asked to. Choosing `below` is the
+    /// caller's: never past the stored snapshot's position plus one, so every
+    /// event dropped is one the snapshot already reflects. A reader that then
+    /// asks to resume from before `below` is told the log no longer covers it
+    /// ([`event_log_covers`](TaskStore::event_log_covers) answers `false`) and
+    /// is answered with the snapshot, as a lagged reader is, never with a
+    /// silently gapped replay. That is why a store that implements this must
+    /// also implement [`earliest_event_seq`](TaskStore::earliest_event_seq).
+    ///
+    /// # The default, and why it is an error
+    ///
+    /// `unsupported_operation`, as the other log methods default: a sweep
+    /// that asks a store which cannot trim learns so, rather than reading
+    /// `0` as "nothing needed trimming". It is new on a trait out-of-tree
+    /// stores implement, and an error breaks none of them: nothing in the
+    /// handler calls it.
+    ///
+    /// # Errors
+    ///
+    /// [`A2aError`](a2a_protocol_types::error::A2aError) if the store fails,
+    /// or `unsupported_operation` when it cannot trim its log.
+    fn trim_event_log<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        below: u64,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        let _ = (task_id, below);
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                "this task store cannot trim its event log",
+            ))
+        })
+    }
 }
 
 #[cfg(test)]

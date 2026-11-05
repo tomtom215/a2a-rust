@@ -220,14 +220,31 @@ impl TenantAwarePostgresTaskStore {
         &self,
         policy: &super::retention::RetentionPolicy,
     ) -> A2aResult<super::retention::PurgeReport> {
-        super::retention::postgres::purge(
+        let mut report = super::retention::postgres::purge(
             &self.pool,
             "tenant_tasks",
             crate::store::tenant_idempotency::PG_EXPIRE,
             policy,
         )
         .await
-        .map_err(|e| to_a2a_error(&e))
+        .map_err(|e| to_a2a_error(&e))?;
+        if let Some(keep) = policy.max_events_per_live_task {
+            let over: Vec<(String, String)> = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query_as(crate::store::tenant_event_log::PG_OVER)
+                    .bind(super::retention::compact::over(keep))
+                    .fetch_all(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
+            for (partition, task_id) in over {
+                let task_id = a2a_protocol_types::task::TaskId::new(task_id);
+                let compact = super::retention::compact::compact_task(self, &task_id, keep);
+                report.events_compacted +=
+                    crate::store::tenant::TenantContext::scope_partition(&partition, "", compact)
+                        .await?;
+            }
+        }
+        Ok(report)
     }
 }
 
@@ -259,6 +276,7 @@ const SAVE_SQL: &str = concat!(
 
 mod caller_keys;
 mod list;
+mod log_bounds;
 mod store_impl;
 
 #[cfg(test)]
