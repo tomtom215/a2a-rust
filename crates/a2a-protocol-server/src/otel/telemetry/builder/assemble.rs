@@ -92,6 +92,12 @@ impl TelemetryBuilder {
             self.meter_provider(&mut telemetry, metrics, runtime.as_ref(), &resource)?;
         telemetry.logger =
             self.logger_provider(&mut telemetry, logs, runtime.as_ref(), &resource)?;
+        if let Some(meter) = &telemetry.meter {
+            super::super::self_metrics::observe_failed_exports(
+                meter,
+                telemetry.failed_totals.clone(),
+            );
+        }
         telemetry.runtime = runtime;
         telemetry.notices.extend(self.base_endpoint_notice([
             chosen[0].otlp,
@@ -130,6 +136,7 @@ impl TelemetryBuilder {
                 .map(|name| name.replace('-', "_")),
             runtime: None,
             failures: Vec::new(),
+            failed_totals: Vec::new(),
             disabled: config::sdk_disabled(&*self.env),
             startup_summary: self.startup_summary,
             console_format: self.console_format.unwrap_or_else(|| {

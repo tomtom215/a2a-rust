@@ -53,6 +53,7 @@ mod propagators;
 mod resource_env;
 mod runtime;
 mod selection;
+mod self_metrics;
 mod subscriber;
 mod upstream;
 
@@ -142,6 +143,8 @@ pub struct Telemetry {
     /// Each signal's count of lost exports since the last report
     /// (`counting.rs`).
     failures: Vec<(Signal, Arc<AtomicU64>)>,
+    /// The same, never reset, for `a2a.telemetry.export.failed` (audit C-13).
+    failed_totals: Vec<(Signal, Arc<AtomicU64>)>,
     /// `OTEL_SDK_DISABLED` was set: nothing is built or exported. The printing
     /// layer is still installed (audit C-07).
     disabled: bool,
@@ -239,13 +242,17 @@ impl Telemetry {
     fn counting<E>(&mut self, signal: Signal, exporter: E, target: &Target) -> Counting<E> {
         let counter = Arc::new(AtomicU64::new(0));
         self.failures.push((signal, Arc::clone(&counter)));
-        Counting::new(exporter, counter).reporting(
-            signal,
-            &target.destination,
-            hints::Route::of(target.protocol, &target.destination),
-            target.proxy_display(),
-            Arc::clone(&target.cause),
-        )
+        let total = Arc::new(AtomicU64::new(0));
+        self.failed_totals.push((signal, Arc::clone(&total)));
+        Counting::new(exporter, counter)
+            .with_total(total)
+            .reporting(
+                signal,
+                &target.destination,
+                hints::Route::of(target.protocol, &target.destination),
+                target.proxy_display(),
+                Arc::clone(&target.cause),
+            )
     }
 
     /// The address `/metrics` is served on under
