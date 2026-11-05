@@ -333,3 +333,31 @@ async fn a_turn_ends_its_run_when_the_task_finishes_or_parks_and_not_before() {
         );
     }
 }
+
+/// `trim_event_log` reaches the wrapped store (ADR 0047).
+#[tokio::test]
+async fn a_trim_reaches_the_wrapped_log() {
+    let inner = Arc::new(InMemoryTaskStore::new());
+    let store = AuditedTaskStore {
+        inner: Arc::clone(&inner) as Arc<dyn TaskStore>,
+        log: Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new()))),
+        metrics: Arc::new(NoopMetrics),
+    };
+    let task = Task::new(
+        TaskId::new("t-1"),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::Working),
+    );
+    store.save(&task).await.unwrap();
+    let event =
+        StreamResponse::StatusUpdate(a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+            task.id.clone(),
+            ContextId::new("c-1"),
+            TaskStatus::new(TaskState::Working),
+        ));
+    for seq in 1..=3 {
+        store.append_event(&task.id, seq, &event).await.unwrap();
+    }
+    assert_eq!(store.trim_event_log(&task.id, 3).await.unwrap(), 2);
+    assert_eq!(inner.earliest_event_seq(&task.id).await.unwrap(), Some(3));
+}

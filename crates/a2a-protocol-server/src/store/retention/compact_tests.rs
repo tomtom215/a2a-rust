@@ -132,6 +132,34 @@ where
     }
 }
 
+/// The tenant-aware in-memory store trims the partition in scope, and asks
+/// nothing of a partition that does not exist.
+#[tokio::test]
+async fn the_tenant_in_memory_store_keeps_the_compaction_contract() {
+    use crate::store::tenant::TenantContext;
+    let store = crate::store::TenantAwareInMemoryTaskStore::new();
+    TenantContext::scope(
+        "acme",
+        check_compaction(&store, || async {
+            let mut dropped = 0;
+            for id in ["live", "behind", "done", "unpositioned", "short"] {
+                dropped += compact_task(&store, &TaskId::new(id), 10).await?;
+            }
+            Ok(dropped)
+        }),
+    )
+    .await;
+    let live = TaskId::new("live");
+    let elsewhere = TenantContext::scope("nobody", store.trim_event_log(&live, 99));
+    assert_eq!(elsewhere.await.unwrap(), 0);
+    let kept = TenantContext::scope("acme", store.earliest_event_seq(&live));
+    assert_eq!(
+        kept.await.unwrap(),
+        Some(341),
+        "the other partition's trim left acme alone"
+    );
+}
+
 /// The in-memory store, compacted task by task: its own bound,
 /// `TaskStoreConfig::max_events_per_task`, is far above these logs.
 #[tokio::test]
@@ -184,10 +212,14 @@ mod sqlite {
         let store = TenantAwareSqliteTaskStore::new("sqlite::memory:")
             .await
             .unwrap();
+        // The sweep runs from another tenant's scope: it must find each
+        // task's partition itself.
         TenantContext::scope(
             "acme",
-            check_compaction(&store, || async {
-                Ok(store.purge_expired(&policy()).await?.events_compacted)
+            check_compaction(&store, || {
+                TenantContext::scope("elsewhere", async {
+                    Ok(store.purge_expired(&policy()).await?.events_compacted)
+                })
             }),
         )
         .await;
@@ -239,10 +271,14 @@ mod postgres {
         let store = TenantAwarePostgresTaskStore::new(&own_schema().await)
             .await
             .unwrap();
+        // The sweep runs from another tenant's scope: it must find each
+        // task's partition itself.
         TenantContext::scope(
             "acme",
-            check_compaction(&store, || async {
-                Ok(store.purge_expired(&policy()).await?.events_compacted)
+            check_compaction(&store, || {
+                TenantContext::scope("elsewhere", async {
+                    Ok(store.purge_expired(&policy()).await?.events_compacted)
+                })
             }),
         )
         .await;
