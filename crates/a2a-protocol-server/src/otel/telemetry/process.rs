@@ -27,15 +27,22 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 
 use super::SCOPE;
 
+// `MS_PER_TICK`, `tick_seconds`, `parse_stat` and `parse_status` read the
+// Linux `/proc` formats and are called only by the Linux `read`. They are also
+// built under `test`, so that the parsers' tests run on every platform;
+// nowhere else would they be used, and an unused item fails `-D warnings`.
+
 /// Milliseconds in one Linux `USER_HZ` clock tick, the unit of the CPU times
 /// in `/proc/<pid>/stat`. `USER_HZ` is part of the kernel's user-space ABI
 /// and is 100 on every architecture Rust's tier 1 and tier 2 Linux targets
 /// run on (`proc(5)`: "measured in clock ticks (divide by
 /// `sysconf(_SC_CLK_TCK)`)"); reading `sysconf` would take `unsafe` or a new
 /// dependency for a constant.
+#[cfg(any(target_os = "linux", test))]
 const MS_PER_TICK: u64 = 10;
 
 /// `ticks` of CPU time in seconds.
+#[cfg(any(target_os = "linux", test))]
 pub(super) const fn tick_seconds(ticks: u64) -> f64 {
     std::time::Duration::from_millis(ticks.saturating_mul(MS_PER_TICK)).as_secs_f64()
 }
@@ -54,6 +61,7 @@ pub(super) struct Snapshot {
 /// `utime` and `stime`, in clock ticks, from the text of `/proc/<pid>/stat`.
 /// The command name (field 2) is in parentheses and may itself hold spaces
 /// and parentheses, so the fields are counted from the last `)`.
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn parse_stat(text: &str) -> Option<(u64, u64)> {
     let rest = &text[text.rfind(')')? + 1..];
     let mut fields = rest.split_ascii_whitespace();
@@ -65,6 +73,7 @@ pub(super) fn parse_stat(text: &str) -> Option<(u64, u64)> {
 }
 
 /// `VmRSS` and `VmSize` in bytes, and `Threads`, from `/proc/<pid>/status`.
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn parse_status(text: &str) -> Option<(u64, u64, u64)> {
     let mut rss = None;
     let mut size = None;
