@@ -358,3 +358,22 @@ fn debug_names_the_origin_and_its_state() {
         "{text}"
     );
 }
+
+/// A stream's guard gives back its place under the cap once the stream has
+/// opened, and counts the stream in flight until it is dropped.
+#[tokio::test]
+async fn an_open_stream_frees_its_place_and_counts_until_dropped() {
+    let origins = Origins::new(None, Some(1), None);
+    let s = origins.get("o");
+    let (_tx, rx) = tokio::sync::mpsc::channel(1);
+    let stream = super::transport::stream(s.enter(Ticket::Normal).unwrap(), async {
+        Ok(crate::streaming::EventStream::from_event_channel(rx))
+    })
+    .await
+    .unwrap();
+    let call = s.enter(Ticket::Normal).expect("the stream's place is free");
+    assert_eq!(s.in_flight(), 2);
+    drop(call);
+    drop(stream);
+    assert_eq!(s.in_flight(), 0);
+}

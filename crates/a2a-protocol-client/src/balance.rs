@@ -254,14 +254,9 @@ impl EndpointSource for DnsEndpoints {
             let addrs = tokio::net::lookup_host((self.host.as_str(), self.port))
                 .await
                 .map_err(|e| ClientError::HttpClient(format!("resolving {}: {e}", self.host)))?;
-            let mut seen = Vec::new();
-            for addr in addrs {
-                if !seen.contains(&addr) {
-                    seen.push(addr);
-                }
-            }
-            Ok(seen
-                .into_iter()
+            // A repeated address is one member of the set: the set drops
+            // repeated endpoints.
+            Ok(addrs
                 .map(|addr| Endpoint::pinned(self.url.clone(), addr))
                 .collect())
         })

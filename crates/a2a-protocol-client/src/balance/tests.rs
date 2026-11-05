@@ -524,4 +524,25 @@ async fn dns_endpoints_pin_each_address_of_the_name() {
     assert_eq!(every.refresh_every(), Some(SECOND));
     assert!(DnsEndpoints::new("not a url").is_err());
     assert!(DnsEndpoints::new("/path-only").is_err());
+    // No port in the URL: the scheme's.
+    for (url, port) in [("https://localhost/a2a", 443), ("http://localhost/a2a", 80)] {
+        let found = DnsEndpoints::new(url).unwrap().endpoints().await.unwrap();
+        assert_ne!(found.len(), 0);
+        assert!(
+            found.iter().all(|e| e.addr().unwrap().port() == port),
+            "{found:?}"
+        );
+    }
+}
+
+/// A card's interface for another protocol major is not an endpoint.
+#[test]
+fn a_cards_interface_for_another_major_is_left_out() {
+    use a2a_protocol_types::{AgentCard, AgentInterface};
+    let mut card = AgentCard::new("x", "1.0.0", AgentInterface::jsonrpc("http://a.test"));
+    let mut next = AgentInterface::jsonrpc("http://b.test");
+    next.protocol_version = "2.0".into();
+    card.supported_interfaces.push(next);
+    let source = StaticEndpoints::from_card(&card, "JSONRPC").unwrap();
+    assert_eq!(source.endpoints(), [Endpoint::new("http://a.test")]);
 }
