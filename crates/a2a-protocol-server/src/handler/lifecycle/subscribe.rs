@@ -617,12 +617,17 @@ impl RequestHandler {
                         )));
                     }
 
+                    // Bounded, per task and in all (audit H5): refused, retryably,
+                    // before the stream is built.
+                    let slot = self.subscriber_slot(&task_id)?;
+
                     // SPEC: The first event in a SubscribeToTask stream MUST be a Task
                     // snapshot representing the current state (Go #231, JS #323).
                     // A client that was disconnected sends back the `id:` of the
                     // last frame it saw, and resumes from exactly there.
                     self.subscription(&task_id, task, |_| {}, last_event_id(headers))
                         .await
+                        .map(|reader| reader.with_subscriber(slot))
                 }
                 .await;
                 call.finish(result).await

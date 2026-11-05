@@ -349,6 +349,17 @@ pub struct HandlerLimits {
     /// reconnection an expected flow). Until 0.15.0 the default was 5
     /// minutes.
     pub subscribe_max_idle: Option<Duration>,
+    /// The most `SubscribeToTask` streams open on one task (default 256).
+    /// One more is refused before any work as `Overloaded`, which every
+    /// binding sends with a retry delay; the count falls as streams end
+    /// (audit H5, ADR 0044).
+    pub max_subscribers_per_task: usize,
+    /// The most `SubscribeToTask` streams open on this handler, over all
+    /// tasks (default 10,000), refused the same way. Each one holds a
+    /// receiver and, while its task is quiet, reads the store every few
+    /// seconds; nothing else bounds how many there are unless the server's
+    /// `max_connections` is set.
+    pub max_subscribers: usize,
     /// How many logged events one read of the task's event log returns at
     /// most. Default: 1,000.
     ///

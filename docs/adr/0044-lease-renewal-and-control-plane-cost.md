@@ -86,8 +86,26 @@ for a reason: each child may live on another server).
 * **Journal writes** are already throttled per child: a position is written
   at most every two seconds (`PROGRESS_EVERY`), and only when it moved
   (`delegation::journal::write_progress`), so an idle child costs none.
-* **Idle subscribers' 250 ms polling** and a subscriber cap are outside this
-  ADR (the subscription path, not the lease, journal or halt paths).
+* **Idle subscribers' polling** backs off already (audit E-F25a: 250 ms up to
+  `subscribe_reattach_max_interval`, 4 s).
+
+## Subscribers (added 2026-11-05)
+
+Nothing bounded how many `SubscribeToTask` streams were open: each holds a
+broadcast receiver and, while its task is quiet, reads the store every few
+seconds. Two bounds are added to `HandlerLimits`, both refused before any
+work as `Overloaded` (a retry delay on every binding) and given back when the
+stream is dropped, however it ends (`handler::subscribers`):
+
+* `max_subscribers_per_task`, default 256: the fan-out on one task.
+* `max_subscribers`, default 10,000, over all tasks. Decided: needed as well,
+  because nothing else bounds the total by default. Each subscriber is a
+  connection or an HTTP/2 stream, but the server's `max_connections` is unset
+  unless the operator sets it, and a per-task bound alone lets one client
+  open streams on many tasks.
+
+Both are additive and generous; a deployment that wants none sets them to
+`usize::MAX`.
 
 ## The reaper's query on `tenant_tasks` (NEW-h-s0-8)
 

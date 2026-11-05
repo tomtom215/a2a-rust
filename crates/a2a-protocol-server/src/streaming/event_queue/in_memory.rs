@@ -912,6 +912,9 @@ pub struct InMemoryQueueReader {
     /// after each read to the lowest position the stream may still read
     /// from the log, and released when the stream ends or is dropped.
     hold: Option<crate::store::EventHold>,
+    /// Counts this stream against the handler's subscriber bounds until it
+    /// is dropped (`handler::subscribers`).
+    subscriber: Option<crate::handler::subscribers::SubscriberSlot>,
 }
 
 // Hand-written because `ReattachFn` is a boxed closure, which cannot derive
@@ -1169,6 +1172,15 @@ impl InMemoryQueueReader {
         self
     }
 
+    /// Counts this stream as an open subscription until it is dropped.
+    pub(crate) fn with_subscriber(
+        mut self,
+        slot: crate::handler::subscribers::SubscriberSlot,
+    ) -> Self {
+        self.subscriber = Some(slot);
+        self
+    }
+
     /// The lowest position this stream may still read the log after: a
     /// resume's pages owe the log from `after` though `replayed_through`
     /// is already at the live receiver's start; otherwise the last position
@@ -1200,6 +1212,7 @@ impl InMemoryQueueReader {
             provisional: None,
             finished: false,
             hold: None,
+            subscriber: None,
         }
     }
 
@@ -1306,6 +1319,7 @@ impl InMemoryQueueReader {
             provisional: None,
             finished: false,
             hold: None,
+            subscriber: None,
         }
     }
 
@@ -1337,6 +1351,7 @@ impl InMemoryQueueReader {
             provisional: None,
             finished: false,
             hold: None,
+            subscriber: None,
         }
     }
 }

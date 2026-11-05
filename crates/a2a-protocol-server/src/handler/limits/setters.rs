@@ -75,6 +75,22 @@ impl HandlerLimits {
         self
     }
 
+    /// Sets the most `SubscribeToTask` streams open on one task; see
+    /// [`max_subscribers_per_task`](Self::max_subscribers_per_task).
+    #[must_use]
+    pub const fn with_max_subscribers_per_task(mut self, max: usize) -> Self {
+        self.max_subscribers_per_task = max;
+        self
+    }
+
+    /// Sets the most `SubscribeToTask` streams open on the handler; see
+    /// [`max_subscribers`](Self::max_subscribers).
+    #[must_use]
+    pub const fn with_max_subscribers(mut self, max: usize) -> Self {
+        self.max_subscribers = max;
+        self
+    }
+
     /// Sets how many logged events one read of the event log returns; see
     /// [`subscribe_replay_limit`](Self::subscribe_replay_limit).
     #[must_use]

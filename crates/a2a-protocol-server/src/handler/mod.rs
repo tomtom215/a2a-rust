@@ -44,6 +44,7 @@ mod push_config_page;
 #[cfg(test)]
 mod push_config_race_tests;
 mod shutdown;
+pub(crate) mod subscribers;
 mod tenant_resolution;
 mod undeclared_binding;
 mod unreadable;
@@ -130,6 +131,8 @@ pub struct RequestHandler {
     pub(crate) executor_timeout: Option<Duration>,
     pub(crate) metrics: Arc<dyn Metrics>,
     pub(crate) limits: HandlerLimits,
+    /// The open `SubscribeToTask` streams, against `limits`' two bounds.
+    pub(crate) subscribers: Arc<subscribers::Subscribers>,
     /// Whether a message's file references must point outside private
     /// networks; see
     /// [`refuse_private_file_urls`](crate::builder::RequestHandlerBuilder::refuse_private_file_urls).
@@ -469,6 +472,8 @@ mod context_lookup_tests;
 mod default_store_metrics_tests;
 #[cfg(test)]
 mod executor_metrics_tests;
+#[cfg(test)]
+mod subscribers_tests;
 #[cfg(test)]
 mod tenant_isolation_tests;
 #[cfg(test)]

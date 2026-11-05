@@ -37,6 +37,8 @@ impl Default for HandlerLimits {
             subscribe_reattach_interval: Duration::from_millis(250),
             subscribe_reattach_max_interval: Duration::from_secs(4),
             subscribe_max_idle: None,
+            max_subscribers_per_task: 256,
+            max_subscribers: 10_000,
             subscribe_replay_limit: 1_000,
             subscribe_replay_catchup: Duration::from_secs(2),
             final_task_snapshot: false,

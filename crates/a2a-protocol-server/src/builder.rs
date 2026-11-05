@@ -1713,6 +1713,7 @@ impl RequestHandlerBuilder {
             tenant_slots: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             in_flight,
             halts: Arc::default(),
+            subscribers: Arc::default(),
             leases: self.lease_store.map(|store| crate::handler::lease::Leases {
                 store,
                 max_ttl: self.max_lease_ttl,
