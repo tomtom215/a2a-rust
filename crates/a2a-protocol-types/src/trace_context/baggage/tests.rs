@@ -14,6 +14,16 @@ fn member(key: &str, value: &str, properties: Option<&str>) -> Member {
     }
 }
 
+/// `is_off` is true for `Off` and for nothing else: `Keys` and `All` let
+/// entries cross.
+#[test]
+fn only_off_is_off() {
+    assert!(BaggagePolicy::Off.is_off());
+    assert!(!BaggagePolicy::All.is_off());
+    assert!(!BaggagePolicy::keys(["tenant"]).is_off());
+    assert!(!BaggagePolicy::keys(Vec::<String>::new()).is_off());
+}
+
 #[test]
 fn nothing_crosses_by_default() {
     assert_eq!(BaggagePolicy::default(), BaggagePolicy::Off);
@@ -121,6 +131,22 @@ fn the_bounds_are_64_members_and_8192_bytes_of_whole_members() {
     assert_eq!(got.len(), MAX_BYTES);
 }
 
+/// The separator counts toward the 8192 bytes: a second member that fits only
+/// if the comma were free is skipped, and a first member over the limit is
+/// skipped (so a header is never over [`MAX_BYTES`], and never partial).
+#[test]
+fn the_comma_and_the_first_member_count_toward_the_byte_limit() {
+    let all = BaggagePolicy::All;
+    // "a=1" + "," + "b=" + value is one byte over when the value is one longer
+    // than the exact fit above.
+    let one_over = "x".repeat(MAX_BYTES - "a=1,b=".len() + 1);
+    let got = encode([("a", "1", None), ("b", one_over.as_str(), None)], &all);
+    assert_eq!(got, Some("a=1".to_owned()), "b would make 8193 bytes");
+    // Nothing before it: a lone member over the limit is dropped, not kept.
+    let over = "x".repeat(MAX_BYTES);
+    assert_eq!(encode([("b", over.as_str(), None)], &all), None);
+}
+
 #[test]
 fn the_propagators_default_to_tracecontext_and_baggage() {
     for unset in [None, Some(""), Some("  ")] {
@@ -141,6 +167,46 @@ fn the_propagators_named_are_the_ones_carried() {
     assert!(!p.tracecontext && !p.baggage, "{p:?}");
     let p = Propagators::from_env_value(Some("tracecontext,none"));
     assert!(!p.tracecontext && !p.baggage, "none wins: {p:?}");
+}
+
+const CHILD: &str = "A2A_TEST_BAGGAGE_CHILD";
+const FROM_ENV_TEST: &str =
+    "trace_context::baggage::tests::from_env_reads_otel_propagators_from_the_process_environment";
+
+/// `from_env` reads `OTEL_PROPAGATORS` from the real process environment. The
+/// 2024 edition makes `set_var` unsafe, so the test runs itself again with the
+/// variable set, as the server crate's environment tests do.
+#[test]
+fn from_env_reads_otel_propagators_from_the_process_environment() {
+    if std::env::var_os(CHILD).is_some() {
+        let p = Propagators::from_env();
+        assert!(!p.tracecontext && p.baggage, "{p:?}");
+        assert_eq!(p.unknown, ["b3"]);
+        return;
+    }
+    let out = std::process::Command::new(std::env::current_exe().expect("exe"))
+        .args([FROM_ENV_TEST, "--exact", "--nocapture"])
+        .env(CHILD, "1")
+        .env("OTEL_PROPAGATORS", "baggage,b3")
+        .output()
+        .expect("child runs");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success() && stdout.contains("1 passed"),
+        "child failed: {stdout}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// An empty name between commas (`a,,b`, or a trailing comma) names nothing: it
+/// is not an unknown propagator to warn about.
+#[test]
+fn an_empty_name_in_the_list_is_not_an_unknown_propagator() {
+    let p = Propagators::from_env_value(Some("tracecontext,,baggage,"));
+    assert!(p.tracecontext && p.baggage, "{p:?}");
+    assert!(p.unknown.is_empty(), "{p:?}");
+    let p = Propagators::from_env_value(Some("b3,,"));
+    assert_eq!(p.unknown, ["b3"]);
 }
 
 /// F3: a list naming only propagators this crate does not carry falls back
