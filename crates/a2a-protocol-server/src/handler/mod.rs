@@ -24,6 +24,7 @@ mod capability;
 pub(crate) mod claims;
 mod concurrency;
 mod event_processing;
+mod turn_slots;
 pub(crate) use event_processing::{PushLanes, ends_turn};
 pub(crate) mod halt;
 pub(crate) mod helpers;
@@ -213,6 +214,8 @@ pub struct RequestHandler {
     /// Set by [`begin_draining`](RequestHandler::begin_draining): readiness
     /// answers "not ready" from then on.
     pub(crate) draining: std::sync::atomic::AtomicBool,
+    /// The admission gate (ADR 0045), when the handler was built with one.
+    pub(crate) admission: Option<crate::admission::gate::AdmissionGate>,
 }
 
 /// Entry in the cancellation token map, tracking creation time for eviction.
@@ -449,6 +452,8 @@ pub enum SendMessageResult {
     Stream(InMemoryQueueReader),
 }
 
+#[cfg(test)]
+mod admission_tests;
 #[cfg(test)]
 mod context_lookup_cost;
 #[cfg(test)]

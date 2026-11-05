@@ -112,6 +112,7 @@ mod trace;
 
 mod rpc_span;
 
+pub mod admission;
 pub mod agent_card;
 pub mod approval;
 #[cfg(feature = "audit")]

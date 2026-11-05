@@ -14,12 +14,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::super::turn_slots::TurnSlots;
 use a2a_protocol_types::error::A2aError;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::failure::{FailureClass, error_class, set_class};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::task::{TaskId, TaskState, TaskStatus};
-use tokio::sync::OwnedSemaphorePermit;
 use tokio::task::JoinHandle;
 
 use crate::executor::AgentExecutor;
@@ -218,17 +218,13 @@ impl RequestHandler {
         &self,
         ctx: RequestContext,
         writer: Arc<InMemoryQueueWriter>,
-        tenant_slot: Option<OwnedSemaphorePermit>,
+        slots: TurnSlots,
         turn: Arc<ExecutorTurn>,
         claim: Option<Arc<TurnClaim>>,
     ) -> JoinHandle<()> {
-        self.in_flight.executors().spawn(self.executor_future(
-            ctx,
-            writer,
-            tenant_slot,
-            turn,
-            claim,
-        ))
+        self.in_flight
+            .executors()
+            .spawn(self.executor_future(ctx, writer, slots, turn, claim))
     }
 
     /// Builds the executor for a task whose queue, token and row all exist,
@@ -237,18 +233,14 @@ impl RequestHandler {
         &self,
         ctx: RequestContext,
         writer: Arc<InMemoryQueueWriter>,
-        tenant_slot: Option<OwnedSemaphorePermit>,
+        slots: TurnSlots,
         turn: Arc<ExecutorTurn>,
         claim: Option<Arc<TurnClaim>>,
     ) -> DeferredExecutor {
         DeferredExecutor {
-            run: Some(Box::pin(self.executor_future(
-                ctx,
-                writer,
-                tenant_slot,
-                turn,
-                claim,
-            ))),
+            run: Some(Box::pin(
+                self.executor_future(ctx, writer, slots, turn, claim),
+            )),
             tracker: self.in_flight.executors().clone(),
         }
     }
@@ -277,13 +269,14 @@ impl RequestHandler {
     ///
     /// The future owns the only writer clone needed, so the channel closes —
     /// and readers see EOF — when the executor finishes. It also owns the
-    /// tenant's concurrency permit, which is returned when the future ends,
-    /// however it ends: dropping the future drops the permit.
+    /// tenant's concurrency permit and the admission gate's, which are
+    /// returned when the future ends, however it ends: dropping the future
+    /// drops them.
     fn executor_future(
         &self,
         ctx: RequestContext,
         writer: Arc<InMemoryQueueWriter>,
-        tenant_slot: Option<OwnedSemaphorePermit>,
+        slots: TurnSlots,
         turn: Arc<ExecutorTurn>,
         claim: Option<Arc<TurnClaim>>,
     ) -> impl std::future::Future<Output = ()> + Send + 'static {
@@ -317,9 +310,9 @@ impl RequestHandler {
         #[cfg(feature = "tracing")]
         let recorder = span.recorder(continues(&ctx.task_id, ctx.stored_task.as_ref()));
         span.instrument(tenant.scope(async move {
-            // Owned by this future, so the slot is returned when the executor
-            // finishes, fails, panics, or is aborted.
-            let _tenant_slot = tenant_slot;
+            // Owned by this future, so the slots are returned when the
+            // executor finishes, fails, panics, or is aborted.
+            let _slots = slots.into_parts();
             // The turn's claim (`handler::claims`) is held by this future,
             // which reads it when the executor returns (`Stop::after_run`),
             // and by the turn's event consumer: released when the last of the

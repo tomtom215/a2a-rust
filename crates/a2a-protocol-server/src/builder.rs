@@ -194,6 +194,7 @@ pub struct RequestHandlerBuilder {
     allow_undeclared_input_modes: bool,
     refuse_private_file_urls: bool,
     approval_gate: Option<crate::approval::ApprovalGate>,
+    admission: Option<crate::admission::Admission>,
     halt_store: Option<Arc<dyn crate::store::HaltStore>>,
     halt_poll_interval: std::time::Duration,
     lease_store: Option<Arc<dyn crate::store::LeaseStore>>,
@@ -271,6 +272,7 @@ impl RequestHandlerBuilder {
             allow_undeclared_input_modes: false,
             refuse_private_file_urls: false,
             approval_gate: None,
+            admission: None,
             halt_store: None,
             halt_poll_interval: crate::handler::DEFAULT_HALT_POLL_INTERVAL,
             lease_store: None,
@@ -461,6 +463,25 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub fn with_approval_gate(mut self, gate: crate::approval::ApprovalGate) -> Self {
         self.approval_gate = Some(gate);
+        self
+    }
+
+    /// Puts an admission gate in front of the send path (audit H9, ADR
+    /// 0045): a capacity, slots reserved per tenant, a bounded wait inside
+    /// the send's budget, priority classes and weighted fairness, all set by
+    /// the server. Without one, which is the default, a send the server has
+    /// no room for is refused at once, as before.
+    ///
+    /// # Errors at build
+    ///
+    /// [`ServerError::Config`](crate::error::ServerError::Config) when the
+    /// gate's capacity is 0 or above the concurrent-stream cap
+    /// ([`with_max_concurrent_streams`](Self::with_max_concurrent_streams)),
+    /// when its default share reserves slots, or when its reservations sum
+    /// past its capacity.
+    #[must_use]
+    pub fn with_admission(mut self, admission: crate::admission::Admission) -> Self {
+        self.admission = Some(admission);
         self
     }
 
@@ -1597,6 +1618,18 @@ impl RequestHandlerBuilder {
             self.push_outbox
                 .map(|outbox| (outbox, in_flight.shutdown_token())),
         );
+        let admission = match self.admission {
+            None => None,
+            Some(admission) => {
+                let cap = self
+                    .max_concurrent_streams
+                    .unwrap_or(DEFAULT_MAX_CONCURRENT_STREAMS);
+                if let Some(why) = admission.invalid(cap) {
+                    return Err(crate::error::ServerError::Config(why));
+                }
+                Some(crate::admission::gate::AdmissionGate::new(admission))
+            }
+        };
         let handler = RequestHandler {
             executor: self.executor,
             task_store,
@@ -1672,6 +1705,7 @@ impl RequestHandlerBuilder {
             #[cfg(feature = "audit")]
             audit: self.audit,
             draining: std::sync::atomic::AtomicBool::new(false),
+            admission,
         };
         // Started now when a runtime is running, which is the usual case (a
         // handler is built in `#[tokio::main]`): until 2026-11-01 it started
@@ -1801,6 +1835,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             )
             .field("refuse_private_file_urls", &self.refuse_private_file_urls)
             .field("approval_gate", &self.approval_gate)
+            .field("admission", &self.admission)
             .field("halt_store", &self.halt_store.is_some())
             .field("halt_poll_interval", &self.halt_poll_interval)
             .field("lease_store", &self.lease_store.is_some())
