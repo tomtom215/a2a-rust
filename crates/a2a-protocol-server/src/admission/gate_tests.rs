@@ -280,3 +280,31 @@ async fn the_debug_forms_name_the_tenant_and_the_load() {
         "{shown}"
     );
 }
+
+/// A waiter that stops waiting leaves no empty place in its class's rotation
+/// for the next freed slot to stop at: the waiter behind it is admitted.
+#[tokio::test(start_paused = true)]
+async fn an_abandoned_waiter_does_not_stall_the_one_behind_it() {
+    let gate = queued(1, 4, Duration::from_secs(10));
+    let held = gate.acquire("x", None).await.unwrap();
+    let gone = {
+        let gate = gate.clone();
+        tokio::spawn(async move { gate.acquire("a", None).await.map(drop) })
+    };
+    settle().await;
+    let behind = {
+        let gate = gate.clone();
+        tokio::spawn(async move { gate.acquire("b", None).await.map(|_| Instant::now()) })
+    };
+    settle().await;
+    gone.abort();
+    settle().await;
+    assert_eq!(load(&gate), (1, 1));
+    let freed = Instant::now();
+    drop(held);
+    assert_eq!(
+        behind.await.unwrap().unwrap(),
+        freed,
+        "admitted when the slot was freed"
+    );
+}

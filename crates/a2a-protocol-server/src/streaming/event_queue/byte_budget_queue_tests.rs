@@ -139,3 +139,82 @@ async fn without_a_budget_nothing_is_charged() {
     assert!(event.as_ref().as_ref().unwrap().charge.is_none());
     assert!(format!("{manager:?}").contains("byte_budget: None"));
 }
+
+/// The live count the load signal reads follows every lease and both ways
+/// of ending queues, without the map's lock (ADR 0046).
+#[tokio::test]
+async fn the_live_count_follows_leases_and_destroys() {
+    let manager = EventQueueManager::new();
+    let _t = lease(&manager, "t").await;
+    let _u = lease(&manager, "u").await;
+    assert_eq!(manager.live_queues(), 2);
+    manager.destroy(&TaskId::new("t")).await;
+    assert_eq!(manager.live_queues(), 1);
+    manager.destroy_all().await;
+    assert_eq!(manager.live_queues(), 0);
+}
+
+fn terminal(state: a2a_protocol_types::task::TaskState) -> StreamResponse {
+    StreamResponse::StatusUpdate(a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+        TaskId::new("t"),
+        ContextId::new("c"),
+        a2a_protocol_types::task::TaskStatus::new(state),
+    ))
+}
+
+/// A terminal event goes out as the store's verdict, a new frame; the frame
+/// an unread subscriber keeps holds the bytes the event was charged.
+#[tokio::test]
+async fn the_verdict_a_subscriber_keeps_holds_the_events_bytes() {
+    use a2a_protocol_types::task::TaskState;
+    let manager = EventQueueManager::new().with_max_buffered_bytes(1 << 20);
+    let (writer, _reader, mut persisted) = lease(&manager, "t").await;
+    let gate = writer.terminal_gate().expect("a background queue is gated");
+    let w = std::sync::Arc::clone(&writer);
+    let write = tokio::spawn(async move { w.write(terminal(TaskState::Completed)).await });
+    let handed = persisted.recv().await.unwrap();
+    let charged = manager.buffered_bytes().unwrap().0;
+    assert!(charged > 0);
+    gate.resolve(
+        handed.as_ref().as_ref().unwrap().seq.unwrap(),
+        terminal(TaskState::Canceled),
+    );
+    write.await.unwrap().unwrap();
+    // The processor is done with the event; the subscriber's frame is not.
+    drop(handed);
+    assert_eq!(manager.buffered_bytes().unwrap().0, charged);
+}
+
+/// The persistence channel's size at the default queue capacity: sixteen
+/// events per broadcast slot (`new_in_memory_queue_with_shared_persistence`).
+const SLOTS: usize = super::DEFAULT_QUEUE_CAPACITY * 16;
+
+/// One deadline for the whole write: a write that waited a second for bytes
+/// has the second that is left to hand its event to a full persistence
+/// channel, not another whole `write_timeout`.
+#[tokio::test(start_paused = true)]
+async fn the_wait_for_bytes_and_the_hand_off_share_one_deadline() {
+    let manager = EventQueueManager::new()
+        .with_write_timeout(Duration::from_secs(2))
+        .with_max_buffered_bytes(size(10_000) + SLOTS * size(10));
+    let (writer, reader, mut persisted) = lease(&manager, "t").await;
+    drop(reader); // no subscriber: only the processor holds events
+    writer.write(chunk(10_000)).await.unwrap();
+    let large = persisted.recv().await.unwrap(); // taken, and still held
+    // Fills the persistence channel and, with the large event, the budget.
+    for _ in 0..SLOTS {
+        writer.write(chunk(10)).await.unwrap();
+    }
+    let started = tokio::time::Instant::now();
+    let w = std::sync::Arc::clone(&writer);
+    let blocked = tokio::spawn(async move { w.write(chunk(10_000)).await });
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    drop(large); // the bytes come back; the channel stays full
+    let refused = blocked.await.unwrap().unwrap_err();
+    assert!(
+        refused.message.contains("still full"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(started.elapsed(), Duration::from_secs(2));
+}
