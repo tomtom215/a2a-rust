@@ -55,11 +55,14 @@ impl Both {
         );
         let handler: Arc<RequestHandler> = handler_with_card(&card);
         let addr = {
-let bound = Server::bind("127.0.0.1:0").await.expect("serve JSON-RPC");
-let addr = bound.local_addr().expect("serve JSON-RPC");
-tokio::spawn(bound.serve_with_shutdown(JsonRpcDispatcher::new(Arc::clone(&handler)), std::future::pending()));
-addr
-};
+            let bound = Server::bind("127.0.0.1:0").await.expect("serve JSON-RPC");
+            let addr = bound.local_addr().expect("serve JSON-RPC");
+            tokio::spawn(bound.serve_with_shutdown(
+                JsonRpcDispatcher::new(Arc::clone(&handler)),
+                std::future::pending(),
+            ));
+            addr
+        };
         let jsonrpc_client = ClientBuilder::new(format!("http://{addr}"))
             .with_protocol_binding("JSONRPC")
             .build()

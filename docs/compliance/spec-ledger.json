@@ -7164,9 +7164,9 @@
    ],
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/src/error_tests.rs:91 status_codes_follow_the_slimrpc_table",
-    "bindings/a2a-protocol-slimrpc/tests/equivalence.rs:138 the_same_requests_get_the_same_answers_on_slimrpc_and_jsonrpc",
-    "bindings/a2a-protocol-slimrpc/tests/equivalence.rs:178 one_task_reads_the_same_through_slimrpc_and_jsonrpc",
-    "bindings/a2a-protocol-slimrpc/tests/equivalence.rs:244 every_fault_is_the_same_a2a_error_on_slimrpc_and_jsonrpc"
+    "bindings/a2a-protocol-slimrpc/tests/equivalence.rs:141 the_same_requests_get_the_same_answers_on_slimrpc_and_jsonrpc",
+    "bindings/a2a-protocol-slimrpc/tests/equivalence.rs:181 one_task_reads_the_same_through_slimrpc_and_jsonrpc",
+    "bindings/a2a-protocol-slimrpc/tests/equivalence.rs:247 every_fault_is_the_same_a2a_error_on_slimrpc_and_jsonrpc"
    ],
    "notes": "SLIMRPC sends PushNotificationNotSupported and UnsupportedOperation as UNIMPLEMENTED where A2A §5.4's gRPC column says FAILED_PRECONDITION. This is the SLIMRPC spec's own §6.1 'canonical mapping' (a MUST), which the binding now follows exactly; the conflict is between the two specifications, not an implementation defect, and is left PARTIAL until upstream resolves it. The stale 'identical to dispatch/grpc' comment was rewritten. Reclassified PARTIAL to TESTED on 2026-10-14 (audit register, the §12/§5.4 row, approved): the text asks for an equivalent mapping that preserves each error's meaning, which the SLIMRPC mapping does, not for the gRPC column itself. The conflict between the two specifications is for upstream; a report is drafted for the maintainer, not filed.",
    "auditor": "E",
