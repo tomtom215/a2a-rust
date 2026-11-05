@@ -16,7 +16,7 @@ impl super::DispatchConfig {
     ///
     /// # Errors
     ///
-    /// [`ServerError::InvalidParams`](crate::error::ServerError::InvalidParams)
+    /// [`ServerError::InvalidParams`]
     /// for anything else (an escape, `{`, `*` or `?` would route differently
     /// on different dispatchers).
     pub fn with_base_path(mut self, path: impl Into<String>) -> ServerResult<Self> {
