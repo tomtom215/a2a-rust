@@ -51,9 +51,33 @@ pub(super) fn refusal(
     })
 }
 
+/// What a production listener warns about and still starts with (ADR 0046):
+/// no `max_connections`, so nothing bounds the connections it accepts. A
+/// warning and not a refusal: the right number depends on the host.
+pub(super) fn warning(config: &ServeConfig) -> Option<&'static str> {
+    (config.production && config.max_connections.is_none()).then_some(
+        "production listener has no max_connections: nothing bounds the connections it \
+         accepts, each holding a task and its buffers; set ServeConfig::with_max_connections",
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ServeConfig, refusal};
+    use super::{ServeConfig, refusal, warning};
+
+    #[test]
+    fn production_warns_without_max_connections_and_only_then() {
+        assert!(
+            warning(&ServeConfig::production())
+                .unwrap()
+                .contains("no max_connections")
+        );
+        assert_eq!(
+            warning(&ServeConfig::production().with_max_connections(64)),
+            None
+        );
+        assert_eq!(warning(&ServeConfig::default()), None);
+    }
 
     fn addr(s: &str) -> std::net::SocketAddr {
         s.parse().expect("addr")

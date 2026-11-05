@@ -90,6 +90,9 @@ pub struct EventQueueManager {
     /// The process-wide budget over buffered event bytes, when there is one
     /// (ADR 0047).
     byte_budget: Option<super::byte_budget::ByteBudget>,
+    /// How many queues the map holds, stored at every change of it, so the
+    /// load signal reads it without the map's lock (ADR 0046).
+    live: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl std::fmt::Debug for EventQueueManager {
@@ -102,6 +105,7 @@ impl std::fmt::Debug for EventQueueManager {
             .field("max_concurrent_queues", &self.max_concurrent_queues)
             .field("metrics", &self.metrics.is_some())
             .field("byte_budget", &self.byte_budget)
+            .field("live", &self.live_queues())
             .finish()
     }
 }
@@ -116,6 +120,7 @@ impl Default for EventQueueManager {
             max_concurrent_queues: None,
             metrics: None,
             byte_budget: None,
+            live: Arc::default(),
         }
     }
 }
@@ -146,6 +151,7 @@ impl EventQueueManager {
             max_concurrent_queues: None,
             metrics: None,
             byte_budget: None,
+            live: Arc::default(),
         }
     }
 
@@ -265,6 +271,8 @@ impl EventQueueManager {
             (writer, Some(reader))
         };
         let queue_count = map.len();
+        self.live
+            .store(queue_count, std::sync::atomic::Ordering::Relaxed);
         drop(map);
         if let Some(ref metrics) = self.metrics {
             metrics.on_queue_depth_change(queue_count);
@@ -312,6 +320,8 @@ impl EventQueueManager {
             (writer, Some(reader), Some(persistence_rx))
         };
         let queue_count = map.len();
+        self.live
+            .store(queue_count, std::sync::atomic::Ordering::Relaxed);
         drop(map);
         if let Some(ref metrics) = self.metrics {
             metrics.on_queue_depth_change(queue_count);
@@ -382,6 +392,8 @@ impl EventQueueManager {
             }
         };
         let queue_count = map.len();
+        self.live
+            .store(queue_count, std::sync::atomic::Ordering::Relaxed);
         drop(map);
         if let Some(ref metrics) = self.metrics {
             metrics.on_queue_depth_change(queue_count);
@@ -500,6 +512,8 @@ impl EventQueueManager {
         let mut map = self.writers.write().await;
         map.remove(task_id);
         let queue_count = map.len();
+        self.live
+            .store(queue_count, std::sync::atomic::Ordering::Relaxed);
         drop(map);
         if let Some(ref metrics) = self.metrics {
             metrics.on_queue_depth_change(queue_count);
@@ -530,8 +544,15 @@ impl EventQueueManager {
 
     /// Removes all event queues, causing all readers to see EOF.
     pub async fn destroy_all(&self) {
-        let mut map = self.writers.write().await;
-        map.clear();
+        self.writers.write().await.clear();
+        self.live.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// How many queues are live, read without the map's lock: the value
+    /// stored at the map's last change.
+    #[must_use]
+    pub(crate) fn live_queues(&self) -> usize {
+        self.live.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

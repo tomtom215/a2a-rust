@@ -276,4 +276,13 @@ impl HandlerLimits {
         self.max_buffered_event_bytes = Some(max);
         self
     }
+
+    /// Makes `/ready` answer `"saturated"` from `unready_at` percent of
+    /// capacity until `ready_at` percent or below; see
+    /// [`saturation_readiness`](Self::saturation_readiness).
+    #[must_use]
+    pub const fn with_saturation_readiness(mut self, unready_at: u8, ready_at: u8) -> Self {
+        self.saturation_readiness = Some((unready_at, ready_at));
+        self
+    }
 }

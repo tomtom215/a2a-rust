@@ -314,6 +314,16 @@ impl RequestHandler {
         Ok(())
     }
 
+    /// Whether a halt of every tenant ([`HaltScope::All`]) is held, which
+    /// `/ready` and the load report show (ADR 0046).
+    #[must_use]
+    pub fn is_halted_everywhere(&self) -> bool {
+        self.halts
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .holds(&HaltScope::All)
+    }
+
     /// Why every send for `tenant` is refused, if it is: a halt of
     /// [`HaltScope::All`] or of the tenant. A halt of one job refuses only
     /// that job's sends; see [`halt_reason_for_root`](Self::halt_reason_for_root).

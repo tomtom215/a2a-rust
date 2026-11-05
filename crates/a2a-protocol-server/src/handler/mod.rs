@@ -35,6 +35,7 @@ pub(crate) mod lease;
 mod lifecycle;
 mod limits;
 pub(crate) mod lineage;
+mod load;
 /// Per-key locks shared by the messaging and push-config paths.
 mod locks;
 mod messaging;
@@ -87,6 +88,8 @@ use crate::tenant_config::PerTenantConfig;
 use crate::tenant_resolver::TenantResolver;
 
 pub use limits::{HandlerLimits, MIN_MESSAGE_ID_LENGTH};
+pub(crate) use load::LoadReporting;
+pub use load::{LOAD_HEADER, LoadReport};
 pub use tenant_resolution::MAX_TENANT_LEN;
 
 // Re-export the response type alongside the handler.
@@ -216,6 +219,10 @@ pub struct RequestHandler {
     pub(crate) draining: std::sync::atomic::AtomicBool,
     /// The admission gate (ADR 0045), when the handler was built with one.
     pub(crate) admission: Option<crate::admission::gate::AdmissionGate>,
+    /// Whether `/load` is served and responses carry the load (ADR 0046).
+    pub(crate) load_reporting: load::LoadReporting,
+    /// The saturation readiness's state between probes (ADR 0046).
+    pub(crate) saturated: std::sync::atomic::AtomicBool,
 }
 
 /// Entry in the cancellation token map, tracking creation time for eviction.

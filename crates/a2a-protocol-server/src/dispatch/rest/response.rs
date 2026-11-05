@@ -81,19 +81,37 @@ pub(super) fn health_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
 /// `/ready`'s answer: `200 {"status":"ready"}`, or
 /// `503 {"status":"not_ready","reason":…}` with the bounded reason
 /// [`RequestHandler::readiness`](crate::RequestHandler::readiness) gave, as the
-/// axum router answers it.
+/// axum router answers it; with `"halted":true` while a halt of every tenant
+/// is held (ADR 0046), which leaves the replica ready: it still serves reads
+/// and cancels.
 pub(super) fn ready_response(
     readiness: Result<(), &'static str>,
+    halted: bool,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    match readiness {
-        Ok(()) => build_json_response(200, br#"{"status":"ready"}"#.to_vec()),
-        Err(reason) => build_json_response(
+    let (status, body) = ready_body(readiness, halted);
+    build_json_response(status, body.to_string().into_bytes())
+}
+
+/// `/ready`'s status and body, shared with the axum router.
+pub fn ready_body(readiness: Result<(), &'static str>, halted: bool) -> (u16, serde_json::Value) {
+    let (status, mut body) = match readiness {
+        Ok(()) => (200, serde_json::json!({"status": "ready"})),
+        Err(reason) => (
             503,
-            serde_json::json!({"status": "not_ready", "reason": reason})
-                .to_string()
-                .into_bytes(),
+            serde_json::json!({"status": "not_ready", "reason": reason}),
         ),
+    };
+    if halted {
+        body["halted"] = serde_json::Value::Bool(true);
     }
+    (status, body)
+}
+
+/// `/load`'s answer (ADR 0046): `200` and the report as JSON.
+pub(super) fn load_response(
+    load: &crate::LoadReport,
+) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    build_json_response(200, load.to_json().to_string().into_bytes())
 }
 
 /// Builds a JSON HTTP response with the given status and body.

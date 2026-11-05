@@ -338,6 +338,7 @@ are rustdoc's job.
 
 | Module | Contents |
 |--------|----------|
+| `admission` | `Admission`, the opt-in gate in front of the send path set with `RequestHandlerBuilder::with_admission`: a capacity, `TenantShare` reservations, a bounded wait inside the send's budget, priority classes and weighted rounds; `AdmissionLoad` is what `RequestHandler::admission_load` reports (ADR 0045) |
 | `agent_card` | Agent card HTTP handlers (static, dynamic, and caching utilities) |
 | `approval` | `ApprovalGate`: admits an approval decision only from an allowed, authenticated approver, for the pending request and its digest, and with `with_quorum(n)` only once `n` distinct approvers have approved (recorded under `QUORUM_METADATA_KEY`); `VerifiedApproval` is what the executor sees |
 | `audit` | `AuditLog`, its stores, retention and legal holds; records every call, run, task event and cancel request (`audit` feature); `AuditPrivacy`, `AuditLog::with_privacy`, `reveal`, `digest_matches` and `erase_subject` protect who and what records name and erase a person (`audit` and `encryption`) |
@@ -393,6 +394,9 @@ are rustdoc's job.
 | `RequestHandler::running_in_root` / `halt_reason_for_root` | The turns of one job running in this process, with their lineage; why a job's sends are refused |
 | `RequestContext::lineage` / `child_lineage` | The turn's job, and the lineage to give a task it delegates |
 | `HALTED_REASON`, `A2A_RUST_ERROR_DOMAIN` | The `ErrorInfo` reason (HALTED) and domain (a2a-rust.com) a halt refusal carries on every binding (ADR 0049) |
+| `HaltScope` | What `RequestHandler::halt` applies to: one tenant, or all |
+| `LoadReport` | What `RequestHandler::load` reports: turns running, sends queued at the admission gate, the capacity, `draining`, `halted`; `utilization_permille`, `to_json` (the `/load` body) and `header_value` (ADR 0046) |
+| `LOAD_HEADER` | `endpoint-load-metrics`, the response header carrying the load in ORCA's text form when the handler is built `with_load_reporting()` |
 | `HaltReport` | What a halt did: `stopped`, the ids of the tasks whose token it fired, and `persisted`, whether the halt store took it (`None` without a store) |
 | `ConnectionPoolStats` | Statistics about the HTTP connection pool |
 | `RpcCall` | One finished inbound call as `Metrics::on_rpc_call` reports it: binding, method, duration, status (`rpc.server.call.duration`) |
@@ -528,7 +532,7 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `EventEmitter` | struct | Ergonomic event emission helper (wraps an `EventQueueWriter`) |
 | `EventQueueWriter` | trait | Write events to a task's event stream |
 | `EventQueueReader` | trait | Read events from a task's event stream |
-| `EventQueueManager` | struct | Per-task queue lifecycle manager (create / lookup / destroy) |
+| `EventQueueManager` | struct | Per-task queue lifecycle manager (create / lookup / destroy); `with_max_buffered_bytes` bounds the bytes all its queues hold at once and `buffered_bytes` reports them (ADR 0047) |
 | `InMemoryQueueWriter` | struct | Bounded-channel `EventQueueWriter` implementation |
 | `InMemoryQueueReader` | struct | Bounded-channel `EventQueueReader` implementation |
 | `StreamEvent` | struct | One queued event and its position in the task's event log (the SSE `id:`) |

@@ -184,6 +184,7 @@ impl A2aRouter {
             card_handler,
         };
         let checks = state.clone();
+        let loads = Arc::clone(&state.handler);
 
         let router = Router::new()
             // Messaging (colon-suffixed paths are literal — no conflict)
@@ -203,6 +204,7 @@ impl A2aRouter {
             // Health check
             .route("/health", get(handle_health))
             .route("/ready", get(handle_ready))
+            .route("/load", get(handle_load))
             // Not a router-wide `fallback`: that would answer every unknown path of an app
             // this router is merged into, and axum refuses to merge two routers that both have one.
             .method_not_allowed_fallback(method_not_allowed)
@@ -212,7 +214,8 @@ impl A2aRouter {
                 checks,
                 validate::validate_a2a_request,
             ))
-            .layer(axum::middleware::from_fn(negotiate_media_type));
+            .layer(axum::middleware::from_fn(negotiate_media_type))
+            .layer(axum::middleware::from_fn_with_state(loads, stamp_load));
         // `DispatchConfig::base_path` (audit B-08): the same routes under the
         // prefix, which `nest` strips before they see the path, and at the
         // root, as the hyper dispatchers serve both.
@@ -690,17 +693,33 @@ async fn handle_health() -> axum::response::Response {
 /// — a bounded discriminant, never the store's message, which could carry a
 /// connection string.
 async fn handle_ready(State(state): State<A2aState>) -> axum::response::Response {
-    match state.handler.readiness().await {
-        Ok(()) => axum::Json(serde_json::json!({"status": "ready"})).into_response(),
-        Err(reason) => (
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            axum::Json(serde_json::json!({
-                "status": "not_ready",
-                "reason": reason,
-            })),
-        )
-            .into_response(),
+    let readiness = state.handler.readiness().await;
+    let (status, body) =
+        crate::dispatch::rest::ready_body(readiness, state.handler.is_halted_everywhere());
+    let status = axum::http::StatusCode::from_u16(status)
+        .unwrap_or(axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    (status, axum::Json(body)).into_response()
+}
+
+/// `GET /load` (ADR 0046): the load as JSON when load reporting is on, else
+/// the router's own 404.
+async fn handle_load(State(state): State<A2aState>) -> axum::response::Response {
+    if !state.handler.reports_load() {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
     }
+    axum::Json(state.handler.load().to_json()).into_response()
+}
+
+/// Adds the load header to every response of the router, when load
+/// reporting is on (ADR 0046).
+async fn stamp_load(
+    State(handler): State<Arc<RequestHandler>>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let mut resp = next.run(req).await;
+    handler.stamp_load(resp.headers_mut());
+    resp
 }
 
 // ── Inner handlers (shared by route handlers and catch-all) ──────────────────

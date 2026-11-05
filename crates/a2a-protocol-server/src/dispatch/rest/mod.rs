@@ -23,6 +23,8 @@ pub(crate) use error_response::{error_json_response, server_error_to_response};
 pub(crate) use error_response::{params_from_slice, params_from_value};
 #[cfg(feature = "axum")]
 pub(crate) use params::Unreadable;
+#[cfg(feature = "axum")]
+pub(crate) use response::ready_body;
 pub(crate) use response::{extended_card_response, json_ok_response};
 
 use std::collections::HashMap;
@@ -43,7 +45,7 @@ use query::{
     contains_path_traversal, list_push_configs_params, parse_list_tasks_query, parse_query_param,
     parse_query_param_u32, percent_decode_path, strip_tenant_prefix,
 };
-use response::{health_response, ready_response};
+use response::{health_response, load_response, ready_response};
 use span::HttpRoute;
 
 use crate::rpc_span::{RpcSystem, record_if_refused, refused};
@@ -154,9 +156,16 @@ impl RestDispatcher {
         // 2026-10-29 `/ready` was the constant too on this dispatcher (and so
         // on `CombinedDispatcher`), though it was documented as probing the
         // task store: a replica whose database was gone stayed in rotation.
-        if matches!(method.as_str(), "GET" | "HEAD") && (path == "/health" || path == "/ready") {
+        if matches!(method.as_str(), "GET" | "HEAD")
+            && (path == "/health"
+                || path == "/ready"
+                || path == "/load" && self.handler.reports_load())
+        {
             let mut resp = if path == "/ready" {
-                ready_response(self.handler.readiness().await)
+                let readiness = self.handler.readiness().await;
+                ready_response(readiness, self.handler.is_halted_everywhere())
+            } else if path == "/load" {
+                load_response(&self.handler.load())
             } else {
                 health_response()
             };

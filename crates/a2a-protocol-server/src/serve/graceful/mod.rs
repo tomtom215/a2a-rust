@@ -308,6 +308,9 @@ impl Server {
         {
             handler.warn_if_undeclared(binding);
         }
+        if let Some(_why) = production::warning(&config) {
+            trace_warn!(reason = _why, "production listener");
+        }
         if let Ok(addr) = listener.local_addr()
             && !config.tls_terminated_in_front
         {

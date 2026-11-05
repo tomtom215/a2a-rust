@@ -51,7 +51,7 @@ fn refusal(
         || matches!(
             *req.method(),
             axum::http::Method::GET | axum::http::Method::HEAD
-        ) && matches!(path, "/health" | "/ready");
+        ) && matches!(path, "/health" | "/ready" | "/load");
     if versionless {
         return None;
     }

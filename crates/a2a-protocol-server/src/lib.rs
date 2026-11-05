@@ -215,8 +215,8 @@ pub use error::{A2A_RUST_ERROR_DOMAIN, HALTED_REASON, ServerError, ServerResult}
 pub use executor::AgentExecutor;
 pub use executor_helpers::{EventEmitter, boxed_future};
 pub use handler::{
-    HaltReport, HaltScope, HandlerLimits, InFlightReport, InboundTracePolicy, RequestHandler,
-    SendMessageResult, ShutdownReport,
+    HaltReport, HaltScope, HandlerLimits, InFlightReport, InboundTracePolicy, LOAD_HEADER,
+    LoadReport, RequestHandler, SendMessageResult, ShutdownReport,
 };
 pub use interceptor::{CallOutcome, ServerInterceptor, ServerInterceptorChain};
 pub use metrics::{ConnectionPoolStats, Metrics, RpcCall};

@@ -444,6 +444,21 @@ pub struct HandlerLimits {
     /// tenth of the budget is free. An event larger than the whole budget is
     /// charged all of it.
     pub max_buffered_event_bytes: Option<usize>,
+    /// Readiness that follows load, as `(unready_at, ready_at)` in percent of
+    /// capacity, or `None` (the default): readiness then ignores load (audit
+    /// H7, ADR 0046).
+    ///
+    /// Utilization is `(running + queued) / capacity`, the numbers of
+    /// [`RequestHandler::load`](crate::RequestHandler::load). `/ready`
+    /// answers 503 `"saturated"` once it reaches `unready_at`, and stays so
+    /// until it is at or below `ready_at`; the band between them keeps one
+    /// noisy probe from flapping the state. Replicas of a fleet saturate
+    /// together, so readiness taken away under load takes capacity away when
+    /// it is most needed: prefer the load signal
+    /// ([`RequestHandlerBuilder::with_load_reporting`](crate::RequestHandlerBuilder::with_load_reporting))
+    /// for a balancer that can read it. The build refuses `ready_at >=
+    /// unready_at`.
+    pub saturation_readiness: Option<(u8, u8)>,
 }
 
 impl Default for HandlerLimits {
@@ -478,6 +493,7 @@ impl Default for HandlerLimits {
             final_task_snapshot: false,
             store_write_retry: Duration::from_secs(30),
             max_buffered_event_bytes: None,
+            saturation_readiness: None,
         }
     }
 }

@@ -55,8 +55,11 @@ B, with A available behind an explicit setting, never by default.
    (unbounded), and `utilization` `(running + queued) / capacity`, which goes
    past 1 when sends are queued, or `null` with no capacity. It touches no
    store: it is cheap enough to scrape every second.
-2. **`endpoint-load-metrics`** on every HTTP+JSON and JSON-RPC response, and
-   on every response of the axum router, when `with_load_reporting()` is set:
+2. **`endpoint-load-metrics`** on every response the crate's server sends
+   (`serve`, `Server`: the HTTP+JSON, JSON-RPC and combined dispatchers), and
+   on every response of the axum router, when `with_load_reporting()` is set.
+   It is added where the response leaves, so a dispatcher called directly from
+   an application's own hyper loop does not carry it:
    `TEXT application_utilization=<u>, named_metrics.running=<r>,
    named_metrics.queued=<q>`. This is the ORCA header a client-side weighted
    balancer reads from ordinary responses (Envoy's client-side weighted round

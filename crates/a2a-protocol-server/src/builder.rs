@@ -195,6 +195,7 @@ pub struct RequestHandlerBuilder {
     refuse_private_file_urls: bool,
     approval_gate: Option<crate::approval::ApprovalGate>,
     admission: Option<crate::admission::Admission>,
+    load_reporting: bool,
     halt_store: Option<Arc<dyn crate::store::HaltStore>>,
     halt_poll_interval: std::time::Duration,
     lease_store: Option<Arc<dyn crate::store::LeaseStore>>,
@@ -273,6 +274,7 @@ impl RequestHandlerBuilder {
             refuse_private_file_urls: false,
             approval_gate: None,
             admission: None,
+            load_reporting: false,
             halt_store: None,
             halt_poll_interval: crate::handler::DEFAULT_HALT_POLL_INTERVAL,
             lease_store: None,
@@ -482,6 +484,17 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub fn with_admission(mut self, admission: crate::admission::Admission) -> Self {
         self.admission = Some(admission);
+        self
+    }
+
+    /// Reports this replica's load for balancers (audit H7, ADR 0046): `GET
+    /// /load` answers it as JSON on the HTTP+JSON binding and the axum
+    /// router, and every response the crate's server or the axum router
+    /// sends carries it in [`LOAD_HEADER`](crate::LOAD_HEADER). Off by
+    /// default; readiness does not change with it.
+    #[must_use]
+    pub const fn with_load_reporting(mut self) -> Self {
+        self.load_reporting = true;
         self
     }
 
@@ -1618,6 +1631,14 @@ impl RequestHandlerBuilder {
             self.push_outbox
                 .map(|outbox| (outbox, in_flight.shutdown_token())),
         );
+        if let Some((unready_at, ready_at)) = self.handler_limits.saturation_readiness
+            && ready_at >= unready_at
+        {
+            return Err(crate::error::ServerError::Config(format!(
+                "saturation readiness ({unready_at}, {ready_at}): the ready threshold must be \
+                 below the unready one, or readiness has no band to keep it from flapping"
+            )));
+        }
         let admission = match self.admission {
             None => None,
             Some(admission) => {
@@ -1709,6 +1730,12 @@ impl RequestHandlerBuilder {
             audit: self.audit,
             draining: std::sync::atomic::AtomicBool::new(false),
             admission,
+            load_reporting: if self.load_reporting {
+                crate::handler::LoadReporting::On
+            } else {
+                crate::handler::LoadReporting::Off
+            },
+            saturated: std::sync::atomic::AtomicBool::new(false),
         };
         // Started now when a runtime is running, which is the usual case (a
         // handler is built in `#[tokio::main]`): until 2026-11-01 it started
@@ -1839,6 +1866,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("refuse_private_file_urls", &self.refuse_private_file_urls)
             .field("approval_gate", &self.approval_gate)
             .field("admission", &self.admission)
+            .field("load_reporting", &self.load_reporting)
             .field("halt_store", &self.halt_store.is_some())
             .field("halt_poll_interval", &self.halt_poll_interval)
             .field("lease_store", &self.lease_store.is_some())

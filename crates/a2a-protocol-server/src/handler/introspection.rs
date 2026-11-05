@@ -90,8 +90,10 @@ impl RequestHandler {
     /// Whether this replica should be sent traffic: not while it is
     /// [draining](Self::begin_draining), nor while its task store fails
     /// [`task_store_health`](Self::task_store_health), nor while a halt store
-    /// it was given has not been read. This is what `/ready` answers on the
-    /// HTTP+JSON dispatcher and the axum router.
+    /// it was given has not been read, nor, when
+    /// [`HandlerLimits::with_saturation_readiness`](crate::HandlerLimits::with_saturation_readiness)
+    /// is set, while it is saturated (ADR 0046). This is what `/ready`
+    /// answers on the HTTP+JSON dispatcher and the axum router.
     ///
     /// The probe is what reads the halt store the first time, so a replica
     /// becomes ready by having read it. Until 2026-11-01 it answered ready
@@ -100,7 +102,7 @@ impl RequestHandler {
     ///
     /// # Errors
     ///
-    /// A bounded reason: `"draining"`, `"timeout"` when the store has not
+    /// A bounded reason: `"draining"`, `"saturated"`, `"timeout"` when the store has not
     /// answered within [`READINESS_TIMEOUT`](crate::handler::READINESS_TIMEOUT),
     /// `"halt_store"` when the halt store cannot be read, or the store error's
     /// [`metric_label`](a2a_protocol_types::error::A2aError::metric_label),
@@ -108,6 +110,9 @@ impl RequestHandler {
     pub async fn readiness(&self) -> Result<(), &'static str> {
         if self.is_draining() {
             return Err("draining");
+        }
+        if self.saturated() {
+            return Err("saturated");
         }
         tokio::time::timeout(crate::handler::READINESS_TIMEOUT, async {
             self.sync_halts().await.map_err(|_| "halt_store")?;

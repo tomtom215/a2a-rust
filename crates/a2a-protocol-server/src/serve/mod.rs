@@ -255,10 +255,14 @@ fn service<D: Dispatcher>(
             if let Some(refused) = refused {
                 return Ok(refused);
             }
-            Ok::<_, Infallible>(match requests {
+            let mut resp = match requests {
                 Some(requests) => requests.dispatch(&*d, req).await,
                 None => d.dispatch(req).await,
-            })
+            };
+            if let Some(handler) = d.request_handler() {
+                handler.stamp_load(resp.headers_mut()); // ADR 0046
+            }
+            Ok::<_, Infallible>(resp)
         }
     })
 }
