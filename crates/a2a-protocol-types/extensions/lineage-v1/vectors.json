@@ -134,6 +134,27 @@
      "parentTaskId": "t-15"
     }
    }
+  },
+  {
+   "name": "a depth written as a float, as an SDK keeping metadata in a protobuf Struct writes it",
+   "value": {
+    "root": "job-42",
+    "depth": 2.0,
+    "parentTaskId": "t-1"
+   },
+   "reads": {
+    "root": "job-42",
+    "depth": 2,
+    "parentTaskId": "t-1"
+   },
+   "child": {
+    "parentTaskId": "t-2",
+    "expect": {
+     "root": "job-42",
+     "depth": 3,
+     "parentTaskId": "t-2"
+    }
+   }
   }
  ],
  "invalid": [
@@ -207,6 +228,13 @@
    "value": {
     "root": "job-42",
     "depth": 1.5
+   }
+  },
+  {
+   "name": "a depth past u32 written as a float",
+   "value": {
+    "root": "job-42",
+    "depth": 4294967296.0
    }
   },
   {

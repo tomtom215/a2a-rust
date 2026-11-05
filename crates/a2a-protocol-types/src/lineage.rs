@@ -85,7 +85,11 @@ pub const MAX_LINEAGE_ID_BYTES: usize = 1024;
 pub struct Lineage {
     /// The job: the root of the tree.
     pub root: String,
-    /// Hops from the job's first task, which is at 0.
+    /// Hops from the job's first task, which is at 0. Read from any JSON
+    /// number with a whole value (`2` or `2.0`): an SDK that keeps metadata
+    /// as a protobuf `Struct`, as a2a-python does, writes every number as a
+    /// double.
+    #[serde(deserialize_with = "whole_depth")]
     pub depth: u32,
     /// The delegating task's id on its own agent, when the sender gave it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -202,6 +206,28 @@ fn check_id(field: &str, id: &str) -> A2aResult<()> {
 }
 
 /// The lineage under [`LINEAGE_METADATA_KEY`] in `metadata`, checked.
+/// A `u32` from a JSON number with a whole value, written as an integer or
+/// as a float (`2.0`); a fraction, a negative or a value past `u32::MAX` is
+/// refused.
+fn whole_depth<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    use serde::de::Error;
+    let n = serde_json::Number::deserialize(d)?;
+    if let Some(u) = n.as_u64() {
+        return u32::try_from(u).map_err(|_| D::Error::custom(format!("depth {n} is not a u32")));
+    }
+    // A whole float prints without a fraction at `.0` precision, so the
+    // parse is exact; a negative or a value past `u32` fails it.
+    match n.as_f64() {
+        Some(f) if f.fract() == 0.0 => format!("{f:.0}")
+            .parse::<u32>()
+            .map_err(|_| D::Error::custom(format!("depth {n} is not a u32"))),
+        _ => Err(D::Error::custom(format!(
+            "depth {n} is not a whole number from 0 to {}",
+            u32::MAX
+        ))),
+    }
+}
+
 fn parse(metadata: Option<&serde_json::Value>) -> A2aResult<Option<Lineage>> {
     let Some(value) = metadata.and_then(|m| m.get(LINEAGE_METADATA_KEY)) else {
         return Ok(None);

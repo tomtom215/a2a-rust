@@ -201,3 +201,33 @@ fn a_malformed_or_repeated_task_is_taken_once_or_not_at_all() {
     assert_eq!(ids(&tree("job", &tasks)), vec![("t", 1, 0)]);
     assert_eq!(tree("job", &[] as &[Task]), Vec::new());
 }
+
+/// a2a-python keeps metadata in a protobuf `Struct`, so its JSON carries the
+/// depth `2` as `2.0`; found by the Python interop run. A whole float reads,
+/// and a fraction, a negative or a value past `u32` does not.
+#[test]
+fn a_depth_written_as_a_whole_float_reads() {
+    let read = |depth: serde_json::Value| {
+        let mut m = Message::user_text("m", "hi");
+        m.metadata = Some(serde_json::json!({
+            LINEAGE_METADATA_KEY: {"root": "job", "depth": depth, "parentTaskId": "p"}
+        }));
+        Lineage::read(&m)
+    };
+    assert_eq!(
+        read(serde_json::json!(2.0)).unwrap().map(|l| l.depth),
+        Some(2)
+    );
+    assert_eq!(
+        read(serde_json::json!(2)).unwrap().map(|l| l.depth),
+        Some(2)
+    );
+    for bad in [
+        serde_json::json!(2.5),
+        serde_json::json!(-1.0),
+        serde_json::json!(4_294_967_296.0),
+        serde_json::json!(4_294_967_296_u64),
+    ] {
+        assert!(read(bad.clone()).is_err(), "{bad}");
+    }
+}

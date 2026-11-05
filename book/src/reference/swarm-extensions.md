@@ -57,7 +57,7 @@ belongs to and where in the job's tree it is.
 | Member | Type | Rule |
 |---|---|---|
 | `root` | string, required | 1 to 1024 bytes of UTF-8, no control character (U+0000 to U+001F, U+007F to U+009F) |
-| `depth` | integer, required | 0 to 16; 0 is the job's first task |
+| `depth` | integer, required | 0 to 16; 0 is the job's first task. A receiver MUST accept a whole number written as a float (`2.0`): an SDK that keeps metadata in a protobuf `Struct`, as a2a-python does, writes every number that way |
 | `parentTaskId` | string, optional | As `root`; the delegating task's id on its own agent. Absent at depth 0 |
 
 Unknown members MUST be ignored. The JSON Schema is

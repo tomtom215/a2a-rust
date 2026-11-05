@@ -253,15 +253,31 @@ impl RequestHandler {
         }
     }
 
+    /// The executor span of the turn `ctx`. Opened before `ctx` moves into
+    /// the executor's future: the span records the ids, the agent, the turn's
+    /// lineage (ADR 0034) and — when captured — the request's message when it
+    /// is created. The call's own span learns the task and context here too,
+    /// the first point both are known.
+    fn open_executor_span(&self, ctx: &RequestContext) -> crate::rpc_span::ExecutorSpan {
+        #[cfg(feature = "tracing")]
+        crate::rpc_span::record_task(&ctx.task_id.0, Some(ctx.context_id.as_ref()));
+        let span = crate::rpc_span::ExecutorSpan::open(
+            &ctx.task_id.0,
+            ctx.context_id.as_ref(),
+            self.agent_card.as_ref(),
+            self.span_settings,
+            &ctx.message,
+        );
+        span.record_lineage(ctx.lineage());
+        span
+    }
+
     /// The executor's whole run, from its first poll to its cleanup.
     ///
     /// The future owns the only writer clone needed, so the channel closes —
     /// and readers see EOF — when the executor finishes. It also owns the
     /// tenant's concurrency permit, which is returned when the future ends,
     /// however it ends: dropping the future drops the permit.
-    // 61 of an allowed 60, crossed by recording the turn's lineage on its span
-    // (ADR 0034): one statement, which belongs beside the span's opening.
-    #[allow(clippy::too_many_lines)]
     fn executor_future(
         &self,
         ctx: RequestContext,
@@ -296,20 +312,7 @@ impl RequestHandler {
         #[cfg(feature = "audit")]
         let audit = self.audit_hook();
 
-        // Opened before `ctx` moves into the executor's future: the span
-        // records the ids, the agent and — when captured — the request's
-        // message when it is created. The call's own span learns the task
-        // and context here too, the first point both are known.
-        #[cfg(feature = "tracing")]
-        crate::rpc_span::record_task(&ctx.task_id.0, Some(ctx.context_id.as_ref()));
-        let span = crate::rpc_span::ExecutorSpan::open(
-            &ctx.task_id.0,
-            ctx.context_id.as_ref(),
-            self.agent_card.as_ref(),
-            self.span_settings,
-            &ctx.message,
-        );
-        span.record_lineage(ctx.lineage());
+        let span = self.open_executor_span(&ctx);
         #[cfg(feature = "tracing")]
         let recorder = span.recorder(continues(&ctx.task_id, ctx.stored_task.as_ref()));
         span.instrument(tenant.scope(async move {
