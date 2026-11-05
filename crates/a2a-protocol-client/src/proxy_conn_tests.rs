@@ -132,7 +132,7 @@ fn an_unsupported_proxy_is_warned_about_once() {
     let mut connector = ProxyConnector::new(
         crate::tls::default_tls_config(),
         rules,
-        HttpConnector::new(),
+        crate::transport::connector::http_connector(std::time::Duration::from_secs(5)),
     );
     assert!(format!("{connector:?}").starts_with("ProxyConnector"));
     let first =
