@@ -44,6 +44,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
 mod auth_card;
+mod card_url;
 mod local_model;
 mod surface;
 mod telemetry;
@@ -271,7 +272,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(bind_addr) = std::env::var("A2A_BIND_ADDR") {
         let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
         let addr: SocketAddr = listener.local_addr()?;
-        let url = format!("http://{addr}");
+        let url = card_url::card_url(addr);
 
         // SSRF posture. Server-only mode models a real deployment, so the
         // webhook SSRF guard is ON by default: a push-notification URL that

@@ -66,6 +66,7 @@ use rig_core::completion::CompletionModel;
 use rig_core::providers::openai;
 
 mod agent;
+mod card_url;
 mod leaked;
 mod mcp;
 
@@ -315,7 +316,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener =
         tokio::net::TcpListener::bind(bind_addr.as_deref().unwrap_or("127.0.0.1:0")).await?;
     let addr: SocketAddr = listener.local_addr()?;
-    let url = format!("http://{addr}");
+    let url = card_url::card_url(addr);
     let card_tools: Vec<&str> = tool_names.iter().map(String::as_str).collect();
     let handler = Arc::new(
         RequestHandlerBuilder::new(McpAgentExecutor {

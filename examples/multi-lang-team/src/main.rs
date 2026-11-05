@@ -47,6 +47,7 @@ use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
+mod card_url;
 mod surface;
 
 mod telemetry;
@@ -365,13 +366,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(bind_addr) = std::env::var("A2A_BIND_ADDR") {
         let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
         let addr: SocketAddr = listener.local_addr()?;
+        let url = card_url::card_url(addr);
         let handler = Arc::new(
             RequestHandlerBuilder::new(CoordinatorExecutor {
                 reachable: reachable.clone(),
             })
-            .with_agent_card(make_coordinator_card(&format!("http://{addr}")))
+            .with_agent_card(make_coordinator_card(&url))
             // §3.1.11: declared, so set; the public card is served as it.
-            .with_extended_agent_card(make_coordinator_card(&format!("http://{addr}")))
+            .with_extended_agent_card(make_coordinator_card(&url))
             .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
             .with_push_sender(a2a_protocol_server::push::HttpPushSender::new().allow_private_urls())
             .allow_unauthenticated_extended_card()

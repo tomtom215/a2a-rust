@@ -73,6 +73,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
 mod agent;
+mod card_url;
 mod leaked;
 mod surface;
 mod tools;
@@ -336,7 +337,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(bind_addr) = std::env::var("A2A_BIND_ADDR") {
         let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
         let addr: SocketAddr = listener.local_addr()?;
-        let url = format!("http://{addr}");
+        let url = card_url::card_url(addr);
         let handler = Arc::new(
             RequestHandlerBuilder::new(RigAgentExecutor {
                 agent: build_agent(&model)?,

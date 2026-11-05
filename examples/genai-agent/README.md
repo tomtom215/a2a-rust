@@ -90,6 +90,7 @@ startup when set. `echo-agent` names the same two variables
 | Variable | Effect |
 |---|---|
 | `A2A_BIND_ADDR` | Serve JSON-RPC here, until Ctrl+C |
+| `A2A_PUBLIC_URL` | The URL the agent card advertises, for callers elsewhere (a container, a proxy). Unset, the card names the bound address, and `http://localhost:<port>` for `0.0.0.0` or `[::]`; until 0.16.0 it named `0.0.0.0`, which a client dials as its own loopback (audit NEW-a-l-5) |
 | `A2A_GRPC_ADDR`, `A2A_WS_ADDR` | Also serve gRPC, WebSocket |
 | `A2A_ALLOW_PRIVATE_WEBHOOKS=1` | Permit push-notification URLs on loopback, private or link-local addresses |
 | `A2A_ALLOW_FALLBACK=1` | Complete a task with a labelled mechanical answer when no model is reachable, instead of failing it |

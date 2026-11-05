@@ -157,6 +157,11 @@ export OPENAI_BASE_URL=http://127.0.0.1:11434/v1
 RIG_MODEL=qwen3:1.7b A2A_BIND_ADDR=127.0.0.1:8080 cargo run -p rig-a2a-agent
 ```
 
+In a container, bind every address and say where callers reach it:
+`A2A_BIND_ADDR=0.0.0.0:8080 A2A_PUBLIC_URL=https://agent.example.com`. The
+card advertises `A2A_PUBLIC_URL`; unset, it names the bound address, and
+`http://localhost:<port>` for a bind to every address (audit NEW-a-l-5).
+
 ### What a tool-calling turn looks like
 
 Both transcripts below are verbatim from the run described above — a debug

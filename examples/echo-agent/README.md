@@ -109,6 +109,11 @@ killed:
 A2A_BIND_ADDR=127.0.0.1:8080 cargo run -p echo-agent
 ```
 
+In a container, bind every address and say where callers reach it:
+`A2A_BIND_ADDR=0.0.0.0:8080 A2A_PUBLIC_URL=https://agent.example.com`. The
+card advertises `A2A_PUBLIC_URL`; unset, it names the bound address, and
+`http://localhost:<port>` for a bind to every address (audit NEW-a-l-5).
+
 It serves JSON-RPC and HTTP+JSON on that one address, the shape this
 repository's TCK (`tck/`, `cargo run -p a2a-tck`) drives. Optional:
 

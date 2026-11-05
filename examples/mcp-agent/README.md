@@ -78,7 +78,8 @@ cargo run -p mcp-a2a-agent --bin mcp-a2a-agent                                # 
 A2A_BIND_ADDR=127.0.0.1:8080 cargo run -p mcp-a2a-agent --bin mcp-a2a-agent   # serve
 ```
 
-The package has two binaries, so `cargo run` needs `--bin`. And the agent
+In serve mode, `A2A_PUBLIC_URL` sets the URL its card advertises (unset: the bound address,
+and `localhost` for `0.0.0.0` or `[::]`). The package has two binaries, so `cargo run` needs `--bin`. And the agent
 spawns `mcp-tool-server` from its own directory, which `cargo run --bin
 mcp-a2a-agent` does not build: without the `cargo build` first it stops with
 "could not spawn …/mcp-tool-server" (both checked 2026-10-15).
