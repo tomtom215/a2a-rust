@@ -366,6 +366,10 @@ async fn server_only(bind_addr: &str) {
     }
     let handler = Arc::new(
         builder
+            // Grants leases (ADR 0020), so the interop clients can send one
+            // as their SDKs write it: a2a-python's metadata is a protobuf
+            // `Struct`, so its `ttlMs` arrives as a double.
+            .with_lease_store(a2a_protocol_server::store::InMemoryLeaseStore::new())
             .with_agent_card(card.clone())
             .with_extended_agent_card(card)
             .with_push_sender(a2a_protocol_server::push::HttpPushSender::new().allow_private_urls())

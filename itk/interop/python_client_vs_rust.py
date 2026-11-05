@@ -16,6 +16,8 @@ end to end over both HTTP bindings:
   * the lineage extension (ADR 0034, book "Swarm Extensions"), written by
     hand from the wire contract: a carried lineage is recorded on the task,
     and a malformed one is refused as InvalidParams before any work
+  * the lease and budget extensions' numbers, which this SDK sends as doubles
+    (extension_numbers.py)
 
 Usage: python python_client_vs_rust.py http://127.0.0.1:9090
 Exit codes: 0 all passed, 1 failures.
@@ -39,6 +41,8 @@ from a2a.types import (
     TaskState,
 )
 from a2a.utils import TransportProtocol
+
+import extension_numbers
 
 FAILURES: list[str] = []
 
@@ -145,6 +149,7 @@ async def run_binding(base_url: str, binding: str) -> None:
 
     # 6. Lineage, as a non-Rust hop writes it from the published contract.
     await check_lineage(client, binding)
+    await extension_numbers.check_lease(client, binding, check)
 
     await client.close()
 
@@ -176,6 +181,7 @@ async def run_binding(base_url: str, binding: str) -> None:
         TaskState.TASK_STATE_COMPLETED in final_states,
         f"got {final_states}",
     )
+    await extension_numbers.check_budget(stream_client, binding, check)
 
     # 8. Subscribing to a terminal task is rejected — reference parity: the
     # Python SDK's ActiveTask.subscribe raises for already-completed tasks

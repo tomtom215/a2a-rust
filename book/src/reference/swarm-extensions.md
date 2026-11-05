@@ -31,6 +31,15 @@ this SDK's server reads the metadata key whether or not it is listed. An
 agent that honours one SHOULD declare the URI in its card's
 `capabilities.extensions`. A breaking change gets a new URI.
 
+**Numbers.** `metadata` is a protobuf `Struct` in A2A, whose only number is a
+double, so an SDK that keeps metadata that way (a2a-python does) writes every
+integer of every extension as a float: `30000` arrives as `30000.0`. A
+receiver MUST read a whole number written as a float as that integer, up to
+2^53, and MUST refuse a fraction, a negative, a value past the field's range
+and a float past 2^53, as invalid params. This SDK does so for every integer
+it reads (lease `ttlMs`, budget `remainingMs`, `meters` and `spent`, lineage
+`depth`), and the Python interop client sends each of them as a double.
+
 The exact shape of lease, budget, idempotency, failure and approval is the
 JSON this SDK's tests pin for each URI, in
 [`crates/a2a-protocol-types/tests/golden/uri_contracts/`](https://github.com/tomtom215/a2a-rust/tree/main/crates/a2a-protocol-types/tests/golden/uri_contracts):
@@ -57,7 +66,7 @@ belongs to and where in the job's tree it is.
 | Member | Type | Rule |
 |---|---|---|
 | `root` | string, required | 1 to 1024 bytes of UTF-8, no control character (U+0000 to U+001F, U+007F to U+009F) |
-| `depth` | integer, required | 0 to 16; 0 is the job's first task. A receiver MUST accept a whole number written as a float (`2.0`): an SDK that keeps metadata in a protobuf `Struct`, as a2a-python does, writes every number that way |
+| `depth` | integer, required | 0 to 16; 0 is the job's first task. `2.0` is `2` (see Numbers above) |
 | `parentTaskId` | string, optional | As `root`; the delegating task's id on its own agent. Absent at depth 0 |
 
 Unknown members MUST be ignored. The JSON Schema is

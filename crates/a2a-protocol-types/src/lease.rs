@@ -68,7 +68,9 @@ pub const LEASE_METADATA_KEY: &str = "a2a-rust.com/lease";
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct Lease {
-    /// The time to live, in milliseconds.
+    /// The time to live, in milliseconds. Read from any whole JSON number,
+    /// `30000.0` included, as a protobuf `Struct` carries it.
+    #[serde(deserialize_with = "crate::whole_number::field")]
     pub ttl_ms: u64,
 }
 

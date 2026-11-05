@@ -82,10 +82,18 @@ pub const TOKENS_METER: &str = "tokens";
 #[non_exhaustive]
 pub struct Budget {
     /// The time left, in milliseconds, measured when the message was sent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::whole_number::optional"
+    )]
     pub remaining_ms: Option<u64>,
     /// The amount left of each meter, by name.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "crate::whole_number::map"
+    )]
     pub meters: BTreeMap<String, u64>,
 }
 
@@ -183,13 +191,25 @@ impl Budget {
 #[non_exhaustive]
 pub struct BudgetStatus {
     /// The time left when the status was written, in milliseconds.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::whole_number::optional"
+    )]
     pub remaining_ms: Option<u64>,
     /// The amount left of each granted meter.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "crate::whole_number::map"
+    )]
     pub meters: BTreeMap<String, u64>,
     /// The amount spent of each granted meter, overdraft included.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "crate::whole_number::map"
+    )]
     pub spent: BTreeMap<String, u64>,
 }
 
