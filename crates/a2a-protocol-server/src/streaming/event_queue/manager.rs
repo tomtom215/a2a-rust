@@ -58,6 +58,10 @@ pub enum QueueLease {
     /// handed back — carrying them would only invite a second executor to write
     /// to the shared queue without a persistence channel.
     Existing,
+    /// Less than a tenth of the buffered-event byte budget is free (ADR
+    /// 0047): what is left is kept for the turns already running. No queue
+    /// was created.
+    BytesExhausted,
     /// The `max_concurrent_queues` limit was reached and no queue was created.
     /// No slot was consumed and nothing was inserted into the map.
     CapacityExhausted,
@@ -83,6 +87,9 @@ pub struct EventQueueManager {
     max_concurrent_queues: Option<usize>,
     /// Optional metrics hook for reporting queue depth changes.
     metrics: Option<Arc<dyn Metrics>>,
+    /// The process-wide budget over buffered event bytes, when there is one
+    /// (ADR 0047).
+    byte_budget: Option<super::byte_budget::ByteBudget>,
 }
 
 impl std::fmt::Debug for EventQueueManager {
@@ -94,6 +101,7 @@ impl std::fmt::Debug for EventQueueManager {
             .field("write_timeout", &self.write_timeout)
             .field("max_concurrent_queues", &self.max_concurrent_queues)
             .field("metrics", &self.metrics.is_some())
+            .field("byte_budget", &self.byte_budget)
             .finish()
     }
 }
@@ -107,6 +115,7 @@ impl Default for EventQueueManager {
             write_timeout: DEFAULT_WRITE_TIMEOUT,
             max_concurrent_queues: None,
             metrics: None,
+            byte_budget: None,
         }
     }
 }
@@ -136,6 +145,7 @@ impl EventQueueManager {
             write_timeout: DEFAULT_WRITE_TIMEOUT,
             max_concurrent_queues: None,
             metrics: None,
+            byte_budget: None,
         }
     }
 
@@ -171,10 +181,37 @@ impl EventQueueManager {
     /// Hands the manager's metrics handle to a writer, so a dropped
     /// persistence event is reported where queue depth already is.
     fn observed(&self, writer: InMemoryQueueWriter) -> InMemoryQueueWriter {
-        match &self.metrics {
+        let writer = match &self.metrics {
             Some(metrics) => writer.with_metrics(Arc::clone(metrics)),
             None => writer,
+        };
+        match &self.byte_budget {
+            Some(budget) => writer.with_byte_budget(budget.clone()),
+            None => writer,
         }
+    }
+
+    /// Bounds the bytes of events held in this manager's queues, across all
+    /// of them, at `max_bytes` (audit H13, ADR 0047). Each event a writer
+    /// accepts is charged its serialized size until the last holder of it
+    /// (the persistence processor, a subscriber, the broadcast buffer) drops
+    /// it. A write that finds the budget spent waits for room, as long as a
+    /// write may wait for a full persistence channel, then fails; a new
+    /// queue is refused while less than a tenth of the budget is free.
+    /// `0` is taken as `1`.
+    #[must_use]
+    pub fn with_max_buffered_bytes(mut self, max_bytes: usize) -> Self {
+        self.byte_budget = Some(super::byte_budget::ByteBudget::new(max_bytes));
+        self
+    }
+
+    /// The buffered-event budget's size and what it holds now, as
+    /// `(held, total)`, or `None` without a budget.
+    #[must_use]
+    pub fn buffered_bytes(&self) -> Option<(usize, usize)> {
+        self.byte_budget
+            .as_ref()
+            .map(|budget| (budget.held(), budget.total()))
     }
 
     /// Sets the maximum number of concurrent event queues.
@@ -315,6 +352,12 @@ impl EventQueueManager {
             .is_some_and(|max| map.len() >= max)
         {
             QueueLease::CapacityExhausted
+        } else if self
+            .byte_budget
+            .as_ref()
+            .is_some_and(|budget| !budget.admits_new_work())
+        {
+            QueueLease::BytesExhausted
         } else {
             let (writer, reader, persistence_rx) = new_in_memory_queue_with_shared_persistence(
                 capacity,

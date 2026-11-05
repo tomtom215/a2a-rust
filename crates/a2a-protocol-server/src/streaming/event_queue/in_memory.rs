@@ -205,6 +205,10 @@ pub struct InMemoryQueueWriter {
     /// *is* the request: its closing is the send ending, not a processor
     /// lost. See [`collected`](Self::collected).
     collected: bool,
+    /// The process-wide budget each accepted event is charged against, when
+    /// the handler has one (`HandlerLimits::max_buffered_event_bytes`; audit
+    /// H13, ADR 0047). See [`super::byte_budget`].
+    byte_budget: Option<super::byte_budget::ByteBudget>,
 }
 
 impl std::fmt::Debug for InMemoryQueueWriter {
@@ -214,6 +218,7 @@ impl std::fmt::Debug for InMemoryQueueWriter {
             .field("max_event_size", &self.max_event_size)
             .field("write_timeout", &self.write_timeout)
             .field("metrics", &self.metrics.is_some())
+            .field("byte_budget", &self.byte_budget)
             .finish_non_exhaustive()
     }
 }
@@ -238,6 +243,7 @@ impl InMemoryQueueWriter {
             turn: Arc::default(),
             terminal_gate: None,
             collected: false,
+            byte_budget: None,
         }
     }
 
@@ -261,6 +267,7 @@ impl InMemoryQueueWriter {
             turn: Arc::default(),
             terminal_gate: None,
             collected: false,
+            byte_budget: None,
         }
     }
 
@@ -409,6 +416,12 @@ impl InMemoryQueueWriter {
         self
     }
 
+    /// Charges every event this writer accepts against `budget` (ADR 0047).
+    pub(crate) fn with_byte_budget(mut self, budget: super::byte_budget::ByteBudget) -> Self {
+        self.byte_budget = Some(budget);
+        self
+    }
+
     /// Creates a new reader that will receive all future events from this writer.
     ///
     /// This enables fan-out: multiple SSE streams can subscribe to the same
@@ -510,7 +523,7 @@ impl InMemoryQueueWriter {
     /// Uses a zero-allocation `CountingWriter` instead of `to_string()` to
     /// avoid allocating a full String just for size measurement — the event
     /// will be serialized again in the SSE layer.
-    fn check_event_size(&self, event: &StreamResponse) -> A2aResult<()> {
+    fn check_event_size(&self, event: &StreamResponse) -> A2aResult<usize> {
         let mut counter = CountingWriter(0);
         serde_json::to_writer(&mut counter, event)
             .map_err(|e| A2aError::internal(format!("event serialization failed: {e}")))?;
@@ -521,7 +534,7 @@ impl InMemoryQueueWriter {
                 self.max_event_size
             )));
         }
-        Ok(())
+        Ok(serialized_size)
     }
 }
 
@@ -561,7 +574,8 @@ impl InMemoryQueueWriter {
     ) -> A2aResult<()> {
         let mut collector_gone = false;
         if !handed_off && let Some(ref persistence_tx) = self.persistence_tx {
-            match persistence_tx.send_within(&event, self.write_timeout).await {
+            let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+            match persistence_tx.send_within(&event, left).await {
                 Ok(()) => {}
                 Err(mpsc::error::SendTimeoutError::Closed(())) => {
                     collector_gone = self.on_persistence_closed(&mut ticket);
@@ -590,7 +604,12 @@ impl InMemoryQueueWriter {
                 .verdict_within(deadline.saturating_duration_since(tokio::time::Instant::now()))
                 .await
         {
-            event = Arc::new(Ok(StreamEvent::at(seq, verdict)));
+            // The verdict's frame holds the bytes the event did: the
+            // subscribers keep it as long as they would have kept the event.
+            let charge = event.as_ref().as_ref().ok().and_then(|e| e.charge.clone());
+            let mut ruled = StreamEvent::at(seq, verdict);
+            ruled.charge = charge;
+            event = Arc::new(Ok(ruled));
         }
         self.broadcast(event, collector_gone)
     }
@@ -685,9 +704,47 @@ impl InMemoryQueueWriter {
         {
             return Box::pin(std::future::ready(Err(e)));
         }
-        if let Err(e) = self.check_event_size(&event) {
-            return Box::pin(std::future::ready(Err(e)));
-        }
+        let size = match self.check_event_size(&event) {
+            Ok(size) => size,
+            Err(e) => return Box::pin(std::future::ready(Err(e))),
+        };
+        // One deadline for the whole call: `write_timeout` is documented as
+        // the bound on a write, and the wait for bytes, the hand-off and the
+        // wait for the store's verdict are phases of one write. Bounding each
+        // by the full timeout let a write take a multiple of it.
+        let deadline = tokio::time::Instant::now() + self.write_timeout;
+        // Charged before the event has a position, so a write refused for
+        // want of bytes leaves no hole in the log (ADR 0047).
+        let charge = match &self.byte_budget {
+            None => None,
+            Some(budget) => match budget.try_charge(size) {
+                Some(charge) => Some(charge),
+                None => {
+                    return Box::pin(async move {
+                        let charge = budget
+                            .charge_by(size, deadline)
+                            .await
+                            .ok_or_else(|| over_budget(budget, self.write_timeout))?;
+                        self.write_charged(event, folded_message, Some(charge), deadline, order)
+                            .await
+                    });
+                }
+            },
+        };
+        self.write_charged(event, folded_message, charge, deadline, order)
+    }
+
+    /// The rest of [`write_in_order`](Self::write_in_order), once the event's
+    /// bytes are charged (or there is no budget): its position, then the
+    /// hand-off and the broadcast.
+    fn write_charged<'a>(
+        &'a self,
+        event: StreamResponse,
+        folded_message: bool,
+        charge: Option<super::byte_budget::Charge>,
+        deadline: tokio::time::Instant,
+        order: tokio::sync::MutexGuard<'a, ()>,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         let note = super::message_fold::Note::of(&event);
         // The position, assigned exactly once and carried on both channels
         // below. `Relaxed` is enough: this is the only writer of the counter
@@ -696,14 +753,10 @@ impl InMemoryQueueWriter {
         let seq = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
         let mut event = StreamEvent::at(seq, event);
         event.folded_message = folded_message;
+        event.charge = charge;
         // Armed before the hand-off, so the processor's verdict can never
         // arrive ahead of the ticket it answers.
         let mut ticket = self.ticket_for(&event);
-        // One deadline for the whole call: `write_timeout` is documented as
-        // the bound on a write, and the hand-off and the wait for the store's
-        // verdict are two phases of one write. Bounding each by the full
-        // timeout let a write take twice it.
-        let deadline = tokio::time::Instant::now() + self.write_timeout;
         let event: super::Shared = Arc::new(Ok(event));
 
         // Persistence first (if configured): this channel is independent of
@@ -749,6 +802,16 @@ impl InMemoryQueueWriter {
             outcome
         })
     }
+}
+
+/// The refusal of a write that found the byte budget spent for its whole
+/// `write_timeout`.
+fn over_budget(budget: &super::byte_budget::ByteBudget, waited: std::time::Duration) -> A2aError {
+    A2aError::internal(format!(
+        "event queue: the {}-byte budget for buffered events stayed spent for {waited:?}; \
+         subscribers and the persistence processor are holding every byte of it",
+        budget.total()
+    ))
 }
 
 // ── InMemoryQueueReader ──────────────────────────────────────────────────────

@@ -684,7 +684,10 @@ pub trait TaskStore: Send + Sync + 'static {
     /// wrote 200,712 bytes of WAL and replacing the whole document 190,448,
     /// three runs alike (audit NEW-h-designs-6, ADR 0044). A splice would save
     /// the read and the transfer of the history, not the write, and would have
-    /// to repeat the byte trim and the write rules of `save` in SQL.
+    /// to repeat the byte trim and the write rules of `save` in SQL. That trim
+    /// counts bytes of serde's compact JSON, which a trim computed in SQL would
+    /// not agree with, and one computed in Rust needs the history it was meant
+    /// not to ship (ADR 0047).
     ///
     /// An override **must** leave the store holding exactly what the default
     /// would have left it holding, including the trim, and must fall back to

@@ -429,6 +429,21 @@ pub struct HandlerLimits {
     /// pool's `acquire_timeout`, 30 s by default, when no connection can be
     /// had; then the statement). With both defaults, about a minute.
     pub store_write_retry: Duration,
+    /// The most bytes of events held in event queues at once, across every
+    /// task, or `None` (the default) for no bound beyond the per-queue count
+    /// and the per-event size (audit H13, ADR 0047).
+    ///
+    /// Each event is charged its serialized size from the moment its writer
+    /// accepts it until the last holder drops it: the persistence processor
+    /// once stored, each subscriber once sent, the broadcast buffer once
+    /// every subscriber has read it. A subscriber that stopped reading
+    /// therefore keeps its events charged, which is the memory it pins. A
+    /// write that finds the budget spent waits for room as long as a write
+    /// may wait for a full queue, then fails, and the task fails with it; a
+    /// new turn is refused `Overloaded` (503, retryable) while less than a
+    /// tenth of the budget is free. An event larger than the whole budget is
+    /// charged all of it.
+    pub max_buffered_event_bytes: Option<usize>,
 }
 
 impl Default for HandlerLimits {
@@ -462,6 +477,7 @@ impl Default for HandlerLimits {
             subscribe_replay_catchup: Duration::from_secs(2),
             final_task_snapshot: false,
             store_write_retry: Duration::from_secs(30),
+            max_buffered_event_bytes: None,
         }
     }
 }

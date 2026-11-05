@@ -1648,6 +1648,9 @@ impl RequestHandlerBuilder {
                         .unwrap_or(DEFAULT_MAX_CONCURRENT_STREAMS),
                 );
                 mgr = mgr.with_metrics(Arc::clone(&self.metrics));
+                if let Some(max) = self.handler_limits.max_buffered_event_bytes {
+                    mgr = mgr.with_max_buffered_bytes(max);
+                }
                 // An executor that fills the queue while the consumer retries
                 // a write waits as long as that retry may last, rather than
                 // failing a turn the store was about to take again.

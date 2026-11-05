@@ -227,3 +227,69 @@ fn the_build_refuses_a_gate_above_the_stream_cap() {
         .build();
     assert!(matches!(default_cap, Err(ServerError::Config(_))));
 }
+
+/// Writes one status update, then runs until the test hands it a permit.
+struct Speaks(Arc<Semaphore>);
+
+impl AgentExecutor for Speaks {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            queue
+                .write(a2a_protocol_types::events::StreamResponse::StatusUpdate(
+                    a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+                        ctx.task_id.clone(),
+                        ctx.context_id.clone(),
+                        a2a_protocol_types::task::TaskStatus::new(
+                            a2a_protocol_types::task::TaskState::Working,
+                        ),
+                    ),
+                ))
+                .await?;
+            if let Ok(permit) = self.0.acquire().await {
+                permit.forget();
+            }
+            Ok(())
+        })
+    }
+}
+
+/// With a byte budget for buffered events (ADR 0047), a stream whose reader
+/// does not read pins the event it was sent; while that leaves less than a
+/// tenth of the budget free, a new send is refused `Overloaded`.
+#[tokio::test(start_paused = true)]
+async fn a_spent_byte_budget_refuses_a_new_turn() {
+    let go = Arc::new(Semaphore::new(0));
+    let h = RequestHandlerBuilder::new(Speaks(Arc::clone(&go)))
+        .without_agent_card()
+        .with_handler_limits(
+            crate::handler::HandlerLimits::default().with_max_buffered_event_bytes(64),
+        )
+        .build()
+        .unwrap();
+    let mut first = send("", "c1");
+    first.configuration = None;
+    let crate::handler::SendMessageResult::Stream(reader) =
+        h.on_send_message(first, true, None).await.unwrap()
+    else {
+        panic!("a streaming send answers with a stream");
+    };
+    settle().await;
+    assert_eq!(
+        h.event_queue_manager.buffered_bytes(),
+        Some((64, 64)),
+        "the unread event holds the whole budget"
+    );
+    let mut second = send("", "c2");
+    second.configuration = None;
+    let refused = h.on_send_message(second, true, None).await;
+    let Err(ServerError::Overloaded(why)) = refused else {
+        panic!("{refused:?}");
+    };
+    assert!(why.contains("byte budget"), "{why}");
+    drop(reader);
+    go.add_permits(8);
+}

@@ -267,4 +267,13 @@ impl HandlerLimits {
         self.max_context_locks = max;
         self
     }
+
+    /// Bounds the bytes of events held in event queues at once, across
+    /// every task; see
+    /// [`max_buffered_event_bytes`](Self::max_buffered_event_bytes).
+    #[must_use]
+    pub const fn with_max_buffered_event_bytes(mut self, max: usize) -> Self {
+        self.max_buffered_event_bytes = Some(max);
+        self
+    }
 }

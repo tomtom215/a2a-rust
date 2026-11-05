@@ -15,6 +15,7 @@
 //! (resubscribe) to work even when another SSE stream is already active.
 
 pub(crate) mod applied;
+pub(crate) mod byte_budget;
 mod content;
 
 /// `capacity` as a broadcast channel can take it: tokio panics on zero and
@@ -29,6 +30,8 @@ fn channel_capacity(capacity: usize) -> usize {
 /// memory budget, and far below tokio's limit.
 const MAX_CHANNEL_CAPACITY: usize = 1 << 24;
 
+#[cfg(test)]
+mod byte_budget_queue_tests;
 #[cfg(test)]
 mod final_snapshot_tests;
 #[cfg(test)]
@@ -149,6 +152,10 @@ pub struct StreamEvent {
     /// processors that keep the task store, which record it as the message
     /// it was; not carried in the log, whose readers need only the payload.
     pub(crate) folded_message: bool,
+    /// The bytes this event holds of the handler's buffered-event budget,
+    /// returned when the last holder drops the event (ADR 0047). `None`
+    /// without a budget, and for frames the server synthesized.
+    pub(crate) charge: Option<byte_budget::Charge>,
 }
 
 impl StreamEvent {
@@ -159,6 +166,7 @@ impl StreamEvent {
             seq: Some(seq),
             event,
             folded_message: false,
+            charge: None,
         }
     }
 
@@ -170,6 +178,7 @@ impl StreamEvent {
             seq: None,
             event,
             folded_message: false,
+            charge: None,
         }
     }
 }

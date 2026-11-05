@@ -222,6 +222,15 @@ base64 with `InvalidParams` naming the field; URL-safe and unpadded base64 are
 accepted and returned in standard padded form. The same check applies to the
 events an executor writes.
 
+A `raw` part travels inside the task: it is kept in the task's row, in every
+event that carries it, and in every subscriber's buffer until it is sent. For
+anything large, an executor should store the bytes where its readers may fetch
+them and emit a `url` part instead; it is the one place that knows where the
+bytes may live and who may read them. The SDK does not rewrite `raw` to `url`
+(ADR 0047). `with_max_event_size` refuses an event that is too large, and
+`HandlerLimits::with_max_buffered_event_bytes` bounds the bytes all queues hold
+at once.
+
 ### Url (URI reference)
 
 ```rust

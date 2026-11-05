@@ -221,6 +221,11 @@ impl RequestHandler {
                 "task {task_id} is already being processed; wait for it to reach \
                      input-required or a terminal state before sending again"
             ))),
+            QueueLease::BytesExhausted => Err(ServerError::Overloaded(
+                "buffered events hold more than nine tenths of the server's byte budget \
+                 for them; retry later"
+                    .to_owned(),
+            )),
             QueueLease::CapacityExhausted => {
                 let cap = self
                     .event_queue_manager
