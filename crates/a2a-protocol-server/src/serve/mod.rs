@@ -115,14 +115,28 @@ pub trait Dispatcher: Send + Sync + 'static {
     fn protocol_binding(&self) -> Option<&'static str> {
         None
     }
+
+    /// Closes the connections this dispatcher upgraded to `WebSocket` (ADR
+    /// 0055), which the HTTP server no longer sees once hyper has handed
+    /// them over: each stops reading, lets its requests finish and sends a
+    /// Close frame. `true` when all of them ended within `within`.
+    /// [`Server::serve_with_shutdown`] calls it in its drain. The default
+    /// upgrades nothing.
+    fn close_upgraded(
+        &self,
+        _within: std::time::Duration,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
+        Box::pin(std::future::ready(true))
+    }
 }
 
 /// A shared dispatcher is a dispatcher: `Arc<D>` forwards all three methods, so
 /// code that keeps an `Arc<JsonRpcDispatcher>` to hand clones to other tasks can
-/// give it to [`Server`] as it is. The two provided methods are forwarded
-/// too, not left at their defaults: a wrapper that kept the defaults would
-/// lose the shutdown that cancels in-flight work first
-/// ([`Dispatcher::request_handler`]).
+/// give it to [`Server`] as it is. The provided methods are forwarded too,
+/// not left at their defaults: a wrapper that kept the defaults would lose
+/// the shutdown that cancels in-flight work first
+/// ([`Dispatcher::request_handler`]) and the one that closes upgraded
+/// connections ([`Dispatcher::close_upgraded`]).
 impl<D: Dispatcher> Dispatcher for Arc<D> {
     fn dispatch(
         &self,
@@ -137,6 +151,13 @@ impl<D: Dispatcher> Dispatcher for Arc<D> {
 
     fn protocol_binding(&self) -> Option<&'static str> {
         (**self).protocol_binding()
+    }
+
+    fn close_upgraded(
+        &self,
+        within: std::time::Duration,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
+        (**self).close_upgraded(within)
     }
 }
 
@@ -220,6 +241,37 @@ pub async fn serve(
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct OverTls;
 
+/// A connection's place in its server, attached to each of its requests so a
+/// connection the dispatcher upgrades to a WebSocket keeps it (ADR 0055): the
+/// [`ServeConfig::max_connections`] permit, released when the last holder is
+/// gone, and the connection's idle timer, suspended while it is held as it is
+/// while a request is in flight.
+#[derive(Clone)]
+pub(crate) struct UpgradeSlot {
+    /// Read only where a connection can be upgraded.
+    #[cfg(feature = "websocket")]
+    permit: Arc<tokio::sync::OwnedSemaphorePermit>,
+    serving: graceful::Serving,
+}
+
+/// An [`UpgradeSlot`] held by an upgraded connection.
+#[cfg(feature = "websocket")]
+pub(crate) struct HeldSlot {
+    _permit: Arc<tokio::sync::OwnedSemaphorePermit>,
+    _serving: graceful::ServingGuard,
+}
+
+#[cfg(feature = "websocket")]
+impl UpgradeSlot {
+    /// Holds the permit, and suspends the idle timer, until dropped.
+    pub(crate) fn hold(self) -> HeldSlot {
+        HeldSlot {
+            _serving: self.serving.begin(),
+            _permit: self.permit,
+        }
+    }
+}
+
 /// The per-connection service: dispatches each request with its connection's
 /// [`PeerAddr`](crate::PeerAddr), and its client's
 /// [`PeerCertificate`](crate::PeerCertificate) when its TLS handshake carried
@@ -227,7 +279,7 @@ pub(crate) struct OverTls;
 fn service<D: Dispatcher>(
     dispatcher: Arc<D>,
     requests: Option<connections::Requests>,
-    serving: graceful::Serving,
+    slot: UpgradeSlot,
     peer: SocketAddr,
     certificate: Option<crate::PeerCertificate>,
     tls: bool,
@@ -247,9 +299,10 @@ fn service<D: Dispatcher>(
         if let Some(certificate) = &certificate {
             req.extensions_mut().insert(certificate.clone());
         }
+        req.extensions_mut().insert(slot.clone());
         let d = Arc::clone(&dispatcher);
         let requests = requests.clone();
-        let serving = serving.begin();
+        let serving = slot.serving.begin();
         async move {
             let _serving = serving;
             if let Some(refused) = refused {

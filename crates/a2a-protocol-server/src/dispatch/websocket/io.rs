@@ -27,6 +27,9 @@ pub(super) enum WsIo {
     /// to tell a card request from an upgrade put back in front of it.
     #[cfg(feature = "tls-rustls")]
     Tls(Box<Replay<tokio_rustls::server::TlsStream<TcpStream>>>),
+    /// A connection the HTTP server upgraded (ADR 0055): hyper's stream,
+    /// TLS included when the server's listener terminates it.
+    Upgraded(hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>),
 }
 
 /// `inner`, with `prefix` delivered before anything read from it.
@@ -99,6 +102,7 @@ impl AsyncRead for WsIo {
             Self::Plain(s) => Pin::new(s).poll_read(cx, buf),
             #[cfg(feature = "tls-rustls")]
             Self::Tls(s) => Pin::new(s.as_mut()).poll_read(cx, buf),
+            Self::Upgraded(s) => Pin::new(s).poll_read(cx, buf),
         }
     }
 }
@@ -113,6 +117,7 @@ impl AsyncWrite for WsIo {
             Self::Plain(s) => Pin::new(s).poll_write(cx, data),
             #[cfg(feature = "tls-rustls")]
             Self::Tls(s) => Pin::new(s.as_mut()).poll_write(cx, data),
+            Self::Upgraded(s) => Pin::new(s).poll_write(cx, data),
         }
     }
 
@@ -121,6 +126,7 @@ impl AsyncWrite for WsIo {
             Self::Plain(s) => Pin::new(s).poll_flush(cx),
             #[cfg(feature = "tls-rustls")]
             Self::Tls(s) => Pin::new(s.as_mut()).poll_flush(cx),
+            Self::Upgraded(s) => Pin::new(s).poll_flush(cx),
         }
     }
 
@@ -129,6 +135,7 @@ impl AsyncWrite for WsIo {
             Self::Plain(s) => Pin::new(s).poll_shutdown(cx),
             #[cfg(feature = "tls-rustls")]
             Self::Tls(s) => Pin::new(s.as_mut()).poll_shutdown(cx),
+            Self::Upgraded(s) => Pin::new(s).poll_shutdown(cx),
         }
     }
 }

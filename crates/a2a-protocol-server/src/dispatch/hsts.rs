@@ -72,4 +72,11 @@ impl<D: Dispatcher> Dispatcher for Hsts<D> {
     fn request_handler(&self) -> Option<&Arc<crate::RequestHandler>> {
         self.inner.request_handler()
     }
+
+    fn close_upgraded(
+        &self,
+        within: std::time::Duration,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
+        self.inner.close_upgraded(within)
+    }
 }

@@ -139,6 +139,8 @@ mod validate;
 pub struct A2aRouter {
     handler: Arc<RequestHandler>,
     config: super::DispatchConfig,
+    #[cfg(feature = "websocket")]
+    websocket: Option<super::websocket::WebSocketUpgrades>,
 }
 
 impl std::fmt::Debug for A2aRouter {
@@ -153,16 +155,40 @@ impl A2aRouter {
     /// Creates a new [`A2aRouter`] wrapping the given handler.
     #[must_use]
     pub fn new(handler: Arc<RequestHandler>) -> Self {
-        Self {
-            handler,
-            config: super::DispatchConfig::default(),
-        }
+        Self::with_config(handler, super::DispatchConfig::default())
     }
 
     /// Creates a new [`A2aRouter`] with custom dispatch configuration.
     #[must_use]
     pub const fn with_config(handler: Arc<RequestHandler>, config: super::DispatchConfig) -> Self {
-        Self { handler, config }
+        Self {
+            handler,
+            config,
+            #[cfg(feature = "websocket")]
+            websocket: None,
+        }
+    }
+
+    /// Serves the WebSocket binding on this router too (audit B-25, ADR
+    /// 0055): an HTTP/1.1 `GET /` with `Upgrade: websocket` is upgraded and
+    /// served as [`CombinedDispatcher::with_websocket`](super::CombinedDispatcher::with_websocket)
+    /// serves it. `axum::serve` enables upgrades. Its shutdown does not know
+    /// upgraded connections: call [`websocket_upgrades`](Self::websocket_upgrades)
+    /// before [`into_router`](Self::into_router) and `close` the handle in
+    /// the application's own shutdown.
+    #[cfg(feature = "websocket")]
+    #[must_use]
+    pub fn with_websocket(mut self, websocket: super::WebSocketDispatcher) -> Self {
+        self.websocket = Some(super::websocket::WebSocketUpgrades::new(websocket));
+        self
+    }
+
+    /// The upgraded connections' handle, when [`with_websocket`](Self::with_websocket)
+    /// set one.
+    #[cfg(feature = "websocket")]
+    #[must_use]
+    pub fn websocket_upgrades(&self) -> Option<super::websocket::WebSocketUpgrades> {
+        self.websocket.clone()
     }
 
     /// Builds the Axum [`Router`] with all A2A REST routes.
@@ -177,6 +203,16 @@ impl A2aRouter {
         let max_body = self.config.max_request_body_size;
         let base_path = self.config.base_path.clone();
         self.handler.warn_if_undeclared("HTTP+JSON"); // §5.2, as every other listener does
+        #[cfg(feature = "websocket")]
+        let websocket = self.websocket.map(|upgrades| {
+            self.handler
+                .warn_if_undeclared(a2a_protocol_types::WEBSOCKET_BINDING_URI);
+            Router::new()
+                .route("/", get(handle_websocket_upgrade))
+                .with_state(upgrades)
+        });
+        #[cfg(not(feature = "websocket"))]
+        let websocket: Option<Router> = None;
         let card_handler = card_handler(&self.handler, self.config.agent_card_max_age);
         let state = A2aState {
             handler: self.handler,
@@ -209,6 +245,7 @@ impl A2aRouter {
             // this router is merged into, and axum refuses to merge two routers that both have one.
             .method_not_allowed_fallback(method_not_allowed)
             .with_state(state)
+            .merge(websocket.unwrap_or_default())
             .layer(axum::extract::DefaultBodyLimit::max(max_body))
             .layer(axum::middleware::from_fn_with_state(
                 checks,
@@ -224,6 +261,19 @@ impl A2aRouter {
             None => router,
         }
     }
+}
+
+/// `GET /` with `Upgrade: websocket` (ADR 0055); any other `GET /` is not
+/// this router's.
+#[cfg(feature = "websocket")]
+async fn handle_websocket_upgrade(
+    State(upgrades): State<super::websocket::WebSocketUpgrades>,
+    req: axum::extract::Request,
+) -> axum::response::Response {
+    if !super::websocket::WebSocketUpgrades::is_upgrade(&req) {
+        return plain_error(426, "this path serves WebSocket upgrades only");
+    }
+    upgrades.upgrade(req).await.map(Body::new)
 }
 
 /// Labels the response's media type exactly as `RestDispatcher` does (§11.1;

@@ -33,6 +33,15 @@ The `Origin` refusal carries the same shape with `"code":403`,
 No subprotocol is negotiated: the SDK's client sends no
 `Sec-WebSocket-Protocol` and the server's answer selects none.
 
+The upgrade is accepted on the WebSocket listener's own port, or, since
+0.16.0, on the HTTP port at the JSON-RPC path (ADR 0055). There the same
+checks run, and also: an `Origin` equal to the request's own (`Host` behind
+`http://` or `https://`) is accepted besides the listed ones; the request's
+headers pass the interceptor chain as a call to `WebSocketUpgrade`, and a
+refusal is the HTTP+JSON binding's answer to it (`401` with its challenge,
+`403`); a `Sec-WebSocket-Version` other than 13 is `426`; past the
+dispatcher's connection cap, or while the server shuts down, `503`.
+
 ## 2. Service parameters (§3.2.6, §12.3)
 
 **Transmission.** Service parameters are the HTTP headers of the upgrade

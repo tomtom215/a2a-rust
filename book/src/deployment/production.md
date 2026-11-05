@@ -104,8 +104,11 @@ every request for a task to one replica calls `allow_process_local_stores()`
 file is not shared between pods, and there is no SQLite lease store. In 0.15
 several replicas are supported only when every turn of a task is routed to one
 replica; see [Running More Than One Replica](./horizontal-scaling.md). The
-gRPC and WebSocket dispatchers serve on their own listeners, which
-`ServeConfig` does not reach.
+gRPC dispatcher serves on its own listener, which `ServeConfig` does not
+reach. The WebSocket dispatcher can too, or, since 0.16.0, on the HTTP port
+through `CombinedDispatcher::with_websocket`, where `ServeConfig`'s
+connection cap and shutdown apply to it
+([WebSocket: on the HTTP port](../building-agents/dispatchers/websocket.md#on-the-http-port)).
 
 ### HTTPS
 

@@ -121,6 +121,8 @@ use super::{Dispatcher, connections, pause_after_accept_error};
 mod idle;
 use idle::IdleTimeout;
 pub(super) use idle::Serving;
+#[cfg(feature = "websocket")]
+pub(super) use idle::ServingGuard;
 
 mod connection;
 use connection::{Accepted, spawn_connection};
@@ -418,6 +420,7 @@ impl Server {
 
         let mut report = drain(
             graceful,
+            dispatcher.close_upgraded(config.drain_timeout),
             accepted.load(Ordering::Relaxed),
             config.drain_timeout,
         )
@@ -427,9 +430,11 @@ impl Server {
     }
 }
 
-/// Waits out the in-flight connections, or reports the ones left behind.
+/// Waits out the in-flight connections, and the dispatcher's `upgraded`
+/// ones closing beside them, or reports the ones left behind.
 async fn drain(
     graceful: hyper_util::server::graceful::GracefulShutdown,
+    upgraded: impl Future<Output = bool>,
     accepted: u64,
     timeout: Duration,
 ) -> ServeReport {
@@ -442,10 +447,9 @@ async fn drain(
         "shutdown signalled; draining connections"
     );
 
-    if tokio::time::timeout(timeout, graceful.shutdown())
-        .await
-        .is_ok()
-    {
+    let (http, upgraded) =
+        tokio::join!(tokio::time::timeout(timeout, graceful.shutdown()), upgraded);
+    if http.is_ok() && upgraded {
         ServeReport {
             accepted,
             drained: true,

@@ -48,6 +48,8 @@ pub(crate) mod subscribers;
 mod tenant_resolution;
 mod undeclared_binding;
 mod unreadable;
+#[cfg(feature = "websocket")]
+pub(crate) mod upgrade;
 
 pub use claims::{DEFAULT_TURN_CLAIM_RENEWAL, DEFAULT_TURN_CLAIM_TTL, MIN_TURN_CLAIM_TTL};
 pub use halt::{DEFAULT_HALT_POLL_INTERVAL, HaltReport, HaltScope};

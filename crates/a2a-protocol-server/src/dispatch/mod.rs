@@ -37,7 +37,7 @@ pub use rest::RestDispatcher;
 pub use version::{A2A_VERSION_METADATA_KEY, validate_version_metadata};
 pub(crate) use version::{requested_version, validate_version_header};
 #[cfg(feature = "websocket")]
-pub use websocket::WebSocketDispatcher;
+pub use websocket::{WebSocketDispatcher, WebSocketUpgrades};
 
 /// Configuration for dispatch-layer limits shared by both JSON-RPC and REST
 /// dispatchers.

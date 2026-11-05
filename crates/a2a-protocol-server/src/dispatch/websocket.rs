@@ -57,12 +57,14 @@ use crate::handler::{RequestHandler, SendMessageResult};
 use crate::rpc_span::StreamEnd;
 
 mod card;
+mod http_upgrade;
 mod io;
 mod origin;
 mod params;
 mod shutdown;
 mod stream;
 
+pub use http_upgrade::WebSocketUpgrades;
 use io::WsIo;
 use params::{Unread, parse_params};
 use stream::stream_events;
@@ -637,11 +639,7 @@ impl WebSocketDispatcher {
         certificate: Option<crate::PeerCertificate>,
         closing: &tokio_util::sync::CancellationToken,
     ) -> Result<(), WsError> {
-        // Cap message/frame sizes at the protocol level so oversized input is
-        // rejected during the read, before it is buffered in memory.
-        let ws_config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
-            .max_message_size(Some(MAX_WS_MESSAGE_SIZE))
-            .max_frame_size(Some(MAX_WS_MESSAGE_SIZE));
+        let ws_config = ws_config();
 
         // Capture the upgrade request's headers during the handshake so that
         // auth material and tenancy context reach the handler exactly as they
@@ -670,11 +668,23 @@ impl WebSocketDispatcher {
         .map_err(WsError::Handshake)?;
 
         let headers = Arc::new(upgrade_headers.unwrap_or_default());
+        self.serve_stream(ws_stream, &headers, closing).await;
+        Ok(())
+    }
 
+    /// Serves an upgraded connection until it ends: this listener's, or one
+    /// the HTTP server upgraded (`WebSocketUpgrades`, ADR 0055). `headers`
+    /// are the upgrade request's, for every call on the connection.
+    async fn serve_stream(
+        &self,
+        ws_stream: WebSocketStream<WsIo>,
+        headers: &Arc<HashMap<String, String>>,
+        closing: &tokio_util::sync::CancellationToken,
+    ) {
         let (writer, reader) = ws_stream.split();
         let writer: WsSink = Arc::new(Connection::new(writer, self.write_timeout));
 
-        self.read_loop(reader, &writer, &headers, closing).await;
+        self.read_loop(reader, &writer, headers, closing).await;
 
         // Best-effort close handshake: sends any pending close reply so the
         // peer sees a clean WebSocket close rather than a bare TCP teardown.
@@ -686,8 +696,6 @@ impl WebSocketDispatcher {
             drop(w);
         })
         .await;
-
-        Ok(())
     }
 
     /// Records an answer given before the call's method is known, with the
@@ -947,6 +955,15 @@ fn extract_upgrade_headers(req: &WsUpgradeRequest) -> HashMap<String, String> {
     // `PathSegmentTenantResolver` documents reading.
     map.insert(":path".to_owned(), req.uri().path().to_owned());
     map
+}
+
+/// The WebSocket configuration of every connection: message and frame sizes
+/// capped at the protocol level, so oversized input is refused during the
+/// read, before it is buffered in memory.
+fn ws_config() -> tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
+    tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
+        .max_message_size(Some(MAX_WS_MESSAGE_SIZE))
+        .max_frame_size(Some(MAX_WS_MESSAGE_SIZE))
 }
 
 /// Validates the `A2A-Version` header (or `?A2A-Version=` parameter, §3.6.1)

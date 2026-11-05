@@ -201,8 +201,6 @@ pub use builder::RequestHandlerBuilder;
 pub use call_context::{
     CallContext, PEER_ADDR_KEY, PEER_CERTIFICATE_KEY, PeerAddr, PeerCertificate,
 };
-#[cfg(feature = "websocket")]
-pub use dispatch::WebSocketDispatcher;
 #[cfg(feature = "axum")]
 pub use dispatch::axum_adapter::A2aRouter;
 pub use dispatch::{
@@ -211,6 +209,8 @@ pub use dispatch::{
 };
 #[cfg(feature = "grpc")]
 pub use dispatch::{GrpcConfig, GrpcDispatcher};
+#[cfg(feature = "websocket")]
+pub use dispatch::{WebSocketDispatcher, WebSocketUpgrades};
 pub use error::{A2A_RUST_ERROR_DOMAIN, HALTED_REASON, ServerError, ServerResult};
 pub use executor::AgentExecutor;
 pub use executor_helpers::{EventEmitter, boxed_future};

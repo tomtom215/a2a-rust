@@ -432,7 +432,8 @@ are rustdoc's job.
 |------|-------------|
 | `JsonRpcDispatcher` | JSON-RPC 2.0 HTTP dispatcher (implements `Dispatcher`) |
 | `RestDispatcher` | RESTful HTTP dispatcher (implements `Dispatcher`) |
-| `CombinedDispatcher` | JSON-RPC and REST on one listener: a `POST` to the JSON-RPC path is JSON-RPC, the rest is REST (implements `Dispatcher`) |
+| `CombinedDispatcher` | JSON-RPC and REST on one listener: a `POST` to the JSON-RPC path is JSON-RPC, the rest is REST (implements `Dispatcher`); `with_websocket` adds the WebSocket binding on the same port, upgraded at the JSON-RPC path (`websocket` feature, ADR 0055) |
+| `WebSocketUpgrades` | The connections an HTTP dispatcher upgraded to WebSockets: `open()`, and `close(within)`, which `Server::serve_with_shutdown` calls in its drain and an axum application calls itself (`A2aRouter::websocket_upgrades`) |
 | `WebSocketDispatcher` | WebSocket dispatcher (`websocket` feature) |
 | `GrpcDispatcher` | gRPC dispatcher (`grpc` feature); `with_rustls(rustls::ServerConfig)` serves TLS through this crate's handshake, so a `ReloadingCertResolver` rotates it (`grpc-tls` and `tls-rustls`) |
 | `A2aRouter` | Axum framework adapter (`axum` feature) |

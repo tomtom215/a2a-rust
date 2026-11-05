@@ -45,6 +45,66 @@ dispatcher.serve("0.0.0.0:443").await?;
 # fn main() {}
 ```
 
+## On the HTTP port
+
+Since 0.16.0 the binding can share the port of the HTTP bindings (audit B-25,
+[ADR 0055](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0055-websocket-on-the-http-port.md)):
+`CombinedDispatcher::with_websocket` upgrades an HTTP/1.1 `GET` with
+`Upgrade: websocket` at the JSON-RPC path and serves the connection with the
+`WebSocketDispatcher`'s settings. Declare it in the card at the same URL,
+`ws://` or `wss://` as the listener's TLS is.
+
+```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("https://agent.example.com"))
+#         .with_interface(AgentInterface::rest("https://agent.example.com"))
+#         .with_interface(AgentInterface::new("wss://agent.example.com", a2a_protocol_types::WEBSOCKET_BINDING_URI))
+#         .with_description("An example agent")
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+# }
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_server::{CombinedDispatcher, WebSocketDispatcher};
+# use a2a_protocol_server::serve::Server;
+# use std::sync::Arc;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# async fn run(shutdown: impl std::future::Future<Output = ()> + Send) -> std::io::Result<()> {
+# let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build().expect("handler"));
+let dispatcher = CombinedDispatcher::new(Arc::clone(&handler)).with_websocket(
+    WebSocketDispatcher::new(handler).with_allowed_origins(["https://app.example.com"]),
+);
+let report = Server::bind("0.0.0.0:8443")
+    .await?
+    .with_tls_pem(&std::fs::read("cert.pem")?, &std::fs::read("key.pem")?)?
+    .serve_with_shutdown(dispatcher, shutdown)
+    .await;
+# let _ = report;
+# Ok(())
+# }
+# fn main() {}
+```
+
+What differs from the separate listener:
+
+- The interceptor chain runs on the upgrade request's headers before the
+  `101`, as a call to `WebSocketUpgrade`: an upgrade without the credential
+  is refused `401` and holds nothing.
+- A page of the server's own origin is accepted besides the listed ones;
+  any other origin is still `403`.
+- The connection keeps the HTTP server's `max_connections` slot until it
+  closes, and the dispatcher's `with_max_connections` caps upgrades (`503`
+  past it). The HTTP idle timeout is suspended for it; the WebSocket idle
+  bound and its Ping govern instead.
+- `Server::serve_with_shutdown` closes it in the drain, after the tasks in
+  flight have ended, with a Close frame. The `WebSocketDispatcher`'s TLS,
+  handshake timeout and listener settings do not apply: the connection is the
+  HTTP server's.
+
+The axum router has the same route (`A2aRouter::with_websocket`, at `/`);
+`axum::serve` does not know upgraded connections, so close them in the
+application's shutdown with `A2aRouter::websocket_upgrades()`'s `close`.
+
 ## Built-in limits
 
 | Limit | Value | Description |
