@@ -35,6 +35,8 @@ In this model, the relay:
 3. Translates peer events into `StreamRequest` items per [Section 5.1](#51-translation-rules)
 4. Injects translated items into peer agents by calling `SendMessage(context_id, return_immediately=True)`
 
+For `TaskStatusUpdateEvent` and `TaskMessageUpdateEvent` items this call carries the translated `message`. For `TaskArtifactUpdateEvent` items, the relay calls `SendMessage` with no `message` field and `artifact_updates: [event]` (and `return_immediately=True`); see [Section 5.1](#51-translation-rules).
+
 The original streaming subscriber for each agent continues to receive that agent's events. The relay discards the response to its injected `SendMessage` calls.
 
 ### 2.2. Live Relay Model
@@ -138,16 +140,18 @@ The relay (or transport, in the native fan-out model) translates peer `StreamRes
 | Initial `Task` | `StreamRequest { message }` | 1× `Part.data` (Task JSON) |
 | `TaskStatusUpdateEvent` with `status.message` | `StreamRequest { message }` | Original `status.message` parts + appended `Part.data` (TaskStatusUpdateEvent JSON) |
 | `TaskStatusUpdateEvent` without `status.message` | `StreamRequest { message }` | 1× `Part.data` (TaskStatusUpdateEvent JSON) |
-| `TaskArtifactUpdateEvent` | `StreamRequest { artifact_update }` (unchanged) | — |
+| `TaskArtifactUpdateEvent` | `StreamRequest { send_message: SendMessageRequest { artifact_updates: [event] } }` | No `message` field; `message-sender` in `TaskArtifactUpdateEvent.metadata`; requires `user_artifacts` on receiving agent (see below) |
 | `TaskMessageUpdateEvent` | `StreamRequest { message }` | Original parts + appended `Part.data` (TaskMessageUpdateEvent JSON) |
 
-All translated peer items carry a `Part.data` containing the JSON-serialised proto event with `preserving_proto_field_name=True` (snake_case field names). The `Part.media_type` **MUST** be set to identify the event type:
+All translated peer items that carry a `Part.data` contain the JSON-serialised proto event with `preserving_proto_field_name=True` (snake_case field names). The `Part.media_type` **MUST** be set to identify the event type:
 
 | Event | `Part.media_type` |
 | :--- | :--- |
 | Initial `Task` | `application/vnd.a2a.task+json` |
 | `TaskStatusUpdateEvent` | `application/vnd.a2a.task-status-update+json` |
 | `TaskMessageUpdateEvent` | `application/vnd.a2a.task-message-update+json` |
+
+**`TaskArtifactUpdateEvent` relay and `user_artifacts`:** The A2A v1.1 `StreamRequest` has no `artifact_update` payload; artifacts are injected via `SendMessageRequest.artifact_updates`. This field is only accepted by agents that declare `AgentCapabilities.user_artifacts = true`. Agents participating in a collaborative task session that may receive relayed artifacts **MUST** declare `user_artifacts = true`. Bindings **SHOULD** verify this before including an agent in a session where peers may produce artifacts. An agent that does not declare `user_artifacts` **MUST NOT** be delivered relayed `TaskArtifactUpdateEvent` items; the relay **MAY** instead translate such items as `StreamRequest { send_message: SendMessageRequest { message: Message { parts: [Part.data(event)] } } }` with `Part.media_type: application/vnd.a2a.task-artifact-update+json` as a fallback, so the receiving agent sees the event as message content.
 
 For `TaskStatusUpdateEvent` with `status.message`, the translated item carries the original text parts so receiving agents can directly use the message content, and appends a `Part.data` so agents can also inspect the full event envelope (state, task ID, etc.).
 
@@ -168,6 +172,18 @@ The relay **MUST** populate the shared-task `message-sender` field before delive
 ```
 
 **`message-sender`** **MUST** be present on every item delivered to a receiving agent. For client-originated items and all translated peer items except `TaskMessageUpdateEvent`, the relay sets this to the sender's identity. For translated `TaskMessageUpdateEvent` items, `message-sender` **MUST** be preserved from the original message (the external client that sent the out-of-band input) and **MUST NOT** be replaced with the relay agent's identity.
+
+For relayed `TaskArtifactUpdateEvent` items, sender identity is carried in `TaskArtifactUpdateEvent.metadata` under the shared-task extension key (the event has no `Message` to carry metadata on):
+
+```json
+{
+  "https://a2a-protocol.org/extensions/shared-task/v1": {
+    "message-sender": "<sender identity>"
+  }
+}
+```
+
+The relay **MUST** populate this metadata field before injecting the artifact update. Receiving agents **SHOULD** read sender identity from this field when processing an inbound artifact update in a collaborative session.
 
 ### 5.3. Session ID Rewriting
 

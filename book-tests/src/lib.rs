@@ -111,6 +111,9 @@ pub mod page_client_delegation {}
 #[doc = include_str!("../../book/src/client/streaming.md")]
 pub mod page_client_streaming {}
 
+#[doc = include_str!("../../book/src/client/load-balancers.md")]
+pub mod page_client_load_balancers {}
+
 #[doc = include_str!("../../book/src/client/task-management.md")]
 pub mod page_client_task_management {}
 
@@ -307,6 +310,7 @@ pub mod pages_building_agents_authentication {}
 #[doc = include_str!("../../book/src/client/builder/reference.md")]
 #[doc = include_str!("../../book/src/client/builder/grpc.md")]
 #[doc = include_str!("../../book/src/client/builder/reuse.md")]
+#[doc = include_str!("../../book/src/client/builder/pool.md")]
 pub mod pages_client_builder {}
 
 #[doc = include_str!("../../book/src/building-agents/stores/in-memory.md")]

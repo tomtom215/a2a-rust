@@ -1,0 +1,13 @@
+{
+ "journal": {
+  "canceled": 50
+ },
+ "no_task_id": 0,
+ "tasks": {
+  "TASK_STATE_CANCELED": 50
+ },
+ "pairs": {
+  "canceled/TASK_STATE_CANCELED": 50
+ },
+ "connections": 11
+}

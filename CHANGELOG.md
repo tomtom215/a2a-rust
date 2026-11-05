@@ -35,6 +35,39 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`HttpPool`: one set of HTTP connections many clients share**
+  (client, `tls-rustls`; audit D-12, ADR 0032). `HttpPool::builder()...build()`
+  makes a pool; `ClientBuilder::with_pool(&pool)` sends the JSON-RPC and
+  HTTP+JSON bindings through it, so clients that call the same host reuse each
+  other's connections instead of each holding a pool of its own. Tested
+  against this repository's server behind a tap that counts accepted
+  connections: ten clients on one pool made one connection (over HTTP/2),
+  ten without a pool made ten. `HttpPool::shared()` is one process-wide pool
+  with the defaults. A pool has one TLS configuration (`with_tls_config`) and
+  one connect timeout (`with_connect_timeout`), so a client that sets either
+  itself *and* is given a pool fails at `build()` with an error that names the
+  setting, in whichever order the two were called, and a pool is built with
+  the proxy variables as they are when it is built. Nothing changes for a
+  client that is not given a pool. gRPC and WebSocket clients do not use one.
+  The pool also takes, all off by default:
+  `with_max_connection_lifetime` (new connections are used once the current
+  ones are that old, spread by up to 10%, without cutting a call or stream
+  running on the old one), `with_http2_keep_alive(interval, timeout)` (an HTTP/2
+  PING on HTTP/2 connections, idle or not; one that is not answered closes
+  the connection and the next call reconnects),
+  `with_max_idle_per_host`, `with_idle_timeout` (default 50 s) and
+  `with_http2_prior_knowledge` (HTTP/2 without negotiating it, so also over
+  plain `http://`). The per-origin in-flight cap, circuit breaker and retry
+  budget ADR 0032 also describes are not in this entry.
+- **A book page, "Behind a load balancer"** (audit B-11). A blocking
+  `send_message` that outlasts a balancer's idle timeout (60 s on an AWS ALB
+  and in nginx by default; the client waits up to ten minutes) is answered
+  `504` while the task runs on, and the client never learns its id. The page
+  gives the three remedies (send with `return_immediately` and poll, stream,
+  raise the balancer's timeout), says why a long-lived HTTP/2 connection is
+  pinned to one replica behind a layer-4 balancer, and what an HTTP/2 PING
+  does and does not cross. Linked from the client builder and CLI pages.
+
 - **`ClientBuilder::with_grpc_keep_alive`, `GrpcTransportConfig::with_http2_keep_alive`**
   (client; audit B-10, D-12). An opt-in HTTP/2 PING interval and timeout for
   gRPC: a quiet stream is not closed by a load balancer's idle timeout when
@@ -44,8 +77,8 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   wire through a proxy that reads the client's bytes as HTTP/2 frames: PINGs
   at the interval on an idle connection, none by default, and a connection
   whose PINGs nobody answers dropped after the timeout. HTTP/2 PINGs for the
-  HTTP bindings, a maximum connection lifetime and a per-host cap are ADR
-  0032's pool.
+  HTTP bindings, a maximum connection lifetime and a per-host idle cap are
+  `HttpPool`'s (next entry above).
 - **Retries that cannot multiply an overload: a retry budget, a bound on
   elapsed time, and a cap on calls in flight** (client; audit H6, per client
   and opt-in, fork F7). A client that retries sends a saturated worker up to
@@ -1354,6 +1387,51 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **The book's recovery loop lost the leased children it was meant to
+  recover** (docs; found by the live proof of audit group M, 2026-11-04).
+  `book/src/client/delegation.md` reattached a journal record and waited for
+  that child to finish before it reattached the next, but a child's handle is
+  what renews its lease, so every child after the first had nothing renewing
+  it and its lease lapsed. Run against a PostgreSQL journal with fifty children
+  on 15-second leases, `kill -9` of the supervisor and the loop as the book
+  wrote it: 49 of 50 children were stopped by the agent in two of three runs
+  and 50 of 50 in the third. With no lease the same loop lost none (3 of 3 runs,
+  50 of 50 completed). The loop now reattaches every record first and waits on
+  the children together, and the page says why. It also does not use `?` once it
+  holds handles: a `Delegation` dropped before its child settles cancels the
+  child (`delegation/drop.rs`), so an early return cancels every child already
+  reattached. Run live with one unreattachable record as the 27th of 51, a loop
+  that returned early cancelled the 26 before it in 3 of 3 runs. The evidence,
+  the harness and the commands to re-run it are in
+  `docs/audits/2026-11-01-triage/evidence/m-live-proof/` and
+  `scripts/live/delegation/`.
+- **A reattach renewed its lease a third of the lease too late**
+  (client; same live proof). `Delegation::reattach_with` with a lease started
+  its renewal task as `start_leased` does, waiting a third of the lease before
+  the first renewal. A child picked up after a crash has had no renewal since
+  before it, so a restart late enough lost it. With 15-second leases a restart
+  7.3 s after the kill, in one of three runs, stopped every child, the first
+  included, though the supervisor had started 2.7 s before the leases lapsed. A
+  reattach now renews at once and then every third of the lease; a start waits
+  a third as before. A restart that comes after the lease has lapsed can still
+  be too late: size the lease to cover one. Live, with 15-second leases renewed
+  every five seconds, a restart 9.5 s after the kill kept 50 of 50 children in
+  six of six runs and one at 12 s kept none in three of three; between them the
+  loss grows (49 or 50, 49, and 29 to 46 kept at 10.0, 10.3 and 10.6 s), and the
+  agent's lease store was in memory. Tested to the nanosecond under a paused
+  clock, and through `reattach_with` against this repository's server (a
+  renewal within 5 s of a reattach whose next tick would be 10 s away).
+
+- **An idle HTTP connection is closed when its idle timeout passes, not when
+  the next request finds it stale** (client; audit D-12, B-07). The client set
+  `pool_idle_timeout` (50 s) without the timer hyper-util needs to start its
+  background sweeper (`pool.rs:436`, hyper-util 0.1.21), so an idle socket was
+  dropped only when something asked the pool for a connection to that host. A
+  program that called many hosts once kept a socket to each until it exited.
+  Both timers are now installed for every client, with or without a pool; the
+  same change is what lets HTTP/2 keep-alive run without hyper's "You must
+  supply a timer" panic. Tested: a pool with a 200 ms idle timeout and no
+  further request sees the client close the connection.
 - **A journal database that stopped answering stopped every delegation of
   the supervisor** (client; audit NEW-h-s0-3). Journal writes are awaited on
   the path the stream's events are read from, so a failover on the journal's

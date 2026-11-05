@@ -254,6 +254,8 @@ are rustdoc's job.
 | `EventStream` | Async SSE event stream |
 | `RetryPolicy` | Configurable retry with exponential backoff |
 | `RetryBudget` | Retries as a bounded fraction of calls, so retries cannot multiply an overload (`RetryPolicy::with_budget`) |
+| `HttpPool` | One set of HTTP connections many clients share, with an optional maximum connection lifetime, HTTP/2 PING and idle limits (`ClientBuilder::with_pool`, `HttpPool::shared()`); needs `tls-rustls` |
+| `HttpPoolBuilder` | Builds an `HttpPool`: TLS configuration, connect and idle timeouts, idle connections per host, connection lifetime, HTTP/2 keep-alive (`HttpPool::builder()`) |
 | `CredentialPreflight` | What a client built from a card does with a call whose credential matches none of the card's security requirements (§3.1.11): off, warn (default) or refuse |
 | `CurrentTrace` | The trace the current task runs under, and how to start one |
 | `TracePropagationInterceptor` | Writes `traceparent` onto every outbound request |

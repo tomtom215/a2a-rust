@@ -1,0 +1,224 @@
+start 2026-11-04T16:48:55Z
+291aaf8970f994c37794f5dfbb0c88a95bcd09f7
+f30824c8ef939c2e3f36c8cffd6b3fc36afb9bda964205a3e2b9bb5b18637135  /tmp/claude-0/-home-user-a2a-rust/5446577a-9083-5ac8-a8d0-71b54994e2d3/scratchpad/fix/expectation-fix.md.part
+2918095f28818feb59c8d16a65e003df74dba536b3daeebf5a119b6061c43528  /tmp/claude-0/-home-user-a2a-rust/5446577a-9083-5ac8-a8d0-71b54994e2d3/scratchpad/fix/expectation-edge.md.part
+e142076d5d2317e7ab178e8b2b9a7d94098e3753fd5e5d631e7a91978bea60b5  /tmp/claude-0/-home-user-a2a-rust/5446577a-9083-5ac8-a8d0-71b54994e2d3/scratchpad/fix/expectation-afail.md.part
+7372deebcebf5ebd50e2428cf1385c1a03cbfc14267c7d30a7df05d895076f66  target/live/delegation/debug/a2a-live-worker
+5811cd9597340a85e5c2e33d24d627c94219326d25c6ffd68f6608411e72bb33  target/live/delegation/debug/a2a-live-supervisor
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/fix2/20261104T164855
+    0.73s [alold-1] children named: 50 of 50 after 0.6s
+   20.14s [alold-1] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.02s
+   23.14s [alold-1] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   61.36s [alold-1] recover exit 0 in 38.0s: {'canceled': 49, 'completed': 1}; journal {'canceled': 49, 'completed': 1} tasks {'TASK_STATE_CANCELED': 49, 'TASK_STATE_COMPLETED': 1}
+   61.94s [alold-1] PASS
+    0.73s [alold-2] children named: 50 of 50 after 0.6s
+   20.12s [alold-2] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.02s
+   27.12s [alold-2] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   61.34s [alold-2] recover exit 0 in 34.1s: {'canceled': 49, 'completed': 1}; journal {'canceled': 49, 'completed': 1} tasks {'TASK_STATE_CANCELED': 49, 'TASK_STATE_COMPLETED': 1}
+   61.76s [alold-2] PASS
+    0.93s [alold-3] children named: 50 of 50 after 0.8s
+   20.12s [alold-3] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.00s
+   27.42s [alold-3] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   61.02s [alold-3] recover exit 0 in 33.4s: {'canceled': 49, 'completed': 1}; journal {'canceled': 49, 'completed': 1} tasks {'TASK_STATE_CANCELED': 49, 'TASK_STATE_COMPLETED': 1}
+   61.31s [alold-3] PASS
+
+  scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart     mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+alold    1  20261104   20.0   19.5    -9    0.02        390      3.0  recover  23.14      None    50    50     0   38.0      0.54     1       1      49       0       1          0      49    0    PASS
+alold    2  20261104   20.0   19.4    -9    0.02        428      7.0  recover  27.09      None    50    50     0   34.1      0.59     1       1      49       0       1          0      49    0    PASS
+alold    3  20261104   20.0   19.4    -9     0.0        472      7.3  recover  27.41      None    50    50     0   33.4      0.54     1       1      49       0       1          0      49    0    PASS
+
+alold: exit_after_s min 0 / median 0.02 / max 0.02 (n=3)
+alold: restart_after_s min 3 / median 7 / max 7.3 (n=3)
+alold: recover_s min 33.4 / median 34.1 / max 38 (n=3)
+alold: recover_exit_after_last_child_s min 0.54 / median 0.54 / max 0.59 (n=3)
+alold: start_spread_ms min 390 / median 428 / max 472 (n=3)
+alold: passed 3 of 3
+raw log and per-run logs: target/live/delegation/fix2/20261104T164855
+driver exit alold 0
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/fix2/20261104T165201
+    0.78s [alfix-1] children named: 50 of 50 after 0.6s
+   20.19s [alfix-1] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   23.19s [alfix-1] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   60.90s [alfix-1] recover exit 0 in 37.5s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   62.24s [alfix-1] PASS
+    0.92s [alfix-2] children named: 50 of 50 after 0.8s
+   20.11s [alfix-2] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   27.11s [alfix-2] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   61.00s [alfix-2] recover exit 0 in 33.7s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   61.28s [alfix-2] PASS
+    0.76s [alfix-3] children named: 50 of 50 after 0.6s
+   20.16s [alfix-3] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   27.46s [alfix-3] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   60.87s [alfix-3] recover exit 0 in 33.2s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   61.75s [alfix-3] PASS
+
+  scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart         mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+alfix    1  20261104   20.0   19.5    -9    0.01        339      3.0  recover-all  23.09       202    50    50     0   37.5      0.04    50      50       0       0      50          0       0    0    PASS
+alfix    2  20261104   20.0   19.4    -9    0.01        374      7.0  recover-all  27.08       203    50    50     0   33.7      0.06    50      50       0       0      50          0       0    0    PASS
+alfix    3  20261104   20.0   19.5    -9    0.01        382      7.3  recover-all   27.4       266    50    50     0   33.2      0.05    50      50       0       0      50          0       0    0    PASS
+
+alfix: exit_after_s min 0.01 / median 0.01 / max 0.01 (n=3)
+alfix: restart_after_s min 3 / median 7 / max 7.3 (n=3)
+alfix: recover_s min 33.2 / median 33.7 / max 37.5 (n=3)
+alfix: recover_exit_after_last_child_s min 0.04 / median 0.05 / max 0.06 (n=3)
+alfix: start_spread_ms min 339 / median 374 / max 382 (n=3)
+alfix: passed 3 of 3
+raw log and per-run logs: target/live/delegation/fix2/20261104T165201
+driver exit alfix 0
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/fix2/20261104T165506
+    0.79s [allate-1] children named: 50 of 50 after 0.6s
+   20.19s [allate-1] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   32.19s [allate-1] before recover: journal {'<open>': 50} tasks {'TASK_STATE_CANCELED': 50} worker cancels 100
+   32.90s [allate-1] recover exit 0 in 0.5s: {'canceled': 50}; journal {'canceled': 50} tasks {'TASK_STATE_CANCELED': 50}
+   33.02s [allate-1] PASS
+    0.73s [allate-2] children named: 50 of 50 after 0.6s
+   20.11s [allate-2] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.00s
+   32.11s [allate-2] before recover: journal {'<open>': 50} tasks {'TASK_STATE_CANCELED': 13, 'TASK_STATE_WORKING': 37} worker cancels 100
+   32.83s [allate-2] recover exit 0 in 0.5s: {'canceled': 50}; journal {'canceled': 50} tasks {'TASK_STATE_CANCELED': 50}
+   32.92s [allate-2] PASS
+    0.71s [allate-3] children named: 50 of 50 after 0.6s
+   20.12s [allate-3] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   32.12s [allate-3] before recover: journal {'<open>': 50} tasks {'TASK_STATE_CANCELED': 50} worker cancels 100
+   32.86s [allate-3] recover exit 0 in 0.5s: {'canceled': 50}; journal {'canceled': 50} tasks {'TASK_STATE_CANCELED': 50}
+   32.97s [allate-3] PASS
+
+   scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart         mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+allate    1  20261104   20.0   19.5    -9    0.01        343     12.0  recover-all  32.08       240    50     0   100    0.5      None     0       0      50       0       0          0      50    0    PASS
+allate    2  20261104   20.0   19.4    -9     0.0        462     12.0  recover-all  32.11       260    50    37   100    0.5      None     0       0      50       0       0          0      50    0    PASS
+allate    3  20261104   20.0   19.5    -9    0.01        379     12.0  recover-all  32.09       262    50     0   100    0.5      None     0       0      50       0       0          0      50    0    PASS
+
+allate: exit_after_s min 0 / median 0.01 / max 0.01 (n=3)
+allate: restart_after_s min 12 / median 12 / max 12 (n=3)
+allate: recover_s min 0.5 / median 0.5 / max 0.5 (n=3)
+allate: recover_exit_after_last_child_s n/a
+allate: start_spread_ms min 343 / median 379 / max 462 (n=3)
+allate: passed 3 of 3
+raw log and per-run logs: target/live/delegation/fix2/20261104T165506
+driver exit allate 0
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/fix2/20261104T165646
+    1.02s [afix-1] children named: 50 of 50 after 0.9s
+   20.18s [afix-1] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.02s
+   25.58s [afix-1] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   61.08s [afix-1] recover exit 0 in 35.3s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   61.16s [afix-1] PASS
+
+ scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart         mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+afix    1  20261104   20.0   19.3    -9    0.02        418      5.4  recover-all  25.49       185    50    50     0   35.3      0.04    50      50       0       0      50          0       0    0    PASS
+
+afix: exit_after_s min 0.02 / median 0.02 / max 0.02 (n=1)
+afix: restart_after_s min 5.4 / median 5.4 / max 5.4 (n=1)
+afix: recover_s min 35.3 / median 35.3 / max 35.3 (n=1)
+afix: recover_exit_after_last_child_s min 0.04 / median 0.04 / max 0.04 (n=1)
+afix: start_spread_ms min 418 / median 418 / max 418 (n=1)
+afix: passed 1 of 1
+raw log and per-run logs: target/live/delegation/fix2/20261104T165646
+driver exit afix 0
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/fix2/20261104T165747
+    0.52s [aledge-1] children named: 50 of 50 after 0.4s
+   20.14s [aledge-1] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.02s
+   29.64s [aledge-1] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   60.72s [aledge-1] recover exit 0 in 30.9s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   60.91s [aledge-1] PASS
+    0.72s [aledge-2] children named: 50 of 50 after 0.6s
+   20.11s [aledge-2] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   29.61s [aledge-2] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   60.86s [aledge-2] recover exit 0 in 31.0s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   60.97s [aledge-2] PASS
+    0.51s [aledge-3] children named: 50 of 50 after 0.4s
+   20.11s [aledge-3] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   29.61s [aledge-3] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   60.74s [aledge-3] recover exit 0 in 31.0s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   60.80s [aledge-3] PASS
+
+   scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart         mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+aledge    1  20261104   20.0   19.7    -9    0.02        195      9.5  recover-all  29.59       191    50    50     0   30.9      0.02    50      50       0       0      50          0       0    0    PASS
+aledge    2  20261104   20.0   19.5    -9    0.01        378      9.5  recover-all  29.57       242    50    50     0   31.0      0.06    50      50       0       0      50          0       0    0    PASS
+aledge    3  20261104   20.0   19.6    -9    0.01        315      9.5  recover-all  29.58       180    50    50     0   31.0      0.06    50      50       0       0      50          0       0    0    PASS
+
+aledge: exit_after_s min 0.01 / median 0.01 / max 0.02 (n=3)
+aledge: restart_after_s min 9.5 / median 9.5 / max 9.5 (n=3)
+aledge: recover_s min 30.9 / median 31 / max 31 (n=3)
+aledge: recover_exit_after_last_child_s min 0.02 / median 0.06 / max 0.06 (n=3)
+aledge: start_spread_ms min 195 / median 315 / max 378 (n=3)
+aledge: passed 3 of 3
+raw log and per-run logs: target/live/delegation/fix2/20261104T165747
+driver exit aledge-9.5 0
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/fix2/20261104T170051
+    0.52s [aledge-1] children named: 50 of 50 after 0.4s
+   20.12s [aledge-1] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   30.12s [aledge-1] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   60.72s [aledge-1] recover exit 0 in 30.4s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   60.80s [aledge-1] PASS
+    0.51s [aledge-2] children named: 50 of 50 after 0.4s
+   20.11s [aledge-2] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.00s
+   30.41s [aledge-2] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   60.64s [aledge-2] recover exit 0 in 30.0s: {'canceled': 1, 'completed': 49}; journal {'canceled': 1, 'completed': 49} tasks {'TASK_STATE_CANCELED': 1, 'TASK_STATE_COMPLETED': 49}
+   60.74s [aledge-2] PASS
+    0.51s [aledge-3] children named: 50 of 50 after 0.4s
+   20.11s [aledge-3] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   30.71s [aledge-3] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   60.63s [aledge-3] recover exit 0 in 29.7s: {'canceled': 21, 'completed': 29}; journal {'canceled': 21, 'completed': 29} tasks {'TASK_STATE_CANCELED': 21, 'TASK_STATE_COMPLETED': 29}
+   60.71s [aledge-3] PASS
+
+   scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart         mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+aledge    1  20261104   20.0   19.6    -9    0.01        242     10.0  recover-all  30.09       183    50    50     0   30.4      0.05    50      50       0       0      50          0       0    0    PASS
+aledge    2  20261104   20.0   19.7    -9     0.0        199     10.3  recover-all  30.38       179    50    50     0   30.0      0.02    49      49       1       0      49          0       1    0    PASS
+aledge    3  20261104   20.0   19.6    -9    0.01        205     10.6  recover-all  30.69       204    50    50     0   29.7      0.01    29      29      21       0      29          0      21    0    PASS
+
+aledge: exit_after_s min 0 / median 0.01 / max 0.01 (n=3)
+aledge: restart_after_s min 10 / median 10.3 / max 10.6 (n=3)
+aledge: recover_s min 29.7 / median 30 / max 30.4 (n=3)
+aledge: recover_exit_after_last_child_s min 0.01 / median 0.02 / max 0.05 (n=3)
+aledge: start_spread_ms min 199 / median 205 / max 242 (n=3)
+aledge: passed 3 of 3
+raw log and per-run logs: target/live/delegation/fix2/20261104T170051
+driver exit aledge-edge 0
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/fix2/20261104T170353
+    0.52s [afail-1] children named: 50 of 50 after 0.4s
+   20.12s [afail-1] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   25.52s [afail-1] before recover: journal {'<open>': 51} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   66.31s [afail-1] recover exit 1 in 3.2s: {}; journal {'<open>': 25, 'canceled': 26} tasks {'TASK_STATE_CANCELED': 26, 'TASK_STATE_COMPLETED': 24}
+   66.38s [afail-1] PASS
+    0.51s [afail-2] children named: 50 of 50 after 0.4s
+   20.11s [afail-2] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   25.51s [afail-2] before recover: journal {'<open>': 51} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   66.29s [afail-2] recover exit 1 in 3.2s: {}; journal {'<open>': 25, 'canceled': 26} tasks {'TASK_STATE_CANCELED': 26, 'TASK_STATE_COMPLETED': 24}
+   66.36s [afail-2] PASS
+    0.52s [afail-3] children named: 50 of 50 after 0.4s
+   20.11s [afail-3] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.00s
+   25.51s [afail-3] before recover: journal {'<open>': 51} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   66.29s [afail-3] recover exit 1 in 3.2s: {}; journal {'<open>': 25, 'canceled': 26} tasks {'TASK_STATE_CANCELED': 26, 'TASK_STATE_COMPLETED': 24}
+   66.39s [afail-3] PASS
+
+  scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart         mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+afail    1  20261104   20.0   19.7    -9    0.01        238      5.4  recover-all  25.48      None    51    50     0    3.2    -31.68     0       0      26      25      24          0      26    0    PASS
+afail    2  20261104   20.0   19.7    -9    0.01        174      5.4  recover-all  25.48      None    51    50     0    3.2    -31.71     0       0      26      25      24          0      26    0    PASS
+afail    3  20261104   20.0   19.7    -9     0.0        191      5.4  recover-all  25.48      None    51    50     0    3.2    -31.73     0       0      26      25      24          0      26    0    PASS
+
+afail: exit_after_s min 0 / median 0.01 / max 0.01 (n=3)
+afail: restart_after_s min 5.4 / median 5.4 / max 5.4 (n=3)
+afail: recover_s min 3.2 / median 3.2 / max 3.2 (n=3)
+afail: recover_exit_after_last_child_s min -31.73 / median -31.71 / max -31.68 (n=3)
+afail: start_spread_ms min 174 / median 191 / max 238 (n=3)
+afail: passed 3 of 3
+raw log and per-run logs: target/live/delegation/fix2/20261104T170353
+driver exit afail 0
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/fix2/20261104T170713
+    0.52s [afailold-1] children named: 50 of 50 after 0.4s
+   20.13s [afailold-1] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   25.53s [afailold-1] before recover: journal {'<open>': 51} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   66.32s [afailold-1] recover exit 1 in 38.1s: {'completed': 26}; journal {'<open>': 25, 'completed': 26} tasks {'TASK_STATE_COMPLETED': 50}
+   66.41s [afailold-1] PASS
+
+     scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart     mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+afailold    1  20261104   20.0   19.7    -9    0.01        186      5.4  recover  25.48      None    51    50     0   38.1      3.21    26      26       0      25      50          0       0    0    PASS
+
+afailold: exit_after_s min 0.01 / median 0.01 / max 0.01 (n=1)
+afailold: restart_after_s min 5.4 / median 5.4 / max 5.4 (n=1)
+afailold: recover_s min 38.1 / median 38.1 / max 38.1 (n=1)
+afailold: recover_exit_after_last_child_s min 3.21 / median 3.21 / max 3.21 (n=1)
+afailold: start_spread_ms min 186 / median 186 / max 186 (n=1)
+afailold: passed 1 of 1
+raw log and per-run logs: target/live/delegation/fix2/20261104T170713
+driver exit afailold 0
+end 2026-11-04T17:08:19Z

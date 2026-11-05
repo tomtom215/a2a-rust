@@ -139,6 +139,16 @@ pub struct ClientBuilder {
     /// the client asks for; `None` unless the builder came from a card, and
     /// cleared by [`ClientBuilder::skip_required_extension_check`].
     pub(super) required_extensions: Option<Vec<String>>,
+    /// The pool [`with_pool`](Self::with_pool) gave; the HTTP bindings send
+    /// through it. Never set without `tls-rustls`.
+    pub(super) pool: Option<transport_factory::PoolHandle>,
+    /// The TLS setter the caller used (`with_tls_config` or `without_tls`).
+    /// A pool has one TLS configuration, so with a pool this is a conflict.
+    #[cfg(feature = "tls-rustls")]
+    pub(super) tls_setter: Option<&'static str>,
+    /// Whether the caller set the connect timeout, which a pool owns.
+    #[cfg(feature = "tls-rustls")]
+    pub(super) connect_timeout_set: bool,
 }
 
 impl ClientBuilder {
@@ -169,6 +179,11 @@ impl ClientBuilder {
             declared: None,
             extensions: Vec::new(),
             required_extensions: None,
+            pool: None,
+            #[cfg(feature = "tls-rustls")]
+            tls_setter: None,
+            #[cfg(feature = "tls-rustls")]
+            connect_timeout_set: false,
         }
     }
 
@@ -297,6 +312,11 @@ impl ClientBuilder {
                     .map(|e| e.uri.clone())
                     .collect(),
             ),
+            pool: None,
+            #[cfg(feature = "tls-rustls")]
+            tls_setter: None,
+            #[cfg(feature = "tls-rustls")]
+            connect_timeout_set: false,
         })
     }
 
@@ -365,6 +385,10 @@ impl ClientBuilder {
     #[must_use]
     pub const fn with_connection_timeout(mut self, timeout: Duration) -> Self {
         self.config.connection_timeout = timeout;
+        #[cfg(feature = "tls-rustls")]
+        {
+            self.connect_timeout_set = true;
+        }
         self
     }
 
@@ -590,6 +614,10 @@ impl ClientBuilder {
     #[must_use]
     pub fn without_tls(mut self) -> Self {
         self.config.tls = TlsConfig::Disabled;
+        #[cfg(feature = "tls-rustls")]
+        {
+            self.tls_setter = Some("without_tls");
+        }
         self
     }
 
@@ -602,6 +630,25 @@ impl ClientBuilder {
     #[must_use]
     pub fn with_tls_config(mut self, tls: rustls::ClientConfig) -> Self {
         self.config.tls = TlsConfig::Custom(std::sync::Arc::new(tls));
+        self.tls_setter = Some("with_tls_config");
+        self
+    }
+
+    /// Sends the HTTP bindings' (JSON-RPC, HTTP+JSON) calls through `pool`,
+    /// whose connections every client given it shares, instead of through a
+    /// pool of this client's own. See [`HttpPool`](crate::HttpPool).
+    ///
+    /// A pool owns the TLS configuration and the connect timeout, so
+    /// [`build`](Self::build) fails with [`ClientError::Config`] naming the
+    /// setting if this builder also called
+    /// [`with_tls_config`](Self::with_tls_config),
+    /// [`without_tls`](Self::without_tls) or
+    /// [`with_connection_timeout`](Self::with_connection_timeout): set it on
+    /// the pool. gRPC and WebSocket clients do not use a pool.
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn with_pool(mut self, pool: &crate::HttpPool) -> Self {
+        self.pool = Some(pool.clone());
         self
     }
 

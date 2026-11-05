@@ -1,0 +1,18 @@
+sent hold; response state: TASK_STATE_SUBMITTED
+  10.0s tasks: TASK_STATE_WORKING|1
+  20.0s tasks: TASK_STATE_WORKING|1
+  30.1s tasks: TASK_STATE_WORKING|1
+  40.1s tasks: TASK_STATE_WORKING|1
+  50.2s tasks: TASK_STATE_WORKING|1
+  60.2s tasks: TASK_STATE_WORKING|1
+  70.3s tasks: TASK_STATE_WORKING|1
+  80.3s tasks: TASK_STATE_FAILED|1
+  90.4s tasks: TASK_STATE_FAILED|1
+ 100.4s tasks: TASK_STATE_FAILED|1
+ 110.4s tasks: TASK_STATE_FAILED|1
+ 120.5s tasks: TASK_STATE_FAILED|1
+ 130.5s tasks: TASK_STATE_FAILED|1
+ 140.6s tasks: TASK_STATE_FAILED|1
+[replica] serving
+[replica] hold ended, cancelled=false
+

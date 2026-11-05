@@ -1,0 +1,77 @@
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/pr/term/20261104T173133
+    0.53s [c-1] children named: 50 of 50 after 0.4s
+   20.16s [c-1] SIGTERM sent at 20.00s of the run; supervisor exit 0 after 0.03s
+   25.16s [c-1] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   61.07s [c-1] recover exit 0 in 35.7s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   61.15s [c-1] PASS
+    0.51s [c-2] children named: 50 of 50 after 0.4s
+   20.14s [c-2] SIGTERM sent at 20.00s of the run; supervisor exit 0 after 0.03s
+   27.14s [c-2] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   60.97s [c-2] recover exit 0 in 33.6s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   61.05s [c-2] PASS
+    0.51s [c-3] children named: 50 of 50 after 0.4s
+   20.14s [c-3] SIGTERM sent at 20.00s of the run; supervisor exit 0 after 0.03s
+   25.94s [c-3] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   60.93s [c-3] recover exit 0 in 34.8s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   61.02s [c-3] PASS
+    0.21s [c2-1] fan-out accepted: ok
+    0.62s [c2-1] children named: 50 of 50 after 0.4s
+   20.24s [c2-1] SIGTERM sent at 20.00s of the run; supervisor exit 0 after 0.03s
+   23.74s [c2-1] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   60.98s [c2-1] recover exit 0 in 37.1s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   61.06s [c2-1] PASS
+    0.16s [c2-2] fan-out accepted: ok
+    0.57s [c2-2] children named: 50 of 50 after 0.4s
+   20.19s [c2-2] SIGTERM sent at 20.00s of the run; supervisor exit 0 after 0.03s
+   26.49s [c2-2] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   60.99s [c2-2] recover exit 0 in 34.3s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   61.08s [c2-2] PASS
+    0.16s [c2-3] fan-out accepted: ok
+    0.56s [c2-3] children named: 50 of 50 after 0.4s
+   20.19s [c2-3] SIGTERM sent at 20.00s of the run; supervisor exit 0 after 0.03s
+   23.39s [c2-3] before recover: journal {'<open>': 50} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   60.95s [c2-3] recover exit 0 in 37.4s: {'completed': 50}; journal {'completed': 50} tasks {'TASK_STATE_COMPLETED': 50}
+   61.04s [c2-3] PASS
+    0.51s [cx-1] children named: 50 of 50 after 0.4s
+   20.28s [cx-1] SIGTERM sent at 20.00s of the run; supervisor exit 0 after 0.17s
+   23.50s [cx-1] control, after the exit: journal {'canceled': 50} tasks {'TASK_STATE_CANCELED': 50} worker cancel hooks 50
+   23.57s [cx-1] PASS
+    0.51s [cx-2] children named: 50 of 50 after 0.4s
+   20.27s [cx-2] SIGTERM sent at 20.00s of the run; supervisor exit 0 after 0.17s
+   23.48s [cx-2] control, after the exit: journal {'canceled': 50} tasks {'TASK_STATE_CANCELED': 50} worker cancel hooks 50
+   23.54s [cx-2] PASS
+    0.51s [cx-3] children named: 50 of 50 after 0.4s
+   20.28s [cx-3] SIGTERM sent at 20.00s of the run; supervisor exit 0 after 0.17s
+   23.50s [cx-3] control, after the exit: journal {'canceled': 50} tasks {'TASK_STATE_CANCELED': 50} worker cancel hooks 50
+   23.57s [cx-3] PASS
+
+scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart     mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+  c    1  20261104   20.0   19.6     0    0.03        258      5.0  recover  25.12      None    50    50     0   35.7      0.34    50      50       0       0      50          0       0    0    PASS
+  c    2  20261104   20.0   19.7     0    0.03        203      7.0  recover  27.11      None    50    50     0   33.6      0.35    50      50       0       0      50          0       0    0    PASS
+  c    3  20261104   20.0   19.7     0    0.03        188      5.8  recover  25.92      None    50    50     0   34.8       0.3    50      50       0       0      50          0       0    0    PASS
+ c2    1  20261104   20.0   19.7     0    0.03        198      3.5  recover  23.61      None    50    50     0   37.1       0.3    50      50       0       0      50          0       0    0    PASS
+ c2    2  20261104   20.0   19.7     0    0.03        264      6.3  recover  26.41      None    50    50     0   34.3      0.32    50      50       0       0      50          0       0    0    PASS
+ c2    3  20261104   20.0   19.7     0    0.03        211      3.2  recover  23.31      None    50    50     0   37.4       0.3    50      50       0       0      50          0       0    0    PASS
+ cx    1  20261104   20.0   19.6     0    0.17        289        -        -      -         -     0     -     -      -         -     0       0      50       0       0          0      50    0    PASS
+ cx    2  20261104   20.0   19.6     0    0.17        240        -        -      -         -     0     -     -      -         -     0       0      50       0       0          0      50    0    PASS
+ cx    3  20261104   20.0   19.7     0    0.17        226        -        -      -         -     0     -     -      -         -     0       0      50       0       0          0      50    0    PASS
+
+c: exit_after_s min 0.03 / median 0.03 / max 0.03 (n=3)
+c: restart_after_s min 5 / median 5.8 / max 7 (n=3)
+c: recover_s min 33.6 / median 34.8 / max 35.7 (n=3)
+c: recover_exit_after_last_child_s min 0.3 / median 0.34 / max 0.35 (n=3)
+c: start_spread_ms min 188 / median 203 / max 258 (n=3)
+c: passed 3 of 3
+c2: exit_after_s min 0.03 / median 0.03 / max 0.03 (n=3)
+c2: restart_after_s min 3.2 / median 3.5 / max 6.3 (n=3)
+c2: recover_s min 34.3 / median 37.1 / max 37.4 (n=3)
+c2: recover_exit_after_last_child_s min 0.3 / median 0.3 / max 0.32 (n=3)
+c2: start_spread_ms min 198 / median 211 / max 264 (n=3)
+c2: passed 3 of 3
+cx: exit_after_s min 0.17 / median 0.17 / max 0.17 (n=3)
+cx: restart_after_s n/a
+cx: recover_s n/a
+cx: recover_exit_after_last_child_s n/a
+cx: start_spread_ms min 226 / median 240 / max 289 (n=3)
+cx: passed 3 of 3
+raw log and per-run logs: target/live/delegation/pr/term/20261104T173133

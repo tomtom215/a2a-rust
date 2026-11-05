@@ -1,0 +1,155 @@
+t=1793813738913 SERVING supervisor agent listening
+t=1793813738961 STARTED i=20 record=5f2fadbc-e24c-4ce8-994d-ffc4b827a218
+t=1793813738980 STARTED i=34 record=6df3c8dc-daae-4917-b903-c120dc5d2541
+t=1793813739025 STARTED i=21 record=891ec88a-0a97-4e3e-9808-7fd99f966a3f
+t=1793813739037 STARTED i=19 record=c85b9c2e-dc04-4db2-a717-f09a5d3c61c1
+t=1793813739046 STARTED i=35 record=3940f888-b7c0-44ff-b63d-152800e2e139
+t=1793813739049 STARTED i=36 record=3f7c60e0-84c1-4c44-ad1a-bbbe68773f59
+t=1793813739053 STARTED i=22 record=0bb4bef9-bab1-4b6a-86c7-7831c02298ac
+t=1793813739082 STARTED i=29 record=f0e45429-b468-4735-8266-1ad3f5746acd
+t=1793813739086 STARTED i=25 record=150c382c-4a14-4dc7-a355-cec451a160e1
+t=1793813739087 STARTED i=11 record=7ea62994-dc42-4ffe-acea-5169578d476f
+t=1793813739100 STARTED i=37 record=5cc028eb-f6bd-4f32-b773-58f9ae8d8c8b
+t=1793813739116 NAMED i=34 record=6df3c8dc-daae-4917-b903-c120dc5d2541 task=e8a15c5d-4b75-4ad1-a052-0fedf6038b14
+t=1793813739118 STARTED i=23 record=e5d824a4-e426-4734-bc3c-4579b9f9bf1b
+t=1793813739118 NAMED i=20 record=5f2fadbc-e24c-4ce8-994d-ffc4b827a218 task=5f267e27-3bf1-46fc-b1fc-646ef4ce8839
+t=1793813739118 STARTED i=33 record=dd050b14-a725-4e31-8acf-03260807347d
+t=1793813739124 NAMED i=21 record=891ec88a-0a97-4e3e-9808-7fd99f966a3f task=a12fa772-ca6f-4965-874c-c3a2c77c02c2
+t=1793813739125 NAMED i=19 record=c85b9c2e-dc04-4db2-a717-f09a5d3c61c1 task=c849eb13-aa64-4a52-bc9b-e65e4cd2d0da
+t=1793813739125 NAMED i=35 record=3940f888-b7c0-44ff-b63d-152800e2e139 task=1bcca616-8aaf-4853-8ffa-37230faa1fce
+t=1793813739126 STARTED i=38 record=0299b4c0-d014-4567-aae5-b1872a4f4a6e
+t=1793813739126 STARTED i=27 record=a5888a05-f9c9-4213-9bea-0431e1297fc7
+t=1793813739127 STARTED i=39 record=ea45ab35-bd81-49e0-b8d4-ac60052ade7e
+t=1793813739127 NAMED i=22 record=0bb4bef9-bab1-4b6a-86c7-7831c02298ac task=76fa9f83-26bc-452b-a614-436687c55ef9
+t=1793813739127 NAMED i=36 record=3f7c60e0-84c1-4c44-ad1a-bbbe68773f59 task=b991ed08-daa8-44c8-ac01-ab7222f732db
+t=1793813739128 NAMED i=29 record=f0e45429-b468-4735-8266-1ad3f5746acd task=eaf9762f-e2d4-448f-869b-dc6bac8da2e3
+t=1793813739128 NAMED i=25 record=150c382c-4a14-4dc7-a355-cec451a160e1 task=6fb60cbd-37e5-4950-86d3-28fefa71f342
+t=1793813739129 STARTED i=26 record=25b9c6a3-6e25-44c4-9d76-7c161c3f1fa4
+t=1793813739137 NAMED i=23 record=e5d824a4-e426-4734-bc3c-4579b9f9bf1b task=1628adac-5b84-44c5-a232-bcf7e4a27d50
+t=1793813739137 NAMED i=11 record=7ea62994-dc42-4ffe-acea-5169578d476f task=a59f60e6-8c22-4809-8de2-1bd26a2e7230
+t=1793813739139 NAMED i=38 record=0299b4c0-d014-4567-aae5-b1872a4f4a6e task=952d6420-96e2-448b-ae21-592ae9d59d4b
+t=1793813739141 NAMED i=37 record=5cc028eb-f6bd-4f32-b773-58f9ae8d8c8b task=2be6d98f-3b91-4817-8ae8-2c2cf82a229e
+t=1793813739141 NAMED i=27 record=a5888a05-f9c9-4213-9bea-0431e1297fc7 task=7d0e3016-796f-4ea0-8695-98d3d88fef84
+t=1793813739141 STARTED i=40 record=14b58ff6-dc7d-45fe-8d19-aebd37ba77ce
+t=1793813739142 NAMED i=33 record=dd050b14-a725-4e31-8acf-03260807347d task=023e57f7-41a3-41ed-afb8-b3dd2e4edd72
+t=1793813739142 NAMED i=26 record=25b9c6a3-6e25-44c4-9d76-7c161c3f1fa4 task=e07d8f06-0ad3-4d28-8b7c-70c41bafe564
+t=1793813739143 NAMED i=39 record=ea45ab35-bd81-49e0-b8d4-ac60052ade7e task=343ead90-5a0a-4e9e-9832-d42470f86573
+t=1793813739150 NAMED i=40 record=14b58ff6-dc7d-45fe-8d19-aebd37ba77ce task=a4654a55-7777-4b90-9e0a-a6f8ad621a83
+t=1793813739158 STARTED i=28 record=feed44e5-935d-4e7a-8ffd-cae6ebf8eb3c
+t=1793813739158 STARTED i=8 record=ac4d210e-d59d-4aed-936f-a3fe92707d38
+t=1793813739165 NAMED i=28 record=feed44e5-935d-4e7a-8ffd-cae6ebf8eb3c task=dc2bcdb0-e1bd-46d2-9165-7fbc31155f1c
+t=1793813739165 STARTED i=41 record=c199b18b-32de-40f2-8594-09a92aea941c
+t=1793813739165 NAMED i=8 record=ac4d210e-d59d-4aed-936f-a3fe92707d38 task=349b7855-784f-4481-81f9-0650143b0ee9
+t=1793813739166 STARTED i=42 record=987b72d9-ad26-42f6-bd87-737a8f752690
+t=1793813739167 STARTED i=30 record=4a327fff-9661-4cbc-b301-582a1b949b1d
+t=1793813739167 NAMED i=41 record=c199b18b-32de-40f2-8594-09a92aea941c task=3376daf2-a857-4645-82bb-04b40da1d6eb
+t=1793813739167 STARTED i=15 record=7220030c-796a-42a8-ac73-9831882edb4c
+t=1793813739172 STARTED i=43 record=8dca76c8-02b1-4ab6-93d1-513f92dc886a
+t=1793813739172 STARTED i=31 record=4000e2d9-3408-46e7-aee9-a1d8879cdf80
+t=1793813739172 NAMED i=42 record=987b72d9-ad26-42f6-bd87-737a8f752690 task=8585c4ea-32b0-40bf-a6e6-574f04cdb934
+t=1793813739174 STARTED i=12 record=b0bdea28-6a0f-4247-9f3c-7f4768d19d9e
+t=1793813739174 STARTED i=32 record=7ffa998a-c13d-404a-a398-2baa321a6810
+t=1793813739175 STARTED i=44 record=8a626031-dbcd-45f3-8980-596bdf736081
+t=1793813739175 NAMED i=15 record=7220030c-796a-42a8-ac73-9831882edb4c task=f261bd77-a6d6-41e9-acc7-c1a238d05e8a
+t=1793813739177 NAMED i=44 record=8a626031-dbcd-45f3-8980-596bdf736081 task=d6914a9e-8428-411f-949e-c43f45ce093f
+t=1793813739177 NAMED i=31 record=4000e2d9-3408-46e7-aee9-a1d8879cdf80 task=c66750b7-1584-44f8-bfc4-fe2fd5ed621e
+t=1793813739177 STARTED i=13 record=3b4b6f53-6441-4a95-949f-9df58521afbe
+t=1793813739177 STARTED i=2 record=65361393-090b-4437-a41a-41d264992ede
+t=1793813739178 STARTED i=9 record=26ed4c6e-de35-41b6-beb1-a9c361f72665
+t=1793813739179 NAMED i=12 record=b0bdea28-6a0f-4247-9f3c-7f4768d19d9e task=d61d9a35-2677-48c5-b2b0-ea8553511b14
+t=1793813739180 STARTED i=46 record=acb076a9-4b4d-4ac0-81ff-405de4ce29c3
+t=1793813739181 NAMED i=43 record=8dca76c8-02b1-4ab6-93d1-513f92dc886a task=876e92db-8596-47a4-8428-9dd5d5275a12
+t=1793813739181 STARTED i=14 record=7a213962-6dc7-440c-b60d-c15ef694807f
+t=1793813739181 NAMED i=2 record=65361393-090b-4437-a41a-41d264992ede task=50f20020-79c7-46f5-baaf-2cd364ffd58f
+t=1793813739182 NAMED i=32 record=7ffa998a-c13d-404a-a398-2baa321a6810 task=e8ea8cfb-8bb4-485e-a174-be9affd5ec0c
+t=1793813739182 NAMED i=9 record=26ed4c6e-de35-41b6-beb1-a9c361f72665 task=b32f25a7-d904-4618-a83d-ffea2057157f
+t=1793813739182 STARTED i=24 record=eb1d4713-f097-444b-89df-b787e1011e68
+t=1793813739183 STARTED i=47 record=92379563-c287-4f98-8bb5-dea8355ba1f1
+t=1793813739183 STARTED i=17 record=d6b195e6-7a8f-4352-b33c-2816591cae3d
+t=1793813739183 NAMED i=46 record=acb076a9-4b4d-4ac0-81ff-405de4ce29c3 task=bcc17419-6e97-4425-a102-4568d90c6f6c
+t=1793813739182 STARTED i=45 record=f170e955-f1a4-41c5-9a6c-88b042094a8c
+t=1793813739184 STARTED i=48 record=e3ebe825-b6fe-4fbd-a5bf-22e60c6a8d9e
+t=1793813739184 NAMED i=30 record=4a327fff-9661-4cbc-b301-582a1b949b1d task=28b24e90-3ec6-4e9f-841f-26e29541db50
+t=1793813739185 NAMED i=13 record=3b4b6f53-6441-4a95-949f-9df58521afbe task=1d8aed1e-9b46-4e4b-a31c-a0879361740f
+t=1793813739186 NAMED i=17 record=d6b195e6-7a8f-4352-b33c-2816591cae3d task=e25c93ae-1ae0-4c88-ac42-4fab78bf86f6
+t=1793813739187 STARTED i=16 record=8eba5295-cf2b-4f54-9f3f-70a3e7aa4ee0
+t=1793813739187 STARTED i=10 record=c6dae287-8f3f-47cf-adec-56bb64b5b76d
+t=1793813739188 NAMED i=48 record=e3ebe825-b6fe-4fbd-a5bf-22e60c6a8d9e task=922fb9d0-6058-4fd9-bc4f-144296ba5576
+t=1793813739189 NAMED i=45 record=f170e955-f1a4-41c5-9a6c-88b042094a8c task=c516e6e0-780f-4192-88d1-c579e8b2670b
+t=1793813739190 STARTED i=6 record=decfccf4-11a7-44f3-839e-f8a02f53ce0d
+t=1793813739190 NAMED i=24 record=eb1d4713-f097-444b-89df-b787e1011e68 task=272573e6-24e7-49a8-b51e-b938762fbfda
+t=1793813739193 NAMED i=47 record=92379563-c287-4f98-8bb5-dea8355ba1f1 task=cb36cbe2-624d-45cf-aaaa-2afbefd95416
+t=1793813739194 NAMED i=14 record=7a213962-6dc7-440c-b60d-c15ef694807f task=fe502596-2533-4bde-8936-14f962da7d42
+t=1793813739194 STARTED i=18 record=59c27771-c581-4079-914e-c7b0aef5a48a
+t=1793813739194 STARTED i=4 record=3d7d51ed-1ce2-4df6-ade4-e5f75d3cde5d
+t=1793813739194 STARTED i=3 record=ed3d2303-1a27-4a1b-a17e-830fa5e1f82b
+t=1793813739194 NAMED i=10 record=c6dae287-8f3f-47cf-adec-56bb64b5b76d task=1a9e558a-8d1e-4af8-b5ba-b80b9b7ed05a
+t=1793813739194 STARTED i=0 record=65fd85da-9a59-438d-8883-e11dced24f73
+t=1793813739195 NAMED i=16 record=8eba5295-cf2b-4f54-9f3f-70a3e7aa4ee0 task=29c64c95-95e9-466f-b41c-9d6dad3557cb
+t=1793813739196 NAMED i=18 record=59c27771-c581-4079-914e-c7b0aef5a48a task=8b682908-8bbf-4cd9-b89f-869285d1e2ab
+t=1793813739197 NAMED i=0 record=65fd85da-9a59-438d-8883-e11dced24f73 task=b17dbfa2-c485-4061-94b4-90042a75aa09
+t=1793813739197 NAMED i=6 record=decfccf4-11a7-44f3-839e-f8a02f53ce0d task=56a5dfe6-eca9-4b6f-bd5f-297dff941d29
+t=1793813739198 STARTED i=1 record=71b49192-d972-4d15-b068-7d48883cd044
+t=1793813739198 NAMED i=3 record=ed3d2303-1a27-4a1b-a17e-830fa5e1f82b task=b6ddb7f8-d95a-4559-bfcc-11072b0170a0
+t=1793813739200 NAMED i=4 record=3d7d51ed-1ce2-4df6-ade4-e5f75d3cde5d task=2b61ee13-be9d-49a2-8505-03c013e02a5e
+t=1793813739201 STARTED i=5 record=390fe421-9329-448e-bb66-08dec8e52807
+t=1793813739203 NAMED i=1 record=71b49192-d972-4d15-b068-7d48883cd044 task=6fb7b01e-92a5-4801-b386-bdc65264c88d
+t=1793813739203 NAMED i=5 record=390fe421-9329-448e-bb66-08dec8e52807 task=9adb9b52-c81d-4e74-a3eb-e1c3f591ca75
+t=1793813739206 STARTED i=49 record=5fdb7e7d-ee86-4279-9dfb-627ab1108d0a
+t=1793813739208 NAMED i=49 record=5fdb7e7d-ee86-4279-9dfb-627ab1108d0a task=516ea6eb-1b09-4d11-be19-1cc6886e9cbf
+t=1793813739227 STARTED i=7 record=62b9b496-701d-4175-b3c1-e1bade53980c
+t=1793813739228 NAMED i=7 record=62b9b496-701d-4175-b3c1-e1bade53980c task=13122330-e015-4ef8-8d3a-02ce6e43da6b
+t=1793813758916 SIGNAL shutdown signal received
+t=1793813758918 OUTCOME i=41 record=c199b18b-32de-40f2-8594-09a92aea941c task=3376daf2-a857-4645-82bb-04b40da1d6eb outcome=handed_off
+t=1793813758919 OUTCOME i=2 record=65361393-090b-4437-a41a-41d264992ede task=50f20020-79c7-46f5-baaf-2cd364ffd58f outcome=handed_off
+t=1793813758919 OUTCOME i=27 record=a5888a05-f9c9-4213-9bea-0431e1297fc7 task=7d0e3016-796f-4ea0-8695-98d3d88fef84 outcome=handed_off
+t=1793813758920 OUTCOME i=5 record=390fe421-9329-448e-bb66-08dec8e52807 task=9adb9b52-c81d-4e74-a3eb-e1c3f591ca75 outcome=handed_off
+t=1793813758920 OUTCOME i=18 record=59c27771-c581-4079-914e-c7b0aef5a48a task=8b682908-8bbf-4cd9-b89f-869285d1e2ab outcome=handed_off
+t=1793813758920 OUTCOME i=43 record=8dca76c8-02b1-4ab6-93d1-513f92dc886a task=876e92db-8596-47a4-8428-9dd5d5275a12 outcome=handed_off
+t=1793813758920 OUTCOME i=12 record=b0bdea28-6a0f-4247-9f3c-7f4768d19d9e task=d61d9a35-2677-48c5-b2b0-ea8553511b14 outcome=handed_off
+t=1793813758920 OUTCOME i=1 record=71b49192-d972-4d15-b068-7d48883cd044 task=6fb7b01e-92a5-4801-b386-bdc65264c88d outcome=handed_off
+t=1793813758920 OUTCOME i=19 record=c85b9c2e-dc04-4db2-a717-f09a5d3c61c1 task=c849eb13-aa64-4a52-bc9b-e65e4cd2d0da outcome=handed_off
+t=1793813758920 OUTCOME i=36 record=3f7c60e0-84c1-4c44-ad1a-bbbe68773f59 task=b991ed08-daa8-44c8-ac01-ab7222f732db outcome=handed_off
+t=1793813758921 OUTCOME i=49 record=5fdb7e7d-ee86-4279-9dfb-627ab1108d0a task=516ea6eb-1b09-4d11-be19-1cc6886e9cbf outcome=handed_off
+t=1793813758921 OUTCOME i=7 record=62b9b496-701d-4175-b3c1-e1bade53980c task=13122330-e015-4ef8-8d3a-02ce6e43da6b outcome=handed_off
+t=1793813758921 OUTCOME i=24 record=eb1d4713-f097-444b-89df-b787e1011e68 task=272573e6-24e7-49a8-b51e-b938762fbfda outcome=handed_off
+t=1793813758921 OUTCOME i=21 record=891ec88a-0a97-4e3e-9808-7fd99f966a3f task=a12fa772-ca6f-4965-874c-c3a2c77c02c2 outcome=handed_off
+t=1793813758921 OUTCOME i=30 record=4a327fff-9661-4cbc-b301-582a1b949b1d task=28b24e90-3ec6-4e9f-841f-26e29541db50 outcome=handed_off
+t=1793813758922 OUTCOME i=10 record=c6dae287-8f3f-47cf-adec-56bb64b5b76d task=1a9e558a-8d1e-4af8-b5ba-b80b9b7ed05a outcome=handed_off
+t=1793813758922 OUTCOME i=34 record=6df3c8dc-daae-4917-b903-c120dc5d2541 task=e8a15c5d-4b75-4ad1-a052-0fedf6038b14 outcome=handed_off
+t=1793813758923 OUTCOME i=6 record=decfccf4-11a7-44f3-839e-f8a02f53ce0d task=56a5dfe6-eca9-4b6f-bd5f-297dff941d29 outcome=handed_off
+t=1793813758923 OUTCOME i=44 record=8a626031-dbcd-45f3-8980-596bdf736081 task=d6914a9e-8428-411f-949e-c43f45ce093f outcome=handed_off
+t=1793813758923 OUTCOME i=32 record=7ffa998a-c13d-404a-a398-2baa321a6810 task=e8ea8cfb-8bb4-485e-a174-be9affd5ec0c outcome=handed_off
+t=1793813758924 OUTCOME i=22 record=0bb4bef9-bab1-4b6a-86c7-7831c02298ac task=76fa9f83-26bc-452b-a614-436687c55ef9 outcome=handed_off
+t=1793813758924 OUTCOME i=20 record=5f2fadbc-e24c-4ce8-994d-ffc4b827a218 task=5f267e27-3bf1-46fc-b1fc-646ef4ce8839 outcome=handed_off
+t=1793813758924 OUTCOME i=40 record=14b58ff6-dc7d-45fe-8d19-aebd37ba77ce task=a4654a55-7777-4b90-9e0a-a6f8ad621a83 outcome=handed_off
+t=1793813758924 OUTCOME i=26 record=25b9c6a3-6e25-44c4-9d76-7c161c3f1fa4 task=e07d8f06-0ad3-4d28-8b7c-70c41bafe564 outcome=handed_off
+t=1793813758924 OUTCOME i=4 record=3d7d51ed-1ce2-4df6-ade4-e5f75d3cde5d task=2b61ee13-be9d-49a2-8505-03c013e02a5e outcome=handed_off
+t=1793813758924 OUTCOME i=11 record=7ea62994-dc42-4ffe-acea-5169578d476f task=a59f60e6-8c22-4809-8de2-1bd26a2e7230 outcome=handed_off
+t=1793813758925 OUTCOME i=37 record=5cc028eb-f6bd-4f32-b773-58f9ae8d8c8b task=2be6d98f-3b91-4817-8ae8-2c2cf82a229e outcome=handed_off
+t=1793813758925 OUTCOME i=17 record=d6b195e6-7a8f-4352-b33c-2816591cae3d task=e25c93ae-1ae0-4c88-ac42-4fab78bf86f6 outcome=handed_off
+t=1793813758925 OUTCOME i=28 record=feed44e5-935d-4e7a-8ffd-cae6ebf8eb3c task=dc2bcdb0-e1bd-46d2-9165-7fbc31155f1c outcome=handed_off
+t=1793813758926 OUTCOME i=15 record=7220030c-796a-42a8-ac73-9831882edb4c task=f261bd77-a6d6-41e9-acc7-c1a238d05e8a outcome=handed_off
+t=1793813758926 OUTCOME i=42 record=987b72d9-ad26-42f6-bd87-737a8f752690 task=8585c4ea-32b0-40bf-a6e6-574f04cdb934 outcome=handed_off
+t=1793813758926 OUTCOME i=38 record=0299b4c0-d014-4567-aae5-b1872a4f4a6e task=952d6420-96e2-448b-ae21-592ae9d59d4b outcome=handed_off
+t=1793813758926 OUTCOME i=35 record=3940f888-b7c0-44ff-b63d-152800e2e139 task=1bcca616-8aaf-4853-8ffa-37230faa1fce outcome=handed_off
+t=1793813758926 OUTCOME i=13 record=3b4b6f53-6441-4a95-949f-9df58521afbe task=1d8aed1e-9b46-4e4b-a31c-a0879361740f outcome=handed_off
+t=1793813758927 OUTCOME i=16 record=8eba5295-cf2b-4f54-9f3f-70a3e7aa4ee0 task=29c64c95-95e9-466f-b41c-9d6dad3557cb outcome=handed_off
+t=1793813758927 OUTCOME i=3 record=ed3d2303-1a27-4a1b-a17e-830fa5e1f82b task=b6ddb7f8-d95a-4559-bfcc-11072b0170a0 outcome=handed_off
+t=1793813758927 OUTCOME i=14 record=7a213962-6dc7-440c-b60d-c15ef694807f task=fe502596-2533-4bde-8936-14f962da7d42 outcome=handed_off
+t=1793813758927 OUTCOME i=0 record=65fd85da-9a59-438d-8883-e11dced24f73 task=b17dbfa2-c485-4061-94b4-90042a75aa09 outcome=handed_off
+t=1793813758928 OUTCOME i=47 record=92379563-c287-4f98-8bb5-dea8355ba1f1 task=cb36cbe2-624d-45cf-aaaa-2afbefd95416 outcome=handed_off
+t=1793813758927 OUTCOME i=33 record=dd050b14-a725-4e31-8acf-03260807347d task=023e57f7-41a3-41ed-afb8-b3dd2e4edd72 outcome=handed_off
+t=1793813758928 OUTCOME i=25 record=150c382c-4a14-4dc7-a355-cec451a160e1 task=6fb60cbd-37e5-4950-86d3-28fefa71f342 outcome=handed_off
+t=1793813758927 OUTCOME i=8 record=ac4d210e-d59d-4aed-936f-a3fe92707d38 task=349b7855-784f-4481-81f9-0650143b0ee9 outcome=handed_off
+t=1793813758928 OUTCOME i=29 record=f0e45429-b468-4735-8266-1ad3f5746acd task=eaf9762f-e2d4-448f-869b-dc6bac8da2e3 outcome=handed_off
+t=1793813758929 OUTCOME i=46 record=acb076a9-4b4d-4ac0-81ff-405de4ce29c3 task=bcc17419-6e97-4425-a102-4568d90c6f6c outcome=handed_off
+t=1793813758929 OUTCOME i=23 record=e5d824a4-e426-4734-bc3c-4579b9f9bf1b task=1628adac-5b84-44c5-a232-bcf7e4a27d50 outcome=handed_off
+t=1793813758929 OUTCOME i=45 record=f170e955-f1a4-41c5-9a6c-88b042094a8c task=c516e6e0-780f-4192-88d1-c579e8b2670b outcome=handed_off
+t=1793813758930 OUTCOME i=9 record=26ed4c6e-de35-41b6-beb1-a9c361f72665 task=b32f25a7-d904-4618-a83d-ffea2057157f outcome=handed_off
+t=1793813758930 OUTCOME i=31 record=4000e2d9-3408-46e7-aee9-a1d8879cdf80 task=c66750b7-1584-44f8-bfc4-fe2fd5ed621e outcome=handed_off
+t=1793813758930 OUTCOME i=48 record=e3ebe825-b6fe-4fbd-a5bf-22e60c6a8d9e task=922fb9d0-6058-4fd9-bc4f-144296ba5576 outcome=handed_off
+t=1793813758930 OUTCOME i=39 record=ea45ab35-bd81-49e0-b8d4-ac60052ade7e task=343ead90-5a0a-4e9e-9832-d42470f86573 outcome=handed_off
+t=1793813758931 SUMMARY children=50 handed_off=50 
+t=1793813758931 EXECUTOR_DONE children=50 token_cancelled=false
+t=1793813758931 SERVED report=ServeReport { accepted: 2, drained: true, abandoned: 0, tasks: Some(InFlightReport { completed: 1, cancelled: 0, still_running: 0, finished: true }), refused: None }

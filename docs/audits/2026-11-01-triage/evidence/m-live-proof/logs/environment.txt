@@ -1,0 +1,19 @@
+uname -sr: Linux 6.18.44-fc-v233
+nproc: 4
+free -m:
+               total        used        free      shared  buff/cache   available
+Mem:           16091        1196       10396          44        4847       14894
+rustc -V: rustc 1.99.1 (58cf8f9c3 2026-10-13)
+cargo -V: cargo 1.99.1 (5f94df478 2026-08-27)
+psql --version: psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+server: PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+max_connections: 100
+ssl: off
+git HEAD (base): 3685b8f97cecebc57f5316c5229fb477d4d30b0c
+build: dev profile (opt-level 0), CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 cargo build -j2, Cargo.lock copied from the workspace root
+
+binaries used for the tables:
+b2d5e03ed85ed5fbfc59abeaca9f00aa4bdd602091eac2e12053426f29143e16  target/live/delegation/debug/a2a-live-worker
+8f6b30e50188d101716cafee3eefb1e14f917b01dacf0ade4ccc8bc5758bc484  target/live/delegation/debug/a2a-live-supervisor
+grpc:
+958625e5efe36ffb99616b58be2834cf40dc849214d612ec5ccdaf376a72f482  target/live/delegation-grpc/debug/a2a-live-grpc-idle

@@ -18,7 +18,42 @@ use crate::transport::{JsonRpcTransport, RestTransport, Transport};
 use super::ClientBuilder;
 use super::selection::canonical_binding;
 
+/// What [`ClientBuilder::with_pool`] stores. Without `tls-rustls` there is no
+/// pool, and this cannot be built, so no signature needs a `cfg`.
+#[cfg(feature = "tls-rustls")]
+pub(super) type PoolHandle = crate::HttpPool;
+/// What [`ClientBuilder::with_pool`] stores. Without `tls-rustls` there is no
+/// pool, and this cannot be built, so no signature needs a `cfg`.
+#[cfg(not(feature = "tls-rustls"))]
+pub(super) type PoolHandle = std::convert::Infallible;
+
 impl ClientBuilder {
+    /// A pool owns the TLS configuration and the connect timeout: asking for
+    /// both a pool and one of those on the client is a conflict, refused
+    /// rather than resolved by ignoring one.
+    #[cfg(feature = "tls-rustls")]
+    fn check_pool(&self) -> ClientResult<()> {
+        if self.pool.is_none() {
+            return Ok(());
+        }
+        if let Some(setter) = self.tls_setter {
+            return Err(ClientError::Config(format!(
+                "ClientBuilder::{setter} and ClientBuilder::with_pool were both called, but a \
+                 pool has one TLS configuration for every client that uses it: set it with \
+                 HttpPool::builder().with_tls_config(..), or drop one of the two"
+            )));
+        }
+        if self.connect_timeout_set {
+            return Err(ClientError::Config(
+                "ClientBuilder::with_connection_timeout and ClientBuilder::with_pool were both \
+                 called, but a pool has one connect timeout for every client that uses it: set \
+                 it with HttpPool::builder().with_connect_timeout(..), or drop one of the two"
+                    .into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// The gRPC transport's configuration, from what the builder was given.
     #[cfg(feature = "grpc")]
     fn grpc_transport_config(&self) -> crate::transport::grpc::GrpcTransportConfig {
@@ -101,6 +136,8 @@ impl ClientBuilder {
             ));
         }
         self.check_max_in_flight()?;
+        #[cfg(feature = "tls-rustls")]
+        self.check_pool()?;
         self.send_extensions()?;
 
         let custom = self.transport_override.as_ref().map(|t| {
@@ -113,7 +150,7 @@ impl ClientBuilder {
                 .preferred_binding
                 .clone()
                 .unwrap_or_else(|| BINDING_JSONRPC.into());
-            match http_transport(&self.config, &binding, &self.endpoint) {
+            match http_transport(&self.config, self.pool.as_ref(), &binding, &self.endpoint) {
                 Ok(t) => t,
                 Err(first) => self.fall_back(&binding, first)?,
             }
@@ -189,7 +226,12 @@ impl ClientBuilder {
         // that came from the failed interface belongs to that interface.
         let tenant_from_card = !self.tenant_set;
         for iface in std::mem::take(&mut self.fallback_interfaces) {
-            match http_transport(&self.config, &iface.protocol_binding, &iface.url) {
+            match http_transport(
+                &self.config,
+                self.pool.as_ref(),
+                &iface.protocol_binding,
+                &iface.url,
+            ) {
                 Ok(t) => {
                     trace_warn!(
                         chosen = %binding,
@@ -372,6 +414,7 @@ const GRPC_NOT_SYNC: &str = "gRPC transport requires the `grpc` feature flag";
 /// the REST transport.
 fn http_transport(
     config: &ClientConfig,
+    pool: Option<&PoolHandle>,
     binding: &str,
     endpoint: &str,
 ) -> ClientResult<Box<dyn Transport>> {
@@ -379,7 +422,7 @@ fn http_transport(
         Some(BINDING_JSONRPC) => Ok(Box::new(
             JsonRpcTransport::from_client(
                 endpoint,
-                http_client(config, endpoint)?,
+                http_client(config, pool, endpoint)?,
                 config.request_timeout,
                 config.stream_connect_timeout,
             )?
@@ -389,7 +432,7 @@ fn http_transport(
         Some(BINDING_HTTP_JSON) => Ok(Box::new(
             RestTransport::from_client(
                 endpoint,
-                http_client(config, endpoint)?,
+                http_client(config, pool, endpoint)?,
                 config.request_timeout,
                 config.stream_connect_timeout,
             )?
@@ -403,12 +446,22 @@ fn http_transport(
     }
 }
 
-/// The HTTP client `config.tls` asks for, for a transport to `endpoint`.
+/// The HTTP client for a transport to `endpoint`: the pool's, when the
+/// builder was given one, and otherwise one of its own as `config.tls` asks.
 fn http_client(
     config: &ClientConfig,
+    pool: Option<&PoolHandle>,
     endpoint: &str,
 ) -> ClientResult<crate::transport::HttpClient> {
     use crate::config::TlsConfig;
+
+    #[cfg(feature = "tls-rustls")]
+    if let Some(pool) = pool {
+        return Ok(pool.client());
+    }
+    // Without `tls-rustls` a pool cannot exist.
+    #[cfg(not(feature = "tls-rustls"))]
+    let _ = pool;
 
     let https = endpoint
         .get(..8)

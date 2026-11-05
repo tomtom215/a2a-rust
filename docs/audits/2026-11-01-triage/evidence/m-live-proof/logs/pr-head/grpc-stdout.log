@@ -1,0 +1,10 @@
+run 1: exit 0 ('completed', '90.0', 8, 0, {'SendStreamingMessage': 1, 'SubscribeToTask': 8}, 'PASS') wall 90.0s
+run 2: exit 0 ('completed', '90.0', 8, 0, {'SendStreamingMessage': 1, 'SubscribeToTask': 8}, 'PASS') wall 90.0s
+run 3: exit 0 ('completed', '90.0', 8, 0, {'SendStreamingMessage': 1, 'SubscribeToTask': 8}, 'PASS') wall 90.0s
+
+run  outcome    elapsed_s  SubscribeToTask  CancelTask  result
+  1  completed       90.0                8           0  PASS
+  2  completed       90.0                8           0  PASS
+  3  completed       90.0                8           0  PASS
+elapsed_s min 90.0 / median 90.0 / max 90.0; resumes min 8 / median 8 / max 8
+quiet 90s, client stream_idle_timeout 10s; logs /home/user/a2a-pr6/target/live/grpc-idle/20261104T173852

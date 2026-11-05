@@ -154,3 +154,31 @@ and what it needs proving is a supervisor killed with `kill -9` against a
 PostgreSQL journal with fifty children, which is a run, not code. gRPC and
 WebSocket keep-alive is in ADR 0032's scope (the WebSocket client already pings
 every 15 s by default).
+
+## Amendment, 2026-11-04 (the live proof; audit LP-1, LP-2, LP-3)
+
+The run the previous amendment called "a run, not code" was made: `scripts/live/delegation/`, PostgreSQL
+16.15, fifty children that each hold a task for 60 s, a supervisor killed with `kill -9` at 20 s or sent
+SIGTERM. Evidence, with each expectation written before its run:
+`docs/audits/2026-11-01-triage/evidence/m-live-proof/`.
+
+- **Held up.** After `kill -9` and a restart 5.4 to 7.5 s later, the book's loop found 50 open records and
+  ended with 50 completed, none cancelled (3 of 3). After SIGTERM every child handed off, the 50 records stayed
+  open and the 50 tasks working; a control that wires the same signal to the cancel future cancelled 50 of 50
+  (3 of 3 each, for a bare supervisor and for one that is an agent behind `serve_with_shutdown`). A gRPC child
+  quiet for 90 s under a 10 s client idle timeout resumed 8 times and completed, with no `CancelTask`
+  (3 of 3; scaled timers, no proxy).
+- **Three defects, all fixed in the same release.** (1) The book's loop waited on each child before it
+  reattached the next, and a child's handle is what renews its lease, so with 15 s leases every child after the
+  first lapsed (49 or 50 of 50 lost); the book reattaches every record first. (2) `Renewal::spawn` waited a
+  third of the lease before its first renewal, which is right for a start and wrong for a reattach, whose lease
+  was last renewed before the crash; a reattach renews at once. (3) The corrected loop first ended each
+  reattach with `?`, and a dropped `Delegation` cancels its child, so one record that could not be reattached
+  cancelled every child held (26 of 26 in 3 of 3 runs); the book matches on the result and goes on.
+- **A limit, stated.** A restart that comes after the agent has noticed the lapse loses the child. With 15 s
+  leases renewed every 5 s, a restart 9.5 s after the kill kept all 50 (6 of 6 runs) and one at 12 s kept none
+  (3 of 3); between them the loss grows and two runs at one delay can differ. The agent's lease store was in
+  memory; `PostgresLeaseStore` was not run, and nor was any other lease length, more than 50 children, or a
+  `kill -9` of the `serve` supervisor. Size the lease to cover a restart (the book says so).
+- **gRPC keep-alive** is built (`GrpcTransportConfig`, #193, opt-in), and `HttpPool` carries HTTP/2 PING for the
+  JSON-RPC and HTTP+JSON bindings (ADR 0032); neither is on by default.

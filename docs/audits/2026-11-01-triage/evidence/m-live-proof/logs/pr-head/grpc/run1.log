@@ -1,0 +1,13 @@
+t=1793813932065 BEGIN grpc=127.0.0.1:39807 quiet=90s client_stream_idle_timeout=10s
+t=1793813932067 RPC SendStreamingMessage
+t=1793813932068 CHILD working task=73ba43bc-07f5-417b-8691-3bc7af8b8e95, quiet for 90s
+t=1793813942113 RPC SubscribeToTask
+t=1793813952118 RPC SubscribeToTask
+t=1793813962122 RPC SubscribeToTask
+t=1793813972126 RPC SubscribeToTask
+t=1793813982130 RPC SubscribeToTask
+t=1793813992134 RPC SubscribeToTask
+t=1793814002138 RPC SubscribeToTask
+t=1793814012142 RPC SubscribeToTask
+t=1793814022070 CHILD completing task=73ba43bc-07f5-417b-8691-3bc7af8b8e95
+t=1793814022072 RESULT outcome=completed elapsed_s=90.0 quiet_s=90 idle_s=10 calls={"SendStreamingMessage": 1, "SubscribeToTask": 8}

@@ -1,0 +1,19 @@
+library under test: git 291aaf8970f994c37794f5dfbb0c88a95bcd09f7 (crates/ and book as at that commit); harness at this commit
+uname -sr: Linux 6.18.44-fc-v233
+nproc: 4
+free -m:
+               total        used        free      shared  buff/cache   available
+Mem:           16091         799        8085          44        7580       15292
+rustc -V: rustc 1.99.1 (58cf8f9c3 2026-10-13)
+psql --version: psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+server: PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+build: dev profile, CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 cargo build -j2 --manifest-path scripts/live/delegation/Cargo.toml --target-dir target/live/delegation, Cargo.lock copied from the worktree root; 57.7 s real from an empty target directory for the first build, 0 warnings (grep -c '^warning' of that build log)
+
+binaries of the second pass (sha256), the tables:
+7372deebcebf5ebd50e2428cf1385c1a03cbfc14267c7d30a7df05d895076f66  target/live/delegation/debug/a2a-live-worker
+5811cd9597340a85e5c2e33d24d627c94219326d25c6ffd68f6608411e72bb33  target/live/delegation/debug/a2a-live-supervisor
+binaries of the first pass:
+7372deebcebf5ebd50e2428cf1385c1a03cbfc14267c7d30a7df05d895076f66  target/live/delegation/debug/a2a-live-worker
+17c2889c62efdeaa48ea0c0e588571009327117876b38dc64cf05f34b31a55c0  target/live/delegation/debug/a2a-live-supervisor
+
+after the runs: touch of the three sources and a rebuild gave the same sha256 for both binaries (second pass) and 0 warnings (grep -c '^warning')

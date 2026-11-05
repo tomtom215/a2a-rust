@@ -1,0 +1,40 @@
+start 2026-11-04T17:09:21Z
+7372deebcebf5ebd50e2428cf1385c1a03cbfc14267c7d30a7df05d895076f66  target/live/delegation/debug/a2a-live-worker
+5811cd9597340a85e5c2e33d24d627c94219326d25c6ffd68f6608411e72bb33  target/live/delegation/debug/a2a-live-supervisor
+server_version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)  seed 20261104  out target/live/delegation/fix3/20261104T170921
+    0.52s [afail-1] children named: 50 of 50 after 0.4s
+   20.12s [afail-1] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   25.52s [afail-1] before recover: journal {'<open>': 51} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   66.33s [afail-1] recover exit 1 in 0.2s: {}; journal {'<open>': 51} tasks {'TASK_STATE_CANCELED': 1, 'TASK_STATE_COMPLETED': 49}
+   66.45s [afail-1] FAIL ["prediction: the 26 children reattached before the failure were cancelled: 1 tasks canceled; journal {'<open>': 51}", "prediction: the others ran on to completion, their records open: tasks {'TASK_STATE_CANCELED': 1, 'TASK_STATE_COMPLETED': 49}; journal {'<open>': 51}"]
+    0.51s [afail-2] children named: 50 of 50 after 0.4s
+   20.12s [afail-2] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   25.52s [afail-2] before recover: journal {'<open>': 51} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   66.32s [afail-2] recover exit 1 in 0.2s: {}; journal {'<open>': 51} tasks {'TASK_STATE_CANCELED': 1, 'TASK_STATE_COMPLETED': 49}
+   66.40s [afail-2] FAIL ["prediction: the 26 children reattached before the failure were cancelled: 1 tasks canceled; journal {'<open>': 51}", "prediction: the others ran on to completion, their records open: tasks {'TASK_STATE_CANCELED': 1, 'TASK_STATE_COMPLETED': 49}; journal {'<open>': 51}"]
+    0.51s [afail-3] children named: 50 of 50 after 0.4s
+   20.11s [afail-3] SIGKILL sent at 20.00s of the run; supervisor exit -9 after 0.01s
+   25.52s [afail-3] before recover: journal {'<open>': 51} tasks {'TASK_STATE_WORKING': 50} worker cancels 0
+   66.30s [afail-3] recover exit 1 in 0.2s: {}; journal {'<open>': 51} tasks {'TASK_STATE_CANCELED': 2, 'TASK_STATE_COMPLETED': 48}
+   66.42s [afail-3] FAIL ["prediction: the 26 children reattached before the failure were cancelled: 2 tasks canceled; journal {'<open>': 51}", "prediction: the others ran on to completion, their records open: tasks {'TASK_STATE_CANCELED': 2, 'TASK_STATE_COMPLETED': 48}; journal {'<open>': 51}"]
+
+  scn  run      seed  sig@s  age_s  exit  exit+s  starts_ms  restart         mode  rec@s  reatt_ms  open  work  cncl  rec_s  rec_last  done  j_comp  j_canc  j_open  t_comp  t_nonterm  w_canc  rej  result
+afail    1  20261104   20.0   19.6    -9    0.01        250      5.4  recover-all  25.48      None    51    50     0    0.2    -34.74     0       0       0      51      49          0       1    0    FAIL
+afail    2  20261104   20.0   19.7    -9    0.01        214      5.4  recover-all  25.51      None    51    50     0    0.2    -34.71     0       0       0      51      49          0       1    0    FAIL
+afail    3  20261104   20.0   19.6    -9    0.01        240      5.4  recover-all  25.49      None    51    50     0    0.2    -34.74     0       0       0      51      48          0       2    0    FAIL
+
+afail: exit_after_s min 0.01 / median 0.01 / max 0.01 (n=3)
+afail: restart_after_s min 5.4 / median 5.4 / max 5.4 (n=3)
+afail: recover_s min 0.2 / median 0.2 / max 0.2 (n=3)
+afail: recover_exit_after_last_child_s min -34.74 / median -34.74 / max -34.71 (n=3)
+afail: start_spread_ms min 214 / median 240 / max 250 (n=3)
+afail: passed 0 of 3
+FAILED afail-1: prediction: the 26 children reattached before the failure were cancelled: 1 tasks canceled; journal {'<open>': 51}
+FAILED afail-1: prediction: the others ran on to completion, their records open: tasks {'TASK_STATE_CANCELED': 1, 'TASK_STATE_COMPLETED': 49}; journal {'<open>': 51}
+FAILED afail-2: prediction: the 26 children reattached before the failure were cancelled: 1 tasks canceled; journal {'<open>': 51}
+FAILED afail-2: prediction: the others ran on to completion, their records open: tasks {'TASK_STATE_CANCELED': 1, 'TASK_STATE_COMPLETED': 49}; journal {'<open>': 51}
+FAILED afail-3: prediction: the 26 children reattached before the failure were cancelled: 2 tasks canceled; journal {'<open>': 51}
+FAILED afail-3: prediction: the others ran on to completion, their records open: tasks {'TASK_STATE_CANCELED': 2, 'TASK_STATE_COMPLETED': 48}; journal {'<open>': 51}
+raw log and per-run logs: target/live/delegation/fix3/20261104T170921
+driver exit 1
+end 2026-11-04T17:12:41Z

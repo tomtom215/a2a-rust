@@ -105,10 +105,14 @@ mod content;
 mod credential_preflight;
 mod declared;
 mod extensions;
+#[cfg(feature = "tls-rustls")]
+mod https_client;
 mod legacy_card;
 mod loopback;
 mod message_id;
 mod plaintext;
+#[cfg(feature = "tls-rustls")]
+mod pool;
 #[cfg(feature = "tls-rustls")]
 mod proxy;
 mod received;
@@ -156,6 +160,8 @@ pub use discovery::resolve_agent_card;
 pub use error::{ClientError, ClientResult};
 pub use interceptor::{CallInterceptor, ClientRequest, ClientResponse, InterceptorChain};
 pub use message_id::new_message_id;
+#[cfg(feature = "tls-rustls")]
+pub use pool::{HttpPool, HttpPoolBuilder};
 pub use retry::{RetryBudget, RetryPolicy};
 pub use streaming::EventStream;
 pub use token_provider::{

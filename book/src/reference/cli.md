@@ -204,6 +204,11 @@ a2a task get http://127.0.0.1:3111 "$id" | jq -r '.status.state'
 a2a task cancel http://127.0.0.1:3111 "$id"
 ```
 
+A `send` that waits for a long turn can be cut by a load balancer between you
+and the agent, which answers `504` while the task goes on running. Send with
+`--no-wait` and follow the task with `a2a task get`, as above
+([Behind a load balancer](../client/load-balancers.md)).
+
 Gate a deployment on a signed card:
 
 ```bash

@@ -96,6 +96,20 @@ MAIN_EXEMPT: dict[str, str] = {
         "predates this wiring; an exporter would add to the round trips and "
         "latencies it measures"
     ),
+    "scripts/live/delegation/src/bin/worker.rs": (
+        "the worker of the delegation live proof, whose evidence is the "
+        "start, completion and cancel times it logs; an exporter would add "
+        "to what those times are read against"
+    ),
+    "scripts/live/delegation/src/bin/supervisor.rs": (
+        "the supervisor of the delegation live proof, read by the time of "
+        "each line it prints; an exporter would add to those times"
+    ),
+    "scripts/live/delegation/src/bin/grpc_idle.rs": (
+        "the gRPC idle probe, whose evidence is the resumes and the elapsed "
+        "time of one quiet stream; an exporter would add traffic to a "
+        "stream the probe keeps quiet"
+    ),
 }
 
 # A manifest whose `default-features = false` dependency does not ask for
