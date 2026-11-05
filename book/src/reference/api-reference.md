@@ -47,7 +47,7 @@ are rustdoc's job.
 | `idempotency` | Client-supplied idempotency keys for `message/send`, as a declared extension |
 | `jsonrpc` | JSON-RPC 2.0 envelope types |
 | `lease` | The lease extension: `Lease`, a delegated task's time to live, granted on the message that starts it and renewed by a `GetTask` that activates the extension |
-| `lineage` | The lineage extension: `Lineage` (`root`, `depth`, `parentTaskId`), the job a task belongs to; `Lineage::child` for a delegated task; `tree` arranges tasks into a job's tree (ADR 0034) |
+| `lineage` | The lineage extension: `Lineage` (its root, depth and parent task id), the job a task belongs to; `Lineage::child` for a delegated task; `tree` arranges tasks into a job's tree (ADR 0034) |
 | `message` | Message types for the A2A protocol |
 | `method` | The A2A v1.0 service methods, mirrored from the ratified specification |
 | `params` | JSON-RPC method parameter types |
@@ -392,7 +392,7 @@ are rustdoc's job.
 | `HaltScope` | What `RequestHandler::halt` applies to: one job (`HaltScope::root(tenant, root)`, ADR 0034), one tenant, or all |
 | `RequestHandler::running_in_root` / `halt_reason_for_root` | The turns of one job running in this process, with their lineage; why a job's sends are refused |
 | `RequestContext::lineage` / `child_lineage` | The turn's job, and the lineage to give a task it delegates |
-| `HALTED_REASON`, `A2A_RUST_ERROR_DOMAIN` | The `ErrorInfo` reason (`HALTED`) and domain (`a2a-rust.com`) a halt refusal carries on every binding (ADR 0049) |
+| `HALTED_REASON`, `A2A_RUST_ERROR_DOMAIN` | The `ErrorInfo` reason (HALTED) and domain (a2a-rust.com) a halt refusal carries on every binding (ADR 0049) |
 | `HaltReport` | What a halt did: `stopped`, the ids of the tasks whose token it fired, and `persisted`, whether the halt store took it (`None` without a store) |
 | `ConnectionPoolStats` | Statistics about the HTTP connection pool |
 | `RpcCall` | One finished inbound call as `Metrics::on_rpc_call` reports it: binding, method, duration, status (`rpc.server.call.duration`) |
