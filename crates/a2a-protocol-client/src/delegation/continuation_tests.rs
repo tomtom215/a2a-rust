@@ -119,7 +119,7 @@ fn message_of(send: &serde_json::Value) -> &serde_json::Value {
 /// its task and context, after the first wait; it then completes.
 #[tokio::test(start_paused = true)]
 async fn a_handed_back_child_is_sent_again_and_completes() {
-    let (outcome, sends, took) = run(
+    let (outcome, sends, took) = Box::pin(run(
         vec![
             vec![
                 status(TaskState::Working, false),
@@ -128,7 +128,7 @@ async fn a_handed_back_child_is_sent_again_and_completes() {
             vec![status(TaskState::Completed, false)],
         ],
         DelegationOptions::new(),
-    )
+    ))
     .await;
     assert!(matches!(outcome, Outcome::Completed(_)), "{outcome:?}");
     assert_eq!(sends.len(), 2);
@@ -149,7 +149,7 @@ async fn a_handed_back_child_is_sent_again_and_completes() {
 /// child is lost (no resume here) and cancelled.
 #[tokio::test(start_paused = true)]
 async fn continuations_stop_at_the_bound() {
-    let (outcome, sends, took) = run(
+    let (outcome, sends, took) = Box::pin(run(
         vec![vec![status(TaskState::Working, true)]],
         DelegationOptions::new()
             .with_hand_off(HandOffPolicy::new(
@@ -158,7 +158,7 @@ async fn continuations_stop_at_the_bound() {
                 Duration::from_secs(8),
             ))
             .with_resume(ResumePolicy::none()),
-    )
+    ))
     .await;
     assert!(matches!(outcome, Outcome::Lost(_)), "{outcome:?}");
     assert_eq!(sends.len(), 3, "the start and two continuations");
@@ -168,12 +168,12 @@ async fn continuations_stop_at_the_bound() {
 /// `HandOffPolicy::never` opts out: the mark is a lost stream.
 #[tokio::test(start_paused = true)]
 async fn never_does_not_continue() {
-    let (outcome, sends, took) = run(
+    let (outcome, sends, took) = Box::pin(run(
         vec![vec![status(TaskState::Working, true)]],
         DelegationOptions::new()
             .with_hand_off(HandOffPolicy::never())
             .with_resume(ResumePolicy::none()),
-    )
+    ))
     .await;
     assert!(matches!(outcome, Outcome::Lost(_)), "{outcome:?}");
     assert_eq!(sends.len(), 1);
@@ -183,10 +183,10 @@ async fn never_does_not_continue() {
 /// A child that is working without the mark is not continued.
 #[tokio::test(start_paused = true)]
 async fn an_unmarked_end_is_resumed_not_continued() {
-    let (outcome, sends, _) = run(
+    let (outcome, sends, _) = Box::pin(run(
         vec![vec![status(TaskState::Working, false)]],
         DelegationOptions::new().with_resume(ResumePolicy::none()),
-    )
+    ))
     .await;
     assert!(matches!(outcome, Outcome::Lost(_)), "{outcome:?}");
     assert_eq!(sends.len(), 1);
