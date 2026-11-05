@@ -447,3 +447,5 @@ mod root_tests;
 mod store_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod window_tests;
