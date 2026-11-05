@@ -101,7 +101,9 @@ async fn run(
         vec![Part::text("do it")],
     );
     let started = tokio::time::Instant::now();
-    let child = Delegation::start_with(client, MessageSendParams::new(message), options)
+    let mut params = MessageSendParams::new(message);
+    params.tenant = Some("acme".to_owned());
+    let child = Delegation::start_with(client, params, options)
         .await
         .unwrap();
     let outcome = child.wait(std::future::pending()).await.outcome;
@@ -133,6 +135,11 @@ async fn a_handed_back_child_is_sent_again_and_completes() {
     let (first, again) = (message_of(&sends[0]), message_of(&sends[1]));
     assert_eq!(again["taskId"], "t");
     assert_eq!(again["contextId"], "c");
+    assert_eq!(
+        (&sends[0]["tenant"], &sends[1]["tenant"]),
+        (&serde_json::json!("acme"), &serde_json::json!("acme")),
+        "the continuation goes to the child's tenant"
+    );
     assert_ne!(again["messageId"], first["messageId"]);
     assert_eq!(again["parts"], first["parts"]);
     assert_eq!(took, Duration::from_secs(1), "the first wait");
