@@ -389,22 +389,15 @@ impl ServerSpan {
     /// ([`RpcSystem::is_server_error`]); a call the peer abandoned is
     /// classified in [`outcome::classify`] (audit C-09).
     fn finish(&self, duration: Duration, status: Option<&str>) {
-        let outcome::Outcome {
-            status_code,
-            failed_with,
-            abandoned,
-        } = outcome::classify(self.system, status);
-        // Only the span below tells an abandoned call from a failed one.
-        #[cfg(not(feature = "tracing"))]
-        let _ = abandoned;
+        let done = outcome::classify(self.system, status);
         #[cfg(feature = "tracing")]
         {
-            if let Some(code) = status_code {
+            if let Some(code) = done.status_code {
                 self.span.record("rpc.status_code", code);
             }
-            if let Some(code) = failed_with {
+            if let Some(code) = done.failed_with {
                 self.span.record("error.type", code);
-                if !abandoned {
+                if done.marks_span_error() {
                     self.span.record("otel.status_code", "ERROR");
                 }
             }
@@ -413,8 +406,8 @@ impl ServerSpan {
             system: self.system.name(),
             method: Some(self.method),
             duration,
-            status_code,
-            error_type: failed_with,
+            status_code: done.status_code,
+            error_type: done.failed_with,
             tenant: self.tenant.get().map(String::as_str),
         });
     }

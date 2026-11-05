@@ -14,7 +14,18 @@ const GRPC_CANCELLED: &str = "CANCELLED";
 pub(super) struct Outcome<'a> {
     pub(super) status_code: Option<&'a str>,
     pub(super) failed_with: Option<&'a str>,
-    pub(super) abandoned: bool,
+    /// Only the span tells an abandoned call from a failed one.
+    #[cfg(feature = "tracing")]
+    abandoned: bool,
+}
+
+#[cfg(feature = "tracing")]
+impl Outcome<'_> {
+    /// Whether the call's span is marked `Error`: it failed, and the peer did
+    /// not merely abandon it.
+    pub(super) const fn marks_span_error(&self) -> bool {
+        self.failed_with.is_some() && !self.abandoned
+    }
 }
 
 /// Classifies a call on `system` that ended with `status` (`None` for
@@ -53,6 +64,7 @@ pub(super) fn classify(system: RpcSystem, status: Option<&str>) -> Outcome<'_> {
     Outcome {
         status_code,
         failed_with,
+        #[cfg(feature = "tracing")]
         abandoned,
     }
 }
