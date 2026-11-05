@@ -127,7 +127,10 @@ a job in three ways.
 
    JSON-RPC carries it in `error.data` (code `-32603`, message
    `halted: <reason>`); HTTP+JSON in `error.details` under HTTP `503`, status
-   `UNAVAILABLE`; gRPC as a status detail under `UNAVAILABLE`. A sender
+   `UNAVAILABLE`, after the `a2a-protocol.org` `ErrorInfo` `INTERNAL_ERROR`
+   that the official SDKs map by; gRPC as a status detail under `UNAVAILABLE`.
+   So a receiver MUST look for it among all `ErrorInfo` details, not only the
+   first. A sender
    receiving it SHOULD stop the work that sent it and SHOULD NOT retry it as a
    transient failure.
 2. **The cascade.** A halted task is cancelled. Its agent cancels the tasks

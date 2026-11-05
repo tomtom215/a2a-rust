@@ -20,7 +20,6 @@ Extensions: the Wire Contract"), as a hop in another language would write it.
 
 from a2a.client.errors import A2AClientError
 from a2a.types import Message, Part, SendMessageRequest
-from a2a.utils import TransportProtocol
 from a2a.utils.errors import A2AError
 
 LEASE_URI = "https://a2a-rust.com/extensions/lease/v1"
@@ -44,11 +43,12 @@ def as_sent(message: Message, key: str) -> dict:
 
 
 async def refusal(client, message: Message) -> str | None:
+    """The refusal, as `<error type>: <message>`, or None when sent."""
     try:
         async for _ in client.send_message(SendMessageRequest(message=message)):
             pass
     except (A2AClientError, A2AError) as e:
-        return str(e)
+        return f"{type(e).__name__}: {e}"
     return None
 
 
@@ -63,27 +63,23 @@ async def check_lease(client, binding, check) -> None:
     why = await refusal(client, granted)
     check("lease: ttlMs 30000.0 is granted", why is None, f"refused: {why}")
 
-    # On HTTP+JSON the refusal is a bare 400 to this client (the server adds
-    # no a2a-protocol.org ErrorInfo to invalid params); the text is JSON-RPC's.
+    # Every binding: the SDK reads the refusal as invalid params, message
+    # kept (HTTP+JSON carries reason INVALID_PARAMS, ADR 0049).
     short = carrying(f"py-{binding}-lease-2", LEASE_KEY, LEASE_URI, {"ttlMs": 500})
-    want = (
-        "400 Bad Request"
-        if binding == TransportProtocol.HTTP_JSON
-        else "this one is 500 ms"
-    )
     why = await refusal(client, short)
     check(
         "lease: ttlMs 500.0 is read as 500 and refused by the lease's range",
-        why is not None and want in why,
+        why is not None
+        and why.startswith("InvalidParamsError:")
+        and "this one is 500 ms" in why,
         f"got {why}",
     )
 
     half = carrying(f"py-{binding}-lease-3", LEASE_KEY, LEASE_URI, {"ttlMs": 30000.5})
-    want = "400 Bad Request" if binding == TransportProtocol.HTTP_JSON else "malformed lease"
     why = await refusal(client, half)
     check(
         "lease: ttlMs 30000.5 is refused as malformed",
-        why is not None and want in why,
+        why is not None and why.startswith("InvalidParamsError:") and "malformed lease" in why,
         f"got {why}",
     )
 

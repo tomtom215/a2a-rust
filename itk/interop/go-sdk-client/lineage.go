@@ -56,20 +56,13 @@ func runLineage(ctx context.Context, s *suite, c *a2aclient.Client, binding a2a.
 		}
 	}
 
+	// On every binding a2a-go reads the refusal as invalid params, the
+	// server's message kept: HTTP+JSON carries an a2a-protocol.org ErrorInfo
+	// with reason INVALID_PARAMS (ADR 0049).
 	_, err = c.SendMessage(ctx, withLineage("lineage", map[string]any{"root": "go-job", "depth": 17}))
-	const why = "lineage depth 17 is past the cap of 16"
-	switch {
-	case binding != a2a.TransportProtocolHTTPJSON:
-		s.expect("lineage: past the depth cap -> InvalidParams", err, a2a.ErrInvalidParams)
-	// Over HTTP+JSON the server answers 400 INVALID_ARGUMENT with no
-	// a2a-protocol.org ErrorInfo (it adds one only for A2A's own codes), and
-	// a2a-go reads such a body as an internal error, so only the message
-	// identifies the refusal here.
-	case err == nil:
-		s.fail("lineage: past the depth cap is refused", "expected a refusal, got success")
-	case !strings.Contains(err.Error(), why):
-		s.fail("lineage: past the depth cap is refused", "got %T: %v", err, err)
-	default:
-		s.ok("lineage: past the depth cap is refused", err.Error())
+	if err != nil && !strings.Contains(err.Error(), "lineage depth 17 is past the cap of 16") {
+		s.fail("lineage: past the depth cap -> InvalidParams", "got %T: %v", err, err)
+		return
 	}
+	s.expect("lineage: past the depth cap -> InvalidParams", err, a2a.ErrInvalidParams)
 }

@@ -18,7 +18,9 @@ mod span;
 
 // The axum adapter answers errors through these, so the two HTTP+JSON
 // dispatchers send one error shape (audit N37).
-pub(crate) use error_response::{error_json_response, server_error_to_response};
+pub(crate) use error_response::{
+    error_json_response, rest_error_details, server_error_to_response,
+};
 #[cfg(feature = "axum")]
 pub(crate) use error_response::{params_from_slice, params_from_value};
 #[cfg(feature = "axum")]

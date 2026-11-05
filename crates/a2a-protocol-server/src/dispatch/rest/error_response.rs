@@ -18,22 +18,16 @@ use crate::error::ServerError;
 /// one field violation (spec §11.6: implementations SHOULD use well-known
 /// types such as `BadRequest` for validation errors). `field` is the path of
 /// the offending field, `""` when the request itself is the problem.
+/// The same body as [`server_error_to_response`] of the
+/// [`ServerError::InvalidField`] it is, `INVALID_PARAMS` `ErrorInfo` first.
 pub fn bad_request_response(
     field: &str,
     description: &str,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    let body = serde_json::json!({
-        "error": {
-            "code": 400,
-            "status": "INVALID_ARGUMENT",
-            "message": description,
-            "details": [crate::streaming::sse::bad_request_detail(field, description)]
-        }
-    });
-    serde_json::to_vec(&body).map_or_else(
-        |_| internal_error_response(),
-        |bytes| build_json_response(400, bytes),
-    )
+    server_error_to_response(&ServerError::InvalidField {
+        field: field.to_owned(),
+        message: description.to_owned(),
+    })
 }
 
 /// The [`Unreadable::violation`] for a value that did not deserialize: the
@@ -56,9 +50,12 @@ pub fn params_from_value<T: serde::de::DeserializeOwned>(
     serde_path_to_error::deserialize(value).map_err(|e| violation(e.path(), e.inner()))
 }
 
-/// Deserializes request parameters from raw body bytes. Malformed JSON is a
-/// plain 400 as before; well-formed JSON of the wrong shape is re-parsed with
-/// path tracking, on the failure path only, to name the field.
+/// Deserializes request parameters from raw body bytes. Malformed JSON is
+/// [`Unreadable::not_json`]; well-formed JSON of the wrong shape is read
+/// again as a value through [`params_from_value`], on the failure path only,
+/// to name the field. As a value, as `RestDispatcher` reads it: re-reading the
+/// bytes put `at line 1 column N` into the message, so the two HTTP+JSON
+/// dispatchers answered one bad body with two messages.
 #[cfg(feature = "axum")]
 #[allow(clippy::result_large_err)] // the error holds the response, as in `RestDispatcher::read_params`
 pub fn params_from_slice<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, Unreadable> {
@@ -67,14 +64,12 @@ pub fn params_from_slice<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<
         Err(e) if e.classify() != serde_json::error::Category::Data => {
             Err(Unreadable::not_json(&e))
         }
-        Err(e) => {
-            let mut de = serde_json::Deserializer::from_slice(body);
-            let tracked: Result<T, _> = serde_path_to_error::deserialize(&mut de);
-            Err(match tracked {
-                Err(t) => violation(t.path(), t.inner()),
-                Ok(_) => Unreadable::violation("", &e.to_string()),
-            })
-        }
+        Err(e) => match serde_json::from_slice::<serde_json::Value>(body) {
+            Ok(value) => {
+                params_from_value::<T>(value).and(Err(Unreadable::violation("", &e.to_string())))
+            }
+            Err(e) => Err(Unreadable::not_json(&e)),
+        },
     }
 }
 
@@ -129,6 +124,51 @@ pub(super) fn not_found_response() -> hyper::Response<BoxBody<Bytes, Infallible>
     error_json_response(404, "not found")
 }
 
+/// The `google.rpc.ErrorInfo` reason of a JSON-RPC-standard error on this
+/// binding: the reasons a2a-go (v2.7.0 `a2a/errors.go`) and a2a-python
+/// (`a2a-sdk` 1.2.3 `a2a/utils/errors.py`) send and map by, in the
+/// `a2a-protocol.org` domain. v1.0.1 §11.6 requires an `ErrorInfo` only for the
+/// A2A-specific errors (§3.3.2), and names no reason for these; without one,
+/// a2a-go read a `400 INVALID_ARGUMENT` as an internal error and a2a-python
+/// as a bare HTTP 400 (ADR 0049). a2a-python reads no `PARSE_ERROR`; a2a-go
+/// does.
+const fn standard_reason(code: a2a_protocol_types::ErrorCode) -> Option<&'static str> {
+    use a2a_protocol_types::ErrorCode;
+    match code {
+        ErrorCode::ParseError => Some("PARSE_ERROR"),
+        ErrorCode::InvalidRequest => Some("INVALID_REQUEST"),
+        ErrorCode::MethodNotFound => Some("METHOD_NOT_FOUND"),
+        ErrorCode::InvalidParams => Some("INVALID_PARAMS"),
+        ErrorCode::InternalError => Some("INTERNAL_ERROR"),
+        _ => None,
+    }
+}
+
+/// An HTTP+JSON error's details: [`error_details`](crate::streaming::sse::error_details),
+/// led by the `ErrorInfo` of a JSON-RPC-standard error ([`standard_reason`]).
+/// First, because a2a-python reads only the first `ErrorInfo` in `details`:
+/// a halt's `HALTED` and a validation error's `BadRequest` follow it. A
+/// credential refusal gets none: it answers `401`/`403` whatever its code
+/// (`InvalidRequest`), and both SDKs would read a reason over that status.
+/// The JSON-RPC and gRPC bindings are unchanged.
+pub fn rest_error_details(err: &a2a_protocol_types::A2aError) -> Vec<serde_json::Value> {
+    let mut details = crate::streaming::sse::error_details(err);
+    if err.auth_rejection().is_some() {
+        return details;
+    }
+    if let Some(reason) = standard_reason(err.code) {
+        details.insert(
+            0,
+            serde_json::json!({
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                "reason": reason,
+                "domain": a2a_protocol_types::error::A2A_ERROR_DOMAIN,
+            }),
+        );
+    }
+    details
+}
+
 /// Converts a [`ServerError`] to an AIP-193 error response with proper status codes.
 ///
 /// Per Section 5.4 and 11.6, each A2A error type maps to a specific HTTP status.
@@ -139,8 +179,7 @@ pub fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<By
     // answers 413 and 503 (audit N20).
     let status = err.http_status();
     let grpc_status = err.status_name();
-    let details = crate::streaming::sse::error_details(&a2a_err);
-
+    let details = rest_error_details(&a2a_err);
     let mut error_obj = serde_json::json!({
         "error": {
             "code": status,
@@ -148,6 +187,7 @@ pub fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<By
             "message": a2a_err.message
         }
     });
+    // Empty only for a credential refusal with nothing to say.
     if !details.is_empty() {
         error_obj["error"]["details"] = serde_json::Value::Array(details);
     }
@@ -369,6 +409,40 @@ mod tests {
                 .as_str()
                 .unwrap_or("")
                 .contains("proto err")
+        );
+    }
+
+    /// Each JSON-RPC-standard code leads its details with the reason a2a-go
+    /// and a2a-python map by; an A2A code and a credential refusal do not get
+    /// one (ADR 0049). The parity test drives the reachable ones through both
+    /// dispatchers; parse error, method not found and invalid request are
+    /// answered by this builder alone on this binding.
+    #[test]
+    fn each_standard_code_leads_with_its_reason() {
+        use a2a_protocol_types::{A2aError, ErrorCode};
+        let first = |e: &A2aError| rest_error_details(e).first().map(|d| d["reason"].clone());
+        for (code, reason) in [
+            (ErrorCode::ParseError, "PARSE_ERROR"),
+            (ErrorCode::InvalidRequest, "INVALID_REQUEST"),
+            (ErrorCode::MethodNotFound, "METHOD_NOT_FOUND"),
+            (ErrorCode::InvalidParams, "INVALID_PARAMS"),
+            (ErrorCode::InternalError, "INTERNAL_ERROR"),
+        ] {
+            let details = rest_error_details(&A2aError::new(code, "x"));
+            assert_eq!(details.len(), 1, "{code:?}");
+            assert_eq!(details[0]["reason"], reason);
+            assert_eq!(details[0]["domain"], "a2a-protocol.org");
+        }
+        assert_eq!(
+            first(&A2aError::task_not_found("t")),
+            Some("TASK_NOT_FOUND".into())
+        );
+        assert_eq!(rest_error_details(&A2aError::task_not_found("t")).len(), 1);
+        let refused = A2aError::unauthenticated("no credential", "Bearer");
+        assert!(
+            rest_error_details(&refused)
+                .iter()
+                .all(|d| d["domain"] != "a2a-protocol.org")
         );
     }
 }

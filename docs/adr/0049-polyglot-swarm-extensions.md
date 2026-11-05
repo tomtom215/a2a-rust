@@ -82,7 +82,9 @@ maintainer's say-so; C is out of scope.
    INVALID_ARGUMENT` without an `a2a-protocol.org` `ErrorInfo` (the server adds
    one only for A2A's own codes, for every invalid-params error), which a2a-go
    reads as an internal error and a2a-python as a bare HTTP 400; that is a
-   server-wide gap, recorded for its own fix, not a lineage rule.
+   server-wide gap, recorded for its own fix, not a lineage rule. (Closed by
+   the second amendment below: both SDKs now read it as invalid params on
+   every binding.)
 
    The first Python run found that a2a-python keeps metadata in a protobuf
    `Struct` and so writes the depth `2` as `2.0`. The contract therefore says a
@@ -115,7 +117,8 @@ Built since the decision above:
   (a parent-task link, a standard halt reason, guidance on integers) and
   `docs/upstream/a2a-standard-error-reasons-draft.md` (below).
 
-**Errors on HTTP+JSON, decided: unchanged.** A refusal of invalid params is
+**Errors on HTTP+JSON, first decided: unchanged** (superseded by the second
+amendment below). A refusal of invalid params is
 `400 INVALID_ARGUMENT` with no `a2a-protocol.org` `ErrorInfo`, which a2a-go
 v2.7.0 reads as an internal error and a2a-python 1.2.3 as a bare HTTP 400.
 v1.0.1 §11.6 requires that `ErrorInfo` "for A2A-specific errors", which §3.3.2
@@ -125,6 +128,53 @@ not require it, and the behaviour is left as it is. Both reference SDKs do send
 and read a reason for invalid params (`INVALID_PARAMS`, in `a2a-protocol.org`),
 so adding it is the maintainer's call; the draft asks the A2A project to define
 it.
+
+## Amendment, 2026-11-05 (second): the standard reasons on HTTP+JSON
+
+The lead chose to build what the first amendment left to the maintainer.
+
+**What is sent.** On the HTTP+JSON binding (`RestDispatcher` and the axum
+router, which answer through one builder, `dispatch::rest::rest_error_details`),
+an error whose code is one of JSON-RPC's standard codes carries, first in
+`details`, a `google.rpc.ErrorInfo` in the `a2a-protocol.org` domain whose
+`reason` is the one both reference SDKs map by:
+
+| Code | `reason` | Read by |
+|---|---|---|
+| `-32602` invalid params | `INVALID_PARAMS` | a2a-go v2.7.0, a2a-sdk 1.2.3 |
+| `-32603` internal error | `INTERNAL_ERROR` | both |
+| `-32601` method not found | `METHOD_NOT_FOUND` | both |
+| `-32600` invalid request | `INVALID_REQUEST` | both |
+| `-32700` parse error | `PARSE_ERROR` | a2a-go (a2a-python has no such reason) |
+
+What the error carried before follows it: a validation error's
+`google.rpc.BadRequest` (the field, where it is known), a halt's `HALTED`
+(`a2a-rust.com`), a rate limit's `RetryInfo`. First, because a2a-python reads
+only the first `ErrorInfo` in `details`. Not sent: on a credential refusal,
+which answers `401`/`403` whatever its code (`InvalidRequest`), since both SDKs
+would read the reason over the status; and on the transport-level answers that
+carry no error kind (a path refused as traversal, a body or query over its
+limit, a body not received in time, an unknown route). A2A-specific errors keep
+exactly the `ErrorInfo` they had. JSON-RPC and gRPC are unchanged.
+
+**Why.** v1.0.1 does not require it (§11.6 asks for an `ErrorInfo` only for the
+A2A-specific errors), but it asks for structured validation errors (§11.6:
+"SHOULD use well-known types such as `google.rpc.BadRequest`"), and both
+official SDKs send these reasons and map by them: without one, a2a-go read our
+`400` as an internal error and a2a-python as a bare HTTP 400, so a caller in
+either language could not tell a refusal of its input from a fault. The
+addition is purely additive for a client that reads the status or the message.
+
+**Shown by:** `tests/http_json_error_parity.rs`
+(`each_standard_error_names_its_reason_on_both_dispatchers`: a body that does
+not fit, a body that is not JSON, a lineage past its cap, a halt, an A2A error
+and a credential refusal, on both dispatchers, byte for byte), the builder's
+unit test for the codes no HTTP+JSON request reaches, and the interop clients:
+a2a-go and a2a-python now read a refused lineage and a refused lease as invalid
+params on HTTP+JSON as on JSON-RPC. The parity case also found the axum router
+answering a body of the wrong shape with `at line 1 column N` in its message
+where `RestDispatcher` had none; it now reads the body as a value, as
+`RestDispatcher` does.
 
 ## What is not built
 

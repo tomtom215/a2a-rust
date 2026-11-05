@@ -5,7 +5,11 @@
 
 **Status: draft, not sent.** Written 2026-11-05 against A2A v1.0.1,
 a2a-go v2.7.0 and a2a-python (`a2a-sdk`) 1.2.3, read from installed sources.
-Sending it is the maintainer's decision.
+Sending it is the maintainer's decision. **Updated 2026-11-05:** this SDK now
+sends the reasons both SDKs use on HTTP+JSON (ADR 0049, second amendment), so
+the interop gap described below is closed on our side; the request to the
+specification stands, since a server that follows v1.0.1 to the letter is
+still misread.
 
 ---
 
@@ -38,7 +42,7 @@ them.
   raises `A2AClientError('HTTP Error 400: ...')` without the server's message.
 
 **What follows.** A server that does what the spec requires and no more (ours
-did, for invalid params: `400`, status `INVALID_ARGUMENT`, a message, and a
+did until 2026-11-05, for invalid params: `400`, status `INVALID_ARGUMENT`, a message, and a
 `BadRequest` detail where it has field violations) is read by a2a-go as an
 internal error and by a2a-python as a bare HTTP 400. We found this from the
 interop runs in `itk/interop/` (a lineage past its depth cap, a lease out of

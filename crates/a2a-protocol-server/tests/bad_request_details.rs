@@ -64,7 +64,18 @@ async fn check(send_url: String) {
     let (status, body) = post(&send_url, BAD_TYPE).await;
     assert_eq!(status, 400, "{body}");
     assert_eq!(body["error"]["status"], "INVALID_ARGUMENT", "{body}");
-    let detail = &body["error"]["details"][0];
+    // The reason a2a-go and a2a-python map by first (ADR 0049), then the
+    // field it names.
+    assert_eq!(
+        body["error"]["details"][0],
+        serde_json::json!({
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            "reason": "INVALID_PARAMS",
+            "domain": "a2a-protocol.org",
+        }),
+        "{body}"
+    );
+    let detail = &body["error"]["details"][1];
     assert_eq!(
         detail["@type"], "type.googleapis.com/google.rpc.BadRequest",
         "{body}"
@@ -78,10 +89,19 @@ async fn check(send_url: String) {
         "{body}"
     );
 
-    // Malformed JSON names no field: a plain 400, no BadRequest.
+    // Malformed JSON names no field: a 400 with its reason and no
+    // BadRequest.
     let (status, body) = post(&send_url, MALFORMED).await;
     assert_eq!(status, 400, "{body}");
-    assert!(body["error"].get("details").is_none(), "{body}");
+    assert_eq!(
+        body["error"]["details"],
+        serde_json::json!([{
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            "reason": "INVALID_PARAMS",
+            "domain": "a2a-protocol.org",
+        }]),
+        "{body}"
+    );
 }
 
 #[tokio::test]

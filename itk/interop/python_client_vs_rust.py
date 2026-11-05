@@ -245,17 +245,13 @@ async def check_lineage(client, binding: str) -> None:
             pass
         check("a lineage past the depth cap is refused", False, "no error raised")
     except (A2AClientError, A2AError) as e:
-        # Over HTTP+JSON the server answers 400 INVALID_ARGUMENT with no
-        # a2a-protocol.org ErrorInfo (it adds one only for A2A's own codes),
-        # and the Python client then reports only the HTTP status.
-        expected = (
-            "400 Bad Request"
-            if binding == TransportProtocol.HTTP_JSON
-            else "lineage depth 17 is past the cap of 16"
-        )
+        # On every binding the SDK reads it as invalid params, the server's
+        # message kept: HTTP+JSON carries an a2a-protocol.org ErrorInfo with
+        # reason INVALID_PARAMS (ADR 0049).
         check(
-            "a lineage past the depth cap is refused",
-            expected in str(e),
+            "a lineage past the depth cap is refused as invalid params",
+            type(e).__name__ == "InvalidParamsError"
+            and "lineage depth 17 is past the cap of 16" in str(e),
             f"got {type(e).__name__}: {e}",
         )
 

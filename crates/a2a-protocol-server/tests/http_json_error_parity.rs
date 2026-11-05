@@ -304,3 +304,128 @@ async fn rest_and_axum_negotiate_the_response_media_type() {
         );
     }
 }
+
+/// The JSON-RPC-standard errors carry the `google.rpc.ErrorInfo` reason
+/// a2a-go and a2a-python map by, in `a2a-protocol.org`, first in `details`;
+/// what an error carried before (`BadRequest`, `HALTED`) follows; an A2A error
+/// and a credential refusal keep what they had. Both dispatchers, identically
+/// (ADR 0049).
+#[tokio::test]
+async fn each_standard_error_names_its_reason_on_both_dispatchers() {
+    let (rest_handler, axum_handler) = (handler(), handler());
+    let rest = serve_with_addr(
+        "127.0.0.1:0",
+        RestDispatcher::new(Arc::clone(&rest_handler)),
+    )
+    .await
+    .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let axum_addr = listener.local_addr().unwrap();
+    let app = A2aRouter::new(Arc::clone(&axum_handler)).into_router();
+    tokio::spawn(async move { axum::serve(listener, app).await });
+
+    let info = |reason: &str, domain: &str| {
+        serde_json::json!({
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            "reason": reason,
+            "domain": domain,
+        })
+    };
+    let both = |method: &'static str, path: &'static str, body: &'static str, token| async move {
+        let r = call(rest, method, path, body, token).await;
+        let a = call(axum_addr, method, path, body, token).await;
+        assert_eq!(a, r, "{method} {path} {body}: the adapter disagrees");
+        r
+    };
+
+    // Invalid params: a body that does not fit, with the field it names.
+    let (status, _, body) = both(
+        "POST",
+        "/message:send",
+        r#"{"message":{"role":"ROLE_USER","parts":[{"text":"x"}]}}"#,
+        Some("good"),
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+    let details = body["error"]["details"].as_array().unwrap();
+    assert_eq!(
+        details[0],
+        info("INVALID_PARAMS", "a2a-protocol.org"),
+        "{body}"
+    );
+    assert_eq!(
+        details[1]["@type"], "type.googleapis.com/google.rpc.BadRequest",
+        "{body}"
+    );
+    assert_eq!(details.len(), 2, "{body}");
+
+    // Invalid params: a body that is not JSON.
+    let (status, _, body) = both("POST", "/message:send", "{", Some("good")).await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(
+        body["error"]["details"],
+        serde_json::json!([info("INVALID_PARAMS", "a2a-protocol.org")]),
+        "{body}"
+    );
+
+    // Invalid params from the handler: a lineage past its cap.
+    let (status, _, body) = both(
+        "POST",
+        "/message:send",
+        r#"{"message":{"messageId":"m-1","role":"ROLE_USER","parts":[{"text":"x"}],
+            "metadata":{"a2a-rust.com/lineage":{"root":"job","depth":17}}}}"#,
+        Some("good"),
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(
+        body["error"]["message"],
+        "lineage depth 17 is past the cap of 16"
+    );
+    assert_eq!(
+        body["error"]["details"],
+        serde_json::json!([info("INVALID_PARAMS", "a2a-protocol.org")]),
+        "{body}"
+    );
+
+    // An A2A error keeps exactly its own ErrorInfo.
+    let (status, _, body) = both("GET", "/tasks/nope", "", Some("good")).await;
+    assert_eq!(status, 404, "{body}");
+    assert_eq!(
+        body["error"]["details"],
+        serde_json::json!([info("TASK_NOT_FOUND", "a2a-protocol.org")]),
+        "{body}"
+    );
+
+    // A credential refusal gets no reason over its 401.
+    let (status, _, body) = both("GET", "/tasks/nope", "", None).await;
+    assert_eq!(status, 401, "{body}");
+    assert!(
+        body["error"]["details"]
+            .as_array()
+            .is_none_or(|d| d.iter().all(|x| x["domain"] != "a2a-protocol.org")),
+        "{body}"
+    );
+
+    // Internal: a halt, INTERNAL_ERROR first and this SDK's HALTED after.
+    for h in [&rest_handler, &axum_handler] {
+        h.halt(a2a_protocol_server::HaltScope::All, "oncall", "drill")
+            .await;
+    }
+    let (status, _, body) = both(
+        "POST",
+        "/message:send",
+        r#"{"message":{"messageId":"m-2","role":"ROLE_USER","parts":[{"text":"x"}]}}"#,
+        Some("good"),
+    )
+    .await;
+    assert_eq!(status, 503, "{body}");
+    assert_eq!(
+        body["error"]["details"],
+        serde_json::json!([
+            info("INTERNAL_ERROR", "a2a-protocol.org"),
+            info("HALTED", "a2a-rust.com")
+        ]),
+        "{body}"
+    );
+}
