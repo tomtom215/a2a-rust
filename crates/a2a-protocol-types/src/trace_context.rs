@@ -47,6 +47,7 @@
 //! );
 //! ```
 
+pub mod baggage;
 use std::fmt;
 
 /// The inbound/outbound header carrying the trace identity.

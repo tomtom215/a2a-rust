@@ -131,6 +131,7 @@ pub mod interceptor;
 #[cfg(feature = "signing")]
 pub mod jwks;
 pub mod methods;
+pub mod otel_baggage;
 pub mod retry;
 pub mod streaming;
 #[cfg(feature = "tls-rustls")]
@@ -160,6 +161,7 @@ pub use discovery::resolve_agent_card;
 pub use error::{ClientError, ClientResult};
 pub use interceptor::{CallInterceptor, ClientRequest, ClientResponse, InterceptorChain};
 pub use message_id::new_message_id;
+pub use otel_baggage::{BaggagePolicy, Propagators};
 #[cfg(feature = "tls-rustls")]
 pub use pool::{HttpPool, HttpPoolBuilder};
 pub use retry::{RetryBudget, RetryPolicy};

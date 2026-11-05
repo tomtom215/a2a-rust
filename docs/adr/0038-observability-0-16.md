@@ -1,15 +1,12 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
-# ADR 0038: Observability decisions for 0.16.0 (abandoned calls, the scrape endpoint, `Telemetry` ergonomics, console logs; baggage and control-plane metrics proposed)
+# ADR 0038: Observability decisions for 0.16.0 (baggage, abandoned calls, the scrape endpoint, control-plane metrics, `Telemetry` ergonomics, console logs, self and process metrics)
 
 **Date:** 2026-11-04
 **Status:** Accepted for 0.16.0, by the maintainer's instruction of 2026-11-04
 ("all open plan items are in 0.16.0; implement the best engineering option,
-record the reasoning, the maintainer can veto in review"), for sections 2, 3,
-5 and 6 and the C-13 counter, which are built. Sections 1 (C-10) and 4 (H11)
-are **proposed and not built**: the `obs-sdk` work package did not reach
-them, and they stay open for the maintainer.
+record the reasoning, the maintainer can veto in review"), for every section; each says what is built.
 **Author:** Tom F.
 **Amends:** ADR 0013 (observability).
 
@@ -37,30 +34,42 @@ Options (from `DECISIONS.md#c-10`): (1) inject and extract everything through
 the global propagator; (2) keep the hard-coded W3C trace context, add opt-in
 baggage, honour `OTEL_PROPAGATORS` for "do not inject"; (3) document only.
 
-**Proposed (not built): (2).** Baggage is a data channel to whoever the next hop is, which
-for an A2A agent is often a third party; forwarding it by default would send
-an upstream service's `user.id=` or `tenant=` entries to every remote agent.
-The fork F3 position says the same. So:
+**Decision, built: (2).** Baggage is a data channel to whoever the next hop
+is, which for an A2A agent is often a third party; forwarding it by default
+would send an upstream service's `user.id=` or `tenant=` entries to every
+remote agent. The fork F3 position says the same. So it is **opt-in and
+allow-listed by key**, on each side separately:
 
-* `ClientBuilder::with_baggage_propagation(true)` writes the current
-  OpenTelemetry context's baggage as the W3C `baggage` header on every
-  header-carrying binding (JSON-RPC, HTTP+JSON, gRPC). Off by default.
-* `RequestHandlerBuilder::with_baggage_propagation(true)` reads an inbound
-  `baggage` header into the context the call's span (and so the executor)
-  runs in, under `InboundTracePolicy::Continue` only (`Restart` and `Drop`
-  discard it, as they discard the caller's trace). Off by default.
-* Both go through the **global text-map propagator** for the `baggage` field
-  alone, so `OTEL_PROPAGATORS` decides the format: `Telemetry` installs
-  `tracecontext,baggage` by default, and a process whose `OTEL_PROPAGATORS`
-  leaves `baggage` out sends and accepts none even when opted in.
-* `OTEL_PROPAGATORS=none`, or a list that names neither `tracecontext` nor an
-  unknown name only, stops the client writing `traceparent`; a list that names
-  only names this SDK lacks falls back to the default, as `Telemetry` does.
-* WebSocket carries no per-request headers; unchanged.
-
-None of this section is built in 0.16.0 so far: baggage still dies at every
-A2A hop and `OTEL_PROPAGATORS` still changes only the global propagator.
-B3 and Jaeger propagators stay out (reported as notices, as before).
+* `ClientBuilder::with_baggage_propagation(BaggagePolicy)` (and the same on
+  `ClientConfig`) writes the call span's OpenTelemetry baggage as the W3C
+  `baggage` header on every header-carrying binding (JSON-RPC, HTTP+JSON,
+  gRPC), only the keys `BaggagePolicy::keys([...])` names, or every key with
+  `BaggagePolicy::All`. `Off` by default. A `baggage` header the caller set on
+  the request is kept.
+* `RequestHandlerBuilder::with_baggage_propagation(BaggagePolicy)` puts the
+  allowed entries of an inbound `baggage` header into the context the call's
+  span runs in, so the executor and the calls it makes carry them, under
+  `InboundTracePolicy::Continue` only (`Restart` and `Drop` discard it, as
+  they discard the caller's trace). `Off` by default.
+* Bounds are the W3C Baggage limits (§3.3.2): at most 64 whole members and
+  8192 bytes; an inbound header over 8192 bytes is dropped whole, a malformed
+  member skipped. Baggage is never a metric attribute.
+* The codec is this crate's own (`a2a_protocol_types::trace_context::baggage`),
+  not the global text-map propagator: the client crate depends on the
+  OpenTelemetry API only, and a process with no SDK installed (the global
+  propagator a no-op) would otherwise send nothing even when opted in.
+* `OTEL_PROPAGATORS` is read by the client when its `ClientConfig` is made
+  and by the server when the handler is built (`with_propagators` overrides
+  it on either): without `tracecontext` the client writes no `traceparent` of
+  its own and the server does not continue the caller's (`Continue` acts as
+  `Restart`); without `baggage` no baggage is read or written; `none` turns
+  off both. Names neither carries (`b3`, `jaeger`, `xray`, `ottrace`; the
+  pinned crates ship none of them) are warned about and ignored, and a list of
+  only such names gets the default (F3).
+* WebSocket carries no per-request headers; unchanged. The opt-in
+  `TracePropagationInterceptor` and the push sender's `traceparent` are not
+  governed by `OTEL_PROPAGATORS`: the first is installed by choice, the second
+  is a webhook, not an A2A peer.
 
 ## 2. A call the peer abandons (C-09)
 

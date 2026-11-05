@@ -119,6 +119,51 @@ unauthenticated request at all.
 
 The agent card's span follows the same policy.
 
+## Baggage, opt-in by key
+
+W3C Baggage crosses the A2A wire only where an operator says so, on each side
+separately (audit C-10). Baggage is a data channel to whoever the next hop is,
+and an A2A peer is often another organisation's agent: forwarding every entry
+would hand it whatever an upstream service put there (`user.id`, `tenant`, a
+session id). So both sides default to `BaggagePolicy::Off`, and name the keys
+that may cross:
+
+```rust,ignore
+use a2a_protocol_client::BaggagePolicy;
+
+// Sending: the call span's baggage, only these keys.
+let client = ClientBuilder::new(url)
+    .with_baggage_propagation(BaggagePolicy::keys(["deploy", "experiment"]))
+    .build()?;
+
+// Receiving: the caller's baggage joins the call's context (and so the
+// executor's, and the calls it makes), only these keys, under `Continue`.
+let handler = RequestHandlerBuilder::new(executor)
+    .with_baggage_propagation(BaggagePolicy::keys(["deploy"]))
+    .build()?;
+```
+
+`BaggagePolicy::All` forwards every entry, for a chain wholly inside one trust
+boundary. Either way the W3C limits apply (§3.3.2): at most 64 whole members
+and 8192 bytes; a received header over 8192 bytes is dropped whole, a
+malformed member is skipped. Received baggage is read only under
+`InboundTracePolicy::Continue` (`Restart` and `Drop` discard it with the
+caller's trace), and is never made a metric attribute. Values are
+percent-decoded on the way in and encoded on the way out; a member's
+properties (`;ttl=30`) are kept. A `baggage` header the caller set on the
+request itself is never replaced. Sending needs the `otel` feature, a
+recording `tracing-opentelemetry` layer, and a binding with per-request
+headers (JSON-RPC, HTTP+JSON, gRPC); WebSocket carries none.
+
+`OTEL_PROPAGATORS` decides which of the two is carried, on the client when
+its `ClientConfig` is made and on the server when the handler is built
+(default `tracecontext,baggage`): without `tracecontext` a client writes no
+`traceparent` of its own and a server does not continue the caller's trace
+(`Continue` acts as `Restart`); without `baggage` neither reads nor writes
+baggage; `none` turns off both. A name neither carries (`b3`, `jaeger`,
+`xray`) is warned about and ignored, and a list of only such names gets the
+default. `with_propagators(Propagators)` sets it in code, on either side.
+
 ## What is not done
 
 Nothing *interprets* `tracestate` — the SDK adds no vendor entry of its own

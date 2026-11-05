@@ -330,6 +330,22 @@ impl ClientBuilder {
         self
     }
 
+    /// Which W3C baggage entries calls send; none by default
+    /// ([`ClientConfig::with_baggage_propagation`](crate::config::ClientConfig::with_baggage_propagation)).
+    #[must_use]
+    pub fn with_baggage_propagation(mut self, policy: crate::BaggagePolicy) -> Self {
+        self.config.baggage = policy;
+        self
+    }
+
+    /// Which propagators calls use, instead of `OTEL_PROPAGATORS`
+    /// ([`ClientConfig::with_propagators`](crate::config::ClientConfig::with_propagators)).
+    #[must_use]
+    pub fn with_propagators(mut self, propagators: crate::Propagators) -> Self {
+        self.config.propagators = propagators;
+        self
+    }
+
     /// Sets the per-request timeout for non-streaming calls, except a
     /// blocking `SendMessage`, which [`with_send_timeout`](Self::with_send_timeout) bounds.
     #[must_use]

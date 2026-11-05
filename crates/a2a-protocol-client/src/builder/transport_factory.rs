@@ -120,6 +120,7 @@ impl ClientBuilder {
     /// - [`ClientError::Transport`] if the selected transport cannot be
     ///   initialized; after fallbacks, it names every interface tried.
     pub fn build(mut self) -> ClientResult<A2aClient> {
+        crate::otel_baggage::warn_unknown(&self.config.propagators);
         if self.config.request_timeout.is_zero() || self.config.send_timeout.is_zero() {
             return Err(ClientError::Config(
                 "request_timeout and send_timeout must be non-zero".into(),
@@ -329,7 +330,7 @@ impl ClientBuilder {
     #[cfg(feature = "grpc")]
     pub async fn build_grpc(mut self) -> ClientResult<A2aClient> {
         use crate::transport::grpc::GrpcTransport;
-
+        crate::otel_baggage::warn_unknown(&self.config.propagators);
         if self.config.request_timeout.is_zero() || self.config.send_timeout.is_zero() {
             return Err(ClientError::Config(
                 "request_timeout and send_timeout must be non-zero".into(),

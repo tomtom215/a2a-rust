@@ -187,6 +187,8 @@ pub struct RequestHandlerBuilder {
     tenant_isolation: TenantIsolation,
     caller_isolation: Option<CallerIsolation>,
     inbound_trace_policy: crate::handler::InboundTracePolicy,
+    baggage: a2a_protocol_types::trace_context::baggage::BaggagePolicy,
+    propagators: Option<a2a_protocol_types::trace_context::baggage::Propagators>,
     span_settings: crate::rpc_span::SpanSettings,
     outbound: crate::provenance::Outbound,
     inbound: crate::provenance::Inbound,
@@ -260,6 +262,8 @@ impl RequestHandlerBuilder {
             tenant_isolation: TenantIsolation::Required,
             caller_isolation: None,
             inbound_trace_policy: crate::handler::InboundTracePolicy::Continue,
+            baggage: a2a_protocol_types::trace_context::baggage::BaggagePolicy::Off,
+            propagators: None,
             span_settings: crate::rpc_span::SpanSettings {
                 agent: true,
                 content: false,
@@ -985,6 +989,36 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Which entries of a caller's W3C `baggage` header the call's
+    /// OpenTelemetry context takes, and so the executor and the calls it
+    /// makes: none by default (audit C-10). Baggage can carry user data
+    /// across a trust boundary, so a receiving agent names the keys it
+    /// accepts ([`BaggagePolicy::keys`](a2a_protocol_types::trace_context::baggage::BaggagePolicy::keys)).
+    /// Read only under [`InboundTracePolicy::Continue`](crate::handler::InboundTracePolicy::Continue),
+    /// within the W3C limits (64 members, 8192 bytes); never a metric label.
+    #[must_use]
+    pub fn with_baggage_propagation(
+        mut self,
+        policy: a2a_protocol_types::trace_context::baggage::BaggagePolicy,
+    ) -> Self {
+        self.baggage = policy;
+        self
+    }
+
+    /// Which propagators inbound calls are read with, instead of
+    /// `OTEL_PROPAGATORS` (read when the handler is built; default
+    /// `tracecontext,baggage`). Without `tracecontext` a caller's
+    /// `traceparent` is not continued (a `Continue` policy acts as
+    /// `Restart`); without `baggage` no baggage is read.
+    #[must_use]
+    pub fn with_propagators(
+        mut self,
+        propagators: a2a_protocol_types::trace_context::baggage::Propagators,
+    ) -> Self {
+        self.propagators = Some(propagators);
+        self
+    }
+
     /// Whether the executor's span follows the OpenTelemetry `GenAI` agent
     /// conventions (default: yes).
     ///
@@ -1512,6 +1546,17 @@ impl RequestHandlerBuilder {
                 }
             });
         let stores_isolate = task_store.isolates_tenants() && push_config_store.isolates_tenants();
+        let propagators = self
+            .propagators
+            .clone()
+            .unwrap_or_else(a2a_protocol_types::trace_context::baggage::Propagators::from_env);
+        for _name in &propagators.unknown {
+            trace_warn!(
+                propagator = %_name,
+                "OTEL_PROPAGATORS names a propagator this server does not read; ignored \
+                 (it reads tracecontext and baggage)"
+            );
+        }
         let refuse_unisolated_tenants =
             !stores_isolate && self.tenant_isolation == TenantIsolation::Required;
         if isolate_callers && !stores_isolate {
@@ -1697,7 +1742,18 @@ impl RequestHandlerBuilder {
             require_resolved_tenant: self.require_resolved_tenant,
             refuse_unisolated_tenants,
             caller_isolation,
-            inbound_trace_policy: self.inbound_trace_policy,
+            inbound_trace_policy: if propagators.tracecontext
+                || self.inbound_trace_policy != crate::handler::InboundTracePolicy::Continue
+            {
+                self.inbound_trace_policy
+            } else {
+                crate::handler::InboundTracePolicy::Restart
+            },
+            baggage: if propagators.baggage {
+                self.baggage
+            } else {
+                a2a_protocol_types::trace_context::baggage::BaggagePolicy::Off
+            },
             span_settings: self.span_settings,
             outbound: self.outbound,
             inbound: self.inbound,
@@ -1879,7 +1935,9 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             )
             .field("turn_claim_ttl", &self.turn_claim_ttl)
             .field("turn_claim_renewal", &self.turn_claim_renewal)
-            .field("replica_name", &self.replica_name);
+            .field("replica_name", &self.replica_name)
+            .field("baggage", &self.baggage)
+            .field("propagators", &self.propagators);
         d.field("profiles", &self.profiles);
         #[cfg(feature = "audit")]
         d.field("audit", &self.audit.is_some());

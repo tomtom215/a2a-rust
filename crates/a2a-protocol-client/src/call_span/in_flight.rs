@@ -107,12 +107,23 @@ impl<'a> InFlight<'a> {
     /// Writes this call's trace context into `headers` (`call_span::propagate`).
     pub fn propagate(&self, headers: &mut HashMap<String, String>) {
         #[cfg(feature = "otel")]
-        super::propagate(
-            &self.call,
-            &self.client.peer,
-            self.client.config.propagate_trace,
-            headers,
-        );
+        {
+            let config = &self.client.config;
+            super::propagate(
+                &self.call,
+                &self.client.peer,
+                config.propagate_trace && config.propagators.tracecontext,
+                headers,
+            );
+            if config.propagators.baggage {
+                crate::otel_baggage::propagate(
+                    &self.call.span,
+                    self.client.peer.carries_headers,
+                    &config.baggage,
+                    headers,
+                );
+            }
+        }
     }
 
     /// Awaits `send` inside the call's span, and notes the JSON-RPC id the

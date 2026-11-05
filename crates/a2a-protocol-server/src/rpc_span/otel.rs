@@ -6,6 +6,33 @@
 
 use std::collections::HashMap;
 
+/// The parent context of an inbound call under `Continue`: the caller's
+/// `traceparent` as a remote parent, with the entries of its `baggage`
+/// header that `baggage` lets in (audit C-10). `None` when there is
+/// neither. The handler's propagators were applied when it was built: a
+/// `traceparent` is read only when `tracecontext` is on, which is what
+/// left the policy at `Continue`, and `baggage` is `Off` without `baggage`.
+pub fn inbound_parent(
+    headers: &HashMap<String, String>,
+    baggage: &a2a_protocol_types::trace_context::baggage::BaggagePolicy,
+) -> Option<opentelemetry::Context> {
+    use a2a_protocol_types::trace_context::baggage::{BAGGAGE_HEADER, parse};
+    use opentelemetry::baggage::{BaggageExt as _, KeyValueMetadata};
+    let parent = remote_parent(headers);
+    let members = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(BAGGAGE_HEADER))
+        .map(|(_, v)| parse(v, baggage))
+        .unwrap_or_default();
+    if members.is_empty() {
+        return parent;
+    }
+    let entries = members
+        .into_iter()
+        .map(|m| KeyValueMetadata::new(m.key, m.value, m.properties.unwrap_or_default()));
+    Some(parent.unwrap_or_default().with_baggage(entries))
+}
+
 /// The caller's `traceparent` as an OpenTelemetry remote parent.
 pub fn remote_parent(headers: &HashMap<String, String>) -> Option<opentelemetry::Context> {
     use opentelemetry::trace::TraceContextExt as _;

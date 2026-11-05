@@ -86,8 +86,6 @@ use names::OTHER;
 pub use names::{RpcSystem, WireStatus, a2a_method};
 #[cfg(feature = "otel")]
 pub use otel::current_recorded_span;
-#[cfg(feature = "otel")]
-use otel::remote_parent;
 #[cfg(feature = "grpc")]
 pub use refusal::record_refused;
 pub use refusal::{record_if_refused, record_unrouted, refused};
@@ -195,7 +193,8 @@ impl ServerSpan {
                 }
                 #[cfg(feature = "otel")]
                 if policy == InboundTracePolicy::Continue
-                    && let Some(parent) = headers.and_then(remote_parent)
+                    && let Some(parent) =
+                        headers.and_then(|h| otel::inbound_parent(h, &handler.baggage))
                 {
                     use tracing_opentelemetry::OpenTelemetrySpanExt as _;
                     // Refused only when the span is already entered or has no
@@ -480,6 +479,8 @@ fn truncated(s: &str, max: usize) -> &str {
 
 #[cfg(test)]
 mod abandoned_tests;
+#[cfg(all(test, feature = "otel"))]
+mod baggage_tests;
 #[cfg(test)]
 mod jsonrpc_tests;
 mod outcome;
