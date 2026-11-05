@@ -65,7 +65,8 @@ impl LoopError {
                 ModelError::Status {
                     status: 429 | 502 | 503 | 504,
                     ..
-                } | ModelError::Timeout(_)
+                } | ModelError::RateLimited { .. }
+                    | ModelError::Timeout(_)
                     | ModelError::Transport(_)
             )
         )
@@ -86,6 +87,9 @@ impl LoopError {
         match self {
             Self::Model(ModelError::Status { status, .. }) => {
                 format!("the model provider answered HTTP {status}")
+            }
+            Self::Model(ModelError::RateLimited { .. }) => {
+                "the model provider answered HTTP 429".to_owned()
             }
             Self::Model(ModelError::Transport(_)) => {
                 "could not reach the model provider".to_owned()
@@ -135,6 +139,23 @@ mod tests {
         assert!(!LoopError::Model(ModelError::Config("x".into())).is_transient());
         assert!(!LoopError::Model(ModelError::Other("x".into())).is_transient());
         assert!(!LoopError::TurnLimit(3).is_transient());
+    }
+
+    /// A rate-limited turn is a 429 to everything outside the loop: transient,
+    /// told to the caller as the status alone (not the body, which can carry
+    /// the account's quota), and recorded as `429` (audit H17).
+    #[test]
+    fn a_rate_limited_turn_is_a_transient_429_without_its_body() {
+        let limited = LoopError::Model(ModelError::RateLimited {
+            retry_after: Some(Duration::from_secs(2)),
+            body: "quota for org-acme exceeded".to_owned(),
+        });
+        assert!(limited.is_transient());
+        assert_eq!(
+            limited.caller_message(),
+            "the model provider answered HTTP 429"
+        );
+        assert_eq!(limited.error_type(), "429");
     }
 
     /// What a caller is told, per failure: the status or the kind, never the

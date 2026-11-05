@@ -122,8 +122,9 @@ conformance = []
 ## for the chat-completions API (OpenAI, llama-server, vLLM, Ollama). On the
 ## hyper client push delivery uses; `ring`, already in the graph with the
 ## default `tls-rustls`, derives each tool call's idempotency key (ADR 0026).
-## HTTPS to the model needs `tls-rustls`.
-tool-loop = ["dep:ring"]
+## HTTPS to the model needs `tls-rustls`. `httpdate`, already in the graph
+## through the client crate, reads a rate-limited turn's `Retry-After` date.
+tool-loop = ["dep:ring", "dep:httpdate"]
 ## Enable Axum framework integration (Router, extractors, IntoResponse).
 axum = ["dep:axum"]
 ## Enable JWT bearer-token authentication (HS256/RS256/ES256, static or remote
@@ -182,6 +183,9 @@ webpki-roots   = { version = ">=1.0.10, <2", optional = true }
 # JWT verification (auth-jwt feature). `ring` is the same crypto backend the
 # types crate's `signing` feature already uses.
 ring           = { version = "0.17.12", optional = true }
+# A rate-limited model turn's `Retry-After` HTTP date (tool-loop feature).
+# Already in the graph through the client crate.
+httpdate       = { version = ">=1.0.3, <2", optional = true }
 # Always: a message's `raw` parts are checked and kept in standard base64 at
 # ingress, so every binding can carry what one accepts. Tiny, with no
 # transitive deps; the JWT, SQL and OTLP code use it too.

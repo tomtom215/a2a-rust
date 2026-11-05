@@ -460,11 +460,14 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 
 | Type | Description |
 |------|-------------|
-| `ToolLoop` | Runs model turns until the model answers without a call, bounded by `with_max_turns` (default 8); tool errors go back to the model, and a call written as text is run as one; `with_agent_name` and `with_meter` for its `gen_ai.*` metrics |
+| `ToolLoop` | Runs model turns until the model answers without a call, bounded by `with_max_turns` (default 8); tool errors go back to the model, and a call written as text is run as one; `with_agent_name` and `with_meter` for its `gen_ai.*` metrics; `with_model_retry` sends a rate-limited turn again (off by default) |
 | `ToolLoopExecutor` | A `ToolLoop` as an `AgentExecutor`: `Working`, the `answer` and `tool-trace` artifacts, `Completed`; `Failed` as `internal` or `budget-exhausted`; `with_drafts` streams each turn's text to a `draft-N` artifact first |
 | `ToolSet` | The tools a loop offers; refuses two of one name |
 | `OpenAiChatModel` | A `ToolModel` for `POST {base}/chat/completions` (OpenAI, llama-server, vLLM, Ollama) on the crate's hyper client; HTTPS with `tls-rustls`; streams for `complete_streaming` |
 | `TextSink` | Where `ToolModel::complete_streaming` hands each piece of a turn's text |
+| `InferenceLimit` | At most `max` model turns in flight at one provider, shared by every loop holding a clone; `max()` and `available()` (ADR 0048) |
+| `LimitedModel` | A `ToolModel` that holds a slot of an `InferenceLimit` for each turn, streamed or not, and gives it back however the turn ends |
+| `ModelRetry` | `ToolLoop::with_model_retry`'s policy for a rate-limited turn (`ModelError::RateLimited`): 3 retries, 0.5 s doubling to 30 s with half jitter, or the provider's `Retry-After` spread by up to a quarter; never past `max_delay` or the budget's remaining time (ADR 0048) |
 
 ### Built-in Implementations
 

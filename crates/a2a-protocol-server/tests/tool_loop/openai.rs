@@ -257,6 +257,65 @@ async fn a_non_2xx_answer_is_the_status_and_at_most_512_bytes_of_body() {
     assert_eq!(body, "x".repeat(512));
 }
 
+/// A 429 is `RateLimited`, carrying the provider's `Retry-After` and the
+/// body, and one without a readable `Retry-After` carries none (audit H17).
+#[tokio::test]
+async fn a_429_is_rate_limited_with_the_providers_delay() {
+    let with_delay = {
+        let mut r = response("429 Too Many Requests", b"slow down");
+        let at = r.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+        r.splice(at..at, b"\r\nretry-after: 2".iter().copied());
+        r
+    };
+    let mock = Mock::start(vec![with_delay, response("429 Too Many Requests", b"")]).await;
+    let model = model(&mock);
+    assert_eq!(
+        one_turn(&model).await.unwrap_err(),
+        ModelError::RateLimited {
+            retry_after: Some(Duration::from_secs(2)),
+            body: "slow down".to_owned()
+        }
+    );
+    assert_eq!(
+        one_turn(&model).await.unwrap_err(),
+        ModelError::RateLimited {
+            retry_after: None,
+            body: String::new()
+        }
+    );
+}
+
+/// End to end: the provider refuses the first turn with `Retry-After: 0`,
+/// the loop with a retry policy sends it again on a new connection, and the
+/// run answers; without the policy the same refusal ends it.
+#[tokio::test]
+async fn a_loop_with_a_retry_policy_answers_after_a_429() {
+    let refuse = || {
+        let mut r = response("429 Too Many Requests", b"");
+        let at = r.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+        r.splice(at..at, b"\r\nretry-after: 0".iter().copied());
+        r
+    };
+    let mock = Mock::start(vec![refuse(), completion(&json!({"content": "fine"}))]).await;
+    let tool_loop = ToolLoop::new(model(&mock), ToolSet::new())
+        .with_model_retry(a2a_protocol_server::tool_loop::ModelRetry::new());
+    let answer = tool_loop
+        .run("how is checkout?", &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(answer.text, "fine");
+    assert_eq!(mock.requests.lock().unwrap().len(), 2);
+    assert_eq!(mock.body(0), mock.body(1), "the same turn, sent again");
+
+    let mock = Mock::start(vec![refuse(), completion(&json!({"content": "fine"}))]).await;
+    let err = ToolLoop::new(model(&mock), ToolSet::new())
+        .run("how is checkout?", &CancellationToken::new())
+        .await
+        .unwrap_err();
+    assert_eq!(err.to_string(), "the model provider answered HTTP 429");
+    assert_eq!(mock.requests.lock().unwrap().len(), 1);
+}
+
 #[tokio::test]
 async fn a_body_over_the_cap_is_refused_and_one_under_it_read() {
     let padding = "y".repeat(2000);

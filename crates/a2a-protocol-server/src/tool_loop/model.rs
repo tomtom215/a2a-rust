@@ -227,6 +227,20 @@ pub enum ModelError {
         /// boundary.
         body: String,
     },
+    /// The provider refused the turn as over its rate limit (HTTP 429),
+    /// saying when to come back if it did. Until 0.16.0 this was
+    /// [`Status`](Self::Status) with `status: 429`; it is a variant of its
+    /// own so the delay can travel with it (audit H17, ADR 0048).
+    /// [`ToolLoop::with_model_retry`](super::ToolLoop::with_model_retry)
+    /// retries it.
+    RateLimited {
+        /// The provider's `Retry-After`, read as delta-seconds or an HTTP
+        /// date, and `None` when it sent none that could be read.
+        retry_after: Option<Duration>,
+        /// At most 512 bytes of the response body, cut on a character
+        /// boundary.
+        body: String,
+    },
     /// No complete answer within the request timeout.
     Timeout(Duration),
     /// The request could not be sent, or the connection failed.
@@ -250,6 +264,7 @@ impl ModelError {
     pub fn error_type(&self) -> String {
         match self {
             Self::Status { status, .. } => status.to_string(),
+            Self::RateLimited { .. } => "429".to_owned(),
             Self::Timeout(_) => "timeout".to_owned(),
             Self::Transport(_) => "transport".to_owned(),
             Self::InvalidResponse(_) => "invalid_response".to_owned(),
@@ -268,6 +283,12 @@ impl fmt::Display for ModelError {
             }
             Self::Status { status, body } => {
                 write!(f, "the model provider answered HTTP {status}: {body}")
+            }
+            Self::RateLimited { body, .. } if body.is_empty() => {
+                f.write_str("the model provider answered HTTP 429")
+            }
+            Self::RateLimited { body, .. } => {
+                write!(f, "the model provider answered HTTP 429: {body}")
             }
             Self::Timeout(after) => {
                 write!(f, "the model provider did not answer within {after:?}")
@@ -321,6 +342,8 @@ impl TextSink {
 ///
 /// An implementation sends the request once and reports what came back. It
 /// does not run tools, retry or loop; [`ToolLoop`](super::ToolLoop) does.
+/// [`LimitedModel`](super::LimitedModel) wraps one to bound how many turns
+/// are in flight at once.
 pub trait ToolModel: Send + Sync + 'static {
     /// The model asked for, recorded as `gen_ai.request.model` and in the
     /// name of each turn's span (`chat {model}`).
@@ -343,7 +366,9 @@ pub trait ToolModel: Send + Sync + 'static {
     /// # Errors
     ///
     /// A [`ModelError`] when the provider failed. The loop ends the task on
-    /// it; it never retries.
+    /// it, except that a loop given
+    /// [`with_model_retry`](super::ToolLoop::with_model_retry) sends the
+    /// turn again after a [`RateLimited`](ModelError::RateLimited).
     fn complete<'a>(
         &'a self,
         request: ChatRequest<'a>,
@@ -387,6 +412,27 @@ mod tests {
         assert_eq!(bare.to_string(), "the model provider answered HTTP 503");
         let with_body = ModelError::Status {
             status: 429,
+            body: "slow down".to_owned(),
+        };
+        assert_eq!(
+            with_body.to_string(),
+            "the model provider answered HTTP 429: slow down"
+        );
+    }
+
+    /// A rate-limited turn reads as the 429 it was, with or without a body,
+    /// and records the `error.type` a `Status { status: 429 }` recorded, so
+    /// dashboards keyed on it keep counting.
+    #[test]
+    fn a_rate_limited_turn_reads_and_records_as_a_429() {
+        let bare = ModelError::RateLimited {
+            retry_after: Some(Duration::from_secs(2)),
+            body: String::new(),
+        };
+        assert_eq!(bare.to_string(), "the model provider answered HTTP 429");
+        assert_eq!(bare.error_type(), "429");
+        let with_body = ModelError::RateLimited {
+            retry_after: None,
             body: "slow down".to_owned(),
         };
         assert_eq!(
