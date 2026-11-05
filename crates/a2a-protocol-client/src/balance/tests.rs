@@ -254,6 +254,45 @@ async fn hedges_are_paid_from_the_budget() {
     assert_eq!(fleet.calls().iter().sum::<usize>(), 4, "one copy only");
 }
 
+/// Each call earns its share of a copy: at half a copy per call with a
+/// reserve of one, the first slow call is copied (the reserve), the second
+/// is not (half earned), the third is (a whole one).
+#[tokio::test(start_paused = true)]
+async fn calls_earn_their_copies() {
+    let fleet = Fleet::new(&[Act::After(1000 * MS), Act::After(1000 * MS)], None);
+    let policy = BalancePolicy::new().with_hedge(
+        Hedge::after(100 * MS).with_budget(RetryBudget::new(0.5, 0.0).with_reserve(1.0)),
+    );
+    let b = fleet.balancer(&policy, false);
+    let mut sent = Vec::new();
+    for _ in 0..3 {
+        get_task(&b).await.unwrap();
+        sent.push(fleet.calls().iter().sum::<usize>());
+    }
+    assert_eq!(sent, [2, 3, 5]);
+}
+
+/// The copy goes to another endpoint even when the first is still the
+/// least loaded.
+#[tokio::test(start_paused = true)]
+async fn the_copy_goes_elsewhere() {
+    let fleet = Fleet::new(&[Act::After(MS), Act::After(MS)], None);
+    let b = fleet.balancer(&hedged(100 * MS), false);
+    get_task(&b).await.unwrap();
+    for act in &fleet.acts {
+        *act.lock().unwrap() = Act::After(1000 * MS);
+    }
+    let set = b.members().current();
+    let held = [
+        set[0].state.enter(crate::origin::Ticket::Normal).unwrap(),
+        set[0].state.enter(crate::origin::Ticket::Normal).unwrap(),
+    ];
+    // a has two calls in flight, b none: the call goes to b, its copy to a.
+    get_task(&b).await.unwrap();
+    assert_eq!(fleet.calls(), vec![2, 1]);
+    drop(held);
+}
+
 /// One endpoint has nowhere to send a copy, and a stream is never hedged.
 #[tokio::test(start_paused = true)]
 async fn no_copy_without_a_second_endpoint_or_for_a_stream() {

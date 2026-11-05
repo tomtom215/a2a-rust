@@ -704,6 +704,9 @@ pub(crate) fn jittered(backoff: Duration) -> Duration {
 mod limits_tests;
 
 #[cfg(test)]
+mod shared_budget_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

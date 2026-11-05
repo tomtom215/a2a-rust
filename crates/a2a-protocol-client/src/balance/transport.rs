@@ -128,7 +128,7 @@ impl Transport for BalancedTransport {
             let hedge = self
                 .hedge
                 .as_ref()
-                .filter(|_| set.len() > 1 && self.hedgeable(method, &params));
+                .filter(|_| self.hedgeable(method, &params));
             let copy = hedge.map(|_| params.clone());
             let (first_member, guard) = self.pick(&set, None)?;
             let first = origin_calls::unary(
