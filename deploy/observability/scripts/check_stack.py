@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import re
+import signal
 import sys
 from pathlib import Path
 
@@ -50,6 +51,50 @@ HEADER = (
 )
 
 
+# One match arm of ErrorCode::http_status: `Self::A | Self::B => 404`, with the
+# alternatives on one line or on several. The `|` between two names is required,
+# so no run of whitespace can be matched two ways: the earlier form,
+# `((?:\|?\s*Self::\w+\s*)+)=>`, let the trailing `\s*` of one name and the
+# leading `\|?\s*` of the next both take the same spaces, and took time doubling
+# with every name when the arm had no `=>` (CodeQL py/redos).
+_ARM = re.compile(r"((?:\|\s*)?Self::\w+(?:\s*\|\s*Self::\w+)*)\s*=>\s*(\d{3})")
+
+
+def _self_test() -> list[str]:
+    """Proves _ARM reads the arms it is for and cannot be made to backtrack."""
+    problems: list[str] = []
+    sample = (
+        "Self::A | Self::B => 404,\n"
+        "            Self::C\n"
+        "            | Self::D => 500,\n"
+        "            Self::E => 400,\n"
+    )
+    got = [(re.findall(r"Self::(\w+)", names), status) for names, status in _ARM.findall(sample)]
+    want = [(["A", "B"], "404"), (["C", "D"], "500"), (["E"], "400")]
+    if got != want:
+        problems.append(f"self-test: the arm pattern read {got}, expected {want}")
+
+    def too_slow(_signum, _frame):
+        raise TimeoutError
+
+    # 60 names and no `=>`: instant for an unambiguous pattern, longer than the
+    # age of the universe for the one this replaced. The alarm turns a
+    # reintroduced ambiguity into a failure instead of a hung job.
+    pathological = "Self::0" + " Self::0" * 60
+    if hasattr(signal, "SIGALRM"):
+        signal.signal(signal.SIGALRM, too_slow)
+        signal.alarm(5)
+    try:
+        if _ARM.findall(pathological):
+            problems.append("self-test: the arm pattern matched a line with no `=>`")
+    except TimeoutError:
+        problems.append("self-test: the arm pattern took over 5 s on a line of 61 names (backtracking)")
+    finally:
+        if hasattr(signal, "SIGALRM"):
+            signal.alarm(0)
+    return problems
+
+
 def jsonrpc_caller_codes() -> set[str]:
     """JSON-RPC codes whose A2A §5.4 HTTP status is a 4xx, read from the types crate."""
     text = (ROOT / "crates/a2a-protocol-types/src/error.rs").read_text(encoding="utf-8")
@@ -58,7 +103,7 @@ def jsonrpc_caller_codes() -> set[str]:
     body = body[: body.index("\n    }\n")]
     caller: set[str] = set()
     seen: set[str] = set()
-    for names, status in re.findall(r"((?:\|?\s*Self::\w+\s*)+)=>\s*(\d{3})", body):
+    for names, status in _ARM.findall(body):
         for name in re.findall(r"Self::(\w+)", names):
             seen.add(name)
             if status.startswith("4"):
@@ -204,7 +249,7 @@ def main(argv: list[str]) -> int:
     if argv not in ([], ["--skip-kubernetes"]):
         print(__doc__, file=sys.stderr)
         return 2
-    problems: list[str] = []
+    problems: list[str] = _self_test()
     check_caller_pattern(problems)
     check_compose_prometheus(problems)
     check_image_pins(problems)
