@@ -204,15 +204,16 @@ impl A2aRouter {
         let base_path = self.config.base_path.clone();
         self.handler.warn_if_undeclared("HTTP+JSON"); // §5.2, as every other listener does
         #[cfg(feature = "websocket")]
-        let websocket = self.websocket.map(|upgrades| {
+        let websocket = self.websocket.map_or_else(Router::new, |upgrades| {
             self.handler
                 .warn_if_undeclared(a2a_protocol_types::WEBSOCKET_BINDING_URI);
             Router::new()
                 .route("/", get(handle_websocket_upgrade))
                 .with_state(upgrades)
         });
+        // No upgrade route without the feature: merging an empty router adds none.
         #[cfg(not(feature = "websocket"))]
-        let websocket: Option<Router> = None;
+        let websocket = Router::new();
         let card_handler = card_handler(&self.handler, self.config.agent_card_max_age);
         let state = A2aState {
             handler: self.handler,
@@ -245,7 +246,7 @@ impl A2aRouter {
             // this router is merged into, and axum refuses to merge two routers that both have one.
             .method_not_allowed_fallback(method_not_allowed)
             .with_state(state)
-            .merge(websocket.unwrap_or_default())
+            .merge(websocket)
             .layer(axum::extract::DefaultBodyLimit::max(max_body))
             .layer(axum::middleware::from_fn_with_state(
                 checks,

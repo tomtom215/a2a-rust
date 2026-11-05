@@ -166,6 +166,8 @@ pub struct RequestHandler {
     /// each. See [`InboundTracePolicy`].
     pub(crate) inbound_trace_policy: InboundTracePolicy,
     /// The caller's baggage entries the call's context takes (audit C-10).
+    /// Read only where the call's span has an OpenTelemetry parent to set.
+    #[cfg(feature = "otel")]
     pub(crate) baggage: a2a_protocol_types::trace_context::baggage::BaggagePolicy,
     /// What the executor's span records: the `GenAI` `invoke_agent`
     /// conventions, and whether messages are captured.

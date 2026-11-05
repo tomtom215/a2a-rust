@@ -394,6 +394,9 @@ impl ServerSpan {
             failed_with,
             abandoned,
         } = outcome::classify(self.system, status);
+        // Only the span below tells an abandoned call from a failed one.
+        #[cfg(not(feature = "tracing"))]
+        let _ = abandoned;
         #[cfg(feature = "tracing")]
         {
             if let Some(code) = status_code {

@@ -1749,6 +1749,7 @@ impl RequestHandlerBuilder {
             } else {
                 crate::handler::InboundTracePolicy::Restart
             },
+            #[cfg(feature = "otel")]
             baggage: if propagators.baggage {
                 self.baggage
             } else {
