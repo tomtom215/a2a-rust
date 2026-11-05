@@ -101,6 +101,10 @@ hyper-util     = { workspace = true }
 httpdate       = ">=1.0.3, <2"
 tokio          = { workspace = true }
 uuid           = { workspace = true }
+# `EventStream` implements `futures_core::Stream` (audit G-12), so the trait is
+# a public dependency (STABILITY.md section 6). Already in the graph through
+# hyper and http-body-util; no new crate.
+futures-core   = { version = ">=0.3.30, <0.4", default-features = false }
 # SHA-256 for the webhook receiver's token index and duplicate cache. The same
 # `ring` rustls links in the default build; no new crate.
 ring           = { version = "0.17.12", optional = true }
@@ -158,7 +162,8 @@ a2a-protocol-types = { version = "0.16.0", path = "../a2a-protocol-types" }
 # `signing`: `tests/content_end_to_end.rs`, where this server signs what the
 # client verifies.
 a2a-protocol-server = { version = "0.16.0", path = "../a2a-protocol-server", features = ["websocket", "signing", "tls-rustls"] }
-futures-util = { version = ">=0.3.30, <0.4", default-features = false, features = ["sink"] }
+# `alloc` for `stream::select_all` in the `EventStream` stream tests.
+futures-util = { version = ">=0.3.30, <0.4", default-features = false, features = ["sink", "alloc"] }
 # Read socket options back in the connector test; both already in the tree
 # through hyper-util.
 socket2 = { version = ">=0.6, <0.7", features = ["all"] }

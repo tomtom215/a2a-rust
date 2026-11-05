@@ -194,7 +194,11 @@ README badge, which CI keeps consistent.
 - Types re-exported from dependencies (`tonic`, `hyper`, `rustls`,
   `opentelemetry`, `sqlx`): their stability is theirs. A major bump of such
   a dependency that leaks into a public signature is a breaking change of
-  this crate and is treated as §3 describes.
+  this crate and is treated as §3 describes. The same holds for a trait of a
+  dependency that a public type implements: the client's `EventStream`
+  implements `futures_core::Stream` from `futures-core` 0.3 (since 0.16.0,
+  audit G-12), so a `futures-core` 0.4 would be a breaking change of the
+  client.
 
 ## 7. The path to 1.0
 

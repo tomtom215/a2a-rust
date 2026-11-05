@@ -6,7 +6,8 @@
 //! Async SSE event stream with typed deserialization.
 //!
 //! [`EventStream`] provides an async `next()` iterator over
-//! [`a2a_protocol_types::StreamResponse`] events received via Server-Sent Events.
+//! [`a2a_protocol_types::StreamResponse`] events received via Server-Sent Events,
+//! and is a `futures_core::Stream` of the same events.
 //!
 //! The stream finishes (`None`) when:
 //! - A [`a2a_protocol_types::TaskStatusUpdateEvent`] with a terminal state is
@@ -53,6 +54,9 @@ use crate::streaming::sse_parser::SseParser;
 
 #[cfg(feature = "tracing")]
 pub(crate) mod call;
+mod poll;
+#[cfg(test)]
+mod stream_tests;
 
 // ── Chunk ─────────────────────────────────────────────────────────────────────
 
@@ -72,7 +76,36 @@ const EVENT_BRIDGE_CAPACITY: usize = 64;
 ///
 /// Created by [`crate::A2aClient::stream_message`] or
 /// [`crate::A2aClient::subscribe_to_task`]. Call [`EventStream::next`] in a loop
-/// to consume events.
+/// to consume events, or use it as the `futures_core::Stream` it is, with
+/// `StreamExt` (from `futures` or `futures-util`), `select_all`, tokio's
+/// `StreamMap` or axum's `Sse`: both read the same state, in the same order.
+///
+/// ```rust
+/// # use a2a_protocol_client::EventStream;
+/// # use a2a_protocol_types::{ContextId, StreamResponse, TaskId, TaskState, TaskStatus, TaskStatusUpdateEvent};
+/// use futures_util::StreamExt;
+///
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// # let update = |state| Ok(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+/// #     TaskId::new("t1"), ContextId::new("c1"), TaskStatus::new(state))));
+/// # let (tx, rx) = tokio::sync::mpsc::channel(4);
+/// # tx.send(update(TaskState::Working)).await.unwrap();
+/// # tx.send(update(TaskState::Completed)).await.unwrap();
+/// let stream: EventStream = EventStream::from_event_channel(rx);
+/// // Every status update, until the terminal one ends the stream.
+/// let states: Vec<TaskState> = stream
+///     .filter_map(|event| async move {
+///         match event {
+///             Ok(StreamResponse::StatusUpdate(update)) => Some(update.status.state),
+///             _ => None,
+///         }
+///     })
+///     .collect()
+///     .await;
+/// assert_eq!(states, [TaskState::Working, TaskState::Completed]);
+/// # }
+/// ```
 ///
 /// When dropped, the background body-reader task is aborted to prevent
 /// resource leaks.
@@ -117,6 +150,12 @@ pub struct EventStream {
     /// Whether at least one chunk has been received (switches the bound in
     /// force from `first_event_timeout` to `idle_timeout`).
     first_chunk_received: bool,
+    /// The timer for the silence deadline, armed by the first poll that
+    /// waits under a bound and moved whenever the deadline does. Kept across
+    /// polls so a waker is registered for it; its deadline is always the one
+    /// [`last_activity`](Self::last_activity) gives, so a poll that is
+    /// dropped and repeated finds the same deadline.
+    silence: Option<poll::Silence>,
     /// Whether the last event decoded is one a stream may end on — see
     /// [`ends_stream`]. Decides whether the body's end is a completion or an
     /// [`ClientError::IncompleteStream`].
@@ -174,6 +213,7 @@ impl EventStream {
             idle_timeout: Some(crate::config::DEFAULT_STREAM_IDLE_TIMEOUT),
             last_activity: tokio::time::Instant::now(),
             first_chunk_received: false,
+            silence: None,
             at_final_event: false,
             events_received: 0,
             last_event_id: None,
@@ -206,6 +246,7 @@ impl EventStream {
             idle_timeout: Some(crate::config::DEFAULT_STREAM_IDLE_TIMEOUT),
             last_activity: tokio::time::Instant::now(),
             first_chunk_received: false,
+            silence: None,
             at_final_event: false,
             events_received: 0,
             last_event_id: None,
@@ -313,6 +354,7 @@ impl EventStream {
             idle_timeout: Some(crate::config::DEFAULT_STREAM_IDLE_TIMEOUT),
             last_activity: tokio::time::Instant::now(),
             first_chunk_received: false,
+            silence: None,
             at_final_event: false,
             events_received: 0,
             last_event_id: None,
@@ -477,102 +519,14 @@ impl EventStream {
     /// [`ClientError::IncompleteStream`] when the body ends anywhere else,
     /// and [`ClientError::Timeout`] when a silence bound expires. After an
     /// error the stream is finished and the next call returns `None`.
+    ///
+    /// The same as [`StreamExt::next`](https://docs.rs/futures/0.3/futures/stream/trait.StreamExt.html#method.next)
+    /// through this type's `Stream` implementation: both poll one state. A
+    /// call that is cancelled (dropped inside a `select!`, say) does not
+    /// restart the silence bound, which is a deadline counted from the last
+    /// data received, not a timeout per call.
     pub async fn next(&mut self) -> Option<ClientResult<StreamResponse>> {
-        let resume_from = self.last_event_id.clone();
-        let next = self.next_traced().await;
-        // Content whose signature does not verify ends the stream, as any
-        // other error does (ADR 0027): nothing buffered behind it is
-        // delivered, the body reader stops, and the refused event does not
-        // count as delivered, so a resume from `last_event_id` replays it.
-        // So does an event missing a field a2a.proto marks REQUIRED.
-        if let Some(Ok(event)) = &next
-            && let Err(e) = crate::received::event(event).and_then(|()| self.content.event(event))
-        {
-            self.phase = Phase::Finished;
-            self.parser = SseParser::new();
-            self.last_event_id = resume_from;
-            if let Some(handle) = self.abort_handle.take() {
-                handle.abort();
-            }
-            #[cfg(feature = "tracing")]
-            if let Some(call) = self.call.as_mut() {
-                call.0.fail(&e);
-            }
-            return Some(Err(e));
-        }
-        next
-    }
-
-    /// [`next`](Self::next), before the content check.
-    async fn next_traced(&mut self) -> Option<ClientResult<StreamResponse>> {
-        // Polled inside the call's span, so the span covers consuming the
-        // stream: `tracing-opentelemetry` ends a span at its last exit, and
-        // holding it alone would end it when the stream opened.
-        #[cfg(feature = "tracing")]
-        if let Some(span) = self.call.as_ref().map(|c| c.0.span.clone()) {
-            let next = tracing::Instrument::instrument(self.next_event(), span).await;
-            if let (Some(Err(e)), Some(call)) = (&next, self.call.as_mut()) {
-                call.0.fail(e);
-            }
-            return next;
-        }
-        self.next_event().await
-    }
-
-    /// [`next`](Self::next), outside any span.
-    async fn next_event(&mut self) -> Option<ClientResult<StreamResponse>> {
-        loop {
-            // First, drain any frames the parser already has buffered.
-            if let Some(result) = self.parser.next_frame() {
-                match result {
-                    Ok(frame) => {
-                        self.last_event_id = frame.id;
-                        return Some(self.decode_frame(&frame.data));
-                    }
-                    Err(e) => {
-                        return Some(Err(ClientError::Transport(e.to_string())));
-                    }
-                }
-            }
-
-            match self.phase {
-                Phase::Finished => return None,
-                Phase::BodyEnded => {
-                    self.phase = Phase::Finished;
-                    return self.judge_end().map(Err);
-                }
-                Phase::Open => {}
-            }
-
-            // Need more bytes — wait for the next chunk from the body reader,
-            // no later than the deadline of whichever bound is in force.
-            let chunk = match self.silence_deadline() {
-                Some((deadline, bound)) => {
-                    let Ok(chunk) = tokio::time::timeout_at(deadline, self.rx.recv()).await else {
-                        return Some(Err(self.fail_silent(bound)));
-                    };
-                    chunk
-                }
-                None => self.rx.recv().await,
-            };
-            match chunk {
-                None => {
-                    // Channel closed — the body ended. Frames already parsed
-                    // are still delivered by the loop head; then `judge_end`
-                    // decides whether this was a completion.
-                    self.phase = Phase::BodyEnded;
-                }
-                Some(Err(e)) => {
-                    self.phase = Phase::Finished;
-                    return Some(Err(e));
-                }
-                Some(Ok(bytes)) => {
-                    self.first_chunk_received = true;
-                    self.last_activity = tokio::time::Instant::now();
-                    self.parser.feed(&bytes);
-                }
-            }
-        }
+        std::future::poll_fn(|cx| self.poll_next_checked(cx)).await
     }
 
     // ── internals ─────────────────────────────────────────────────────────────
