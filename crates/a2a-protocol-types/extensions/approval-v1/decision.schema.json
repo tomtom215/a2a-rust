@@ -1,0 +1,30 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://a2a-rust.com/extensions/approval/v1/decision.schema.json",
+ "title": "Approval decision (approval/v1)",
+ "description": "On the message that continues the task: the answer, naming the request and the digest the person was shown, which must equal the request's.",
+ "type": "object",
+ "required": [
+  "requestId",
+  "decision",
+  "digest"
+ ],
+ "properties": {
+  "requestId": {
+   "type": "string"
+  },
+  "decision": {
+   "enum": [
+    "approve",
+    "deny"
+   ]
+  },
+  "digest": {
+   "type": "string",
+   "pattern": "^sha256:[0-9a-f]{64}$"
+  },
+  "comment": {
+   "type": "string"
+  }
+ }
+}

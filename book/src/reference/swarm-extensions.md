@@ -19,11 +19,13 @@ The words MUST, SHOULD and MAY are used as in RFC 2119.
 | Cancel | A standard `CancelTask` | The cascade stops at that hop unless it cancels its own children |
 | [Lineage](#lineage-v1) | `Message.metadata["a2a-rust.com/lineage"]` | The job's halt does not reach the tasks below it, except as the parent's cancels |
 | [Halt](#halts) | Not on the wire; the refusal is | That hop keeps working for a halted job |
-| Lease | `Message.metadata["a2a-rust.com/lease"]`, renewed by `GetTask` | A child keeps running after its parent dies |
-| Budget | `Message.metadata["a2a-rust.com/budget"]` | The caller's deadline and meters are not enforced |
-| Idempotency key | `Message.metadata["a2a-rust.com/idempotency-key"]` | A retried send can start a second child |
-| Failure class | The failed status message's `metadata["a2a-rust.com/failure"]` | A caller cannot tell a retryable failure from a final one |
-| Approval | `metadata["a2a-rust.com/approval"]` on the asking status and the answering message | An action runs without the bound approval |
+| [Lease](#lease-v1) | `Message.metadata["a2a-rust.com/lease"]`, renewed by `GetTask` | A child keeps running after its parent dies |
+| [Budget](#budget-v1) | `Message.metadata["a2a-rust.com/budget"]` | The caller's deadline and meters are not enforced |
+| [Idempotency key](#idempotency-v1) | `Message.metadata["a2a-rust.com/idempotency-key"]` | A retried send can start a second child |
+| [Failure class](#failure-v1) | The failed status message's `metadata["a2a-rust.com/failure"]` | A caller cannot tell a retryable failure from a final one |
+| [Approval](#approval-v1) | `metadata["a2a-rust.com/approval"]` on the asking status and the answering message | An action runs without the bound approval |
+| [Provenance](#provenance-v1) | `metadata["a2a-rust.com/provenance"]` on a message or an artifact | Content loses its AI-generated marker and its signature |
+| [Hand-off marker](#the-hand-off-marker) | The working status message's `metadata["a2a-rust.com/hand-off"]` | A caller does not know to send the turn again after a deploy |
 
 Each extension's URI is `https://a2a-rust.com/extensions/<name>/v1`. A
 message that carries one SHOULD also list that URI in `Message.extensions`;
@@ -40,13 +42,20 @@ and a float past 2^53, as invalid params. This SDK does so for every integer
 it reads (lease `ttlMs`, budget `remainingMs`, `meters` and `spent`, lineage
 `depth`), and the Python interop client sends each of them as a double.
 
-The exact shape of lease, budget, idempotency, failure and approval is the
-JSON this SDK's tests pin for each URI, in
-[`crates/a2a-protocol-types/tests/golden/uri_contracts/`](https://github.com/tomtom215/a2a-rust/tree/main/crates/a2a-protocol-types/tests/golden/uri_contracts):
-a sample value, the field names, the tokens and what they mean. The
-behaviour is in ADR 0020 (lease), ADR 0023 (budget), ADR 0026 (idempotency)
-and the [human oversight](../deployment/oversight.md) chapter (approval).
-Lineage and halts are specified here in full.
+**Schemas and vectors.** Each extension below has a JSON Schema and
+conformance vectors in
+[`crates/a2a-protocol-types/extensions/`](https://github.com/tomtom215/a2a-rust/tree/main/crates/a2a-protocol-types/extensions),
+one folder per extension. A vectors file lists `valid` values (each with what
+it `reads` as), `invalid` values a receiver MUST refuse as invalid params, and
+for some extensions `tolerated` values a receiver accepts but a sender MUST NOT
+write. This SDK's tests read every vector through its own readers and write
+each valid one back (`tests/extension_vectors.rs`, and the hand-off marker's
+in the server's claim stores); `scripts/check_extension_vectors.py` checks
+every valid value against its schema and lists the invalid ones a schema
+cannot refuse (it needs `jsonschema` and is not yet a CI gate). Build against
+the files, not against this page: they are what the tests hold the SDK to. The JSON this SDK sends for each URI
+is also pinned in
+[`tests/golden/uri_contracts/`](https://github.com/tomtom215/a2a-rust/tree/main/crates/a2a-protocol-types/tests/golden/uri_contracts).
 
 ## Lineage v1
 
@@ -154,9 +163,158 @@ a job in three ways.
 A halt never stops a task parked at `input-required` or `auth-required`;
 the send that would continue it is refused.
 
+## Lease v1
+
+URI `https://a2a-rust.com/extensions/lease/v1`; metadata key
+`a2a-rust.com/lease` on the delegating send; ADR 0020. Files: `lease-v1/`.
+
+```json
+{ "a2a-rust.com/lease": { "ttlMs": 30000 } }
+```
+
+* **Receiver.** It MUST refuse a lease outside its own range as invalid
+  params (this SDK: 1 000 ms to its configured maximum, one hour by default).
+  It stops the task, which ends `TASK_STATE_CANCELED`, when `ttlMs` passes
+  without a renewal.
+* **Renewal.** A `GetTask` of the task whose request activates the URI (the
+  `A2A-Extensions` service parameter, or its header) moves the deadline to
+  now + `ttlMs`. A renewal that also activates
+  `https://a2a-rust.com/extensions/lease/v1/renewal-only` is answered with the
+  task's id, context and status only (ADR 0044).
+* **Sender.** It renews at least once per `ttlMs` while it waits for the
+  child, and stops renewing when it stops caring, which is how a dead parent's
+  children are stopped.
+
+## Budget v1
+
+URI `https://a2a-rust.com/extensions/budget/v1`; metadata key
+`a2a-rust.com/budget`; ADR 0023. Files: `budget-v1/grant.*` (on the
+delegating send) and `budget-v1/status.*` (on status updates).
+
+```json
+{ "a2a-rust.com/budget": { "remainingMs": 30000, "meters": { "tokens": 50000 } } }
+```
+
+* A grant names `remainingMs`, at least one meter, or both. A meter name is 1
+  to 64 of `[a-z0-9._-]`; at most 16 meters.
+* **Receiver.** Its deadline is the admission time plus `remainingMs`; it
+  MUST refuse `remainingMs` 0 as invalid params. When the deadline passes the
+  turn ends `TASK_STATE_FAILED` with failure class `budget-exhausted`. On
+  every status update of the turn it writes what is left and spent
+  (`remainingMs`, `meters`, `spent`) under the same key.
+* **Sender delegating further.** It grants a child no more than what it has
+  left.
+
+## Idempotency v1
+
+URI `https://a2a-rust.com/extensions/idempotency/v1`; metadata key
+`a2a-rust.com/idempotency-key` on a `SendMessage` or
+`SendStreamingMessage`; the value is the key itself. Files:
+`idempotency-v1/`.
+
+* A key is 16 to 255 of ASCII letters, digits and `- _ . :`. It MUST be
+  unguessable (16 or more random bytes): within a tenant it is the handle to
+  the task it created.
+* **Receiver.** A second send with the same key in the same tenant returns
+  the task the first created, in whatever state it reached, and runs nothing.
+  It honours a key whether or not the URI is listed in `Message.extensions`.
+
+## Failure v1
+
+URI `https://a2a-rust.com/extensions/failure/v1`; metadata key
+`a2a-rust.com/failure` on the failed task's status message; the value is a
+class token. Files: `failure-v1/`.
+
+| Class | Retry the same request? | Needs a person? |
+|---|---|---|
+| `transient` | yes | no |
+| `invalid-request` | no | no |
+| `policy-refusal` | no | yes |
+| `budget-exhausted` | not with the same budget | no |
+| `internal` | no | no |
+
+* **Reader.** It MUST read an unrecognised token as `internal`, so that a
+  peer classifying more finely never has its failures become unreadable. A
+  value that is not a string means no class: the task's state still says it
+  failed. Nothing is refused.
+* The same token MAY ride in a JSON-RPC error's `data` object under the same
+  key.
+
+## Approval v1
+
+URI `https://a2a-rust.com/extensions/approval/v1`; metadata key
+`a2a-rust.com/approval`. Files: `approval-v1/request.*` and
+`approval-v1/decision.*`.
+
+* **The request** is on the status message of a task at `input-required`:
+  `requestId`, a one-line `summary`, and `digest`, `sha256:` and 64 lowercase
+  hex digits over the RFC 8785 canonical JSON of the exact action. The server
+  sets `requestedBy` to the authenticated caller whose run asks.
+* **The decision** is on the message that continues the task: `requestId`,
+  `decision` (`approve` or `deny`), the `digest` the person was shown, and an
+  optional `comment`. The receiver MUST check that the digest equals the
+  request's, and that the decision comes from someone allowed to make it,
+  before acting.
+
+## Provenance v1
+
+URI `https://a2a-rust.com/extensions/provenance/v1`; metadata key
+`a2a-rust.com/provenance` on a message or an artifact. Files:
+`provenance-v1/`.
+
+* `aiGenerated` (an empty object reads as `false`), an optional `generator`,
+  and an optional `signature`: a detached-payload JWS (`protected`,
+  `signature`, base64url) over the RFC 8785 canonical JSON of the whole message
+  or artifact with only `signature` removed, ES256 or EdDSA, verified against
+  the signer's JWK Set by `kid`.
+
+## The hand-off marker
+
+No URI: a server writes it; metadata key `a2a-rust.com/hand-off` on the
+`TASK_STATE_WORKING` status message of a turn its shutdown handed back to the
+caller (ADR 0054). Files: `hand-off/`.
+
+* Only the JSON boolean `true` marks a hand-off; any other value does not.
+* **Caller.** It sends the turn's message again, to any replica, within 600
+  seconds. After that the task ends `TASK_STATE_FAILED`, class `transient`.
+
+## Carrying the extensions from another SDK
+
+These are the shims the interop run executes against this SDK's server
+(`itk/interop/`), included here from those files. Attaching an extension is
+setting a metadata key and listing the URI; the rest is each extension's
+rules above.
+
+a2a-python (`python_client_vs_rust.py`):
+
+```python
+{{#include ../../../itk/interop/python_client_vs_rust.py:propagate}}
+```
+
+a2a-python, any extension (`extension_numbers.py`):
+
+```python
+{{#include ../../../itk/interop/extension_numbers.py:carrying}}
+```
+
+a2a-go (`go-sdk-client/lineage.go`):
+
+```go
+{{#include ../../../itk/interop/go-sdk-client/lineage.go:propagate}}
+```
+
+A hop that forwards a task MUST also carry the lineage onward (its own task's
+lineage, `depth` plus one, `parentTaskId` set) and cascade its cancels, as
+the [halts](#halts) section says.
+
 ## Where this stops
 
-There is no middleware for a2a-python or a2a-go in this repository, no
-language binding, and no upstream proposal yet (ADR 0049). The interop
-harnesses check that the Python and Go SDKs' clients can carry a lineage to
-this SDK's server and get the refusal of a malformed one.
+There is no middleware for a2a-python or a2a-go in this repository and no
+language binding: the shims above are what is shown to run. The interop
+harnesses check that the Python and Go SDKs' clients carry a lineage to this
+SDK's server and get the refusal of a malformed one, and that the Python SDK's
+leases and budgets, whose numbers it sends as doubles, are honoured. Draft
+upstream proposals (a parent-task link and a halt reason in A2A, and the
+error-reason gap described there) are in
+[`docs/upstream/swarm-proposals.md`](https://github.com/tomtom215/a2a-rust/blob/main/docs/upstream/swarm-proposals.md);
+nothing has been sent.

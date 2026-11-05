@@ -1,0 +1,79 @@
+{
+ "description": "Conformance vectors for https://a2a-rust.com/extensions/provenance/v1. Each 'valid' value is read as 'reads'; each 'invalid' one is refused as invalid params. A signature is read here and verified separately (signing feature). Run by crates/a2a-protocol-types/tests/extension_vectors.rs, each value read through the SDK's own reader, and checked against the schema beside it.",
+ "uri": "https://a2a-rust.com/extensions/provenance/v1",
+ "metadataKey": "a2a-rust.com/provenance",
+ "carrier": "Message.metadata or Artifact.metadata",
+ "valid": [
+  {
+   "name": "marked",
+   "value": {
+    "aiGenerated": true,
+    "generator": "billing-agent/2.3"
+   },
+   "reads": {
+    "aiGenerated": true,
+    "generator": "billing-agent/2.3"
+   }
+  },
+  {
+   "name": "an empty object",
+   "value": {},
+   "reads": {
+    "aiGenerated": false
+   }
+  },
+  {
+   "name": "signed",
+   "value": {
+    "aiGenerated": true,
+    "signature": {
+     "protected": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImsxIn0",
+     "signature": "c2ln"
+    }
+   },
+   "reads": {
+    "aiGenerated": true,
+    "signature": {
+     "protected": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImsxIn0",
+     "signature": "c2ln"
+    }
+   }
+  }
+ ],
+ "invalid": [
+  {
+   "name": "not an object",
+   "value": true
+  },
+  {
+   "name": "an array in field order",
+   "value": [
+    true,
+    "agent"
+   ]
+  },
+  {
+   "name": "a signature as an array in field order",
+   "value": {
+    "signature": [
+     "eyJhbGciOiJFUzI1NiIsImtpZCI6ImsxIn0",
+     "c2ln"
+    ]
+   }
+  },
+  {
+   "name": "aiGenerated as a string",
+   "value": {
+    "aiGenerated": "yes"
+   }
+  },
+  {
+   "name": "a signature without its header",
+   "value": {
+    "signature": {
+     "signature": "c2ln"
+    }
+   }
+  }
+ ]
+}

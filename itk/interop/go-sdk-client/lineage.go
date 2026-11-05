@@ -24,12 +24,15 @@ const (
 	lineageKey = "a2a-rust.com/lineage"
 )
 
+// ANCHOR: propagate
 func withLineage(prompt string, lineage map[string]any) *a2a.SendMessageRequest {
 	req := text(prompt)
 	req.Message.Metadata = map[string]any{lineageKey: lineage}
 	req.Message.Extensions = []string{lineageURI}
 	return req
 }
+
+// ANCHOR_END: propagate
 
 func runLineage(ctx context.Context, s *suite, c *a2aclient.Client, binding a2a.TransportProtocol) {
 	carried := map[string]any{"root": fmt.Sprintf("go-job-%s", binding), "depth": 2, "parentTaskId": "go-parent-1"}

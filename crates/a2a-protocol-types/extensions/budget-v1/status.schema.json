@@ -1,0 +1,35 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://a2a-rust.com/extensions/budget/v1/status.schema.json",
+ "title": "Budget status (budget/v1)",
+ "description": "What is left and spent, written by the receiver on every status update of the turn (TaskStatusUpdateEvent.metadata).",
+ "type": "object",
+ "properties": {
+  "remainingMs": {
+   "type": "integer",
+   "minimum": 0
+  },
+  "meters": {
+   "type": "object",
+   "maxProperties": 16,
+   "propertyNames": {
+    "pattern": "^[a-z0-9._-]{1,64}$"
+   },
+   "additionalProperties": {
+    "type": "integer",
+    "minimum": 0
+   }
+  },
+  "spent": {
+   "type": "object",
+   "maxProperties": 16,
+   "propertyNames": {
+    "pattern": "^[a-z0-9._-]{1,64}$"
+   },
+   "additionalProperties": {
+    "type": "integer",
+    "minimum": 0
+   }
+  }
+ }
+}

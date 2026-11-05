@@ -89,18 +89,54 @@ maintainer's say-so; C is out of scope.
    receiver MUST accept a whole number written as a float, and the vectors
    include one.
 
+## Amendment, 2026-11-05: every extension, numbers, and the shims
+
+Built since the decision above:
+
+* **A schema and vectors for every extension** this SDK defines on the wire,
+  beside lineage's: lease, budget (grant and status), idempotency, failure
+  (with a `tolerated` list: values a receiver reads but a sender must not
+  write), approval (request and decision), provenance, and the hand-off marker
+  (ADR 0054), which has no URI. `tests/extension_vectors.rs` reads every vector
+  through the SDK's own readers and writes each valid one back; the hand-off
+  vectors run through the SQL claim stores, the marker's only reader;
+  `scripts/check_extension_vectors.py` checks every valid value against its
+  schema. The page states each extension's receiver and sender rules.
+* **Integers in metadata.** A2A's `metadata` is a protobuf `Struct`, so
+  a2a-python sends every integer as a double. Every integer an extension reads
+  (lease `ttlMs`, budget `remainingMs`, `meters`, `spent`, lineage `depth`) now
+  goes through one reader that takes a whole double up to 2^53 and refuses a
+  fraction, a negative or a value past the field's range. The Python interop
+  client sends a lease and a budget and checks they are honoured.
+* **The shims, as they run.** The page includes, by mdBook `#include`, the
+  functions the Python and Go interop clients use to attach an extension, from
+  the files the interop run executes, so the page cannot drift from them.
+* **Upstream drafts, not sent:** `docs/upstream/a2a-task-lineage-halt-draft.md`
+  (a parent-task link, a standard halt reason, guidance on integers) and
+  `docs/upstream/a2a-standard-error-reasons-draft.md` (below).
+
+**Errors on HTTP+JSON, decided: unchanged.** A refusal of invalid params is
+`400 INVALID_ARGUMENT` with no `a2a-protocol.org` `ErrorInfo`, which a2a-go
+v2.7.0 reads as an internal error and a2a-python 1.2.3 as a bare HTTP 400.
+v1.0.1 §11.6 requires that `ErrorInfo` "for A2A-specific errors", which §3.3.2
+lists as the nine `-3200x` errors, and for validation errors says implementations
+"SHOULD use well-known types such as `google.rpc.BadRequest`". So the spec does
+not require it, and the behaviour is left as it is. Both reference SDKs do send
+and read a reason for invalid params (`INVALID_PARAMS`, in `a2a-protocol.org`),
+so adding it is the maintainer's call; the draft asks the A2A project to define
+it.
+
 ## What is not built
 
 * Middleware for a2a-python or a2a-go (option B), and language bindings
-  (option C).
-* Schemas and vectors for lease, budget, idempotency, failure and approval:
-  the page states their contract in prose from the code, and lineage is the
-  pattern to follow.
-* Upstream proposals (option D).
+  (option C): only the shims above, which the interop run executes.
+* Sending the upstream drafts (option D): the maintainer's action.
 * A halt sent over the wire to another agent. A halt is an operator's
   decision, made where the operator is authenticated; carrying it agent to
   agent would make a halt something any caller could send. Across a hop that
   shares no halt store it travels as the cascade's cancels.
+* `scripts/check_extension_vectors.py` as a CI gate: it needs `jsonschema`,
+  which CI's script gates do not install.
 
 ## Consequences
 

@@ -1,0 +1,86 @@
+{
+ "description": "Conformance vectors for https://a2a-rust.com/extensions/approval/v1. Each 'valid' request is read as 'reads'; each 'invalid' one is refused as invalid params. The digest's form is checked where the decision is matched to it, not on reading. Run by crates/a2a-protocol-types/tests/extension_vectors.rs, each value read through the SDK's own reader, and checked against the schema beside it.",
+ "uri": "https://a2a-rust.com/extensions/approval/v1",
+ "metadataKey": "a2a-rust.com/approval",
+ "carrier": "status message of the input-required task",
+ "valid": [
+  {
+   "name": "a request",
+   "value": {
+    "requestId": "req-1",
+    "summary": "Refund EUR 40 to order 1182",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   },
+   "reads": {
+    "requestId": "req-1",
+    "summary": "Refund EUR 40 to order 1182",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   }
+  },
+  {
+   "name": "with its requester",
+   "value": {
+    "requestId": "req-1",
+    "summary": "Refund EUR 40 to order 1182",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "requestedBy": "alice"
+   },
+   "reads": {
+    "requestId": "req-1",
+    "summary": "Refund EUR 40 to order 1182",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "requestedBy": "alice"
+   }
+  },
+  {
+   "name": "unknown members are ignored",
+   "value": {
+    "requestId": "req-1",
+    "summary": "Refund EUR 40 to order 1182",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "priority": 1
+   },
+   "reads": {
+    "requestId": "req-1",
+    "summary": "Refund EUR 40 to order 1182",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   }
+  }
+ ],
+ "invalid": [
+  {
+   "name": "not an object",
+   "value": "req-1"
+  },
+  {
+   "name": "an array in field order",
+   "value": [
+    "req-1",
+    "s",
+    "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   ]
+  },
+  {
+   "name": "no summary",
+   "value": {
+    "requestId": "req-1",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   }
+  },
+  {
+   "name": "no digest",
+   "value": {
+    "requestId": "req-1",
+    "summary": "s"
+   }
+  },
+  {
+   "name": "a requestId that is not a string",
+   "value": {
+    "requestId": 1,
+    "summary": "Refund EUR 40 to order 1182",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   }
+  }
+ ]
+}

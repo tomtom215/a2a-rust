@@ -1,0 +1,196 @@
+{
+ "description": "Conformance vectors for https://a2a-rust.com/extensions/budget/v1. Each 'valid' grant is read as 'reads'; each 'invalid' one is refused as invalid params. Numbers are read from any whole JSON number, a float such as 30000.0 included (a protobuf Struct writes every number as a double), up to 2^53; a fraction, a negative or a value past the field's range is refused. Run by crates/a2a-protocol-types/tests/extension_vectors.rs, each value read through the SDK's own reader, and checked against the schema beside it.",
+ "uri": "https://a2a-rust.com/extensions/budget/v1",
+ "metadataKey": "a2a-rust.com/budget",
+ "carrier": "Message.metadata of the delegating send",
+ "valid": [
+  {
+   "name": "time and a meter",
+   "value": {
+    "remainingMs": 30000,
+    "meters": {
+     "tokens": 50000
+    }
+   },
+   "reads": {
+    "remainingMs": 30000,
+    "meters": {
+     "tokens": 50000
+    }
+   }
+  },
+  {
+   "name": "as a protobuf Struct writes it",
+   "value": {
+    "remainingMs": 30000.0,
+    "meters": {
+     "tokens": 50000.0
+    }
+   },
+   "reads": {
+    "remainingMs": 30000,
+    "meters": {
+     "tokens": 50000
+    }
+   }
+  },
+  {
+   "name": "time only",
+   "value": {
+    "remainingMs": 1
+   },
+   "reads": {
+    "remainingMs": 1
+   }
+  },
+  {
+   "name": "a meter only, its name at the edges of the alphabet",
+   "value": {
+    "meters": {
+     "a.b_c-9": 0
+    }
+   },
+   "reads": {
+    "meters": {
+     "a.b_c-9": 0
+    }
+   }
+  },
+  {
+   "name": "sixteen meters",
+   "value": {
+    "meters": {
+     "m0": 0,
+     "m1": 1,
+     "m2": 2,
+     "m3": 3,
+     "m4": 4,
+     "m5": 5,
+     "m6": 6,
+     "m7": 7,
+     "m8": 8,
+     "m9": 9,
+     "m10": 10,
+     "m11": 11,
+     "m12": 12,
+     "m13": 13,
+     "m14": 14,
+     "m15": 15
+    }
+   },
+   "reads": {
+    "meters": {
+     "m0": 0,
+     "m1": 1,
+     "m2": 2,
+     "m3": 3,
+     "m4": 4,
+     "m5": 5,
+     "m6": 6,
+     "m7": 7,
+     "m8": 8,
+     "m9": 9,
+     "m10": 10,
+     "m11": 11,
+     "m12": 12,
+     "m13": 13,
+     "m14": 14,
+     "m15": 15
+    }
+   }
+  }
+ ],
+ "invalid": [
+  {
+   "name": "not an object",
+   "value": 30000
+  },
+  {
+   "name": "an array in field order",
+   "value": [
+    30000,
+    {
+     "tokens": 1
+    }
+   ]
+  },
+  {
+   "name": "neither time nor a meter",
+   "value": {}
+  },
+  {
+   "name": "an empty meter map and no time",
+   "value": {
+    "meters": {}
+   }
+  },
+  {
+   "name": "seventeen meters",
+   "value": {
+    "meters": {
+     "m0": 0,
+     "m1": 1,
+     "m2": 2,
+     "m3": 3,
+     "m4": 4,
+     "m5": 5,
+     "m6": 6,
+     "m7": 7,
+     "m8": 8,
+     "m9": 9,
+     "m10": 10,
+     "m11": 11,
+     "m12": 12,
+     "m13": 13,
+     "m14": 14,
+     "m15": 15,
+     "m16": 16
+    }
+   }
+  },
+  {
+   "name": "an upper-case meter name",
+   "value": {
+    "meters": {
+     "Tokens": 1
+    }
+   }
+  },
+  {
+   "name": "an empty meter name",
+   "value": {
+    "meters": {
+     "": 1
+    }
+   }
+  },
+  {
+   "name": "a meter name of 65 characters",
+   "value": {
+    "meters": {
+     "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm": 1
+    }
+   }
+  },
+  {
+   "name": "a fractional meter",
+   "value": {
+    "meters": {
+     "tokens": 0.5
+    }
+   }
+  },
+  {
+   "name": "a negative time",
+   "value": {
+    "remainingMs": -1
+   }
+  },
+  {
+   "name": "a time as a string",
+   "value": {
+    "remainingMs": "30000"
+   }
+  }
+ ]
+}

@@ -1,0 +1,76 @@
+{
+ "description": "Conformance vectors for https://a2a-rust.com/extensions/lease/v1. Each 'valid' value is read as 'reads'; each 'invalid' one is refused as invalid params. Numbers are read from any whole JSON number, a float such as 30000.0 included (a protobuf Struct writes every number as a double), up to 2^53; a fraction, a negative or a value past the field's range is refused. Run by crates/a2a-protocol-types/tests/extension_vectors.rs, each value read through the SDK's own reader, and checked against the schema beside it.",
+ "uri": "https://a2a-rust.com/extensions/lease/v1",
+ "metadataKey": "a2a-rust.com/lease",
+ "carrier": "Message.metadata of the delegating send",
+ "valid": [
+  {
+   "name": "thirty seconds",
+   "value": {
+    "ttlMs": 30000
+   },
+   "reads": {
+    "ttlMs": 30000
+   }
+  },
+  {
+   "name": "thirty seconds as a protobuf Struct writes it",
+   "value": {
+    "ttlMs": 30000.0
+   },
+   "reads": {
+    "ttlMs": 30000
+   }
+  },
+  {
+   "name": "unknown members are ignored",
+   "value": {
+    "ttlMs": 1000,
+    "renew": "never"
+   },
+   "reads": {
+    "ttlMs": 1000
+   }
+  }
+ ],
+ "invalid": [
+  {
+   "name": "not an object",
+   "value": 30000
+  },
+  {
+   "name": "an array in field order",
+   "value": [
+    30000
+   ]
+  },
+  {
+   "name": "no ttlMs",
+   "value": {}
+  },
+  {
+   "name": "a fraction",
+   "value": {
+    "ttlMs": 30000.5
+   }
+  },
+  {
+   "name": "negative",
+   "value": {
+    "ttlMs": -1
+   }
+  },
+  {
+   "name": "a string",
+   "value": {
+    "ttlMs": "30000"
+   }
+  },
+  {
+   "name": "past 2^53 as a float",
+   "value": {
+    "ttlMs": 1e+19
+   }
+  }
+ ]
+}

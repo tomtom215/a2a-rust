@@ -1,0 +1,76 @@
+{
+ "description": "Conformance vectors for https://a2a-rust.com/extensions/approval/v1. Each 'valid' decision is read as 'reads'; each 'invalid' one is refused as invalid params. Run by crates/a2a-protocol-types/tests/extension_vectors.rs, each value read through the SDK's own reader, and checked against the schema beside it.",
+ "uri": "https://a2a-rust.com/extensions/approval/v1",
+ "metadataKey": "a2a-rust.com/approval",
+ "carrier": "the message that continues the task",
+ "valid": [
+  {
+   "name": "approve",
+   "value": {
+    "requestId": "req-1",
+    "decision": "approve",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   },
+   "reads": {
+    "requestId": "req-1",
+    "decision": "approve",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   }
+  },
+  {
+   "name": "deny with a comment",
+   "value": {
+    "requestId": "req-1",
+    "decision": "deny",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "comment": "no"
+   },
+   "reads": {
+    "requestId": "req-1",
+    "decision": "deny",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "comment": "no"
+   }
+  }
+ ],
+ "invalid": [
+  {
+   "name": "an array in field order",
+   "value": [
+    "req-1",
+    "approve",
+    "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   ]
+  },
+  {
+   "name": "an unknown decision",
+   "value": {
+    "requestId": "req-1",
+    "decision": "maybe",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   }
+  },
+  {
+   "name": "a decision in capitals",
+   "value": {
+    "requestId": "req-1",
+    "decision": "APPROVE",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   }
+  },
+  {
+   "name": "no digest",
+   "value": {
+    "requestId": "req-1",
+    "decision": "approve"
+   }
+  },
+  {
+   "name": "no decision",
+   "value": {
+    "requestId": "req-1",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   }
+  }
+ ]
+}

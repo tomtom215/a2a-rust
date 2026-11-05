@@ -29,11 +29,13 @@ BUDGET_URI = "https://a2a-rust.com/extensions/budget/v1"
 BUDGET_KEY = "a2a-rust.com/budget"
 
 
+# ANCHOR: carrying
 def carrying(message_id: str, key: str, uri: str, value: dict) -> Message:
     message = Message(message_id=message_id, role="ROLE_USER", parts=[Part(text="numbers")])
     message.metadata.update({key: value})
     message.extensions.append(uri)
     return message
+# ANCHOR_END: carrying
 
 
 def as_sent(message: Message, key: str) -> dict:

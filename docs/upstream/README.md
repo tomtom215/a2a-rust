@@ -22,6 +22,8 @@ sent until the maintainer sends it; nothing here is posted automatically.
 | `langfuse-docs-a2a-rust-page.md` | `langfuse/langfuse-docs` | Draft, not sent |
 | `a2a-oversight-provenance-extensions-draft.md` | `a2aproject/A2A` (discussion) | Draft, not sent |
 | `a2a-deadline-budget-propagation-draft.md` | `a2aproject/A2A` (discussion) | Draft, not sent |
+| `a2a-task-lineage-halt-draft.md` | `a2aproject/A2A` (discussion) | Draft, not sent; lineage, a standard halt reason, integers in `Struct` metadata (ADR 0034, 0049) |
+| `a2a-standard-error-reasons-draft.md` | `a2aproject/A2A` | Draft, not sent; verified against a2a-go v2.7.0 and a2a-sdk 1.2.3 on 2026-11-05 |
 | `a2a-itk-dashboard-enrolment-draft.md` | `a2aproject/a2a-itk` | Draft, not sent |
 | `a2a-required-empty-array-report.md` | `a2aproject/A2A` | Draft, held; re-verified 2026-10-15 |
 | `slimrpc-a2a-error-mapping-report.md` | `a2aproject/experimental-cpb-slimrpc`, or `a2aproject/A2A` | Draft, held; re-verified 2026-10-15 |

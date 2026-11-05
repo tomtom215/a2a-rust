@@ -206,10 +206,12 @@ LINEAGE_URI = "https://a2a-rust.com/extensions/lineage/v1"
 LINEAGE_KEY = "a2a-rust.com/lineage"
 
 
+# ANCHOR: propagate
 def with_lineage(message: Message, value: dict) -> Message:
     message.metadata.update({LINEAGE_KEY: value})
     message.extensions.append(LINEAGE_URI)
     return message
+# ANCHOR_END: propagate
 
 
 async def check_lineage(client, binding: str) -> None:
