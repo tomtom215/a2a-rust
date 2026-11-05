@@ -216,6 +216,23 @@ async fn a_source_that_never_answered_fails_the_call() {
     );
 }
 
+/// Balancing is for the HTTP bindings: a builder for another is refused when
+/// it is built, not on its first call.
+#[tokio::test]
+async fn balancing_another_binding_is_refused() {
+    let a = Replica::start("a").await;
+    let err = ClientBuilder::new(a.url())
+        .with_protocol_binding("GRPC")
+        .with_balancing(StaticEndpoints::new([a.url()]), BalancePolicy::new())
+        .build()
+        .expect_err("not an HTTP binding");
+    assert!(
+        matches!(&err, ClientError::Config(m) if m.contains("with_balancing") && m.contains("GRPC")),
+        "{err:?}"
+    );
+    assert_eq!(a.requests(), 0);
+}
+
 /// What the builder refuses.
 #[tokio::test]
 async fn balancing_with_a_custom_transport_is_refused() {

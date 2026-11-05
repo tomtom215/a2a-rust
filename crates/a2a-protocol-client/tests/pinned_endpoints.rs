@@ -17,6 +17,7 @@
 mod support_tls;
 
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use a2a_protocol_client::balance::{BalancePolicy, Endpoint, StaticEndpoints};
@@ -25,15 +26,21 @@ use a2a_protocol_types::{Task, TaskQueryParams, TaskState, TaskStatus};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 
-/// A JSON-RPC agent on `ip` answering `GetTask` with a task named `name`,
-/// recording each request's `Host` header.
-async fn replica(name: &'static str, ip: &str) -> (SocketAddr, Arc<Mutex<Vec<String>>>) {
+/// The `Host` header of each request a replica answered, and how many
+/// connections it accepted.
+type Seen = (Arc<Mutex<Vec<String>>>, Arc<AtomicUsize>);
+
+/// A JSON-RPC agent on `ip` answering `GetTask` with a task named `name`.
+async fn replica(name: &'static str, ip: &str) -> (SocketAddr, Seen) {
     let listener = tokio::net::TcpListener::bind((ip, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
     let hosts: Arc<Mutex<Vec<String>>> = Arc::default();
+    let accepted = Arc::new(AtomicUsize::new(0));
     let seen = Arc::clone(&hosts);
+    let count = Arc::clone(&accepted);
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
+            count.fetch_add(1, Ordering::SeqCst);
             let seen = Arc::clone(&seen);
             tokio::spawn(async move {
                 let service = hyper::service::service_fn(move |req: hyper::Request<_>| {
@@ -66,7 +73,7 @@ async fn replica(name: &'static str, ip: &str) -> (SocketAddr, Arc<Mutex<Vec<Str
             });
         }
     });
-    (addr, hosts)
+    (addr, (hosts, accepted))
 }
 
 async fn get(client: &A2aClient) -> String {
@@ -122,8 +129,8 @@ fn pinned_endpoints_keep_their_name() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         // Two loopback addresses: all of 127.0.0.0/8 is the loopback
         // interface. No port in the URL: each pinned address's own is used.
-        let (a, a_hosts) = replica("a", "127.0.0.1").await;
-        let (b, b_hosts) = replica("b", "127.0.0.2").await;
+        let (a, (a_hosts, a_accepted)) = replica("a", "127.0.0.1").await;
+        let (b, (b_hosts, _)) = replica("b", "127.0.0.2").await;
         let url = "http://replica.invalid";
         let client = ClientBuilder::new(url)
             .with_balancing(
@@ -146,6 +153,23 @@ fn pinned_endpoints_keep_their_name() {
                 ["replica.invalid", "replica.invalid"]
             );
         }
+
+        // Two clients of one pool pinned to one address share its
+        // connections: one more connection to `a`, not two.
+        let pool = HttpPool::builder().build().unwrap();
+        let before = a_accepted.load(Ordering::SeqCst);
+        for _ in 0..2 {
+            let client = ClientBuilder::new(url)
+                .with_pool(&pool)
+                .with_balancing(
+                    StaticEndpoints::from_endpoints(vec![Endpoint::pinned(url, a)]),
+                    BalancePolicy::new(),
+                )
+                .build()
+                .unwrap();
+            assert_eq!(get(&client).await, "a");
+        }
+        assert_eq!(a_accepted.load(Ordering::SeqCst), before + 1);
 
         // One-label names: the agent answers loopback only for those (its
         // DNS-rebinding guard); they resolve to nothing here either.
