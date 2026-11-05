@@ -268,9 +268,6 @@ impl RequestHandler {
         claim: Option<Arc<TurnClaim>>,
     ) -> impl std::future::Future<Output = ()> + Send + 'static {
         let executor = Arc::clone(&self.executor);
-        // Only a turn holding a claim can be taken over by another replica;
-        // without one, a hand-off would leave a task nobody may run.
-        let hands_off = claim.is_some() && executor.resumes_after_hand_off();
         let metrics = Arc::clone(&self.metrics);
         let task_id = ctx.task_id.clone();
         let event_queue_mgr = self.event_queue_manager.clone();
@@ -315,10 +312,11 @@ impl RequestHandler {
             // Owned by this future, so the slot is returned when the executor
             // finishes, fails, panics, or is aborted.
             let _tenant_slot = tenant_slot;
-            // The turn's claim (`handler::claims`), held here and by the
-            // turn's event consumer: released when the last of the two ends,
-            // so no write of this turn comes after another replica's next.
-            let _claim = claim;
+            // The turn's claim (`handler::claims`) is held by this future,
+            // which reads it when the executor returns (`Stop::after_run`),
+            // and by the turn's event consumer: released when the last of the
+            // two ends, so no write of this turn comes after another
+            // replica's next.
             trace_debug!(task_id = %ctx.task_id, "executor started");
 
             // Armed before the executor runs; see the type's docs for when it
@@ -343,8 +341,7 @@ impl RequestHandler {
                 run_executor(executor.as_ref(), &ctx, &writer, timeout, expose_internal)
             })
             .await;
-            let stop = Stop::of(turn.is_halted(), shutdown.is_cancelled(), turn.is_lapsed())
-                .handed_off_if(hands_off);
+            let stop = Stop::after_run(&turn, shutdown.is_cancelled(), claim.is_some(), &*executor);
             run.finish(run_outcome(
                 &result,
                 stop != Stop::No || ctx.cancellation_token.is_cancelled(),

@@ -87,6 +87,20 @@ pub(super) enum Stop {
 }
 
 impl Stop {
+    /// How a run of `executor` on `turn` was stopped, once it returned. Only a
+    /// turn holding a claim (`claimed`) can be taken over by another replica,
+    /// so only such a turn is handed off; without one a hand-off would leave
+    /// a task nobody may run.
+    pub(super) fn after_run(
+        turn: &ExecutorTurn,
+        shut_down: bool,
+        claimed: bool,
+        executor: &dyn AgentExecutor,
+    ) -> Self {
+        Self::of(turn.is_halted(), shut_down, turn.is_lapsed())
+            .handed_off_if(claimed && executor.resumes_after_hand_off())
+    }
+
     /// A shutdown's stop, as a hand-off when `hands_off` (the executor can be
     /// re-run and the turn holds a claim another replica can take); any
     /// other stop as it is.

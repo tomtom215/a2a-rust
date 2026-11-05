@@ -7,7 +7,6 @@
 //! The clock is paused, so every turn's watcher starts at the same instant
 //! and the window holds an exact number of check intervals.
 
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -21,6 +20,7 @@ use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::task::TaskState;
 
 use crate::builder::RequestHandlerBuilder;
+use crate::store::lease::LapsedLeases;
 use crate::store::{InMemoryLeaseStore, InMemoryTaskStore, LeaseStore};
 use crate::{EventEmitter, agent_executor};
 
@@ -82,7 +82,7 @@ impl LeaseStore for Counting {
     fn lapsed_many<'a>(
         &'a self,
         leases: &'a [(String, String)],
-    ) -> Pin<Box<dyn Future<Output = A2aResult<HashMap<(String, String), bool>>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = A2aResult<LapsedLeases>> + Send + 'a>> {
         self.reads.fetch_add(1, Ordering::SeqCst);
         self.inner.lapsed_many(leases)
     }

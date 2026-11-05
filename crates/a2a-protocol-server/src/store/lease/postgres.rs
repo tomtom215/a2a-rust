@@ -13,14 +13,13 @@
 //! wrote and another judged by its own wall clock was shortened or lengthened
 //! by the difference between the two (audit E-F17).
 
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use sqlx::postgres::PgPool;
 
-use super::LeaseStore;
+use super::{LapsedLeases, LeaseStore};
 
 const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS a2a_leases (
     tenant       TEXT NOT NULL,
@@ -207,7 +206,7 @@ impl LeaseStore for PostgresLeaseStore {
     fn lapsed_many<'a>(
         &'a self,
         leases: &'a [(String, String)],
-    ) -> Pin<Box<dyn Future<Output = A2aResult<HashMap<(String, String), bool>>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = A2aResult<LapsedLeases>> + Send + 'a>> {
         Box::pin(async move {
             let (tenants, tasks): (Vec<&str>, Vec<&str>) = leases
                 .iter()

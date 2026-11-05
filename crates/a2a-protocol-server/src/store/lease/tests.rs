@@ -265,10 +265,18 @@ async fn postgres_keeps_the_contract_on_the_database_clock() {
     store.release("u", "a").await.unwrap();
     store.release("t", "big").await.unwrap();
 
+    sweep_and_read_many(&store, &pool).await;
+}
+
+/// The sweep and the many-lease read, on the database's clock: called by the
+/// contract test above, after its own rows are gone, so the two never run
+/// beside each other on the shared table.
+#[cfg(feature = "postgres")]
+async fn sweep_and_read_many(store: &PostgresLeaseStore, pool: &sqlx::postgres::PgPool) {
     // The sweep judges on the database's clock too (audit NEW-h-s0-6): a
     // lease that lapsed an hour ago goes, one that lapses in an hour and one
     // that lapsed a moment ago stay, whatever `now_ms` the caller passes.
-    let now = database_now_ms(&pool).await;
+    let now = database_now_ms(pool).await;
     for (task, deadline) in [
         ("old", now - 3_600_000),
         ("soon", now + 3_600_000),
@@ -277,7 +285,7 @@ async fn postgres_keeps_the_contract_on_the_database_clock() {
         sqlx::query("INSERT INTO a2a_leases VALUES ('s', $1, 1, $2)")
             .bind(task)
             .bind(deadline)
-            .execute(&pool)
+            .execute(pool)
             .await
             .unwrap();
     }

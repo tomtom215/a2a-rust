@@ -179,10 +179,11 @@ pub trait AgentExecutor: Send + Sync + 'static {
 /// value is `true`.
 pub const HAND_OFF_METADATA_KEY: &str = "a2a-rust.com/hand-off";
 
-/// How long the reaper leaves a handed-off task for its caller to continue,
-/// from the hand-off's status timestamp, before it ends the task
-/// `Failed`/`transient` (ADR 0054). The SQL claim stores' `abandoned`
-/// statements spell it as `600 seconds`.
+/// How long a handed-off task waits for its caller (ADR 0054).
+///
+/// Counted from the hand-off's status timestamp; after it the reaper ends a
+/// task nobody continued `Failed`/`transient`. The SQL claim stores'
+/// `abandoned` statements spell it as `600 seconds`.
 pub const HAND_OFF_WINDOW: std::time::Duration = std::time::Duration::from_secs(600);
 
 /// Writes the terminal `Canceled` status for `ctx`'s task: what the default

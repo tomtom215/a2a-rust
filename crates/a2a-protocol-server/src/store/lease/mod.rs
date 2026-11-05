@@ -160,7 +160,7 @@ pub trait LeaseStore: Send + Sync + 'static {
     fn lapsed_many<'a>(
         &'a self,
         leases: &'a [(String, String)],
-    ) -> Pin<Box<dyn Future<Output = A2aResult<HashMap<(String, String), bool>>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = A2aResult<LapsedLeases>> + Send + 'a>> {
         Box::pin(async move {
             let mut out = HashMap::with_capacity(leases.len());
             for (tenant, task) in leases {
@@ -209,6 +209,10 @@ pub trait LeaseStore: Send + Sync + 'static {
         Box::pin(async { Ok(0) })
     }
 }
+
+/// What [`LeaseStore::lapsed_many`] answers: whether each lease that exists
+/// has lapsed, by `(tenant, task)`.
+pub type LapsedLeases = HashMap<(String, String), bool>;
 
 /// `(ttl_ms, deadline_ms)` by `(tenant, task)`.
 type Leases = HashMap<(String, String), (i64, i64)>;

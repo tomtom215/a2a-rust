@@ -148,7 +148,7 @@ impl RequestHandler {
 /// context and status, without its history, artifacts or metadata (ADR
 /// 0044). The status message stays: a terminal status says why the task
 /// ended, and it is all a content signer then signs.
-pub(crate) fn renewal_only(mut task: Task) -> Task {
+pub(super) fn renewal_only(mut task: Task) -> Task {
     task.history = None;
     task.artifacts = None;
     task.metadata = None;

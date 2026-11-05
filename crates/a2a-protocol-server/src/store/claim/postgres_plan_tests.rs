@@ -31,15 +31,57 @@ const ROWS: i64 = 20_000;
 #[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
 async fn the_reapers_tenant_query_reads_the_state_index_not_the_table() {
     let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+    let (admin, pool, schema) = seeded(&url).await;
+
+    let (plan,): (serde_json::Value,) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "EXPLAIN (FORMAT JSON) {}",
+        super::ABANDONED_TENANT_SQL
+    )))
+    .bind(15_000_i64)
+    .bind(32_i64)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // The reaper finds exactly the two running rows through that plan.
+    let found: Vec<(String, String)> = sqlx::query_as(super::ABANDONED_TENANT_SQL)
+        .bind(15_000_i64)
+        .bind(32_i64)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
+        .execute(&admin)
+        .await
+        .unwrap();
+
+    let mut scans = Vec::new();
+    scans_of(&plan, "tenant_tasks", &mut scans);
+    assert_eq!(
+        scans,
+        [(
+            "Index Scan".to_owned(),
+            Some("idx_tenant_tasks_state".to_owned())
+        )],
+        "{plan:#}"
+    );
+    let mut found: Vec<_> = found.into_iter().map(|(_, id)| id).collect();
+    found.sort();
+    assert_eq!(found, ["task-10000", "task-20000"]);
+}
+
+/// A schema of its own holding the store's tables, `ROWS` tasks of which
+/// every ten-thousandth is running, analysed: the admin pool, a pool whose
+/// search path is the schema, and the schema's name.
+async fn seeded(url: &str) -> (sqlx::postgres::PgPool, sqlx::postgres::PgPool, String) {
     // A schema of its own, so the rows below meet no other test's reaper and
     // no other test's rows change the statistics.
     let schema = format!("plan_{}", uuid::Uuid::new_v4().simple());
-    let admin = sqlx::postgres::PgPool::connect(&url).await.unwrap();
+    let admin = sqlx::postgres::PgPool::connect(url).await.unwrap();
     sqlx::query(sqlx::AssertSqlSafe(format!("CREATE SCHEMA {schema}")))
         .execute(&admin)
         .await
         .unwrap();
-    let options = PgConnectOptions::from_str(&url)
+    let options = PgConnectOptions::from_str(url)
         .unwrap()
         .options([("search_path", schema.as_str())]);
     let pool = PgPoolOptions::new()
@@ -76,41 +118,7 @@ async fn the_reapers_tenant_query_reads_the_state_index_not_the_table() {
         .execute(&pool)
         .await
         .unwrap();
-
-    let (plan,): (serde_json::Value,) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "EXPLAIN (FORMAT JSON) {}",
-        super::ABANDONED_TENANT_SQL
-    )))
-    .bind(15_000_i64)
-    .bind(32_i64)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    // The reaper finds exactly the two running rows through that plan.
-    let found: Vec<(String, String)> = sqlx::query_as(super::ABANDONED_TENANT_SQL)
-        .bind(15_000_i64)
-        .bind(32_i64)
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-    sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
-        .execute(&admin)
-        .await
-        .unwrap();
-
-    let mut scans = Vec::new();
-    scans_of(&plan, "tenant_tasks", &mut scans);
-    assert_eq!(
-        scans,
-        [(
-            "Index Scan".to_owned(),
-            Some("idx_tenant_tasks_state".to_owned())
-        )],
-        "{plan:#}"
-    );
-    let mut found: Vec<_> = found.into_iter().map(|(_, id)| id).collect();
-    found.sort();
-    assert_eq!(found, ["task-10000", "task-20000"]);
+    (admin, pool, schema)
 }
 
 /// Every node of `plan` that reads `relation`: its node type and index.
