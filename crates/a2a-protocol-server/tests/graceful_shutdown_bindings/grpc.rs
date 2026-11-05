@@ -197,3 +197,17 @@ async fn grpc_shutdown_closes_the_port_before_the_drain() {
         .expect("clean");
     assert!(report.drained, "{report:?}");
 }
+
+/// The completion window comes before the task grace: with none, the task
+/// is cancelled at once and the server returns well inside the guard,
+/// though its task grace is a minute.
+#[tokio::test]
+async fn grpc_shutdown_cancels_at_once_without_a_completion_window() {
+    assert_delegation_ended(
+        &run(Setup {
+            cancel_at_once: true,
+            ..Setup::default()
+        })
+        .await,
+    );
+}

@@ -132,6 +132,9 @@ fn into_service_creates_server() {
 
 // ── serve_with_listener tests ───────────────────────────────────────────────
 
+// The deprecated entry point's own test, one of its only callers in the
+// workspace; removed with it, no earlier than 0.17.0 (ADR 0052).
+#[allow(deprecated)]
 #[tokio::test]
 async fn serve_with_listener_returns_correct_address() {
     let handler = build_handler();
@@ -142,30 +145,26 @@ async fn serve_with_listener_returns_correct_address() {
         .expect("bind listener");
     let expected_addr = listener.local_addr().expect("local addr");
 
-    let addr = {
-        let listener = listener;
-        let addr = listener.local_addr().expect("serve_with_listener");
-        tokio::spawn(dispatcher.serve_with_shutdown(listener, std::future::pending()));
-        addr
-    };
+    let addr = dispatcher
+        .serve_with_listener(listener)
+        .expect("serve_with_listener");
 
     assert_eq!(addr, expected_addr);
     assert!(addr.port() > 0, "should have a non-zero port");
 }
 
+// The deprecated entry point's own test, one of its only callers in the
+// workspace; removed with it, no earlier than 0.17.0 (ADR 0052).
+#[allow(deprecated)]
 #[tokio::test]
 async fn serve_with_addr_returns_bound_address() {
     let handler = build_handler();
     let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default());
 
-    let addr = {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("serve_with_addr");
-        let addr = listener.local_addr().expect("serve_with_addr");
-        tokio::spawn(dispatcher.serve_with_shutdown(listener, std::future::pending()));
-        addr
-    };
+    let addr = dispatcher
+        .serve_with_addr("127.0.0.1:0")
+        .await
+        .expect("serve_with_addr");
 
     assert_eq!(addr.ip(), std::net::Ipv4Addr::LOCALHOST);
     assert!(addr.port() > 0, "should have a non-zero port");
@@ -232,18 +231,8 @@ async fn multiple_dispatchers_from_same_handler() {
         .await
         .expect("bind listener 2");
 
-    let addr1 = {
-        let listener = listener1;
-        let addr = listener.local_addr().expect("serve 1");
-        tokio::spawn(d1.serve_with_shutdown(listener, std::future::pending()));
-        addr
-    };
-    let addr2 = {
-        let listener = listener2;
-        let addr = listener.local_addr().expect("serve 2");
-        tokio::spawn(d2.serve_with_shutdown(listener, std::future::pending()));
-        addr
-    };
+    let addr1 = serving(d1, listener1);
+    let addr2 = serving(d2, listener2);
 
     assert_ne!(addr1.port(), addr2.port(), "should bind to different ports");
 }
@@ -383,6 +372,20 @@ async fn serve_and_read_first_frame() -> Result<[u8; 9], String> {
 /// socket plus whether the server answered with its SETTINGS frame within
 /// `wait` — which is the observable difference between "accepted and served"
 /// and "held in the listen backlog".
+/// A loopback listener on a free port.
+async fn loopback() -> tokio::net::TcpListener {
+    tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind")
+}
+
+/// `dispatcher` serving `listener` until the test ends, and its address.
+fn serving(dispatcher: GrpcDispatcher, listener: tokio::net::TcpListener) -> std::net::SocketAddr {
+    let addr = listener.local_addr().expect("addr");
+    tokio::spawn(dispatcher.serve_with_shutdown(listener, std::future::pending()));
+    addr
+}
+
 async fn preface_answered(
     addr: std::net::SocketAddr,
     wait: std::time::Duration,
@@ -413,20 +416,12 @@ async fn preface_answered(
 /// one that never releases it.
 #[tokio::test(flavor = "multi_thread")]
 async fn max_connections_bounds_served_connections_and_releases_on_close() {
-    let addr = {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind");
-        let addr = listener.local_addr().expect("bind");
-        tokio::spawn(
-            GrpcDispatcher::new(build_handler(), GrpcConfig::default())
-                .with_serve_config(
-                    a2a_protocol_server::serve::ServeConfig::new().with_max_connections(1),
-                )
-                .serve_with_shutdown(listener, std::future::pending()),
-        );
-        addr
-    };
+    let addr = serving(
+        GrpcDispatcher::new(build_handler(), GrpcConfig::default()).with_serve_config(
+            a2a_protocol_server::serve::ServeConfig::new().with_max_connections(1),
+        ),
+        loopback().await,
+    );
 
     let (first, first_served) = preface_answered(addr, std::time::Duration::from_secs(5)).await;
     assert!(
@@ -464,18 +459,32 @@ async fn max_connections_bounds_served_connections_and_releases_on_close() {
 /// ceiling, and this pins that the gate is inert unless asked for.
 #[tokio::test(flavor = "multi_thread")]
 async fn without_max_connections_every_connection_is_served() {
-    let addr = {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind");
-        let addr = listener.local_addr().expect("bind");
-        tokio::spawn(
-            GrpcDispatcher::new(build_handler(), GrpcConfig::default())
-                .serve_with_shutdown(listener, std::future::pending()),
-        );
-        addr
-    };
+    let addr = serving(
+        GrpcDispatcher::new(build_handler(), GrpcConfig::default()),
+        loopback().await,
+    );
     let (_first, first_served) = preface_answered(addr, std::time::Duration::from_secs(5)).await;
     let (_second, second_served) = preface_answered(addr, std::time::Duration::from_secs(5)).await;
     assert!(first_served && second_served, "no ceiling by default");
+}
+
+/// The deprecated `serve_with_listener` and `with_max_connections` keep the
+/// ceiling: the second peer waits while the first holds the only permit.
+/// Their own test, their only callers in the workspace; removed with them,
+/// no earlier than 0.17.0 (ADR 0052).
+#[tokio::test(flavor = "multi_thread")]
+#[allow(deprecated)]
+async fn the_deprecated_entry_point_keeps_the_ceiling() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = GrpcDispatcher::new(build_handler(), GrpcConfig::default())
+        .with_max_connections(1)
+        .serve_with_listener(listener)
+        .expect("serves");
+    let (_first, first_served) = preface_answered(addr, std::time::Duration::from_secs(5)).await;
+    assert!(first_served, "the first connection is served");
+    let (_second, second_served) =
+        preface_answered(addr, std::time::Duration::from_millis(500)).await;
+    assert!(!second_served, "the second waits for the only permit");
 }

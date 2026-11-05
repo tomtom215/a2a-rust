@@ -27,11 +27,10 @@ fn handler() -> Arc<RequestHandler> {
     )
 }
 
-/// A body that yields its chunks in order, then fails, or ends when `fail`
-/// is false.
+/// A body that plays its script in order: `Some(bytes)` a data frame,
+/// `None` an error; then it ends.
 struct Scripted {
-    chunks: VecDeque<&'static [u8]>,
-    fail: bool,
+    steps: VecDeque<Option<&'static [u8]>>,
 }
 
 impl Body for Scripted {
@@ -42,26 +41,26 @@ impl Body for Scripted {
         mut self: Pin<&mut Self>,
         _cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Bytes>, std::io::Error>>> {
-        Poll::Ready(match self.chunks.pop_front() {
-            Some(chunk) => Some(Ok(Frame::data(Bytes::from_static(chunk)))),
-            None if self.fail => Some(Err(std::io::Error::other("upstream reset"))),
-            None => None,
-        })
+        Poll::Ready(self.steps.pop_front().map(|step| {
+            step.map_or_else(
+                || Err(std::io::Error::other("upstream reset")),
+                |chunk| Ok(Frame::data(Bytes::from_static(chunk))),
+            )
+        }))
     }
 }
 
-fn scripted(chunks: &[&'static [u8]], fail: bool) -> Truncating {
+fn scripted(steps: &[Option<&'static [u8]>]) -> Truncating {
     Truncating::new(axum::body::Body::new(Scripted {
-        chunks: chunks.iter().copied().collect(),
-        fail,
+        steps: steps.iter().copied().collect(),
     }))
 }
 
 /// An error mid-body ends the body after what came before it, and it stays
-/// ended.
+/// ended: what the inner body would yield after its error is not read.
 #[tokio::test]
 async fn a_body_error_truncates_the_response() {
-    let mut body = scripted(&[b"hel", b"lo"], true);
+    let mut body = scripted(&[Some(b"hel"), Some(b"lo"), None, Some(b"after")]);
     let mut seen = Vec::new();
     while let Some(frame) = body.frame().await {
         let Ok(frame) = frame;
@@ -75,7 +74,7 @@ async fn a_body_error_truncates_the_response() {
 /// A body that ends ends, and says so.
 #[tokio::test]
 async fn a_body_that_ends_is_carried_whole() {
-    let mut body = scripted(&[b"ok"], false);
+    let mut body = scripted(&[Some(b"ok")]);
     assert!(!body.is_end_stream());
     let collected = body.frame().await.expect("a frame");
     let Ok(frame) = collected;

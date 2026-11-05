@@ -144,3 +144,17 @@ async fn websocket_shutdown_reports_work_that_ignores_cancellation() {
         .await,
     );
 }
+
+/// The completion window comes before the task grace: with none, the task
+/// is cancelled at once and the server returns well inside the guard,
+/// though its task grace is a minute.
+#[tokio::test]
+async fn websocket_shutdown_cancels_at_once_without_a_completion_window() {
+    assert_delegation_ended(
+        &run(Setup {
+            cancel_at_once: true,
+            ..Setup::default()
+        })
+        .await,
+    );
+}
