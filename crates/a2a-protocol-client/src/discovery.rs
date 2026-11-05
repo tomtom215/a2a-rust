@@ -24,13 +24,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+#[cfg(not(feature = "tls-rustls"))]
+use crate::transport::connector::TcpConnector;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::Bytes;
 use hyper::header;
 #[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::Client;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::connect::HttpConnector;
 #[cfg(not(feature = "tls-rustls"))]
 use hyper_util::rt::TokioExecutor;
 use tokio::sync::RwLock;
@@ -604,12 +604,11 @@ async fn fetch_inner(
     options: &CardFetchOptions,
 ) -> ClientResult<Fetched> {
     #[cfg(not(feature = "tls-rustls"))]
-    let client: Client<HttpConnector, Full<Bytes>> = {
-        let mut connector = HttpConnector::new();
-        connector.set_connect_timeout(Some(Duration::from_secs(10)));
-        connector.set_nodelay(true);
-        Client::builder(TokioExecutor::new()).build(connector)
-    };
+    // The transports' connector: the lookup, not only the connect, bounded
+    // by the timeout (audit B-28).
+    let client: Client<TcpConnector, Full<Bytes>> = Client::builder(TokioExecutor::new()).build(
+        crate::transport::connector::http_connector(Duration::from_secs(10)),
+    );
 
     #[cfg(feature = "tls-rustls")]
     let client = options.https_client();

@@ -64,8 +64,9 @@ pub async fn fetch_jwks(url: &str, options: &CardFetchOptions) -> ClientResult<J
 
     #[cfg(not(feature = "tls-rustls"))]
     let client = {
-        let mut connector = hyper_util::client::legacy::connect::HttpConnector::new();
-        connector.set_connect_timeout(Some(std::time::Duration::from_secs(10)));
+        // The lookup, not only the connect, bounded by the timeout (B-28).
+        let connector =
+            crate::transport::connector::http_connector(std::time::Duration::from_secs(10));
         hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
             .build::<_, Full<Bytes>>(connector)
     };
