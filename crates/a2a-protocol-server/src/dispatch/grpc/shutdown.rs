@@ -149,9 +149,8 @@ impl GrpcDispatcher {
         // stream — open through the whole drain. A signal is still passed,
         // because passing one is what makes tonic send `GOAWAY` and wait for
         // connections rather than return at once.
-        let serving = self
-            .build_router()?
-            .serve_with_incoming_shutdown(incoming, std::future::pending::<()>());
+        let mut serving = self.serving(incoming, true)?;
+        let serving = serving.as_mut();
         tokio::pin!(serving);
 
         tokio::select! {

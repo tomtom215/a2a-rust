@@ -60,6 +60,7 @@ mod details;
 mod dispatcher;
 mod helpers;
 mod native;
+mod serving;
 mod shutdown;
 #[cfg(test)]
 mod undeclared_tests;

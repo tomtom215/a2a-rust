@@ -19,6 +19,9 @@ use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::io::{AsyncRead, AsyncWrite};
 
+mod reload;
+pub use reload::ReloadingCertResolver;
+
 /// The acceptor a listener runs each connection's handshake through.
 #[derive(Clone)]
 pub struct Tls(tokio_rustls::TlsAcceptor);

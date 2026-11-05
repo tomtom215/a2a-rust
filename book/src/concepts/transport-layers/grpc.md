@@ -220,6 +220,15 @@ is installed and more than one is linked, the dispatcher installs `ring`
 rather than letting rustls panic, and never overrides a provider the
 application installed first.
 
+tonic's configuration holds the certificate as bytes, so a listener built
+from it rotates its certificate only by restarting. `with_rustls` takes a
+`rustls::ServerConfig` instead (with `tls-rustls`, a default feature): any
+crypto provider, any client verifier, and a certificate resolver such as
+`ReloadingCertResolver`, which replaces the certificate when its files change
+([Proxies, certificates and DNS](../../deployment/production/proxies-and-tls.md#rotating-certificates-without-a-restart)).
+The handshake is then the SDK's, bounded to 10 s on a task per connection;
+a client certificate reaches interceptors as it does under `with_tls`.
+
 ## Protocol
 
 - All 11 A2A methods are mapped to gRPC RPCs on the canonical `lf.a2a.v1.A2AService`

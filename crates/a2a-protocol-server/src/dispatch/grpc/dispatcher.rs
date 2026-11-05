@@ -43,6 +43,8 @@ pub struct GrpcDispatcher {
     agent_card_max_age: u32,
     #[cfg(feature = "grpc-tls")]
     tls: Option<tonic::transport::ServerTlsConfig>,
+    #[cfg(all(feature = "grpc-tls", feature = "tls-rustls"))]
+    pub(super) rustls: Option<crate::tls::Tls>,
 }
 
 impl GrpcDispatcher {
@@ -64,6 +66,8 @@ impl GrpcDispatcher {
             agent_card_max_age: crate::dispatch::DEFAULT_AGENT_CARD_MAX_AGE,
             #[cfg(feature = "grpc-tls")]
             tls: None,
+            #[cfg(all(feature = "grpc-tls", feature = "tls-rustls"))]
+            rustls: None,
         }
     }
 
@@ -128,10 +132,38 @@ impl GrpcDispatcher {
     /// A configuration tonic rejects (a key that does not match its
     /// certificate, an unparsable PEM) is reported by the `serve*` call as an
     /// `std::io::Error`, not a panic.
+    ///
+    /// tonic's configuration holds the certificate as bytes and cannot rotate
+    /// it; [`with_rustls`](Self::with_rustls) can. The later of the two calls
+    /// is the one used.
     #[cfg(feature = "grpc-tls")]
     #[must_use]
     pub fn with_tls(mut self, tls: tonic::transport::ServerTlsConfig) -> Self {
         self.tls = Some(tls);
+        #[cfg(feature = "tls-rustls")]
+        {
+            self.rustls = None;
+        }
+        self
+    }
+
+    /// Serves TLS from a `rustls::ServerConfig`, used as built: its crypto
+    /// provider, its client verifier (mutual TLS) and its certificate
+    /// resolver, so a [`ReloadingCertResolver`](crate::ReloadingCertResolver)
+    /// rotates this listener's certificate with no restart (audit B-14, ADR
+    /// 0041). `h2` and `http/1.1` are offered when `config` names no ALPN.
+    ///
+    /// The handshake is this crate's, on a task per connection, bounded to
+    /// 10 s, and counted against [`with_max_connections`](Self::with_max_connections)
+    /// from the accept; a client certificate reaches interceptors as
+    /// [`CallContext::peer_certificate`](crate::CallContext::peer_certificate),
+    /// as under [`with_tls`](Self::with_tls). The later of the two calls is
+    /// the one used.
+    #[cfg(all(feature = "grpc-tls", feature = "tls-rustls"))]
+    #[must_use]
+    pub fn with_rustls(mut self, config: rustls::ServerConfig) -> Self {
+        self.rustls = Some(crate::tls::Tls::new(config, &[b"h2", b"http/1.1"]));
+        self.tls = None;
         self
     }
 
@@ -244,9 +276,7 @@ impl GrpcDispatcher {
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
         let incoming = BoundedIncoming::new(listener, self.max_connections);
-        let router = self.build_router()?;
-        router
-            .serve_with_incoming(incoming)
+        self.serving(incoming, false)?
             .await
             .map_err(std::io::Error::other)
     }
@@ -284,16 +314,15 @@ impl GrpcDispatcher {
         listener: tokio::net::TcpListener,
     ) -> std::io::Result<SocketAddr> {
         let local_addr = listener.local_addr()?;
-        let incoming = BoundedIncoming::new(listener, self.max_connections);
 
         trace_info!(
             %local_addr,
             "A2A gRPC server listening"
         );
 
-        let router = self.build_router()?;
+        let serving = self.serving(BoundedIncoming::new(listener, self.max_connections), false)?;
         tokio::spawn(async move {
-            let _ = router.serve_with_incoming(incoming).await;
+            let _ = serving.await;
         });
 
         Ok(local_addr)
@@ -368,7 +397,11 @@ impl GrpcDispatcher {
     /// Whether this listener serves TLS.
     #[allow(clippy::unused_self)]
     const fn serves_tls(&self) -> bool {
-        #[cfg(feature = "grpc-tls")]
+        #[cfg(all(feature = "grpc-tls", feature = "tls-rustls"))]
+        {
+            self.tls.is_some() || self.rustls.is_some()
+        }
+        #[cfg(all(feature = "grpc-tls", not(feature = "tls-rustls")))]
         {
             self.tls.is_some()
         }
@@ -409,9 +442,8 @@ impl std::fmt::Debug for GrpcDispatcher {
             .field("task_grace", &self.task_grace)
             .field("drain_timeout", &self.drain_timeout)
             .field("agent_card_max_age", &self.agent_card_max_age);
-        #[cfg(feature = "grpc-tls")]
-        s.field("tls", &self.tls.is_some());
-        s.finish()
+        s.field("tls", &self.serves_tls());
+        s.finish_non_exhaustive()
     }
 }
 

@@ -29,6 +29,41 @@ fn it_serves_tls_exactly_when_given_a_tls_configuration() {
     assert!(format!("{tls:?}").contains("tls: true"), "{tls:?}");
 }
 
+/// `with_rustls` serves TLS too, and the later of it and `with_tls` is the
+/// one kept (ADR 0041).
+#[cfg(all(feature = "grpc-tls", feature = "tls-rustls"))]
+#[test]
+fn the_later_of_the_two_tls_settings_is_kept() {
+    use crate::RequestHandlerBuilder;
+    use crate::agent_executor;
+    struct DummyExec;
+    agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(DummyExec)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
+    let key = rcgen::KeyPair::generate().unwrap();
+    let cert = rcgen::CertificateParams::new(vec!["localhost".into()])
+        .unwrap()
+        .self_signed(&key)
+        .unwrap();
+    let config = || {
+        crate::tls::config_from_pem(cert.pem().as_bytes(), key.serialize_pem().as_bytes()).unwrap()
+    };
+    let rustls = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
+        .with_tls(tonic::transport::ServerTlsConfig::new())
+        .with_rustls(config());
+    assert!(rustls.serves_tls());
+    assert!(rustls.rustls.is_some() && rustls.tls.is_none());
+    let tonic = GrpcDispatcher::new(handler, GrpcConfig::default())
+        .with_rustls(config())
+        .with_tls(tonic::transport::ServerTlsConfig::new());
+    assert!(tonic.serves_tls());
+    assert!(tonic.rustls.is_none() && tonic.tls.is_some());
+}
+
 // ── Connection-level bounds ──────────────────────────────────────────
 //
 // `GrpcConfig` bounds message size and per-connection concurrency, and
