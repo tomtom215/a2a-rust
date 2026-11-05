@@ -1,0 +1,7 @@
+Linux 6.18.44-fc-v236
+4
+Mem:           16086        2558        2674          75       11317       13527
+rustc 1.99.1 (58cf8f9c3 2026-10-13)
+psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+b74d0cb66cca6871d148c88af191aebf4f374400a7004722358538a4f80d21bb  a2a-live-supervisor
+0f564a3cf72c19b652560bf62a3b141a89d5ea93923a8e0f65b1004b01aaf332  a2a-live-worker

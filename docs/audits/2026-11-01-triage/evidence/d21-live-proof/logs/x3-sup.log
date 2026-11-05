@@ -1,0 +1,17 @@
+t=1793869880462 BEGIN owner=sup-x3 children=5 pid=12904
+t=1793869880566 STARTED i=2 record=00d9d7af-cf8c-4547-bb56-cf7934fefa20
+t=1793869880570 NAMED i=2 record=00d9d7af-cf8c-4547-bb56-cf7934fefa20 task=cfe1ff4f-f3af-4189-a600-2a5488e2871b
+t=1793869880686 STARTED i=3 record=a6231c76-8f7e-4087-b042-33616e7070a6
+t=1793869880703 NAMED i=3 record=a6231c76-8f7e-4087-b042-33616e7070a6 task=ff6ad9d6-4975-4ed2-82cc-32316a2ce357
+t=1793869880715 STARTED i=4 record=280b09b7-8a97-4447-a39b-49d6b4d48a56
+t=1793869880722 NAMED i=4 record=280b09b7-8a97-4447-a39b-49d6b4d48a56 task=b37a94d2-54b0-4d6a-9ce2-c6f3dfaa0391
+t=1793869880724 STARTED i=1 record=bd9366f7-fbc7-4490-8fbd-a50bc35dfffb
+t=1793869880727 NAMED i=1 record=bd9366f7-fbc7-4490-8fbd-a50bc35dfffb task=31baaf78-a5a4-48e9-8a9e-b85500bb1cea
+t=1793869880732 STARTED i=0 record=041bbd53-fc43-4aa1-8b62-0f0e3a841999
+t=1793869880735 NAMED i=0 record=041bbd53-fc43-4aa1-8b62-0f0e3a841999 task=0f0add81-c6e9-46ce-ba76-b8e45a8df865
+t=1793869893454 OUTCOME i=3 record=a6231c76-8f7e-4087-b042-33616e7070a6 task=ff6ad9d6-4975-4ed2-82cc-32316a2ce357 outcome=failed detail="Failed { status: TaskStatus { state: Failed, message: Some(Message { id: MessageId(\"21819f57-d514-487b-a575-88a49b0df7d2\"), context_id: Some(ContextId(\"1d9a1779"
+t=1793869893510 OUTCOME i=1 record=bd9366f7-fbc7-4490-8fbd-a50bc35dfffb task=31baaf78-a5a4-48e9-8a9e-b85500bb1cea outcome=failed detail="Failed { status: TaskStatus { state: Failed, message: Some(Message { id: MessageId(\"05dea718-2d86-49eb-b667-bb549ba58968\"), context_id: Some(ContextId(\"d2e2e957"
+t=1793869893510 OUTCOME i=2 record=00d9d7af-cf8c-4547-bb56-cf7934fefa20 task=cfe1ff4f-f3af-4189-a600-2a5488e2871b outcome=failed detail="Failed { status: TaskStatus { state: Failed, message: Some(Message { id: MessageId(\"d169e284-a5a6-427b-acbe-b0450b35d4b6\"), context_id: Some(ContextId(\"8a794b80"
+t=1793869893512 OUTCOME i=0 record=041bbd53-fc43-4aa1-8b62-0f0e3a841999 task=0f0add81-c6e9-46ce-ba76-b8e45a8df865 outcome=failed detail="Failed { status: TaskStatus { state: Failed, message: Some(Message { id: MessageId(\"94b93973-60af-4329-b3fb-f34223ed6da7\"), context_id: Some(ContextId(\"be3630fd"
+t=1793869893521 OUTCOME i=4 record=280b09b7-8a97-4447-a39b-49d6b4d48a56 task=b37a94d2-54b0-4d6a-9ce2-c6f3dfaa0391 outcome=failed detail="Failed { status: TaskStatus { state: Failed, message: Some(Message { id: MessageId(\"61771a80-123c-4cad-b3c4-f96be3a17a47\"), context_id: Some(ContextId(\"c4b54676"
+t=1793869893521 SUMMARY children=5 failed=5 
