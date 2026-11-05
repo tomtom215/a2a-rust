@@ -227,7 +227,8 @@ pub use push::{
 #[cfg(feature = "postgres")]
 pub use rate_limit::PostgresRateLimitCounter;
 pub use rate_limit::{
-    InvalidTrustedProxy, RateLimitConfig, RateLimitCounter, RateLimitInterceptor, TrustedProxy,
+    ForwardedHeader, InvalidTrustedProxy, RateLimitConfig, RateLimitCounter, RateLimitInterceptor,
+    TrustedProxy,
 };
 pub use request_context::RequestContext;
 pub use rpc_span::{BindingSpan, CustomBinding, StreamEnd, StreamOutcome};

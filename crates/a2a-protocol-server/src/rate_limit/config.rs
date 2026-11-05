@@ -7,6 +7,8 @@
 
 //! What the limiter is configured with, separate from what it does with it.
 
+use super::forwarded::ForwardedHeader;
+use super::identity::ProxyChain;
 use super::trusted::TrustedProxy;
 
 /// Configuration for [`RateLimitInterceptor`](super::RateLimitInterceptor).
@@ -53,7 +55,17 @@ pub struct RateLimitConfig {
     /// in one of them; any other connection is keyed by its own address, as
     /// if no proxy were configured. Has no effect while
     /// [`trusted_proxy_hops`](Self::trusted_proxy_hops) is `0`.
+    ///
+    /// [`RateLimitInterceptor::new`](super::RateLimitInterceptor::new) logs a
+    /// warning when hops are set and this is empty.
     pub trusted_proxies: Vec<TrustedProxy>,
+
+    /// The header the trusted proxies write the client's address into:
+    /// `x-forwarded-for` (the default) or RFC 7239 `forwarded`. Only that one
+    /// is read; the other is ignored, since a proxy that writes one passes a
+    /// client's own copy of the other through. Has no effect while
+    /// [`trusted_proxy_hops`](Self::trusted_proxy_hops) is `0`.
+    pub forwarded_header: ForwardedHeader,
 
     /// Maximum number of caller buckets tracked at once.
     ///
@@ -79,6 +91,7 @@ impl Default for RateLimitConfig {
             window_secs: 60,
             trusted_proxy_hops: 0,
             trusted_proxies: Vec::new(),
+            forwarded_header: ForwardedHeader::XForwardedFor,
             max_buckets: DEFAULT_MAX_BUCKETS,
         }
     }
@@ -116,12 +129,42 @@ impl RateLimitConfig {
         self
     }
 
+    /// Sets the header the trusted proxies write the client's address into.
+    /// See [`forwarded_header`](Self::forwarded_header).
+    #[must_use]
+    pub const fn with_forwarded_header(mut self, header: ForwardedHeader) -> Self {
+        self.forwarded_header = header;
+        self
+    }
+
     /// Sets the maximum number of caller buckets tracked at once. Must be
     /// non-zero.
     #[must_use]
     pub const fn with_max_buckets(mut self, max: usize) -> Self {
         self.max_buckets = max;
         self
+    }
+
+    /// The proxies this configuration trusts, as the keying reads them.
+    pub(super) fn proxy_chain(&self) -> ProxyChain<'_> {
+        ProxyChain::new(self.trusted_proxy_hops, &self.trusted_proxies)
+            .with_header(self.forwarded_header)
+    }
+}
+
+/// The warning for a forwarded header believed on the hop count alone, which
+/// lets any client that can reach this server without going through the proxy
+/// name its own key (audit B-09); `None` when the configuration does not.
+/// The interceptors that key by the header log it once, when they are built.
+pub const fn untrusted_hops_warning(hops: usize, trusted: &[TrustedProxy]) -> Option<&'static str> {
+    if hops != 0 && trusted.is_empty() {
+        Some(
+            "trusted_proxy_hops is set but trusted_proxies is empty: the forwarded header is \
+             believed from any peer, so a client that reaches this server directly can choose \
+             its own key; name the proxies' address ranges with with_trusted_proxies",
+        )
+    } else {
+        None
     }
 }
 
@@ -140,12 +183,15 @@ mod tests {
             .with_window_secs(d.window_secs + 1)
             .with_trusted_proxy_hops(d.trusted_proxy_hops + 1)
             .with_trusted_proxies([proxy])
+            .with_forwarded_header(super::ForwardedHeader::Forwarded)
             .with_max_buckets(d.max_buckets + 1);
         assert_eq!(cfg.requests_per_window, d.requests_per_window + 1);
         assert_eq!(cfg.window_secs, d.window_secs + 1);
         assert_eq!(cfg.trusted_proxy_hops, d.trusted_proxy_hops + 1);
         assert_eq!(cfg.trusted_proxies, [proxy]);
         assert!(d.trusted_proxies.is_empty(), "off unless asked for");
+        assert_eq!(cfg.forwarded_header, super::ForwardedHeader::Forwarded);
+        assert_eq!(d.forwarded_header, super::ForwardedHeader::XForwardedFor);
         assert_eq!(cfg.max_buckets, d.max_buckets + 1);
     }
 }

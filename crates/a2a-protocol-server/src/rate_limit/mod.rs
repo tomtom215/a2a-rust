@@ -147,12 +147,15 @@ use crate::error::{ServerError, ServerResult};
 use crate::interceptor::ServerInterceptor;
 
 mod config;
+mod forwarded;
 pub(crate) mod identity;
 mod shared;
 mod trusted;
 mod unwind_safety;
 mod window;
+pub(crate) use config::untrusted_hops_warning;
 pub use config::{DEFAULT_MAX_BUCKETS, RateLimitConfig};
+pub use forwarded::ForwardedHeader;
 #[cfg(feature = "postgres")]
 pub use shared::PostgresRateLimitCounter;
 pub use shared::RateLimitCounter;
@@ -236,6 +239,15 @@ impl RateLimitInterceptor {
             return Err(ServerError::InvalidParams(
                 "rate limit max_buckets must be greater than zero".into(),
             ));
+        }
+        if let Some(_why) =
+            untrusted_hops_warning(config.trusted_proxy_hops, &config.trusted_proxies)
+        {
+            trace_warn!(
+                interceptor = "RateLimitInterceptor",
+                trusted_proxy_hops = config.trusted_proxy_hops,
+                "{_why}"
+            );
         }
         Ok(Self {
             config,
@@ -368,11 +380,7 @@ impl ServerInterceptor for RateLimitInterceptor {
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let key = identity::caller_key(
-                ctx,
-                self.config.trusted_proxy_hops,
-                &self.config.trusted_proxies,
-            );
+            let key = identity::caller_key(ctx, self.config.proxy_chain());
             self.check(&key, self.config.requests_per_window).await?;
             if let Some((tenant, allowance)) = self.tenant_window_allowance() {
                 self.check(&format!("tenant:{tenant}"), allowance).await?;
@@ -389,6 +397,8 @@ impl ServerInterceptor for RateLimitInterceptor {
     }
 }
 
+#[cfg(test)]
+mod forwarded_tests;
 #[cfg(test)]
 mod keying_tests;
 #[cfg(test)]

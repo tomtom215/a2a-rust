@@ -72,12 +72,19 @@ ranges as well: `with_trusted_proxies(["10.0.0.0/8".parse()?])` believes the
 header only when the connection's peer is in one of them, and keys any other
 connection by its own address (before this, the hop count alone was believed,
 and an entry with a port, `203.0.113.7:51234`, made a new key for each
-connection; the port is now dropped). Only when neither is available — a forwarded chain
-shorter than `trusted_proxy_hops`, or a transport that records no peer — does
-it fall back to a shared `anon` bucket, which keeps the limit but makes those
-callers spend one budget. Keying by the peer address is new in 0.15; before,
-every caller with no identity and no trusted forwarded address shared one
-bucket.
+connection; the port is now dropped). Hops set with no ranges named log a
+warning when the limiter (or `AuthFailureThrottle`) is built. A proxy that
+writes RFC 7239 `Forwarded` instead (`for=192.0.2.60;proto=https`) is read with
+`with_forwarded_header(ForwardedHeader::Forwarded)`: only the configured header
+is read, since a proxy that writes one passes a client's own copy of the other
+through. A forwarded chain shorter than `trusted_proxy_hops`, or an element
+whose `for` is missing or `unknown`, is keyed by the connection's peer (the
+proxy), so the callers through that proxy share its budget and no one else's;
+until 0.16.0 they shared one `anon` bucket with every such caller, which a
+client connecting directly with a short header could exhaust for all of them.
+Only a transport that records no peer falls back to `anon`. Keying by the peer
+address is new in 0.15; before, every caller with no identity and no trusted
+forwarded address shared one bucket.
 
 ## What it costs
 
