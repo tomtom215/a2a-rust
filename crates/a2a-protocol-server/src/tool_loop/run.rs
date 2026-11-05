@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::idempotency::{self, Secret};
 pub use super::loop_error::LoopError;
-use super::model::{ChatMessage, ChatRequest, ModelError, ToolCall, ToolModel};
+use super::model::{ChatMessage, ChatRequest, ToolCall, ToolModel};
 use super::recover;
 use super::retry::ModelRetry;
 use super::tool::{ToolError, ToolInvocation, ToolSet};
@@ -92,21 +92,6 @@ impl ToolLoop {
             meter: GenAiMeter::default(),
             model_retry: None,
         }
-    }
-
-    /// Sends a turn the provider refused as rate limited
-    /// ([`ModelError::RateLimited`]) again, as `retry` says, instead of
-    /// ending the run on it (audit H17, ADR 0048). Off by default: without
-    /// it a 429 ends the run, and the task ends `transient`.
-    ///
-    /// The wait honours the provider's `Retry-After`, is never longer than
-    /// what remains of the run's budget, and is abandoned when the run is
-    /// cancelled. A [`LimitedModel`](super::LimitedModel)'s slot is not held
-    /// while the loop waits.
-    #[must_use]
-    pub const fn with_model_retry(mut self, retry: ModelRetry) -> Self {
-        self.model_retry = Some(retry);
-        self
     }
 
     /// Names the agent this loop is, recorded as `gen_ai.agent.name` on
@@ -340,42 +325,6 @@ impl ToolLoop {
         )
     }
 
-    /// [`turn`](Self::turn), sent again after a rate-limited answer for as
-    /// long as [`with_model_retry`](Self::with_model_retry)'s policy and the
-    /// budget allow. Each attempt has its own span.
-    async fn retried_turn(
-        &self,
-        request: ChatRequest<'_>,
-        cancel: &CancellationToken,
-        sink: Option<&super::model::TextSink>,
-        budget: Option<&BudgetHandle>,
-    ) -> Result<super::model::ModelTurn, LoopError> {
-        let mut retries = 0;
-        loop {
-            let result = self.turn(request, cancel, sink).await;
-            let Err(LoopError::Model(ModelError::RateLimited { retry_after, .. })) = &result else {
-                return result;
-            };
-            let Some(wait) = self
-                .model_retry
-                .and_then(|policy| policy.next_wait(retries, *retry_after, budget))
-            else {
-                return result;
-            };
-            trace_info!(
-                retry = retries + 1,
-                wait_ms = u64::try_from(wait.as_millis()).unwrap_or(u64::MAX),
-                "tool loop: the model provider is rate limiting; sending the turn again"
-            );
-            tokio::select! {
-                biased;
-                () = cancel.cancelled() => return Err(LoopError::Cancelled),
-                () = tokio::time::sleep(wait) => {}
-            }
-            retries += 1;
-        }
-    }
-
     /// One model turn, in its span, abandoned if `cancel` fires.
     async fn turn(
         &self,
@@ -537,6 +486,9 @@ fn parse_arguments(raw: &str) -> Result<Value, String> {
         Err(e) => Err(format!("the arguments are not valid JSON ({e})")),
     }
 }
+
+#[path = "run_retried.rs"]
+mod retried;
 
 #[cfg(test)]
 #[path = "run_tests/mod.rs"]
