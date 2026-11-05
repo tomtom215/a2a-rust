@@ -472,7 +472,7 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `EncryptedTaskStore` | Wraps any `TaskStore` and seals every part at rest, bound to where it sits (`store::encrypted`; `encryption` feature) |
 | `Aes256GcmCipher` | AES-256-GCM over a key ring for `EncryptedTaskStore`, and a `PushConfigCipher` (`encryption` feature) |
 | `InMemoryPushConfigStore` | In-memory push config store |
-| `HttpPushSender` | HTTP webhook delivery with SSRF protection |
+| `HttpPushSender` | HTTP webhook delivery with SSRF protection; follows the proxy variables in every build, and `with_proxy_resolved_names()` lets a proxy resolve names this process cannot (ADR 0043) |
 | `SqliteTaskStore` | SQLite task store (`sqlite` feature) |
 | `SqlitePushConfigStore` | SQLite push config store (`sqlite` feature) |
 | `TenantAwareInMemoryTaskStore` | Multi-tenant in-memory task store |

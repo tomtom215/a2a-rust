@@ -154,7 +154,6 @@ mod tls;
 pub use tls::ReloadingCertResolver;
 // Outbound HTTP shared by push delivery, JWKS and OIDC discovery, the tool
 // loop's model client and OTLP export: proxies, trusted roots, pool tuning.
-#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 mod net;
 #[cfg(feature = "tool-loop")]
 pub mod tool_loop;

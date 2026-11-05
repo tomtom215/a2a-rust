@@ -10,11 +10,13 @@
 //! resolving it, then connects. With the client resolving a second time, a
 //! name that answers a public address to the check and an internal one to the
 //! connect (DNS rebinding) got a TCP connection and a TLS `ClientHello` to the
-//! internal address (audit D-13, SEC-13). `http://` was already closed by
+//! internal address (audit D-13, SEC-13). `http://` was closed first, by
 //! rewriting the URL to the validated address. An `https://` URL cannot be
 //! rewritten: the certificate is checked against the host name in the URL, so
-//! the connection has to ask for that name. Here the name stays and the
-//! answer is fixed: while a [`PinGuard`] is held, the host resolves to the
+//! the connection has to ask for that name. Since 0.16.0 an `http://` one is
+//! not rewritten either: the proxy rules, `NO_PROXY` included, were then
+//! matched against the address rather than the name they were written for
+//! (audit NEW-b-4). For both, the name stays and the answer is fixed: while a [`PinGuard`] is held, the host resolves to the
 //! addresses that were checked and to nothing else, and the server's
 //! certificate is verified against the name as before.
 //!
@@ -40,6 +42,7 @@ use tower_service::Service;
 pub type Tcp = HttpConnector<PinResolver>;
 
 /// A TCP connector that resolves through the system, with no pins.
+#[cfg(any(feature = "tls-rustls", feature = "otlp", test))]
 pub fn system_tcp() -> Tcp {
     HttpConnector::new_with_resolver(PinResolver::default())
 }
@@ -52,8 +55,7 @@ type Pins = Mutex<HashMap<String, Vec<(u64, Vec<SocketAddr>)>>>;
 #[derive(Clone)]
 pub struct PinResolver {
     pins: Arc<Pins>,
-    // Ids for pins; only the push client makes any (`tls-rustls`), OTLP export none.
-    #[cfg_attr(not(feature = "tls-rustls"), allow(dead_code))]
+    // Ids for pins; only the push client makes any, OTLP export none.
     next: Arc<std::sync::atomic::AtomicU64>,
     system: GaiResolver,
 }
@@ -87,7 +89,6 @@ impl PinResolver {
     /// Pins stack: while two deliveries to one host each hold one, the host
     /// resolves to both sets, so neither delivery's addresses vanish when the
     /// other ends.
-    #[cfg_attr(not(feature = "tls-rustls"), allow(dead_code))]
     pub fn pin(&self, host: &str, addrs: Vec<SocketAddr>) -> PinGuard {
         let id = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let key = key(host);
@@ -106,7 +107,6 @@ impl PinResolver {
 
     /// Whether `host` has a pin.
     #[cfg(test)]
-    #[cfg_attr(not(feature = "tls-rustls"), allow(dead_code))]
     pub(crate) fn is_pinned(&self, host: &str) -> bool {
         self.pinned(host).is_some()
     }
@@ -133,7 +133,6 @@ impl PinResolver {
 
 /// A host's pin; the host resolves normally again when it is dropped.
 #[must_use = "the pin ends when the guard is dropped"]
-#[cfg_attr(not(feature = "tls-rustls"), allow(dead_code))]
 pub struct PinGuard {
     pins: Arc<Pins>,
     key: String,

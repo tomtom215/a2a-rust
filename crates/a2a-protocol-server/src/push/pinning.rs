@@ -1,73 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
-//! The pin half of the push sender's DNS-rebinding defence: the address a
-//! delivery connects to, and the `Host` it presents there. Moved out of
-//! `sender.rs`, which is over the 500-line limit.
-
-use std::net::{IpAddr, SocketAddr};
+//! The pin half of the push sender's DNS-rebinding defence: the name a
+//! delivery's checked addresses are pinned under (`net::resolver`). Moved out
+//! of `sender.rs`, which is over the 500-line limit.
+//!
+//! Until 0.16.0 an `http://` delivery was rewritten here to one checked
+//! address per attempt, with the name in a `Host` header; it is pinned in the
+//! resolver as `https://` is, so the proxy rules see the name (audit NEW-b-4).
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 
-/// Rewrites a webhook URL so that the host component is replaced with the
-/// given literal [`SocketAddr`], preserving scheme, path, and query.
-///
-/// Used after [`validate_webhook_url_with_dns`](super::sender::validate_webhook_url_with_dns) returns a validated
-/// `SocketAddr` so the outgoing request connects to the exact IP that was
-/// validated — not whatever the HTTP client's own resolver returns seconds
-/// later. This is the pin half of the DNS-rebinding defence; the caller is
-/// responsible for setting the `Host` header to the original hostname so
-/// HTTP vhost routing still works at the remote end.
-pub(super) fn rewrite_uri_with_pinned_addr(url: &str, pinned: SocketAddr) -> A2aResult<hyper::Uri> {
-    let uri: hyper::Uri = url
-        .parse()
-        .map_err(|e| A2aError::invalid_params(format!("invalid webhook URL: {e}")))?;
-
-    let scheme = uri
-        .scheme_str()
-        .ok_or_else(|| A2aError::invalid_params("webhook URL missing scheme"))?;
-
-    // IPv6 literals must be bracketed in the URI authority.
-    let host_str = match pinned.ip() {
-        IpAddr::V4(v4) => v4.to_string(),
-        IpAddr::V6(v6) => format!("[{v6}]"),
-    };
-
-    let path_and_query = uri
-        .path_and_query()
-        .map_or_else(|| "/".to_string(), std::string::ToString::to_string);
-
-    let rewritten = format!(
-        "{scheme}://{host_str}:{port}{path_and_query}",
-        port = pinned.port()
-    );
-
-    rewritten
-        .parse()
-        .map_err(|e| A2aError::invalid_params(format!("could not rewrite webhook URL: {e}")))
-}
-
-/// Extracts the original `Host` header value (`host[:port]`) from a webhook URL.
-///
-/// Used with [`rewrite_uri_with_pinned_addr`] so the remote server still sees
-/// the original hostname for vhost routing even though the connection is
-/// dialled directly to the pinned IP.
-pub(super) fn host_header_from_url(url: &str) -> A2aResult<String> {
-    let uri: hyper::Uri = url
-        .parse()
-        .map_err(|e| A2aError::invalid_params(format!("invalid webhook URL: {e}")))?;
-    let host = uri
-        .host()
-        .ok_or_else(|| A2aError::invalid_params("webhook URL missing host"))?;
-    Ok(uri
-        .port_u16()
-        .map_or_else(|| host.to_string(), |port| format!("{host}:{port}")))
-}
-
-/// The bare host name of a webhook URL: no port, no brackets. What an
-/// `https://` delivery's pin is keyed by, as the connector asks the resolver
-/// for exactly this.
-#[cfg(feature = "tls-rustls")]
+/// The bare host name of a webhook URL: no port, no brackets. What a
+/// delivery's pin is keyed by, as the connector asks the resolver for exactly
+/// this.
 pub(super) fn host_from_url(url: &str) -> A2aResult<String> {
     let uri: hyper::Uri = url
         .parse()
@@ -75,31 +21,6 @@ pub(super) fn host_from_url(url: &str) -> A2aResult<String> {
     uri.host()
         .map(str::to_owned)
         .ok_or_else(|| A2aError::invalid_params("webhook URL missing host"))
-}
-
-/// The address attempt `attempt` (counted from 0) uses, going round the
-/// validated addresses so that one that is down is followed by the next.
-/// `None` when there are none.
-pub(super) fn pick_addr(addrs: &[SocketAddr], attempt: usize) -> Option<SocketAddr> {
-    addrs.get(attempt.checked_rem(addrs.len())?).copied()
-}
-
-/// Decides whether the URI is rewritten to the validated IP for this delivery.
-///
-/// `http://` requests are (the caller rewrites the URI to the literal IP and
-/// restores the original `Host` header) to close the DNS-rebinding TOCTOU
-/// window. `https://` requests must **not** be: the connection has to present
-/// the original hostname for SNI and certificate verification. They are
-/// pinned in the client's resolver instead (`net::resolver`). A `None`
-/// address (IP literal, or SSRF validation skipped) is never rewritten.
-pub(super) const fn pin_target(
-    is_https: bool,
-    pinned_addr: Option<SocketAddr>,
-) -> Option<SocketAddr> {
-    match pinned_addr {
-        Some(addr) if !is_https => Some(addr),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

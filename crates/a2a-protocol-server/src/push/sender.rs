@@ -18,32 +18,16 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 
+use super::pinning::host_from_url;
+use super::request::{Attempt, Prepared, judge};
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
-#[cfg(not(feature = "tls-rustls"))]
-use bytes::Bytes;
-#[cfg(not(feature = "tls-rustls"))]
-use http_body_util::Full;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::Client;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::connect::HttpConnector;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::rt::TokioExecutor;
 
-#[cfg(feature = "tls-rustls")]
-use super::pinning::host_from_url;
-use super::pinning::{host_header_from_url, pick_addr, pin_target, rewrite_uri_with_pinned_addr};
-use super::request::{Attempt, Prepared, judge};
-
-/// The hyper client type backing [`HttpPushSender`].
-///
-/// Plaintext-HTTP only in the default build; an HTTPS-capable
-/// (`https_or_http`) client when the `tls-rustls` feature is enabled.
-#[cfg(not(feature = "tls-rustls"))]
-pub(crate) type PushHttpClient = Client<HttpConnector, Full<Bytes>>;
-#[cfg(feature = "tls-rustls")]
+/// The hyper client type backing [`HttpPushSender`]: an HTTPS-capable
+/// (`https_or_http`) client with the `tls-rustls` feature, plaintext without.
+/// Both follow the proxy variables and pin the checked addresses
+/// (`net::client`).
 pub(crate) type PushHttpClient = crate::net::client::HttpsClient;
 
 /// Builds an HTTPS-capable (`https_or_http`) push client from a rustls config.
@@ -55,17 +39,30 @@ pub(crate) fn build_push_https_client(tls_config: &rustls::ClientConfig) -> Push
     crate::net::client::HttpsClient::new(tls_config)
 }
 
+/// A push client with explicit proxy `rules` and the default roots, in either
+/// build: what the proxy tests give the sender.
+#[cfg(test)]
+pub(crate) fn push_client_with_rules(
+    rules: std::sync::Arc<hyper_util::client::proxy::matcher::Matcher>,
+) -> PushHttpClient {
+    #[cfg(not(feature = "tls-rustls"))]
+    {
+        crate::net::client::HttpsClient::plain_with_rules(rules)
+    }
+    #[cfg(feature = "tls-rustls")]
+    {
+        crate::net::client::HttpsClient::with_rules(&crate::net::roots::default_tls_config(), rules)
+    }
+}
+
 /// Builds the push-delivery hyper client for the active feature set, using the
 /// default trust roots.
 pub(crate) fn build_push_http_client() -> PushHttpClient {
+    // The settings, proxy rules and pins the `tls-rustls` client has (audit
+    // B-30, NEW-b-3).
     #[cfg(not(feature = "tls-rustls"))]
     {
-        // The settings the `tls-rustls` client has (audit B-30).
-        let mut tcp = HttpConnector::new();
-        crate::tcp::tune(&mut tcp);
-        Client::builder(TokioExecutor::new())
-            .pool_idle_timeout(crate::tcp::POOL_IDLE_TIMEOUT)
-            .build(tcp)
+        crate::net::client::HttpsClient::plain()
     }
     #[cfg(feature = "tls-rustls")]
     {
@@ -256,20 +253,22 @@ impl PushRetryPolicy {
 /// The SSRF pre-flight (`validate_webhook_url_with_dns`) always runs, rejecting
 /// webhooks that resolve to private/loopback/link-local addresses, and the
 /// delivery then connects only to the addresses it checked, to close the
-/// DNS-rebinding window between the check and the connect. For `http://` the
-/// request dials a validated literal IP with the original `Host` header. For
+/// DNS-rebinding window between the check and the connect. For
 /// `https://` the connection has to ask for the host name (SNI and the
 /// certificate are checked against it), so the client's resolver is told that
 /// the name is those addresses for the length of the delivery; the certificate
-/// is still verified against the name. Until 0.16.0 `https://` was not pinned
-/// and relied on TLS alone, which stops a rebound server from impersonating
-/// the host but not a TCP connection and a `ClientHello` to an internal
-/// address (audit D-13, SEC-13).
+/// is still verified against the name. `http://` is pinned the same way since
+/// 0.16.0; it was rewritten to the address, which matched the proxy rules,
+/// `NO_PROXY` included, against the address and not the name (audit NEW-b-4,
+/// ADR 0043). Until 0.16.0 `https://` was not pinned and relied on TLS alone,
+/// which stops a rebound server from impersonating the host but not a TCP
+/// connection and a `ClientHello` to an internal address (audit D-13, SEC-13).
 ///
-/// A host with several addresses is tried in turn, one per attempt for
-/// `http://` and by the connector in the resolver's order for `https://`
-/// (audit B-13). Behind a proxy the proxy resolves the name, so there is no
-/// pin; see `docs/audits/2026-11-01-triage/DECISIONS.md`, F16.
+/// A host with several addresses is tried in turn by the connector, in the
+/// resolver's order, within each attempt (audit B-13). Behind a proxy the
+/// proxy resolves the name, so there is no pin; see
+/// `docs/audits/2026-11-01-triage/DECISIONS.md`, F16, and
+/// [`with_proxy_resolved_names`](Self::with_proxy_resolved_names).
 ///
 /// # Security
 ///
@@ -291,6 +290,9 @@ pub struct HttpPushSender {
     allowed_hosts: Option<Vec<String>>,
     /// Whether only `https://` webhooks are accepted.
     https_only: bool,
+    /// Whether a name this process cannot resolve is sent to the proxy that
+    /// carries it, for the proxy to resolve.
+    proxy_resolved_names: bool,
 }
 
 impl Default for HttpPushSender {
@@ -319,6 +321,7 @@ impl HttpPushSender {
             allow_private_urls: false,
             allowed_hosts: None,
             https_only: false,
+            proxy_resolved_names: false,
         }
     }
 
@@ -346,6 +349,7 @@ impl HttpPushSender {
             allow_private_urls: false,
             allowed_hosts: None,
             https_only: false,
+            proxy_resolved_names: false,
         }
     }
 
@@ -414,6 +418,50 @@ impl HttpPushSender {
         self
     }
 
+    /// Behind a proxy that resolves names itself, delivers to a webhook whose
+    /// name this process cannot resolve, instead of failing it (audit
+    /// NEW-b-1, ADR 0043). Off by default.
+    ///
+    /// The SSRF screen resolves a webhook's host here and refuses a private
+    /// answer. Where this process's resolver answers only internal names and
+    /// every external request goes through a proxy (Squid, Zscaler and their
+    /// like), that lookup fails for every external webhook. With this set,
+    /// when the proxy rules send a webhook through a proxy and the lookup
+    /// gets no answer (no record, `NXDOMAIN`, or the
+    /// [`with_dns_timeout`](Self::with_dns_timeout) bound), the delivery goes
+    /// to the proxy by name. The name is still screened by its form
+    /// (`localhost`, `*.internal`, a numeric IPv4 spelling, ...), and a name
+    /// that does resolve here is still refused when any answer is private.
+    ///
+    /// **The proxy is then the screen** for names only it can resolve, an
+    /// internal name behind split-horizon DNS among them: deny private,
+    /// loopback, link-local and metadata addresses in its own policy before
+    /// turning this on. A destination `NO_PROXY` exempts goes direct and must
+    /// resolve here as before.
+    #[must_use]
+    pub const fn with_proxy_resolved_names(mut self) -> Self {
+        self.proxy_resolved_names = true;
+        self
+    }
+
+    /// The SSRF pre-flight: `url`'s checked addresses, `None` for an address
+    /// literal or a name left to the proxy to resolve.
+    async fn preflight(&self, url: &str) -> A2aResult<Option<Vec<SocketAddr>>> {
+        let proxied = url
+            .parse::<hyper::Uri>()
+            .is_ok_and(|uri| self.client.proxied(&uri));
+        if !proxied {
+            return validate_webhook_url_with_dns(url, self.dns_timeout).await;
+        }
+        preflight_with(
+            url,
+            self.dns_timeout,
+            self.proxy_resolved_names,
+            crate::url_guard::system_lookup,
+        )
+        .await
+    }
+
     fn host_allowed(&self, url: &str) -> bool {
         let Some(allowed) = &self.allowed_hosts else {
             return true;
@@ -439,6 +487,55 @@ pub(crate) fn is_https_url(url: &str) -> bool {
 /// [`check_public_url`]: crate::url_guard::check_public_url
 pub(crate) fn validate_webhook_url(url: &str) -> A2aResult<()> {
     crate::url_guard::check(url, "webhook URL")
+}
+
+/// The SSRF pre-flight for a webhook a proxy carries, with the resolver as a
+/// parameter: [`resolve`], except that a lookup that gets no answer is
+/// `Ok(None)` (the proxy resolves the name) when `proxy_resolved_names`, and
+/// otherwise an error that names the option. An answer, when there is one,
+/// is checked as always.
+///
+/// [`resolve`]: crate::url_guard::resolve_with
+pub(crate) async fn preflight_with<F, Fut>(
+    url: &str,
+    dns_timeout: std::time::Duration,
+    proxy_resolved_names: bool,
+    resolve: F,
+) -> A2aResult<Option<Vec<SocketAddr>>>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = std::io::Result<Vec<SocketAddr>>>,
+{
+    // Whether the lookup ran, and whether it answered with an address. Only an
+    // error from a lookup that ran and found nothing is the name this process
+    // cannot resolve; the screen refusing the URL's form before any lookup,
+    // or refusing an answer, is an error as always.
+    let looked_up = std::sync::atomic::AtomicBool::new(false);
+    let answered = std::sync::atomic::AtomicBool::new(false);
+    let watched = |addr: String| {
+        let (looked_up, answered) = (&looked_up, &answered);
+        looked_up.store(true, std::sync::atomic::Ordering::SeqCst);
+        let lookup = resolve(addr);
+        async move {
+            let found = lookup.await;
+            if found.as_ref().is_ok_and(|addrs| !addrs.is_empty()) {
+                answered.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            found
+        }
+    };
+    let checked = crate::url_guard::resolve_with(url, "webhook URL", dns_timeout, watched).await;
+    let unanswered = looked_up.load(std::sync::atomic::Ordering::SeqCst)
+        && !answered.load(std::sync::atomic::Ordering::SeqCst);
+    match checked {
+        Err(_) if unanswered && proxy_resolved_names => Ok(None),
+        Err(err) if unanswered => Err(A2aError::invalid_params(format!(
+            "{}; a proxy carries this webhook, and HttpPushSender::with_proxy_resolved_names \
+             lets it resolve names this process cannot (ADR 0043)",
+            err.message
+        ))),
+        other => other,
+    }
 }
 
 /// [`validate_webhook_url_with_dns`] with an injected resolver, for tests.
@@ -623,7 +720,7 @@ impl PushSender for HttpPushSender {
             let validated = if self.allow_private_urls {
                 None
             } else {
-                validate_webhook_url_with_dns(url, self.dns_timeout).await?
+                self.preflight(url).await?
             };
 
             // The gate's per-destination bound, on the addresses this
@@ -654,28 +751,18 @@ impl HttpPushSender {
     ) -> A2aResult<()> {
         let target = super::webhook::origin_for_log(url);
         let _ = &target;
-        let is_https = is_https_url(url);
 
-        // `https://`: the connection has to ask for the host name (SNI and
-        // the certificate are checked against it), so the URL stays as it
-        // is and the client's resolver is told the name is these addresses
-        // for as long as this delivery runs (audit D-13, SEC-13). Until
-        // 0.16.0 it was not pinned, and a rebinding resolver got a TCP
-        // connection and a `ClientHello` at an internal address. Held across
-        // the attempts, so a retry cannot resolve differently either.
-        #[cfg(feature = "tls-rustls")]
-        let _https_pin = match (is_https, validated.as_ref()) {
-            (true, Some(addrs)) => Some(self.client.pin(&host_from_url(url)?, addrs.clone())),
-            _ => None,
-        };
-
-        // `http://`: rewrite the URI to a validated literal IP and restore
-        // the original hostname through an explicit `Host:` header. Which
-        // address is chosen per attempt below, so an address that is down
-        // is followed by the next one (audit B-13).
-        let pinned_host_header = match (is_https, validated.as_ref()) {
-            (false, Some(_)) => Some(host_header_from_url(url)?),
-            _ => None,
+        // The URL stays as it is and the client's resolver is told the name
+        // is these addresses for as long as this delivery runs (audit D-13,
+        // SEC-13). For `https://` the connection has to ask for the name (SNI
+        // and the certificate are checked against it); for `http://` the
+        // proxy rules have to see it, `NO_PROXY` included (audit NEW-b-4: the
+        // URI was rewritten to the address until 0.16.0). The connector tries
+        // the addresses in turn (B-13). Held across the attempts, so a retry
+        // cannot resolve differently either.
+        let _pin = match validated {
+            Some(addrs) => Some(self.client.pin(&host_from_url(url)?, addrs)),
+            None => None,
         };
 
         let prepared = Prepared::new(config, event)?;
@@ -686,14 +773,7 @@ impl HttpPushSender {
         // directly (§4.3.3).
         let attempts = self.retry_policy.max_attempts.max(1);
         for attempt in 0..attempts {
-            let pinned_addr = validated
-                .as_deref()
-                .and_then(|addrs| pick_addr(addrs, attempt));
-            let rewritten = match pin_target(is_https, pinned_addr) {
-                Some(addr) => Some(rewrite_uri_with_pinned_addr(url, addr)?),
-                None => None,
-            };
-            let mut req = prepared.request(url, rewritten, pinned_host_header.as_deref())?;
+            let mut req = prepared.request(url, None, None)?;
 
             // Each attempt in its HTTP `CLIENT` span, carrying that span
             // as the receiver's `traceparent` (`rpc_span::webhook`).
@@ -738,6 +818,10 @@ impl HttpPushSender {
 #[cfg(test)]
 #[path = "sender_pin_tests.rs"]
 mod pin_tests;
+
+#[cfg(test)]
+#[path = "sender_proxy_tests.rs"]
+mod proxy_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1362,66 +1446,6 @@ mod tests {
             matches!(result, Ok(None)),
             "public IP literal should be accepted with no pinning (got {result:?})",
         );
-    }
-
-    // ── rewrite_uri_with_pinned_addr / host_header_from_url ──────────────
-
-    #[test]
-    fn rewrite_uri_preserves_scheme_path_and_query() {
-        let pinned: SocketAddr = "203.0.113.1:8080".parse().unwrap();
-        let rewritten =
-            rewrite_uri_with_pinned_addr("http://example.com:8080/webhook?x=1", pinned).unwrap();
-        assert_eq!(rewritten.to_string(), "http://203.0.113.1:8080/webhook?x=1",);
-    }
-
-    #[test]
-    fn rewrite_uri_uses_ipv6_brackets() {
-        let pinned: SocketAddr = "[2001:db8::1]:443".parse().unwrap();
-        let rewritten =
-            rewrite_uri_with_pinned_addr("https://example.com/webhook", pinned).unwrap();
-        // IPv6 literals must be bracketed in the URI authority.
-        assert!(
-            rewritten.to_string().contains("[2001:db8::1]:443"),
-            "IPv6 literal should be bracketed: {rewritten}",
-        );
-    }
-
-    #[test]
-    fn rewrite_uri_default_path_when_missing() {
-        let pinned: SocketAddr = "203.0.113.1:80".parse().unwrap();
-        let rewritten = rewrite_uri_with_pinned_addr("http://example.com", pinned).unwrap();
-        assert_eq!(rewritten.to_string(), "http://203.0.113.1:80/");
-    }
-
-    #[test]
-    fn host_header_includes_port_when_present() {
-        let host = host_header_from_url("http://example.com:8080/webhook").unwrap();
-        assert_eq!(host, "example.com:8080");
-    }
-
-    #[test]
-    fn host_header_omits_default_port() {
-        let host = host_header_from_url("https://example.com/webhook").unwrap();
-        assert_eq!(host, "example.com");
-    }
-
-    #[test]
-    fn host_header_from_url_rejects_missing_host() {
-        let result = host_header_from_url("http:///path");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn pin_target_pins_http_but_not_https() {
-        let addr: SocketAddr = "203.0.113.1:8080".parse().unwrap();
-        // http:// pins the validated IP (DNS-rebinding defense).
-        assert_eq!(pin_target(false, Some(addr)), Some(addr));
-        // https:// must NOT pin — the hostname is preserved for SNI/cert
-        // verification, and TLS closes the rebinding window instead.
-        assert_eq!(pin_target(true, Some(addr)), None);
-        // Nothing to pin when validation was skipped / the host was an IP literal.
-        assert_eq!(pin_target(false, None), None);
-        assert_eq!(pin_target(true, None), None);
     }
 
     // ── HTTPS delivery behavior ──────────────────────────────────────────────
