@@ -11,6 +11,7 @@
 
 pub mod extended_card;
 pub mod follow;
+mod get_task;
 pub mod push_config;
 pub mod send_message;
 mod status_timestamp;
