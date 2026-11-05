@@ -172,9 +172,6 @@ impl AdmissionGate {
             if state.queued >= config.max_queued || config.max_wait.is_zero() {
                 return Err(Refusal::Full);
             }
-            if budget_left == Some(Duration::ZERO) {
-                return Err(Refusal::Budget);
-            }
             let id = state.next_id;
             state.next_id += 1;
             let (tx, rx) = oneshot::channel();

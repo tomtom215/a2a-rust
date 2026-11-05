@@ -235,6 +235,45 @@ async fn the_load_says_halted_and_draining() {
     assert!(handler.load().draining);
 }
 
+/// With an admission gate, the load counts its waiting sends and measures
+/// against its capacity, not the stream cap.
+#[tokio::test(start_paused = true)]
+async fn with_a_gate_the_load_counts_its_queue_against_its_capacity() {
+    let go = Arc::new(Semaphore::new(0));
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(Held(Arc::clone(&go)))
+            .without_agent_card()
+            .with_max_concurrent_streams(8)
+            .with_admission(
+                crate::admission::Admission::new(1)
+                    .with_max_queued(4)
+                    .with_max_wait(Duration::from_secs(30)),
+            )
+            .build()
+            .unwrap(),
+    );
+    handler
+        .on_send_message(send("c1"), false, None)
+        .await
+        .unwrap();
+    let waiting = {
+        let handler = Arc::clone(&handler);
+        tokio::spawn(async move {
+            handler
+                .on_send_message(send("c2"), false, None)
+                .await
+                .map(drop)
+        })
+    };
+    settle().await;
+    let load = handler.load();
+    assert_eq!(load, report(1, 1, Some(1)));
+    assert_eq!(load.utilization_permille(), Some(2000));
+    go.add_permits(1);
+    waiting.await.unwrap().unwrap();
+    go.add_permits(8);
+}
+
 /// The build refuses a band that is not one.
 #[test]
 fn the_build_refuses_saturation_thresholds_that_are_not_a_band() {
