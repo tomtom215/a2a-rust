@@ -351,6 +351,53 @@ Every setting is fixed when `build()` is called. A zero duration is refused.
 | `OTEL_*` | Read by `Telemetry` (server `otlp` feature, on in the SDK) and the OpenTelemetry crates beneath it: `OTEL_SDK_DISABLED`, `OTEL_TRACES_EXPORTER` / `OTEL_METRICS_EXPORTER` / `OTEL_LOGS_EXPORTER` (a list of `otlp`, `console` and, for metrics with the `otel-prometheus` feature, `prometheus`; or `none`), `OTEL_EXPORTER_OTLP_ENDPOINT` / `_PROTOCOL` / `_HEADERS` / `_COMPRESSION` / `_TIMEOUT` (10 s) / `_CERTIFICATE` / `_CLIENT_CERTIFICATE` / `_CLIENT_KEY` and their per-signal forms, `_INSECURE` (only for a scheme-less OTLP/gRPC endpoint), `OTEL_EXPORTER_PROMETHEUS_HOST` / `_PORT`, `OTEL_PROPAGATORS`, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`; and `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` for the export; see [Observability](../deployment/observability.md) |
 | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | Read by `Langfuse::from_env()`; the base URL defaults to `http://localhost:3000` |
 | `PROTOC` | The `proto`/`grpc` build scripts use a vendored `protoc` unless this names another |
+| `SSL_CERT_FILE`, `SSL_CERT_DIR` | A PEM file, and a directory of PEM files, of CA certificates trusted beside the bundled Mozilla roots: by the client (every binding, gRPC included, card discovery, JWKS and the token provider) and by the server's push delivery, JWKS and OIDC discovery and the tool loop's model client (telemetry export takes `OTEL_EXPORTER_OTLP_CERTIFICATE` instead). Read once per process; a file that cannot be read is reported and skipped, never replacing the bundled roots |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` (and lower-case) | Not only the telemetry export's: the client's HTTP, gRPC and WebSocket transports, and the server's push delivery, JWKS and OIDC fetches go through them; loopback never does unless `A2A_PROXY_LOOPBACK` says so |
+| `HOSTNAME` (`COMPUTERNAME` on Windows) | The replica's name in a turn claim, and the telemetry resource's `host.name`; Kubernetes sets it to the pod's name |
+| `NO_COLOR` | Set, the subscriber `Telemetry` installs writes no colour |
+| `A2A_TEST_POSTGRES_URL` | Tests only: the PostgreSQL the `#[ignore]`d live tests run against (`scripts/run_postgres_suites.py`) |
+
+### What each binary in the repository reads
+
+The SDK's crates read only the variables above. Each example and tool reads
+its own, and they were named one binary at a time, so the same setting has
+more than one spelling ([ADR 0040](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0040-first-run-configuration-and-scope.md)
+records why none is renamed in 0.16.0, and the rule for new ones: a platform's
+name where a platform injects it, `A2A_` otherwise). Every one of them also
+reads `OTEL_*`. Read from each crate's source (`std::env::var` calls) on
+2026-11-04.
+
+| Setting | Variable | Read by |
+|---|---|---|
+| Where to listen | `PORT` (all addresses) | `deploy-agent` |
+| | `A2A_BIND_ADDR` (`host:port`) | `echo-agent`, `genai-agent`, `rig-agent`, `mcp-agent`, `multi-lang-team` (each starts its server mode when it is set) |
+| | `SUT_HOST` | `tck/sut` |
+| | none: `127.0.0.1:3000` | `hello-agent` |
+| Extra listeners | `A2A_GRPC_BIND_ADDR`, `A2A_WS_BIND_ADDR` | `echo-agent` |
+| | `A2A_GRPC_ADDR`, `A2A_WS_ADDR` | `genai-agent` |
+| | `SUT_GRPC_HOST`, `SUT_WS_HOST` | `tck/sut` |
+| The URL on the agent card | `AGENT_URL` | `deploy-agent` |
+| | `A2A_PUBLIC_URL` | the five `A2A_BIND_ADDR` examples; unset, the card names the bound address, or `http://localhost:<port>` for a bind to every address (`0.0.0.0`, `[::]`), which a client elsewhere cannot use |
+| | `SUT_ADVERTISE_URL`, `SUT_GRPC_ADVERTISE_URL`, `SUT_WS_ADVERTISE_URL` | `tck/sut` |
+| Another agent to call | `A2A_AGENT_URL` (the remote agent: not the card URL above, despite the name) | `mcp-bridge` |
+| Database | `A2A_DATABASE_URL`, else `DATABASE_URL` with a warning; `DATABASE_POOL_SIZE`, `DATABASE_PUSH_POOL_SIZE`, `TASK_RETENTION_HOURS` | `deploy-agent` |
+| | `A2A_TEST_POSTGRES_URL` | `resilient-agent`, `incident-response` (their PostgreSQL acts) |
+| Shutdown and version | `DRAIN_DELAY_SECONDS`, `AGENT_VERSION` | `deploy-agent` |
+| Model endpoint | `OPENAI_BASE_URL`, `OPENAI_API_KEY` | `rig-agent`, `mcp-agent` |
+| | `TOOL_LOOP_BASE_URL`, `TOOL_LOOP_API_KEY` | `tool-loop-agent` |
+| | `LIVE_BASE_URL` | `live-model` |
+| | `SWARM_LLM_URL` | `swarm` |
+| Model, thinking, output cap | `GENAI_MODEL`, `GENAI_THINKING`, `GENAI_MAX_TOKENS` | `genai-agent` |
+| | `RIG_MODEL`, `RIG_THINKING`, `RIG_MAX_TOKENS` | `rig-agent` (`mcp-agent` reads `RIG_MODEL` too, with `MCP_THINKING`, `MCP_MAX_TOKENS`) |
+| | `INCIDENT_MODEL`, `INCIDENT_THINKING`, `INCIDENT_MAX_TOKENS` | `incident-response` |
+| | `LIVE_MODEL`, `LIVE_THINKING`, `LIVE_EXTRA_BODY`, `LIVE_MODEL_TIMEOUT_SECS` | `live-model` |
+| | `TOOL_LOOP_MODEL`, `TOOL_LOOP_THINKING`, `TOOL_LOOP_EXTRA_BODY`, `TOOL_LOOP_MODEL_TIMEOUT_SECS` | `tool-loop-agent` |
+| Authentication and limits | `A2A_API_KEY`, `A2A_BEARER_TOKEN`, `A2A_JWT_HS256_SECRET`, `A2A_JWT_ISS`, `A2A_JWT_AUD`, `A2A_MAX_CONCURRENT_TASKS`, `A2A_ALLOW_PRIVATE_WEBHOOKS`, `A2A_ALLOW_FALLBACK` | `genai-agent` |
+| | `A2A_INTEROP_API_KEY`, `A2A_INTEROP_CARD` | `echo-agent` (the Go interop legs) |
+| Test-run switches | `RESILIENT_REQUIRE_ALL`, `INCIDENT_REQUIRE_ALL`, `INCIDENT_EXIT_WHEN_DONE`, `SWARM_*` sizes, `SWARM_DEBUG`, `SUT_PROFILE` | `resilient-agent`, `incident-response`, `swarm`, `tck/sut` |
+| Other | `MCP_SERVER_BIN` | `mcp-agent` (the tool server it spawns) |
+| | `LANGFUSE_*` | `langfuse-agent`, through `Langfuse::from_env()` |
+| | none of its own | `a2a` (the CLI is configured by flags; it reads the SDK's variables above) |
 
 Examples:
 ```bash

@@ -163,6 +163,13 @@ a2a-protocol-sdk = "0.16"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
+This README is the one on `main`, and its snippets name the release line `main`
+is preparing. If [crates.io](https://crates.io/crates/a2a-protocol-sdk) does not
+have that line yet (cargo says `failed to select a version`), read the README
+at the [latest release tag](https://github.com/tomtom215/a2a-rust/releases), or
+build against `main` with
+`a2a-protocol-sdk = { git = "https://github.com/tomtom215/a2a-rust" }`.
+
 ### A complete agent, and a client that calls it
 
 One file, `src/main.rs`. It starts the agent on port 3000 with the agent card
