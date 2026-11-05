@@ -33,6 +33,7 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **Observability:** control-plane, process and runtime metrics, baggage and `OTEL_PROPAGATORS` on the A2A wire, JSON console logs with the trace context, alerts that watch the stack itself, and the stack on Kubernetes and in CI.
 - **A task's ending always reaches its webhooks, its log and its caller;** an executor that panics leaves the task `failed`; a blocking send over gRPC is no longer cut at the request timeout; credentials go only to the host the caller named; a private CA and mutual TLS reach every binding, the token provider included.
 - **Shipping:** a signed `deploy-agent` image on GHCR with build provenance, a card that reports its version, and retention of finished tasks; OpenTelemetry export through proxies with gzip, console and Prometheus exporters, resource detection and lost-export warnings; WebSocket connections that detect a dead peer.
+- **Serving and API shape:** every listener has one graceful `serve_with_shutdown` and takes `ServeConfig` (the axum router now runs on `Server`), `EventStream` is a `futures_core::Stream`, a one-shot agent answers with `complete_with_text`, and 23 names are deprecated, to be removed no earlier than 0.17.0.
 - **Not in this release:** agent skills (ADR 0035) and steering (ADR 0036), the parts listed under Known Limitations, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
 
 ### Added
@@ -678,6 +679,14 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **Metrics-to-traces links in the stack** (`deploy/observability`; audit C-05, stack side): Tempo's metrics generator (span metrics and a service graph) with exemplars, Prometheus exemplar storage, exemplar and trace-to-metrics links in Grafana, and a server span-duration panel with exemplars. The SDK does not emit exemplars yet (see Known Limitations).
 
 - **The stack on Kubernetes and in CI** (audit C-22, group J): `deploy/kubernetes/observability/` holds a generated `PrometheusRule` and Grafana dashboard ConfigMaps with a kustomization, with the book page *The stack on Kubernetes*; the CI workflow `observability.yml` runs `promtool check config` and `check rules`, `promtool test rules`, `amtool check-config` and `deploy/observability/scripts/check_stack.py` (the caller-class pattern against the crates' error codes, image digests, the generated manifests). A client dashboard panel, *Calls in the range by processes that started in it*, shows one-shot CLI and batch clients (audit L11).
+
+- `EventEmitter::text_artifact(id, text)`, `complete_with(parts)` and `complete_with_text(text)` (the result artifact, then the terminal `Completed` status, so a one-shot agent is one call), and `artifact_chunk(id, parts, ArtifactChunk)` with `ArtifactChunk::{whole, first, append, last}` in place of two positional `Option<bool>`s; `ArtifactChunk` is in the SDK prelude. `artifact` stays, not deprecated: only it can send `append: false` or leave out `lastChunk`. hello-agent, the quick start and the first-agent page use the short form (audit G-16).
+
+- `EventStream` implements `futures_core::Stream`, reading the same state as `next()`: `StreamExt`, `select_all`, `StreamMap` and axum's `Sse` take it as it is. A dropped poll does not restart the silence deadline. `futures-core` 0.3 is now a public dependency of the client (`STABILITY.md` section 6) (audit G-12).
+
+- The axum router is a `Dispatcher`: `Server::serve_with_shutdown(RestRouter::new(handler), signal)` gives it `ServeConfig`'s header-read and idle timeouts, connection cap, `Host` check, production refusal and task-first shutdown, and closes its WebSocket upgrades in the drain. `GrpcDispatcher::with_serve_config` and `WebSocketDispatcher::with_serve_config` take the same `ServeConfig` (connection cap, graces, drain timeout and delay, production refusal; on WebSocket also the idle bound). `ServeConfig` and `RestRouter` are in the SDK prelude (audit G-09, ADR 0052).
+
+- `RestRouter`, a type alias for `A2aRouter` that names the binding it serves (HTTP+JSON), and the names that follow the wire methods: `RequestHandler::on_subscribe_to_task` and `on_create_push_config`, `A2aClient::create_push_config`, `RateLimitConfig::with_window(Duration)`, `TenantLimitsBuilder::with_*`. A naming rule for new public items is in `CONTRIBUTING.md` (audit G-15, ADR 0053).
 
 ### Breaking Changes
 
@@ -1481,6 +1490,8 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **deploy-agent**: the image installs its binary as `/usr/local/bin/agent` (was `/usr/local/bin/deploy-agent`); the manifest sets `TOKIO_WORKER_THREADS=2` and `_RJEM_MALLOC_CONF=narenas:2,background_thread:true` (audit A26; the effect on memory under a 256 Mi limit on a many-core node is not measured).
 
 - **`CachingCardResolver` builds its HTTP client once** and reuses its connections; concurrent resolves on one resolver and its clones make one fetch and share its outcome (audit H8). The HTTP server now serves connections with upgrades enabled; a dispatcher that answers no `101` sees no difference. `tower-service` became a non-optional dependency of the client crate, and `http`, `tower-service` and hyper-util's `client-proxy` feature of the server crate (all already in the dependency graph).
+
+- **A gRPC or WebSocket listener can take `ServeConfig`** (audit G-09, ADR 0052). Nothing changes until `with_serve_config` is called. Under `ServeConfig::production()` the listener then refuses to start on plaintext beyond loopback without its own TLS, or on a card that does not declare its binding (`ServeReport::refused` says why), and `drain_delay` keeps it accepting, not ready, for that long after the shutdown signal. The four setters that took the same settings still work, deprecated, and write the same fields.
 
 ### Fixed
 
@@ -2491,6 +2502,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 - `init_otlp_pipeline` and `init_otlp_pipeline_with_endpoint` (audit C-12), to be removed no earlier than 0.17.0; the book's Telemetry page gives the `Telemetry` equivalent.
 
+- **The serve entry points that cannot be stopped** (audit G-09, ADR 0052), each `since = "0.16.0"` and removed no earlier than 0.17.0: `serve::serve` and `serve::serve_with_addr` (also at the crate root and in the SDK prelude), for `Server::bind(addr).await?.serve_with_shutdown(dispatcher, shutdown_signal())`; `GrpcDispatcher::{serve, serve_with_addr, serve_with_listener}` and `WebSocketDispatcher::{serve, serve_with_addr}`, for `serve_with_shutdown(listener, signal)`.
+
+- **The listener settings the gRPC and WebSocket dispatchers repeated** (audit G-09): `with_max_connections`, `with_completion_grace`, `with_task_grace` and `with_drain_timeout` on both, for `with_serve_config(ServeConfig::new().with_...)`; same `since` and removal.
+
+- **Names that disagreed with the wire methods and the crate's conventions** (audit G-15, ADR 0053), same `since` and removal: `RequestHandler::on_resubscribe` for `on_subscribe_to_task`; `RequestHandler::on_set_push_config` for `on_create_push_config`; `A2aClient::set_push_config` for `create_push_config`; `RateLimitConfig::with_window_secs(u64)` for `with_window(Duration)`; `TenantLimitsBuilder::{max_concurrent_tasks, executor_timeout, event_queue_capacity, rate_limit_rps}` for the `with_` forms. Each old name calls the new one. The table is in `book/src/reference/upgrading/0.15-to-0.16.md`.
+
 ### Known Limitations
 
 - **Exemplars** (audit C-05): the stack stores and links them, but the SDK records none until the pinned `opentelemetry_sdk` does; ROADMAP has a *Waiting on upstream* row.
@@ -2510,6 +2527,8 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **Swarm contract** (audit H19): schemas and vectors exist for every extension, but middleware and bindings for other SDKs are not built, and the two upstream drafts (`docs/upstream/`) are written and not sent.
 
 - **Deployment** (audit A15, A26, NEW-a-l-4a): readiness still checks the task pool only (documented); A26's effect on memory is not measured; the steps of `deploy.yml` that need Docker have not run anywhere yet, so the first CI run is their first execution.
+
+- **`ServeConfig` on gRPC and WebSocket** (audit G-09): `idle_timeout`, `header_read_timeout` and `allowed_hosts` are not applied to a gRPC listener (a quiet server stream is healthy, HTTP/2 has no header phase, and keepalive closes a peer that stops answering), and `header_read_timeout`, `allowed_hosts` and `host_check` are not applied to a WebSocket listener (its handshake timeout and `Origin` check stand in). `GrpcDispatcher::into_service` and `A2aRouter::into_router` hand the service to a server the caller runs, which applies none of it.
 
 ### Internal
 

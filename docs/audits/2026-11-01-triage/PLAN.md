@@ -75,9 +75,9 @@ an item that is `fixed (part)` has its remainder in the register's note (and, fo
 | M | 2 | 1 | D-21 (fixed (part)) |
 | O | 1 | 1 |  |
 | R | 12 | 9 | H5 (fixed (part)), H13 (fixed (part)), H19 (fixed (part)) |
-| N | 5 | 1 | G-09 (needs decision), G-12 (confirmed (read)), G-15 (needs decision), G-16 (confirmed (read)) |
+| N | 5 | 5 |  |
 
-54 of the 69 are closed. `scripts/audit/plan_status.py` counts 187 of the 191 plan items with at least one commit.
+58 of the 69 are closed. `scripts/audit/plan_status.py` counts 191 of the 191 plan items with at least one commit.
 
 <!-- status-0.16-end -->
 
