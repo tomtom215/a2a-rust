@@ -13,13 +13,13 @@
 //!
 //! | Concern | Here | Why an in-process example never shows it |
 //! |---|---|---|
-//! | Configuration | `PORT`, `AGENT_URL`, `DATABASE_URL`, `DRAIN_DELAY_SECONDS`, `AGENT_VERSION` from the environment, checked before anything binds | Examples hardcode `127.0.0.1:3000`; a scheduler assigns the port |
+//! | Configuration | `PORT`, `AGENT_URL`, `A2A_DATABASE_URL`, `DRAIN_DELAY_SECONDS`, `AGENT_VERSION` from the environment, checked before anything binds | Examples hardcode `127.0.0.1:3000`; a scheduler assigns the port |
 //! | Health checks | `GET /health` (liveness, a constant), `GET /ready` (readiness: the task store answers, and the process is not draining) | Nothing probes an example, so nothing notices it has no probe endpoint |
 //! | Graceful shutdown | `SIGTERM`: not ready at once, still serving for `DRAIN_DELAY_SECONDS`, then in-flight tasks end, then connections drain, each bounded | Examples are killed with Ctrl-C and nobody minds the truncated stream |
 //! | Bind address | every address, IPv6 and IPv4 (`[::]`, or `0.0.0.0` where the host has no IPv6) | A loopback bind is invisible locally and unreachable in a container |
 //! | Timeouts | the SDK's `Server`: a header-read and an idle timeout on every connection | `axum::serve` has neither, so a client that sends a byte a minute holds a connection forever |
 //! | Allocator | jemalloc, not glibc's | A short run never fills the task store; a long-running server's bounded store does, and glibc is slow in that heap |
-//! | Replicas | `DATABASE_URL` puts tasks and push configs in PostgreSQL | One process's memory is not another's: behind a load balancer, a task created on one replica is not found on the next |
+//! | Replicas | `A2A_DATABASE_URL` puts tasks and push configs in PostgreSQL | One process's memory is not another's: behind a load balancer, a task created on one replica is not found on the next |
 //!
 //! The agent itself is deliberately trivial. Everything interesting here is the
 //! wrapper, because the wrapper is the part that is missing when someone tries
@@ -92,14 +92,24 @@ struct Config {
     /// task (`store::claim`), so no session affinity is needed. Unset, the
     /// stores are in memory and the agent must run as one replica.
     database_url: Option<String>,
+    /// The variable `database_url` came from: `A2A_DATABASE_URL`, or the
+    /// generic `DATABASE_URL` when only that is set (ADR 0040).
+    database_var: &'static str,
     /// How long to go on accepting after `SIGTERM`, not ready, while load
     /// balancers learn the pod is leaving (`ServeConfig::drain_delay`).
     drain_delay: Duration,
     /// Connections in the task store's pool (`DATABASE_POOL_SIZE`). Each
-    /// replica opens it and a push-config pool of [`PUSH_POOL_SIZE`], so
-    /// replicas × (this + 2), with a surge pod during a rollout, must stay
+    /// replica opens it and the push-config pool (`push_pool_size`), so
+    /// replicas × (this + that), with a surge pod during a rollout, must stay
     /// under PostgreSQL's `max_connections` (97 usable by default).
     pool_size: u32,
+    /// Connections in the push-config store's pool
+    /// (`DATABASE_PUSH_POOL_SIZE`, [`PUSH_POOL_SIZE`] by default). A pool of
+    /// its own rather than a share of the task store's: the task stores'
+    /// pool skips the ping before a statement that their retry wrapper
+    /// covers, and the push-config store's statements are not written for it
+    /// (`PostgresTaskStore::pool_options`).
+    push_pool_size: u32,
     /// The version the card reports (`AGENT_VERSION`), so rollouts can be told
     /// apart from the card alone. The image build sets it from the release
     /// tag; unset (`cargo run`), it is this crate's own version.
@@ -116,16 +126,33 @@ struct Config {
 struct Vars {
     port: Option<String>,
     agent_url: Option<String>,
+    a2a_database_url: Option<String>,
     database_url: Option<String>,
     drain_delay: Option<String>,
     pool_size: Option<String>,
+    push_pool_size: Option<String>,
     agent_version: Option<String>,
     retention_hours: Option<String>,
 }
 
-/// The push-config store's pool: it reads a task's configs once per
-/// delivery and writes only when a client registers one.
+/// The push-config store's pool unless `DATABASE_PUSH_POOL_SIZE` says
+/// otherwise: it reads a task's configs once per delivery and writes only
+/// when a client registers one.
 const PUSH_POOL_SIZE: u32 = 2;
+
+/// A pool size from the variable `name`: unset is `default`, anything but a
+/// whole number from 1 is refused.
+fn parse_pool_size(raw: Option<String>, name: &str, default: u32) -> Result<u32, String> {
+    match raw {
+        Some(raw) => match raw.parse::<u32>() {
+            Ok(0) | Err(_) => Err(format!(
+                "{name} is not a whole number of connections from 1: {raw:?}"
+            )),
+            Ok(size) => Ok(size),
+        },
+        None => Ok(default),
+    }
+}
 
 impl Config {
     fn from_env() -> Result<Self, String> {
@@ -133,9 +160,11 @@ impl Config {
         Self::from_vars(Vars {
             port: var("PORT"),
             agent_url: var("AGENT_URL"),
+            a2a_database_url: var("A2A_DATABASE_URL"),
             database_url: var("DATABASE_URL"),
             drain_delay: var("DRAIN_DELAY_SECONDS"),
             pool_size: var("DATABASE_POOL_SIZE"),
+            push_pool_size: var("DATABASE_PUSH_POOL_SIZE"),
             agent_version: var("AGENT_VERSION"),
             retention_hours: var("TASK_RETENTION_HOURS"),
         })
@@ -149,9 +178,11 @@ impl Config {
         let Vars {
             port,
             agent_url,
+            a2a_database_url,
             database_url,
             drain_delay,
-            pool_size,
+            pool_size: pool,
+            push_pool_size: push_pool,
             agent_version,
             retention_hours,
         } = vars;
@@ -176,16 +207,18 @@ impl Config {
             })?),
             None => Duration::ZERO,
         };
-        let pool_size = match pool_size {
-            Some(raw) => match raw.parse::<u32>() {
-                Ok(0) | Err(_) => {
-                    return Err(format!(
-                        "DATABASE_POOL_SIZE is not a whole number of connections from 1: {raw:?}"
-                    ));
-                }
-                Ok(size) => size,
-            },
-            None => a2a_protocol_sdk::server::store::DEFAULT_POOL_SIZE,
+        let pool_size = parse_pool_size(
+            pool,
+            "DATABASE_POOL_SIZE",
+            a2a_protocol_sdk::server::store::DEFAULT_POOL_SIZE,
+        )?;
+        let push_pool_size = parse_pool_size(push_pool, "DATABASE_PUSH_POOL_SIZE", PUSH_POOL_SIZE)?;
+        // The SDK's own name first; the generic one, which other tools in a
+        // developer's shell also read, only when it is the one set.
+        let (database_url, database_var) = match (a2a_database_url, database_url) {
+            (Some(url), _) => (Some(url), "A2A_DATABASE_URL"),
+            (None, Some(url)) => (Some(url), "DATABASE_URL"),
+            (None, None) => (None, "A2A_DATABASE_URL"),
         };
         let agent_version = agent_version.unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned());
         if agent_version.contains(char::is_whitespace) {
@@ -198,8 +231,10 @@ impl Config {
             port,
             public_url,
             database_url,
+            database_var,
             drain_delay,
             pool_size,
+            push_pool_size,
             agent_version,
             retention,
         })
@@ -274,30 +309,44 @@ async fn handler(config: &Config) -> Result<Arc<RequestHandler>, Box<dyn std::er
     let mut builder = RequestHandlerBuilder::new(DeployAgent).with_agent_card(card(config));
     match &config.database_url {
         Some(url) => {
-            tracing::info!(database = %redacted(url), "connecting to PostgreSQL");
+            if config.database_var == "DATABASE_URL" {
+                tracing::warn!(
+                    "the database is DATABASE_URL's, a name other tools in this environment may \
+                     read for a database of their own; set A2A_DATABASE_URL to name this agent's \
+                     (it wins when both are set)"
+                );
+            }
+            tracing::info!(
+                database = %redacted(url),
+                from = config.database_var,
+                "connecting to PostgreSQL"
+            );
             // Both stores, not just the tasks: a push config registered through
             // one replica must be found by the replica running the task.
             tracing::info!(
                 task_pool = config.pool_size,
-                push_pool = PUSH_POOL_SIZE,
+                push_pool = config.push_pool_size,
                 "PostgreSQL pools: {} connections per replica; PostgreSQL's max_connections \
                  must exceed that times the replicas, a surge pod included",
-                config.pool_size + PUSH_POOL_SIZE
+                config.pool_size + config.push_pool_size
             );
-            let tasks = Arc::new(
+            // Opened together: each waits on the database, not on the other
+            // (their schema statements take turns under one advisory lock).
+            let (tasks, push) = tokio::join!(
                 a2a_protocol_sdk::server::store::PostgresTaskStore::new_with_pool_size(
                     url,
                     config.pool_size,
-                )
-                .await
-                .map_err(|e| format!("cannot open the task store at {}: {e}", redacted(url)))?,
+                ),
+                a2a_protocol_sdk::server::push::PostgresPushConfigStore::new_with_pool_size(
+                    url,
+                    config.push_pool_size,
+                ),
             );
-            let push = a2a_protocol_sdk::server::push::PostgresPushConfigStore::new_with_pool_size(
-                url,
-                PUSH_POOL_SIZE,
-            )
-            .await
-            .map_err(|e| {
+            let tasks =
+                Arc::new(tasks.map_err(|e| {
+                    format!("cannot open the task store at {}: {e}", redacted(url))
+                })?);
+            let push = push.map_err(|e| {
                 format!(
                     "cannot open the push-config store at {}: {e}",
                     redacted(url)
@@ -323,8 +372,8 @@ async fn handler(config: &Config) -> Result<Arc<RequestHandler>, Box<dyn std::er
                 .with_push_config_store(push);
         }
         None => tracing::warn!(
-            "DATABASE_URL is unset: tasks are kept in this process's memory, so run one \
-             replica, or set DATABASE_URL to a PostgreSQL database every replica shares"
+            "A2A_DATABASE_URL is unset: tasks are kept in this process's memory, so run one \
+             replica, or set A2A_DATABASE_URL to a PostgreSQL database every replica shares"
         ),
     }
     Ok(Arc::new(builder.build()?))

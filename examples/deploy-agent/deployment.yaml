@@ -109,7 +109,9 @@ spec:
             # Not optional on purpose: a pod with no database would start, run
             # in memory, and lose tasks behind the balancer. For one replica
             # with no database, delete this entry and set `replicas: 1`.
-            - name: DATABASE_URL
+            # A2A_DATABASE_URL, not the generic DATABASE_URL (still read when
+            # this is unset, with a warning): see ADR 0040.
+            - name: A2A_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: deploy-agent-db
