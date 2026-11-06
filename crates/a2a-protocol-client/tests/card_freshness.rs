@@ -147,6 +147,37 @@ async fn a_304_renews_the_cards_freshness() {
     assert_eq!(requests(&seen), 4, "and stale once those 60 s are used");
 }
 
+/// RFC 9111 §4.3.3: a full response to a revalidation replaces the stored one,
+/// header fields included; only a `304` is merged into it (§4.3.4). Here the
+/// replacement says nothing about caching, so it has no lifetime and the next
+/// use revalidates; it must not inherit the stored `max-age=1`, which would
+/// keep the new card fresh without a request.
+#[tokio::test]
+async fn a_200_replaces_the_stored_lifetime_instead_of_inheriting_it() {
+    let (url, seen) = serve(vec![
+        ok("cache-control: max-age=1\r\n"),
+        ok(""),
+        not_modified(""),
+    ])
+    .await;
+    let resolver = CachingCardResolver::new(&url).unwrap();
+    resolve(&resolver).await;
+    elapse(Duration::from_secs(2)).await;
+    resolve(&resolver).await;
+    assert_eq!(
+        requests(&seen),
+        2,
+        "stale after its max-age: revalidated, answered by a 200"
+    );
+
+    resolve(&resolver).await;
+    assert_eq!(
+        requests(&seen),
+        3,
+        "the 200 named no lifetime, so the card is revalidated at once"
+    );
+}
+
 /// RFC 9111 §5.2.2.4: `no-cache` means revalidate before every use,
 /// whatever the `max-age`.
 #[tokio::test]
