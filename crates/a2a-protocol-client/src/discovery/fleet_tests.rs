@@ -242,6 +242,10 @@ async fn a_failed_fetch_is_shared_not_repeated() {
 
 /// A resolver holding a card that went stale `stale_by` ago, whose agent
 /// now answers `then`.
+///
+/// A case that expects the card to be served must leave a second of its window
+/// to spare, because the server's `Date` arrives up to a second old
+/// (`stale_window.rs` says why).
 async fn stale_resolver(
     fields: &[(&'static str, &'static str)],
     window: Option<Duration>,
@@ -267,7 +271,7 @@ async fn the_configured_window_serves_the_stored_card_on_a_503() {
         &[("cache-control", "max-age=1")],
         Some(60 * SECOND),
         Mode::Status(503),
-        59 * SECOND,
+        58 * SECOND,
     )
     .await;
     assert_eq!(resolver.resolve().await.expect("stale card").name, "fleet");
@@ -309,11 +313,11 @@ async fn the_cards_stale_if_error_directive_is_honoured() {
         &[("cache-control", "max-age=1, stale-if-error=30")],
         None,
         Mode::Status(502),
-        29 * SECOND,
+        28 * SECOND,
     )
     .await;
     assert_eq!(resolver.resolve().await.expect("stale card").name, "fleet");
-    elapse(SECOND + Duration::from_millis(1)).await;
+    elapse(2 * SECOND + Duration::from_millis(1)).await;
     resolver
         .resolve()
         .await
@@ -327,7 +331,7 @@ async fn the_larger_window_wins() {
         &[("cache-control", "max-age=1, stale-if-error=5")],
         Some(20 * SECOND),
         Mode::Status(504),
-        19 * SECOND,
+        18 * SECOND,
     )
     .await;
     resolver.resolve().await.expect("the configured 20 s");
@@ -490,3 +494,6 @@ mod card_cache;
 
 // What the resolver does not store.
 mod stored_cards;
+
+// How a stale-if-error window is counted.
+mod stale_window;
