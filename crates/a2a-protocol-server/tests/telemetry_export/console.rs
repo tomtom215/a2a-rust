@@ -15,6 +15,9 @@ use super::collector::unreachable;
 const CHILD: &str = "A2A_CONSOLE_TEST_CHILD";
 /// Set on the child to build without the startup line, as a command-line tool does.
 const QUIET: &str = "A2A_CONSOLE_TEST_QUIET";
+/// Set on the child to install with `install_subscriber`, which says nothing
+/// of whether it installed one, instead of `try_install_subscriber`.
+const INFALLIBLE: &str = "A2A_CONSOLE_TEST_INFALLIBLE";
 
 /// Runs only as the child: starts `Telemetry` from the environment alone,
 /// installs its subscriber, and records one span, one metric and some events.
@@ -28,10 +31,14 @@ fn record_as_the_child_process() {
         builder = builder.without_startup_summary();
     }
     let telemetry = builder.build().expect("build from the environment");
-    assert!(
-        telemetry.try_install_subscriber(),
-        "a fresh process has none"
-    );
+    if std::env::var_os(INFALLIBLE).is_some() {
+        telemetry.install_subscriber();
+    } else {
+        assert!(
+            telemetry.try_install_subscriber(),
+            "a fresh process has none"
+        );
+    }
     {
         let span = tracing::info_span!("unit-of-work", answer = 42);
         let _entered = span.enter();
@@ -65,6 +72,8 @@ fn run_child(vars: &[(&str, &str)]) -> Ran {
         ])
         .env(CHILD, "1")
         .env_remove(QUIET)
+        .env_remove(INFALLIBLE)
+        .env_remove("A2A_LOG_FORMAT")
         .env_remove("RUST_LOG");
     for (name, _) in std::env::vars().filter(|(k, _)| k.starts_with("OTEL_")) {
         child.env_remove(name);
@@ -131,6 +140,58 @@ fn install_subscriber_says_where_telemetry_goes_and_shows_warnings_only() {
         "{err}"
     );
     assert!(!err.contains("an informational event"), "{err}");
+}
+
+/// `A2A_LOG_FORMAT=json` prints each warning on standard error as one JSON
+/// object; the default prints the text format. The line is parsed, not
+/// searched, so a text line that happens to hold the message does not pass.
+#[test]
+fn the_json_console_format_prints_one_object_per_event() {
+    let json_lines = |ran: &Ran| {
+        ran.stderr
+            .lines()
+            .filter(|l| l.contains("a warning to be seen"))
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .collect::<Vec<_>>()
+    };
+    let ran = run_child(&[
+        ("A2A_LOG_FORMAT", "json"),
+        ("OTEL_TRACES_EXPORTER", "console"),
+        ("OTEL_METRICS_EXPORTER", "none"),
+        ("OTEL_LOGS_EXPORTER", "none"),
+    ]);
+    let lines = json_lines(&ran);
+    assert_eq!(lines.len(), 1, "{}", ran.stderr);
+    let object = lines[0]
+        .as_ref()
+        .unwrap_or_else(|| panic!("{}", ran.stderr));
+    assert_eq!(object["level"], "WARN", "{object}");
+    assert_eq!(object["message"], "a warning to be seen", "{object}");
+    // The control: without the variable the same event is text, not an object.
+    let text = run_child(&SPANS_ONLY);
+    assert_eq!(json_lines(&text), [None], "{}", text.stderr);
+}
+
+/// `install_subscriber` is `try_install_subscriber` without the answer: what a
+/// person sees on standard error is the same, which is all a caller who ignores
+/// the answer has to go on.
+#[test]
+fn install_subscriber_installs_what_try_install_subscriber_does() {
+    let ran = run_child(&[
+        (INFALLIBLE, "1"),
+        ("OTEL_TRACES_EXPORTER", "console"),
+        ("OTEL_METRICS_EXPORTER", "none"),
+        ("OTEL_LOGS_EXPORTER", "none"),
+    ]);
+    let err = &ran.stderr;
+    assert!(
+        err.contains("telemetry: traces → console; metrics → off; logs → off"),
+        "{err}"
+    );
+    assert!(
+        err.contains("WARN") && err.contains("a warning to be seen"),
+        "{err}"
+    );
 }
 
 /// A command-line tool asks for no startup line: with nothing configured, or

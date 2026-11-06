@@ -355,6 +355,20 @@ mod tests {
         assert_eq!(budget.omitted, 1, "the part after a cut one is left out");
     }
 
+    /// A URI is the other part with something to cut, and is cut as a text is.
+    #[test]
+    fn a_uri_that_does_not_fit_is_cut_to_what_is_left() {
+        let part = Part::url(format!("https://{}", "u".repeat(92)));
+        let skeleton = size(&part_json(&part, Some("")));
+        let marker = "…[truncated 100 bytes]".len();
+        let mut budget = Budget::new(skeleton + marker + 3);
+        let got = parts_json(std::slice::from_ref(&part), &mut budget);
+        assert_eq!(got.len(), 1, "the URI is cut, not left out");
+        assert_eq!(got[0]["type"], "uri");
+        assert_eq!(got[0]["uri"], "htt…[truncated 97 bytes]");
+        assert_eq!(budget.left, 0);
+    }
+
     #[test]
     fn data_that_does_not_fit_is_replaced_not_cut() {
         let value = json!({ "long": "value".repeat(20) });

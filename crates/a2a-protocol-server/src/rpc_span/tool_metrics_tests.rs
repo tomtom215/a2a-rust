@@ -99,6 +99,21 @@ fn a_run_shows_the_instruments_it_holds_by_name() {
     assert!(shown.contains("instruments: Instruments { .. }"), "{shown}");
 }
 
+/// A meter shows whether it records to one it was given or to the global
+/// provider, which is what tells two of them apart in a log line.
+#[test]
+fn a_meter_shows_whether_it_was_given_or_is_global() {
+    assert_eq!(
+        format!("{:?}", GenAiMeter::default()),
+        "GenAiMeter(\"global\")"
+    );
+    let (meter, _reader, _provider) = recording_meter();
+    assert_eq!(
+        format!("{:?}", GenAiMeter::new(&meter)),
+        "GenAiMeter(\"given\")"
+    );
+}
+
 #[test]
 fn a_turn_records_its_duration_and_its_tokens_in_both_families() {
     let (meter, reader, _provider) = recording_meter();

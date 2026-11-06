@@ -8,7 +8,7 @@
 
 use std::net::SocketAddr;
 
-use super::{ForwardedClientCert, pem_to_der, percent_decode, xfcc_cert};
+use super::{ForwardedClientCert, pem_to_der, percent_decode, split_unquoted, xfcc_cert};
 use crate::auth::MutualTlsAuthInterceptor;
 use crate::call_context::CallContext;
 use crate::interceptor::ServerInterceptor as _;
@@ -128,6 +128,34 @@ fn xfcc_keys_are_matched_whole_and_in_any_case() {
     assert_eq!(xfcc_cert("cert=\"x\"").as_deref(), Some("x"));
     assert_eq!(xfcc_cert(" CERT = x ").as_deref(), Some("x"));
     assert_eq!(xfcc_cert("Certificate=x;Chain=y"), None);
+}
+
+/// A separator ends a part unless it is inside a double-quoted string; a quote
+/// inside one is not a separator either way.
+#[test]
+fn a_separator_splits_unless_it_is_quoted() {
+    assert_eq!(split_unquoted("a,b,c", b','), ["a", "b", "c"]);
+    assert_eq!(
+        split_unquoted("a,\"b,c\",d", b','),
+        ["a", "\"b,c\"", "d"],
+        "the comma inside the quotes stays"
+    );
+    assert_eq!(split_unquoted("a;b", b','), ["a;b"], "another separator");
+    assert_eq!(
+        split_unquoted("", b','),
+        [""],
+        "nothing to split is one part"
+    );
+}
+
+/// Two elements with no quoted comma anywhere: the last is read, whole.
+#[test]
+fn xfcc_reads_the_last_of_plain_elements() {
+    assert_eq!(xfcc_cert("Cert=a,Cert=b").as_deref(), Some("b"));
+    assert_eq!(
+        xfcc_cert("Hash=1;Cert=a,Hash=2;Cert=b").as_deref(),
+        Some("b")
+    );
 }
 
 #[test]
