@@ -29,7 +29,8 @@ command is named so the next session re-runs it instead of copying the number. A
   1f6dd965..origin/claude/inspiring-mccarthy-rgpntj-rest` commits, `git diff --shortstat` against `1f6dd965` for the size. It was
   built from ten work packages (observability SDK, observability stack, deploy, network, push, claims, control plane, lineage,
   client balancing and discovery, API shape), each by an agent in its own worktree that never pushed, merged by the lead with every conflict
-  resolved by hand, then the integration fixes the merged tree needed. It becomes one pull request to `main`, opened right after the last push; find it with the open pull requests (head `claude/inspiring-mccarthy-rgpntj-rest`) and the `mutation-test` label on it.
+  resolved by hand, then the integration fixes the merged tree needed. It is pull request #197 to `main` (head `claude/inspiring-mccarthy-rgpntj-rest`, label `mutation-test`). Its head on the remote read `e3105ea4` when this was
+  written; the commits above it are local until the next push (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD`).
 - **What it closes.** The 69 plan items that were open when the final 0.16.0 work began (the maintainer's instruction: all of them go
   into 0.16.0, with the best engineering option and the reasoning recorded, open to a veto). `python3 scripts/audit/plan_status.py`:
   191 of 191 plan items have a commit. In the register (`docs/audits/2026-10-29/README.md`): 56 `fixed`, 11 `fixed (part)` (B-29,
@@ -63,11 +64,29 @@ command is named so the next session re-runs it instead of copying the number. A
   with the observability SDK package and client balancing (run 1809, the last green one before it, has neither, and 1811 never got past compile
   there); 1813 (`06de715a`) **22 of 22 green**, every Windows and macOS test step on stable and 1.94 passing. Run 1813's tree does not
   have the API-shape package (G-09, G-12, G-15, G-16), the `x/net` bump or this documentation: the pull request's CI is the first run of those.
-- **Not verified.** The workflows that run only on a pull request (`deploy.yml`, `observability.yml`, the TCK, ACTS and ITK workflows, mutation
-  testing) have never run on this tree. Windows and macOS have not run the API-shape package (its socket tests use the real clock with lower bounds and a 10 s
-  ceiling, and the three drain-delay tests take about 3 s each). The `x/net` bump is built and vetted, not exercised by the ITK interop runs.
-  The SLIMRPC job's `cargo deny` and package steps were not run. `cargo mutants` was not run on the API-shape package: the package ran 91 hand mutants
-  itself (23, 19, 12 and 37, all caught) and this session did not re-run them. Not read line by line in the merge of that package: its test files, the
+- **CI on pull request #197** at `e3105ea4` (Actions API, check runs for that sha: 112, of which 79 success, 22 failure, 9 skipped, 2 cancelled).
+  The 22 failures are: the first `Mutation Testing (incremental)` (the opened event carried no label, so it fails in seconds by design); the second one, which
+  only reports that a shard failed; 17 mutation shards; `Test coverage`; `CodeQL`; and `a2a-tck conformance`. Passing among the rest: Windows and macOS
+  Clippy and Test legs, `deploy-agent image`, `deploy-agent manifests (kubeconform)`, ACTS, ITK, Go SDK interop, SLIMRPC and every TCK cross-language leg
+  (read from the check names; `observability.yml` has no check of that name among the successes and was not looked into).
+  - *Mutation (run 42130035411).* Of the 20 `a2a-protocol-server` shards 5 passed, 13 failed (survivors; for 8/20 a failing baseline, which grades nothing),
+    and 2 (16/20, 18/20) were cancelled at the 180-minute job limit with no verdict. The 19 shards that ran took 116.6 to 177.9 minutes in the mutation step
+    (job step timestamps). The client's 2 shards and the types' 2 shards failed on survivors. Every survivor read from the annotations has a test and a
+    hand-applied mutant in the local commits below; cargo-mutants has not re-graded them, the next run on the new head will.
+  - *`Test coverage`:* `No space left on device` on the hosted runner (the runner's own diagnostic log could not be written). A step that frees disk is added
+    (`7ecea386`); whether it is enough is unproven until that job runs.
+  - *`CodeQL`:* one error, a regular expression in `deploy/observability/scripts/check_stack.py:61` that backtracks exponentially (fixed locally, `8e8c38fe`, with a
+    timed self-test), and 14 warnings "Log entry depends on a user-provided value" in `crates/a2a-protocol-server/src/otel/telemetry/prometheus/tests.rs`
+    (lines 77 to 264: assertion messages that print the scraped response). Those 14 are left for the maintainer's decision, not dismissed.
+  - *`a2a-tck conformance`:* the gate fails with 87 MUST requirements graded against a floor of 88, one failing check not in the baseline (`HTTP_JSON-ERR-001`) and
+    baselined checks that now pass. `official-tck.yml` clones upstream's `main` (`A2A_TCK_REVISION: main`), and two executions I compared (extracts in `/tmp`, not kept)
+    show the same counts, so this is CONJECTURED to be upstream drift and not this tree. Pinning the revision or re-baselining is the maintainer's call (*Waiting on the maintainer*).
+- **Not verified.** CI on the local commits above `e3105ea4`: none of them has been pushed or run in CI. Mutation grading of the survivors they close.
+  Whether the coverage job's disk step is enough. The 40-shard projection (a calculation from run 42130035411's timings, not a measurement). Windows and macOS ran the API-shape package in the pull request's CI at `e3105ea4` (the four Test legs
+  succeeded; its socket tests use the real clock with lower bounds and a 10 s ceiling, and the three drain-delay tests take about 3 s each). The ITK
+  checks and `SLIMRPC binding (out-of-workspace)` succeeded there; whether the ITK runs exercise the `x/net` bump was not checked, and the SLIMRPC job's
+  `cargo deny` and package steps were not run locally. The API-shape package's 91 hand mutants (23, 19, 12 and 37, all caught, by its own agent) were not re-run in this
+  session; cargo-mutants graded its source only in the shards that finished. Not read line by line in the merge of that package: its test files, the
   caller migrations in examples, benches and the book, and the lockfile hunks (the `-D warnings` build and the gates stand for those). macOS cannot be
   cross-checked from this sandbox (`ring` needs Apple's SDK headers); the Windows target stands in only for non-Linux compile errors.
 
@@ -88,17 +107,20 @@ command is named so the next session re-runs it instead of copying the number. A
   the signal fires" (a behaviour change). They already did: `finish_in_flight` calls `begin_draining` first. The only change is the
   optional `drain_delay`; the CHANGELOG says that. The same report listed two failures as "pre-existing"; both were already fixed on
   the integration branch (`b07d7d60`, `781a4eaa`). The test counts it cites match its files (8, 14, 12, 6 and 2); its mutation counts (23, 19, 12 and 37 hand mutants, all caught) were not re-run.
+- A hand mutant's "kill" counts only if the same test passes on the unmutated tree. The test `an_outbox_that_cannot_update_a_row_is_warned_about` was written
+  for the `finish -> ()` survivor, "killed" it by hand, and was committed locally; it failed on every run (10 of 10 on the committed tree), because it took
+  the first new warning to be the outbox's and a failed delivery warns first. Found before any push, by the 500-line gate that sent me back to that file. Fixed
+  (it looks for the outbox's warning among the new ones; 80 of 80 stress iterations pass) and `finish -> ()` and `later -> ()` re-proved by hand.
 
 ### First, next
 
-1. Read the CI of the 0.16.0 pull request on its newest head before building on it (`ci-failure-triage`): the first real error of each
-   failed job, reproduced locally where the sandbox allows, every real failure fixed in one push. **A run must finish before the next
-   is dispatched:** `ci.yml` has `cancel-in-progress` for any ref but `main`, so a new `workflow_dispatch` on the branch kills the run
-   in flight (and the evidence in it). A push alone starts no run on this branch; `workflow_dispatch` does. Do not merge or tag: the
-   maintainer's go is required.
-2. The workflows that run only on a pull request to `main` have never run on this tree: `deploy.yml` (Docker steps), `observability.yml`
-   (`promtool`, the stack), the TCK, ACTS and ITK workflows, and mutation testing. Add the `mutation-test` label the moment the pull
-   request is created (see *Facts this session established*); read each of those runs' first error before anything else.
+1. Push the local commits in one push (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD` lists them), then read the CI of pull request
+   #197 on the new head before building on it (`ci-failure-triage`): the first real error of each failed job, every real failure fixed in one push.
+   The mutation run is the check that matters: it grades the survivors the local commits close, measures the 40 server shards (projected near 85 minutes
+   for the slowest; the limit is 180), and shows whether shards 8/20, 16/20 and 18/20, which graded nothing, now grade. A failed job may be re-run at most
+   once, and only after its whole run has completed. Do not merge or tag: the maintainer's go is required.
+2. Then read `Test coverage` (did the disk step help?) and `CodeQL` (is `check_stack.py` clean?). `a2a-tck conformance` and the 14 log-entry warnings in
+   `prometheus/tests.rs` wait on the maintainer (*Waiting on the maintainer*).
 3. After the tag: ADR 0035 (agent skills) and ADR 0036 (steering), each its own pull request (the maintainer's decision of 2026-11-03).
 4. The adversarial campaign (the matrix in the maintainer's brief) is not started. It is scripts with recorded output, one brief per
    area, in the style of `docs/audits/2026-11-01-triage/BRIEF.md`.
@@ -113,6 +135,17 @@ command is named so the next session re-runs it instead of copying the number. A
    --all-features` if the public API changes before the tag.
 
 ### Facts this session established
+
+- The incremental mutation gate builds with `--all-features`, so a function compiled out there (gated `not(feature = "tls-rustls")` or
+  `not(target_os = "linux")`) cannot be reached by any test, and every viable mutant of it survives. Two ways out, both used on pull request #197:
+  build it in test builds (`#[cfg(any(test, not(feature = "tls-rustls")))]`, as `net/plain.rs`) and test it; or, where the mutant cannot
+  compile in the one build that has the function, `#[mutants::skip]` with a written compiler proof. The proofs: `http_client` in `discovery.rs`, and `plain` and
+  `plain_with_rules` in `net/client.rs` (E0277: `HttpsClient` has no `Default`), and the non-Linux `process::read` (E0015: a `const fn` cannot call
+  `Default::default()`). Each was proved by building the one build that has the function with the mutant applied by hand, the source restored byte for byte.
+- `cargo nextest run --stress-count N --no-fail-fast -E 'test(~name)'` repeats a test N times, each in its own process, and prints how many iterations
+  passed: how the outbox warning test's 10-of-10 failure and its 80-of-80 pass were measured.
+- On a pull request of this size the server's 20 incremental-mutation shards ran 116.6 to 177.9 minutes and two hit the job limit; `mutants.yml`
+  now has 40 and its comment has the run, the timings and the arithmetic.
 
 - The live proofs of the delegation hand-off are re-runnable: `scripts/live/delegation/README.md` has the
   build and the commands (PostgreSQL 16 on this image with `ssl = off`; about 13 minutes for `a,c,c2,cx,al` and
@@ -301,6 +334,15 @@ session start.
    (*Open engineering* below).
 
 ## Waiting on the maintainer
+
+- **`a2a-tck conformance` is red on pull request #197 and `official-tck.yml` floats on upstream's `main`.** The gate reports 87 MUST requirements graded against its floor of
+  88, one failing check that is not in the baseline (`HTTP_JSON-ERR-001`) and baselined checks that now pass. Options: pin `A2A_TCK_REVISION` to a commit (the
+  workflow's comment says `git clone --branch` does not take a SHA, so it also needs a clone and checkout, and the `schedule` trigger an override); or follow
+  the gate's own message and re-baseline (`tck/scripts/check_conformance.py --update`, with the reason in `docs/official-tck-findings.md`). I recommend pinning: a floating
+  revision turns a contributor's PR red for a reason that is not theirs, as the workflow comment itself says. Nothing was changed.
+- **CodeQL's 14 warnings "Log entry depends on a user-provided value"** are all in `crates/a2a-protocol-server/src/otel/telemetry/prometheus/tests.rs`: assertion messages
+  that print the scraped HTTP response. Options: dismiss them as test-only, with that reason; or print the status and length instead of the body. I would dismiss
+  them (a failing scrape needs the body), but that is yours to decide. Nothing was dismissed.
 
 - **0.16.0: the choices made for you, each open to a veto.** You told the work to take the best engineering option for every open item
   and record why. The reasoning is in the register row, the ADR or the commit; this list is only the ones a deployer or you may
@@ -882,6 +924,11 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **A hand mutant is a kill only if the test passes without it.** A test that fails on every run "kills" every mutant. Run the unmutated tree first, in the same
+  command as the mutant, and count the kill only when that baseline passed; then run the whole suite before the commit is pushed, which would also have caught
+  it. The case is in *Withdrawn or corrected* (the outbox warning test, 2026-11-06).
+- **Warnings arrive in code order, not in the order a test's story tells them.** A failed push delivery warns "push notification delivery failed" before the
+  outbox warns that it could not be updated; a test that reads "the first new warning" sees the wrong one. Wait for the message you mean, among the new ones.
 - **`127.0.0.2` is loopback on Linux only.** A push test used it as "an address that is down" and passed
   on Linux; on macOS nothing configures it, so the connect waited out the request timeout and the macOS
   job of #186 failed with "timed out after 2s" (not "refused"). A test that needs a fast refusal on every
