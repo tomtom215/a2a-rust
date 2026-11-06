@@ -40,18 +40,18 @@ command is named so the next session re-runs it instead of copying the number. A
 - **Also on the branch, not a plan item.** Code-scanning alerts 183 to 186 (OSV-Scanner on the two ITK Go modules): `golang.org/x/net`
   0.61.0 carries GO-2026-6860 and GO-2026-6866, fixed in 0.62.0; the branch has 0.62.0 in both `go.mod` files. The alerts are on
   `main` and close when this reaches `main` and the scan runs again.
-- **Verified locally on `e1007669`** (the local head before the one documentation commit that records this; tree clean), each from a command's own exit status or totals, read in this session
-  and logged to a file, never piped to `head`. Gates 1 to 44 of `scripts/preflight.sh --list`: 44 of 44 exit 0. The CI clippy job's 13 commands (gates 45 to 57) and
-  `cargo hack clippy -p a2a-protocol-types -p a2a-protocol-client -p a2a-protocol-server -p a2a-protocol-sdk --all-targets --each-feature -- -D warnings`
-  (gate 58): exit 0. `cargo nextest run --profile ci --workspace`: 7144 passed, 0 failed, 200 skipped (382 binaries); with `--all-features`: 7165 passed,
-  0 failed, 200 skipped. `cargo test --doc --workspace`: 511 passed, 0 failed, 4 ignored (summed over the crates); with `--all-features` 512, with
-  `--no-default-features` 511, the same 0 failed and 4 ignored. Gate 15, the spec ledger, fails whenever an edit moves a line it cites; it did again here (29 lines, after
-  a comment in `discovery.rs`) and was fixed with `--fix-lines`. Two gates failed on the survivor-closing commits before they were fixed: gate 3 (a local
-  `struct Message` shadowing a generated type) and gate 39 (a test module the panic-path scan could not tell was test-only). Of the nextest variants (gates 59 to 73) only
-  the default and `--all-features` ones were run on this head. Gates 1 to 44 were run again on the documentation commit itself (below).
-  *Read on an earlier head and not re-run on `e1007669`* (since `e3105ea4` the changed non-test files are `coverage.yml`, `mutants.yml`, `check_stack.py`, and in
-  `crates/` `discovery.rs`, `https_client.rs`, `otel_baggage.rs`, `combined.rs`, `http_upgrade.rs`, `net/client.rs`, `net/mod.rs`, `net/plain.rs`, `process.rs`
-  and `content.rs`; the rest is tests):
+- **Verified locally on `d98304fb`** (the local head before the one documentation commit that records this; tree clean), each from a command's own exit status or totals, read
+  in this session and logged to a file, never piped to `head`. Gates 1 to 44 of `scripts/preflight.sh --list`: 44 of 44 exit 0. The CI clippy job's 13 commands (gates 45 to 57)
+  and `cargo hack clippy -p a2a-protocol-types -p a2a-protocol-client -p a2a-protocol-server -p a2a-protocol-sdk --all-targets --each-feature -- -D warnings` (gate 58): exit 0.
+  `cargo nextest run --profile ci --workspace`: 7163 passed, 0 failed, 200 skipped (382 binaries); with `--all-features`: 7184 passed, 0 failed, 200 skipped.
+  `cargo test --doc --workspace`: 511 passed, 0 failed, 4 ignored (summed over the crates); with `--all-features` 512, with `--no-default-features` 511, the same 0 failed and 4
+  ignored. Gate 15, the spec ledger, fails whenever an edit moves a line it cites; it did again (29 lines each time) and was fixed with `--fix-lines`. Two gates failed on the
+  survivor-closing commits before they were fixed: gate 3 (a local `struct Message` shadowing a generated type) and gate 39 (a test module the panic-path scan could not tell
+  was test-only). Of the nextest variants (gates 59 to 73) only the default and `--all-features` ones were run on this head. Gates 1 to 44 are run again on the documentation
+  commit that records this (below).
+  *Read on an earlier head and not re-run on `d98304fb`* (since `e3105ea4` the changed non-test files are `coverage.yml`, `mutants.yml`, `check_stack.py`, ADR 0051, the book's
+  caching page and, in `crates/`, client `discovery.rs`, `discovery/stale.rs`, `https_client.rs`, `otel_baggage.rs`, `transport/dns.rs`, `transport/resolver.rs`,
+  `builder/transport_factory/balanced.rs`, and server `combined.rs`, `http_upgrade.rs`, `net/client.rs`, `net/mod.rs`, `net/plain.rs`, `process.rs` and `content.rs`; the rest is tests):
   In `bindings/a2a-protocol-slimrpc`: `cargo fmt --check` (failed once on one file the API-shape package left unformatted; fixed),
   `cargo clippy --all-targets -- -D warnings`, `cargo build --bin slim-node` and `cargo test -- --test-threads=1` exit 0 (75 unit tests, the
   integration suites, 10 doctests). `cargo clippy --workspace --all-targets --target x86_64-pc-windows-gnu -- -D warnings` exits 0.
@@ -831,6 +831,13 @@ call. To check one:
 ```sh
 git fetch origin && git merge-base --is-ancestor origin/<branch> origin/main && echo merged
 ```
+
+Two follow-up branches carry work that is deliberately not in pull request #197, pushed so that a new session can pick it up, with no pull
+request opened for either (the maintainer's instruction of 2026-11-06: push the branches, open no pull request, since a plain push to a branch other than
+`main` starts no workflow): `claude/inspiring-mccarthy-rgpntj-304-merge` (the `304` header merge in the card cache, RFC 9111 §4.3.4 and §3.2: recompute
+freshness from a merged header map, never carrying `Date` or `Age` over from the stored `200`) and `claude/inspiring-mccarthy-rgpntj-standards-ledger` (a standards ledger for
+the external RFCs, JWT and JWS first; `scripts/check_spec_ledger.py` is bound to the one A2A specification today and has to be generalised without breaking gate 15). Both
+were cut from #197's head as pushed, and until they carry commits of their own they are that head. If #197 is squashed or rebased, rebase them onto `main`.
 
 This clone is shallow, so a "no" for an old branch is not proof, and `git
 blame` stops at the shallow boundary. Never write this branch's own head SHA
