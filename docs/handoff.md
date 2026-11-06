@@ -19,7 +19,7 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-State on 2026-11-05 (UTC), for the 0.16.0 integration. Each figure was read from a command in the session that wrote it; the
+State on 2026-11-06 (UTC), for the 0.16.0 integration. Each figure was read from a command in the session that wrote it; the
 command is named so the next session re-runs it instead of copying the number. Anything not run is listed under *Not verified*.
 
 - **Where the code is.** `main` is `1f6dd965` (the maintainer's merge of pull request #196; `git rev-parse origin/main`). Nothing is
@@ -29,8 +29,9 @@ command is named so the next session re-runs it instead of copying the number. A
   1f6dd965..origin/claude/inspiring-mccarthy-rgpntj-rest` commits, `git diff --shortstat` against `1f6dd965` for the size. It was
   built from ten work packages (observability SDK, observability stack, deploy, network, push, claims, control plane, lineage,
   client balancing and discovery, API shape), each by an agent in its own worktree that never pushed, merged by the lead with every conflict
-  resolved by hand, then the integration fixes the merged tree needed. It is pull request #197 to `main` (head `claude/inspiring-mccarthy-rgpntj-rest`, label `mutation-test`). Its head on the remote read `e3105ea4` when this was
-  written; the commits above it are local until the next push (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD`).
+  resolved by hand, then the integration fixes the merged tree needed. It is pull request #197 to `main` (head `claude/inspiring-mccarthy-rgpntj-rest`, label `mutation-test`). Its head on the remote reads `1ed6f8fe` (the push of 2026-11-06); the commits above it are local until the next push
+  (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD`): the `304` header merge in the card cache, the RFC requirements ledger and its CI gate, the
+  JWKS fix, the pin of the official TCK, the four gate injections of `prove_gates_fail.sh`, the cross-replica test fix, the two survivor tests of mutation run 469, and this file.
 - **What it closes.** The 69 plan items that were open when the final 0.16.0 work began (the maintainer's instruction: all of them go
   into 0.16.0, with the best engineering option and the reasoning recorded, open to a veto). `python3 scripts/audit/plan_status.py`:
   191 of 191 plan items have a commit. In the register (`docs/audits/2026-10-29/README.md`): 56 `fixed`, 11 `fixed (part)` (B-29,
@@ -40,18 +41,18 @@ command is named so the next session re-runs it instead of copying the number. A
 - **Also on the branch, not a plan item.** Code-scanning alerts 183 to 186 (OSV-Scanner on the two ITK Go modules): `golang.org/x/net`
   0.61.0 carries GO-2026-6860 and GO-2026-6866, fixed in 0.62.0; the branch has 0.62.0 in both `go.mod` files. The alerts are on
   `main` and close when this reaches `main` and the scan runs again.
-- **Verified locally on `d98304fb`** (the local head before the one documentation commit that records this; tree clean), each from a command's own exit status or totals, read
-  in this session and logged to a file, never piped to `head`. Gates 1 to 44 of `scripts/preflight.sh --list`: 44 of 44 exit 0. The CI clippy job's 13 commands (gates 45 to 57)
-  and `cargo hack clippy -p a2a-protocol-types -p a2a-protocol-client -p a2a-protocol-server -p a2a-protocol-sdk --all-targets --each-feature -- -D warnings` (gate 58): exit 0.
-  `cargo nextest run --profile ci --workspace`: 7163 passed, 0 failed, 200 skipped (382 binaries); with `--all-features`: 7184 passed, 0 failed, 200 skipped.
-  `cargo test --doc --workspace`: 511 passed, 0 failed, 4 ignored (summed over the crates); with `--all-features` 512, with `--no-default-features` 511, the same 0 failed and 4
-  ignored. Gate 15, the spec ledger, fails whenever an edit moves a line it cites; it did again (29 lines each time) and was fixed with `--fix-lines`. Two gates failed on the
-  survivor-closing commits before they were fixed: gate 3 (a local `struct Message` shadowing a generated type) and gate 39 (a test module the panic-path scan could not tell
-  was test-only). Of the nextest variants (gates 59 to 73) only the default and `--all-features` ones were run on this head. Gates 1 to 44 are run again on the documentation
-  commit that records this (below).
-  *Read on an earlier head and not re-run on `d98304fb`* (since `e3105ea4` the changed non-test files are `coverage.yml`, `mutants.yml`, `check_stack.py`, ADR 0051, the book's
-  caching page and, in `crates/`, client `discovery.rs`, `discovery/stale.rs`, `https_client.rs`, `otel_baggage.rs`, `transport/dns.rs`, `transport/resolver.rs`,
-  `builder/transport_factory/balanced.rs`, and server `combined.rs`, `http_upgrade.rs`, `net/client.rs`, `net/mod.rs`, `net/plain.rs`, `process.rs` and `content.rs`; the rest is tests):
+- **Verified locally on `d30e5199`** (the local head before the one documentation commit that records this; tree clean at every gate), each from a command's own exit status or totals, read
+  in this session and logged to a file, never piped to `head`. The numbering of `scripts/preflight.sh --list` moved by one when the RFC-ledger step went into `ci.yml`:
+  static gates 1 to 45, clippy 46 to 59, nextest 60 to 74, doctests 75 to 77. Static gates 1 to 45: 45 of 45 exit 0. Clippy gates 46 to 59 (the CI job's commands; 59 is
+  `cargo hack clippy ... --each-feature`): 14 of 14 exit 0. Nextest gates 60 to 74 (`--profile ci`, every feature set CI names): 15 of 15 exit 0, 0 failed in each. Tests passed per gate: 60, 61, 62, 69 and 70: 7191
+  (200 skipped); 63: 1296; 64: 3036; 65: 3376; 66: 3094; 67: 3130; 68: 3165; 71 and 72: 3111; 73: 7212; 74: 7186. Doctests 75, 76 and 77: 511, 512 and 511 passed, 0 failed, 4 ignored each
+  (summed over the crates). `scripts/prove_gates_fail.sh --list` exits 0 (104 gates; it exited 2 before the four missing injections were added) and `--only rfc_ledger` ends PROVEN
+  (the gate exits 1 on the injected defect, the tree restored). Gates 65, 66 and 74, and the first attempt at 68 to 70 as one stage, each failed on `No space left on device` while linking
+  (the disk quota, not a test; *Lessons*) and passed on a re-run of the same tree after a sweep. Hand mutants on the final bytes (the unmutated baseline first, the intended test required to
+  fail, the file restored and its hash compared): the JWKS parser in `jwt.rs`, 14 of 14 (baseline 48 passed); the algorithm check of `VerifyingKey::verify`, 3 of 3 (61); `system_lookup`, 2 of 2 (17);
+  the admission gate's `next_id`, 2 of 2 (23). The mutants behind the RFC ledger's earlier TESTED rows (the `crit` refusals, claims and members, the algorithm tests: 5, 9 and 5) were killed on the
+  bytes before the JWKS commit changed `jwt.rs` and were not re-run on these.
+  *Read on an earlier head and not re-run on `d30e5199`* (the branch has changed a good deal since `e3105ea4`: `git diff --stat e3105ea4..HEAD`):
   In `bindings/a2a-protocol-slimrpc`: `cargo fmt --check` (failed once on one file the API-shape package left unformatted; fixed),
   `cargo clippy --all-targets -- -D warnings`, `cargo build --bin slim-node` and `cargo test -- --test-threads=1` exit 0 (75 unit tests, the
   integration suites, 10 doctests). `cargo clippy --workspace --all-targets --target x86_64-pc-windows-gnu -- -D warnings` exits 0.
@@ -88,19 +89,30 @@ command is named so the next session re-runs it instead of copying the number. A
     the next run is the first to grade them; server shard 0/40, one survivor (`push/sender.rs:534`, a match guard in `preflight_with` replaced by `true`); and server
     shard 36/40, one survivor (`push/gate.rs:333`, `literal_ip` replaced by `None`). Both survivors are closed by tests seen to fail with the mutant applied by hand, in the
     commits after `6bd576f8`; the second one's test could never have failed (*Lessons*).
+  - *Mutation (run 42212614136, run number 469, on `1ed6f8fe`, 40 server shards; the Actions API).* Finished 2026-11-06 14:57 UTC: 43 of 49 jobs succeeded, 2 were skipped and 4 failed (three server
+    shards and the aggregate job). The server jobs took 10.1 to 111.7 minutes (slowest: shard 10/40; the limit is 180). Both client shards (1/2 included: its 245 mutants had never been graded), both types
+    shards, the SDK and the discovery shard succeeded. Failures: server shard 39/40 failed its baseline on `multi_replica::intermediate_events_cross_replicas_through_the_log` and graded none of its 42
+    mutants (the test is fixed in `9b9d4973`; the cause of the CI failure is CONJECTURED, *Lessons*), so the next run is the first to grade them; shard 30/40, one survivor (`admission/gate.rs:176`,
+    `state.next_id += 1` replaced by `*= 1`); shard 32/40, one survivor (`url_guard.rs:384`, `system_lookup` replaced by `Ok(vec![])`). Both survivors are closed by tests seen to fail with the
+    mutant applied by hand (`d30e5199`).
+  - *The other checks on `1ed6f8fe`* (128 check runs: 117 success, 6 skipped, 5 failure; the failures are the three shards above, their aggregate job and `a2a-tck conformance`): `Test coverage`
+    (24 minutes; it also succeeded on `8080a519`, so its disk step has now been enough twice), `CodeQL`, `Analyze` in three languages, ACTS, the Windows and macOS Clippy and Test legs, every TCK cross-language leg,
+    SLIMRPC and the `deploy-agent` checks succeeded.
   - *`Test coverage`:* `No space left on device` on the hosted runner (the runner's own diagnostic log could not be written). A step that frees disk was added
     (`7ecea386`); on `8080a519` the job succeeded (check-run conclusion), so the step was enough once; one pass is not a rate.
   - *`CodeQL`:* on `e3105ea4` one error, a regular expression in `deploy/observability/scripts/check_stack.py:61` that backtracks exponentially (fixed in `8e8c38fe`,
     with a timed self-test; the `CodeQL` and `Analyze` checks succeeded on `8080a519`), and 14 warnings "Log entry depends on a user-provided value" in `crates/a2a-protocol-server/src/otel/telemetry/prometheus/tests.rs`
     (lines 77 to 264: assertion messages that print the scraped response). The maintainer dismissed them as `Used in tests` on 2026-11-06.
-  - *`a2a-tck conformance`:* the gate fails with 87 MUST requirements graded against a floor of 88, one failing check not in the baseline (`HTTP_JSON-ERR-001`) and
-    baselined checks that now pass. `official-tck.yml` clones upstream's `main` (`A2A_TCK_REVISION: main`), and two executions I compared (extracts in `/tmp`, not kept)
-    show the same counts, so this is CONJECTURED to be upstream drift and not this tree. On `8080a519` it fails in the same two steps (the baseline gate and the
-    minimal-profile gate; compared by step name, not by the gate's text). Pinning the revision or re-baselining is the maintainer's call (*Waiting on the maintainer*).
+  - *`a2a-tck conformance`:* failed on `1ed6f8fe`: 87 MUST requirements graded against a floor of 88, one failing check not in the baseline (`HTTP_JSON-ERR-001`) and baselined checks that now pass,
+    with `official-tck.yml` cloning upstream's `main`. Two executions I compared showed the same counts, so it is CONJECTURED to be upstream drift and not this tree. The maintainer chose option D on
+    2026-11-06 and this branch carries it: pull requests, pushes and manual runs fetch the pinned commit `70f6f73` (`A2A_TCK_PIN`; upstream `main` on 2026-11-05, three commits after the tag
+    `1.0.0.alpha3`, which has not got its A2A 1.0.1 realignment) and the nightly run fetches `main`. The baseline (seven entries) and the two floors (88 and 66) were measured at `d4d6fae` and are NOT
+    re-measured at the pin: the first CI run at the pin decides them (`docs/official-tck-findings.md` section 26).
   - *`ACTS`:* failed once on `8080a519` in `Build the itk_service image` (a Maven download in the upstream Dockerfile exited 2; no ACTS, ITK or Docker file changed);
     re-run once, attempt 2 succeeded. Infrastructure, commented on the pull request once.
-- **Not verified.** CI on the commits after `6bd576f8` (the flaky-test fix, the two survivor closes and this file): none has run in CI, so cargo-mutants has not
-  graded them, the 245 client mutants of shard 1/2 that run 468 never reached, or the behaviour changes in `CachingCardResolver`. Whether the coverage job's disk step is enough more than once. Windows and macOS ran the API-shape package in the pull request's CI at `e3105ea4` (the four Test legs
+- **Not verified.** CI on the commits above `1ed6f8fe`: none has run in CI, so cargo-mutants has not graded shard 39/40's 42 mutants (its baseline failed), the JWKS parser, the `304` merge, the new
+  tests or anything else added since; the official TCK has not run at the pin, so its baseline and floors are unmeasured there; the RFC-ledger CI step (`ci.yml`) has not run in CI (its checker has, locally,
+  and the harness proves it can fail). `scripts/prove_gates_fail.sh` has not been run over its other 103 gates on this head. Windows and macOS ran the API-shape package in the pull request's CI at `e3105ea4` (the four Test legs
   succeeded; its socket tests use the real clock with lower bounds and a 10 s ceiling, and the three drain-delay tests take about 3 s each). The ITK
   checks and `SLIMRPC binding (out-of-workspace)` succeeded there; whether the ITK runs exercise the `x/net` bump was not checked, and the SLIMRPC job's
   `cargo deny` and package steps were not run locally. The API-shape package's 91 hand mutants (23, 19, 12 and 37, all caught, by its own agent) were not re-run in this
@@ -109,6 +121,9 @@ command is named so the next session re-runs it instead of copying the number. A
   cross-checked from this sandbox (`ring` needs Apple's SDK headers); the Windows target stands in only for non-Linux compile errors.
 
 **Withdrawn or corrected during this work** (so a reader who saw the earlier statement does not keep it):
+
+- The ledger branch's handoff said `scripts/prove_gates_fail.sh` "cannot run on pull request #197's head" because its drift check exited 2 (four gates without an injection). That was true of `1ed6f8fe`
+  and is not true of this branch: the four injections are in it and `--list` exits 0.
 
 - The work packages' own checks were all green and the merged tree still had failures: two tests that pinned a shape another package
   changed on purpose (`the_lineage_option_is_printed`, the observability end-to-end stream-cancel check) and a file over the
@@ -132,13 +147,12 @@ command is named so the next session re-runs it instead of copying the number. A
 
 ### First, next
 
-1. The flaky-test fix and the survivor closes went up in one push on 2026-11-06 (`git log --oneline 6bd576f8..origin/claude/inspiring-mccarthy-rgpntj-rest`
-   lists them). Read the CI of pull request #197 on that head before building on it (`ci-failure-triage`): the first real error of each failed job, every real failure fixed in one push.
-   The mutation run is the check that matters: it grades the survivors the local commits close, measures the 40 server shards (projected near 85 minutes
-   for the slowest; the limit is 180), and shows whether shards 8/20, 16/20 and 18/20, which graded nothing, now grade. A failed job may be re-run at most
-   once, and only after its whole run has completed. Do not merge or tag: the maintainer's go is required.
-2. Then read `Test coverage` (did the disk step help?) and `CodeQL` (is `check_stack.py` clean?). `a2a-tck conformance` waits on the maintainer; the 14 log-entry warnings in
-   `prometheus/tests.rs` were dismissed by the maintainer on 2026-11-06.
+1. Read the CI of pull request #197 on the pushed head before building on it (`ci-failure-triage`): the first real error of each failed job, every real failure fixed in one push. The commits above
+   `1ed6f8fe` go up in one push (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD` lists them until then). Read, in this order: `a2a-tck conformance` (the first run at the pin:
+   re-baseline `tck/conformance-baseline.json` with `tck/scripts/check_conformance.py --update` from that run's report, re-measure the two `--min-graded` floors, and fill in the table of
+   `docs/official-tck-findings.md` section 26), the mutation run (shard 39/40's 42 mutants are graded for the first time, and the JWKS parser, the `304` merge and the ledger tests are new code), the
+   new CI step `RFC ledger covers every requirement and cites only code and tests that exist`, and `Test coverage`. A failed job may be re-run at most once, and only after its whole run has completed. Do not merge or tag: the maintainer's go is required.
+2. Then the maintainer's open questions (*Waiting on the maintainer*): (c) the HS256 key as raw bytes, (d) `fetch_jwks` forwarding the card fetch's headers.
 3. After the tag: ADR 0035 (agent skills) and ADR 0036 (steering), each its own pull request (the maintainer's decision of 2026-11-03).
 4. The adversarial campaign (the matrix in the maintainer's brief) is not started. It is scripts with recorded output, one brief per
    area, in the style of `docs/audits/2026-11-01-triage/BRIEF.md`.
@@ -353,43 +367,30 @@ session start.
 
 ## Waiting on the maintainer
 
-- **Standards compliance beyond the A2A spec: JWS, JWT and the JWT best-practice RFC now have a ledger; nothing else does.** It is on
-  `claude/inspiring-mccarthy-rgpntj-standards-ledger` (pushed; no pull request, by the maintainer's instruction of 2026-11-06).
-  `docs/compliance/rfc-ledger.json` has 152 rows, one per MUST, SHOULD and MAY of RFC 7515, 7519 and 8725. `python3 scripts/check_rfc_ledger.py`
-  runs its own `--self-test`, then checks every line, hash and citation and prints the count; the figures here are from a script over the file:
-  20 TESTED, 45 IMPLEMENTED_UNTESTED, 3 GAP and 9 PARTIAL, 1 DEVIATION, 7 APPLICATION, 45 NOT_APPLICABLE, 16 NOT_SUPPORTED, 6 SUPPORTED. 85 are
-  security rows, and a security row is TESTED only with a recorded hand mutant that a test of the row killed (10 are). The rows are one reviewer's reading
-  of each RFC against the code, re-read by me for the consequential ones (the `none` refusal, `exp` and `nbf`, the HS256 floor, the JWKS parser, `crit`);
-  the 45 IMPLEMENTED_UNTESTED rows are the work left, and 4 of them are high severity, all RFC 8725 (lines 289, 342, 397, 422).
-  What it found. Changed, for the maintainer's veto like the stale-if-error and `304` items: `verify_content` and `verify_checkpoint` ignored `crit`
-  and the JWT validator read `"crit":null` as no member, so all four JWS verifiers now refuse any `crit` (a stricter verifier; only the key holder can add
-  the member); and `algorithm_confusion_rejected`, which `control-map.md` and `controls.toml` cite, never built the confusion token (strengthened, plus
-  `jwt/tests/algorithms.rs`). Left open: RFC 7515 5.2 and 7.2.1 (the card verifier does not refuse a header name present in both the protected and the
-  unprotected header; GAP, low); RFC 8725 3.1 (the server's JWKS parser reads neither a key's `alg` nor `key_ops` and skips only `use: enc`), 3.2 (card
-  ES256 signing is hedged with a random nonce, not RFC 6979), 3.5 (the HS256 key is used as raw bytes with only a 32-byte floor, `examples/genai-agent`
-  feeds it a passphrase, and the book's sample secret is guessable); `exp` and `nbf` are `u64`, so a fractional NumericDate is refused (fail-closed);
-  and `fetch_jwks` sends the `CardFetchOptions` headers (Authorization, Cookie) to the key-set URL, which is a design question. RFC 7519 section 8's
-  `none` is a DEVIATION naming ADR 0010. The CI step (`ci.yml`, after the spec-ledger step) and its entry in `scripts/prove_gates_fail.sh` are on the branch. The
-  harness itself cannot run on #197's head, because its drift check exits 2 before proving anything (four gates have no injection, *Waiting on
-  the maintainer*), so the gate was proved by hand with the same injection: baseline exit 0, one cited test renamed, exit 1 with 11 problems all
-  naming `no fn alg_none_is_rejected`, file restored. Adding a static gate shifts every later preflight gate number by one (static 1-45, clippy 46-59,
-  nextest 60-74, doctests 75-77). Verified on the branch head as pushed: gates 1-45, 46-59, nextest 60, 61 and 71-74 (7173, 7173, 3105, 3105, 7194 and
-  7168 tests passed), doctests 75-77 (511, 512 and 511 passed), and every hand mutant behind a TESTED row re-run on the final test text, killed by
-  its intended test with the file restored byte-identical (algorithms 5 of 5, claims and members 9 of 9, `crit` in the card, content and checkpoint
-  verifiers 5 of 5). Not run: gates 62-70 (other feature sets) and 78-104 (the PostgreSQL gates and the rest of the list). Not started: RFC 7518, 7517
-  and 8785, then 6750, 9068 and 6749; a ledger for RFC 9111 and 5861 (the card cache, where the stale-if-error bug was).
-- **`a2a-tck conformance` is red on pull request #197 and `official-tck.yml` floats on upstream's `main`.** The gate reports 87 MUST requirements graded against its floor of
-  88, one failing check that is not in the baseline (`HTTP_JSON-ERR-001`) and baselined checks that now pass. Options: pin `A2A_TCK_REVISION` to a commit (the
-  workflow's comment says `git clone --branch` does not take a SHA, so it also needs a clone and checkout, and the `schedule` trigger an override); or follow
-  the gate's own message and re-baseline (`tck/scripts/check_conformance.py --update`, with the reason in `docs/official-tck-findings.md`). I recommend pinning: a floating
-  revision turns a contributor's PR red for a reason that is not theirs, as the workflow comment itself says. Nothing was changed.
-- **CodeQL's 14 warnings "Log entry depends on a user-provided value"** are all in `crates/a2a-protocol-server/src/otel/telemetry/prometheus/tests.rs`: assertion messages
-  that print the scraped HTTP response. **Decided and carried out 2026-11-06: all 14 (alerts 191 to 204) dismissed as `Used in tests`**, which keeps the body in a failing assertion. The maintainer ran the
-  dismissal (this session's proxy refuses write access to code-scanning alerts, so it could not); the only check this session could make afterwards is that the 14 review
-  threads on the pull request then read `is_resolved: true`, which GitHub does when an alert is dismissed. The alert states themselves were not read. Comment used: "Test-only: this
-  assertion message prints a local test exporter scrape. No production path and no external input. Dismissed on the maintainer decision of 2026-11-06 (option A)." Alert 190 (the
-  regular expression) was already resolved.
-
+- **Two design calls from the RFC ledger are yours: (c) and (d).** Both were put to you before the tag and neither was answered; nothing was changed for either. The ledger's rows carry the code and
+  the tests (`docs/compliance/rfc-ledger.json`; `python3 scripts/check_rfc_ledger.py` runs its own `--self-test`, then checks every line, hash and citation).
+  - *(c) The HS256 key is used as raw bytes* (RFC 8725 line 372, `PARTIAL`, medium). `JwtValidator::with_hs256_secret` uses the bytes as the HMAC key with a floor of 32 bytes and no other check;
+    `examples/genai-agent` reads `A2A_JWT_HS256_SECRET` as a string and passes `secret.into_bytes()`, which is the password-as-key pattern RFC 8725 section 3.5 forbids, and the book's sample secret is a
+    guessable 32-character string. Options: (1) fix the example and the book (read a random key as base64, say how to make one) and change no runtime behaviour; (2) as (1) plus a refusal of obviously
+    low-entropy secrets (one repeated byte, a sequence), a heuristic that cannot tell a passphrase from a key; (3) leave it. My recommendation is (1): it removes the SDK's own bad example without a check
+    that would be wrong in both directions.
+  - *(d) `fetch_jwks` forwards the card fetch's headers to the key-set URL* (RFC 8725 line 435, `IMPLEMENTED_UNTESTED`, medium). The client's `fetch_jwks` sends the caller's `CardFetchOptions` headers, so an
+    `Authorization` or `Cookie` set for the card fetch is also sent to the key server. Options: (1) send none of them, with a separate header option on `fetch_jwks` for a key server that wants one;
+    (2) strip only `Authorization`, `Cookie` and `Proxy-Authorization`; (3) leave it and document it. My recommendation is (1): the key server is another trust domain and sending it the card's credentials
+    by default is the surprising behaviour. It changes client behaviour in 0.16.0, so it needs a CHANGELOG entry.
+- **Confirm a reading.** Your reply listed `standards-ledger` under "ship before the tag" with the sentence "I'd ship it after the tag" still attached (my earlier wording). I took the list as the instruction and
+  put the ledger, its CI step and the `crit` refusals in this branch. If you meant after, they come out as a revert of those commits (`git log --oneline` names them).
+- **The two follow-up branches on the remote are now redundant.** `claude/inspiring-mccarthy-rgpntj-304-merge` (remote head `a47f4800`, on an older base) and
+  `claude/inspiring-mccarthy-rgpntj-standards-ledger` (`9814b4d2`) hold work that this branch carries (the rebased `304` commit and the ledger commits). Delete them or leave them; nothing needs either. A
+  force-push of the stale `-304-merge` was refused in this session and is not needed.
+- **What the RFC ledger left open** (no decision needed; the ledger's severities, and the ledger is a reviewer's reading, re-read by me for the consequential rows): 152 rows for RFC 7515, 7519 and 8725 (21
+  `TESTED`, 45 `IMPLEMENTED_UNTESTED`, 3 `GAP`, 8 `PARTIAL`, 1 `DEVIATION`, 7 `APPLICATION`, 45 `NOT_APPLICABLE`, 16 `NOT_SUPPORTED`, 6 `SUPPORTED`; 85 are security rows and a security row is `TESTED` only
+  with a recorded mutant a test of the row killed: 11 are). Open: four high-severity rows that are implemented and untested, all RFC 8725 (lines 289, 342 to 343, 397, 422 to 424: the algorithm named by the
+  header is the one used, all cryptographic operations validated, the keys belong to the issuer, the audience checked); GAP: RFC 7515 5.2 and 7.2.1 (the card verifier does not refuse a header name present
+  in both the protected and the unprotected header), RFC 8725 3.2 (ES256 card signing is hedged with a random nonce, not RFC 6979); PARTIAL (8): RFC 7519 4.1.4 and 4.1.5 (`exp` and `nbf` are `u64`, so a fractional NumericDate is refused, which fails closed) and 7.2;
+  RFC 8725 3.1 (lines 287 to 288), 3.2 (307), 3.5 (371, and 372, the (c) row above) and 3.8 (394); each row's notes say what is missing. New from the JWKS fix: the card verifier does not read a JWK's `key_ops` (RFC 7517 4.3; the types crate's `Jwk` has no such member), so a card key set that marks a
+  public key sign-only is still used to verify (low; RFC 7517 is not in the ledger yet). RFC 7519 section 8's `none` is a `DEVIATION` naming ADR 0010. Not started: RFC 7518, 7517 and 8785, then 6750, 9068
+  and 6749, and a ledger for RFC 9111 and 5861 (the card cache, where the stale-if-error bug was).
 - **0.16.0: the choices made for you, each open to a veto.** You told the work to take the best engineering option for every open item
   and record why. The reasoning is in the register row, the ADR or the commit; this list is only the ones a deployer or you may
   want to overrule. Whether to tag and publish is yours: you said you cannot promise to deploy after this pull request, and nothing
@@ -404,6 +405,11 @@ session start.
     information"; RFC 9111 §4.2.4: serving stale by origin directive or "configuration in accordance with an out-of-band contract"), still never when it is
     `no-store`, `must-revalidate` or `no-cache`, and still opt-in (no default window). ADR 0051 has a dated amendment. A card with no validator and no lifetime
     is a full fetch on every resolve; the window counts from its arrival.
+  - *Stricter verifiers, found by the RFC ledger (CHANGELOG, Fixed):* all four JWS verifiers refuse any `crit` member, whatever it holds (`verify_content` and `verify_checkpoint` ignored it and the
+    JWT validator read `"crit":null` as no member; only the key holder can add the member, so this was a verifier more lenient than its documentation, not a forgery); the server's JWKS parser skips a key
+    whose `use` is not `sig` or whose `key_ops` lacks `verify`, and a key that names an `alg` verifies only that one, so a key set that declares an `alg` other than `RS256` (RSA) or `ES256` (P-256) for a key
+    its issuer signs with the accepted algorithm stops verifying until the set says what the issuer does (a set that names no `alg` is unaffected). `algorithm_confusion_rejected`, which `control-map.md` and
+    `controls.toml` cite, never built the confusion token; it does now, and `jwt/tests/algorithms.rs` runs the attack (the validator was not wrong).
   - *Designs with a stated cost:* the push outbox row is written after the event is stored, so a crash between the two loses that
     webhook (H14, the ADR 0037 amendment); SEC-14 is closed in part (ADR 0043); there is no `fips` feature (B-29) and no DNS cache
     in the client (B-28); the same-origin check on the WebSocket upgrade does not defend against DNS rebinding, the `Host` check does
@@ -699,6 +705,16 @@ read `cargo deny check advisories` after the update, not before.
 Kept under this heading because `release.yml` and `packaging/README.md` cite
 it.
 
+- **2026-11-06, answers to the decision sheet on the official TCK, the dependency-source skips, stale-if-error, the gate injections and the ledgers** (all done in this branch unless stated):
+  - **TCK: option D.** Pull requests, pushes and manual runs grade against a pinned `a2a-tck` commit (`70f6f73`); the nightly run floats on upstream `main` as a drift alarm that gates no pull request.
+    The re-baseline is made from the first CI run at the pin (*First, next*).
+  - **The two dependency-source skips: accepted.** Each carries its argument beside the code.
+  - **The stale-if-error change: kept** (RFC 5861 section 4; the default window is still none; `no-store`, `must-revalidate` and `no-cache` cards are never served stale).
+  - **The four missing `prove_gates_fail.sh` injections: added before the tag**, so every gate of this release can be proved able to fail.
+  - **Before the tag:** the `304` header merge (RFC 9111 section 4.3.4), the standards ledger with its CI step and the stricter `crit` handling, and (a) the server's JWKS parser honouring a key's own
+    `alg`, `key_ops` and `use`. (c) and (d) are undecided.
+  - **CodeQL alerts 191 to 204 ("Log entry depends on a user-provided value", `otel/telemetry/prometheus/tests.rs`): dismissed as `Used in tests`** (option A). The maintainer ran the dismissal; the only check
+    this session could make is that the 14 review threads read resolved. Comment used: "Test-only: this assertion message prints a local test exporter scrape. No production path and no external input."
 - **2026-11-01, answers to `docs/audits/2026-11-01-triage/DECISIONS.md`** (all built or recorded as
   below; the forks are described there):
   - **F1, 0.16.0 breaks: all five.** `#[non_exhaustive]` on the generated wire structs (G-10),
@@ -856,14 +872,10 @@ call. To check one:
 git fetch origin && git merge-base --is-ancestor origin/<branch> origin/main && echo merged
 ```
 
-Two follow-up branches carry work that is deliberately not in pull request #197, pushed so that a new session can pick it up, with no pull
-request opened for either (the maintainer's instruction of 2026-11-06: push the branches, open no pull request, since a plain push to a branch other than
-`main` starts no workflow). `claude/inspiring-mccarthy-rgpntj-304-merge` is the `304` header merge in the card cache (RFC 9111 §4.3.4 and §3.2: recompute
-freshness from a merged header map, never carrying `Date` or `Age` over from the stored `200`); it is one commit on #197's head as pushed on 2026-11-06,
-verified there by preflight gates 1-44 (static), 45-58 (clippy), 59 and 72 (nextest, default and all features) and 74-76 (doctests); gates 60-71 and 73 were not run
-(`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..origin/claude/inspiring-mccarthy-rgpntj-304-merge` lists its commit),
-and it lacks the flaky-test fix of the `-rest` branch, so rebase it onto the final `-rest` head. `claude/inspiring-mccarthy-rgpntj-standards-ledger` is the
-standards ledger and what it found (*Waiting on the maintainer*, first item). If #197 is squashed or rebased, rebase both onto `main`.
+Two follow-up branches were pushed on 2026-11-06 for work that was then held out of pull request #197 (the maintainer's instruction: push the branches, open no pull request, since a plain push to a
+branch other than `main` starts no workflow): `claude/inspiring-mccarthy-rgpntj-304-merge` (the `304` header merge in the card cache, RFC 9111 section 4.3.4 and 3.2) and
+`claude/inspiring-mccarthy-rgpntj-standards-ledger` (the RFC requirements ledger and what it found). The maintainer then asked for both before the tag, so #197's branch carries them (the `304` commit
+rebased onto the flaky-test fix, the ledger commits); the two remote branches are redundant (*Waiting on the maintainer*). If #197 is squashed or rebased, rebase nothing from them.
 
 This clone is shallow, so a "no" for an old branch is not proof, and `git
 blame` stops at the shallow boundary. Never write this branch's own head SHA
@@ -984,6 +996,14 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **A commit that says "Not run: clippy" has not been checked, and clippy found three things in it.** The JWKS change passed its tests and 17 hand mutants and still failed `clippy::similar_names`,
+  `clippy::unnecessary_wraps` and `clippy::too_many_lines` (`JwtValidator::validate` at 65 of 60) in the first CI-scope clippy gate run on it. The cure for the last was a method (`VerifyKey::verifies`),
+  not an `#[allow]`. Run gate 46 before the mutants, not after; the mutants then have to be re-run on the bytes that changed (they were: 14 of 14 on the final file).
+- **A gate that fails with `No space left on device` is the quota, and a stage of three test builds can spend it.** Nextest gates 65, 66 and 74 and a three-gate stage (68 to 70) failed while
+  linking, with the volume at 0 MB (the harness then could not store command output). Sweep (idle test executables older than a few minutes, the workspace crates' rlibs), then run one gate at a time with a
+  sweep between them; re-running the same tree is justified for that failure, and only for it. The log's first `error` line says which kind of failure it is.
+- **`git commit --fixup=amend:<sha>` cannot take `-F`.** To rewrite an earlier local commit's message with a long body without an editor, write the subject `amend! <the target's subject>`, a blank line and
+  the new message into a file, commit it with `-F`, and run `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`; `git diff ORIG_HEAD HEAD` (and the two tree hashes) then show that the rebase changed no content.
 - **A test that dates a response with `Date` has a second less margin than it says.** `Date` has one-second resolution, so a response generated 0.99 s after a
   whole second reads as dated that second and its apparent age is up to a second. Three stale-if-error tests stepped a 60 s, 30 s and 20 s window to one second short
   of its end (59, 29 and 19 s) and failed about once in a few hundred runs: 399 of 400 stress iterations passed before the fix (`the_configured_window_serves_the_stored_card_on_a_503`
