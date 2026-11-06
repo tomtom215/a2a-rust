@@ -541,6 +541,12 @@ impl JwtValidator {
     /// anyone who guesses it mint tokens this validator accepts. Use
     /// [`try_with_hs256_secret`](Self::try_with_hs256_secret) to refuse such a
     /// secret at startup instead.
+    ///
+    /// The secret is a key, not a password (RFC 8725 §3.5): at least 32
+    /// random bytes from a secret store, for instance what
+    /// `openssl rand -base64 32` writes, decoded. Only the length is checked:
+    /// a passphrase of 32 or more characters is accepted as it stands, and
+    /// anyone who guesses it can mint tokens this validator accepts.
     #[must_use]
     pub fn with_hs256_secret(mut self, secret: impl Into<Vec<u8>>) -> Self {
         // Wrapped before anything else, so a refused secret is wiped too.

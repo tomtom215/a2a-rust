@@ -27,6 +27,8 @@ hyper-util     = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
 bytes          = "1"
 uuid           = { workspace = true }
+# `A2A_JWT_HS256_SECRET` is a random key in base64 (`auth_card::hs256_key`).
+base64         = "0.23"
 
 # genai — multi-provider LLM client (https://crates.io/crates/genai)
 genai = "0.7"

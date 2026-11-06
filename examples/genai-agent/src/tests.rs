@@ -238,3 +238,42 @@ fn the_card_advertises_the_capabilities_the_sweep_requires() {
     assert_eq!(card.url.as_deref(), Some("http://127.0.0.1:9000"));
     assert!(!card.skills.is_empty());
 }
+
+/// `A2A_JWT_HS256_SECRET` is a key in base64, used as the bytes it decodes to;
+/// it was a string used as its own bytes, which let a passphrase be the key
+/// (RFC 8725 section 3.5).
+#[test]
+fn the_hs256_variable_is_a_base64_key_used_as_its_bytes() {
+    use base64::Engine as _;
+    // Bytes whose standard base64 needs both `+` and `/`, which the URL-safe
+    // alphabet spells differently: `openssl rand -base64` writes the former.
+    let pattern = [0xFB_u8, 0xEF, 0xBE, 0xFF, 0xFF, 0xFF];
+    let key: Vec<u8> = (0..32).map(|i| pattern[i % pattern.len()]).collect();
+    let text = base64::engine::general_purpose::STANDARD.encode(&key);
+    assert!(text.contains('+') && text.contains('/'), "{text}");
+    assert_eq!(crate::auth_card::hs256_key(&text).unwrap(), key);
+    // The newline a key read from a file ends with is not part of it.
+    assert_eq!(
+        crate::auth_card::hs256_key(&format!("  {text}\n")).unwrap(),
+        key
+    );
+}
+
+/// What the variable used to be given is no longer a key: a typed passphrase is
+/// not base64, and the book's old 32-character sample is, but decodes to 24
+/// bytes, under the validator's floor.
+#[test]
+fn a_typed_passphrase_is_not_a_key() {
+    use a2a_protocol_server::auth::JwtValidator;
+    let refused = crate::auth_card::hs256_key("top-secret-shared-key-0123456789").unwrap_err();
+    assert!(refused.contains("openssl rand -base64 32"), "{refused}");
+    assert!(refused.contains("A2A_JWT_HS256_SECRET"), "{refused}");
+
+    let old_sample = crate::auth_card::hs256_key("0123456789abcdef0123456789abcdef").unwrap();
+    assert_eq!(old_sample.len(), 24);
+    assert!(
+        JwtValidator::new()
+            .try_with_hs256_secret(old_sample)
+            .is_err()
+    );
+}

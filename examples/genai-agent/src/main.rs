@@ -347,11 +347,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 builder.with_interceptor(a2a_protocol_server::ApiKeyAuthInterceptor::new([key]));
             println!("auth: API key required (x-api-key: <key>)");
         }
-        if let Ok(secret) = std::env::var("A2A_JWT_HS256_SECRET") {
+        if let Ok(value) = std::env::var("A2A_JWT_HS256_SECRET") {
             use a2a_protocol_server::auth::{Jwks, JwtAuthInterceptor, JwtValidator};
-            // `try_`: refuses a secret under 32 bytes (RFC 7518 §3.2) at
+            // A random key in base64, not a typed password (RFC 8725 §3.5).
+            // `try_`: refuses a key under 32 bytes (RFC 7518 §3.2) at
             // startup, rather than starting a server no HS256 token can reach.
-            let mut validator = JwtValidator::new().try_with_hs256_secret(secret.into_bytes())?;
+            let key = auth_card::hs256_key(&value)?;
+            let mut validator = JwtValidator::new().try_with_hs256_secret(key)?;
             // Unset, the SDK would refuse every token; this secret's holder
             // mints them all, so an unset variable opts out, said aloud.
             let (iss, aud) = (std::env::var("A2A_JWT_ISS"), std::env::var("A2A_JWT_AUD"));

@@ -92,6 +92,7 @@ key), or a shared secret for HS256:
 ```rust
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let jwks_bytes: &[u8] = br#"{"keys": []}"#;
+# let key_from_your_secret_store: Vec<u8> = vec![0x5a; 32];
 use a2a_protocol_server::auth::jwt::{Jwks, JwtAuthInterceptor, JwtValidator};
 
 // RS256/ES256 from a JWKS document:
@@ -101,9 +102,11 @@ let interceptor = JwtAuthInterceptor::new(
     jwks,
 );
 
-// HS256 shared secret (no JWKS). At least 32 bytes (RFC 7518 §3.2);
+// HS256 shared secret (no JWKS): a random key of at least 32 bytes (RFC 7518
+// §3.2), not a password (RFC 8725 §3.5). `openssl rand -base64 32` makes one;
+// keep it in a secret store and decode it when you load it.
 // `try_with_hs256_secret` refuses a shorter one here, at startup.
-let secret = b"0123456789abcdef0123456789abcdef".to_vec(); // load yours from a secret store
+let secret = key_from_your_secret_store;
 let interceptor = JwtAuthInterceptor::new(
     JwtValidator::new()
         .with_issuer("https://issuer")

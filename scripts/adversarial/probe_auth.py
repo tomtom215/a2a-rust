@@ -10,7 +10,7 @@
 
 Point it at a genai example started with JWT-HS256 auth:
 
-    A2A_ALLOW_FALLBACK=1 A2A_JWT_HS256_SECRET=<secret> \\
+    A2A_ALLOW_FALLBACK=1 A2A_JWT_HS256_SECRET=<key, base64: openssl rand -base64 32> \\
       A2A_JWT_ISS=<iss> A2A_JWT_AUD=<aud> \\
       A2A_BIND_ADDR=127.0.0.1:8090 A2A_GRPC_ADDR=127.0.0.1:8091 A2A_WS_ADDR=127.0.0.1:8092 \\
       cargo run -p genai-a2a-agent
@@ -50,7 +50,8 @@ def jwt_hs256(claims, secret, header=None, tamper_payload=False, drop_sig=False,
     hdr = header if header is not None else {"alg": "HS256", "typ": "JWT"}
     seg = b64u(json.dumps(hdr, separators=(",", ":")).encode()) + b"." + \
         b64u(json.dumps(claims, separators=(",", ":")).encode())
-    sig = hmac.new(secret.encode(), seg, hashlib.sha256).digest()
+    key = secret if isinstance(secret, bytes) else secret.encode()
+    sig = hmac.new(key, seg, hashlib.sha256).digest()
     if bad_sig:
         sig = bytes((sig[0] ^ 0xFF,)) + sig[1:]
     token = seg + b"." + b64u(sig)
@@ -299,7 +300,8 @@ def main():
     ap.add_argument("--port", type=int, default=8090, help="JSON-RPC port")
     ap.add_argument("--grpc-port", type=int, default=None)
     ap.add_argument("--ws-port", type=int, default=None)
-    ap.add_argument("--secret", default="top-secret-shared-key-0123456789")
+    ap.add_argument("--secret", default="YDVouIyoSi9W6gLLiubA/BUIpN6Xz0vb1dm+xpdF1tg=",
+                    help="the HS256 key as base64, the value A2A_JWT_HS256_SECRET holds; the default is\n                         a throwaway for local probing, never a deployment's key")
     ap.add_argument("--iss", default="https://issuer.test")
     ap.add_argument("--aud", default="a2a-agent")
     ap.add_argument("--quiet", action="store_true")
@@ -312,7 +314,8 @@ def main():
     print("=" * 92)
     print("auth probe -> %s:%d  (JWT HS256; iss=%s aud=%s)" % (args.host, args.port, args.iss, args.aud))
     print("=" * 92)
-    p = Probe(args.host, args.port, args.secret, args.iss, args.aud, quiet=args.quiet)
+    key = base64.b64decode(args.secret)
+    p = Probe(args.host, args.port, key, args.iss, args.aud, quiet=args.quiet)
     print("\n--- JSON-RPC auth matrix ---")
     p.run_jsonrpc()
     p.oracle_and_public()
@@ -320,10 +323,10 @@ def main():
     extra_rows = []
     if args.grpc_port:
         print("\n--- gRPC cross-binding ---")
-        extra_rows += check_grpc(args.host, args.grpc_port, args.secret, args.iss, args.aud, args.quiet)
+        extra_rows += check_grpc(args.host, args.grpc_port, key, args.iss, args.aud, args.quiet)
     if args.ws_port:
         print("\n--- WebSocket cross-binding ---")
-        extra_rows += check_ws(args.host, args.ws_port, args.secret, args.iss, args.aud, args.quiet)
+        extra_rows += check_ws(args.host, args.ws_port, key, args.iss, args.aud, args.quiet)
 
     all_rows = p.rows + extra_rows
     dangers = [r for r in all_rows if r.get("danger")]

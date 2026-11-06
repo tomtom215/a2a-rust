@@ -49,7 +49,10 @@ refusal reads on each binding is under [Error mapping](#error-mapping-important)
   key at least as long as the hash output. `try_with_hs256_secret` returns an
   error for a shorter one; `with_hs256_secret` fails closed instead — it logs
   an error and rejects every HS256 token — so a short secret can never be
-  the thing standing between a guesser and a valid token.
+  the thing standing between a guesser and a valid token. The length is all
+  that is checked: the secret is a key, not a password (RFC 8725 §3.5), so use
+  random bytes (`openssl rand -base64 32`, decoded), because a passphrase of
+  32 or more characters is accepted and can be guessed.
 - **Rejections are generic.** A missing, malformed, expired, or wrong token all
   produce the same error, so the response can't be used as an oracle.
 - **Constant-time comparison** for API keys and static bearer tokens.
