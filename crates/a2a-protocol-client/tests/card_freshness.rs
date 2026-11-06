@@ -113,7 +113,9 @@ async fn a_card_past_its_max_age_is_revalidated() {
 }
 
 /// RFC 9111 §4.3.4: a `304` freshens the stored card, for as long as the
-/// `304` says; one that says nothing leaves it to be revalidated.
+/// `304` says; one that says nothing leaves the stored `max-age` in force, so
+/// the card is fresh again for it from the `304` on. (Until 2026-11-06 a `304`
+/// with no `Cache-Control` left the card to be revalidated on every use.)
 #[tokio::test]
 async fn a_304_renews_the_cards_freshness() {
     let (url, seen) = serve(vec![
@@ -133,8 +135,16 @@ async fn a_304_renews_the_cards_freshness() {
 
     elapse(Duration::from_secs(31)).await;
     resolve(&resolver).await;
+    assert_eq!(requests(&seen), 3, "stale again after the 304's 60 s");
     resolve(&resolver).await;
-    assert_eq!(requests(&seen), 4, "a 304 with no lifetime: stale at once");
+    assert_eq!(
+        requests(&seen),
+        3,
+        "a 304 with no Cache-Control keeps the stored max-age=60: fresh from the 304 on"
+    );
+    elapse(Duration::from_secs(61)).await;
+    resolve(&resolver).await;
+    assert_eq!(requests(&seen), 4, "and stale once those 60 s are used");
 }
 
 /// RFC 9111 §5.2.2.4: `no-cache` means revalidate before every use,

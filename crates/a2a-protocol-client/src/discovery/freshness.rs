@@ -41,10 +41,17 @@
 //!   cache), so a stored response always matches the next request. The
 //!   resolver fetches the public card only; an extended card, which the
 //!   server sends with `Vary: Authorization`, is installed by the caller.
-//! - After a `304`, freshness is computed from the `304`'s own fields, which
-//!   RFC 9110 §15.4.5 requires to carry the `Cache-Control` and `Expires` a
-//!   `200` would. A `304` without them leaves the card to be revalidated on
-//!   its next use, where §4.3.4 would carry the stored ones over.
+//! - After a `304` the stored response's caching fields are updated from it
+//!   (RFC 9111 §4.3.4, §3.2): each of `Cache-Control`, `Expires` and `Vary`
+//!   that the `304` carries replaces the stored one whole, as a field, not
+//!   directive by directive, so a `304`'s `Cache-Control: max-age=10` also
+//!   drops a stored `stale-if-error`; one it does not carry stays. `Date` and
+//!   `Age` are not carried over: they say when the message in hand was made and
+//!   how old it is, so the `304`'s own are used, and a `304` without a `Date`
+//!   is dated by its arrival (RFC 9110 §6.6.1), not by the stored response's.
+//!   Until 2026-11-06 freshness was read from the `304`'s own fields alone,
+//!   so one that omitted `Cache-Control` (which RFC 9110 §15.4.5 obliges an
+//!   origin to send) lost the stored lifetime and stale window.
 
 use std::time::{Duration, SystemTime};
 
@@ -52,13 +59,32 @@ use hyper::HeaderMap;
 use hyper::header;
 use tokio::time::Instant;
 
+/// The fields a stored response's freshness is read from, other than `Date`
+/// and `Age`, which describe one message and are never carried over.
+const CACHING_FIELDS: [header::HeaderName; 3] =
+    [header::CACHE_CONTROL, header::EXPIRES, header::VARY];
+
+/// `headers` reduced to [`CACHING_FIELDS`].
+fn caching_fields(headers: &HeaderMap) -> HeaderMap {
+    let mut kept = HeaderMap::new();
+    for name in CACHING_FIELDS {
+        for value in headers.get_all(&name) {
+            kept.append(name.clone(), value.clone());
+        }
+    }
+    kept
+}
+
 /// The largest delta-seconds value a recipient keeps (RFC 9111 §1.2.2).
 const DELTA_SECONDS_MAX: Duration = Duration::from_secs(1 << 31);
 
 /// What a card response says about storing and reusing it, read when it
 /// arrived.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(super) struct Freshness {
+    /// The `Cache-Control`, `Expires` and `Vary` fields of the response as
+    /// stored: what a `304` updates field by field (RFC 9111 §3.2).
+    fields: HeaderMap,
     /// `Cache-Control: no-store`: a cache MUST NOT store the response.
     pub(super) no_store: bool,
     /// `no-cache` or `Vary: *`: never used without revalidating.
@@ -125,6 +151,7 @@ impl Freshness {
             .and_then(|(_, v)| v.and_then(|v| delta_seconds(v.trim_matches('"'))));
 
         Self {
+            fields: caching_fields(headers),
             no_store: has("no-store"),
             revalidate: has("no-cache") || vary_any,
             must_revalidate: has("must-revalidate"),
@@ -133,6 +160,36 @@ impl Freshness {
             age: apparent_age.max(corrected_age_value),
             received,
         }
+    }
+
+    /// This stored response freshened by a `304` (RFC 9111 §4.3.4): `update` is
+    /// the `304`'s header section, which arrived at `received` (`received_at`
+    /// on the wall clock) in answer to a request sent at `requested`.
+    pub(super) fn after_304(
+        &self,
+        update: &HeaderMap,
+        requested: Instant,
+        received: Instant,
+        received_at: SystemTime,
+    ) -> Self {
+        let mut merged = HeaderMap::new();
+        for name in CACHING_FIELDS {
+            let source = if update.contains_key(&name) {
+                update
+            } else {
+                &self.fields
+            };
+            for value in source.get_all(&name) {
+                merged.append(name.clone(), value.clone());
+            }
+        }
+        // Not carried over from the stored response: see the module doc.
+        for name in [header::DATE, header::AGE] {
+            for value in update.get_all(&name) {
+                merged.append(name.clone(), value.clone());
+            }
+        }
+        Self::of(&merged, requested, received, received_at)
     }
 
     /// Until when the response is fresh, or `None` when it never is and every
@@ -437,3 +494,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod after_304_tests;

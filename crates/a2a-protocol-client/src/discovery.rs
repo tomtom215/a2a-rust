@@ -877,8 +877,16 @@ async fn fetch_inner(
     tracing::Span::current().record("http.response.status_code", status.as_u16());
     let retry_after = crate::error::parse_retry_after(resp.headers());
 
-    // Extract caching headers before consuming the response body.
-    let freshness = Freshness::of(resp.headers(), requested, Instant::now(), SystemTime::now());
+    // Extract caching headers before consuming the response body. A `304`
+    // freshens the stored response's fields (RFC 9111 §4.3.4), it does not
+    // replace them.
+    let freshness =
+        match cached {
+            Some(cached) if status == hyper::StatusCode::NOT_MODIFIED => cached
+                .freshness
+                .after_304(resp.headers(), requested, Instant::now(), SystemTime::now()),
+            _ => Freshness::of(resp.headers(), requested, Instant::now(), SystemTime::now()),
+        };
     let etag = resp
         .headers()
         .get("etag")
@@ -893,8 +901,9 @@ async fn fetch_inner(
     // 304 Not Modified: the cached card, its stored validators replaced by
     // those the 304 carries (RFC 9111 §4.3.4). Until 2026-10-13 the stored
     // ones were kept, so the next revalidation sent an ETag or date the
-    // server had already replaced. Its freshness is the 304's own, and so
-    // is a `no-store` on it; see the `freshness` module.
+    // server had already replaced. Its freshness is the stored one freshened
+    // by the 304's fields (above), and a `no-store` on the 304 counts; see the
+    // `freshness` module.
     if status == hyper::StatusCode::NOT_MODIFIED
         && let Some(cached) = cached
     {

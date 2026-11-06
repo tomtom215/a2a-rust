@@ -396,7 +396,7 @@ fn jitter_brings_the_expiry_forward_by_its_share_of_the_lifetime() {
         card: card.clone(),
         etag: None,
         last_modified: None,
-        freshness,
+        freshness: freshness.clone(),
         jitter,
     };
     let resolver = CachingCardResolver::new("http://a.example").unwrap();
@@ -495,5 +495,6 @@ mod card_cache;
 // What the resolver does not store.
 mod stored_cards;
 
-// How a stale-if-error window is counted.
+// How a stale-if-error window is counted, and what a `304` leaves, end to end.
+mod revalidation;
 mod stale_window;

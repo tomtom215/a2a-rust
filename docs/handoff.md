@@ -353,16 +353,17 @@ session start.
 
 ## Waiting on the maintainer
 
-- **Standards compliance beyond the A2A spec has no ledger, and one deviation is known.** The spec ledger (`docs/compliance/spec-ledger.json`) covers the A2A
+- **Standards compliance beyond the A2A spec has no ledger.** The spec ledger (`docs/compliance/spec-ledger.json`) covers the A2A
   specification only (510 entries; the gate prints 455 TESTED, 32 APPLICATION, 19 NOT_APPLICABLE and 4 PARTIAL). The RFCs the client and server implement
   (HTTP caching 9111 and 5861, conditional requests, JWS and JCS for card signatures, JWT validation, `Retry-After`, WebSocket origin, SSE framing,
-  `Forwarded`) have no clause table, so their compliance rests on authors' reading and tests; the stale-if-error bug above got through because the tests'
+  `Forwarded`) have no clause table, so their compliance rests on authors' reading and tests; the stale-if-error bug got through because the tests'
   server always sent an `ETag`. A read-only pass over the card cache against the RFC text (2026-11-06) found one more deviation, recorded in
-  `discovery/freshness.rs`: after a `304` freshness is read from the `304`'s own headers only, where RFC 9111 §4.3.4 says the stored fields the `304` lacks are
-  kept (an origin MUST send `Cache-Control` and `Expires` on a `304` that a `200` would carry, RFC 9110 §15.4.5, so only a non-compliant origin or proxy
-  loses them; the effect is extra revalidations and a lost stale window). I recommend: fix that merge in the card cache; then a standards ledger for the
-  external RFCs, one row per MUST or SHOULD the code implements, on the `check_spec_ledger.py` machinery, starting with JWT and JWS verification (security),
-  as the adversarial campaign still open under *First, next*. Nothing of this is started.
+  `discovery/freshness.rs`: after a `304` freshness was read from the `304`'s own headers only, where RFC 9111 §4.3.4 says the stored fields the `304` lacks are
+  kept. It is fixed on the branch `claude/inspiring-mccarthy-rgpntj-304-merge` (not in pull request #197): the merge recomputes freshness from a merged header
+  map, replacing `Cache-Control`, `Expires` and `Vary` field by field and never carrying `Date` or `Age` over (a naive carry-over would make a fresh `304` look an hour
+  old). `tests/card_freshness.rs::a_304_renews_the_cards_freshness` pinned the old behaviour and is changed to the RFC's. What is still open: a standards ledger for
+  the external RFCs. It is on the branch `claude/inspiring-mccarthy-rgpntj-standards-ledger` (RFC 7515, 7519 and 8725 only, with its open findings in that
+  branch's `docs/handoff.md`), not in pull request #197; RFC 7518, 7517, 8785 and the HTTP caching RFCs have no rows.
 - **`scripts/prove_gates_fail.sh` cannot run on pull request #197's head.** Its drift check exits 2 before proving anything, because four CI gates have no failure
   injection: `check_net_copies.py`, `hand_mutate.py` (`--self-test`), `check_example_servers.py` and the `promtool` step of `observability.yml`'s bash block
   (`bash scripts/prove_gates_fail.sh --list` prints them; checked on a clean worktree of `6bd576f8`, where it fails the same way). The script is local, not a CI

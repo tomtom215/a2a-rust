@@ -1495,6 +1495,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A `304` no longer makes a cached agent card forget its lifetime** (RFC 9111
+  §4.3.4, §3.2). `CachingCardResolver` read a revalidated card's freshness from
+  the `304`'s own headers alone, so an origin or proxy that left `Cache-Control`
+  off its `304` (RFC 9110 §15.4.5 says an origin MUST send it) cost the card its
+  stored `max-age` and `stale-if-error` window, and the card was revalidated on
+  every use. The stored `Cache-Control`, `Expires` and `Vary` are now updated
+  field by field from the `304`, and `Date` and `Age` are the `304`'s own. A card
+  with no `ETag`, no `Last-Modified` and no lifetime is also now kept when a
+  stale-if-error window can apply to it (ADR 0051, amended 2026-11-06).
 - **The book's recovery loop lost the leased children it was meant to
   recover** (docs; found by the live proof of audit group M, 2026-11-04).
   `book/src/client/delegation.md` reattached a journal record and waited for

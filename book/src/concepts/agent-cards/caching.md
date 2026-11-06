@@ -27,7 +27,7 @@ Replicas of one build should send one card, with one validator. Two things decid
 
 ## Client cache
 
-On the client, `discovery::CachingCardResolver` is a private HTTP cache of one card (spec §8.6.2, RFC 9111). `resolve()` returns the stored card without a request while it is fresh, for its `max-age`, or else its `Expires`, less the age it arrived with (`Age`, `Date`), and revalidates it with `If-None-Match` / `If-Modified-Since` once it is stale. A card marked `no-cache` is revalidated on every resolve, and a `no-store` card is not stored.
+On the client, `discovery::CachingCardResolver` is a private HTTP cache of one card (spec §8.6.2, RFC 9111). `resolve()` returns the stored card without a request while it is fresh, for its `max-age`, or else its `Expires`, less the age it arrived with (`Age`, `Date`), and revalidates it with `If-None-Match` / `If-Modified-Since` once it is stale. A `304` freshens it: the `Cache-Control`, `Expires` or `Vary` the `304` carries replace the stored ones, a field it leaves out stays in force, and its own `Date` and `Age` are the ones that count (RFC 9111 §4.3.4). A card marked `no-cache` is revalidated on every resolve, and a `no-store` card is not stored.
 
 ```rust,no_run
 use std::time::Duration;

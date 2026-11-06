@@ -73,7 +73,14 @@ c4404e8's claim (roots and session cache built once) had no test.
    out-of-band contract", which `with_stale_if_error` is. Such a card is now
    kept when a window (its own or the configured one) can apply to it; with no
    window, as before, it is not kept, since nothing could use it. It is stale
-   from the moment it arrives, so the window counts from then.
+   from the moment it arrives, so the window counts from then. *Amended
+   2026-11-06, second*: a `304` updates the stored response's `Cache-Control`,
+   `Expires` and `Vary` field by field (RFC 9111 §4.3.4, §3.2): a field it
+   carries replaces the stored one whole, one it omits stays, and `Date` and
+   `Age` are the `304`'s own, never carried over. Before, freshness was read from
+   the `304`'s fields alone, so an origin that omitted `Cache-Control` from a
+   `304` (RFC 9110 §15.4.5 says it MUST send it) cost the card its stored
+   lifetime and stale window.
 4. **Jittered expiry, opt-in on a resolver.** `with_refresh_jitter(f)` (a
    fraction from 0 to 0.5) shortens each stored card's freshness by a random
    part of up to `f` of its lifetime, never lengthens it, so processes that

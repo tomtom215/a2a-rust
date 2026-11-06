@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:12562 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:12571 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -1398,7 +1398,7 @@
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:361 the_extended_card_replaces_the_capabilities_checked",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:405 a_failed_extended_card_fetch_changes_nothing",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:431 an_extended_card_does_not_turn_the_checks_on",
-    "crates/a2a-protocol-client/src/discovery.rs:1408 an_installed_extended_card_is_served_until_cleared"
+    "crates/a2a-protocol-client/src/discovery.rs:1417 an_installed_extended_card_is_served_until_cleared"
    ],
    "notes": "The SDK caches a card in two places. A2aClient caches the capabilities it checks calls against (DeclaredCapabilities, from the card it was built from); since 2026-10-13 get_extended_agent_card replaces them with the extended card's (A2aClient::adopt_capabilities), keeping extendedAgentCard declared, and only when the client checks at all. Before, it kept the public card's, so a capability only the extended card declared was refused locally with CapabilityNotDeclared. The other, the resolver's, is replaced when the application calls CachingCardResolver::install_extended_card, which serves the extended card from resolve() until clear_extended_card() or invalidate(); the application decides when the session ends.",
    "auditor": "A",
@@ -3000,7 +3000,7 @@
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/grpc.rs:1389 add_metadata_injects_a2a_version",
     "crates/a2a-protocol-client/tests/rest_streaming_tests.rs:210 rest_send_message_returns_completed_task",
-    "crates/a2a-protocol-client/src/discovery.rs:1969 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
+    "crates/a2a-protocol-client/src/discovery.rs:1978 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
     "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs:168 every_call_declares_the_protocol_version",
     "bindings/a2a-protocol-slimrpc/tests/multicast.rs:102 every_invited_agent_answers_and_is_identifiable (against the version-required default)",
     "crates/a2a-protocol-sdk/tests/extensions_e2e.rs:102 json_rpc_sends_the_extensions_asked_for",
@@ -4713,7 +4713,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:209 CardFetchOptions::with_signature_keys",
-    "crates/a2a-protocol-client/src/discovery.rs:985 verify_card_signatures",
+    "crates/a2a-protocol-client/src/discovery.rs:994 verify_card_signatures",
     "crates/a2a-protocol-client/src/discovery.rs:498 CachingCardResolver::with_options",
     "crates/a2a-protocol-client/src/builder/signed.rs:33 ClientBuilder::from_signed_card"
    ],
@@ -5800,7 +5800,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:90 canonicalize_card_json",
     "crates/a2a-protocol-types/src/signing.rs:687 verify_card_json_with_jwks",
-    "crates/a2a-protocol-client/src/discovery.rs:985 verify_card_signatures"
+    "crates/a2a-protocol-client/src/discovery.rs:994 verify_card_signatures"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/card_signature_as_received.rs:97 a_received_cards_defaults_are_dropped_before_canonicalizing",
@@ -5879,7 +5879,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:985 verify_card_signatures",
+    "crates/a2a-protocol-client/src/discovery.rs:994 verify_card_signatures",
     "crates/a2a-protocol-client/src/discovery.rs:225 CardFetchOptions::with_require_signature"
    ],
    "test_evidence": [
@@ -5989,7 +5989,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:600 CachingCardResolver::resolve",
-    "crates/a2a-protocol-client/src/discovery/freshness.rs:84 Freshness::of",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:110 Freshness::of",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:133 StaticAgentCardHandler::full_response",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:451 card_handler",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:37 extended_card_response"
@@ -6099,26 +6099,26 @@
     "crates/a2a-protocol-client/src/discovery.rs:600 CachingCardResolver::resolve",
     "crates/a2a-protocol-client/src/discovery.rs:706 CachingCardResolver::fresh_until",
     "crates/a2a-protocol-client/src/discovery.rs:796 fetch_card_with_metadata",
-    "crates/a2a-protocol-client/src/discovery/freshness.rs:84 Freshness::of",
-    "crates/a2a-protocol-client/src/discovery/freshness.rs:141 Freshness::fresh_until",
-    "crates/a2a-protocol-client/src/discovery/freshness.rs:182 is_fresh"
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:110 Freshness::of",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:198 Freshness::fresh_until",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:239 is_fresh"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/card_freshness.rs:84 a_fresh_card_is_served_without_a_request",
     "crates/a2a-protocol-client/tests/card_freshness.rs:96 a_card_past_its_max_age_is_revalidated",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:118 a_304_renews_the_cards_freshness",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:143 a_no_cache_card_is_revalidated_on_every_resolve",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:157 a_no_store_card_is_fetched_again_however_fresh",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:171 always_revalidate_ignores_max_age",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:187 a_card_without_a_validator_is_kept_while_fresh",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:205 age_reduces_the_remaining_freshness",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:218 a_date_an_hour_old_is_an_hours_age",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:275 with_options_starts_a_new_cache",
-    "crates/a2a-protocol-client/src/discovery/freshness.rs:281 expires_counts_from_date_and_max_age_wins_over_it",
-    "crates/a2a-protocol-client/src/discovery/freshness.rs:307 an_invalid_or_past_expires_is_stale",
-    "crates/a2a-protocol-client/src/discovery/freshness.rs:319 no_cache_and_vary_star_are_never_fresh",
-    "crates/a2a-protocol-client/src/discovery/freshness.rs:369 the_age_is_the_larger_of_apparent_and_corrected_age",
-    "crates/a2a-protocol-client/src/discovery/freshness.rs:419 fresh_means_strictly_before_the_end_of_the_lifetime",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:120 a_304_renews_the_cards_freshness",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:153 a_no_cache_card_is_revalidated_on_every_resolve",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:167 a_no_store_card_is_fetched_again_however_fresh",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:181 always_revalidate_ignores_max_age",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:197 a_card_without_a_validator_is_kept_while_fresh",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:215 age_reduces_the_remaining_freshness",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:228 a_date_an_hour_old_is_an_hours_age",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:285 with_options_starts_a_new_cache",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:338 expires_counts_from_date_and_max_age_wins_over_it",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:364 an_invalid_or_past_expires_is_stale",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:376 no_cache_and_vary_star_are_never_fresh",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:426 the_age_is_the_larger_of_apparent_and_corrected_age",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:476 fresh_means_strictly_before_the_end_of_the_lifetime",
     "crates/a2a-protocol-client/tests/card_revalidation.rs:99 a_no_store_card_is_not_kept",
     "crates/a2a-protocol-client/tests/card_revalidation.rs:151 a_304_replaces_the_stored_validators",
     "crates/a2a-protocol-client/tests/card_revalidation.rs:180 a_no_store_304_leaves_nothing_stored"
@@ -6141,7 +6141,7 @@
     "crates/a2a-protocol-client/src/discovery.rs:796 fetch_card_with_metadata"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:1221 fetch_card_with_metadata_304_returns_cached",
+    "crates/a2a-protocol-client/src/discovery.rs:1230 fetch_card_with_metadata_304_returns_cached",
     "crates/a2a-protocol-client/tests/card_revalidation.rs:67 a_cached_card_is_revalidated_with_its_validators"
    ],
    "notes": "CachingCardResolver revalidates on every resolve with If-None-Match and If-Modified-Since from the cached response; a server that answers 304 only to a request carrying both validators sees them on the second fetch. Shown to fail with the If-None-Match header removed.",
@@ -6159,13 +6159,13 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:554 CachingCardResolver::with_default_freshness",
     "crates/a2a-protocol-client/src/discovery.rs:706 CachingCardResolver::fresh_until",
-    "crates/a2a-protocol-client/src/discovery/freshness.rs:141 Freshness::fresh_until"
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:198 Freshness::fresh_until"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/tests/card_freshness.rs:231 no_default_lifetime_unless_asked_for",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:242 the_default_lifetime_keeps_a_card_with_no_caching_headers_fresh",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:259 the_default_lifetime_does_not_override_max_age",
-    "crates/a2a-protocol-client/src/discovery/freshness.rs:401 the_default_lifetime_fills_only_a_missing_one"
+    "crates/a2a-protocol-client/tests/card_freshness.rs:241 no_default_lifetime_unless_asked_for",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:252 the_default_lifetime_keeps_a_card_with_no_caching_headers_fresh",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:269 the_default_lifetime_does_not_override_max_age",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:458 the_default_lifetime_fills_only_a_missing_one"
    ],
    "notes": "Since 2026-10-15, opt-in: CachingCardResolver::with_default_freshness(lifetime) gives a card whose response has no max-age and no Expires that freshness lifetime (RFC 9111 §4.2.2 heuristic freshness), less any Age it arrived with, capped at 2^31 s. It never applies to a no-cache, Vary: * or no-store response, and is off by default, so without it such a card is revalidated on every resolve. The tests assert with_default_freshness keeps a card served without caching headers fresh and fills only a missing lifetime; shown able to fail by ignoring the default lifetime in fresh_until (2026-10-20).",
    "auditor": "D",
@@ -8418,7 +8418,7 @@
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:361 the_extended_card_replaces_the_capabilities_checked",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:405 a_failed_extended_card_fetch_changes_nothing",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:431 an_extended_card_does_not_turn_the_checks_on",
-    "crates/a2a-protocol-client/src/discovery.rs:1408 an_installed_extended_card_is_served_until_cleared"
+    "crates/a2a-protocol-client/src/discovery.rs:1417 an_installed_extended_card_is_served_until_cleared"
    ],
    "notes": "The SDK caches a card in two places. A2aClient caches the capabilities it checks calls against (DeclaredCapabilities, from the card it was built from); since 2026-10-13 get_extended_agent_card replaces them with the extended card's (A2aClient::adopt_capabilities), keeping extendedAgentCard declared, and only when the client checks at all. Before, it kept the public card's, so a capability only the extended card declared was refused locally with CapabilityNotDeclared. The other, the resolver's, is replaced when the application calls CachingCardResolver::install_extended_card, which serves the extended card from resolve() until clear_extended_card() or invalidate(); the application decides when the session ends.",
    "auditor": "F",
