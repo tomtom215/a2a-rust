@@ -309,3 +309,20 @@ async fn a_literal_address_returns_none() {
     .unwrap();
     assert_eq!(got, None);
 }
+
+// ── system_lookup: the lookup the push sender hands to resolve_with ──────────
+
+/// `system_lookup` answers with what the system resolver found, whole. An
+/// address literal needs no network and resolves to itself at the port given,
+/// in either family; an answer with nothing in it, or with another address,
+/// is not that.
+#[tokio::test]
+async fn the_system_lookup_answers_with_the_addresses_the_resolver_found() {
+    for literal in ["127.0.0.1:8080", "[::1]:9"] {
+        let want: SocketAddr = literal.parse().unwrap();
+        let got = system_lookup(literal.to_owned())
+            .await
+            .expect("an address literal resolves");
+        assert_eq!(got, vec![want], "{literal}");
+    }
+}

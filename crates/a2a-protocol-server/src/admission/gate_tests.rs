@@ -308,3 +308,34 @@ async fn an_abandoned_waiter_does_not_stall_the_one_behind_it() {
         "admitted when the slot was freed"
     );
 }
+
+/// Two waiters of one tenant are told apart by their ids, not by their
+/// places: when the newer one stops waiting, the older one keeps its place
+/// and is the one admitted when the slot is freed. (If the ids repeated, the
+/// newer one's leaving would take the older one's entry out of the queue.)
+#[tokio::test(start_paused = true)]
+async fn the_waiter_that_stops_waiting_is_the_one_that_leaves_the_queue() {
+    let gate = queued(1, 4, Duration::from_secs(10));
+    let held = gate.acquire("t", None).await.unwrap();
+    let older = {
+        let gate = gate.clone();
+        tokio::spawn(async move { gate.acquire("t", None).await.map(|_| Instant::now()) })
+    };
+    settle().await;
+    let newer = {
+        let gate = gate.clone();
+        tokio::spawn(async move { gate.acquire("t", None).await.map(drop) })
+    };
+    settle().await;
+    assert_eq!(load(&gate), (1, 2));
+    newer.abort();
+    settle().await;
+    assert_eq!(load(&gate), (1, 1), "only the newer waiter left");
+    let freed = Instant::now();
+    drop(held);
+    assert_eq!(
+        older.await.unwrap().unwrap(),
+        freed,
+        "the older waiter was admitted when the slot was freed"
+    );
+}
