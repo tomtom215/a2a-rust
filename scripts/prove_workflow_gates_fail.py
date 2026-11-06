@@ -575,10 +575,10 @@ def build_registry() -> dict[str, Probe | Exempt]:
     # These three are the reason this harness exists. The full-profile one is
     # where the `| tee` masking was found; the other two share its shape.
     reg["official-tck.yml::official-tck::Gate against the conformance baseline"] = (
-        _tck_gate_probe("full-compatibility.json", 88)
+        _tck_gate_probe("full-compatibility.json", 87)
     )
     reg["official-tck.yml::official-tck::Gate the minimal-profile run"] = _tck_gate_probe(
-        "minimal-compatibility.json", 66
+        "minimal-compatibility.json", 65
     )
     reg["official-tck.yml::official-tck::Gate the required-extension run"] = Probe(
         healthy=lambda d: write_report(

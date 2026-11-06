@@ -131,13 +131,14 @@ profile's run. `official-tck.yml` runs three profiles, each against its own
 python3 tck/scripts/check_conformance.py \
   --report /tmp/a2a-tck/reports/compatibility.json \
   --baseline tck/conformance-baseline.json \
-  --min-graded 88
+  --min-graded 87
 ```
 
 The gate fails on a MUST failure the baseline does not list, on a baselined
 failure that now passes (fix the baseline in the same change, with
 `--update`), and, with `--min-graded`, on a run that graded fewer MUST
-requirements than the floor (88 for the full profile, 66 for the minimal).
+requirements than the floor (87 for the full profile, 65 for the minimal, as measured
+at the pinned suite).
 The extension run is gated with `--require-pass CORE-CAP-004` instead, so a
 renamed test fails loudly rather than selecting nothing.
 

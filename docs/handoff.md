@@ -106,12 +106,15 @@ command is named so the next session re-runs it instead of copying the number. A
   - *`a2a-tck conformance`:* failed on `1ed6f8fe`: 87 MUST requirements graded against a floor of 88, one failing check not in the baseline (`HTTP_JSON-ERR-001`) and baselined checks that now pass,
     with `official-tck.yml` cloning upstream's `main`. Two executions I compared showed the same counts, so it is CONJECTURED to be upstream drift and not this tree. The maintainer chose option D on
     2026-11-06 and this branch carries it: pull requests, pushes and manual runs fetch the pinned commit `70f6f73` (`A2A_TCK_PIN`; upstream `main` on 2026-11-05, three commits after the tag
-    `1.0.0.alpha3`, which has not got its A2A 1.0.1 realignment) and the nightly run fetches `main`. The baseline (seven entries) and the two floors (88 and 66) were measured at `d4d6fae` and are NOT
-    re-measured at the pin: the first CI run at the pin decides them (`docs/official-tck-findings.md` section 26).
+    `1.0.0.alpha3`, which has not got its A2A 1.0.1 realignment) and the nightly run fetches `main`. **The first run at the pin (Official TCK run 42243749206, on `ffd72299`, 2026-11-06) failed its gates as
+    predicted, and measured the suite:** full profile 85 passed, 2 failed, 5 skipped, 7 manual, 16 not tested of 115 MUST (87 graded, floor 88); minimal 63, 2, 26, 7, 17 (65 graded, floor 66). Four of the
+    seven baselined requirements pass at the pin, `HTTP_JSON-SVC-001` is a SHOULD there, and two fail: `CORE-SEND-003` (the suite declares no expected error) and `HTTP_JSON-ERR-001` (its test wants
+    `application/json`; the suite's own v1.0.1 example answers `application/a2a+json`, as this SDK does). A follow-up commit sets the baseline to those two entries and the floors to 87 and 65, checked against
+    synthetic reports only (`docs/official-tck-findings.md` section 26); the run on that commit is the check.
   - *`ACTS`:* failed once on `8080a519` in `Build the itk_service image` (a Maven download in the upstream Dockerfile exited 2; no ACTS, ITK or Docker file changed);
     re-run once, attempt 2 succeeded. Infrastructure, commented on the pull request once.
 - **Not verified.** CI on the commits above `1ed6f8fe`: none has run in CI, so cargo-mutants has not graded shard 39/40's 42 mutants (its baseline failed), the JWKS parser, the `304` merge, the new
-  tests or anything else added since; the official TCK has not run at the pin, so its baseline and floors are unmeasured there; the RFC-ledger CI step (`ci.yml`) has not run in CI (its checker has, locally,
+  tests or anything else added since; the re-baselined official TCK gates have not run (the baseline and floors are measured at the pin but checked only against synthetic reports); the RFC-ledger CI step (`ci.yml`) has not run in CI (its checker has, locally,
   and the harness proves it can fail). `scripts/prove_gates_fail.sh` has not been run over its other 103 gates on this head. Windows and macOS ran the API-shape package in the pull request's CI at `e3105ea4` (the four Test legs
   succeeded; its socket tests use the real clock with lower bounds and a 10 s ceiling, and the three drain-delay tests take about 3 s each). The ITK
   checks and `SLIMRPC binding (out-of-workspace)` succeeded there; whether the ITK runs exercise the `x/net` bump was not checked, and the SLIMRPC job's
@@ -148,9 +151,9 @@ command is named so the next session re-runs it instead of copying the number. A
 ### First, next
 
 1. Read the CI of pull request #197 on the pushed head before building on it (`ci-failure-triage`): the first real error of each failed job, every real failure fixed in one push. The commits above
-   `1ed6f8fe` go up in one push (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD` lists them until then). Read, in this order: `a2a-tck conformance` (the first run at the pin:
-   re-baseline `tck/conformance-baseline.json` with `tck/scripts/check_conformance.py --update` from that run's report, re-measure the two `--min-graded` floors, and fill in the table of
-   `docs/official-tck-findings.md` section 26), the mutation run (shard 39/40's 42 mutants are graded for the first time, and the JWKS parser, the `304` merge and the ledger tests are new code), the
+   `1ed6f8fe` go up in one push (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD` lists them until then). Read, in this order: `a2a-tck conformance` (the re-baselined gates' first run: it should exit 0 with 87 and 65 graded; if upstream
+   moved nothing, any difference is this repository's, since the revision is pinned; reconcile `tck/untested-musts.toml` against that run's report artifact, which lists the pin's 16 not-tested and 7 manual
+   MUST requirements, as `docs/official-tck-findings.md` section 26 says), the mutation run (shard 39/40's 42 mutants are graded for the first time, and the JWKS parser, the `304` merge and the ledger tests are new code), the
    new CI step `RFC ledger covers every requirement and cites only code and tests that exist`, and `Test coverage`. A failed job may be re-run at most once, and only after its whole run has completed. Do not merge or tag: the maintainer's go is required.
 2. Then the maintainer's open questions (*Waiting on the maintainer*): (c) the HS256 key as raw bytes, (d) `fetch_jwks` forwarding the card fetch's headers.
 3. After the tag: ADR 0035 (agent skills) and ADR 0036 (steering), each its own pull request (the maintainer's decision of 2026-11-03).
@@ -707,7 +710,7 @@ it.
 
 - **2026-11-06, answers to the decision sheet on the official TCK, the dependency-source skips, stale-if-error, the gate injections and the ledgers** (all done in this branch unless stated):
   - **TCK: option D.** Pull requests, pushes and manual runs grade against a pinned `a2a-tck` commit (`70f6f73`); the nightly run floats on upstream `main` as a drift alarm that gates no pull request.
-    The re-baseline is made from the first CI run at the pin (*First, next*).
+    The suite was measured at the pin in the first CI run there and the baseline and floors follow that measurement (`docs/official-tck-findings.md` section 26).
   - **The two dependency-source skips: accepted.** Each carries its argument beside the code.
   - **The stale-if-error change: kept** (RFC 5861 section 4; the default window is still none; `no-store`, `must-revalidate` and `no-cache` cards are never served stale).
   - **The four missing `prove_gates_fail.sh` injections: added before the tag**, so every gate of this release can be proved able to fail.

@@ -8,8 +8,8 @@
 # practices are non-negotiable. — Tom F.
 """Gate the official a2a-tck run against a checked-in baseline.
 
-The TCK currently reports 5 failing MUST-level requirements against this SDK
-(see docs/official-tck-findings.md). Until those are closed, the CI job cannot
+The TCK reports 2 failing MUST-level requirements against this SDK at the
+pinned revision (see docs/official-tck-findings.md §26). Until those are closed, the CI job cannot
 simply require a clean run — but it must not report success either, which is
 what `continue-on-error: true` did: a green check with `exit code 1` buried in
 the annotations is worse than a red one, because nobody reads a green check.
@@ -47,7 +47,7 @@ Usage:
                          --baseline tck/conformance-baseline.json
     check_conformance.py --report … --baseline … --update   # rewrite baseline
     check_conformance.py --report … --baseline … --require-pass CORE-CAP-004
-    check_conformance.py --report … --baseline … --min-graded 88
+    check_conformance.py --report … --baseline … --min-graded 87
 """
 
 from __future__ import annotations

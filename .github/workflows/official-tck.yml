@@ -231,11 +231,14 @@ jobs:
       # running the gate against a synthetic all-SKIPPED report and against an
       # empty one: both exited 0 before this flag existed.
       #
-      # 88 is measured, not chosen: the full profile grades 88 of the suite's
-      # 114 MUST requirements (the other 26 are 5 SKIPPED + 21 NOT TESTED —
-      # see docs/official-tck-findings.md §1). It is a floor, not an equality,
-      # so upstream adding MUST tests does not turn this red. A *drop* is the
-      # signal — diagnose it, do not lower the floor to go green.
+      # 87 is measured, not chosen: at the pinned a2a-tck the full profile
+      # grades 87 of the suite's 115 MUST requirements (85 PASS + 2 FAIL; the
+      # other 28 are 5 SKIPPED + 7 MANUAL + 16 NOT TESTED — run 42243749206,
+      # docs/official-tck-findings.md §26). It was 88 of 114 at the previous
+      # revision; the pin's one upstream commit (a2aproject/a2a-tck#258) reports
+      # manual obligations separately from "not tested". It is a floor, not an
+      # equality, so upstream adding MUST tests does not turn this red. A *drop*
+      # is the signal — diagnose it, do not lower the floor to go green.
       #
       # `set -o pipefail` is the load-bearing line, not boilerplate. Without
       # it this entire gate was decorative, from the day the `| tee` was added
@@ -263,7 +266,7 @@ jobs:
           python3 tck/scripts/check_conformance.py \
             --report /tmp/full-compatibility.json \
             --baseline tck/conformance-baseline.json \
-            --min-graded 88 2>&1 | tee /tmp/tck-gate.log
+            --min-graded 87 2>&1 | tee /tmp/tck-gate.log
 
       - name: Summarize
         if: always()
@@ -380,16 +383,17 @@ jobs:
       # gets a requirement-level diagnosis rather than just a red X — but not
       # when that step was skipped, because then there is no report to read and
       # the only thing this can produce is `error: TCK report not found`.
-      # Floor of 66 measured the same way as the full profile's 88: the
+      # Floor of 65 measured the same way as the full profile's 87: the
       # less-capable card means the suite legitimately skips more, so this
-      # profile grades 66 of 114 MUSTs.
+      # profile grades 65 of 115 MUSTs (63 PASS + 2 FAIL; 26 SKIPPED, 7 MANUAL,
+      # 17 NOT TESTED).
       - name: Gate the minimal-profile run
         if: ${{ !cancelled() && steps.minimal_run.outcome != 'skipped' }}
         run: |
           python3 tck/scripts/check_conformance.py \
             --report /tmp/minimal-compatibility.json \
             --baseline tck/conformance-baseline.json \
-            --min-graded 66
+            --min-graded 65
 
       # A third profile, for exactly one requirement. CORE-CAP-004 asserts that
       # a server advertising an extension with `required: true` rejects a
