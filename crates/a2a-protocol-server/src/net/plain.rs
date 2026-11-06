@@ -66,6 +66,14 @@ impl Write for PlainConn {
         self.project().inner.poll_write(cx, buf)
     }
 
+    // Equivalent mutant: cargo-mutants replaces the body with
+    // `Poll::from(Ok(()))`, which is `Poll::Ready(Ok(()))`, and that is what
+    // the body returns. `inner` is the connector's response, a
+    // `TokioIo<TcpStream>`; `TokioIo::poll_flush` (hyper-util 0.1.21) calls
+    // `AsyncWrite::poll_flush` of the stream, and tokio's (1.54.1,
+    // `net/tcp/stream.rs`) is `// tcp flush is a no-op`, `Poll::Ready(Ok(()))`.
+    // No test can distinguish the two (ADR 0006).
+    #[mutants::skip]
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         self.project().inner.poll_flush(cx)
     }
@@ -130,3 +138,6 @@ impl Service<http::Uri> for PlainConnector {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

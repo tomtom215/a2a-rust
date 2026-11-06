@@ -28,7 +28,10 @@
 // connector in `proxy`. Without `tls-rustls` the push client is plaintext and
 // dials through `plain` (audit NEW-b-3).
 pub mod client;
-#[cfg(not(feature = "tls-rustls"))]
+// Built for tests as well: the mutation run builds with every feature,
+// `tls-rustls` among them, which leaves this module out, so every mutant in it
+// compiled to nothing and none could be caught (the class audit N8 names).
+#[cfg(any(test, not(feature = "tls-rustls")))]
 pub mod plain;
 pub mod proxy;
 pub mod resolver;
