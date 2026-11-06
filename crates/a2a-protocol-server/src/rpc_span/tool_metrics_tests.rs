@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{Status, TwoCalls, recorded};
 use crate::otel::test_reader::{collect, recording_meter};
-use crate::rpc_span::{GenAiMeter, GenAiSpan, Reply};
+use crate::rpc_span::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 use crate::tool_loop::{
     ChatRequest, LoopError, ModelError, ModelTurn, ToolCall, ToolLoop, ToolModel, ToolSet,
 };
@@ -87,6 +87,17 @@ fn only(rm: &ResourceMetrics, name: &str) -> Point {
 const DURATION_BUCKETS: [f64; 14] = [
     0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92,
 ];
+
+/// A run prints the instruments it holds by name and not by contents (they
+/// are handles into a meter provider); the derived `Debug` of a run, or of a
+/// measure, is what a failure message or a log line shows of them.
+#[test]
+fn a_run_shows_the_instruments_it_holds_by_name() {
+    let (meter, _reader, _provider) = recording_meter();
+    let run = AgentRun::start(&GenAiMeter::new(&meter), Some("planner"), "qwen3:1.7b");
+    let shown = format!("{run:?}");
+    assert!(shown.contains("instruments: Instruments { .. }"), "{shown}");
+}
 
 #[test]
 fn a_turn_records_its_duration_and_its_tokens_in_both_families() {
