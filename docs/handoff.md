@@ -29,9 +29,9 @@ command is named so the next session re-runs it instead of copying the number. A
   1f6dd965..origin/claude/inspiring-mccarthy-rgpntj-rest` commits, `git diff --shortstat` against `1f6dd965` for the size. It was
   built from ten work packages (observability SDK, observability stack, deploy, network, push, claims, control plane, lineage,
   client balancing and discovery, API shape), each by an agent in its own worktree that never pushed, merged by the lead with every conflict
-  resolved by hand, then the integration fixes the merged tree needed. It is pull request #197 to `main` (head `claude/inspiring-mccarthy-rgpntj-rest`, label `mutation-test`). Its head on the remote reads `1ed6f8fe` (the push of 2026-11-06); the commits above it are local until the next push
-  (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD`): the `304` header merge in the card cache, the RFC requirements ledger and its CI gate, the
-  JWKS fix, the pin of the official TCK, the four gate injections of `prove_gates_fail.sh`, the cross-replica test fix, the two survivor tests of mutation run 469, and this file.
+  resolved by hand, then the integration fixes the merged tree needed. It is pull request #197 to `main` (head `claude/inspiring-mccarthy-rgpntj-rest`, label `mutation-test`). Its head on the remote reads `ffd72299` (the second push of 2026-11-06, which carried the `304` header merge in the card cache, the RFC requirements ledger and its CI gate, the
+  JWKS fix, the pin of the official TCK, the four gate injections of `prove_gates_fail.sh`, the cross-replica test fix and the two survivor tests of mutation run 469); the commits above it are local until the next push
+  (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD`): the re-baseline of the TCK gates, the closes of the three survivors of mutation run 470, and this file.
 - **What it closes.** The 69 plan items that were open when the final 0.16.0 work began (the maintainer's instruction: all of them go
   into 0.16.0, with the best engineering option and the reasoning recorded, open to a veto). `python3 scripts/audit/plan_status.py`:
   191 of 191 plan items have a commit. In the register (`docs/audits/2026-10-29/README.md`): 56 `fixed`, 11 `fixed (part)` (B-29,
@@ -52,6 +52,10 @@ command is named so the next session re-runs it instead of copying the number. A
   fail, the file restored and its hash compared): the JWKS parser in `jwt.rs`, 14 of 14 (baseline 48 passed); the algorithm check of `VerifyingKey::verify`, 3 of 3 (61); `system_lookup`, 2 of 2 (17);
   the admission gate's `next_id`, 2 of 2 (23). The mutants behind the RFC ledger's earlier TESTED rows (the `crit` refusals, claims and members, the algorithm tests: 5, 9 and 5) were killed on the
   bytes before the JWKS commit changed `jwt.rs` and were not re-run on these.
+  **After the push of `ffd72299`** the three survivors of mutation run 470 were closed and the gates that cover them re-run, one gate at a time on a clean tree. On `94e5ffa5` (`JwtHeader.crit` became a `bool`):
+  clippy 46, 57, 58 and 59, nextest 60 (7192 passed), 71 and 72 (3112), 73 (7213) and 74 (7187) exit 0, 0 failed. On `84d52b76` (the client test): clippy 46, 49, 58 and 59, nextest 63 (1297), 60 (7193), 73 (7214) and
+  74 (7188) exit 0, 0 failed. Hand mutants, baseline first and the file restored byte for byte: `present`, 5 of 5 (baseline 49 passed); the `304` guard in `fetch_inner`, 3 of 3 (109). Static gates 1 to 45 are
+  re-run on the head that precedes this file's commit; the result is in the pull request body, not here.
   *Read on an earlier head and not re-run on `d30e5199`* (the branch has changed a good deal since `e3105ea4`: `git diff --stat e3105ea4..HEAD`):
   In `bindings/a2a-protocol-slimrpc`: `cargo fmt --check` (failed once on one file the API-shape package left unformatted; fixed),
   `cargo clippy --all-targets -- -D warnings`, `cargo build --bin slim-node` and `cargo test -- --test-threads=1` exit 0 (75 unit tests, the
@@ -95,6 +99,12 @@ command is named so the next session re-runs it instead of copying the number. A
     mutants (the test is fixed in `9b9d4973`; the cause of the CI failure is CONJECTURED, *Lessons*), so the next run is the first to grade them; shard 30/40, one survivor (`admission/gate.rs:176`,
     `state.next_id += 1` replaced by `*= 1`); shard 32/40, one survivor (`url_guard.rs:384`, `system_lookup` replaced by `Ok(vec![])`). Both survivors are closed by tests seen to fail with the
     mutant applied by hand (`d30e5199`).
+  - *Mutation (run 42243749081, run number 470, on `ffd72299`; the Actions API).* Finished 2026-11-06 18:35 UTC: 43 of 49 jobs succeeded, 2 were skipped and 4 failed (three shards and the aggregate job). The server jobs took 61.8 to
+    104.6 minutes. Shard 39/40 graded its 42 mutants for the first time (its baseline passed: the `multi_replica` fix) with no survivor. Three distinct survivors, all in code this branch added: `jwt.rs:794`, `present`
+    replaced by `Ok(Some(Default::default()))` (shard 35/40) and by `Ok(None)` (34/40), and `discovery.rs:885`, the guard `status == NOT_MODIFIED` of `fetch_inner` replaced by `true` (client shard 0/2). Closed in `94e5ffa5`
+    and `84d52b76`, each by a test seen to fail with the mutant applied by hand; `present` was a design defect (`Lessons`).
+  - *The other checks on `ffd72299`* (128 check runs: 117 success, 6 skipped, 5 failure; the failures are the three shards above, their aggregate job and `a2a-tck conformance`): `Test coverage`, `Test (postgres integration)`, the Windows and macOS
+    Test legs, `Regression Gate` and `Static checks` (which now include the RFC-ledger step) succeeded.
   - *The other checks on `1ed6f8fe`* (128 check runs: 117 success, 6 skipped, 5 failure; the failures are the three shards above, their aggregate job and `a2a-tck conformance`): `Test coverage`
     (24 minutes; it also succeeded on `8080a519`, so its disk step has now been enough twice), `CodeQL`, `Analyze` in three languages, ACTS, the Windows and macOS Clippy and Test legs, every TCK cross-language leg,
     SLIMRPC and the `deploy-agent` checks succeeded.
@@ -109,13 +119,12 @@ command is named so the next session re-runs it instead of copying the number. A
     `1.0.0.alpha3`, which has not got its A2A 1.0.1 realignment) and the nightly run fetches `main`. **The first run at the pin (Official TCK run 42243749206, on `ffd72299`, 2026-11-06) failed its gates as
     predicted, and measured the suite:** full profile 85 passed, 2 failed, 5 skipped, 7 manual, 16 not tested of 115 MUST (87 graded, floor 88); minimal 63, 2, 26, 7, 17 (65 graded, floor 66). Four of the
     seven baselined requirements pass at the pin, `HTTP_JSON-SVC-001` is a SHOULD there, and two fail: `CORE-SEND-003` (the suite declares no expected error) and `HTTP_JSON-ERR-001` (its test wants
-    `application/json`; the suite's own v1.0.1 example answers `application/a2a+json`, as this SDK does). A follow-up commit sets the baseline to those two entries and the floors to 87 and 65, checked against
-    synthetic reports only (`docs/official-tck-findings.md` section 26); the run on that commit is the check.
+    `application/json`; the suite's own v1.0.1 example answers `application/a2a+json`, as this SDK does). `73bd2a00` sets the baseline to those two entries and the floors to 87 and 65, checked against
+    synthetic reports and against the real step bodies by `scripts/prove_workflow_gates_fail.py` (4 proven, 0 unproven; `docs/official-tck-findings.md` section 26); the run on that commit is the check.
   - *`ACTS`:* failed once on `8080a519` in `Build the itk_service image` (a Maven download in the upstream Dockerfile exited 2; no ACTS, ITK or Docker file changed);
     re-run once, attempt 2 succeeded. Infrastructure, commented on the pull request once.
-- **Not verified.** CI on the commits above `1ed6f8fe`: none has run in CI, so cargo-mutants has not graded shard 39/40's 42 mutants (its baseline failed), the JWKS parser, the `304` merge, the new
-  tests or anything else added since; the re-baselined official TCK gates have not run (the baseline and floors are measured at the pin but checked only against synthetic reports); the RFC-ledger CI step (`ci.yml`) has not run in CI (its checker has, locally,
-  and the harness proves it can fail). `scripts/prove_gates_fail.sh` has not been run over its other 103 gates on this head. Windows and macOS ran the API-shape package in the pull request's CI at `e3105ea4` (the four Test legs
+- **Not verified.** CI on the commits above `ffd72299`: none has run in CI, so cargo-mutants has not graded `JwtHeader.crit` as a `bool` or the new tests, and the re-baselined official TCK gates have not run (the baseline and
+  floors are measured at the pin but checked only against synthetic reports and the proof harness). `scripts/prove_gates_fail.sh` has not been run over its other 103 gates on this head. Windows and macOS ran the API-shape package in the pull request's CI at `e3105ea4` (the four Test legs
   succeeded; its socket tests use the real clock with lower bounds and a 10 s ceiling, and the three drain-delay tests take about 3 s each). The ITK
   checks and `SLIMRPC binding (out-of-workspace)` succeeded there; whether the ITK runs exercise the `x/net` bump was not checked, and the SLIMRPC job's
   `cargo deny` and package steps were not run locally. The API-shape package's 91 hand mutants (23, 19, 12 and 37, all caught, by its own agent) were not re-run in this
@@ -124,6 +133,8 @@ command is named so the next session re-runs it instead of copying the number. A
   cross-checked from this sandbox (`ring` needs Apple's SDK headers); the Windows target stands in only for non-Linux compile errors.
 
 **Withdrawn or corrected during this work** (so a reader who saw the earlier statement does not keep it):
+
+- The previous version of this file said the RFC-ledger CI step had not run in CI. It ran on `ffd72299`, inside the `Static checks` job, which succeeded.
 
 - The ledger branch's handoff said `scripts/prove_gates_fail.sh` "cannot run on pull request #197's head" because its drift check exited 2 (four gates without an injection). That was true of `1ed6f8fe`
   and is not true of this branch: the four injections are in it and `--list` exits 0.
@@ -151,10 +162,9 @@ command is named so the next session re-runs it instead of copying the number. A
 ### First, next
 
 1. Read the CI of pull request #197 on the pushed head before building on it (`ci-failure-triage`): the first real error of each failed job, every real failure fixed in one push. The commits above
-   `1ed6f8fe` go up in one push (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD` lists them until then). Read, in this order: `a2a-tck conformance` (the re-baselined gates' first run: it should exit 0 with 87 and 65 graded; if upstream
+   `ffd72299` go up in one push (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD` lists them until then). Read, in this order: `a2a-tck conformance` (the re-baselined gates' first run: it should exit 0 with 87 and 65 graded; if upstream
    moved nothing, any difference is this repository's, since the revision is pinned; reconcile `tck/untested-musts.toml` against that run's report artifact, which lists the pin's 16 not-tested and 7 manual
-   MUST requirements, as `docs/official-tck-findings.md` section 26 says), the mutation run (shard 39/40's 42 mutants are graded for the first time, and the JWKS parser, the `304` merge and the ledger tests are new code), the
-   new CI step `RFC ledger covers every requirement and cites only code and tests that exist`, and `Test coverage`. A failed job may be re-run at most once, and only after its whole run has completed. Do not merge or tag: the maintainer's go is required.
+   MUST requirements, as `docs/official-tck-findings.md` section 26 says), the mutation run (the `crit` bool and the two new tests are code it has not graded), and `Test coverage`. A failed job may be re-run at most once, and only after its whole run has completed. Do not merge or tag: the maintainer's go is required.
 2. Then the maintainer's open questions (*Waiting on the maintainer*): (c) the HS256 key as raw bytes, (d) `fetch_jwks` forwarding the card fetch's headers.
 3. After the tag: ADR 0035 (agent skills) and ADR 0036 (steering), each its own pull request (the maintainer's decision of 2026-11-03).
 4. The adversarial campaign (the matrix in the maintainer's brief) is not started. It is scripts with recorded output, one brief per
@@ -999,6 +1009,10 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **A deserializer that returns data nobody reads has mutants no test can see, and a refusal by parse error looks the same as a refusal by rule.** `JwtHeader.crit` was an `Option<serde_json::Value>` whose only use was `.is_some()`;
+  mutation run 470 replaced the deserializing function by `Ok(None)` and by `Ok(Some(Default::default()))` and both survived, because a `deserialize_with` function that does not read its value makes serde_json fail the header,
+  and a header that does not parse is refused, which is what every validator-level test asserted. The cure was to keep only what is used (a `bool`) and to test the header's own deserialization, not only the verdict on a token.
+  When a mutant of a helper survives every end-to-end test, check whether the end-to-end verdict has a second path to the same answer.
 - **A commit that says "Not run: clippy" has not been checked, and clippy found three things in it.** The JWKS change passed its tests and 17 hand mutants and still failed `clippy::similar_names`,
   `clippy::unnecessary_wraps` and `clippy::too_many_lines` (`JwtValidator::validate` at 65 of 60) in the first CI-scope clippy gate run on it. The cure for the last was a method (`VerifyKey::verifies`),
   not an `#[allow]`. Run gate 46 before the mutants, not after; the mutants then have to be re-run on the bytes that changed (they were: 14 of 14 on the final file).
