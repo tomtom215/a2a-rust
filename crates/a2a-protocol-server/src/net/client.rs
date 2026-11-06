@@ -57,13 +57,25 @@ impl HttpsClient {
     }
 
     /// A plaintext client with the proxy rules the process environment gives.
+    // No test can kill cargo-mutants' `Default::default()` here (ADR 0006): the
+    // gate builds with every feature, where this function is compiled out, and
+    // in a build without `tls-rustls`, the only one that has it, `HttpsClient`
+    // has no `Default` (E0277, checked 2026-11-06), so the mutant does not
+    // compile.
     #[cfg(not(feature = "tls-rustls"))]
+    #[mutants::skip]
     pub fn plain() -> Self {
         Self::plain_with_rules(environment_rules())
     }
 
     /// A plaintext client with explicit proxy `rules`: what the tests give it.
+    // No test can kill cargo-mutants' `Default::default()` here (ADR 0006): the
+    // gate builds with every feature, where this function is compiled out, and
+    // in a build without `tls-rustls`, the only one that has it, `HttpsClient`
+    // has no `Default` (E0277, checked 2026-11-06), so the mutant does not
+    // compile.
     #[cfg(not(feature = "tls-rustls"))]
+    #[mutants::skip]
     pub fn plain_with_rules(rules: Arc<Matcher>) -> Self {
         Self::assemble(rules, Connector::new)
     }

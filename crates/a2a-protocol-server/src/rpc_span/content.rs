@@ -73,7 +73,9 @@ fn size(value: &Value) -> usize {
 pub fn parts_json(parts: &[Part], budget: &mut Budget) -> Vec<Value> {
     let mut out = Vec::new();
     for part in parts {
-        if budget.left == 0 || budget.omitted > 0 {
+        // Once a part has been left out `left` is 0 (it only ever falls), so
+        // this also leaves out every part after it.
+        if budget.left == 0 {
             budget.omitted += 1;
             continue;
         }

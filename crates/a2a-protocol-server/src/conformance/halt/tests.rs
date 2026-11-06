@@ -204,6 +204,7 @@ async fn each_flaw_is_named() {
         (Flaw::WrongCancel, "a_cancel_is_pushed_to_another_handle"),
         (Flaw::JoinsJobs, "job_halts_are_kept_apart"),
         (Flaw::KeepsRemoved, "job_halts_are_kept_apart"),
+        (Flaw::RemovesAll, "job_halts_are_kept_apart"),
         (Flaw::Mute, "a_write_is_pushed_to_another_handle"),
     ] {
         let report = grade_store(Broken::new(flaw)).await;

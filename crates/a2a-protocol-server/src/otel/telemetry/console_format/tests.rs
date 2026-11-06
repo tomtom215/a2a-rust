@@ -110,6 +110,24 @@ fn an_event_field_does_not_overwrite_the_lines_own_keys() {
     assert_ne!(got[0]["target"], "mine");
 }
 
+/// Every numeric field keeps its JSON type, a float among them.
+#[test]
+fn numeric_fields_are_json_numbers() {
+    let got = lines(|| {
+        tracing::info!(
+            ratio = 0.25_f64,
+            count = 3_u64,
+            delta = -2_i64,
+            ok = true,
+            "x"
+        );
+    });
+    assert_eq!(got[0]["ratio"], 0.25);
+    assert_eq!(got[0]["count"], 3);
+    assert_eq!(got[0]["delta"], -2);
+    assert_eq!(got[0]["ok"], true);
+}
+
 #[test]
 fn a_debug_field_is_its_debug_text() {
     let got = lines(|| tracing::info!(path = ?std::path::Path::new("/a"), "x"));

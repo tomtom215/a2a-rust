@@ -51,6 +51,17 @@ impl AgentExecutor for Resumable {
     }
 }
 
+/// An executor that says nothing is not re-run after a hand-off: running a
+/// turn twice is for the executor to promise, so the default is `false`.
+#[test]
+fn an_executor_is_not_resumed_after_a_hand_off_unless_it_says_so() {
+    struct Silent;
+    crate::agent_executor!(Silent, |_ctx, _queue| async { Ok(()) });
+    assert!(!Silent.resumes_after_hand_off());
+    assert!(!Resumable(false).resumes_after_hand_off());
+    assert!(Resumable(true).resumes_after_hand_off());
+}
+
 fn marked(task: &Task) -> bool {
     task.status
         .message

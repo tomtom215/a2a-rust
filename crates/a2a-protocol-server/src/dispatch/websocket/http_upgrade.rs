@@ -220,7 +220,7 @@ fn same_origin(req: &hyper::Request<()>) -> bool {
 
 /// The `101` that completes the handshake.
 fn switching_protocols(accept: &str) -> Response {
-    let mut resp = hyper::Response::new(empty());
+    let mut resp = hyper::Response::new(BoxBody::default());
     *resp.status_mut() = hyper::StatusCode::SWITCHING_PROTOCOLS;
     let headers = resp.headers_mut();
     headers.insert(
@@ -261,12 +261,6 @@ fn plain(status: u16, reason: &'static str) -> Response {
     *resp.status_mut() =
         hyper::StatusCode::from_u16(status).unwrap_or(hyper::StatusCode::BAD_REQUEST);
     resp
-}
-
-fn empty() -> BoxBody<Bytes, Infallible> {
-    http_body_util::Empty::new()
-        .map_err(|never| match never {})
-        .boxed()
 }
 
 #[cfg(test)]

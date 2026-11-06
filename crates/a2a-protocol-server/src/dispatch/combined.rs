@@ -236,6 +236,16 @@ mod tests {
     }
 
     #[test]
+    fn debug_names_the_dispatcher_and_its_paths() {
+        let text = format!("{:?}", combined());
+        assert!(text.starts_with("CombinedDispatcher {"), "{text}");
+        assert!(
+            text.contains("jsonrpc_path") && text.contains("base_path"),
+            "{text}"
+        );
+    }
+
+    #[test]
     fn only_a_post_or_preflight_of_the_jsonrpc_path_is_jsonrpc() {
         let d = combined();
         assert!(d.is_jsonrpc(&req("POST", "/")));
