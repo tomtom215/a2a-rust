@@ -111,8 +111,19 @@ impl TestDb {
 /// The delay between them is what gives a subscriber on the other replica a
 /// window in which the task exists, is non-terminal, and is producing events
 /// somewhere else — the state the interesting questions are about.
+///
+/// A delay is a guess about how fast the subscriber is, and a loaded machine
+/// (the mutation job runs this whole suite beside a database that is creating
+/// and dropping a database per test) can lose it: a subscriber that arrives
+/// after the artifact is shown it inside the snapshot `Task`, as it should
+/// be, and sees no artifact frame. With a `gate` the artifact waits for the
+/// test to say the subscriber is attached instead, so nothing depends on speed.
 struct StreamingExec {
     step: Duration,
+    /// When set, the artifact is held until the test calls `notify_one` on it
+    /// (a permit is kept if that comes first), and `step` only separates the
+    /// artifact from the terminal status.
+    gate: Option<Arc<tokio::sync::Notify>>,
 }
 
 impl a2a_protocol_server::executor::AgentExecutor for StreamingExec {
@@ -124,11 +135,15 @@ impl a2a_protocol_server::executor::AgentExecutor for StreamingExec {
         Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
     > {
         let step = self.step;
+        let gate = self.gate.clone();
         Box::pin(async move {
             use a2a_protocol_server::executor_helpers::EventEmitter;
             let emitter = EventEmitter::new(ctx, queue);
             emitter.status(TaskState::Working).await?;
-            tokio::time::sleep(step).await;
+            match gate {
+                Some(gate) => gate.notified().await,
+                None => tokio::time::sleep(step).await,
+            }
             emitter
                 .artifact(
                     "out",
@@ -147,11 +162,20 @@ impl a2a_protocol_server::executor::AgentExecutor for StreamingExec {
 /// A handler standing in for one replica: its own executor and queues, the
 /// caller's store.
 async fn replica(url: &str, step: Duration) -> Arc<RequestHandler> {
+    replica_gated(url, step, None).await
+}
+
+/// [`replica`] whose executor holds its artifact until `gate` is notified.
+async fn replica_gated(
+    url: &str,
+    step: Duration,
+    gate: Option<Arc<tokio::sync::Notify>>,
+) -> Arc<RequestHandler> {
     let store = PostgresTaskStore::new(url)
         .await
         .expect("postgres task store");
     Arc::new(
-        RequestHandlerBuilder::new(StreamingExec { step })
+        RequestHandlerBuilder::new(StreamingExec { step, gate })
             .without_agent_card()
             .with_task_store_arc(Arc::new(store))
             .build()
@@ -321,7 +345,16 @@ async fn intermediate_events_cross_replicas_through_the_log() {
     use a2a_protocol_types::events::StreamResponse;
 
     let db = TestDb::create("events").await;
-    let a = replica(&db.url(), Duration::from_millis(150)).await;
+    // A's executor holds the artifact until B is attached: a subscriber that
+    // came after it would be shown the artifact in its snapshot and no frame
+    // for it, which is correct and not what this test is about.
+    let artifact_gate = Arc::new(tokio::sync::Notify::new());
+    let a = replica_gated(
+        &db.url(),
+        Duration::from_millis(150),
+        Some(Arc::clone(&artifact_gate)),
+    )
+    .await;
     let b = replica(&db.url(), Duration::from_millis(150)).await;
 
     let result = a
@@ -343,6 +376,8 @@ async fn intermediate_events_cross_replicas_through_the_log() {
         .on_subscribe_to_task(TaskIdParams::new(task_id.0), None)
         .await
         .expect("replica B accepts the subscription");
+    // B is attached, and its snapshot is already read: only now may A go on.
+    artifact_gate.notify_one();
 
     // Each artifact frame's log position and id.
     let artifact = |event: &a2a_protocol_server::StreamEvent| match &event.event {
@@ -358,9 +393,13 @@ async fn intermediate_events_cross_replicas_through_the_log() {
     });
 
     let (mut b_artifacts, mut last_state) = (Vec::new(), None);
+    let mut snapshot_artifacts = None;
     let ended = tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(event) = stream_b.read().await {
             let event = event.expect("no streamLagged: the log holds every event");
+            if let StreamResponse::Task(snapshot) = &event.event {
+                snapshot_artifacts.get_or_insert(snapshot.artifacts.as_ref().map_or(0, Vec::len));
+            }
             b_artifacts.extend(artifact(&event));
             if let Some(state) = terminal_state_of(&event.event) {
                 last_state = Some(state);
@@ -370,6 +409,11 @@ async fn intermediate_events_cross_replicas_through_the_log() {
     .await;
 
     let a_artifacts = a_artifacts.await.expect("A's counter joins");
+    assert_eq!(
+        snapshot_artifacts,
+        Some(0),
+        "B's first frame is its snapshot, read before the gate opened, so it cannot hold the artifact"
+    );
     assert_eq!(
         a_artifacts.len(),
         1,
