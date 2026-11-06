@@ -111,7 +111,14 @@ pub(super) fn read() -> Option<Snapshot> {
 }
 
 /// The process's state now: not read outside Linux.
+// No test can kill cargo-mutants' `Some(Default::default())` here (ADR 0006):
+// the gate runs on Linux, where this function is compiled out, and on the
+// platforms that have it the mutant does not compile, because a `const fn`
+// cannot call `Default::default()` (E0015, checked 2026-11-06 by building this
+// function with the platform gate flipped by hand). If `const` is ever removed
+// from it, drop this skip and let `nothing_is_read_outside_linux` carry it.
 #[cfg(not(target_os = "linux"))]
+#[mutants::skip]
 pub(super) const fn read() -> Option<Snapshot> {
     None
 }

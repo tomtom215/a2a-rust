@@ -8,7 +8,14 @@
 //! behaviour (a client served on one port, refusals, shutdown) is
 //! `tests/websocket_on_http_port.rs`.
 
-use super::{WebSocketUpgrades, same_origin};
+use std::sync::Arc;
+
+use super::{WebSocketDispatcher, WebSocketUpgrades, same_origin};
+use crate::agent_executor;
+use crate::builder::RequestHandlerBuilder;
+
+struct Idle;
+agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
 
 fn upgrade_request(version: hyper::Version) -> hyper::Request<()> {
     hyper::Request::builder()
@@ -84,4 +91,19 @@ fn the_requests_own_origin_is_its_host() {
             "{origin:?} from {host:?}"
         );
     }
+}
+
+/// `Debug` names the type and how many upgraded connections are open, which is
+/// what a log line about the dispatcher needs; it does not print the handler.
+#[test]
+fn debug_names_the_type_and_the_connections_open() {
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(Idle)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
+    let upgrades = WebSocketUpgrades::new(WebSocketDispatcher::new(handler));
+    assert_eq!(upgrades.open(), 0);
+    assert_eq!(format!("{upgrades:?}"), "WebSocketUpgrades { open: 0, .. }");
 }
