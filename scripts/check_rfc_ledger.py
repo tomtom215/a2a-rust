@@ -25,7 +25,9 @@ It checks, for each document in the ledger:
 2. Every cited line exists and carries a keyword, and is cited once.
 3. `status` and `severity` use the vocabulary, an open status has a severity and
    a closed one has none; a `NOT_APPLICABLE` or `APPLICATION` entry says why in
-   `notes`; `TESTED` has implementation and test evidence; `IMPLEMENTED_UNTESTED`
+   `notes`; a `DEVIATION` (the code knowingly does not do what a MUST says, for a
+   reason that is written down) says why in `notes` and names the `decision` that
+   made it, so a refusal of a MUST is a recorded choice and not an unexplained gap; `TESTED` has implementation and test evidence; `IMPLEMENTED_UNTESTED`
    has implementation evidence.
 4. Every citation names what it points at and the line is where that is.
 5. A `security` entry that is `TESTED` carries `mutant_evidence`: each item names
@@ -66,7 +68,7 @@ KEYWORD = re.compile(
     r"\b(MUST NOT|MUST|SHALL NOT|SHALL|SHOULD NOT|SHOULD|NOT RECOMMENDED|RECOMMENDED|REQUIRED|MAY|OPTIONAL)\b"
 )
 OPEN = {"GAP", "PARTIAL", "IMPLEMENTED_UNTESTED", "UNKNOWN"}
-CLOSED = {"TESTED", "APPLICATION", "NOT_APPLICABLE", "SUPPORTED", "NOT_SUPPORTED"}
+CLOSED = {"TESTED", "APPLICATION", "NOT_APPLICABLE", "SUPPORTED", "NOT_SUPPORTED", "DEVIATION"}
 SEVERITIES = {"high", "medium", "low"}
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
@@ -136,8 +138,10 @@ def check_entry(root: Path, where: str, e: dict) -> list[str]:
             problems.append(f"{where} is {status}, which answers only a MAY or OPTIONAL")
     if not str(e.get("requirement", "")).strip():
         problems.append(f"{where} does not say what the requirement is")
-    if status in {"NOT_APPLICABLE", "APPLICATION"} and not str(e.get("notes", "")).strip():
+    if status in {"NOT_APPLICABLE", "APPLICATION", "DEVIATION"} and not str(e.get("notes", "")).strip():
         problems.append(f"{where} is {status} without notes saying why")
+    if status == "DEVIATION" and not str(e.get("decision", "")).strip():
+        problems.append(f"{where} is a DEVIATION without the decision that made it")
     impl, tests = e.get("impl_evidence", []), e.get("test_evidence", [])
     if status == "TESTED" and not (impl and tests):
         problems.append(f"{where} is TESTED without implementation and test evidence")
@@ -178,13 +182,13 @@ def render(ledger: dict) -> str:
         out += [f"## {doc.get('title', doc.get('id'))} (`{doc.get('id')}`)", ""]
         out.append(", ".join(f"{k} {v}" for k, v in sorted(counts.items())) or "no entries")
         out.append("")
-        opened = [e for e in entries if e.get("status") in OPEN]
+        opened = [e for e in entries if e.get("status") in OPEN | {"DEVIATION"}]
         opened.sort(key=lambda e: (SEVERITY_ORDER.get(e.get("severity"), 9), e.get("lines", [0])[0]))
         if opened:
             out += ["| Section | Keyword | Status | Severity | Requirement |", "|---|---|---|---|---|"]
             for e in opened:
                 out.append(
-                    f"| {e.get('section')} | {e.get('keyword')} | {e['status']} | {e.get('severity')} "
+                    f"| {e.get('section')} | {e.get('keyword')} | {e['status']} | {e.get('severity') or 'decided'} "
                     f"| {str(e.get('requirement', '')).replace('|', '/')} |"
                 )
             out.append("")
@@ -231,6 +235,8 @@ def self_test() -> int:
         expect("an open status needs a severity", doc([entry([2], status="GAP")] + full[1:]), "with severity None")
         expect("a closed status has no severity", doc([entry([2], severity="low")] + full[1:]), "carries severity")
         expect("not applicable says why", doc([entry([2], notes="")] + full[1:]), "without notes")
+        expect("a deviation names its decision", doc([entry([2], status="DEVIATION")] + full[1:]), "without the decision")
+        expect("a deviation with a decision passes", doc([entry([2], status="DEVIATION", decision="docs/handoff.md")] + full[1:]), None)
         expect("TESTED needs both evidences", doc([entry([2], status="TESTED")] + full[1:]), "without implementation and test")
         good_impl, good_test = ["lib.rs:1 verify"], ["lib.rs:4 rejects"]
         tested = entry([2], status="TESTED", impl_evidence=good_impl, test_evidence=good_test)
