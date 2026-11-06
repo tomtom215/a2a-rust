@@ -171,6 +171,14 @@ async fn the_shortest_lease_paces_the_reads() {
     assert_eq!(leases.reads.load(Ordering::SeqCst), 12);
 }
 
+/// A watcher shows how many leases it holds, which is what a log line about a
+/// handler needs, and does not print the store or the turns it holds.
+#[test]
+fn a_watcher_shows_how_many_leases_it_holds() {
+    let watch = super::watch::LeaseWatch::default();
+    assert_eq!(format!("{watch:?}"), "LeaseWatch { watched: 0, .. }");
+}
+
 /// A lease the store says is gone is no longer the turn's: when the turn
 /// ends it does not release the key, which may by then hold a lease granted
 /// elsewhere.
