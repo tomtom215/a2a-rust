@@ -76,18 +76,25 @@ command is named so the next session re-runs it instead of copying the number. A
   (read from the check names; `observability.yml` has no check of that name among the successes and was not looked into).
   - *Mutation (run 42130035411).* Of the 20 `a2a-protocol-server` shards 5 passed, 13 failed (survivors; for 8/20 a failing baseline, which grades nothing),
     and 2 (16/20, 18/20) were cancelled at the 180-minute job limit with no verdict. The 19 shards that ran took 116.6 to 177.9 minutes in the mutation step
-    (job step timestamps). The client's 2 shards and the types' 2 shards failed on survivors. Every survivor read from the annotations has a test and a
-    hand-applied mutant in the local commits below; cargo-mutants has not re-graded them, the next run on the new head will.
-  - *`Test coverage`:* `No space left on device` on the hosted runner (the runner's own diagnostic log could not be written). A step that frees disk is added
-    (`7ecea386`); whether it is enough is unproven until that job runs.
-  - *`CodeQL`:* one error, a regular expression in `deploy/observability/scripts/check_stack.py:61` that backtracks exponentially (fixed locally, `8e8c38fe`, with a
-    timed self-test), and 14 warnings "Log entry depends on a user-provided value" in `crates/a2a-protocol-server/src/otel/telemetry/prometheus/tests.rs`
+    (job step timestamps). The client's 2 shards and the types' 2 shards failed on survivors. The first push (`e3105ea4..8080a519`) closed those.
+  - *Mutation (run 42160220819, on `8080a519`, 40 server shards).* All 46 shards finished and graded; none was cancelled, none died on its baseline.
+    7 failed with 17 distinct survivors (10 in the two client shards, 7 in five server shards), every one in code the first run had not graded. Matched by
+    file and mutant text, none of run 466's 45 survivors survives again (some were removed or skipped by the first push rather than killed). The 17 are closed
+    in the local commits below, each by a test seen to fail with its mutant applied by hand, or by a skip with its reason beside it (4 in the client crate: three
+    compiler proofs and one equivalent-mutant argument, the weakest). Slowest shard times were not read from this run.
+  - *`Test coverage`:* `No space left on device` on the hosted runner (the runner's own diagnostic log could not be written). A step that frees disk was added
+    (`7ecea386`); on `8080a519` the job succeeded (check-run conclusion), so the step was enough once; one pass is not a rate.
+  - *`CodeQL`:* on `e3105ea4` one error, a regular expression in `deploy/observability/scripts/check_stack.py:61` that backtracks exponentially (fixed in `8e8c38fe`,
+    with a timed self-test; the `CodeQL` and `Analyze` checks succeeded on `8080a519`), and 14 warnings "Log entry depends on a user-provided value" in `crates/a2a-protocol-server/src/otel/telemetry/prometheus/tests.rs`
     (lines 77 to 264: assertion messages that print the scraped response). Those 14 are left for the maintainer's decision, not dismissed.
   - *`a2a-tck conformance`:* the gate fails with 87 MUST requirements graded against a floor of 88, one failing check not in the baseline (`HTTP_JSON-ERR-001`) and
     baselined checks that now pass. `official-tck.yml` clones upstream's `main` (`A2A_TCK_REVISION: main`), and two executions I compared (extracts in `/tmp`, not kept)
-    show the same counts, so this is CONJECTURED to be upstream drift and not this tree. Pinning the revision or re-baselining is the maintainer's call (*Waiting on the maintainer*).
-- **Not verified.** CI on the local commits above `e3105ea4`: none of them has been pushed or run in CI. Mutation grading of the survivors they close.
-  Whether the coverage job's disk step is enough. The 40-shard projection (a calculation from run 42130035411's timings, not a measurement). Windows and macOS ran the API-shape package in the pull request's CI at `e3105ea4` (the four Test legs
+    show the same counts, so this is CONJECTURED to be upstream drift and not this tree. On `8080a519` it fails in the same two steps (the baseline gate and the
+    minimal-profile gate; compared by step name, not by the gate's text). Pinning the revision or re-baselining is the maintainer's call (*Waiting on the maintainer*).
+  - *`ACTS`:* failed once on `8080a519` in `Build the itk_service image` (a Maven download in the upstream Dockerfile exited 2; no ACTS, ITK or Docker file changed);
+    re-run once, attempt 2 succeeded. Infrastructure, commented on the pull request once.
+- **Not verified.** CI on the local commits above `8080a519`: none of them has been pushed or run in CI, so cargo-mutants has not graded the 17 survivors they
+  close or the behaviour change in `CachingCardResolver`. Whether the coverage job's disk step is enough more than once. Windows and macOS ran the API-shape package in the pull request's CI at `e3105ea4` (the four Test legs
   succeeded; its socket tests use the real clock with lower bounds and a 10 s ceiling, and the three drain-delay tests take about 3 s each). The ITK
   checks and `SLIMRPC binding (out-of-workspace)` succeeded there; whether the ITK runs exercise the `x/net` bump was not checked, and the SLIMRPC job's
   `cargo deny` and package steps were not run locally. The API-shape package's 91 hand mutants (23, 19, 12 and 37, all caught, by its own agent) were not re-run in this
@@ -340,6 +347,16 @@ session start.
 
 ## Waiting on the maintainer
 
+- **Standards compliance beyond the A2A spec has no ledger, and one deviation is known.** The spec ledger (`docs/compliance/spec-ledger.json`) covers the A2A
+  specification only (510 entries; the gate prints 455 TESTED, 32 APPLICATION, 19 NOT_APPLICABLE and 4 PARTIAL). The RFCs the client and server implement
+  (HTTP caching 9111 and 5861, conditional requests, JWS and JCS for card signatures, JWT validation, `Retry-After`, WebSocket origin, SSE framing,
+  `Forwarded`) have no clause table, so their compliance rests on authors' reading and tests; the stale-if-error bug above got through because the tests'
+  server always sent an `ETag`. A read-only pass over the card cache against the RFC text (2026-11-06) found one more deviation, recorded in
+  `discovery/freshness.rs`: after a `304` freshness is read from the `304`'s own headers only, where RFC 9111 §4.3.4 says the stored fields the `304` lacks are
+  kept (an origin MUST send `Cache-Control` and `Expires` on a `304` that a `200` would carry, RFC 9110 §15.4.5, so only a non-compliant origin or proxy
+  loses them; the effect is extra revalidations and a lost stale window). I recommend: fix that merge in the card cache; then a standards ledger for the
+  external RFCs, one row per MUST or SHOULD the code implements, on the `check_spec_ledger.py` machinery, starting with JWT and JWS verification (security),
+  as the adversarial campaign still open under *First, next*. Nothing of this is started.
 - **`a2a-tck conformance` is red on pull request #197 and `official-tck.yml` floats on upstream's `main`.** The gate reports 87 MUST requirements graded against its floor of
   88, one failing check that is not in the baseline (`HTTP_JSON-ERR-001`) and baselined checks that now pass. Options: pin `A2A_TCK_REVISION` to a commit (the
   workflow's comment says `git clone --branch` does not take a SHA, so it also needs a clone and checkout, and the `schedule` trigger an override); or follow
@@ -358,6 +375,11 @@ session start.
     a Ping at half) by default (D-20, ADR 0042; `without_http2_keepalive()` and `without_idle_timeout()` opt out); the server's
     outbound HTTP follows the proxy and CA variables; loopback is never sent to a proxy; every card declares the lineage
     extension URI, so replicas of one fleet upgrade together, and a malformed lineage is `InvalidParams` (ADR 0034).
+  - *A bug fixed against the spec, your instruction applied:* a card with no `ETag`, no `Last-Modified` and no lifetime was not kept, so neither its own
+    `stale-if-error` nor `with_stale_if_error` applied to it. It is now kept when a window can apply (RFC 5861 §4: "regardless of other freshness
+    information"; RFC 9111 §4.2.4: serving stale by origin directive or "configuration in accordance with an out-of-band contract"), still never when it is
+    `no-store`, `must-revalidate` or `no-cache`, and still opt-in (no default window). ADR 0051 has a dated amendment. A card with no validator and no lifetime
+    is a full fetch on every resolve; the window counts from its arrival.
   - *Designs with a stated cost:* the push outbox row is written after the event is stored, so a crash between the two loses that
     webhook (H14, the ADR 0037 amendment); SEC-14 is closed in part (ADR 0043); there is no `fips` feature (B-29) and no DNS cache
     in the client (B-28); the same-origin check on the WebSocket upgrade does not defend against DNS rebinding, the `Host` check does
