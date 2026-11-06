@@ -64,7 +64,16 @@ c4404e8's claim (roots and session cache built once) had no test.
    one when the fetch failed for another reason (a `404`, a card that does
    not verify, a card that does not parse). **Behaviour change**: a server
    that sends `stale-if-error` gets it honoured without the caller opting in,
-   which is what the directive asks of a cache.
+   which is what the directive asks of a cache. *Amended 2026-11-06*: the
+   first build did not keep a card that had no `ETag`, no `Last-Modified` and
+   no lifetime, so for the cards simple agents actually send, neither the
+   directive nor the configured window did anything. RFC 5861 §4 makes the
+   directive apply "regardless of other freshness information", and RFC 9111
+   §4.2.4 permits serving stale by "configuration in accordance with an
+   out-of-band contract", which `with_stale_if_error` is. Such a card is now
+   kept when a window (its own or the configured one) can apply to it; with no
+   window, as before, it is not kept, since nothing could use it. It is stale
+   from the moment it arrives, so the window counts from then.
 4. **Jittered expiry, opt-in on a resolver.** `with_refresh_jitter(f)` (a
    fraction from 0 to 0.5) shortens each stored card's freshness by a random
    part of up to `f` of its lifetime, never lengthens it, so processes that

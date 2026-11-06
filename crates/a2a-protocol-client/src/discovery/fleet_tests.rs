@@ -487,3 +487,6 @@ async fn new_options_do_not_share_the_old_fetch() {
 
 // The `CardCache` and pool cases.
 mod card_cache;
+
+// What the resolver does not store.
+mod stored_cards;

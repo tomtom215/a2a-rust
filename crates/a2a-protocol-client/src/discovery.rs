@@ -368,7 +368,9 @@ struct CachedCard {
 ///
 /// A card with no `max-age` and no `Expires` is revalidated on every
 /// resolve unless [`with_default_freshness`](Self::with_default_freshness)
-/// gives it a lifetime, and
+/// gives it a lifetime (with no `ETag` or `Last-Modified` either, that is a
+/// full fetch each time, and the card is kept only to be served stale, below),
+/// and
 /// [`with_always_revalidate`](Self::with_always_revalidate) revalidates
 /// even a fresh card, so a card the agent changes is seen at once.
 ///
@@ -385,7 +387,10 @@ struct CachedCard {
 ///   went stale no longer ago than the stale-if-error window (RFC 5861):
 ///   the larger of [`with_stale_if_error`](Self::with_stale_if_error) and
 ///   the card's own `Cache-Control: stale-if-error`. A card marked
-///   `must-revalidate` or `no-cache` is never returned stale.
+///   `must-revalidate` or `no-cache` is never returned stale. A card with
+///   no lifetime is stale from the moment it arrives, so the window counts
+///   from then, and it is kept (when it has no validator either) only if a
+///   window can apply to it.
 /// - [`with_refresh_jitter`](Self::with_refresh_jitter) spreads the
 ///   revalidations of processes that fetched together.
 ///
@@ -643,13 +648,20 @@ impl CachingCardResolver {
             Err(e) => return self.stale_or(cached, e),
         };
 
-        // Kept when there is a validator to revalidate it by or a time it
-        // stays fresh for; otherwise it would never be used. A `no-store`
-        // response is not kept (RFC 9111 §5.2.2.5: a cache MUST NOT store
-        // it), and replaces what was.
+        // Kept when something can use it: a validator to revalidate it by, a
+        // time it stays fresh for, or a window to serve it stale in when the
+        // agent cannot be reached (RFC 5861 §4; the window is the card's own
+        // `stale-if-error` or the one configured, which RFC 9111 §4.2.4
+        // permits as "configuration in accordance with an out-of-band
+        // contract"). A card with none of these would never be used. A card
+        // with no validator and no lifetime is stale as it arrives, so it is
+        // revalidated by a full fetch on every resolve, and kept only for the
+        // window. A `no-store` response is not kept (RFC 9111 §5.2.2.5: a
+        // cache MUST NOT store it), and replaces what was.
         let useful = etag.is_some()
             || last_modified.is_some()
-            || !self.always_revalidate && freshness.fresh_until(self.default_freshness).is_some();
+            || !self.always_revalidate && freshness.fresh_until(self.default_freshness).is_some()
+            || freshness.stale_window(self.stale_if_error).is_some();
         let stored = (!freshness.no_store && useful).then(|| CachedCard {
             card: card.clone(),
             etag,
