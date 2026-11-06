@@ -14,8 +14,8 @@ struct Warnings(Arc<Mutex<Vec<String>>>);
 #[cfg(feature = "tracing")]
 impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Warnings {
     fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
-        struct Message(String);
-        impl tracing::field::Visit for Message {
+        struct Text(String);
+        impl tracing::field::Visit for Text {
             fn record_debug(&mut self, f: &tracing::field::Field, v: &dyn std::fmt::Debug) {
                 if f.name() == "message" {
                     self.0 = format!("{v:?}");
@@ -23,7 +23,7 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Warnings {
             }
         }
         if *event.metadata().level() == tracing::Level::WARN {
-            let mut message = Message(String::new());
+            let mut message = Text(String::new());
             event.record(&mut message);
             self.0.lock().unwrap().push(message.0);
         }

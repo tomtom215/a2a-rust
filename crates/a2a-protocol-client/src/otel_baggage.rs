@@ -92,5 +92,5 @@ pub(crate) fn propagate(
     }
 }
 
-#[cfg(all(test, feature = "otel"))]
+#[cfg(test)]
 mod tests;

@@ -3,6 +3,8 @@
 
 //! Outbound baggage: opt-in, by key, bounded, never over a caller's header.
 
+#![cfg(feature = "otel")]
+
 use std::collections::HashMap;
 
 use a2a_protocol_types::trace_context::baggage::{BAGGAGE_HEADER, Member, parse};
