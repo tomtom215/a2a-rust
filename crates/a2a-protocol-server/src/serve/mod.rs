@@ -142,7 +142,10 @@ pub trait Dispatcher: Send + Sync + 'static {
         &self,
         _within: std::time::Duration,
     ) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
-        Box::pin(std::future::ready(true))
+        // An async block rather than `std::future::ready(true)`: both resolve
+        // to `true` at once, and cargo-mutants' replacement `async move { true }`
+        // would otherwise be an equivalent mutant that no test can kill.
+        Box::pin(async move { true })
     }
 }
 
