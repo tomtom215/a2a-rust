@@ -74,6 +74,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The instrumented build of the whole workspace with every feature is
+      # large, and it grows with the workspace. Run 1003 of pull request 197
+      # ended twice, about 12 minutes in, in the first instrumented step, with
+      # "No space left on device" (the runner's own log, not a test), where the
+      # same workflow had passed on `main` that morning. The same step as
+      # mutants.yml's; it has no `exit`, so no gate probe applies to it.
+      - name: Free runner disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: stable
