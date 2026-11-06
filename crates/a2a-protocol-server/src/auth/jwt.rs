@@ -602,7 +602,7 @@ impl JwtValidator {
         // does not know it must not accept the token (RFC 7515 4.1.11).
         // Ignoring the member, as this did until 2026-10-31, accepts tokens
         // the issuer meant to be refused (audit SEC-18 b).
-        if header.crit.is_some() || !self.typ_accepted(&header) {
+        if header.crit || !self.typ_accepted(&header) {
             return Err(ValidateOutcome::Rejected);
         }
         let signature = URL_SAFE_NO_PAD
@@ -765,7 +765,7 @@ struct JwtHeader {
     /// RFC 7515 section 4.1.11: extensions the verifier MUST understand. This
     /// validator understands none, so a token that lists any is refused.
     #[serde(default, deserialize_with = "present")]
-    crit: Option<serde_json::Value>,
+    crit: bool,
     /// RFC 7515 section 4.1.9. Kept as a raw value: a `typ` that is not a
     /// string must not start refusing tokens for a validator that never asked
     /// for the check.
@@ -783,15 +783,16 @@ fn normalise_typ(typ: &str) -> String {
         .to_owned()
 }
 
-/// A member that is there, `null` included. `Option<T>`'s own reading turns
-/// `null` into no member, which for `crit` let a header with `"crit": null`
-/// through until 2026-11-06 (RFC 7515 4.1.11: any `crit` member that is not a
-/// non-empty list makes the JWS invalid).
-fn present<'de, D>(de: D) -> Result<Option<serde_json::Value>, D::Error>
+/// Whether the member is there, whatever it holds, `null` and `false`
+/// included. `Option<T>`'s own reading turns `null` into no member, which for
+/// `crit` let a header with `"crit": null` through until 2026-11-06 (RFC 7515
+/// 4.1.11: any `crit` member that is not a non-empty list makes the JWS
+/// invalid), and the value itself is never read, so none is kept.
+fn present<'de, D>(de: D) -> Result<bool, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    <serde_json::Value as serde::Deserialize>::deserialize(de).map(Some)
+    <serde::de::IgnoredAny as serde::Deserialize>::deserialize(de).map(|_| true)
 }
 
 #[derive(serde::Deserialize)]

@@ -166,8 +166,34 @@ fn a_critical_member_is_refused_whatever_it_holds() {
         "null",
         "5",
         "{}",
+        "false",
     ] {
         let header = format!(r#"{{"alg":"HS256","typ":"JWT","crit":{crit}}}"#);
         assert!(!accepted(&header, &c), "crit {crit}");
     }
+}
+
+/// RFC 7515 4.1.11, read from the header text and not through the validator:
+/// a `crit` member of any shape, `null` and `false` included, is recorded, and
+/// a header without one is not.
+#[test]
+fn a_header_records_a_critical_member_of_any_shape() -> Result<(), serde_json::Error> {
+    let has_crit = |text: &str| -> Result<bool, serde_json::Error> {
+        Ok(serde_json::from_str::<JwtHeader>(text)?.crit)
+    };
+    assert!(!has_crit(r#"{"alg":"HS256","typ":"JWT"}"#)?, "no member");
+    for crit in [
+        "null",
+        "false",
+        "true",
+        "5",
+        r#""exp""#,
+        "[]",
+        r#"["exp"]"#,
+        "{}",
+    ] {
+        let header = format!(r#"{{"alg":"HS256","typ":"JWT","crit":{crit}}}"#);
+        assert!(has_crit(&header)?, "crit {crit}");
+    }
+    Ok(())
 }
