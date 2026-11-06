@@ -107,6 +107,9 @@ pub(crate) const fn exceeds_card_body_size(len: u64, max: u64) -> bool {
 #[derive(Clone)]
 pub struct CardFetchOptions {
     headers: HashMap<String, String>,
+    /// See [`with_jwks_header`](Self::with_jwks_header).
+    #[cfg(feature = "signing")]
+    jwks_headers: HashMap<String, String>,
     timeout: Duration,
     /// Keys a signed card must verify against; see
     /// [`with_signature_keys`](Self::with_signature_keys).
@@ -126,6 +129,11 @@ impl std::fmt::Debug for CardFetchOptions {
         f.field("header_names", &crate::redact::names(self.headers.keys()))
             .field("timeout", &self.timeout);
         #[cfg(feature = "signing")]
+        f.field(
+            "jwks_header_names",
+            &crate::redact::names(self.jwks_headers.keys()),
+        );
+        #[cfg(feature = "signing")]
         f.field("signature_keys", &self.signature_keys)
             .field("require_signature", &self.require_signature);
         // Whether a configuration was set, never what is in it.
@@ -140,6 +148,8 @@ impl Default for CardFetchOptions {
     fn default() -> Self {
         Self {
             headers: HashMap::new(),
+            #[cfg(feature = "signing")]
+            jwks_headers: HashMap::new(),
             timeout: CARD_FETCH_BUDGET,
             #[cfg(feature = "signing")]
             signature_keys: None,
@@ -227,6 +237,25 @@ impl CardFetchOptions {
         self
     }
 
+    /// Adds one header to a JWK Set fetch ([`fetch_jwks`](crate::jwks::fetch_jwks))
+    /// and to nothing else.
+    ///
+    /// A key server is another trust domain than the agent: the headers of
+    /// [`with_header`](Self::with_header), an `Authorization` or a `Cookie` for
+    /// the card, are never sent to it. Set here what a key server itself asks
+    /// for, such as a bearer token for a private key store. An invalid name or
+    /// value is reported by the fetch as [`ClientError::Transport`], not here.
+    ///
+    /// Until 2026-11-06 `fetch_jwks` sent the headers of `with_header` to the
+    /// key server too (RFC 8725 section 3.10 advises against cookies in a key
+    /// fetch); a caller that relied on that sets them here.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub fn with_jwks_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.jwks_headers.insert(name.into(), value.into());
+        self
+    }
+
     /// Replaces the headers sent with the request.
     #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
@@ -245,6 +274,14 @@ impl CardFetchOptions {
     #[must_use]
     pub const fn headers(&self) -> &HashMap<String, String> {
         &self.headers
+    }
+
+    /// The headers a JWK Set fetch will carry besides `Accept`; see
+    /// [`with_jwks_header`](Self::with_jwks_header).
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub const fn jwks_headers(&self) -> &HashMap<String, String> {
+        &self.jwks_headers
     }
 
     /// The budget for the whole fetch.

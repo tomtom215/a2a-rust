@@ -89,7 +89,14 @@ struct Target {
 pub(crate) fn fetch_options(opts: &GlobalOpts, with_headers: bool) -> CardFetchOptions {
     let mut options = CardFetchOptions::default().with_timeout(Duration::from_secs(opts.timeout));
     if with_headers {
-        options = options.with_headers(header_map(opts));
+        let headers = header_map(opts);
+        // The caller decided that `--header` goes to the JWK Set's host too
+        // (`card verify` decides that; see `offline.rs`), so it is set for the
+        // key fetch as well: `fetch_jwks` sends only these, never the card's.
+        for (name, value) in &headers {
+            options = options.with_jwks_header(name, value);
+        }
+        options = options.with_headers(headers);
     }
     match &opts.tls_flags.built {
         Some(tls) => options.with_tls_config(tls.client.clone()),

@@ -108,6 +108,12 @@ fn card_fetch_options_print_header_names_only() {
         .with_timeout(std::time::Duration::from_secs(5));
     let shown = format!("{options:?}");
     assert_no_secret(&shown);
+    // The names of the headers set for a key-set fetch: none here.
+    let jwks = if cfg!(feature = "signing") {
+        ", jwks_header_names: []"
+    } else {
+        ""
+    };
     // The keys a card is verified against are public; they print as before.
     let keys = if cfg!(feature = "signing") {
         ", signature_keys: None, require_signature: true"
@@ -122,7 +128,35 @@ fn card_fetch_options_print_header_names_only() {
     };
     assert_eq!(
         shown,
-        format!("CardFetchOptions {{ header_names: {SORTED_NAMES}, timeout: 5s{keys}{tls} }}")
+        format!(
+            "CardFetchOptions {{ header_names: {SORTED_NAMES}, timeout: 5s{jwks}{keys}{tls} }}"
+        )
+    );
+}
+
+/// The headers set for a key-set fetch print as names, sorted, like the
+/// card's, and apart from them.
+#[cfg(feature = "signing")]
+#[test]
+fn key_fetch_headers_print_names_only() {
+    let options = CardFetchOptions::default()
+        .with_jwks_header("x-keys", "keys-s3cret")
+        .with_jwks_header("authorization", "Bearer jwks-s3cret")
+        .with_timeout(std::time::Duration::from_secs(5));
+    let shown = format!("{options:?}");
+    assert_no_secret(&shown);
+    let tls = if cfg!(feature = "tls-rustls") {
+        ", tls_config: false"
+    } else {
+        ""
+    };
+    assert_eq!(
+        shown,
+        format!(
+            "CardFetchOptions {{ header_names: [], timeout: 5s, \
+             jwks_header_names: [\"authorization\", \"x-keys\"], \
+             signature_keys: None, require_signature: true{tls} }}"
+        )
     );
 }
 

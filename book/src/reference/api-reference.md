@@ -235,7 +235,7 @@ are rustdoc's job.
 | `discovery` | Agent card discovery with HTTP caching |
 | `error` | Client error types |
 | `interceptor` | Request/response interceptor infrastructure |
-| `jwks` | `fetch_jwks`: a JWK Set from a trusted HTTPS URL, bounded in size and time, for verifying card signatures (`signing` feature) |
+| `jwks` | `fetch_jwks`: a JWK Set from a trusted HTTPS URL, bounded in size and time, for verifying card signatures; it sends only the headers set with `CardFetchOptions::with_jwks_header` (`signing` feature) |
 | `methods` | Per-method client helpers |
 | `retry` | Configurable retry policy for transient client errors |
 | `streaming` | SSE client-side streaming support |
