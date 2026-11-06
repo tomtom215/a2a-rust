@@ -82,6 +82,12 @@ command is named so the next session re-runs it instead of copying the number. A
     file and mutant text, none of run 466's 45 survivors survives again (some were removed or skipped by the first push rather than killed). The 17 are closed
     in the local commits below, each by a test seen to fail with its mutant applied by hand, or by a skip with its reason beside it (4 in the client crate: three
     compiler proofs and one equivalent-mutant argument, the weakest). Slowest shard times were not read from this run.
+  - *Mutation (run 42182620607, run number 468, on `6bd576f8`, 40 server shards; the Actions API).* 43 of its 46 mutation shards succeeded, 3 failed, and the
+    aggregate job failed with them. The server jobs took 61.1 to 115.6 minutes each, start to completion (the limit is 180). Failures: client shard 1/2 failed its
+    baseline on one of three flaky stale-if-error tests (`Date` has one-second resolution; see *Lessons*), so its 245 mutants were never graded and
+    the next run is the first to grade them; server shard 0/40, one survivor (`push/sender.rs:534`, a match guard in `preflight_with` replaced by `true`); and server
+    shard 36/40, one survivor (`push/gate.rs:333`, `literal_ip` replaced by `None`). Both survivors are closed by tests seen to fail with the mutant applied by hand, in the
+    commits after `6bd576f8`; the second one's test could never have failed (*Lessons*).
   - *`Test coverage`:* `No space left on device` on the hosted runner (the runner's own diagnostic log could not be written). A step that frees disk was added
     (`7ecea386`); on `8080a519` the job succeeded (check-run conclusion), so the step was enough once; one pass is not a rate.
   - *`CodeQL`:* on `e3105ea4` one error, a regular expression in `deploy/observability/scripts/check_stack.py:61` that backtracks exponentially (fixed in `8e8c38fe`,
@@ -93,8 +99,8 @@ command is named so the next session re-runs it instead of copying the number. A
     minimal-profile gate; compared by step name, not by the gate's text). Pinning the revision or re-baselining is the maintainer's call (*Waiting on the maintainer*).
   - *`ACTS`:* failed once on `8080a519` in `Build the itk_service image` (a Maven download in the upstream Dockerfile exited 2; no ACTS, ITK or Docker file changed);
     re-run once, attempt 2 succeeded. Infrastructure, commented on the pull request once.
-- **Not verified.** CI on the local commits above `8080a519`: none of them has been pushed or run in CI, so cargo-mutants has not graded the 17 survivors they
-  close or the behaviour change in `CachingCardResolver`. Whether the coverage job's disk step is enough more than once. Windows and macOS ran the API-shape package in the pull request's CI at `e3105ea4` (the four Test legs
+- **Not verified.** CI on the commits after `6bd576f8` (the flaky-test fix, the two survivor closes and this file): none has run in CI, so cargo-mutants has not
+  graded them, the 245 client mutants of shard 1/2 that run 468 never reached, or the behaviour changes in `CachingCardResolver`. Whether the coverage job's disk step is enough more than once. Windows and macOS ran the API-shape package in the pull request's CI at `e3105ea4` (the four Test legs
   succeeded; its socket tests use the real clock with lower bounds and a 10 s ceiling, and the three drain-delay tests take about 3 s each). The ITK
   checks and `SLIMRPC binding (out-of-workspace)` succeeded there; whether the ITK runs exercise the `x/net` bump was not checked, and the SLIMRPC job's
   `cargo deny` and package steps were not run locally. The API-shape package's 91 hand mutants (23, 19, 12 and 37, all caught, by its own agent) were not re-run in this
@@ -126,8 +132,8 @@ command is named so the next session re-runs it instead of copying the number. A
 
 ### First, next
 
-1. Push the local commits in one push (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD` lists them), then read the CI of pull request
-   #197 on the new head before building on it (`ci-failure-triage`): the first real error of each failed job, every real failure fixed in one push.
+1. The flaky-test fix and the survivor closes went up in one push on 2026-11-06 (`git log --oneline 6bd576f8..origin/claude/inspiring-mccarthy-rgpntj-rest`
+   lists them). Read the CI of pull request #197 on that head before building on it (`ci-failure-triage`): the first real error of each failed job, every real failure fixed in one push.
    The mutation run is the check that matters: it grades the survivors the local commits close, measures the 40 server shards (projected near 85 minutes
    for the slowest; the limit is 180), and shows whether shards 8/20, 16/20 and 18/20, which graded nothing, now grade. A failed job may be re-run at most
    once, and only after its whole run has completed. Do not merge or tag: the maintainer's go is required.
@@ -357,6 +363,11 @@ session start.
   loses them; the effect is extra revalidations and a lost stale window). I recommend: fix that merge in the card cache; then a standards ledger for the
   external RFCs, one row per MUST or SHOULD the code implements, on the `check_spec_ledger.py` machinery, starting with JWT and JWS verification (security),
   as the adversarial campaign still open under *First, next*. Nothing of this is started.
+- **`scripts/prove_gates_fail.sh` cannot run on pull request #197's head.** Its drift check exits 2 before proving anything, because four CI gates have no failure
+  injection: `check_net_copies.py`, `hand_mutate.py` (`--self-test`), `check_example_servers.py` and the `promtool` step of `observability.yml`'s bash block
+  (`bash scripts/prove_gates_fail.sh --list` prints them; checked on a clean worktree of `6bd576f8`, where it fails the same way). The script is local, not a CI
+  job, so nothing is red; the cost is that no gate of this release has been proved able to fail by it, and the new gates cannot be proved by it either (the RFC ledger
+  gate on the standards-ledger branch was proved by hand). Adding the four injections is a small change I did not make, because it touches the proof harness.
 - **`a2a-tck conformance` is red on pull request #197 and `official-tck.yml` floats on upstream's `main`.** The gate reports 87 MUST requirements graded against its floor of
   88, one failing check that is not in the baseline (`HTTP_JSON-ERR-001`) and baselined checks that now pass. Options: pin `A2A_TCK_REVISION` to a commit (the
   workflow's comment says `git clone --branch` does not take a SHA, so it also needs a clone and checkout, and the `schedule` trigger an override); or follow
@@ -958,6 +969,20 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **A test that dates a response with `Date` has a second less margin than it says.** `Date` has one-second resolution, so a response generated 0.99 s after a
+  whole second reads as dated that second and its apparent age is up to a second. Three stale-if-error tests stepped a 60 s, 30 s and 20 s window to one second short
+  of its end (59, 29 and 19 s) and failed about once in a few hundred runs: 399 of 400 stress iterations passed before the fix (`the_configured_window_serves_the_stored_card_on_a_503`
+  the failure), 1200 of 1200 after it moved to a two-second margin. `a_response_that_arrives_stale_has_its_window_counted_from_arrival` pins the arithmetic with a
+  `Date` header two seconds old, so no test depends on the clock's phase. Measure a suspected flake with `cargo nextest run --stress-count N`, not by re-running until green.
+- **A test that releases the thing it is checking before the thing can happen cannot fail.** `the_bundled_sender_holds_the_address_it_connects_to` started the second
+  delivery and released the first without yielding, so the second always arrived after the release, held or not, and `literal_ip -> None` survived (run 468). It now
+  waits 500 ms and requires that the second request has not arrived while the first holds the address; that wait costs 0.5 s in the correct code, and a mutant that
+  drops the hold is killed by it (100 of 100 stress iterations pass). When a mutant survives a test that "obviously covers" it, look for the step that lets the mutant's
+  behaviour happen before the assertion.
+- **The disk quota, not `df`, ends a session, and one big stage can spend it.** A 14-gate clippy stage run after the mutant drivers had left their test executables and
+  per-worktree builds in the shared target directory ran the allowance to 0 MB (the harness then could not store command output at all). Delete what rebuilds
+  (idle test executables, `target/debug/incremental`, workspace `liba2a_*` files) rather than sources, and run gates in small stages with a sweep between them
+  (a small script that deletes idle test executables and the workspace crates' rlibs, all of which rebuild).
 - **A hand mutant is a kill only if the test passes without it.** A test that fails on every run "kills" every mutant. Run the unmutated tree first, in the same
   command as the mutant, and count the kill only when that baseline passed; then run the whole suite before the commit is pushed, which would also have caught
   it. The case is in *Withdrawn or corrected* (the outbox warning test, 2026-11-06).

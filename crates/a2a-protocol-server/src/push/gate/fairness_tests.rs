@@ -273,6 +273,15 @@ async fn the_bundled_sender_holds_the_address_it_connects_to() {
     let a = start(&gate, "", &urls[0]);
     assert!(arrived.recv().await.unwrap(), "the first request is held");
     let b = start(&gate, "", &urls[1]);
+    // While the first request holds the address the second must not arrive.
+    // Give it the time to: it arrives within that when nothing holds the
+    // address (these are IP literals, so the address comes from `literal_ip`).
+    assert!(
+        tokio::time::timeout(Duration::from_millis(500), arrived.recv())
+            .await
+            .is_err(),
+        "the second request arrived while the first held the address"
+    );
     released.store(true, Ordering::SeqCst);
     release.notify_one();
     a.await.unwrap();

@@ -3444,7 +3444,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:191 retries_on_server_error_and_eventually_fails",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:270 backoff_is_paid_between_attempts_but_not_after_the_last",
-    "crates/a2a-protocol-server/src/push/sender.rs:907 push_retry_policy_default"
+    "crates/a2a-protocol-server/src/push/sender.rs:911 push_retry_policy_default"
    ],
    "notes": "PushRetryPolicy default 3 attempts, backoff [1s,2s]; only 5xx/408/429/transport errors are retried. Tests assert 3 attempts against a failing webhook, the backoff paid between attempts and not after the last, and the default doubling [1s, 2s] schedule; shown able to fail by fixing attempts at 1 (attempt-count tests fail), removing the backoff sleep (backoff test fails) and changing the default to [1s, 1s] (default-policy test fails) (2026-10-20).",
    "auditor": "C",
@@ -3465,7 +3465,7 @@
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:224 deliver_once"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:1107 the_default_schedule_starts_every_attempt_inside_the_default_bound",
+    "crates/a2a-protocol-server/src/push/sender.rs:1111 the_default_schedule_starts_every_attempt_inside_the_default_bound",
     "crates/a2a-protocol-server/src/handler/limits/tests.rs:13 default_values",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/mod.rs:242 deliver_push_bg_logs_delivery_timeout"
    ],
@@ -4487,7 +4487,7 @@
     "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:157 jsonrpc_push_config_ids_with_crlf_are_invalid_params",
     "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:232 jsonrpc_tenant_with_control_character_is_invalid_params",
     "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:248 rest_message_and_task_ids_with_crlf_are_400",
-    "crates/a2a-protocol-server/src/push/sender.rs:1260 rejects_header_with_crlf",
+    "crates/a2a-protocol-server/src/push/sender.rs:1264 rejects_header_with_crlf",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:384 path_traversal_raw"
    ],
    "notes": "Split 2026-10-20 from the APPLICATION entry on this line (ledger audit): the SDK is an implementation, and what it takes from a request and uses itself is sanitized and tested. Push credential header values refuse CR/LF (validate_header_value), REST paths refuse traversal (contains_path_traversal), and every client-supplied identifier the server validates (message, context, task, reference task, push-config and tenant ids, and the ListTasks contextId filter) refuses any control character (handler/ids.rs, since 2026-10-20; until then validate_id refused only empty and over-long ids). The SQL stores bind values as placeholders; that was grepped, not audited, and is not claimed here.",
@@ -7851,7 +7851,7 @@
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:191 retries_on_server_error_and_eventually_fails",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:270 backoff_is_paid_between_attempts_but_not_after_the_last",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:358 retries_on_rate_limit_status",
-    "crates/a2a-protocol-server/src/push/sender.rs:907 push_retry_policy_default"
+    "crates/a2a-protocol-server/src/push/sender.rs:911 push_retry_policy_default"
    ],
    "notes": "3 attempts, backoff [1s,2s] (doubling; schedule is an explicit list whose last entry repeats, not computed exponential). Retries 5xx/408/429/transport errors only. Caveat: under the default 5s handler bound a timed-out first attempt leaves no time for retries (see 3110).",
    "auditor": "F",
@@ -7870,7 +7870,7 @@
     "crates/a2a-protocol-server/src/push/sender.rs:680 HttpPushSender::send"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:855 push_retry_policy_with_max_attempts",
+    "crates/a2a-protocol-server/src/push/sender.rs:859 push_retry_policy_with_max_attempts",
     "crates/a2a-protocol-server/tests/optional_features/push_retry.rs:77 push_delivery_stops_after_the_configured_number_of_failures"
    ],
    "notes": "Per-event max_attempts only; no cross-event circuit breaker that disables a config after N consecutive failed events. Asserts a webhook failing every attempt gets exactly the configured 2, then 5, attempts and no more; shown able to fail by fixing the retry loop at one attempt; the count is per delivery, with no cross-event circuit breaker (2026-10-20).",
@@ -7894,8 +7894,8 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:531 refuse_an_unservable_config"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:1354 the_resolver_seam_checks_and_pins_what_it_is_given",
-    "crates/a2a-protocol-server/src/push/sender.rs:1494 https_with_tls_feature_still_enforces_ssrf",
+    "crates/a2a-protocol-server/src/push/sender.rs:1358 the_resolver_seam_checks_and_pins_what_it_is_given",
+    "crates/a2a-protocol-server/src/push/sender.rs:1498 https_with_tls_feature_still_enforces_ssrf",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:401 https_webhook_enforces_ssrf_with_tls_feature"
    ],
    "notes": "Synchronous host check at config creation, DNS-resolve-all + IP pinning at delivery (http), cert validation defeats rebinding for https. Bypassable only by explicit HttpPushSender::allow_private_urls().",
@@ -7915,11 +7915,11 @@
     "crates/a2a-protocol-server/src/url_guard.rs:210 is_private_ip"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:916 rejects_loopback_ipv4",
-    "crates/a2a-protocol-server/src/push/sender.rs:921 rejects_private_10_range",
-    "crates/a2a-protocol-server/src/push/sender.rs:926 rejects_private_172_range",
-    "crates/a2a-protocol-server/src/push/sender.rs:931 rejects_private_192_168_range",
-    "crates/a2a-protocol-server/src/push/sender.rs:1033 rejects_decimal_integer_metadata"
+    "crates/a2a-protocol-server/src/push/sender.rs:920 rejects_loopback_ipv4",
+    "crates/a2a-protocol-server/src/push/sender.rs:925 rejects_private_10_range",
+    "crates/a2a-protocol-server/src/push/sender.rs:930 rejects_private_172_range",
+    "crates/a2a-protocol-server/src/push/sender.rs:935 rejects_private_192_168_range",
+    "crates/a2a-protocol-server/src/push/sender.rs:1037 rejects_decimal_integer_metadata"
    ],
    "notes": "Also CGNAT, 0.0.0.0, IPv6 ULA, IPv4-mapped/NAT64 forms and inet_aton numeric encodings.",
    "auditor": "F",
@@ -7939,10 +7939,10 @@
     "crates/a2a-protocol-server/src/push/sender.rs:680 HttpPushSender::send"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:936 rejects_link_local",
-    "crates/a2a-protocol-server/src/push/sender.rs:1151 rejects_localhost",
-    "crates/a2a-protocol-server/src/push/sender.rs:1315 rejects_ipv6_link_local",
-    "crates/a2a-protocol-server/src/push/sender.rs:1166 rejects_ipv6_loopback"
+    "crates/a2a-protocol-server/src/push/sender.rs:940 rejects_link_local",
+    "crates/a2a-protocol-server/src/push/sender.rs:1155 rejects_localhost",
+    "crates/a2a-protocol-server/src/push/sender.rs:1319 rejects_ipv6_link_local",
+    "crates/a2a-protocol-server/src/push/sender.rs:1170 rejects_ipv6_loopback"
    ],
    "notes": "localhost, *.local, *.internal hostnames and 169.254/16, fe80::/10 rejected.",
    "auditor": "F",

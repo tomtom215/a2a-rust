@@ -828,6 +828,10 @@ mod pin_tests;
 mod proxy_tests;
 
 #[cfg(test)]
+#[path = "sender_proxy_hint_tests.rs"]
+mod proxy_hint_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
