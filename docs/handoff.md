@@ -92,7 +92,7 @@ command is named so the next session re-runs it instead of copying the number. A
     (`7ecea386`); on `8080a519` the job succeeded (check-run conclusion), so the step was enough once; one pass is not a rate.
   - *`CodeQL`:* on `e3105ea4` one error, a regular expression in `deploy/observability/scripts/check_stack.py:61` that backtracks exponentially (fixed in `8e8c38fe`,
     with a timed self-test; the `CodeQL` and `Analyze` checks succeeded on `8080a519`), and 14 warnings "Log entry depends on a user-provided value" in `crates/a2a-protocol-server/src/otel/telemetry/prometheus/tests.rs`
-    (lines 77 to 264: assertion messages that print the scraped response). Those 14 are left for the maintainer's decision, not dismissed.
+    (lines 77 to 264: assertion messages that print the scraped response). The maintainer dismissed them as `Used in tests` on 2026-11-06.
   - *`a2a-tck conformance`:* the gate fails with 87 MUST requirements graded against a floor of 88, one failing check not in the baseline (`HTTP_JSON-ERR-001`) and
     baselined checks that now pass. `official-tck.yml` clones upstream's `main` (`A2A_TCK_REVISION: main`), and two executions I compared (extracts in `/tmp`, not kept)
     show the same counts, so this is CONJECTURED to be upstream drift and not this tree. On `8080a519` it fails in the same two steps (the baseline gate and the
@@ -137,8 +137,8 @@ command is named so the next session re-runs it instead of copying the number. A
    The mutation run is the check that matters: it grades the survivors the local commits close, measures the 40 server shards (projected near 85 minutes
    for the slowest; the limit is 180), and shows whether shards 8/20, 16/20 and 18/20, which graded nothing, now grade. A failed job may be re-run at most
    once, and only after its whole run has completed. Do not merge or tag: the maintainer's go is required.
-2. Then read `Test coverage` (did the disk step help?) and `CodeQL` (is `check_stack.py` clean?). `a2a-tck conformance` and the 14 log-entry warnings in
-   `prometheus/tests.rs` wait on the maintainer (*Waiting on the maintainer*).
+2. Then read `Test coverage` (did the disk step help?) and `CodeQL` (is `check_stack.py` clean?). `a2a-tck conformance` waits on the maintainer; the 14 log-entry warnings in
+   `prometheus/tests.rs` were dismissed by the maintainer on 2026-11-06.
 3. After the tag: ADR 0035 (agent skills) and ADR 0036 (steering), each its own pull request (the maintainer's decision of 2026-11-03).
 4. The adversarial campaign (the matrix in the maintainer's brief) is not started. It is scripts with recorded output, one brief per
    area, in the style of `docs/audits/2026-11-01-triage/BRIEF.md`.
@@ -374,8 +374,11 @@ session start.
   the gate's own message and re-baseline (`tck/scripts/check_conformance.py --update`, with the reason in `docs/official-tck-findings.md`). I recommend pinning: a floating
   revision turns a contributor's PR red for a reason that is not theirs, as the workflow comment itself says. Nothing was changed.
 - **CodeQL's 14 warnings "Log entry depends on a user-provided value"** are all in `crates/a2a-protocol-server/src/otel/telemetry/prometheus/tests.rs`: assertion messages
-  that print the scraped HTTP response. Options: dismiss them as test-only, with that reason; or print the status and length instead of the body. I would dismiss
-  them (a failing scrape needs the body), but that is yours to decide. Nothing was dismissed.
+  that print the scraped HTTP response. **Decided and carried out 2026-11-06: all 14 (alerts 191 to 204) dismissed as `Used in tests`**, which keeps the body in a failing assertion. The maintainer ran the
+  dismissal (this session's proxy refuses write access to code-scanning alerts, so it could not); the only check this session could make afterwards is that the 14 review
+  threads on the pull request then read `is_resolved: true`, which GitHub does when an alert is dismissed. The alert states themselves were not read. Comment used: "Test-only: this
+  assertion message prints a local test exporter scrape. No production path and no external input. Dismissed on the maintainer decision of 2026-11-06 (option A)." Alert 190 (the
+  regular expression) was already resolved.
 
 - **0.16.0: the choices made for you, each open to a veto.** You told the work to take the best engineering option for every open item
   and record why. The reasoning is in the register row, the ADR or the commit; this list is only the ones a deployer or you may
