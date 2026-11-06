@@ -60,7 +60,14 @@ impl ClientBuilder {
     }
 
     /// Without `tls-rustls` there is no pool: `PoolHandle` is `Infallible`.
+    // No test can kill cargo-mutants' replacements here (ADR 0006): the gate
+    // builds with every feature, where this function is compiled out, and in
+    // the one build that has it (`--no-default-features`, checked 2026-11-06)
+    // `Some(Arc::new(Default::default()))` does not compile (E0277: `Origins`
+    // has no `Default`) and `None` is what the body returns, since `self.pool`
+    // is an `Option<Infallible>` and has no `Some` to map.
     #[cfg(not(feature = "tls-rustls"))]
+    #[mutants::skip]
     fn pool_origins(&self) -> Option<Arc<Origins>> {
         self.pool.map(|never| match never {})
     }
@@ -202,7 +209,12 @@ fn pinned_client(
     ))
 }
 
+// No test can kill cargo-mutants' `Ok(Default::default())` here (ADR 0006): the
+// gate builds with every feature, where this function is compiled out, and in
+// the one build that has it (`--no-default-features`, checked 2026-11-06) the
+// mutant does not compile (E0277: hyper-util's `Client` has no `Default`).
 #[cfg(not(feature = "tls-rustls"))]
+#[mutants::skip]
 fn pinned_client(
     _config: &ClientConfig,
     _pool: Option<&PoolHandle>,
@@ -214,3 +226,6 @@ fn pinned_client(
         crate::redact::without_userinfo(url)
     )))
 }
+
+#[cfg(test)]
+mod tests;

@@ -133,6 +133,34 @@ mod tests {
         Name::from_str("agent.example.com").expect("name")
     }
 
+    /// A resolver that is not ready: it says so with an error.
+    struct Down;
+
+    impl tower_service::Service<Name> for Down {
+        type Response = std::vec::IntoIter<SocketAddr>;
+        type Error = std::io::Error;
+        type Future = std::future::Ready<std::io::Result<std::vec::IntoIter<SocketAddr>>>;
+
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Err(std::io::Error::other("the resolver is down")))
+        }
+
+        fn call(&mut self, _name: Name) -> Self::Future {
+            std::future::ready(Ok(Vec::new().into_iter()))
+        }
+    }
+
+    /// The bound wraps the lookup, not the question of whether the resolver
+    /// can take one: when the inner resolver is not ready, neither is this.
+    #[tokio::test]
+    async fn readiness_is_the_inner_resolvers() {
+        let mut r = BoundedResolver::new(Down, Duration::from_secs(1));
+        let err = std::future::poll_fn(|cx| tower_service::Service::poll_ready(&mut r, cx))
+            .await
+            .expect_err("the inner resolver is down");
+        assert_eq!(err.to_string(), "the resolver is down");
+    }
+
     /// A lookup that never answers fails at exactly the bound, and says why.
     #[tokio::test(start_paused = true)]
     async fn a_lookup_past_the_bound_times_out_at_the_bound() {

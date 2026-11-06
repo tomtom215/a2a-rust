@@ -70,6 +70,15 @@ pub(super) fn random_bits() -> u64 {
 mod tests {
     use super::*;
 
+    /// A draw is a draw: not one number every time, and not zero, which would
+    /// give every card the same share of its jitter.
+    #[test]
+    fn random_bits_differ_from_draw_to_draw() {
+        let draws: std::collections::HashSet<u64> = (0..16).map(|_| random_bits()).collect();
+        assert!(draws.len() > 1, "{draws:?}");
+        assert!(draws.iter().any(|&bits| bits != 0), "{draws:?}");
+    }
+
     #[test]
     fn what_counts_as_the_agent_being_unavailable() {
         for status in [500, 502, 503, 504] {

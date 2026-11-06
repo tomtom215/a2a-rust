@@ -70,6 +70,13 @@ impl tower_service::Service<Name> for Resolver {
     type Error = std::io::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Addrs, std::io::Error>> + Send>>;
 
+    // Equivalent mutant: cargo-mutants replaces the body with
+    // `Poll::from(Ok(()))`, which is `Poll::Ready(Ok(()))`, and that is what
+    // `self.system.poll_ready(cx)` returns: `system` is a `GaiResolver`, whose
+    // `poll_ready` (hyper-util 0.1.21, `client/legacy/connect/dns.rs`) is
+    // `Poll::Ready(Ok(()))`. No test can tell the two apart (ADR 0006); if
+    // `system` ever becomes another type, drop this skip.
+    #[mutants::skip]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.system.poll_ready(cx)
     }

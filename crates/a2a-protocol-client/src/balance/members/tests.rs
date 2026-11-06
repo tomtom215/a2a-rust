@@ -145,3 +145,30 @@ fn picks_count_up() {
     let counter = AtomicU64::new(0);
     assert_eq!((next_pick(&counter), next_pick(&counter)), (1, 2));
 }
+
+/// An endpoint that cannot be built is left out and the log says so, once; a
+/// set in which every endpoint builds says nothing. The warning is the only
+/// way an operator learns the set is smaller than the source gave.
+#[cfg(feature = "tracing")]
+#[test]
+fn an_endpoint_that_cannot_be_built_is_skipped_with_a_warning() {
+    let refresh = |endpoints: Vec<Endpoint>| {
+        let (m, _, _) = members(vec![Ok(endpoints)]);
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .start_paused(true)
+            .build()
+            .expect("runtime");
+        let mut got = Vec::new();
+        let warnings = crate::test_tracing::warnings_in(|| {
+            got = urls(&rt.block_on(m.get()).expect("a set"));
+        });
+        (warnings, got)
+    };
+    let (warnings, got) = refresh(vec![ep("a"), Endpoint::new("not a url")]);
+    assert_eq!(got, ["http://a.test"]);
+    assert_eq!(warnings, 1, "the endpoint left out is warned about");
+    let (warnings, got) = refresh(vec![ep("a"), ep("b")]);
+    assert_eq!(got, ["http://a.test", "http://b.test"]);
+    assert_eq!(warnings, 0, "nothing was left out");
+}
