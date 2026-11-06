@@ -1,0 +1,29 @@
+{
+ "about": "What this repository does about each MUST, SHOULD and MAY of the RFCs it implements; checked by scripts/check_rfc_ledger.py against the vendored texts in docs/implementation/rfc/.",
+ "documents": [
+  {
+   "id": "rfc7515",
+   "title": "JSON Web Signature (JWS), RFC 7515",
+   "path": "docs/implementation/rfc/rfc7515.txt",
+   "sha256": "ecbf84674118e62526511c1237e1deaa86aada86d25b247623a2a7e04ae62e40",
+   "excluded_lines": [],
+   "entries": []
+  },
+  {
+   "id": "rfc7519",
+   "title": "JSON Web Token (JWT), RFC 7519",
+   "path": "docs/implementation/rfc/rfc7519.txt",
+   "sha256": "fecd930e9ccf2276b95c0017c6c4ff5d09352e4bc3c7629946447894e0f97248",
+   "excluded_lines": [],
+   "entries": []
+  },
+  {
+   "id": "rfc8725",
+   "title": "JSON Web Token Best Current Practices, RFC 8725 (BCP 225)",
+   "path": "docs/implementation/rfc/rfc8725.txt",
+   "sha256": "737b7013a2495dcfd5481cf4c57c87e2455d537c4cec1140c9096a71fcef0812",
+   "excluded_lines": [],
+   "entries": []
+  }
+ ]
+}
