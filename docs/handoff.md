@@ -55,7 +55,8 @@ command is named so the next session re-runs it instead of copying the number. A
   **After the push of `ffd72299`** the three survivors of mutation run 470 were closed and the gates that cover them re-run, one gate at a time on a clean tree. On `94e5ffa5` (`JwtHeader.crit` became a `bool`):
   clippy 46, 57, 58 and 59, nextest 60 (7192 passed), 71 and 72 (3112), 73 (7213) and 74 (7187) exit 0, 0 failed. On `84d52b76` (the client test): clippy 46, 49, 58 and 59, nextest 63 (1297), 60 (7193), 73 (7214) and
   74 (7188) exit 0, 0 failed. Hand mutants, baseline first and the file restored byte for byte: `present`, 5 of 5 (baseline 49 passed); the `304` guard in `fetch_inner`, 3 of 3 (109). Static gates 1 to 45 are
-  re-run on the head that precedes this file's commit; the result is in the pull request body, not here.
+  re-run on the head that precedes this file's commit; the result is in the pull request body, not here. Item (d) (the key fetch's own headers) was built after that and is in the local commits above the
+  push; the gates it needed are in the pull request body once it is pushed.
   *Read on an earlier head and not re-run on `d30e5199`* (the branch has changed a good deal since `e3105ea4`: `git diff --stat e3105ea4..HEAD`):
   In `bindings/a2a-protocol-slimrpc`: `cargo fmt --check` (failed once on one file the API-shape package left unformatted; fixed),
   `cargo clippy --all-targets -- -D warnings`, `cargo build --bin slim-node` and `cargo test -- --test-threads=1` exit 0 (75 unit tests, the
@@ -162,10 +163,9 @@ command is named so the next session re-runs it instead of copying the number. A
 ### First, next
 
 1. Read the CI of pull request #197 on the pushed head before building on it (`ci-failure-triage`): the first real error of each failed job, every real failure fixed in one push. The commits above
-   `ffd72299` go up in one push (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD` lists them until then). Read, in this order: `a2a-tck conformance` (the re-baselined gates' first run: it should exit 0 with 87 and 65 graded; if upstream
-   moved nothing, any difference is this repository's, since the revision is pinned; reconcile `tck/untested-musts.toml` against that run's report artifact, which lists the pin's 16 not-tested and 7 manual
-   MUST requirements, as `docs/official-tck-findings.md` section 26 says), the mutation run (the `crit` bool and the two new tests are code it has not graded), and `Test coverage`. A failed job may be re-run at most once, and only after its whole run has completed. Do not merge or tag: the maintainer's go is required.
-2. Then the maintainer's open questions (*Waiting on the maintainer*): (c) the HS256 key as raw bytes, (d) `fetch_jwks` forwarding the card fetch's headers.
+   `ffd72299` go up in one push (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD` lists them until then). Read, in this order: `a2a-tck conformance` (read on `a672ff8e`: the job exited 0, 87 and 65 MUST requirements graded, each equal to its floor, the four baselined failing pairs and no others; `tck/untested-musts.toml` was
+   reconciled against that run's report artifact and needs no change, as `docs/official-tck-findings.md` section 26 records), the mutation run (the `crit` bool and the two new tests are code it has not graded), and `Test coverage`. A failed job may be re-run at most once, and only after its whole run has completed. Do not merge or tag: the maintainer's go is required.
+2. Then the one open item for the maintainer (*Waiting on the maintainer*): deleting the two redundant remote branches, which this session's git access cannot do.
 3. After the tag: ADR 0035 (agent skills) and ADR 0036 (steering), each its own pull request (the maintainer's decision of 2026-11-03).
 4. The adversarial campaign (the matrix in the maintainer's brief) is not started. It is scripts with recorded output, one brief per
    area, in the style of `docs/audits/2026-11-01-triage/BRIEF.md`.
@@ -380,28 +380,20 @@ session start.
 
 ## Waiting on the maintainer
 
-- **Two design calls from the RFC ledger are yours: (c) and (d).** Both were put to you before the tag and neither was answered; nothing was changed for either. The ledger's rows carry the code and
-  the tests (`docs/compliance/rfc-ledger.json`; `python3 scripts/check_rfc_ledger.py` runs its own `--self-test`, then checks every line, hash and citation).
-  - *(c) The HS256 key is used as raw bytes* (RFC 8725 line 372, `PARTIAL`, medium). `JwtValidator::with_hs256_secret` uses the bytes as the HMAC key with a floor of 32 bytes and no other check;
-    `examples/genai-agent` reads `A2A_JWT_HS256_SECRET` as a string and passes `secret.into_bytes()`, which is the password-as-key pattern RFC 8725 section 3.5 forbids, and the book's sample secret is a
-    guessable 32-character string. Options: (1) fix the example and the book (read a random key as base64, say how to make one) and change no runtime behaviour; (2) as (1) plus a refusal of obviously
-    low-entropy secrets (one repeated byte, a sequence), a heuristic that cannot tell a passphrase from a key; (3) leave it. My recommendation is (1): it removes the SDK's own bad example without a check
-    that would be wrong in both directions.
-  - *(d) `fetch_jwks` forwards the card fetch's headers to the key-set URL* (RFC 8725 line 435, `IMPLEMENTED_UNTESTED`, medium). The client's `fetch_jwks` sends the caller's `CardFetchOptions` headers, so an
-    `Authorization` or `Cookie` set for the card fetch is also sent to the key server. Options: (1) send none of them, with a separate header option on `fetch_jwks` for a key server that wants one;
-    (2) strip only `Authorization`, `Cookie` and `Proxy-Authorization`; (3) leave it and document it. My recommendation is (1): the key server is another trust domain and sending it the card's credentials
-    by default is the surprising behaviour. It changes client behaviour in 0.16.0, so it needs a CHANGELOG entry.
-- **Confirm a reading.** Your reply listed `standards-ledger` under "ship before the tag" with the sentence "I'd ship it after the tag" still attached (my earlier wording). I took the list as the instruction and
-  put the ledger, its CI step and the `crit` refusals in this branch. If you meant after, they come out as a revert of those commits (`git log --oneline` names them).
-- **The two follow-up branches on the remote are now redundant.** `claude/inspiring-mccarthy-rgpntj-304-merge` (remote head `a47f4800`, on an older base) and
-  `claude/inspiring-mccarthy-rgpntj-standards-ledger` (`9814b4d2`) hold work that this branch carries (the rebased `304` commit and the ledger commits). Delete them or leave them; nothing needs either. A
-  force-push of the stale `-304-merge` was refused in this session and is not needed.
+- **The two follow-up branches on the remote are redundant and safe to delete; this session could not delete them.** Your instruction was to delete them only if safe. Checked on 2026-11-06 against
+  `origin/claude/inspiring-mccarthy-rgpntj-rest` at `a672ff8e`: no pull request, in any state, has either as its head; no scheduled task is enabled; no workflow, script or config names them (only this file);
+  and every line they add is in #197's branch or was replaced by a later edit of the same text. `claude/inspiring-mccarthy-rgpntj-304-merge` (`a47f4800`, one commit): 443 added lines, 21 absent, all moved
+  citation numbers in the spec ledger, the old handoff text and one comment line. `claude/inspiring-mccarthy-rgpntj-standards-ledger` (`9814b4d2`, three commits, two with a patch-equivalent in #197): 925
+  added lines, 217 absent, which are citation line numbers (173 of 175 in the RFC ledger), ledger counts, the old handoff text and the `crit` design `Option<Value>` with its `present` deserializer, which
+  `crit: bool` replaced on purpose. The delete was refused by the remote (`git push origin --delete ...` returned HTTP 403, as the force-push of `-304-merge` was earlier), so both are still there. Delete them
+  from a clone with the right: `git push origin --delete claude/inspiring-mccarthy-rgpntj-304-merge claude/inspiring-mccarthy-rgpntj-standards-ledger`, or in the branch list. Their commits would be
+  `a47f4800`, and `9814b4d2` with its parents `dde3c9c7` and `19c3a671`; GitHub keeps an unreferenced commit fetchable by hash for a while, not for ever.
 - **What the RFC ledger left open** (no decision needed; the ledger's severities, and the ledger is a reviewer's reading, re-read by me for the consequential rows): 152 rows for RFC 7515, 7519 and 8725 (21
   `TESTED`, 45 `IMPLEMENTED_UNTESTED`, 3 `GAP`, 8 `PARTIAL`, 1 `DEVIATION`, 7 `APPLICATION`, 45 `NOT_APPLICABLE`, 16 `NOT_SUPPORTED`, 6 `SUPPORTED`; 85 are security rows and a security row is `TESTED` only
   with a recorded mutant a test of the row killed: 11 are). Open: four high-severity rows that are implemented and untested, all RFC 8725 (lines 289, 342 to 343, 397, 422 to 424: the algorithm named by the
   header is the one used, all cryptographic operations validated, the keys belong to the issuer, the audience checked); GAP: RFC 7515 5.2 and 7.2.1 (the card verifier does not refuse a header name present
   in both the protected and the unprotected header), RFC 8725 3.2 (ES256 card signing is hedged with a random nonce, not RFC 6979); PARTIAL (8): RFC 7519 4.1.4 and 4.1.5 (`exp` and `nbf` are `u64`, so a fractional NumericDate is refused, which fails closed) and 7.2;
-  RFC 8725 3.1 (lines 287 to 288), 3.2 (307), 3.5 (371, and 372, the (c) row above) and 3.8 (394); each row's notes say what is missing. New from the JWKS fix: the card verifier does not read a JWK's `key_ops` (RFC 7517 4.3; the types crate's `Jwk` has no such member), so a card key set that marks a
+  RFC 8725 3.1 (lines 287 to 288), 3.2 (307), 3.5 (371 and 372: the SDK's own example and the docs were fixed, the runtime was not) and 3.8 (394); each row's notes say what is missing. New from the JWKS fix: the card verifier does not read a JWK's `key_ops` (RFC 7517 4.3; the types crate's `Jwk` has no such member), so a card key set that marks a
   public key sign-only is still used to verify (low; RFC 7517 is not in the ledger yet). RFC 7519 section 8's `none` is a `DEVIATION` naming ADR 0010. Not started: RFC 7518, 7517 and 8785, then 6750, 9068
   and 6749, and a ledger for RFC 9111 and 5861 (the card cache, where the stale-if-error bug was).
 - **0.16.0: the choices made for you, each open to a veto.** You told the work to take the best engineering option for every open item
@@ -725,7 +717,19 @@ it.
   - **The stale-if-error change: kept** (RFC 5861 section 4; the default window is still none; `no-store`, `must-revalidate` and `no-cache` cards are never served stale).
   - **The four missing `prove_gates_fail.sh` injections: added before the tag**, so every gate of this release can be proved able to fail.
   - **Before the tag:** the `304` header merge (RFC 9111 section 4.3.4), the standards ledger with its CI step and the stricter `crit` handling, and (a) the server's JWKS parser honouring a key's own
-    `alg`, `key_ops` and `use`. (c) and (d) are undecided.
+    `alg`, `key_ops` and `use`.
+  - **(c) The HS256 key as raw bytes: option (1), decided** (reply "c: fix", to my question whether the "a" of "a: agree, d: agree" meant (c)). `examples/genai-agent` reads `A2A_JWT_HS256_SECRET` as a key in
+    base64 (`auth_card::hs256_key`; `openssl rand -base64 32`), so a typed passphrase is refused at startup; the book's samples, the validator's rustdoc and the authentication page say a key is random bytes;
+    `probe_auth.py --secret` takes the same base64 key. The runtime is unchanged: `with_hs256_secret` still checks the length only, and RFC 8725 section 3.5's two rows stay `PARTIAL` with notes saying so.
+    Hand mutants of `hs256_key`, baseline first and the file restored byte for byte: 5 of 5 (baseline 9 passed). The wiring in `main.rs` has no unit test: the example was run under `probe_auth.py` (27 of 27
+    cases, 0 bypasses), and with `main.rs` reading the variable as text again the probe's valid-token controls (C1, C2, gRPC, WebSocket) were rejected and its exit status was 1.
+  - **The RFC ledger ships before the tag: confirmed** (reply "ship before the tag, deleted only if it is safe", to my question whether `standards-ledger` meant before or after). The ledger, its CI step and the
+    `crit` refusals stay in #197. The redundant branches: see *Waiting on the maintainer*.
+  - **(d) `fetch_jwks` sends none of the card fetch's headers: option (1), decided** (reply "a: agree, d: agree"; I read "d" as this). The key-set fetch sends `Accept` and only the headers set
+    with the new `CardFetchOptions::with_jwks_header` (read back with `jwks_headers()`; `Debug` prints names only). `a2a card verify` sets `--header` for the key fetch exactly when it already
+    decided to send it there. CHANGELOG `### Behaviour Changes`, the 0.15 to 0.16 upgrade guide and `book/src/deployment/provenance.md` say so; RFC 8725 section 3.10's row keeps `IMPLEMENTED_UNTESTED`
+    (the URL allow-list half is the caller's, and no test sets `jku`, `x5u` or a header `jwk`). Hand mutants, baseline first and each file restored byte for byte: the fetch and the option, 7 of 7
+    (baseline 8 passed in `jwks_fetch_tests`); `connect.rs`, 2 of 2 (baseline 8 passed in `card_origin`).
   - **CodeQL alerts 191 to 204 ("Log entry depends on a user-provided value", `otel/telemetry/prometheus/tests.rs`): dismissed as `Used in tests`** (option A). The maintainer ran the dismissal; the only check
     this session could make is that the 14 review threads read resolved. Comment used: "Test-only: this assertion message prints a local test exporter scrape. No production path and no external input."
 - **2026-11-01, answers to `docs/audits/2026-11-01-triage/DECISIONS.md`** (all built or recorded as
@@ -888,7 +892,7 @@ git fetch origin && git merge-base --is-ancestor origin/<branch> origin/main && 
 Two follow-up branches were pushed on 2026-11-06 for work that was then held out of pull request #197 (the maintainer's instruction: push the branches, open no pull request, since a plain push to a
 branch other than `main` starts no workflow): `claude/inspiring-mccarthy-rgpntj-304-merge` (the `304` header merge in the card cache, RFC 9111 section 4.3.4 and 3.2) and
 `claude/inspiring-mccarthy-rgpntj-standards-ledger` (the RFC requirements ledger and what it found). The maintainer then asked for both before the tag, so #197's branch carries them (the `304` commit
-rebased onto the flaky-test fix, the ledger commits); the two remote branches are redundant (*Waiting on the maintainer*). If #197 is squashed or rebased, rebase nothing from them.
+rebased onto the flaky-test fix, the ledger commits); the two remote branches are redundant and were verified safe to delete, but the delete was refused by the remote (*Waiting on the maintainer*). If #197 is squashed or rebased, rebase nothing from them.
 
 This clone is shallow, so a "no" for an old branch is not proof, and `git
 blame` stops at the shallow boundary. Never write this branch's own head SHA

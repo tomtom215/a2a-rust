@@ -2332,14 +2332,13 @@ that passes and a one-requirement drop each fail the gate. That is a check of
 the gate's logic on a model of the report, not of the report: the next run at
 the pin is the check.
 
-**Not reconciled.** `tck/untested-musts.toml` maps 22 requirements the suite did
-not test at `d4d6fae` to tests in this repository. Of the pin's 7 manual MUST
-requirements, 5 are in the map (`CARD-SIGN-001` to `-004` and `AUTH-TLS-001`)
-and 2 are not (`CARD-CLIENT-001`, a client obligation, and `BIND-CUSTOM-002`);
-the map's other 17 requirements could not be placed in the pin's "not tested"
-list (16) or its skipped list (5), which are in the run's report artifact and
-not in its log. Reconcile the map against that report before quoting it for the
-pin.
+**Reconciled against the pin's report.** The first CI run with the re-baselined gates (run 42277491237, job `a2a-tck conformance`, head `a672ff8e`) graded 87 MUST requirements on the full run and 65 on
+the minimal profile, each equal to its floor, with the four failing pairs of the baseline and no others. Its report artifact (`official-tck-reports`, `full-compatibility.json`) was read
+mechanically against `tck/untested-musts.toml`: the full run's MUST rows are 85 passed, 2 failed, 5 skipped, 7 manual and 16 not tested. All 22 requirements of the map are ungraded in that
+report (the 16 not tested: `AUTH-INTASK-001` to `-004`, `AUTH-SCOPE-001` to `-003`, `AUTH-SERVER-002`, `BIND-EQUIV-001` to `-004`, `GRPC-SVC-003`, `VER-CLIENT-001`, `VER-CLIENT-002`,
+`VER-SERVER-001`; five of the seven manual, `CARD-SIGN-001` to `-004` and `AUTH-TLS-001`; and the skipped `CARD-EXT-002`), none is graded pass or fail there, and none is missing from
+it. The ungraded MUSTs the map does not carry are the other two manual ones (`CARD-CLIENT-001`, a client obligation, and `BIND-CUSTOM-002`, a comparison across versions) and
+`CORE-CAP-001` to `-004`, skipped in the full run and graded by the profile runs (`-001` to `-003` pass on the minimal profile, `-004` on the required-extension one). The map needs no change.
 
 **Moving the pin.** Take the commit the nightly run reported, run the suite
 against it, re-baseline if any verdict changed, record why here, and change
