@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:12603 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:12620 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -1780,7 +1780,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:20 AuthRejectionKind",
     "crates/a2a-protocol-types/src/error.rs:402 A2aError::insufficient_scope",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:376 JwtValidator::require_scope",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:427 JwtValidator::require_scope",
     "crates/a2a-protocol-server/src/error/mod.rs:197 ServerError::http_status",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status"
    ],
@@ -1805,7 +1805,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:56 AuthRejection::insufficient_scope",
     "crates/a2a-protocol-types/src/error.rs:402 A2aError::insufficient_scope",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:123 insufficient_scope_names_the_scopes_in_its_challenge",
@@ -4696,7 +4696,7 @@
     "crates/a2a-protocol-types/tests/signing_tests.rs:57 canonicalize_sorts_object_keys_lexicographically",
     "crates/a2a-protocol-types/tests/signing_tests.rs:295 sign_and_verify_roundtrip",
     "crates/a2a-protocol-types/tests/signing_tests.rs:388 verify_rejects_tampered_card",
-    "crates/a2a-protocol-types/src/signing/keys/tests.rs:254 a_card_verifies_when_any_of_its_signatures_does"
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs:298 a_card_verifies_when_any_of_its_signatures_does"
    ],
    "notes": "Signing/verification in a2a-protocol-types::signing. The tests assert a card signed with ES256 verifies, a tampered card does not, and a card carrying signatures verifies against a key set; shown able to fail by making the JWS verification ignore its result (the rejection tests fail) and by trying only the first signature (the multi-signature test fails) (2026-10-20).",
    "auditor": "C",
@@ -5017,7 +5017,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/interceptor/mod.rs:150 ServerInterceptor::authenticates",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:376 JwtValidator::require_scope",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:427 JwtValidator::require_scope",
     "crates/a2a-protocol-server/src/call_context.rs:114 CallContext"
    ],
    "test_evidence": [
@@ -5481,7 +5481,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/tests/signing_tests.rs:295 sign_and_verify_roundtrip",
     "crates/a2a-protocol-types/tests/signing_tests.rs:388 verify_rejects_tampered_card",
-    "crates/a2a-protocol-types/src/signing/keys/tests.rs:150 a_jwks_verifies_by_kid_and_alg"
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs:194 a_jwks_verifies_by_kid_and_alg"
    ],
    "notes": "ES256 and EdDSA signers (signing feature). The tests assert ES256 and EdDSA signatures verify and a tampered card does not; shown able to fail by making the JWS verification ignore its result (2026-10-20).",
    "auditor": "D",
@@ -5760,7 +5760,7 @@
     "crates/a2a-protocol-types/src/signing.rs:687 verify_card_json_with_jwks"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing/keys/tests.rs:254 a_card_verifies_when_any_of_its_signatures_does"
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs:298 a_card_verifies_when_any_of_its_signatures_does"
    ],
    "notes": "verify_card_with_jwks iterates card.signatures; verify_card_json_with_jwks reads them from the card as received.",
    "auditor": "D",
@@ -5781,7 +5781,7 @@
     "crates/a2a-protocol-client/src/jwks.rs:58 fetch_jwks"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing/keys/tests.rs:150 a_jwks_verifies_by_kid_and_alg",
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs:194 a_jwks_verifies_by_kid_and_alg",
     "crates/a2a-protocol-client/tests/jwks_fetch_tests.rs:82 a_card_verifies_under_a_fetched_set"
    ],
    "notes": "The 'from a trusted key store' branch is what is implemented and tested: kid-based lookup in a caller-supplied JWKS. jku is decoded but never followed, deliberately: following a card's own jku would let the card name the key that vouches for it, and fetch_jwks takes a caller-trusted URL instead. Reclassified PARTIAL to TESTED on 2026-10-14 (audit register, the §8.4.3 row, approved).",
@@ -5922,7 +5922,7 @@
     "crates/a2a-protocol-types/src/signing/keys.rs:238 Jwks"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing/keys/tests.rs:150 a_jwks_verifies_by_kid_and_alg"
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs:194 a_jwks_verifies_by_kid_and_alg"
    ],
    "notes": "Caller-supplied Jwks. Asserts a caller-supplied key set verifies by kid and alg and refuses an unknown kid; shown able to fail by dropping the kid filter from Jwks::candidates_at (2026-10-20).",
    "auditor": "D",
@@ -5945,8 +5945,8 @@
     "crates/a2a-protocol-types/src/signing/keys/x5c.rs:36 admits"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing/keys/tests.rs:188 an_expired_key_is_not_used",
-    "crates/a2a-protocol-types/src/signing/keys/tests.rs:177 removing_a_key_from_the_set_revokes_it",
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs:232 an_expired_key_is_not_used",
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs:221 removing_a_key_from_the_set_revokes_it",
     "crates/a2a-protocol-types/src/signing/keys/x5c/tests.rs:141 x5c_expired_leaf_is_not_used",
     "crates/a2a-protocol-types/src/signing/keys/x5c/tests.rs:156 x5c_not_yet_valid_leaf_is_not_used",
     "crates/a2a-protocol-types/src/signing/keys/x5c/tests.rs:128 x5c_validity_bounds_are_inclusive",
@@ -5972,7 +5972,7 @@
     "crates/a2a-protocol-types/src/signing.rs:700 verify_any"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing/keys/tests.rs:254 a_card_verifies_when_any_of_its_signatures_does"
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs:298 a_card_verifies_when_any_of_its_signatures_does"
    ],
    "notes": "Asserts a card carrying a rotated-out signature and a current one verifies; shown able to fail by trying only the first signature (2026-10-20).",
    "auditor": "D",
@@ -8671,7 +8671,7 @@
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:106 debug_names_no_accepted_credential",
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:135 accepting_and_refusing_logs_no_credential",
     "crates/a2a-protocol-server/tests/credential_rotation.rs:116 an_api_key_is_rotated_and_revoked_while_serving",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1879 debug_impls_render_type_and_redact_secrets"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1931 debug_impls_render_type_and_redact_secrets"
    ],
    "notes": "Constant-time comparison, Debug shows counts not keys, identity labels separate from credentials, push secrets redacted. Exception: SQL push-config stores keep credentials plaintext at rest (see 3131). Client: until 2026-10-14 (audit register R17) the derived Debug of ClientRequest, ClientResponse, CardFetchOptions and WebSocketTransportConfig printed header values (the Authorization an auth interceptor adds) and push-config params and results verbatim; they print header names and JSON keys now, never values.",
    "auditor": "F",
@@ -8690,7 +8690,7 @@
     "crates/a2a-protocol-server/src/auth/credentials.rs:44 CredentialSet::add",
     "crates/a2a-protocol-server/src/auth/mod.rs:261 ApiKeyAuthInterceptor::credentials",
     "crates/a2a-protocol-server/src/auth/mod.rs:379 BearerTokenAuthInterceptor::credentials",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1106 RemoteJwks::get"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1157 RemoteJwks::get"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/credential_rotation.rs:101 a_bearer_token_is_rotated_and_revoked_while_serving",
@@ -8738,7 +8738,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/credentials.rs:58 CredentialSet::revoke",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1106 RemoteJwks::get"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1157 RemoteJwks::get"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/credential_rotation.rs:101 a_bearer_token_is_rotated_and_revoked_while_serving",

@@ -77,8 +77,12 @@ the set holds no usable key, the call is refused with a server error (not
 `401`), because no verdict about the token could be reached; a refetch for an
 unknown `kid` that fails leaves the keys in hand, and the token is refused
 with `401`. Only RSA keys and P-256 EC keys are
-loaded, and an RS256 key must be 2048 to 8192 bits; entries with
-`"use": "enc"` or another key type are skipped.
+loaded, and an RS256 key must be 2048 to 8192 bits; entries of another key
+type are skipped, and so is any entry that is not for verifying signatures: a
+`use` other than `"sig"`, or a `key_ops` that does not list `"verify"`. A key
+that names an `alg` verifies only tokens that name it (RFC 8725 section 3.1), so
+an RSA key that says `RS512` verifies nothing here, where only `RS256` is
+accepted; a key that names none verifies the one algorithm its type fixes.
 
 ## Static keys and HS256
 

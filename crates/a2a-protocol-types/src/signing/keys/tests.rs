@@ -114,6 +114,50 @@ fn a_key_is_never_tried_under_another_algorithm() {
     assert!(verify_agent_card(&card(), &sig, &hex(P256_SPKI)).is_err());
 }
 
+/// RFC 8725 3.1: a key is used with exactly one algorithm, and that is
+/// checked when the signature is verified. A genuine signature, made with
+/// the key's own algorithm, is still refused when the header names another
+/// one, so the refusal is the algorithm check's and not the signature
+/// primitive failing on bytes that were never a signature.
+#[test]
+fn a_genuine_signature_is_refused_under_another_algorithms_name() {
+    let rng = ring::rand::SystemRandom::new();
+    let input = b"the signing input";
+    let p256_sig = ring::signature::EcdsaKeyPair::from_pkcs8(
+        &ring::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
+        &hex(P256_PKCS8),
+        &rng,
+    )
+    .unwrap()
+    .sign(&rng, input)
+    .unwrap();
+    let ed25519_sig = ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(&hex(ED_PKCS8))
+        .unwrap()
+        .sign(input);
+    let p256_key = VerifyingKey::from_bytes("ES256", &hex(P256_SPKI)).unwrap();
+    let ed25519_key = VerifyingKey::from_bytes("EdDSA", &hex(ED_SPKI)).unwrap();
+
+    p256_key.verify("ES256", input, p256_sig.as_ref()).unwrap();
+    ed25519_key
+        .verify("EdDSA", input, ed25519_sig.as_ref())
+        .unwrap();
+
+    for alg in ["EdDSA", "RS256", "es256", "ES256 ", "", "none"] {
+        assert!(
+            p256_key.verify(alg, input, p256_sig.as_ref()).is_err(),
+            "P-256 key, {alg:?}"
+        );
+    }
+    for alg in ["ES256", "RS256", "eddsa", "EdDSA ", "", "none"] {
+        assert!(
+            ed25519_key
+                .verify(alg, input, ed25519_sig.as_ref())
+                .is_err(),
+            "Ed25519 key, {alg:?}"
+        );
+    }
+}
+
 #[test]
 fn malformed_keys_are_refused() {
     assert!(VerifyingKey::from_bytes("ES256", &[0x04; 64]).is_err());

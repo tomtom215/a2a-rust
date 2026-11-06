@@ -1535,6 +1535,23 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   a public key, `none` in seven spellings, an empty key and unlisted algorithm
   names; each is paired with an accepted control and each fails with the
   matching check removed. The validator was not wrong.
+- **The server's JWKS parser ignored a key's own `alg` and `key_ops`, and loaded
+  a key whose `use` was anything but `enc`** (server; found by the RFC ledger,
+  fixed 2026-11-06). RFC 8725 section 3.1 requires each key to be used with
+  exactly one algorithm, checked when the signature is verified, and RFC 7517
+  sections 4.2 and 4.3 say a key marked for another use or operation is not a
+  verification key. `Jwks::from_json` now skips a key whose `use` is present and
+  is not `sig`, or whose `key_ops` is present and does not list `verify`; a key
+  whose `alg` is present verifies only a token whose header names that
+  algorithm, so an RSA key that declares `RS512`, `PS256` or `RSA-OAEP` (and an
+  EC key that declares anything but `ES256`) verifies nothing, and the
+  refusal is a rejection, not a missing key, so it does not make the caller
+  refetch the key set. A `key_ops` that is not an array of strings makes the
+  document invalid. **Compatibility:** a key set that declares an `alg` other
+  than `RS256` for an RSA key or `ES256` for a P-256 key, while its issuer signs
+  with the algorithm this validator accepts, stops verifying until the set says
+  what the issuer does; sets that name no `alg` are unaffected. Tests:
+  `jwt/tests/keys.rs`.
 
 - **The book's recovery loop lost the leased children it was meant to
   recover** (docs; found by the live proof of audit group M, 2026-11-04).

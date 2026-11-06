@@ -64,7 +64,7 @@ APPLICATION 1, DEVIATION 1, IMPLEMENTED_UNTESTED 12, NOT_APPLICABLE 16, NOT_SUPP
 
 ## JSON Web Token Best Current Practices, RFC 8725 (BCP 225) (`rfc8725`)
 
-APPLICATION 6, GAP 1, IMPLEMENTED_UNTESTED 8, NOT_APPLICABLE 10, PARTIAL 6, TESTED 1
+APPLICATION 6, GAP 1, IMPLEMENTED_UNTESTED 8, NOT_APPLICABLE 10, PARTIAL 5, TESTED 2
 
 | Section | Keyword | Status | Severity | Requirement |
 |---|---|---|---|---|
@@ -78,7 +78,6 @@ APPLICATION 6, GAP 1, IMPLEMENTED_UNTESTED 8, NOT_APPLICABLE 10, PARTIAL 6, TEST
 | 3.7 | MUST | IMPLEMENTED_UNTESTED | medium | Implementations MUST use UTF-8 for JSON in headers and claims, and not use or admit other Unicode encodings. |
 | 3.10 | SHOULD | IMPLEMENTED_UNTESTED | medium | Applications SHOULD protect against SSRF via jku/x5u headers, e.g. a URL allow-list and no cookies in the key fetch. |
 | 3.1 | MUST | PARTIAL | low | A library MUST let the caller specify the supported algorithm set and MUST NOT use any other algorithm for cryptographic operations. |
-| 3.1 | MUST | PARTIAL | low | Each key MUST be used with exactly one algorithm, and this MUST be checked when the cryptographic operation is performed. |
 | 3.2 | MUST | PARTIAL | low | Applications MUST be designed to enable cryptographic agility, so algorithms can change as they weaken. |
 | 3.2 | SHOULD | GAP | low | JWT libraries SHOULD implement ECDSA using the deterministic approach of RFC 6979. |
 | 3.5 | MUST | PARTIAL | low | The key-entropy and random-value advice of RFC 7515 10.1 and the password considerations of RFC 7518 8.8 MUST be followed. |

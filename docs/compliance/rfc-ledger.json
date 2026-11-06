@@ -51,7 +51,7 @@
      "security": false,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1483 decode_json"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1534 decode_json"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -111,8 +111,8 @@
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:316 protected_header",
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1483 decode_json"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1534 decode_json"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -131,15 +131,15 @@
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
       "crates/a2a-protocol-types/src/signing/keys.rs:61 VerifyingKey::from_bytes",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
       "crates/a2a-protocol-types/src/provenance/sign.rs:140 verify_content",
       "crates/a2a-protocol-types/src/audit/checkpoint.rs:268 verify_checkpoint"
      ],
      "test_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:1024 a_signature_with_crit_is_refused",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1946 a_token_that_marks_an_extension_critical_is_refused",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1998 a_token_that_marks_an_extension_critical_is_refused",
       "crates/a2a-protocol-types/src/signing.rs:972 verify_rejects_unsupported_algorithm",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1679 alg_none_is_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1731 alg_none_is_rejected",
       "crates/a2a-protocol-server/src/auth/jwt/tests/members.rs:158 a_critical_member_is_refused_whatever_it_holds",
       "crates/a2a-protocol-types/src/provenance/sign/tests.rs:171 a_signature_that_names_a_critical_extension_does_not_verify",
       "crates/a2a-protocol-types/src/audit/checkpoint/tests.rs:53 a_checkpoint_that_names_a_critical_extension_does_not_verify"
@@ -159,11 +159,11 @@
      "security": true,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1970 a_required_typ_must_match_and_is_otherwise_not_checked"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2022 a_required_typ_must_match_and_is_otherwise_not_checked"
      ],
      "mutant_evidence": [],
      "notes": "jwk, x5u, x5c, x5t, x5t#S256 and cty are never read by any verifier. jku is decoded by signature_header (so the caller can see it) but never fetched. kid selects among keys the caller or configuration supplied; typ is ignored unless the JWT validator was told to require one. So an attacker-supplied embedded key or key URL is never used. The only test is the typ one (a non-string typ is ignored when none is required); no test presents a token or card signature carrying an attacker's jwk, jku, x5u or x5c and asserts it is refused."
@@ -180,7 +180,7 @@
      "security": false,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -199,14 +199,14 @@
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
       "crates/a2a-protocol-types/src/signing/keys.rs:61 VerifyingKey::from_bytes",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader"
      ],
      "test_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:1124 signature_header_rejects_malformed_input",
       "crates/a2a-protocol-types/src/signing.rs:972 verify_rejects_unsupported_algorithm",
       "crates/a2a-protocol-types/src/signing.rs:1149 verify_rejects_non_es256_algorithm",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1679 alg_none_is_rejected"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1731 alg_none_is_rejected"
      ],
      "mutant_evidence": [],
      "notes": "Card path: a header without alg is an error in signature_header (t_hdr_malformed asserts it); an alg other than ES256 or EdDSA is refused by VerifyingKey::from_bytes (RS256 asserted). JWT path: alg is a required String in JwtHeader, so a missing alg fails the parse (no test of a missing alg); anything but HS256, RS256 or ES256 is Rejected (alg none asserted). Provenance and checkpoint verifiers turn a missing alg into '' or an unknown name, which finds no key or no SigningAlg (not tested). The tests assert refusal but nothing has been mutated to prove them."
@@ -223,7 +223,7 @@
      "security": false,
      "impl_evidence": [
       "crates/a2a-protocol-client/src/jwks.rs:58 fetch_jwks",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:138 Jwks::from_json"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:164 Jwks::from_json"
      ],
      "test_evidence": [
       "crates/a2a-protocol-client/tests/jwks_fetch_tests.rs:105 a_key_server_cannot_answer_with_anything_else"
@@ -246,15 +246,15 @@
      "impl_evidence": [
       "crates/a2a-protocol-client/src/jwks.rs:58 fetch_jwks",
       "crates/a2a-protocol-client/src/jwks.rs:124 is_trustworthy_url",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1364 trustworthy_url",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1171 RemoteJwks::fetch",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1415 trustworthy_url",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1222 RemoteJwks::fetch",
       "crates/a2a-protocol-types/src/signing.rs:316 protected_header"
      ],
      "test_evidence": [
       "crates/a2a-protocol-client/src/jwks.rs:149 only_https_or_loopback_http_is_fetched",
       "crates/a2a-protocol-client/tests/jwks_fetch_tests.rs:126 a_set_is_never_fetched_in_the_clear_from_a_remote_host",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1746 keys_are_fetched_over_https_or_from_loopback_only",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1775 a_plaintext_jwks_url_is_refused_at_fetch",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1798 keys_are_fetched_over_https_or_from_loopback_only",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1827 a_plaintext_jwks_url_is_refused_at_fetch",
       "crates/a2a-protocol-types/tests/signing_jku.rs:85 a_jku_that_is_not_https_is_refused"
      ],
      "mutant_evidence": [],
@@ -293,7 +293,7 @@
      "security": true,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -312,12 +312,12 @@
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:316 protected_header",
       "crates/a2a-protocol-types/src/signing/keys.rs:272 Jwks::candidates_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:254 Jwks::candidates",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:305 Jwks::candidates",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader"
      ],
      "test_evidence": [
       "crates/a2a-protocol-types/tests/signing_tests.rs:341 protected_header_carries_alg_typ_and_kid",
-      "crates/a2a-protocol-types/src/signing/keys/tests.rs:150 a_jwks_verifies_by_kid_and_alg"
+      "crates/a2a-protocol-types/src/signing/keys/tests.rs:194 a_jwks_verifies_by_kid_and_alg"
      ],
      "mutant_evidence": [],
      "notes": "Signers take the kid as &str, so it is always a JSON string. Matching is exact string equality (Jwks::candidates_at in types, Jwks::candidates in the server). The JWT path refuses a non-string kid at parse (JwtHeader.kid is Option<String>). The card path is lenient: signature_header reads kid with as_str, so a non-string kid is treated as absent and every key of that alg becomes a candidate; the signature must still verify under a key of the trusted set, so nothing is forged. No test covers case-sensitivity or a non-string kid; the listed tests assert the header's kid and an unknown kid being refused."
@@ -336,12 +336,12 @@
       "crates/a2a-protocol-types/src/signing.rs:316 protected_header",
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
       "crates/a2a-protocol-types/src/signing/keys.rs:272 Jwks::candidates_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:254 Jwks::candidates"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:305 Jwks::candidates"
      ],
      "test_evidence": [
       "crates/a2a-protocol-types/tests/signing_tests.rs:309 sign_and_verify_without_key_id",
       "crates/a2a-protocol-types/src/signing.rs:1086 signature_header_kid_is_none_for_a_foreign_signature_without_one",
-      "crates/a2a-protocol-types/src/signing/keys/tests.rs:150 a_jwks_verifies_by_kid_and_alg"
+      "crates/a2a-protocol-types/src/signing/keys/tests.rs:194 a_jwks_verifies_by_kid_and_alg"
      ],
      "mutant_evidence": [],
      "notes": "Every signer here writes kid, and a verifier accepts a signature without one: a kid-less card signature is tried against every key of its alg in the supplied set, and a kid-less JWT against every key of the set; a JWT that names a kid a keyed set lacks gets no candidate. Tests assert the kid-less card signature verifies."
@@ -497,11 +497,11 @@
      "security": false,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:316 protected_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:418 JwtValidator::typ_accepted"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:469 JwtValidator::typ_accepted"
      ],
      "test_evidence": [
       "crates/a2a-protocol-types/tests/signing_tests.rs:341 protected_header_carries_alg_typ_and_kid",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1970 a_required_typ_must_match_and_is_otherwise_not_checked"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2022 a_required_typ_must_match_and_is_otherwise_not_checked"
      ],
      "mutant_evidence": [],
      "notes": "Card signers always write typ JOSE (spec 8.4.2 asks for it). The JWT validator reads typ only when told to (JwtValidator::with_required_typ) and otherwise ignores it. Provenance and checkpoint signatures carry no typ."
@@ -537,11 +537,11 @@
      "severity": "low",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:418 JwtValidator::typ_accepted",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:727 normalise_typ"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:469 JwtValidator::typ_accepted",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:778 normalise_typ"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1970 a_required_typ_must_match_and_is_otherwise_not_checked"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2022 a_required_typ_must_match_and_is_otherwise_not_checked"
      ],
      "mutant_evidence": [],
      "notes": "Only the JWT validator uses typ, and only if with_required_typ was called: both sides are lower-cased and an 'application/' prefix is dropped, so at+jwt, AT+JWT and application/at+jwt all match. The test asserts those and that application/jwt, id+jwt and a missing or non-string typ are refused, so it would fail if the prefix handling were removed. Deviation: the whole value is lower-cased, so media-type parameter values, which 4.1.9 says are case sensitive, compare case-insensitively (not exploitable for a bare type such as at+jwt). The card verifier does not use typ."
@@ -638,14 +638,14 @@
      "security": true,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader",
       "crates/a2a-protocol-types/src/provenance/sign.rs:140 verify_content",
       "crates/a2a-protocol-types/src/audit/checkpoint.rs:268 verify_checkpoint"
      ],
      "test_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:1024 a_signature_with_crit_is_refused",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1946 a_token_that_marks_an_extension_critical_is_refused",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1998 a_token_that_marks_an_extension_critical_is_refused",
       "crates/a2a-protocol-server/src/auth/jwt/tests/members.rs:158 a_critical_member_is_refused_whatever_it_holds",
       "crates/a2a-protocol-types/src/provenance/sign/tests.rs:171 a_signature_that_names_a_critical_extension_does_not_verify",
       "crates/a2a-protocol-types/src/audit/checkpoint/tests.rs:53 a_checkpoint_that_names_a_critical_extension_does_not_verify"
@@ -709,11 +709,11 @@
      "security": true,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:1024 a_signature_with_crit_is_refused",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1946 a_token_that_marks_an_extension_critical_is_refused"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1998 a_token_that_marks_an_extension_critical_is_refused"
      ],
      "mutant_evidence": [],
      "notes": "The card verifier and the JWT validator refuse any crit, which includes a crit naming a spec-defined header, the empty list and a non-array (tests assert [], a string and a list of extension names). The provenance and checkpoint verifiers refuse it too since 2026-11-06 (see line 738)."
@@ -731,11 +731,11 @@
      "security": true,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:1024 a_signature_with_crit_is_refused",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1946 a_token_that_marks_an_extension_critical_is_refused"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1998 a_token_that_marks_an_extension_critical_is_refused"
      ],
      "mutant_evidence": [],
      "notes": "Producers never write crit. Recipients: signature_header refuses a crit in the protected header and also one in the unprotected header (a_signature_with_crit_is_refused asserts a validly signed card signature with only an unprotected crit is refused); the JWT compact form has only a protected header. Provenance and checkpoint signatures have no unprotected header, so the placement rule cannot be broken there."
@@ -752,11 +752,11 @@
      "security": true,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:1024 a_signature_with_crit_is_refused",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1946 a_token_that_marks_an_extension_critical_is_refused"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1998 a_token_that_marks_an_extension_critical_is_refused"
      ],
      "mutant_evidence": [],
      "notes": "No signer writes crit; the card verifier and the JWT validator refuse any signature or token that carries one. The provenance and checkpoint verifiers ignore it (see line 738)."
@@ -773,13 +773,13 @@
      "security": true,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
       "crates/a2a-protocol-types/src/provenance/sign.rs:140 verify_content",
       "crates/a2a-protocol-types/src/audit/checkpoint.rs:268 verify_checkpoint"
      ],
      "test_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:1024 a_signature_with_crit_is_refused",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1946 a_token_that_marks_an_extension_critical_is_refused",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1998 a_token_that_marks_an_extension_critical_is_refused",
       "crates/a2a-protocol-server/src/auth/jwt/tests/members.rs:158 a_critical_member_is_refused_whatever_it_holds",
       "crates/a2a-protocol-types/src/provenance/sign/tests.rs:171 a_signature_that_names_a_critical_extension_does_not_verify",
       "crates/a2a-protocol-types/src/audit/checkpoint/tests.rs:53 a_checkpoint_that_names_a_critical_extension_does_not_verify"
@@ -836,15 +836,15 @@
       "crates/a2a-protocol-types/src/signing.rs:687 verify_card_json_with_jwks",
       "crates/a2a-protocol-client/src/discovery.rs:994 verify_card_signatures",
       "crates/a2a-protocol-client/src/builder/signed.rs:33 ClientBuilder::from_signed_card",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-types/src/signing/keys/tests.rs:254 a_card_verifies_when_any_of_its_signatures_does",
+      "crates/a2a-protocol-types/src/signing/keys/tests.rs:298 a_card_verifies_when_any_of_its_signatures_does",
       "crates/a2a-protocol-client/tests/card_signature_verification.rs:76 a_signed_card_is_verified_when_keys_are_supplied",
       "crates/a2a-protocol-client/tests/card_signature_verification.rs:104 a_card_whose_signatures_were_removed_is_refused_when_keys_are_supplied",
       "crates/a2a-protocol-client/tests/card_signature_verification.rs:213 a_client_built_from_a_signed_card_verifies_it",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1527 hs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1579 hs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections"
      ],
      "mutant_evidence": [],
      "notes": "Card path: verify_any succeeds only if some signature verifies under some candidate key; zero signatures is an error; none verifying is an error. a_card_verifies_when_any_of_its_signatures_does asserts a card whose only signature is by a rotated-out key fails and passes once a good one is added. JWT path: one signature, which must verify. Caveat: the client verifies a fetched card only when CardFetchOptions::with_signature_keys is supplied (discovery.rs, the signature_keys branch before the typed card read); with require_signature(false) a card with no signatures is returned unverified, by the caller's choice. The tests assert tamper, strip and wrong-key refusal; none has been mutation-checked."
@@ -882,16 +882,16 @@
       "crates/a2a-protocol-types/src/signing.rs:595 verify_agent_card",
       "crates/a2a-protocol-types/src/signing.rs:629 verify_canonical_with_jwks",
       "crates/a2a-protocol-types/src/signing/keys.rs:94 VerifyingKey::verify",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1404 verify_asymmetric"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1455 verify_asymmetric"
      ],
      "test_evidence": [
       "crates/a2a-protocol-types/src/signing/keys/tests.rs:106 a_key_is_never_tried_under_another_algorithm",
       "crates/a2a-protocol-types/src/signing.rs:972 verify_rejects_unsupported_algorithm",
       "crates/a2a-protocol-types/src/signing.rs:1149 verify_rejects_non_es256_algorithm",
       "crates/a2a-protocol-types/src/signing.rs:1124 signature_header_rejects_malformed_input",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1658 algorithm_confusion_rejected",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1679 alg_none_is_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1710 algorithm_confusion_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1731 alg_none_is_rejected",
       "crates/a2a-protocol-types/src/audit/tests.rs:205 a_key_is_never_tried_under_another_algorithm"
      ],
      "mutant_evidence": [],
@@ -911,15 +911,15 @@
       "crates/a2a-protocol-types/src/signing.rs:700 verify_any",
       "crates/a2a-protocol-types/src/signing.rs:713 verify_with",
       "crates/a2a-protocol-types/src/signing/keys.rs:94 VerifyingKey::verify",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:937 verify_rejects_tampered_card",
       "crates/a2a-protocol-types/tests/signing_tests.rs:421 verify_rejects_wrong_public_key",
       "crates/a2a-protocol-types/tests/signing_tests.rs:456 verify_rejects_modified_protected_header",
       "crates/a2a-protocol-client/tests/card_signature_verification.rs:76 a_signed_card_is_verified_when_keys_are_supplied",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1527 hs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1579 hs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections"
      ],
      "mutant_evidence": [],
      "notes": "Every verifier returns an error when verification fails: ring's verify result is mapped to an error in VerifyingKey::verify and verify_with, and to Rejected in the JWT validator, before any claim is read. Tests assert a tampered card, the wrong public key, a modified protected header, a wrong-secret and a wrong-key token are all refused. Same code and tests as the line 861 entry."
@@ -937,12 +937,12 @@
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing/keys.rs:61 VerifyingKey::from_bytes",
       "crates/a2a-protocol-types/src/signing/keys.rs:94 VerifyingKey::verify",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1679 alg_none_is_rejected",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1658 algorithm_confusion_rejected",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1538 hs256_without_configured_secret_is_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1731 alg_none_is_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1710 algorithm_confusion_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1590 hs256_without_configured_secret_is_rejected",
       "crates/a2a-protocol-types/src/signing.rs:972 verify_rejects_unsupported_algorithm",
       "crates/a2a-protocol-types/src/signing/keys/tests.rs:106 a_key_is_never_tried_under_another_algorithm"
      ],
@@ -961,12 +961,12 @@
      "security": true,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:727 normalise_typ"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:778 normalise_typ"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1970 a_required_typ_must_match_and_is_otherwise_not_checked"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2022 a_required_typ_must_match_and_is_otherwise_not_checked"
      ],
      "mutant_evidence": [],
      "notes": "serde_json decodes escapes before a member name or value is compared, and the comparisons are Rust string equality (alg, kid) or serde's field match, so \"sig\" and \"\\u0073ig\" are equal and case differs. typ is the documented exception (normalise_typ, case-insensitive). No test uses an escaped member name or a differently-cased alg or kid (a header spelled \"ALG\" or alg \"es256\" is refused by the same reading)."
@@ -984,7 +984,7 @@
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
       "crates/a2a-protocol-types/src/signing.rs:713 verify_with",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
       "crates/a2a-protocol-types/tests/signing_tests.rs:456 verify_rejects_modified_protected_header",
@@ -1221,7 +1221,7 @@
       "crates/a2a-protocol-server/src/net/roots.rs:43 config_with_roots",
       "crates/a2a-protocol-client/src/tls.rs:78 default_tls_config",
       "crates/a2a-protocol-client/src/jwks.rs:58 fetch_jwks",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1171 RemoteJwks::fetch"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1222 RemoteJwks::fetch"
      ],
      "test_evidence": [
       "crates/a2a-protocol-server/tests/jwks_https_e2e.rs:175 jwks_fetched_over_real_tls_validates_tokens"
@@ -1244,7 +1244,7 @@
       "crates/a2a-protocol-server/src/net/roots.rs:43 config_with_roots",
       "crates/a2a-protocol-client/src/tls.rs:78 default_tls_config",
       "crates/a2a-protocol-client/src/jwks.rs:58 fetch_jwks",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1171 RemoteJwks::fetch"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1222 RemoteJwks::fetch"
      ],
      "test_evidence": [
       "crates/a2a-protocol-server/tests/jwks_https_e2e.rs:201 jwks_from_untrusted_certificate_fails_closed",
@@ -1294,11 +1294,11 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1404 verify_asymmetric",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1455 verify_asymmetric",
       "crates/a2a-protocol-types/src/signing/keys.rs:94 VerifyingKey::verify"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections"
      ],
      "mutant_evidence": [],
      "notes": "The SDK does not rely on an algorithm field inside the signature: RS256 verifies with ring's RSA_PKCS1_2048_8192_SHA256, which recomputes the SHA-256 EMSA-PKCS1-v1_5 encoding and compares the whole encoded message (ring rsa/verification.rs, rsa/padding/pkcs1.rs verify), so a signature built with another hash fails; ES256 uses ECDSA_P256_SHA256_FIXED and EdDSA ED25519. rs256_valid_and_rejections asserts a wrong-key token is refused, but no test supplies an RS256-labelled token whose signature uses a different hash."
@@ -1315,8 +1315,8 @@
      "security": true,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1483 decode_json",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1534 decode_json",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
       "crates/a2a-protocol-types/src/provenance/sign.rs:140 verify_content",
       "crates/a2a-protocol-types/src/audit/checkpoint.rs:268 verify_checkpoint",
       "crates/a2a-protocol-client/src/discovery.rs:994 verify_card_signatures"
@@ -1356,8 +1356,8 @@
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:316 protected_header",
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1483 decode_json"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1534 decode_json"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -1378,8 +1378,8 @@
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:316 protected_header",
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1483 decode_json"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1534 decode_json"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -1397,8 +1397,8 @@
      "security": true,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1483 decode_json",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1534 decode_json",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -1417,7 +1417,7 @@
      "security": true,
      "impl_evidence": [
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader",
       "crates/a2a-protocol-types/src/signing/keys.rs:272 Jwks::candidates_at"
      ],
      "test_evidence": [],
@@ -1458,7 +1458,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -1475,8 +1475,8 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1483 decode_json",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1534 decode_json",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -1493,9 +1493,9 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1483 decode_json"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1534 decode_json"
      ],
      "test_evidence": [
       "crates/a2a-protocol-server/src/auth/jwt/tests/members.rs:92 a_member_named_twice_is_refused_whatever_it_says_first_or_last"
@@ -1516,10 +1516,10 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2045 a_delegated_token_names_its_principal_and_its_actors"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2097 a_delegated_token_names_its_principal_and_its_actors"
      ],
      "mutant_evidence": [],
      "notes": "JwtClaims has no deny_unknown_fields, so an unknown member is skipped. a_delegated_token_names_its_principal_and_its_actors asserts that a token carrying an extra claim {\"x\":1} is accepted (i.before(&plain).unwrap()) with no actors; the test is about act, so the unknown claim is incidental, but adding deny_unknown_fields would fail it. Only one unknown claim name is exercised. Registered claims the code does read beyond RFC 7519 (scope, act: RFC 8693) are an application requirement, which is the RFC's own carve-out."
@@ -1535,14 +1535,14 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:386 JwtValidator::with_issuer",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:435 JwtValidator::allow_any_issuer",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:437 JwtValidator::with_issuer",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:486 JwtValidator::allow_any_issuer",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1702 unset_audience_and_issuer_refuse_every_token_unless_opted_out",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1754 unset_audience_and_issuer_refuse_every_token_unless_opted_out",
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/main.rs:120 valid_rs256_passes_and_invalid_is_rejected_over_http",
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/main.rs:316 oidc_discovery_binds_the_issuer_to_a_validator_that_names_none",
       "crates/a2a-protocol-server/src/auth/jwt/tests/members.rs:123 a_registered_claim_of_the_wrong_type_is_refused"
@@ -1563,13 +1563,13 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1054 JwtAuthInterceptor::before",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1105 JwtAuthInterceptor::before",
       "crates/a2a-protocol-server/src/auth/caller_id.rs:52 jwt",
       "crates/a2a-protocol-server/src/auth/mod.rs:461 AuthenticatedPrincipal"
      ],
      "test_evidence": [
       "crates/a2a-protocol-server/tests/jwt_caller_identity.rs:96 one_sub_from_two_issuers_is_two_callers",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1616 a_validated_token_records_its_subject_as_the_caller",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1668 a_validated_token_records_its_subject_as_the_caller",
       "crates/a2a-protocol-server/src/auth/caller_id.rs:112 an_issuer_with_a_colon_cannot_borrow_part_of_the_subject"
      ],
      "mutant_evidence": [],
@@ -1586,8 +1586,8 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1054 JwtAuthInterceptor::before",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1105 JwtAuthInterceptor::before",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims",
       "crates/a2a-protocol-server/src/auth/mod.rs:461 AuthenticatedPrincipal"
      ],
      "test_evidence": [
@@ -1608,15 +1608,15 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:393 JwtValidator::with_audience",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:443 JwtValidator::allow_any_audience",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:450 JwtValidator::refuses_everything",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:299 JwtValidator"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:444 JwtValidator::with_audience",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:494 JwtValidator::allow_any_audience",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:501 JwtValidator::refuses_everything",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:350 JwtValidator"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1702 unset_audience_and_issuer_refuse_every_token_unless_opted_out",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1754 unset_audience_and_issuer_refuse_every_token_unless_opted_out",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/main.rs:120 valid_rs256_passes_and_invalid_is_rejected_over_http",
       "crates/a2a-protocol-server/src/auth/jwt/tests/members.rs:60 an_audience_is_a_string_or_an_array_and_must_name_this_application"
      ],
@@ -1637,12 +1637,12 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:795 de_aud",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:393 JwtValidator::with_audience"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:846 de_aud",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:444 JwtValidator::with_audience"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/main.rs:120 valid_rs256_passes_and_invalid_is_rejected_over_http",
       "crates/a2a-protocol-server/src/auth/jwt/tests/members.rs:60 an_audience_is_a_string_or_an_array_and_must_name_this_application"
      ],
@@ -1664,12 +1664,12 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:795 de_aud",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:846 de_aud",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections"
      ],
      "mutant_evidence": [],
      "notes": "de_aud accepts a string (One) or an array of strings (Many) via an untagged enum. Every test vector and helper token uses the single-string form, so the string form is exercised (accepted for 'a2a-agent', refused for 'other-api'). NO test uses an array: a mutant that read only the first element, replaced any() by all() in the audience match, or broke Many survives, because every tested aud has one element."
@@ -1685,13 +1685,13 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:443 JwtValidator::allow_any_audience",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:795 de_aud"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:494 JwtValidator::allow_any_audience",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:846 de_aud"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2100 check_claims_require_exp_boundary",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1702 unset_audience_and_issuer_refuse_every_token_unless_opted_out"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2152 check_claims_require_exp_boundary",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1754 unset_audience_and_issuer_refuse_every_token_unless_opted_out"
      ],
      "mutant_evidence": [],
      "notes": "Optional only by explicit opt-out here: with allow_any_audience() a token with no aud is accepted (check_claims_at skips the audience block); otherwise a missing aud is refused. check_claims_require_exp_boundary asserts at check_claims_at level that claims with aud None pass under allow_any_audience; unset_audience_and_issuer_... asserts the opt-out accepts a token that has an aud. Not asserted: a token with no aud through validate() or the interceptor."
@@ -1707,16 +1707,16 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:624 JwtValidator::check_claims",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:675 JwtValidator::check_claims",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2162 check_claims_exp_boundary_is_fail_closed",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2100 check_claims_require_exp_boundary",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1527 hs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1692 es256_valid_and_expired",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2214 check_claims_exp_boundary_is_fail_closed",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2152 check_claims_require_exp_boundary",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1579 hs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1744 es256_valid_and_expired",
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/main.rs:120 valid_rs256_passes_and_invalid_is_rejected_over_http"
      ],
      "mutant_evidence": [
@@ -1736,15 +1736,15 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:624 JwtValidator::check_claims"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:675 JwtValidator::check_claims"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2162 check_claims_exp_boundary_is_fail_closed",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2100 check_claims_require_exp_boundary",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1527 hs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1692 es256_valid_and_expired",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2214 check_claims_exp_boundary_is_fail_closed",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2152 check_claims_require_exp_boundary",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1579 hs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1744 es256_valid_and_expired",
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/main.rs:120 valid_rs256_passes_and_invalid_is_rejected_over_http"
      ],
      "mutant_evidence": [
@@ -1765,12 +1765,12 @@
      "security": true,
      "impl_evidence": [
       "crates/a2a-protocol-server/src/auth/jwt.rs:55 DEFAULT_LEEWAY",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:468 JwtValidator::with_leeway",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:519 JwtValidator::with_leeway",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2162 check_claims_exp_boundary_is_fail_closed",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2134 check_claims_nbf_boundary_is_strict"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2214 check_claims_exp_boundary_is_fail_closed",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2186 check_claims_nbf_boundary_is_strict"
      ],
      "mutant_evidence": [],
      "notes": "On by default: DEFAULT_LEEWAY is 60 s, applied to exp (now >= exp + leeway) and nbf (now + leeway < nbf); with_leeway() sets it with no upper bound (the RFC's 'usually no more than a few minutes' is not a MUST). check_claims_exp_boundary_is_fail_closed asserts the exp edges with a 60 s leeway (accepted at exp + 59, refused at exp + 60) and with zero leeway. check_claims_nbf_boundary_is_strict uses ZERO leeway only, so NO test asserts nbf leeway, and no test asserts that the default is 60 (every default-leeway test uses values hundreds of seconds apart): a mutant flipping the nbf leeway sign, or changing DEFAULT_LEEWAY to a large value, survives. Both leeway additions are saturating_add on u64."
@@ -1786,8 +1786,8 @@
      "severity": "low",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -1804,12 +1804,12 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:475 JwtValidator::allow_missing_exp",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:299 JwtValidator"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:526 JwtValidator::allow_missing_exp",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:350 JwtValidator"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2100 check_claims_require_exp_boundary"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2152 check_claims_require_exp_boundary"
      ],
      "mutant_evidence": [],
      "notes": "Required by default (require_exp is true, check_claims_at returns Err on None); allow_missing_exp() is the opt-out. RFC 9068 (the profile the code follows) makes exp required; RFC 7519 makes it optional. check_claims_require_exp_boundary asserts at check_claims_at level that no exp is refused by default and accepted after allow_missing_exp(); it does not go through validate(), and no token vector lacks exp. A mutant that defaults require_exp to false fails that test."
@@ -1825,11 +1825,11 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2134 check_claims_nbf_boundary_is_strict"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2186 check_claims_nbf_boundary_is_strict"
      ],
      "mutant_evidence": [],
      "notes": "check_claims_at rejects when now + leeway < nbf (saturating add). check_claims_nbf_boundary_is_strict (check_claims_at, zero leeway, allow_missing_exp) asserts: nbf 2000 at now 1000 refused; nbf == now accepted; nbf 500 accepted. No token vector carries nbf and no test goes through validate() with one, so a mutant in the wiring (check_claims not reading nbf from the parsed claims) is not caught by an nbf test. "
@@ -1845,10 +1845,10 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2134 check_claims_nbf_boundary_is_strict"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2186 check_claims_nbf_boundary_is_strict"
      ],
      "mutant_evidence": [],
      "notes": "The boundary is 'now >= nbf' (accepted exactly at nbf), as the RFC says. check_claims_nbf_boundary_is_strict (check_claims_at, zero leeway, allow_missing_exp) asserts: nbf 2000 at now 1000 refused; nbf == now accepted; nbf 500 accepted. No token vector carries nbf and no test goes through validate() with one, so a mutant in the wiring (check_claims not reading nbf from the parsed claims) is not caught by an nbf test. "
@@ -1865,11 +1865,11 @@
      "security": true,
      "impl_evidence": [
       "crates/a2a-protocol-server/src/auth/jwt.rs:55 DEFAULT_LEEWAY",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:468 JwtValidator::with_leeway",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:519 JwtValidator::with_leeway",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2134 check_claims_nbf_boundary_is_strict"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2186 check_claims_nbf_boundary_is_strict"
      ],
      "mutant_evidence": [],
      "notes": "The same 60 s default leeway as exp applies to nbf: a token is accepted from nbf - 60 s. The only nbf test, check_claims_nbf_boundary_is_strict, sets leeway to ZERO, so no test asserts any nbf leeway behaviour (a mutant turning the nbf comparison's now + leeway into now - leeway survives)."
@@ -1885,8 +1885,8 @@
      "severity": "low",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -1903,13 +1903,13 @@
      "severity": "low",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1527 hs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2162 check_claims_exp_boundary_is_fail_closed"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1579 hs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2214 check_claims_exp_boundary_is_fail_closed"
      ],
      "mutant_evidence": [],
      "notes": "A token without nbf is accepted (check_claims_at only tests nbf when Some). Every vector and helper token omits nbf and is accepted, so a mutant that required nbf fails immediately. Severity low: the fail-open direction (ignoring a present nbf) is the one at line 518."
@@ -1925,7 +1925,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -1942,7 +1942,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -1960,7 +1960,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -1977,7 +1977,7 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims",
       "crates/a2a-protocol-server/src/auth/mod.rs:461 AuthenticatedPrincipal"
      ],
      "test_evidence": [],
@@ -1995,7 +1995,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims",
       "crates/a2a-protocol-server/src/auth/mod.rs:461 AuthenticatedPrincipal"
      ],
      "test_evidence": [],
@@ -2013,10 +2013,10 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:418 JwtValidator::typ_accepted"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:469 JwtValidator::typ_accepted"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1970 a_required_typ_must_match_and_is_otherwise_not_checked"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2022 a_required_typ_must_match_and_is_otherwise_not_checked"
      ],
      "mutant_evidence": [],
      "notes": "A recommendation to the issuer. The SDK mints no JWT: nothing under crates/*/src signs a bearer JWT (only test helpers do); agent-card signing in a2a-protocol-types is a detached JWS (RFC 7515), not a JWT. Validator side: without with_required_typ() typ is not looked at (any string, number or absence passes), so a typ of 'JWT' is accepted, which a_required_typ_must_match_and_is_otherwise_not_checked asserts for the open validator. The typ check itself is recorded at line 597."
@@ -2032,7 +2032,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:727 normalise_typ"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:778 normalise_typ"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -2049,14 +2049,14 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:410 JwtValidator::with_required_typ",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:418 JwtValidator::typ_accepted",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:727 normalise_typ",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:461 JwtValidator::with_required_typ",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:469 JwtValidator::typ_accepted",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:778 normalise_typ",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1970 a_required_typ_must_match_and_is_otherwise_not_checked"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2022 a_required_typ_must_match_and_is_otherwise_not_checked"
      ],
      "mutant_evidence": [],
      "notes": "typ is optional by default and checked only after with_required_typ() (RFC 8725 section 3.11; for access tokens 'at+jwt', RFC 9068 section 2.1). a_required_typ_must_match_and_is_otherwise_not_checked asserts: with no requirement, tokens with typ JWT, at+jwt, no typ, and a numeric typ are accepted; with at+jwt required, at+jwt, AT+JWT, application/at+jwt and Application/AT+JWT are accepted and JWT, id+jwt, at+jwt2, xat+jwt, application/jwt and the empty string are refused, as are a missing typ and a numeric typ. It does not assert that the refusal happens before the signature is checked, nor typ inside a nested token. Default-off is the weak point: an ID token with typ JWT from the same issuer and audience is accepted unless the operator opts in (RFC 9068 section 4 is, from memory not the vendored text, stricter: SUSPECTED, out of scope here). The test is thorough; promote after a hand mutant (for example typ_accepted returning true)."
@@ -2072,7 +2072,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -2090,7 +2090,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -2107,7 +2107,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -2124,7 +2124,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -2156,11 +2156,11 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1679 alg_none_is_rejected",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1538 hs256_without_configured_secret_is_rejected"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1731 alg_none_is_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1590 hs256_without_configured_secret_is_rejected"
      ],
      "mutant_evidence": [],
      "notes": "Deliberately refused, which is the security-relevant behaviour: validate() accepts only the three algorithms in its match and everything else, 'none' included, falls into the '_ => Rejected' arm (RFC 8725 section 3.2: libraries SHOULD NOT consume none unless the caller asks; this SDK offers no way to ask). alg_none_is_rejected feeds validate() a token with header {\"alg\":\"none\",\"typ\":\"JWT\"}, iss and aud matching, exp year 9999, an empty signature, against an RSA JWKS, and asserts Err(Rejected). Not asserted: spellings None, NONE, nOnE; alg none with a non-empty signature; none when an HS256 secret is configured; a header with no alg (JwtHeader requires alg, so parse failure). MUTANT TARGET: the '_ => return Err(Rejected)' arm of the alg match in validate(); status stays NOT_SUPPORTED because the MAY (creating unsecured JWTs) is not offered, but the refusal is what an attacker would target."
@@ -2228,17 +2228,17 @@
      "severity": "low",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1483 decode_json",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1534 decode_json",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1946 a_token_that_marks_an_extension_critical_is_refused",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1679 alg_none_is_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1998 a_token_that_marks_an_extension_critical_is_refused",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1731 alg_none_is_rejected",
       "crates/a2a-protocol-server/tests/jwt_required_scope.rs:99 a_valid_token_without_the_scope_is_refused_403_naming_it",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1636 a_rejected_token_records_no_caller",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1688 a_rejected_token_records_no_caller",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections"
      ],
      "mutant_evidence": [],
      "notes": "Walk of 7.2 through validate(): step 1 requires exactly three segments (stricter than 'at least one period'); steps 3 and 9 use base64 0.23 URL_SAFE_NO_PAD (padding, whitespace and non-canonical trailing bits refused); step 5: unknown header parameters are ignored, crit is refused whatever its value (a_token_that_marks_an_extension_critical_is_refused asserts [\"exp\"], [\"b64\"], [] and a string are all refused and the same token without crit accepted), a non-string kid is refused; steps 6-7: JWS only; the signature is verified before the claims are parsed (HS256 via ring::hmac::verify, RS256/ES256 via ring), and a_valid_token_without_the_scope_is_refused_403_naming_it asserts a forged token with no scope gets 401 whose challenge never mentions scope, i.e. the signature check precedes the scope check, on both bindings; a_rejected_token_records_no_caller asserts an expired but validly signed token records no identity. Two deviations. (a) Steps 4 and 10 require a JSON object, but JwtHeader and JwtClaims are serde-derived structs and serde_derive generates visit_seq for them, which serde_json's deserialize_struct calls for '[': a header [\"HS256\"] or claims [\"https://issuer.test\",\"s\",\"a2a-agent\",253402300799] (fields in declaration order) parses (serde_derive de/struct_.rs:70-95, serde_json de.rs:1836-1847, read not run: SUSPECTED, never run). Needs a trusted signature, so only an issuer that signs attacker-shaped payloads is exposed. (b) Step 8 is not implemented: cty is never read, so a signed token marked cty JWT whose payload is plain claims is accepted as flat claims instead of being refused or recursed into (CONFIRMED by reading; no test). No test covers either. Client side: token_provider.rs and token_provider/exchange.rs treat a token as an opaque String (TokenResponse.access_token, ExchangedToken.access_token); nothing there base64-decodes or parses a token or reads exp or any other claim (the only base64 is STANDARD for the Basic client-credentials header, and the cache lifetime comes from the OAuth response's expires_in, not from the token)."
@@ -2254,17 +2254,17 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1404 verify_asymmetric",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:254 Jwks::candidates",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:494 JwtValidator::with_hs256_secret"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1455 verify_asymmetric",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:305 Jwks::candidates",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:545 JwtValidator::with_hs256_secret"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1679 alg_none_is_rejected",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1658 algorithm_confusion_rejected",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1538 hs256_without_configured_secret_is_rejected",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1527 hs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1731 alg_none_is_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1710 algorithm_confusion_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1590 hs256_without_configured_secret_is_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1579 hs256_valid_and_rejections",
       "crates/a2a-protocol-server/src/auth/jwt/tests/algorithms.rs:177 none_is_refused_in_every_spelling_and_with_any_signature",
       "crates/a2a-protocol-server/src/auth/jwt/tests/algorithms.rs:103 an_hs256_token_signed_with_a_public_key_is_refused",
       "crates/a2a-protocol-server/src/auth/jwt/tests/algorithms.rs:147 an_hs256_token_with_an_empty_key_is_refused",
@@ -2290,15 +2290,15 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:747 JwtClaims",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:254 Jwks::candidates",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:727 normalise_typ"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:798 JwtClaims",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:305 Jwks::candidates",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:778 normalise_typ"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1970 a_required_typ_must_match_and_is_otherwise_not_checked",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2022 a_required_typ_must_match_and_is_otherwise_not_checked",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections"
      ],
      "mutant_evidence": [],
      "notes": "Names and values are compared as exact, unnormalised Rust Strings after serde_json has decoded JSON escapes, which is code-point equality: claim and header member names by serde's field match (case-sensitive; 'EXP' is an unknown member and ignored), alg by an exact match on \"HS256\", \"RS256\", \"ES256\", kid by ==, iss and aud by HashSet<String>::contains. typ is the allowed exception (normalise_typ: ASCII-lowercase, optional application/ prefix), and cty is never read. Tests: the typ test asserts the exception's cases; RS256_WRONG_ISS/WRONG_AUD assert only that a different string is refused. NOT asserted: any case variant of an issuer, audience, alg, kid or claim name, a Unicode or percent-escaped variant, a JSON escape spelling ('\\u0069ss'), or a trailing-slash/whitespace variant. A mutant that compared iss or aud case-insensitively survives. Client side: token_provider.rs and token_provider/exchange.rs treat a token as an opaque String (TokenResponse.access_token, ExchangedToken.access_token); nothing there base64-decodes or parses a token or reads exp or any other claim (the only base64 is STANDARD for the Basic client-credentials header, and the cache lifetime comes from the OAuth response's expires_in, not from the token)."
@@ -2314,12 +2314,12 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:494 JwtValidator::with_hs256_secret"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:545 JwtValidator::with_hs256_secret"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1679 alg_none_is_rejected",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1527 hs256_valid_and_rejections"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1731 alg_none_is_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1579 hs256_valid_and_rejections"
      ],
      "mutant_evidence": [],
      "notes": "HS256 is implemented (opt-in, secret of at least 32 bytes per RFC 7518 section 3.2; hs256_valid_and_rejections asserts the valid and wrong-secret vectors). 'none' is deliberately NOT implemented, so the code does not do what this sentence says: a bearer credential that needs no key to forge is never acceptable here (RFC 8725 section 3.2), and alg_none_is_rejected asserts the refusal. No caller-side switch enables none. The decision is ADR 0010's.",
@@ -2336,14 +2336,14 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1404 verify_asymmetric",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:198 Jwks::with_rsa",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:218 Jwks::with_ec_p256",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:138 Jwks::from_json"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1455 verify_asymmetric",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:235 Jwks::with_rsa",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:262 Jwks::with_ec_p256",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:164 Jwks::from_json"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1692 es256_valid_and_expired",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1744 es256_valid_and_expired",
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/main.rs:120 valid_rs256_passes_and_invalid_is_rejected_over_http"
      ],
      "mutant_evidence": [],
@@ -2360,11 +2360,11 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1404 verify_asymmetric"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1455 verify_asymmetric"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1821 jwks_skips_enc_and_unknown_keys"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1873 jwks_skips_enc_and_unknown_keys"
      ],
      "mutant_evidence": [],
      "notes": "Not offered: no HS384/HS512, RS384/RS512, PS*, ES384/ES512, EdDSA, and JWK keys of other curves or types are skipped (jwks_skips_enc_and_unknown_keys asserts a P-384 and an oct key are not loaded). Key sizes: RSA only 2048 to 8192 bits (ring's RSA_PKCS1_2048_8192_SHA256), HS256 secrets at least 32 bytes. The refusal of unlisted algorithms is recorded at line 818."
@@ -2380,7 +2380,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -2397,7 +2397,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -2414,7 +2414,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -2431,7 +2431,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -2448,9 +2448,9 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1483 decode_json"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1534 decode_json"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -2482,11 +2482,11 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1054 JwtAuthInterceptor::before",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1105 JwtAuthInterceptor::before",
       "crates/a2a-protocol-server/src/auth/caller_id.rs:52 jwt"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1879 debug_impls_render_type_and_redact_secrets"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1931 debug_impls_render_type_and_redact_secrets"
      ],
      "mutant_evidence": [],
      "notes": "What a token carries is the issuer's choice and transport confidentiality (TLS, or an encrypted JWT, which is not supported) is the deployer's. What the SDK does with a token: it is read from the Authorization header and never logged (the trace calls in jwt.rs log lengths, URLs and error text, not the token); CallContext's Debug prints header names only; JwtValidator's Debug redacts the HS256 secret (debug_impls_render_type_and_redact_secrets asserts the secret is absent); a rejection is one generic 401 with no reason. The validated iss and sub, which may be personal data (an e-mail as sub), are kept as the caller identity 'jwt:<iss>:<sub>' and can reach rate-limit buckets and task-store caller keys: the deployer must treat those stores accordingly. Client: ExchangedToken and ExchangeRequest redact tokens in Debug."
@@ -2524,12 +2524,12 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:410 JwtValidator::with_required_typ"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:461 JwtValidator::with_required_typ"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1702 unset_audience_and_issuer_refuse_every_token_unless_opted_out",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1970 a_required_typ_must_match_and_is_otherwise_not_checked"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1754 unset_audience_and_issuer_refuse_every_token_unless_opted_out",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2022 a_required_typ_must_match_and_is_otherwise_not_checked"
      ],
      "mutant_evidence": [],
      "notes": "Left to the caller: only the application knows which other JWT kinds share its issuer and keys. What the SDK does by default: signature, exp, iss and aud are all checked, and a validator that names no issuer or no audience refuses every token (audit SEC-06; allow_any_issuer / allow_any_audience opt out), so the issuer and audience strategies of 3.12 are on by default once the caller supplies values. Opt-in, NOT default: with_required_typ (typ pin), require_scope, a separate JwtAuthInterceptor and key set per kind of token. With none of the opt-ins, an ID token or any other JWT from the same issuer, with an accepted aud, signed by the same key, is accepted (CONFIRMED: validate() looks at no claim besides exp, nbf, iss, aud, scope, act, sub). See the 3.11 and 3.12 rows. Tests cited assert the default refusal of an unset iss/aud and the typ pin; neither is a cross-JWT-confusion test (no ID-token-as-access-token vector)."
@@ -2546,16 +2546,16 @@
      "severity": "low",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1404 verify_asymmetric",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1455 verify_asymmetric",
       "crates/a2a-protocol-types/src/signing/keys.rs:61 VerifyingKey::from_bytes"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1679 alg_none_is_rejected",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1658 algorithm_confusion_rejected",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1538 hs256_without_configured_secret_is_rejected",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1692 es256_valid_and_expired",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1731 alg_none_is_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1710 algorithm_confusion_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1590 hs256_without_configured_secret_is_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1744 es256_valid_and_expired",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
       "crates/a2a-protocol-types/src/signing.rs:972 verify_rejects_unsupported_algorithm",
       "crates/a2a-protocol-types/src/signing.rs:1149 verify_rejects_non_es256_algorithm",
       "crates/a2a-protocol-server/src/auth/jwt/tests/algorithms.rs:177 none_is_refused_in_every_spelling_and_with_any_signature",
@@ -2577,20 +2577,21 @@
      "severity": "high",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1404 verify_asymmetric",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1455 verify_asymmetric",
       "crates/a2a-protocol-types/src/signing/keys.rs:272 Jwks::candidates_at",
       "crates/a2a-protocol-types/src/signing/keys.rs:94 VerifyingKey::verify"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1692 es256_valid_and_expired",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1527 hs256_valid_and_rejections",
-      "crates/a2a-protocol-types/src/signing/keys/tests.rs:150 a_jwks_verifies_by_kid_and_alg",
-      "crates/a2a-protocol-types/src/signing/keys/tests.rs:106 a_key_is_never_tried_under_another_algorithm"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1744 es256_valid_and_expired",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1579 hs256_valid_and_rejections",
+      "crates/a2a-protocol-types/src/signing/keys/tests.rs:194 a_jwks_verifies_by_kid_and_alg",
+      "crates/a2a-protocol-types/src/signing/keys/tests.rs:106 a_key_is_never_tried_under_another_algorithm",
+      "crates/a2a-protocol-types/src/signing/keys/tests.rs:123 a_genuine_signature_is_refused_under_another_algorithms_name"
      ],
      "mutant_evidence": [],
-     "notes": "CONFIRMED trace. validate() reads alg once (jwt.rs:562) and that string selects both the branch and the primitive: HS256 -> ring HMAC-SHA256 (569-571); RS256/ES256 -> verify_asymmetric(alg, key.material, ..) (580-582), whose match pairs (RS256, Rsa) with RSA_PKCS1_2048_8192_SHA256 and (ES256, EcP256) with ECDSA_P256_SHA256_FIXED and returns false for any other pairing (1406-1408). Card path: the key is built for the header alg (VerifyingKey::from_bytes, keys.rs:61), Jwks::candidates_at keeps only keys whose alg equals the header alg (keys.rs:289), and VerifyingKey::verify refuses alg != self.alg() (keys.rs:95). Tests assert correct pairings verify and a wrong key or secret does not. NOT asserted anywhere on the JWT path: a header alg paired with key material of the other type (RS256 header + EC key, ES256 header + RSA key), so the `_ => false` arm of verify_asymmetric is untested. Card path: a_jwks_verifies_by_kid_and_alg refuses an ES256 signature whose kid names an EdDSA key, but two layers (the candidates alg filter and the alg check in VerifyingKey::verify) each cause that refusal alone, so removing either one leaves it green; a_key_is_never_tried_under_another_algorithm calls ed.verify('ES256', b'x', b'y'), which fails on the bogus signature even without the alg check. Hand mutant to try: make verify_asymmetric's `_ => false` return true and present an RS256 token to an EC-only Jwks."
+     "notes": "CONFIRMED trace. validate() reads alg once (jwt.rs:562) and that string selects both the branch and the primitive: HS256 -> ring HMAC-SHA256 (569-571); RS256/ES256 -> verify_asymmetric(alg, key.material, ..) (580-582), whose match pairs (RS256, Rsa) with RSA_PKCS1_2048_8192_SHA256 and (ES256, EcP256) with ECDSA_P256_SHA256_FIXED and returns false for any other pairing (1406-1408). Card path: the key is built for the header alg (VerifyingKey::from_bytes, keys.rs:61), Jwks::candidates_at keeps only keys whose alg equals the header alg (keys.rs:289), and VerifyingKey::verify refuses alg != self.alg() (keys.rs:95). Tests assert correct pairings verify and a wrong key or secret does not. NOT asserted anywhere on the JWT path: a header alg paired with key material of the other type (RS256 header + EC key, ES256 header + RSA key), so the `_ => false` arm of verify_asymmetric is untested. Card path: a_jwks_verifies_by_kid_and_alg refuses an ES256 signature whose kid names an EdDSA key, but two layers (the candidates alg filter and the alg check in VerifyingKey::verify) each cause that refusal alone, so removing the filter leaves it green; the alg check in VerifyingKey::verify is isolated, since 2026-11-06, by a_genuine_signature_is_refused_under_another_algorithms_name (a genuine signature under another algorithm's name; hand mutants: the check disabled, case-insensitive, prefix -> that test fails). a_key_is_never_tried_under_another_algorithm still gives it bogus bytes. Hand mutant to try: make verify_asymmetric's `_ => false` return true and present an RS256 token to an EC-only Jwks."
     },
     {
      "lines": [
@@ -2600,23 +2601,33 @@
      "section": "3.1",
      "keyword": "MUST",
      "requirement": "Each key MUST be used with exactly one algorithm, and this MUST be checked when the cryptographic operation is performed.",
-     "status": "PARTIAL",
-     "severity": "low",
+     "status": "TESTED",
+     "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:93 KeyMaterial",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1404 verify_asymmetric",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:138 Jwks::from_json",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:100 VerifyKey::declared_for",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:107 VerifyKey::verifies",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:164 Jwks::from_json",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1455 verify_asymmetric",
       "crates/a2a-protocol-types/src/signing/keys.rs:160 Jwk::verifying_key",
       "crates/a2a-protocol-types/src/signing/keys.rs:94 VerifyingKey::verify"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1821 jwks_skips_enc_and_unknown_keys",
-      "crates/a2a-protocol-types/src/signing/keys/tests.rs:214 jwks_entries_that_must_not_be_used_are_skipped_or_refused",
-      "crates/a2a-protocol-types/src/signing/keys/tests.rs:106 a_key_is_never_tried_under_another_algorithm"
+      "crates/a2a-protocol-server/src/auth/jwt/tests/keys.rs:108 a_key_that_names_an_algorithm_verifies_only_tokens_that_name_it",
+      "crates/a2a-protocol-server/src/auth/jwt/tests/keys.rs:54 a_key_verifies_only_if_use_and_key_ops_allow_it",
+      "crates/a2a-protocol-server/src/auth/jwt/tests/keys.rs:87 a_key_ops_that_is_not_a_list_of_strings_makes_the_document_invalid",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1873 jwks_skips_enc_and_unknown_keys",
+      "crates/a2a-protocol-types/src/signing/keys/tests.rs:123 a_genuine_signature_is_refused_under_another_algorithms_name",
+      "crates/a2a-protocol-types/src/signing/keys/tests.rs:258 jwks_entries_that_must_not_be_used_are_skipped_or_refused"
      ],
-     "mutant_evidence": [],
-     "notes": "CONFIRMED. A key's algorithm is fixed by its type and checked at verification time: KeyMaterial::Rsa verifies only RS256, KeyMaterial::EcP256 only ES256 (verify_asymmetric 1393), and the HS256 secret lives on the validator, is used only in the HS256 branch and never appears in the Jwks, so no key is usable under two algorithms and a public key cannot become an HMAC key. GAP, server-side: Jwks::from_json (jwt.rs:138-191) does not read a JWK's own `alg` or `key_ops` and skips only `use: enc` (169), so an RSA JWK that declares alg RS384, PS256 or RSA-OAEP (with no `use`) is still loaded and used for RS256 tokens: the single algorithm the key declares is not enforced, and a `use` other than sig/enc is accepted. The rustdoc at jwt.rs:129-133 says an encryption key is 'never' used to verify; that holds only for `use: enc`. Card path meets it: Jwk::verifying_key (keys.rs:160) refuses use != sig and an alg that contradicts the curve; VerifyingKey::verify checks alg == self.alg(). Tests: jwks_entries_that_must_not_be_used_are_skipped_or_refused asserts those two card-path refusals; jwks_skips_enc_and_unknown_keys asserts the server skips use:enc, oct and P-384 entries. No test gives a server-side JWK an alg that differs from the token's, and (see the 289 row) the alg check in VerifyingKey::verify is shadowed by from_bytes/candidates_at so no test isolates it."
+     "mutant_evidence": [
+      "VerifyKey::declared_for: the declared algorithm never compared (always true) -> a_key_that_names_an_algorithm_verifies_only_tokens_that_name_it fails; the comparison inverted, made case-insensitive, or the key's alg dropped when the RSA or the EC key is built -> the same test fails",
+      "VerifyKey::verifies: the call to declared_for removed -> a_key_that_names_an_algorithm_verifies_only_tokens_that_name_it fails",
+      "VerifyKey::declared_for: a key with no alg refused -> a_key_verifies_only_if_use_and_key_ops_allow_it fails",
+      "Jwks::from_json: only use:enc skipped (as before 2026-11-06), use compared case-insensitively, key_ops ignored, any non-empty key_ops accepted, key_ops compared case-insensitively or as a prefix, use and key_ops required to both forbid -> a_key_verifies_only_if_use_and_key_ops_allow_it fails",
+      "VerifyingKey::verify: the algorithm check disabled, compared case-insensitively or as a prefix -> a_genuine_signature_is_refused_under_another_algorithms_name fails"
+     ],
+     "notes": "CONFIRMED and, since 2026-11-06, enforced on both paths. A key's algorithm is fixed by its type (KeyMaterial::Rsa verifies only RS256, KeyMaterial::EcP256 only ES256; verify_asymmetric pairs them) and, new on 2026-11-06, by the JWK's own alg when it names one: Jwks::from_json keeps the member on the key and JwtValidator::validate verifies through VerifyKey::verifies, which asks VerifyKey::declared_for first, so a key that declares RS384, RS512, PS256 or RSA-OAEP (an EC key: anything but ES256) verifies nothing, and the refusal is a rejection, not a key miss (the caller is not told to refetch). Before that date the server read neither alg nor key_ops, skipped only use:enc, and used such a key for RS256 tokens: found by this ledger, fixed with the maintainer's go (decision 2026-11-06, item (a)). from_json also skips a key whose use is present and is not sig, or whose key_ops is present and omits verify (RFC 7517 4.2, 4.3), and refuses a document whose key_ops is not an array of strings. The HS256 secret lives on the validator, is used only in the HS256 branch and never appears in the Jwks, so no key is usable under two algorithms and a public key cannot become an HMAC key. Card path: Jwk::verifying_key refuses use != sig and an alg that contradicts the curve; VerifyingKey::verify refuses alg != self.alg() when the signature is checked, and a_genuine_signature_is_refused_under_another_algorithms_name isolates that check with a genuine signature (the older tests gave it bogus bytes, which fail on their own). NOT done: the card path does not read key_ops (RFC 7517 4.3; the types crate's Jwk has no such member), so a card key set that marks a public key sign-only is still used to verify. That is RFC 7517's SHOULD-level consistency, not this MUST, and it is recorded in docs/handoff.md. The hand mutants behind this row are listed in mutant_evidence; the keys.rs test file builds its controls from the same JWK with the member under test removed, so each refusal is that member's doing."
     },
     {
      "lines": [
@@ -2629,12 +2640,12 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
       "crates/a2a-protocol-types/src/signing/keys.rs:61 VerifyingKey::from_bytes",
       "crates/a2a-protocol-types/src/signing/keys.rs:272 Jwks::candidates_at"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1679 alg_none_is_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1731 alg_none_is_rejected",
       "crates/a2a-protocol-types/src/signing.rs:972 verify_rejects_unsupported_algorithm",
       "crates/a2a-protocol-types/src/signing.rs:1149 verify_rejects_non_es256_algorithm"
      ],
@@ -2652,16 +2663,16 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1404 verify_asymmetric",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:285 MIN_HS256_SECRET_LEN",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:494 JwtValidator::with_hs256_secret",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1455 verify_asymmetric",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:336 MIN_HS256_SECRET_LEN",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:545 JwtValidator::with_hs256_secret",
       "crates/a2a-protocol-types/src/signing/keys.rs:94 VerifyingKey::verify"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1567 hs256_secret_shorter_than_32_bytes_fails_closed",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1579 try_with_hs256_secret_refuses_a_short_secret",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1692 es256_valid_and_expired"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1619 hs256_secret_shorter_than_32_bytes_fails_closed",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1631 try_with_hs256_secret_refuses_a_short_secret",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1744 es256_valid_and_expired"
      ],
      "mutant_evidence": [],
      "notes": "CONFIRMED. Accepted: RS256 through ring's RSA_PKCS1_2048_8192_SHA256 (verified in ring-0.17.14 src/rsa/verification.rs:88-94: moduli under 2048 bits are refused), ES256 on P-256, HS256 with a secret of at least 32 bytes (MIN_HS256_SECRET_LEN, a shorter secret fails closed), and for cards ES256 and Ed25519. No SHA-1, MD5, RS1, HS1, 'none'. The set is not caller-selectable (see the 3.1 row), so the application cannot remove an algorithm it no longer trusts. Tests: the HS256 31/32-byte boundary is asserted (hs256_secret_shorter_than_32_bytes_fails_closed); the valid-token tests show the three algorithms verify. NOT asserted: any RSA key under 2048 bits is refused (no test uses one; changing the ring constant to a 1024-bit variant would pass every test)."
@@ -2677,8 +2688,8 @@
      "severity": "low",
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:254 Jwks::candidates",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:305 Jwks::candidates",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/remote_jwks.rs:81 remote_jwks_refetches_on_key_rotation"
@@ -2714,10 +2725,10 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1679 alg_none_is_rejected",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1731 alg_none_is_rejected",
       "crates/a2a-protocol-server/src/auth/jwt/tests/algorithms.rs:177 none_is_refused_in_every_spelling_and_with_any_signature"
      ],
      "mutant_evidence": [
@@ -2771,17 +2782,17 @@
      "severity": "high",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1404 verify_asymmetric",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1018 JwtAuthInterceptor::authenticate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1455 verify_asymmetric",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1069 JwtAuthInterceptor::authenticate",
       "crates/a2a-protocol-types/src/signing.rs:629 verify_canonical_with_jwks",
       "crates/a2a-protocol-client/src/discovery.rs:994 verify_card_signatures"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1527 hs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2226 matching_kid_bad_signature_is_rejected_not_keymiss",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:2238 no_kid_bad_signature_is_rejected_not_keymiss",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1579 hs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2278 matching_kid_bad_signature_is_rejected_not_keymiss",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2290 no_kid_bad_signature_is_rejected_not_keymiss",
       "crates/a2a-protocol-server/src/fuzzing.rs:179 forwards_the_token",
       "crates/a2a-protocol-types/tests/signing_tests.rs:402 verify_rejects_tampered_signature_bytes",
       "crates/a2a-protocol-types/tests/signing_tests.rs:456 verify_rejects_modified_protected_header",
@@ -2801,8 +2812,8 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1483 decode_json"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1534 decode_json"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -2819,7 +2830,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:222 Jwks::with_ec_p256_opt_kid"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:266 Jwks::with_ec_p256_declared"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -2836,13 +2847,13 @@
      "severity": "low",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:494 JwtValidator::with_hs256_secret",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:517 JwtValidator::try_with_hs256_secret",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:285 MIN_HS256_SECRET_LEN"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:545 JwtValidator::with_hs256_secret",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:568 JwtValidator::try_with_hs256_secret",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:336 MIN_HS256_SECRET_LEN"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1567 hs256_secret_shorter_than_32_bytes_fails_closed",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1579 try_with_hs256_secret_refuses_a_short_secret"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1619 hs256_secret_shorter_than_32_bytes_fails_closed",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1631 try_with_hs256_secret_refuses_a_short_secret"
      ],
      "mutant_evidence": [],
      "notes": "CONFIRMED. What the SDK enforces is the machine-checkable part: an HS256 secret shorter than 32 bytes is never stored (fails closed, every HS256 token is refused; try_with_hs256_secret errors at startup). Entropy cannot be checked and is not: any 32 bytes pass, including [7u8; 32] (used by tests) and the book's own sample '0123456789abcdef0123456789abcdef' (book/src/building-agents/authentication/jwt.md:102, marked 'load yours from a secret store'). The SDK has no HS256 key generator. Random values: the card signer's ECDSA nonce comes from ring SystemRandom. RFC 7518 8.8 (PBES2 passwords) does not apply: no JWE. Tests assert the 31/32-byte boundary only."
@@ -2858,12 +2869,12 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:494 JwtValidator::with_hs256_secret",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:517 JwtValidator::try_with_hs256_secret"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:545 JwtValidator::with_hs256_secret",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:568 JwtValidator::try_with_hs256_secret"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1567 hs256_secret_shorter_than_32_bytes_fails_closed",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1579 try_with_hs256_secret_refuses_a_short_secret"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1619 hs256_secret_shorter_than_32_bytes_fails_closed",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1631 try_with_hs256_secret_refuses_a_short_secret"
      ],
      "mutant_evidence": [],
      "notes": "CONFIRMED. with_hs256_secret takes raw bytes and uses them directly as the HMAC key (jwt.rs:569, ring::hmac::Key::new(HMAC_SHA256, secret)): no KDF, no entropy gate, no decoding requirement. The 32-byte floor keeps out short passwords ('hunter2') but a passphrase of 32 or more characters is accepted as the key. The SDK's own examples/genai-agent/src/main.rs:350-354 reads A2A_JWT_HS256_SECRET as a string and passes secret.into_bytes() to try_with_hs256_secret, i.e. exactly the password-as-key pattern the sentence forbids, and the book sample is a guessable 32-char string. Concrete input: with_hs256_secret(b\"correct-horse-battery-staple-1234\".to_vec()) is accepted and HS256 tokens under it verify. Tests cover only the length boundary."
@@ -2879,7 +2890,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -2896,8 +2907,8 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1483 decode_json",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1534 decode_json",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header"
      ],
      "test_evidence": [
@@ -2917,11 +2928,11 @@
      "severity": "low",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:386 JwtValidator::with_issuer",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:960 JwtAuthInterceptor::from_oidc_issuer",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1302 discover",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1337 bind_discovered"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:437 JwtValidator::with_issuer",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1011 JwtAuthInterceptor::from_oidc_issuer",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1353 discover",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1388 bind_discovered"
      ],
      "test_evidence": [
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/main.rs:316 oidc_discovery_binds_the_issuer_to_a_validator_that_names_none",
@@ -2942,14 +2953,14 @@
      "severity": "high",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1404 verify_asymmetric"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1455 verify_asymmetric"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/main.rs:120 valid_rs256_passes_and_invalid_is_rejected_over_http",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1702 unset_audience_and_issuer_refuse_every_token_unless_opted_out",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1754 unset_audience_and_issuer_refuse_every_token_unless_opted_out",
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/main.rs:316 oidc_discovery_binds_the_issuer_to_a_validator_that_names_none"
      ],
      "mutant_evidence": [],
@@ -2966,13 +2977,13 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [
       "crates/a2a-protocol-server/tests/jwt_caller_identity.rs:96 one_sub_from_two_issuers_is_two_callers",
       "crates/a2a-protocol-server/tests/jwt_caller_identity.rs:117 a_jwt_with_no_sub_is_refused_under_caller_isolation",
       "crates/a2a-protocol-server/tests/jwt_caller_identity.rs:138 a_jwt_with_no_sub_is_served_when_callers_share",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1616 a_validated_token_records_its_subject_as_the_caller"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1668 a_validated_token_records_its_subject_as_the_caller"
      ],
      "mutant_evidence": [],
      "notes": "Left to the caller: JwtValidator has no subject allow-list or hook, and a correctly signed token for an accepted iss and aud authenticates whatever its `sub`. What the SDK does with sub (CONFIRMED, jwt.rs:1060-1065): records the caller identity as jwt:<iss>:<sub>, so one sub from two issuers is two callers and tasks are partitioned per caller; a token with no sub records no identity, which is refused under caller isolation (default) and served only when the application opts into sharing tasks. Deciding whether the subject is valid for the application (account exists, not suspended, issuer-subject pair allowed) is for a custom ServerInterceptor or authorizer reading CallContext::caller_identity. The safe default (isolation) limits what an unknown but validly-signed sub can reach; it does not reject it."
@@ -2988,10 +2999,10 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
       "crates/a2a-protocol-server/tests/jwt_caller_identity.rs:117 a_jwt_with_no_sub_is_refused_under_caller_isolation"
      ],
      "mutant_evidence": [],
@@ -3008,7 +3019,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -3026,16 +3037,16 @@
      "severity": "high",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:795 de_aud",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:393 JwtValidator::with_audience",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:450 JwtValidator::refuses_everything",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:443 JwtValidator::allow_any_audience"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:846 de_aud",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:444 JwtValidator::with_audience",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:501 JwtValidator::refuses_everything",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:494 JwtValidator::allow_any_audience"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1597 rs256_valid_and_rejections",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1649 rs256_valid_and_rejections",
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/main.rs:120 valid_rs256_passes_and_invalid_is_rejected_over_http",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1702 unset_audience_and_issuer_refuse_every_token_unless_opted_out"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1754 unset_audience_and_issuer_refuse_every_token_unless_opted_out"
      ],
      "mutant_evidence": [],
      "notes": "CONFIRMED. aud is read as a string or an array of strings (de_aud 784; any other JSON type fails the claims decode -> Rejected) and must contain, by exact string equality, at least one configured audience (672-678). No aud, an empty array, or no overlap -> Rejected. A validator with no audience refuses every token unless allow_any_audience is called (667-671, SEC-06), and the interceptor logs that at construction (refuses_everything 450). Tests: RS256_WRONG_AUD (valid signature, iss, exp; aud 'other-api'; signature independently confirmed valid under the Jwks key) is refused on the unit and HTTP paths with the generic message, so the refusal is the audience check's; unset_audience... asserts an unset audience refuses a valid token and that allow_any_audience alone does not help while the issuer is unset. NOT asserted: a token with no aud claim (no vector lacks aud; the `is_some_and` None arm is untested), aud as an array containing the accepted value plus others, an empty array, or case sensitivity."
@@ -3051,18 +3062,18 @@
      "severity": "medium",
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:710 JwtHeader",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1364 trustworthy_url",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1122 RemoteJwks::refetch",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1337 bind_discovered",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:761 JwtHeader",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1415 trustworthy_url",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1173 RemoteJwks::refetch",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1388 bind_discovered",
       "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
       "crates/a2a-protocol-client/src/jwks.rs:58 fetch_jwks",
       "crates/a2a-protocol-client/src/jwks.rs:124 is_trustworthy_url",
       "crates/a2a-protocol-client/src/discovery.rs:209 CardFetchOptions::with_signature_keys"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1746 keys_are_fetched_over_https_or_from_loopback_only",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1775 a_plaintext_jwks_url_is_refused_at_fetch",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1798 keys_are_fetched_over_https_or_from_loopback_only",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1827 a_plaintext_jwks_url_is_refused_at_fetch",
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/main.rs:354 oidc_discovery_with_a_plaintext_jwks_uri_is_refused",
       "crates/a2a-protocol-server/tests/auth_jwt_e2e/remote_jwks.rs:132 forged_key_ids_do_not_each_fetch_the_key_set",
       "crates/a2a-protocol-client/tests/jwks_fetch_tests.rs:126 a_set_is_never_fetched_in_the_clear_from_a_remote_host",
@@ -3083,10 +3094,10 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:727 normalise_typ"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:778 normalise_typ"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1970 a_required_typ_must_match_and_is_otherwise_not_checked"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2022 a_required_typ_must_match_and_is_otherwise_not_checked"
      ],
      "mutant_evidence": [],
      "notes": "Producer-side advice, and the SDK mints no JWTs. Verifier side (CONFIRMED): with_required_typ compares as a media type, ignoring ASCII case and an application/ prefix on either side (normalise_typ 727), as RFC 7515 4.1.9 requires of a recipient; the cited test asserts at+jwt admits AT+JWT, application/at+jwt and Application/AT+JWT and refuses JWT, id+jwt, at+jwt2, xat+jwt, application/jwt and an empty typ."
@@ -3102,7 +3113,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:410 JwtValidator::with_required_typ"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:461 JwtValidator::with_required_typ"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -3119,7 +3130,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:410 JwtValidator::with_required_typ",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:461 JwtValidator::with_required_typ",
       "crates/a2a-protocol-types/src/signing.rs:316 protected_header"
      ],
      "test_evidence": [],
@@ -3137,7 +3148,7 @@
      "severity": null,
      "security": false,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:538 JwtValidator::validate"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:589 JwtValidator::validate"
      ],
      "test_evidence": [],
      "mutant_evidence": [],
@@ -3154,11 +3165,11 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:410 JwtValidator::with_required_typ",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:418 JwtValidator::typ_accepted"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:461 JwtValidator::with_required_typ",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:469 JwtValidator::typ_accepted"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1970 a_required_typ_must_match_and_is_otherwise_not_checked"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2022 a_required_typ_must_match_and_is_otherwise_not_checked"
      ],
      "mutant_evidence": [],
      "notes": "Left to the caller. The SDK provides the check, with_required_typ(\"at+jwt\") (CONFIRMED: media-type comparison, a missing or non-string typ refused, tested on HS256 tokens; the check runs before the alg dispatch so it is the same for RS256/ES256), but it is NOT the default: without the call typ is not looked at, deliberately, because many issuers sign access tokens with typ JWT or none (doc comment, jwt.rs:405-408). So an ID token with an accepted iss and aud passes by default. The SDK makes no new use of JWTs itself."
@@ -3174,13 +3185,13 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:636 JwtValidator::check_claims_at",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:410 JwtValidator::with_required_typ",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:376 JwtValidator::require_scope"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:687 JwtValidator::check_claims_at",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:461 JwtValidator::with_required_typ",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:427 JwtValidator::require_scope"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1702 unset_audience_and_issuer_refuse_every_token_unless_opted_out",
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1970 a_required_typ_must_match_and_is_otherwise_not_checked"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:1754 unset_audience_and_issuer_refuse_every_token_unless_opted_out",
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2022 a_required_typ_must_match_and_is_otherwise_not_checked"
      ],
      "mutant_evidence": [],
      "notes": "Left to the caller, who knows which kinds exist. Of the RFC's strategies the SDK offers: typ (opt-in), required scope (require_scope), different aud values and different issuers (required, caller-supplied, on by default as a refusal when unset), different keys (one validator and key source per interceptor). It enforces no mutual exclusivity: a default validator accepts any JWT with the right iss, aud and exp signed by the key, whatever its other claims or typ. Note the agent-card JWS shares nothing with this check (alg ES256/EdDSA, payload is the JCS card, typ JOSE not verified), but a key used to sign both cards and JWTs is the application's to avoid (SUSPECTED low: the card verifier ignores typ)."
@@ -3196,10 +3207,10 @@
      "severity": null,
      "security": true,
      "impl_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:410 JwtValidator::with_required_typ"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:461 JwtValidator::with_required_typ"
      ],
      "test_evidence": [
-      "crates/a2a-protocol-server/src/auth/jwt.rs:1970 a_required_typ_must_match_and_is_otherwise_not_checked"
+      "crates/a2a-protocol-server/src/auth/jwt.rs:2022 a_required_typ_must_match_and_is_otherwise_not_checked"
      ],
      "mutant_evidence": [],
      "notes": "Same position as the 469 row: with_required_typ exists and works, is opt-in, and the SDK defines no new kind of JWT of its own. See that row for the trace and test."
