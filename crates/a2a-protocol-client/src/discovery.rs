@@ -433,7 +433,13 @@ pub(crate) fn http_client(options: &CardFetchOptions) -> HttpClient {
 
 /// Without `tls-rustls` the options carry no TLS configuration: a plain-HTTP
 /// client with the same 10 s connect timeout.
+// No test can kill cargo-mutants' `Default::default()` here (ADR 0006): the
+// gate builds with every feature, where this function is compiled out, and
+// in a build without `tls-rustls`, the only one that has it, hyper-util's
+// `Client` has no `Default` (E0277, checked 2026-11-06), so the mutant does
+// not compile.
 #[cfg(not(feature = "tls-rustls"))]
+#[mutants::skip]
 pub(crate) fn http_client(_options: &CardFetchOptions) -> HttpClient {
     crate::transport::plain_http_client(Duration::from_secs(10))
 }

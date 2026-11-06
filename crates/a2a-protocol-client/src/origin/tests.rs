@@ -3,15 +3,21 @@
 
 //! The per-origin state machine under a paused clock, to the nanosecond.
 
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::time::Instant;
 
+use super::transport::OriginTransport;
 use super::{Origins, Outcome, Standing, Ticket, ejection_length, origin_key, outcome_of};
 use crate::balance::Ejection;
-use crate::error::ClientError;
+use crate::error::{ClientError, ClientResult};
 use crate::retry::RetryBudget;
+use crate::streaming::EventStream;
+use crate::transport::Transport;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NS: Duration = Duration::from_nanos(1);
@@ -314,6 +320,22 @@ fn origins_are_shared_by_key_and_snapshotted_in_order() {
 }
 
 #[test]
+fn only_origins_made_with_a_budget_say_so() {
+    assert!(!Origins::new(None, None, None).has_budget());
+    assert!(!Origins::new(Some(policy()), Some(1), None).has_budget());
+}
+
+/// Below the bound nothing is forgotten, however idle: the map grows.
+#[test]
+fn idle_origins_are_kept_below_the_bound() {
+    let origins = Origins::new(None, None, None);
+    for i in 0..3 {
+        drop(origins.get(&format!("o{i}")));
+    }
+    assert_eq!(origins.snapshot().len(), 3);
+}
+
+#[test]
 fn idle_healthy_origins_are_forgotten_past_the_bound() {
     let origins = Origins::new(Some(policy()), None, None);
     let held = origins.get("held");
@@ -376,4 +398,51 @@ async fn an_open_stream_frees_its_place_and_counts_until_dropped() {
     drop(call);
     drop(stream);
     assert_eq!(s.in_flight(), 0);
+}
+
+/// The transport an `OriginTransport` wraps: it answers with the method it
+/// was asked for, and names itself and its server.
+struct Inner;
+
+impl Transport for Inner {
+    fn send_request<'a>(
+        &'a self,
+        method: &'a str,
+        _params: serde_json::Value,
+        _extra_headers: &'a HashMap<String, String>,
+    ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
+        Box::pin(async move { Ok(serde_json::json!({ "method": method })) })
+    }
+
+    fn send_streaming_request<'a>(
+        &'a self,
+        _method: &'a str,
+        _params: serde_json::Value,
+        _extra_headers: &'a HashMap<String, String>,
+    ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
+        Box::pin(async { Err(ClientError::Config("no streams here".into())) })
+    }
+
+    fn rpc_system(&self) -> Option<&'static str> {
+        Some("jsonrpc")
+    }
+
+    fn server_url(&self) -> Option<&str> {
+        Some("http://inner.test:80")
+    }
+}
+
+/// What an `OriginTransport` adds is the origin's state around a call; the
+/// answer, the protocol label and the server URL are the wrapped transport's.
+#[tokio::test]
+async fn an_origin_transport_passes_the_answer_the_label_and_the_url_through() {
+    let state = Origins::new(None, None, None).get("http://inner.test:80");
+    let transport = OriginTransport::new(Box::new(Inner), state);
+    let answer = transport
+        .send_request("message/send", serde_json::Value::Null, &HashMap::new())
+        .await
+        .expect("answered");
+    assert_eq!(answer, serde_json::json!({ "method": "message/send" }));
+    assert_eq!(transport.rpc_system(), Some("jsonrpc"));
+    assert_eq!(transport.server_url(), Some("http://inner.test:80"));
 }

@@ -397,3 +397,16 @@ fn a_cards_interface_for_another_major_is_left_out() {
     let source = StaticEndpoints::from_card(&card, "JSONRPC").unwrap();
     assert_eq!(source.endpoints(), [Endpoint::new("http://a.test")]);
 }
+
+/// A source that does not say how long its answer holds is asked once: the
+/// default is "for ever", not "no time".
+#[test]
+fn an_endpoint_source_holds_its_answer_for_ever_unless_it_says_otherwise() {
+    struct Plain;
+    impl super::EndpointSource for Plain {
+        fn endpoints(&self) -> super::EndpointsFuture<'_> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+    }
+    assert_eq!(super::EndpointSource::refresh_every(&Plain), None);
+}

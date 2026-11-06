@@ -128,3 +128,61 @@ fn the_config_setters_set_the_policy_and_the_propagators() {
     assert_eq!(config.baggage, BaggagePolicy::keys(["tenant"]));
     assert_eq!(config.propagators, none);
 }
+
+/// What `tracing` recorded at `WARN`: the propagator named, then the message.
+#[derive(Clone, Default)]
+struct Warnings(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Warnings {
+    fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
+        #[derive(Default)]
+        struct Text {
+            propagator: String,
+            message: String,
+        }
+        impl tracing::field::Visit for Text {
+            fn record_debug(&mut self, f: &tracing::field::Field, v: &dyn std::fmt::Debug) {
+                match f.name() {
+                    "propagator" => self.propagator = format!("{v:?}"),
+                    "message" => self.message = format!("{v:?}"),
+                    _ => {}
+                }
+            }
+        }
+        if *event.metadata().level() == tracing::Level::WARN {
+            let mut text = Text::default();
+            event.record(&mut text);
+            self.0
+                .lock()
+                .expect("lock")
+                .push(format!("{}: {}", text.propagator, text.message));
+        }
+    }
+}
+
+/// Each `OTEL_PROPAGATORS` name this crate does not carry is warned about,
+/// by name, and a list of names it carries is not.
+#[test]
+fn each_unknown_propagator_is_warned_about_by_name() {
+    use tracing_subscriber::layer::SubscriberExt as _;
+
+    let warnings = Warnings::default();
+    crate::test_tracing::install();
+    tracing::subscriber::with_default(
+        tracing_subscriber::registry().with(warnings.clone()),
+        || {
+            warn_unknown(&Propagators::from_env_value(Some("tracecontext,b3,jaeger")));
+            warn_unknown(&Propagators::from_env_value(Some("baggage")));
+        },
+    );
+    let said = warnings.0.lock().expect("lock").clone();
+    assert_eq!(said.len(), 2, "{said:?}");
+    assert!(
+        said[0].starts_with("b3: OTEL_PROPAGATORS names a propagator"),
+        "{said:?}"
+    );
+    assert!(
+        said[1].starts_with("jaeger: OTEL_PROPAGATORS names a propagator"),
+        "{said:?}"
+    );
+}

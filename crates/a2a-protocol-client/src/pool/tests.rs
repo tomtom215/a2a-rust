@@ -241,3 +241,33 @@ fn the_draw_that_spreads_lifetimes_varies() {
         "sixteen draws were all {draws:?}: a fleet would renew together"
     );
 }
+
+fn pinned_count(pool: &HttpPool) -> usize {
+    pool.shared.pinned.lock().expect("lock").len()
+}
+
+/// The pool forgets pinned clients nobody holds once it has 256, and no sooner;
+/// one somebody holds stays. Clients are dropped as they are made, but one.
+#[tokio::test]
+async fn pinned_clients_nobody_holds_are_forgotten_at_the_bound_and_not_before() {
+    let pool = HttpPool::builder().build().expect("the defaults build");
+    let addr = |i: usize| {
+        std::net::SocketAddr::from(([127, 0, 0, 1], 1000 + u16::try_from(i).expect("a port")))
+    };
+    let held = pool.pinned_client("h.test", addr(0));
+    for i in 1..PINNED_PRUNE_ABOVE {
+        drop(pool.pinned_client("h.test", addr(i)));
+    }
+    assert_eq!(
+        pinned_count(&pool),
+        PINNED_PRUNE_ABOVE,
+        "below the bound nothing is forgotten, held or idle"
+    );
+    let _newest = pool.pinned_client("h.test", addr(PINNED_PRUNE_ABOVE));
+    assert_eq!(
+        pinned_count(&pool),
+        2,
+        "at the bound the idle ones went; the held one and the new one are in"
+    );
+    drop(held);
+}

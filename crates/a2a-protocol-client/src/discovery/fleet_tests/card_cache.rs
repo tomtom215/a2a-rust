@@ -4,7 +4,7 @@
 //! The URL-keyed [`CardCache`] and resolvers on an `HttpPool`, against the
 //! counting server of the parent module.
 
-use super::super::CardCache;
+use super::super::{CardCache, CardFetchOptions};
 use super::{SECOND, Server, ok};
 #[cfg(feature = "tls-rustls")]
 use {super::super::CachingCardResolver, crate::error::ClientError};
@@ -93,6 +93,54 @@ async fn a_caches_resolvers_carry_its_settings() {
     assert_eq!(plain.default_freshness, None);
     assert_eq!(plain.stale_if_error, None);
     assert!((plain.jitter - 0.1).abs() < f64::EPSILON);
+}
+
+/// The options a cache is given are the ones it keeps, and so the ones its
+/// resolvers send: its `Debug` shows the header names and the budget.
+#[test]
+fn a_cache_keeps_the_options_it_was_given() {
+    let options = CardFetchOptions::default()
+        .with_timeout(3 * SECOND)
+        .with_header("x-tenant", "t-1");
+    let text = format!("{:?}", CardCache::new().with_options(options));
+    assert!(text.contains("x-tenant"), "{text}");
+    assert!(text.contains("timeout: 3s"), "{text}");
+    let plain = format!("{:?}", CardCache::new());
+    assert!(
+        !plain.contains("x-tenant") && !plain.contains("timeout: 3s"),
+        "{plain}"
+    );
+}
+
+/// The URL dropped is the one used longest ago, whatever order the map keeps
+/// them in: seven URLs through a cache that keeps six, the first not used
+/// again. A fresh cache each time, because a map's order is random per map,
+/// and a cache that dropped an arbitrary entry would be right one time in seven.
+#[tokio::test]
+async fn the_url_dropped_is_the_one_used_longest_ago() {
+    for _ in 0..6 {
+        let cache = CardCache::new().with_max_entries(6);
+        let urls: Vec<String> = (0..7).map(|i| format!("http://u{i}.example")).collect();
+        let held: Vec<_> = urls[..6]
+            .iter()
+            .map(|u| cache.resolver(u).unwrap())
+            .collect();
+        for url in &urls[1..6] {
+            let _ = cache.resolver(url).unwrap();
+        }
+        let _ = cache.resolver(&urls[6]).unwrap();
+        assert_eq!(cache.len(), 6);
+        for (resolver, url) in held.iter().zip(&urls).skip(1) {
+            assert!(
+                resolver.shares_cache_with(&cache.resolver(url).unwrap()),
+                "{url} was used after u0 and must still be cached"
+            );
+        }
+        assert!(
+            !held[0].shares_cache_with(&cache.resolver(&urls[0]).unwrap()),
+            "u0, the least recently used, must be the one dropped"
+        );
+    }
 }
 
 /// The `Debug` of a cache names no URL (a card URL may carry a key).

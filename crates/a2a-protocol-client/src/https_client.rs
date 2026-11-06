@@ -122,6 +122,15 @@ pub fn build_https_client_with_connect_timeout(
     }
 }
 
+/// The settings of a pinned client: the pool's defaults, with the connect
+/// timeout the caller gave.
+fn pinned_settings(connection_timeout: Duration) -> crate::pool::Settings {
+    crate::pool::Settings {
+        connect_timeout: connection_timeout,
+        ..crate::pool::Settings::default()
+    }
+}
+
 /// A client of its own whose connections to `host` go to `addr` (ADR 0050):
 /// the URL, `Host` header and certificate check keep the name.
 pub fn build_pinned_https_client(
@@ -129,10 +138,7 @@ pub fn build_pinned_https_client(
     connection_timeout: Duration,
     pin: &Pin,
 ) -> HttpsClient {
-    let settings = crate::pool::Settings {
-        connect_timeout: connection_timeout,
-        ..crate::pool::Settings::default()
-    };
+    let settings = pinned_settings(connection_timeout);
     let rules = Arc::new(crate::proxy::matcher_from_env());
     HttpsClient {
         kind: Kind::Own(Arc::new(build_inner(
@@ -192,3 +198,6 @@ pub fn build_inner(
         rules,
     }
 }
+
+#[cfg(test)]
+mod tests;
