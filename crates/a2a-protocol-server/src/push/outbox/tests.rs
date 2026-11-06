@@ -113,6 +113,15 @@ fn jitter_is_a_fraction() {
     }
 }
 
+/// Jitter is there to spread retries: 256 draws are not one number, and not a
+/// short list of them (a fresh random UUID gives a 16-bit draw).
+#[test]
+fn jitter_spreads_retries_and_is_not_one_number() {
+    let draws: std::collections::HashSet<u32> = (0..256).map(|_| jitter()).collect();
+    assert!(draws.len() > 100, "{} distinct draws of 256", draws.len());
+    assert!(draws.iter().all(|d| *d < JITTER_ONE));
+}
+
 #[test]
 fn the_in_memory_outbox_shows_what_waits() {
     let outbox = InMemoryPushOutbox::new();
