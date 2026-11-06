@@ -353,22 +353,31 @@ session start.
 
 ## Waiting on the maintainer
 
-- **Standards compliance beyond the A2A spec has no ledger.** The spec ledger (`docs/compliance/spec-ledger.json`) covers the A2A
-  specification only (510 entries; the gate prints 455 TESTED, 32 APPLICATION, 19 NOT_APPLICABLE and 4 PARTIAL). The RFCs the client and server implement
-  (HTTP caching 9111 and 5861, conditional requests, JWS and JCS for card signatures, JWT validation, `Retry-After`, WebSocket origin, SSE framing,
-  `Forwarded`) have no clause table, so their compliance rests on authors' reading and tests; the stale-if-error bug got through because the tests'
-  server always sent an `ETag`. A read-only pass over the card cache against the RFC text (2026-11-06) found one more deviation, recorded in
-  `discovery/freshness.rs`: after a `304` freshness was read from the `304`'s own headers only, where RFC 9111 §4.3.4 says the stored fields the `304` lacks are
-  kept. It is fixed on the branch `claude/inspiring-mccarthy-rgpntj-304-merge` (not in pull request #197): the merge recomputes freshness from a merged header
-  map, replacing `Cache-Control`, `Expires` and `Vary` field by field and never carrying `Date` or `Age` over (a naive carry-over would make a fresh `304` look an hour
-  old). `tests/card_freshness.rs::a_304_renews_the_cards_freshness` pinned the old behaviour and is changed to the RFC's. What is still open: a standards ledger for
-  the external RFCs. It is on the branch `claude/inspiring-mccarthy-rgpntj-standards-ledger` (RFC 7515, 7519 and 8725 only, with its open findings in that
-  branch's `docs/handoff.md`), not in pull request #197; RFC 7518, 7517, 8785 and the HTTP caching RFCs have no rows.
-- **`scripts/prove_gates_fail.sh` cannot run on pull request #197's head.** Its drift check exits 2 before proving anything, because four CI gates have no failure
-  injection: `check_net_copies.py`, `hand_mutate.py` (`--self-test`), `check_example_servers.py` and the `promtool` step of `observability.yml`'s bash block
-  (`bash scripts/prove_gates_fail.sh --list` prints them; checked on a clean worktree of `6bd576f8`, where it fails the same way). The script is local, not a CI
-  job, so nothing is red; the cost is that no gate of this release has been proved able to fail by it, and the new gates cannot be proved by it either (the RFC ledger
-  gate on the standards-ledger branch was proved by hand). Adding the four injections is a small change I did not make, because it touches the proof harness.
+- **Standards compliance beyond the A2A spec: JWS, JWT and the JWT best-practice RFC now have a ledger; nothing else does.** It is on
+  `claude/inspiring-mccarthy-rgpntj-standards-ledger` (pushed; no pull request, by the maintainer's instruction of 2026-11-06).
+  `docs/compliance/rfc-ledger.json` has 152 rows, one per MUST, SHOULD and MAY of RFC 7515, 7519 and 8725. `python3 scripts/check_rfc_ledger.py`
+  runs its own `--self-test`, then checks every line, hash and citation and prints the count; the figures here are from a script over the file:
+  20 TESTED, 45 IMPLEMENTED_UNTESTED, 3 GAP and 9 PARTIAL, 1 DEVIATION, 7 APPLICATION, 45 NOT_APPLICABLE, 16 NOT_SUPPORTED, 6 SUPPORTED. 85 are
+  security rows, and a security row is TESTED only with a recorded hand mutant that a test of the row killed (10 are). The rows are one reviewer's reading
+  of each RFC against the code, re-read by me for the consequential ones (the `none` refusal, `exp` and `nbf`, the HS256 floor, the JWKS parser, `crit`);
+  the 45 IMPLEMENTED_UNTESTED rows are the work left, and 4 of them are high severity, all RFC 8725 (lines 289, 342, 397, 422).
+  What it found. Changed, for the maintainer's veto like the stale-if-error and `304` items: `verify_content` and `verify_checkpoint` ignored `crit`
+  and the JWT validator read `"crit":null` as no member, so all four JWS verifiers now refuse any `crit` (a stricter verifier; only the key holder can add
+  the member); and `algorithm_confusion_rejected`, which `control-map.md` and `controls.toml` cite, never built the confusion token (strengthened, plus
+  `jwt/tests/algorithms.rs`). Left open: RFC 7515 5.2 and 7.2.1 (the card verifier does not refuse a header name present in both the protected and the
+  unprotected header; GAP, low); RFC 8725 3.1 (the server's JWKS parser reads neither a key's `alg` nor `key_ops` and skips only `use: enc`), 3.2 (card
+  ES256 signing is hedged with a random nonce, not RFC 6979), 3.5 (the HS256 key is used as raw bytes with only a 32-byte floor, `examples/genai-agent`
+  feeds it a passphrase, and the book's sample secret is guessable); `exp` and `nbf` are `u64`, so a fractional NumericDate is refused (fail-closed);
+  and `fetch_jwks` sends the `CardFetchOptions` headers (Authorization, Cookie) to the key-set URL, which is a design question. RFC 7519 section 8's
+  `none` is a DEVIATION naming ADR 0010. The CI step (`ci.yml`, after the spec-ledger step) and its entry in `scripts/prove_gates_fail.sh` are on the branch. The
+  harness itself cannot run on #197's head, because its drift check exits 2 before proving anything (four gates have no injection, *Waiting on
+  the maintainer*), so the gate was proved by hand with the same injection: baseline exit 0, one cited test renamed, exit 1 with 11 problems all
+  naming `no fn alg_none_is_rejected`, file restored. Adding a static gate shifts every later preflight gate number by one (static 1-45, clippy 46-59,
+  nextest 60-74, doctests 75-77). Verified on the branch head as pushed: gates 1-45, 46-59, nextest 60, 61 and 71-74 (7173, 7173, 3105, 3105, 7194 and
+  7168 tests passed), doctests 75-77 (511, 512 and 511 passed), and every hand mutant behind a TESTED row re-run on the final test text, killed by
+  its intended test with the file restored byte-identical (algorithms 5 of 5, claims and members 9 of 9, `crit` in the card, content and checkpoint
+  verifiers 5 of 5). Not run: gates 62-70 (other feature sets) and 78-104 (the PostgreSQL gates and the rest of the list). Not started: RFC 7518, 7517
+  and 8785, then 6750, 9068 and 6749; a ledger for RFC 9111 and 5861 (the card cache, where the stale-if-error bug was).
 - **`a2a-tck conformance` is red on pull request #197 and `official-tck.yml` floats on upstream's `main`.** The gate reports 87 MUST requirements graded against its floor of
   88, one failing check that is not in the baseline (`HTTP_JSON-ERR-001`) and baselined checks that now pass. Options: pin `A2A_TCK_REVISION` to a commit (the
   workflow's comment says `git clone --branch` does not take a SHA, so it also needs a clone and checkout, and the `schedule` trigger an override); or follow
@@ -849,10 +858,12 @@ git fetch origin && git merge-base --is-ancestor origin/<branch> origin/main && 
 
 Two follow-up branches carry work that is deliberately not in pull request #197, pushed so that a new session can pick it up, with no pull
 request opened for either (the maintainer's instruction of 2026-11-06: push the branches, open no pull request, since a plain push to a branch other than
-`main` starts no workflow): `claude/inspiring-mccarthy-rgpntj-304-merge` (the `304` header merge in the card cache, RFC 9111 §4.3.4 and §3.2: recompute
-freshness from a merged header map, never carrying `Date` or `Age` over from the stored `200`) and `claude/inspiring-mccarthy-rgpntj-standards-ledger` (a standards ledger for
-the external RFCs, JWT and JWS first; `scripts/check_spec_ledger.py` is bound to the one A2A specification today and has to be generalised without breaking gate 15). Both
-were cut from #197's head as pushed, and until they carry commits of their own they are that head. If #197 is squashed or rebased, rebase them onto `main`.
+`main` starts no workflow). `claude/inspiring-mccarthy-rgpntj-304-merge` is the `304` header merge in the card cache (RFC 9111 §4.3.4 and §3.2: recompute
+freshness from a merged header map, never carrying `Date` or `Age` over from the stored `200`); it is one commit on #197's head as pushed on 2026-11-06,
+verified there by preflight gates 1-44 (static), 45-58 (clippy), 59 and 72 (nextest, default and all features) and 74-76 (doctests); gates 60-71 and 73 were not run
+(`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..origin/claude/inspiring-mccarthy-rgpntj-304-merge` lists its commit),
+and it lacks the flaky-test fix of the `-rest` branch, so rebase it onto the final `-rest` head. `claude/inspiring-mccarthy-rgpntj-standards-ledger` is the
+standards ledger and what it found (*Waiting on the maintainer*, first item). If #197 is squashed or rebased, rebase both onto `main`.
 
 This clone is shallow, so a "no" for an old branch is not proof, and `git
 blame` stops at the shallow boundary. Never write this branch's own head SHA

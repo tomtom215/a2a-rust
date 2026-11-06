@@ -390,6 +390,8 @@ injection_for() {
             echo "compliance_map" ;;
         *"check_spec_ledger.py"*)
             echo "spec_ledger" ;;
+        *"check_rfc_ledger.py"*)
+            echo "rfc_ledger" ;;
         *"check_tck_untested_map.py"*)
             echo "tck_untested_map" ;;
         *"check_package_excludes.py"*)
@@ -597,6 +599,7 @@ expected_marker() {
         compliance_map)   printf '%s\n%s\n' "no \`fn verify_rejects_tampered_card\`" \
                               "AIA-50-1: cites neither a test nor a CI step" ;;
         spec_ledger)      echo "no \`fn a_message_only_stream_is_exactly_one_message\`" ;;
+        rfc_ledger)       echo "no \`fn alg_none_is_rejected\`" ;;
         tck_untested_map) echo "no \`fn card_sign_002_signatures_are_not_part_of_the_signed_payload\`" ;;
         package_excludes) echo "not excluded" ;;
         no_model_artifacts) echo "a model-format file (.gguf)" ;;
@@ -1098,6 +1101,8 @@ PY
         spec_ledger)
             rename_test crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs \
                 a_message_only_stream_is_exactly_one_message ;;
+        rfc_ledger)
+            rename_test crates/a2a-protocol-server/src/auth/jwt.rs alg_none_is_rejected ;;
         tck_untested_map)
             rename_test crates/a2a-protocol-types/tests/tck_card_signing.rs \
                 card_sign_002_signatures_are_not_part_of_the_signed_payload ;;

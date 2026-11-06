@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:12571 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:12603 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -2849,7 +2849,7 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/reattach_tests.rs:273 a_finished_task_s_logged_terminal_status_is_not_doubled",
     "crates/a2a-protocol-server/src/streaming/event_queue/reattach_tests.rs:348 a_dropped_read_keeps_a_lag_s_replay",
     "crates/a2a-protocol-server/src/streaming/event_queue/reattach_tests.rs:374 a_dropped_read_keeps_a_turn_s_replay",
-    "crates/a2a-protocol-server/tests/multi_replica.rs:319 intermediate_events_cross_replicas_through_the_log",
+    "crates/a2a-protocol-server/tests/multi_replica.rs:343 intermediate_events_cross_replicas_through_the_log",
     "crates/a2a-protocol-server/tests/event_log_tests/continuation_race.rs:67 a_continuation_sent_on_input_required_does_not_collide_with_the_log",
     "crates/a2a-protocol-server/tests/event_log_tests/log_holes.rs:42 a_lag_across_a_hole_in_the_log_is_reported",
     "crates/a2a-protocol-server/tests/event_log_tests/log_holes.rs:105 a_resume_across_a_hole_in_the_log_starts_from_the_snapshot",
@@ -8671,7 +8671,7 @@
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:106 debug_names_no_accepted_credential",
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:135 accepting_and_refusing_logs_no_credential",
     "crates/a2a-protocol-server/tests/credential_rotation.rs:116 an_api_key_is_rotated_and_revoked_while_serving",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1855 debug_impls_render_type_and_redact_secrets"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1879 debug_impls_render_type_and_redact_secrets"
    ],
    "notes": "Constant-time comparison, Debug shows counts not keys, identity labels separate from credentials, push secrets redacted. Exception: SQL push-config stores keep credentials plaintext at rest (see 3131). Client: until 2026-10-14 (audit register R17) the derived Debug of ClientRequest, ClientResponse, CardFetchOptions and WebSocketTransportConfig printed header values (the Authorization an auth interceptor adds) and push-config params and results verbatim; they print header names and JSON keys now, never values.",
    "auditor": "F",
@@ -8690,7 +8690,7 @@
     "crates/a2a-protocol-server/src/auth/credentials.rs:44 CredentialSet::add",
     "crates/a2a-protocol-server/src/auth/mod.rs:261 ApiKeyAuthInterceptor::credentials",
     "crates/a2a-protocol-server/src/auth/mod.rs:379 BearerTokenAuthInterceptor::credentials",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1095 RemoteJwks::get"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1106 RemoteJwks::get"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/credential_rotation.rs:101 a_bearer_token_is_rotated_and_revoked_while_serving",
@@ -8738,7 +8738,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/credentials.rs:58 CredentialSet::revoke",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1095 RemoteJwks::get"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1106 RemoteJwks::get"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/credential_rotation.rs:101 a_bearer_token_is_rotated_and_revoked_while_serving",

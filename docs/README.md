@@ -19,6 +19,7 @@ is on docs.rs.
 | Document | What it is |
 |---|---|
 | [compliance/spec-ledger.md](compliance/spec-ledger.md) | Every keyword requirement of A2A v1.0.1, its status and the evidence for it; `scripts/check_spec_ledger.py` keeps it complete. The live record of spec compliance |
+| [compliance/rfc-ledger.md](compliance/rfc-ledger.md) | Every MUST, SHOULD and MAY of RFC 7515 (JWS), RFC 7519 (JWT) and RFC 8725 (JWT best practice), what the code does about it and which test says so; `scripts/check_rfc_ledger.py` keeps it complete. The open and decided rows are listed there; the full table is `rfc-ledger.json` |
 | [compliance/audit-register.md](compliance/audit-register.md) | Each audit finding against the spec or the code, the recommendation, and its status |
 | [official-tck-findings.md](official-tck-findings.md) | Results against the A2A project's own conformance suite, requirement by requirement, with each dated measurement and every baselined failure's evidence |
 | [compliance/control-map.md](compliance/control-map.md) | EU AI Act, Cyber Resilience Act, GDPR, OWASP agentic Top 10 and ISO/IEC 42001 provisions: what the SDK provides toward each, the test that proves it, and what is left to you |

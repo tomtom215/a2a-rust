@@ -713,7 +713,7 @@ struct JwtHeader {
     kid: Option<String>,
     /// RFC 7515 section 4.1.11: extensions the verifier MUST understand. This
     /// validator understands none, so a token that lists any is refused.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "present")]
     crit: Option<serde_json::Value>,
     /// RFC 7515 section 4.1.9. Kept as a raw value: a `typ` that is not a
     /// string must not start refusing tokens for a validator that never asked
@@ -730,6 +730,17 @@ fn normalise_typ(typ: &str) -> String {
         .strip_prefix("application/")
         .unwrap_or(&lower)
         .to_owned()
+}
+
+/// A member that is there, `null` included. `Option<T>`'s own reading turns
+/// `null` into no member, which for `crit` let a header with `"crit": null`
+/// through until 2026-11-06 (RFC 7515 4.1.11: any `crit` member that is not a
+/// non-empty list makes the JWS invalid).
+fn present<'de, D>(de: D) -> Result<Option<serde_json::Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    <serde_json::Value as serde::Deserialize>::deserialize(de).map(Some)
 }
 
 #[derive(serde::Deserialize)]
@@ -1480,6 +1491,9 @@ fn decode_json<T: serde::de::DeserializeOwned>(b64: &str) -> Result<T, ()> {
 mod tests {
     use super::*;
 
+    mod algorithms;
+    mod members;
+
     /// A refetch inside the interval is too soon; at the interval, and
     /// after it, it is allowed.
     #[test]
@@ -1642,13 +1656,23 @@ mod tests {
 
     #[tokio::test]
     async fn algorithm_confusion_rejected() {
-        // An RS256 validator (public key only) must NOT accept an HS256 token
-        // that was signed using the RSA public key bytes as an HMAC secret —
-        // the classic confusion attack. Here we simply prove an HS256 token is
-        // rejected when only a JWKS (no HS secret) is configured, and that the
-        // RSA path never treats the token's HS256 header as verifiable.
+        // The classic confusion attack: a token that names HS256 and is MACed
+        // with the RSA public key's bytes as the secret. A validator that let
+        // a key of the key set double as an HS256 secret would accept it.
+        // Neither a validator with a secret of its own nor one with none does,
+        // while the same key set verifies a genuine RS256 token.
+        // `algorithms::an_hs256_token_signed_with_a_public_key_is_refused` runs
+        // the attack over every encoding of the key a forger might use.
+        let n = URL_SAFE_NO_PAD.decode(RS256_N).unwrap();
+        let e = URL_SAFE_NO_PAD.decode(RS256_E).unwrap();
+        let forged = hs256_token(&rsa_pkcs1_der(&n, &e));
+        let with_secret = base_validator().with_hs256_secret([0x5a; MIN_HS256_SECRET_LEN]);
+        for validator in [with_secret, base_validator()] {
+            let i = JwtAuthInterceptor::new(validator, rsa_jwks());
+            assert!(i.before(&ctx_bearer(&forged)).await.is_err());
+        }
         let i = JwtAuthInterceptor::new(base_validator(), rsa_jwks());
-        assert!(i.before(&ctx_bearer(HS256_VALID)).await.is_err());
+        assert!(i.before(&ctx_bearer(RS256_VALID)).await.is_ok());
     }
 
     #[test]

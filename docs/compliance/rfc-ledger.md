@@ -7,16 +7,14 @@ What this repository does about each MUST, SHOULD and MAY of the RFCs it impleme
 
 ## JSON Web Signature (JWS), RFC 7515 (`rfc7515`)
 
-GAP 2, IMPLEMENTED_UNTESTED 24, NOT_APPLICABLE 19, NOT_SUPPORTED 8, PARTIAL 3, SUPPORTED 5, TESTED 8
+GAP 2, IMPLEMENTED_UNTESTED 25, NOT_APPLICABLE 19, NOT_SUPPORTED 8, SUPPORTED 5, TESTED 10
 
 | Section | Keyword | Status | Severity | Requirement |
 |---|---|---|---|---|
 | 4 | MUST | IMPLEMENTED_UNTESTED | medium | Header Parameter names must be unique; parsers must reject duplicate names or keep only the lexically last one. |
-| 4 | MUST | PARTIAL | medium | Implementations must understand and process the spec-defined header parameters marked 'MUST be understood' (alg, crit). |
+| 4 | MUST | IMPLEMENTED_UNTESTED | medium | Implementations must understand and process the spec-defined header parameters marked 'MUST be understood' (alg, crit). |
 | 4 | MUST | IMPLEMENTED_UNTESTED | medium | Spec-defined header parameters not designated 'MUST be understood' must be ignored when not understood. |
 | 4.1.1 | MUST | IMPLEMENTED_UNTESTED | medium | alg must be present and must be understood and processed by implementations. |
-| 4.1.11 | MUST | PARTIAL | medium | Extensions named in crit must be understood and processed; a JWS with an unsupported critical extension is invalid. |
-| 4.1.11 | MUST | PARTIAL | medium | The crit header parameter must be understood and processed by implementations. |
 | 5.2 | MUST | IMPLEMENTED_UNTESTED | medium | At least one JWS Signature value must validate, or the JWS must be considered invalid. |
 | 5.2 | MUST | IMPLEMENTED_UNTESTED | medium | The algorithm must be accurately represented by the alg header value, which must be present. |
 | 5.2 | MUST | IMPLEMENTED_UNTESTED | medium | If none of the signature validations succeeded, the JWS must be considered invalid. |
@@ -43,17 +41,10 @@ GAP 2, IMPLEMENTED_UNTESTED 24, NOT_APPLICABLE 19, NOT_SUPPORTED 8, PARTIAL 3, S
 
 ## JSON Web Token (JWT), RFC 7519 (`rfc7519`)
 
-APPLICATION 1, DEVIATION 1, IMPLEMENTED_UNTESTED 19, NOT_APPLICABLE 16, NOT_SUPPORTED 8, PARTIAL 3, SUPPORTED 1, TESTED 2
+APPLICATION 1, DEVIATION 1, IMPLEMENTED_UNTESTED 12, NOT_APPLICABLE 16, NOT_SUPPORTED 8, PARTIAL 3, SUPPORTED 1, TESTED 9
 
 | Section | Keyword | Status | Severity | Requirement |
 |---|---|---|---|---|
-| 4.1.1 | OPTIONAL | IMPLEMENTED_UNTESTED | high | The iss claim is optional; when used it is a case-sensitive StringOrURI whose processing is application specific. |
-| 4.1.3 | MUST | IMPLEMENTED_UNTESTED | high | Each principal intended to process the JWT must identify itself with a value in the audience claim. |
-| 4.1.3 | MUST | IMPLEMENTED_UNTESTED | high | A JWT whose aud claim is present but does not contain the processing principal's identity must be rejected. |
-| 4.1.4 | MUST NOT | IMPLEMENTED_UNTESTED | high | A JWT must not be accepted on or after its exp time. |
-| 4.1.4 | MUST | IMPLEMENTED_UNTESTED | high | Processing exp requires the current date/time to be before the expiration date/time in exp. |
-| 7.2 | SHOULD | IMPLEMENTED_UNTESTED | high | Unless the algorithms used are acceptable to the application, the JWT should be rejected even if it validates. |
-| 4 | MUST | IMPLEMENTED_UNTESTED | medium | Claim Names must be unique; a parser must reject a JWT with duplicate Claim Names or keep only the lexically last. |
 | 4.1.2 | MUST | IMPLEMENTED_UNTESTED | medium | The subject must be locally unique in the issuer's context or globally unique; a consumer must not treat sub alone as identity. |
 | 4.1.2 | OPTIONAL | IMPLEMENTED_UNTESTED | medium | The sub claim is optional; its processing is application specific and it is a case-sensitive StringOrURI. |
 | 4.1.3 | MAY | IMPLEMENTED_UNTESTED | medium | With one audience the aud value may be a single case-sensitive string instead of an array. |
@@ -73,12 +64,11 @@ APPLICATION 1, DEVIATION 1, IMPLEMENTED_UNTESTED 19, NOT_APPLICABLE 16, NOT_SUPP
 
 ## JSON Web Token Best Current Practices, RFC 8725 (BCP 225) (`rfc8725`)
 
-APPLICATION 6, GAP 1, IMPLEMENTED_UNTESTED 9, NOT_APPLICABLE 10, PARTIAL 6
+APPLICATION 6, GAP 1, IMPLEMENTED_UNTESTED 8, NOT_APPLICABLE 10, PARTIAL 6, TESTED 1
 
 | Section | Keyword | Status | Severity | Requirement |
 |---|---|---|---|---|
 | 3.1 | MUST | IMPLEMENTED_UNTESTED | high | The library MUST ensure the alg/enc header names the same algorithm that is actually used for the cryptographic operation. |
-| 3.2 | SHOULD NOT | IMPLEMENTED_UNTESTED | high | JWT libraries SHOULD NOT consume JWTs using alg none unless the caller explicitly requests it. |
 | 3.3 | MUST | IMPLEMENTED_UNTESTED | high | All cryptographic operations in a JWT MUST be validated, and the whole JWT MUST be rejected if any of them fails. |
 | 3.8 | MUST | IMPLEMENTED_UNTESTED | high | If the keys do not belong to the issuer, the application MUST reject the JWT. |
 | 3.9 | MUST | IMPLEMENTED_UNTESTED | high | The relying party MUST validate the audience, and MUST reject the JWT if aud is absent or not associated with the recipient. |

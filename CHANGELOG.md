@@ -38,6 +38,16 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **An RFC requirements ledger and a CI gate for it** (`docs/compliance/rfc-ledger.json`,
+  `scripts/check_rfc_ledger.py`; 2026-11-06). One row for each MUST, SHOULD and
+  MAY of RFC 7515 (JWS), RFC 7519 (JWT) and RFC 8725 (JWT best practice), 152 in
+  all, with the code and test that answer it, checked to be where the row says
+  (the vendored texts are in `docs/implementation/rfc/`). A security row can say
+  `TESTED` only with a named test that was seen to fail with the check removed;
+  a refusal of a MUST is a `DEVIATION` that names the decision (RFC 7519
+  section 8's `none` is refused by ADR 0010). The A2A specification's ledger is
+  unchanged.
+
 - **`HttpPool`: one set of HTTP connections many clients share**
   (client, `tls-rustls`; audit D-12, ADR 0032). `HttpPool::builder()...build()`
   makes a pool; `ClientBuilder::with_pool(&pool)` sends the JSON-RPC and
@@ -1504,6 +1514,28 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   field by field from the `304`, and `Date` and `Age` are the `304`'s own. A card
   with no `ETag`, no `Last-Modified` and no lifetime is also now kept when a
   stale-if-error window can apply to it (ADR 0051, amended 2026-11-06).
+- **Content provenance and audit checkpoints accepted a signature that names
+  `crit`, and the JWT validator accepted `"crit": null`** (types, server; found
+  by the RFC ledger, 2026-11-06). RFC 7515 section 4.1.11 makes a JWS invalid
+  when a critical extension it names is not understood, and no verifier here
+  understands one. Agent cards and the JWT validator already refused any
+  `crit` member; `verify_content` and `verify_checkpoint` read only `alg` and
+  `kid` and verified such a signature, and the JWT validator read `"crit":
+  null` as no member. All four now refuse any `crit` member
+  (`a_signature_that_names_a_critical_extension_does_not_verify`,
+  `a_checkpoint_that_names_a_critical_extension_does_not_verify`,
+  `a_critical_member_is_refused_whatever_it_holds`; each fails with the
+  refusal removed). Only the key holder can add `crit` to a signature, so the
+  exposure was a verifier more lenient than its documentation, not a forgery.
+- **`algorithm_confusion_rejected` did not test algorithm confusion** (server
+  tests; found by the RFC ledger, 2026-11-06). The test, which
+  `docs/compliance/control-map.md` cites for the refusal, presented an HS256
+  token no validator could verify. It now signs an HS256 token with the RSA
+  public key's bytes, and `algorithms.rs` runs the attack over nine encodings of
+  a public key, `none` in seven spellings, an empty key and unlisted algorithm
+  names; each is paired with an accepted control and each fails with the
+  matching check removed. The validator was not wrong.
+
 - **The book's recovery loop lost the leased children it was meant to
   recover** (docs; found by the live proof of audit group M, 2026-11-04).
   `book/src/client/delegation.md` reattached a journal record and waited for
