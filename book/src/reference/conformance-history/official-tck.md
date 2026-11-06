@@ -195,8 +195,8 @@ which `README.md` and `ROADMAP.md` quote: §23 of `docs/official-tck-findings.md
 ## The 2026-09-01 re-measurement at `a2a-tck@de6af18`
 
 This is the row the rest of the repository quotes, and it is the first in the
-table where the pin moved rather than this SDK: `A2A_TCK_REVISION` floats
-(register entry W1), and `a2a-tck` landed ten commits on 2026-08-31. The
+table where the pin moved rather than this SDK: `A2A_TCK_REVISION` floated
+(register entry W1; since 2026-11-06 only the nightly run floats and pull requests are pinned, see findings §26), and `a2a-tck` landed ten commits on 2026-08-31. The
 2026-08-31 nightly and the 2026-09-01 nightly ran on the **identical** a2a-rust
 commit, `b6f3afb`; the first was green and the second was not.
 

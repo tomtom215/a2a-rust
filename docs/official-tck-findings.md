@@ -2248,3 +2248,43 @@ specification" (§20, and the baseline's `_comment`) is true only if the six
 `ErrorBinding` constants and the literals in the tests change with it, which
 #232 and #258 do and a bare `make spec` does not; and §23's account of what the
 suite sends (corrected in place above).
+
+
+## 26. The suite is pinned for pull requests; the nightly run floats (decided 2026-11-06)
+
+**What changed.** `.github/workflows/official-tck.yml` used to clone upstream's
+`main` on every trigger (§19 records the first time that turned a green run red
+on an unchanged commit). The maintainer chose option D on 2026-11-06: pull
+requests, pushes to `main` and manual runs grade against one commit,
+`70f6f73c30208e80c889141907e094899e6e9f05` (`A2A_TCK_PIN` in the workflow's
+`env`), and the nightly `schedule` run still fetches `main` and is the drift
+alarm. A nightly failure is a message that upstream moved; it is not a pull
+request check, so it blocks nobody. The Clone step fetches the revision rather
+than cloning a branch (`git clone --branch` takes no commit), prints the
+commit it graded, and the Summarize step repeats it, so any row of
+[Official TCK runs](../book/src/reference/conformance-history/official-tck.md)
+can name its a2a-tck column.
+
+**The pin.** `70f6f73` is upstream `main` as read on 2026-11-05, *"fix: align A2A
+1.0.1 conformance checks and reporting (#258)"* (committed 2026-11-05 16:10
++0100). #258 is the change §25 lists as the unmerged upstream fix for six of
+the seven baselined requirements; the two PRs that refresh the vendored
+specification it names are part of it. Whether each of those requirements now
+passes at the pin has not been measured here: the suite cannot be installed in
+the environment that wrote this, and the CI run of the pull request that
+carries this change is the first run at the pin.
+
+**What is not yet measured, stated so that nobody reads it as measured.** The
+seven entries of `tck/conformance-baseline.json` and the floors `--min-graded 88`
+(full profile) and `66` (minimal profile) were measured at `d4d6fae` (§25) and
+are unchanged by this change. Before it, the gate against floating `main`
+reported 87 MUST requirements graded against the floor of 88, one failing
+check that is not in the baseline (`HTTP_JSON-ERR-001`) and baselined checks
+that now pass (pull request #197, 2026-11-06); that run does not say which
+upstream commit it cloned. The first run at the pin decides the baseline, and
+the re-baseline (`tck/scripts/check_conformance.py --update`, the new floors,
+and this section's table) is made from that run's report, not from §25.
+
+**Moving the pin.** Take the commit the nightly run reported, run the suite
+against it, re-baseline if any verdict changed, record why here, and change
+`A2A_TCK_PIN` in the same pull request.
