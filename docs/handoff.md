@@ -29,9 +29,9 @@ command is named so the next session re-runs it instead of copying the number. A
   1f6dd965..origin/claude/inspiring-mccarthy-rgpntj-rest` commits, `git diff --shortstat` against `1f6dd965` for the size. It was
   built from ten work packages (observability SDK, observability stack, deploy, network, push, claims, control plane, lineage,
   client balancing and discovery, API shape), each by an agent in its own worktree that never pushed, merged by the lead with every conflict
-  resolved by hand, then the integration fixes the merged tree needed. It is pull request #197 to `main` (head `claude/inspiring-mccarthy-rgpntj-rest`, label `mutation-test`). Its head on the remote reads `ffd72299` (the second push of 2026-11-06, which carried the `304` header merge in the card cache, the RFC requirements ledger and its CI gate, the
-  JWKS fix, the pin of the official TCK, the four gate injections of `prove_gates_fail.sh`, the cross-replica test fix and the two survivor tests of mutation run 469); the commits above it are local until the next push
-  (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD`): the re-baseline of the TCK gates, the closes of the three survivors of mutation run 470, and this file.
+  resolved by hand, then the integration fixes the merged tree needed. It is pull request #197 to `main` (head `claude/inspiring-mccarthy-rgpntj-rest`, label `mutation-test`). Its head on the remote reads `a672ff8e` (the fifth push; the fourth, `ffd72299`, carried the `304` header merge in the card cache, the RFC requirements ledger and its CI gate, the
+  JWKS fix, the pin of the official TCK, the four gate injections of `prove_gates_fail.sh`, the cross-replica test fix and the two survivor tests of mutation run 469, and the fifth the re-baseline of the TCK gates and the closes of the three survivors of run 470); the commits above it are local until the next push
+  (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD`): the key-fetch headers of `fetch_jwks` (d), the HS256 key as base64 in `examples/genai-agent` (c), the ledgers, changelog and this file, and the close of run 471's one survivor.
 - **What it closes.** The 69 plan items that were open when the final 0.16.0 work began (the maintainer's instruction: all of them go
   into 0.16.0, with the best engineering option and the reasoning recorded, open to a veto). `python3 scripts/audit/plan_status.py`:
   191 of 191 plan items have a commit. In the register (`docs/audits/2026-10-29/README.md`): 56 `fixed`, 11 `fixed (part)` (B-29,
@@ -124,8 +124,9 @@ command is named so the next session re-runs it instead of copying the number. A
     synthetic reports and against the real step bodies by `scripts/prove_workflow_gates_fail.py` (4 proven, 0 unproven; `docs/official-tck-findings.md` section 26); the run on that commit is the check.
   - *`ACTS`:* failed once on `8080a519` in `Build the itk_service image` (a Maven download in the upstream Dockerfile exited 2; no ACTS, ITK or Docker file changed);
     re-run once, attempt 2 succeeded. Infrastructure, commented on the pull request once.
-- **Not verified.** CI on the commits above `ffd72299`: none has run in CI, so cargo-mutants has not graded `JwtHeader.crit` as a `bool` or the new tests, and the re-baselined official TCK gates have not run (the baseline and
-  floors are measured at the pin but checked only against synthetic reports and the proof harness). `scripts/prove_gates_fail.sh` has not been run over its other 103 gates on this head. Windows and macOS ran the API-shape package in the pull request's CI at `e3105ea4` (the four Test legs
+- **Not verified.** CI on the commits above `a672ff8e`: none has run in CI. The re-baselined official TCK gates and cargo-mutants on `JwtHeader.crit` as a `bool` and the push-5 tests did run, on `a672ff8e` (below, *First, next*). The key-fetch headers, the HS256 example and the
+  `close_upgraded` default have been graded by cargo-mutants locally only, and the example's `main.rs` wiring by a run of the example under `probe_auth.py`, not by a unit test. Of the gates, the doctests (75 to 77), the `cargo doc` gates (84, 85) and the nextest sets other than
+  60, 61, 63, 73 and 74 were last run before the `close_upgraded` edit and the `debug_redaction` fix; the first changes no behaviour and the second touches a test. `cargo package` (86) was not run on this head. `scripts/prove_gates_fail.sh` has not been run over its other 103 gates on this head. Windows and macOS ran the API-shape package in the pull request's CI at `e3105ea4` (the four Test legs
   succeeded; its socket tests use the real clock with lower bounds and a 10 s ceiling, and the three drain-delay tests take about 3 s each). The ITK
   checks and `SLIMRPC binding (out-of-workspace)` succeeded there; whether the ITK runs exercise the `x/net` bump was not checked, and the SLIMRPC job's
   `cargo deny` and package steps were not run locally. The API-shape package's 91 hand mutants (23, 19, 12 and 37, all caught, by its own agent) were not re-run in this
@@ -162,9 +163,12 @@ command is named so the next session re-runs it instead of copying the number. A
 
 ### First, next
 
-1. Read the CI of pull request #197 on the pushed head before building on it (`ci-failure-triage`): the first real error of each failed job, every real failure fixed in one push. The commits above
-   `ffd72299` go up in one push (`git log --oneline origin/claude/inspiring-mccarthy-rgpntj-rest..HEAD` lists them until then). Read, in this order: `a2a-tck conformance` (read on `a672ff8e`: the job exited 0, 87 and 65 MUST requirements graded, each equal to its floor, the four baselined failing pairs and no others; `tck/untested-musts.toml` was
-   reconciled against that run's report artifact and needs no change, as `docs/official-tck-findings.md` section 26 records), the mutation run (the `crit` bool and the two new tests are code it has not graded), and `Test coverage`. A failed job may be re-run at most once, and only after its whole run has completed. Do not merge or tag: the maintainer's go is required.
+1. Read the CI of pull request #197 on the head the next push makes (`ci-failure-triage`): the first real error of each failed job, every real failure fixed in one push; a failed job may be re-run at most once, and only after its whole run has completed. Do not merge or tag: the maintainer's go is required.
+   What CI said about `a672ff8e` (all read from the Actions API and the job logs): `CI` run 1819, 21 of 22 jobs succeeded and 1 was skipped; `Official TCK` exited 0 with 87 and 65 MUST requirements graded, each equal to its floor, and the four baselined failing pairs
+   and no others (`tck/untested-musts.toml` reconciled against that run's report artifact: no change, `docs/official-tck-findings.md` section 26); `Mutation Testing` run 471 (id 42277491025): 45 of 49 jobs succeeded, 2 were skipped and 2 failed (server shard 23/40 and the aggregate job),
+   with one distinct survivor, `serve/mod.rs:145`, the trait's default `close_upgraded` replaced by `Box::pin(async move{true})`. It is an equivalent mutant of `Box::pin(std::future::ready(true))`; the body is now written as the mutant's text, so cargo-mutants lists no `true` mutant for it
+   (`cargo mutants --list`), and the three that remain for `close_upgraded` (the default's `false` and both `Arc<D>` forwarder mutants) were caught locally (baseline passed, 0 missed). The same run graded `crit: bool` and the new tests of push 5 for the first time: no survivor.
+   The next push has not run in CI: its first mutation grading covers the new client lines (graded locally with the CI flags: 8 mutants, 3 caught, 5 unviable, 0 missed).
 2. Then the one open item for the maintainer (*Waiting on the maintainer*): deleting the two redundant remote branches, which this session's git access cannot do.
 3. After the tag: ADR 0035 (agent skills) and ADR 0036 (steering), each its own pull request (the maintainer's decision of 2026-11-03).
 4. The adversarial campaign (the matrix in the maintainer's brief) is not started. It is scripts with recorded output, one brief per
