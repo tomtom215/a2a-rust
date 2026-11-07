@@ -493,27 +493,3 @@ async fn a_trim_reaches_the_wrapped_log() {
     assert_eq!(store.trim_event_log(&id, 3).await.unwrap(), 2);
     assert_eq!(inner.earliest_event_seq(&id).await.unwrap(), Some(3));
 }
-
-/// The wrapper hands on the wrapped store's watch of its event log: the watch
-/// it returns is the wrapped store's own (a notification to the inner store
-/// wakes it), and a store that watches nothing gives none. Without the forward
-/// the trait's default answers `None` for every wrapped store.
-#[test]
-fn the_watch_of_the_event_log_is_the_wrapped_stores() {
-    use crate::store::log_wake::testing::Watching;
-    use futures_util::FutureExt as _;
-    let id = TaskId::new("t-1");
-    let inner = Watching::new();
-    let wakers = inner.wakers.clone();
-    let store = EncryptedTaskStore::new(inner, cipher("k1", 1).into_arc());
-    let watch = store
-        .watch_event_log(&id)
-        .expect("the wrapped store watches");
-    wakers.notify(&crate::store::log_wake::key("", "t-1").expect("fits"));
-    assert_eq!(watch.now_or_never(), Some(crate::store::LogWake::Notified));
-
-    let mut mute = Watching::new();
-    mute.mute = true;
-    let store = EncryptedTaskStore::new(mute, cipher("k1", 1).into_arc());
-    assert!(store.watch_event_log(&id).is_none());
-}

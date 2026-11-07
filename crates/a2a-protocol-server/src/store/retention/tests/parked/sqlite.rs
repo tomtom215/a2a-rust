@@ -175,11 +175,11 @@ macro_rules! on_both_stores {
             use super::*;
             #[tokio::test]
             async fn plain_sqlite() {
-                crate::store::retention::parked_tests::$scenario(&plain().await).await;
+                crate::store::retention::tests::parked::$scenario(&plain().await).await;
             }
             #[tokio::test]
             async fn tenant_sqlite() {
-                crate::store::retention::parked_tests::$scenario(&tenant().await).await;
+                crate::store::retention::tests::parked::$scenario(&tenant().await).await;
             }
         }
     )+};

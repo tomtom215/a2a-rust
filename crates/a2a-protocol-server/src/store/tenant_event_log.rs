@@ -97,6 +97,27 @@ pub(super) const PG_APPEND_NOTIFY: &str = concat!(
 pub(super) const SQLITE_SELECT_AFTER: &str = "SELECT seq, payload FROM tenant_task_events \
      WHERE tenant_id = ?1 AND task_id = ?2 AND seq > ?3 ORDER BY seq LIMIT ?4";
 
+/// The tenant store's append of `payload` at `position`, announcing it under
+/// `key` when there is one (see `PG_APPEND_NOTIFY`).
+#[cfg(feature = "postgres")]
+pub(super) fn pg_append_query<'q>(
+    partition: &'q str,
+    task: &'q str,
+    position: i64,
+    payload: &'q serde_json::Value,
+    fence: &'q Option<String>,
+    key: Option<&'q str>,
+) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    let sql = super::log_notify::append_sql(key, PG_APPEND, PG_APPEND_NOTIFY);
+    let append = sqlx::query(sql)
+        .bind(partition)
+        .bind(task)
+        .bind(position)
+        .bind(payload)
+        .bind(fence);
+    super::log_notify::announce(append, key)
+}
+
 #[cfg(feature = "postgres")]
 pub(super) const PG_SELECT_AFTER: &str = "SELECT seq, payload FROM tenant_task_events \
      WHERE tenant_id = $1 AND task_id = $2 AND seq > $3 ORDER BY seq LIMIT $4";

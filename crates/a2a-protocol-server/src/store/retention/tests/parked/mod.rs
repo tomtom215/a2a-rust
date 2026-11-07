@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use a2a_protocol_types::task::TaskState;
 
-use super::{PARKED_STATES, PurgeReport, RetentionPolicy, parked_state_labels};
+use crate::store::retention::{PARKED_STATES, PurgeReport, RetentionPolicy, parked_state_labels};
 
 const HOUR: i64 = 3_600;
 

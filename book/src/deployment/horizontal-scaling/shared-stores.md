@@ -184,6 +184,13 @@ learning of other replicas' halts and cancels at their next poll
 (`with_halt_poll_interval`). `from_pool` is for a pool that reaches
 PostgreSQL directly.
 
+The task stores' log notifications (`with_log_notifications`, off by default;
+[Streaming across replicas](./streaming.md)) have the same failure, for the
+same reason, and the same answer: pass `LogListen::Direct(url)` with the URL of
+PostgreSQL itself, so the listener has a session of its own, or leave the
+option off and the streams poll. `LogListen::Pool` is for a pool that reaches
+PostgreSQL directly.
+
 On 2026-10-30 every PostgreSQL test in the server crate ran through
 PgBouncer 1.26.1 (transaction mode, `max_prepared_statements = 200`, a
 wildcard database entry so each test's scratch database passes through):

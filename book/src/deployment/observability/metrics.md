@@ -435,15 +435,18 @@ implements it; so can you, to count something of your own
 | `on_lease(event)` | A task lease event: `lapsed` | `a2a.server.lease.events` |
 | `on_halt(scope, action, stopped)` | A halt or resume is applied: scope `all` \| `tenant` \| `root` (a job), action `halt` \| `resume`, and the running tasks it stopped | `a2a.server.halts`, `a2a.server.halt.stopped_tasks` |
 | `on_claim(event)` | A turn-claim event: `reaped` (the reaper ended a task its replica left) | `a2a.server.claim.events` |
+| `on_subscribe_wake(cause)` | A cross-replica `SubscribeToTask` stream stops waiting to read the store again, on a store that can wake it (`with_log_notifications`): `notification`, `resync` (the listener reconnected), or `timeout` | `a2a.server.subscribe.wakes` |
 
 `RpcCall` carries `system`, `method` (`Option`), `duration`, `status_code`
 (`Option`), `error_type` (`Option`) and `tenant` (`Option`, the tenant the
 handler resolved), the values above. The label constants are public modules:
 `executor_outcome`, `persistence_operation`, `push_outcome`,
-`event_append_error`, `event_log_catchup_error`, `queue_handoff_error` and
-`control` (`refusal`, `lease`, `halt_scope`, `halt_action`, `claim`). The
-four control-plane hooks are new in 0.16.0 with empty default bodies, so an
-existing `Metrics` implementation compiles unchanged (audit H11).
+`event_append_error`, `event_log_catchup_error`, `queue_handoff_error`,
+`control` (`refusal`, `lease`, `halt_scope`, `halt_action`, `claim`) and
+`subscribe_wake` (`notification`, `resync`, `timeout`). The four
+control-plane hooks, and `on_subscribe_wake`, are new in 0.16.0 with empty
+default bodies, so an existing `Metrics` implementation compiles unchanged
+(audit H11, E-F25).
 
 ### Tenant and agent dimensions
 

@@ -9,7 +9,7 @@ use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 use sqlx::postgres::PgPool;
 
 use super::*;
-use crate::store::pg_scratch::Scratch;
+use crate::store::tests::pg_scratch::Scratch;
 use crate::store::{PostgresTaskStore, TaskStore, TenantAwarePostgresTaskStore, TenantContext};
 
 fn task(id: &str, state: TaskState) -> Task {
@@ -165,7 +165,7 @@ macro_rules! on_both_stores {
             #[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
             async fn plain_postgres() {
                 let h = plain().await;
-                crate::store::retention::parked_tests::$scenario(&h).await;
+                crate::store::retention::tests::parked::$scenario(&h).await;
                 h.pool.close().await;
                 h.db.drop_database().await;
             }
@@ -173,7 +173,7 @@ macro_rules! on_both_stores {
             #[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
             async fn tenant_postgres() {
                 let h = tenant().await;
-                crate::store::retention::parked_tests::$scenario(&h).await;
+                crate::store::retention::tests::parked::$scenario(&h).await;
                 h.pool.close().await;
                 h.db.drop_database().await;
             }
@@ -263,6 +263,39 @@ async fn the_bound_is_exact_with_now_held_still() {
         );
         tx.rollback().await.unwrap();
     }
+    p.pool.close().await;
+    p.db.drop_database().await;
+}
+
+/// A row another transaction holds, a continuation that has written, is passed
+/// over and not waited for (`FOR UPDATE OF t SKIP LOCKED`): the sweep finishes
+/// while the row is locked, deleting the one that is not, and the locked one
+/// is still there.
+#[tokio::test]
+#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
+async fn a_row_another_transaction_holds_is_skipped_not_waited_for() {
+    let p = plain().await;
+    for id in ["held", "free"] {
+        p.store
+            .save(&task(id, TaskState::InputRequired))
+            .await
+            .unwrap();
+        age(&p.pool, "tasks", id, 2 * HOUR).await;
+    }
+    let mut tx = p.pool.begin().await.unwrap();
+    sqlx::query("SELECT 1 FROM tasks WHERE id = 'held' FOR UPDATE")
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+    let policy = policy().with_parked_max_age(Duration::from_hours(1));
+    let sweep = p.store.purge_expired(&policy);
+    let report = tokio::time::timeout(Duration::from_secs(10), sweep)
+        .await
+        .expect("the sweep waited for a row another transaction holds")
+        .unwrap();
+    assert_eq!(report.parked_tasks_deleted, 1);
+    tx.rollback().await.unwrap();
+    assert_eq!(ids(&p.pool, "tasks").await, ["held"]);
     p.pool.close().await;
     p.db.drop_database().await;
 }

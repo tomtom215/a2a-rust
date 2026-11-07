@@ -17,13 +17,13 @@ pub mod holds;
 pub mod lease;
 #[cfg(feature = "postgres")]
 mod log_notify;
-#[cfg(all(test, feature = "postgres"))]
-mod log_notify_tests;
 pub(crate) mod log_wake;
 pub mod retention;
 pub mod task_store;
 pub mod tenant;
 pub mod terminal;
+#[cfg(test)]
+pub(crate) mod tests;
 #[cfg(feature = "tracing")]
 pub(crate) mod traced;
 
@@ -53,8 +53,6 @@ pub mod pg_migration;
 pub(crate) mod pg_retry;
 #[cfg(feature = "postgres")]
 pub(crate) mod pg_schema;
-#[cfg(all(test, feature = "postgres"))]
-pub(crate) mod pg_scratch;
 #[cfg(feature = "postgres")]
 pub mod postgres_store;
 #[cfg(feature = "postgres")]

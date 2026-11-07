@@ -13,12 +13,12 @@ use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 use futures_util::FutureExt as _;
 use sqlx::postgres::PgListener;
 
-use super::pg_scratch::Scratch;
-use super::{
+use crate::metrics::{Metrics, MetricsHandle};
+use crate::store::tests::pg_scratch::Scratch;
+use crate::store::{
     LOG_NOTIFY_CHANNEL, LogListen, LogWake, LogWatch, PostgresTaskStore, TaskStore,
     TenantAwarePostgresTaskStore, TenantContext,
 };
-use crate::metrics::{Metrics, MetricsHandle};
 
 /// A deadline only a lost wake-up reaches; a pass never waits on it.
 const GUARD: Duration = Duration::from_secs(15);
@@ -158,7 +158,7 @@ async fn an_append_that_wrote_nothing_is_not_announced_and_is_still_seen_as_such
 #[tokio::test]
 #[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
 async fn the_announcing_statement_reports_the_rows_it_inserted() {
-    use super::postgres_store::event_log::{APPEND_NOTIFY_SQL, APPEND_SQL};
+    use crate::store::postgres_store::event_log::{APPEND_NOTIFY_SQL, APPEND_SQL};
     let db = Scratch::new("logwake").await;
     let store = announcing(&db, LogListen::Pool).await;
     store.save(&task("t1")).await.unwrap();
@@ -370,6 +370,8 @@ async fn a_lost_listener_connection_wakes_every_waiter_and_recovers() {
 /// listener's two forms are named.
 #[test]
 fn a_listen_setting_prints_without_its_url() {
+    // The channel is named in the book for operators who watch it.
+    assert_eq!(LOG_NOTIFY_CHANNEL, "a2a_task_log");
     assert_eq!(format!("{:?}", LogListen::Pool), "Pool");
     assert_eq!(
         format!(

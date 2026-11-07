@@ -21,7 +21,7 @@ use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::serve::Server;
-use a2a_protocol_server::store::PostgresTaskStore;
+use a2a_protocol_server::store::{LogListen, PostgresTaskStore};
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_server::{EventEmitter, RequestHandlerBuilder};
 use a2a_protocol_types::error::A2aResult;
@@ -111,7 +111,21 @@ impl AgentExecutor for Exec {
 async fn main() {
     let name: &'static str = Box::leak(std::env::var("NAME").unwrap_or_default().into_boxed_str());
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
-    let store = PostgresTaskStore::new(&url).await.expect("store");
+    // `A2A_POOL_SIZE` sizes the task store's pool; `A2A_LOG_NOTIFY` (`pool` or
+    // `direct`) wakes a cross-replica stream from the event log's notifications
+    // (`PostgresTaskStore::with_log_notifications`, audit E-F25 (b)).
+    let size = std::env::var("A2A_POOL_SIZE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(a2a_protocol_server::store::DEFAULT_POOL_SIZE);
+    let mut store = PostgresTaskStore::new_with_pool_size(&url, size)
+        .await
+        .expect("store");
+    store = match std::env::var("A2A_LOG_NOTIFY").as_deref() {
+        Ok("pool") => store.with_log_notifications(LogListen::Pool),
+        Ok("direct") => store.with_log_notifications(LogListen::Direct(url.clone())),
+        _ => store,
+    };
     let handler = Arc::new(
         RequestHandlerBuilder::new(Exec(name))
             .without_agent_card()

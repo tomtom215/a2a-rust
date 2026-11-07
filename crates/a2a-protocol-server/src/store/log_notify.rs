@@ -125,6 +125,39 @@ impl LogNotify {
     }
 }
 
+/// The key an append is announced under, for a store that announces
+/// (`log` is `Some`) and a task whose key fits a notification.
+pub fn announcement(log: Option<&Arc<LogNotify>>, partition: &str, task: &str) -> Option<String> {
+    log.and_then(|_| key(partition, task))
+}
+
+/// A watch on `task` in `partition` for a store that has opted in (`log` is
+/// `Some`); see [`LogNotify::watch`].
+pub fn watch(log: Option<&Arc<LogNotify>>, partition: &str, task: &str) -> Option<LogWatch> {
+    log?.watch(partition, task)
+}
+
+/// The append statement for a store that announces `key`, or the plain one.
+pub const fn append_sql(
+    key: Option<&str>,
+    plain: &'static str,
+    announcing: &'static str,
+) -> &'static str {
+    if key.is_some() { announcing } else { plain }
+}
+
+/// Binds the announcement, the channel and the key, to an announcing append,
+/// and nothing to a plain one.
+pub fn announce<'q>(
+    query: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>,
+    key: Option<&'q str>,
+) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    match key {
+        Some(key) => query.bind(CHANNEL).bind(key),
+        None => query,
+    }
+}
+
 /// Forwards notifications to the waiters until the task is aborted. Every
 /// waiter is woken once the listener is listening, and again after a lost
 /// connection is back: whatever was announced before `LISTEN` took effect, or
@@ -163,3 +196,6 @@ async fn listen(pool: PgPool, on: LogListen, wakers: LogWakers) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
