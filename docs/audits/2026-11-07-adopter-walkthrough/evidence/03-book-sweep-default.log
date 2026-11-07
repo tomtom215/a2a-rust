@@ -1,0 +1,2337 @@
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/sweep-default
+    Updating crates.io index
+     Locking 266 packages to highest Rust 1.99.1 compatible versions
+      Adding crypto-common v0.1.6 (available: v0.1.7)
+      Adding matchit v0.8.4 (available: v0.8.6)
+ Downloading crates ...
+  Downloaded utf_types v1.0.0
+  Downloaded utf8_iter v1.1.0
+  Downloaded ctutils v0.4.8
+  Downloaded unicode-properties v0.1.5
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling cfg-if v1.0.5
+   Compiling serde v1.0.229
+   Compiling libc v0.2.191
+   Compiling pin-project-lite v0.2.17
+   Compiling serde_core v1.0.229
+   Compiling futures-core v0.3.34
+   Compiling once_cell v1.21.4
+   Compiling bytes v1.12.1
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling parking_lot_core v0.9.12
+   Compiling itoa v1.0.18
+   Compiling scopeguard v1.2.0
+   Compiling lock_api v0.4.14
+   Compiling typenum v1.20.1
+   Compiling memchr v2.8.3
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling tracing-core v0.1.36
+   Compiling futures-sink v0.3.34
+   Compiling log v0.4.35
+   Compiling futures-task v0.3.34
+   Compiling futures-io v0.3.34
+   Compiling equivalent v1.0.3
+   Compiling percent-encoding v2.3.2
+   Compiling stable_deref_trait v1.2.1
+   Compiling errno v0.3.14
+   Compiling hashbrown v0.17.1
+   Compiling indexmap v2.14.2
+   Compiling synstructure v0.14.0
+   Compiling signal-hook-registry v1.4.8
+   Compiling slab v0.4.12
+   Compiling tracing-attributes v0.1.31
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.154
+   Compiling serde_derive v1.0.229
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling tracing v0.1.44
+   Compiling zerofrom v0.1.8
+   Compiling tokio-macros v2.7.2
+   Compiling yoke v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling futures-macro v0.3.34
+   Compiling displaydoc v0.2.7
+   Compiling futures-util v0.3.34
+   Compiling zerovec v0.11.9
+   Compiling hybrid-array v0.4.15
+   Compiling thiserror v2.0.21
+   Compiling tinystr v0.8.5
+   Compiling thiserror-impl v2.0.21
+   Compiling http v1.5.0
+   Compiling smallvec v1.16.5
+   Compiling cmov v0.5.4
+   Compiling utf_types v1.0.0
+   Compiling parking_lot v0.12.5
+   Compiling writeable v0.6.4
+   Compiling litemap v0.8.3
+   Compiling tokio v1.54.1
+   Compiling utf8_iter v1.1.0
+   Compiling icu_locale_core v2.4.0
+   Compiling ctutils v0.4.8
+   Compiling potential_utf v0.1.6
+   Compiling block-buffer v0.12.1
+   Compiling crypto-common v0.2.2
+   Compiling zerotrie v0.2.5
+   Compiling version_check v0.9.5
+   Compiling icu_normalizer_data v2.4.0
+   Compiling generic-array v0.14.9
+   Compiling icu_provider v2.4.0
+   Compiling icu_collections v2.4.0
+   Compiling futures-channel v0.3.34
+   Compiling icu_properties_data v2.4.0
+   Compiling either v1.19.0
+   Compiling http-body v1.1.0
+   Compiling httparse v1.10.1
+   Compiling tower-layer v0.3.3
+   Compiling atomic-waker v1.1.2
+   Compiling shlex v2.0.1
+   Compiling tower-service v0.3.3
+   Compiling try-lock v0.2.5
+   Compiling find-msvc-tools v0.1.15
+   Compiling fnv v1.0.7
+   Compiling want v0.3.2
+   Compiling cc v1.11.1
+   Compiling icu_properties v2.4.0
+   Compiling form_urlencoded v1.2.2
+   Compiling httpdate v1.0.3
+   Compiling ring v0.17.14
+   Compiling rand_core v0.10.1
+   Compiling base64 v0.23.1
+   Compiling ipnet v2.12.2
+   Compiling getrandom v0.4.3
+   Compiling block-buffer v0.10.4
+   Compiling anyhow v1.0.104
+   Compiling cpufeatures v0.3.1
+   Compiling http-body-util v0.1.5
+   Compiling getrandom v0.3.4
+   Compiling crossbeam-utils v0.8.23
+   Compiling crc32fast v1.5.4
+   Compiling sync_wrapper v1.0.2
+   Compiling base64 v0.22.1
+   Compiling tokio-util v0.7.20
+   Compiling tokio-stream v0.1.19
+   Compiling zerocopy v0.8.63
+   Compiling h2 v0.4.20
+   Compiling itertools v0.14.0
+   Compiling opentelemetry v0.33.1
+   Compiling zeroize v1.9.1
+   Compiling simd-adler32 v0.3.10
+   Compiling autocfg v1.5.1
+   Compiling foldhash v0.2.0
+   Compiling const-oid v0.10.2
+   Compiling cpufeatures v0.2.17
+   Compiling mime v0.3.18
+   Compiling ryu v1.0.23
+   Compiling adler2 v2.0.1
+   Compiling allocator-api2 v0.2.21
+   Compiling axum-core v0.5.6
+   Compiling prost-derive v0.14.4
+   Compiling hashbrown v0.16.1
+   Compiling miniz_oxide v0.9.1
+   Compiling serde_urlencoded v0.7.1
+   Compiling digest v0.11.3
+   Compiling num-traits v0.2.19
+   Compiling rustls-pki-types v1.15.1
+   Compiling tower v0.5.3
+   Compiling icu_normalizer v2.4.0
+   Compiling hyper v1.12.0
+   Compiling async-trait v0.1.92
+   Compiling pin-project-internal v1.1.13
+   Compiling serde_path_to_error v0.1.20
+   Compiling getrandom v0.2.17
+   Compiling parking v2.2.1
+   Compiling hyper-util v0.1.21
+   Compiling regex-syntax v0.8.11
+   Compiling untrusted v0.9.0
+   Compiling crc-catalog v2.5.0
+   Compiling matchit v0.8.4
+   Compiling crc v3.4.0
+   Compiling regex-automata v0.4.18
+   Compiling hyper-timeout v0.5.2
+   Compiling ppv-lite86 v0.2.21
+   Compiling axum v0.8.9
+   Compiling event-listener v5.4.2
+   Compiling pin-project v1.1.13
+   Compiling idna_adapter v1.2.2
+   Compiling crossbeam-queue v0.3.14
+   Compiling flate2 v1.1.11
+   Compiling rand_core v0.9.5
+   Compiling prost v0.14.4
+   Compiling hashlink v0.11.1
+   Compiling crypto-common v0.1.6
+   Compiling tinyvec v1.13.3
+   Compiling lazy_static v1.5.1
+   Compiling rustls v0.23.46
+   Compiling sharded-slab v0.1.7
+   Compiling unicode-normalization v0.1.26
+   Compiling matchers v0.2.0
+   Compiling digest v0.10.7
+   Compiling rand_chacha v0.9.0
+   Compiling idna v1.1.0
+   Compiling rustls-webpki v0.103.16
+   Compiling chacha20 v0.10.2
+   Compiling tracing-log v0.2.0
+   Compiling tonic v0.14.9
+   Compiling thread_local v1.1.10
+   Compiling nu-ansi-term v0.50.3
+   Compiling unicode-properties v0.1.5
+   Compiling subtle v2.6.1
+   Compiling unicode-bidi v0.3.18
+   Compiling stringprep v0.1.5
+   Compiling tracing-subscriber v0.3.23
+   Compiling url v2.5.8
+   Compiling rand v0.10.3
+   Compiling atoi v2.0.0
+   Compiling rand v0.9.5
+   Compiling futures-intrusive v0.5.0
+   Compiling sha2 v0.10.9
+   Compiling hmac v0.13.0
+   Compiling futures-executor v0.3.34
+   Compiling bitflags v2.13.2
+   Compiling dotenvy v0.15.7
+   Compiling hex v0.4.3
+   Compiling a2a-protocol-types v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0)
+   Compiling byteorder v1.5.0
+   Compiling whoami v2.1.3
+   Compiling opentelemetry_sdk v0.33.1
+   Compiling sqlx-core v0.9.0
+   Compiling hkdf v0.13.0
+   Compiling tokio-rustls v0.26.6
+   Compiling tonic-prost v0.14.9
+   Compiling prost-types v0.14.4
+   Compiling sha2 v0.11.1
+   Compiling md-5 v0.11.0
+   Compiling webpki-roots v1.0.11
+   Compiling tonic-types v0.14.9
+   Compiling hyper-rustls v0.27.10
+   Compiling sqlx-postgres v0.9.0
+   Compiling opentelemetry-proto v0.33.1
+   Compiling tracing-opentelemetry v0.34.0
+   Compiling opentelemetry-http v0.33.1
+   Compiling uuid v1.29.1
+   Compiling mutants v0.0.4
+   Compiling a2a-protocol-server v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0)
+   Compiling a2a-protocol-client v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-client-0.16.0)
+   Compiling heck v0.5.0
+   Compiling opentelemetry-otlp v0.33.1
+   Compiling sqlx-macros-core v0.9.0
+   Compiling opentelemetry-appender-tracing v0.33.1
+   Compiling sqlx-macros v0.9.0
+   Compiling sqlx v0.9.0
+   Compiling a2a-protocol-sdk v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-sdk-0.16.0)
+   Compiling sweep_default v0.1.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/sweep-default)
+    Finished `test` profile [unoptimized] target(s) in 2m 42s
+   Doc-tests sweep_default
+
+running 340 tests
+test src/../pages/book/src/bindings/slimrpc.md - page_book_src_bindings_slimrpc (line 113) ... ignored
+test src/../pages/book/src/bindings/slimrpc.md - page_book_src_bindings_slimrpc (line 137) ... ignored
+test src/../pages/book/src/bindings/slimrpc.md - page_book_src_bindings_slimrpc (line 183) ... ignored
+test src/../pages/book/src/bindings/slimrpc.md - page_book_src_bindings_slimrpc (line 98) ... ignored
+test src/../pages/book/src/building-agents/authentication/authorization.md - page_book_src_building_agents_authentication_authorization (line 21) ... FAILED
+test src/../pages/README.md - page_readme (line 179) - compile ... ok
+test src/../pages/book/src/building-agents/authentication/authorization.md - page_book_src_building_agents_authentication_authorization (line 45) ... ok
+test src/../pages/book/src/building-agents/authentication/jwt.md - page_book_src_building_agents_authentication_jwt (line 48) - compile ... FAILED
+test src/../pages/book/src/building-agents/authentication/jwt.md - page_book_src_building_agents_authentication_jwt (line 92) ... FAILED
+test src/../pages/book/src/building-agents/authentication/mtls.md - page_book_src_building_agents_authentication_mtls (line 19) - compile ... ok
+test src/../pages/book/src/building-agents/authentication/api-keys.md - page_book_src_building_agents_authentication_api_keys (line 13) ... ok
+test src/../pages/book/src/building-agents/authentication/oauth-client-credentials.md - page_book_src_building_agents_authentication_oauth_client_credentials (line 44) - compile ... ok
+test src/../pages/book/src/building-agents/authentication/oauth-client-credentials.md - page_book_src_building_agents_authentication_oauth_client_credentials (line 62) - compile ... ok
+test src/../pages/book/src/building-agents/authentication/api-keys.md - page_book_src_building_agents_authentication_api_keys (line 101) ... ok
+test src/../pages/book/src/building-agents/authentication/oauth-client-credentials.md - page_book_src_building_agents_authentication_oauth_client_credentials (line 99) - compile ... ok
+test src/../pages/book/src/building-agents/authentication/oauth-client-credentials.md - page_book_src_building_agents_authentication_oauth_client_credentials (line 76) - compile ... ok
+test src/../pages/book/src/building-agents/authentication/client-tokens.md - page_book_src_building_agents_authentication_client_tokens (line 10) ... ok
+test src/../pages/book/src/building-agents/authentication/token-exchange.md - page_book_src_building_agents_authentication_token_exchange (line 13) - compile ... ok
+test src/../pages/book/src/building-agents/dispatchers.md - page_book_src_building_agents_dispatchers (line 39) - compile ... FAILED
+test src/../pages/book/src/building-agents/dispatchers/axum.md - page_book_src_building_agents_dispatchers_axum (line 17) - compile ... FAILED
+test src/../pages/book/src/building-agents/authentication/oauth-client-credentials.md - page_book_src_building_agents_authentication_oauth_client_credentials (line 14) ... ok
+test src/../pages/book/src/building-agents/dispatchers/axum.md - page_book_src_building_agents_dispatchers_axum (line 59) ... FAILED
+test src/../pages/book/src/building-agents/dispatchers/grpc.md - page_book_src_building_agents_dispatchers_grpc (line 18) - compile ... FAILED
+test src/../pages/book/src/building-agents/dispatchers/grpc.md - page_book_src_building_agents_dispatchers_grpc (line 139) - compile ... FAILED
+test src/../pages/book/src/building-agents/dispatchers/grpc.md - page_book_src_building_agents_dispatchers_grpc (line 72) - compile ... FAILED
+test src/../pages/book/src/building-agents/dispatchers/jsonrpc.md - page_book_src_building_agents_dispatchers_jsonrpc (line 12) - compile ... ok
+test src/../pages/book/src/building-agents/authentication/throttling.md - page_book_src_building_agents_authentication_throttling (line 19) ... ok
+test src/../pages/book/src/building-agents/dispatchers/rest.md - page_book_src_building_agents_dispatchers_rest (line 12) - compile ... ok
+test src/../pages/book/src/building-agents/dispatchers/serving.md - page_book_src_building_agents_dispatchers_serving (line 139) - compile ... ok
+test src/../pages/book/src/building-agents/dispatchers/serving.md - page_book_src_building_agents_dispatchers_serving (line 181) - compile ... ok
+test src/../pages/book/src/building-agents/dispatchers/serving.md - page_book_src_building_agents_dispatchers_serving (line 18) - compile ... ok
+test src/../pages/book/src/building-agents/dispatchers/serving.md - page_book_src_building_agents_dispatchers_serving (line 62) - compile ... ok
+test src/../pages/book/src/building-agents/dispatchers/cors.md - page_book_src_building_agents_dispatchers_cors (line 13) ... ok
+test src/../pages/book/src/building-agents/dispatchers/websocket.md - page_book_src_building_agents_dispatchers_websocket (line 144) - compile ... FAILED
+test src/../pages/book/src/building-agents/dispatchers/serving.md - page_book_src_building_agents_dispatchers_serving (line 77) - compile ... ok
+test src/../pages/book/src/building-agents/dispatchers/websocket.md - page_book_src_building_agents_dispatchers_websocket (line 23) - compile ... FAILED
+test src/../pages/book/src/building-agents/dispatchers/websocket.md - page_book_src_building_agents_dispatchers_websocket (line 61) - compile ... FAILED
+test src/../pages/book/src/building-agents/executor.md - page_book_src_building_agents_executor (line 71) ... ok
+test src/../pages/book/src/building-agents/executor/event-queue.md - page_book_src_building_agents_executor_event_queue (line 15) ... ok
+test src/../pages/book/src/building-agents/executor.md - page_book_src_building_agents_executor (line 22) ... ok
+test src/../pages/book/src/building-agents/executor/helpers.md - page_book_src_building_agents_executor_helpers (line 15) ... ok
+test src/../pages/book/src/building-agents/executor/helpers.md - page_book_src_building_agents_executor_helpers (line 37) ... ok
+test src/../pages/book/src/building-agents/executor/helpers.md - page_book_src_building_agents_executor_helpers (line 59) ... ok
+test src/../pages/book/src/building-agents/executor/interrupted.md - page_book_src_building_agents_executor_interrupted (line 14) ... ok
+test src/../pages/book/src/building-agents/executor/interrupted.md - page_book_src_building_agents_executor_interrupted (line 60) ... ok
+test src/../pages/book/src/building-agents/executor/interrupted.md - page_book_src_building_agents_executor_interrupted (line 88) ... ok
+test src/../pages/book/src/building-agents/executor/patterns.md - page_book_src_building_agents_executor_patterns (line 125) ... ok
+test src/../pages/book/src/building-agents/executor/patterns.md - page_book_src_building_agents_executor_patterns (line 41) ... ok
+test src/../pages/book/src/building-agents/executor/patterns.md - page_book_src_building_agents_executor_patterns (line 16) ... ok
+test src/../pages/book/src/building-agents/executor/patterns.md - page_book_src_building_agents_executor_patterns (line 89) ... ok
+test src/../pages/book/src/building-agents/executor/request-context.md - page_book_src_building_agents_executor_request_context (line 55) ... ok
+test src/../pages/book/src/building-agents/handler/configuration.md - page_book_src_building_agents_handler_configuration (line 177) ... ok
+test src/../pages/book/src/building-agents/handler.md - page_book_src_building_agents_handler (line 34) ... ok
+test src/../pages/book/src/building-agents/handler/configuration.md - page_book_src_building_agents_handler_configuration (line 15) ... ok
+test src/../pages/book/src/building-agents/handler/configuration.md - page_book_src_building_agents_handler_configuration (line 209) ... ok
+test src/../pages/book/src/building-agents/interceptors/client.md - page_book_src_building_agents_interceptors_client (line 14) ... ok
+test src/../pages/book/src/building-agents/handler/direct-calls.md - page_book_src_building_agents_handler_direct_calls (line 104) ... ok
+test src/../pages/book/src/building-agents/interceptors/patterns.md - page_book_src_building_agents_interceptors_patterns (line 15) - compile ... ok
+test src/../pages/book/src/building-agents/interceptors.md - page_book_src_building_agents_interceptors (line 18) ... ok
+test src/../pages/book/src/building-agents/handler/direct-calls.md - page_book_src_building_agents_handler_direct_calls (line 39) ... ok
+test src/../pages/book/src/building-agents/interceptors/client.md - page_book_src_building_agents_interceptors_client (line 62) ... ok
+test src/../pages/book/src/building-agents/interceptors/patterns.md - page_book_src_building_agents_interceptors_patterns (line 28) ... ok
+test src/../pages/book/src/building-agents/interceptors/server.md - page_book_src_building_agents_interceptors_server (line 105) ... ok
+test src/../pages/book/src/building-agents/interceptors/server.md - page_book_src_building_agents_interceptors_server (line 15) ... ok
+test src/../pages/book/src/building-agents/interceptors/server.md - page_book_src_building_agents_interceptors_server (line 162) ... ok
+test src/../pages/book/src/building-agents/push-notifications/receiving.md - page_book_src_building_agents_push_notifications_receiving (line 12) - compile ... ok
+test src/../pages/book/src/building-agents/interceptors/patterns.md - page_book_src_building_agents_interceptors_patterns (line 64) ... ok
+test src/../pages/book/src/building-agents/push-notifications/custom-sender.md - page_book_src_building_agents_push_notifications_custom_sender (line 10) ... ok
+test src/../pages/book/src/building-agents/push-notifications/receiving.md - page_book_src_building_agents_push_notifications_receiving (line 38) ... ok
+test src/../pages/book/src/building-agents/push-notifications/setup.md - page_book_src_building_agents_push_notifications_setup (line 54) - compile ... ok
+test src/../pages/book/src/building-agents/push-notifications/setup.md - page_book_src_building_agents_push_notifications_setup (line 79) - compile ... ok
+test src/../pages/book/src/building-agents/interceptors/server.md - page_book_src_building_agents_interceptors_server (line 49) ... ok
+test src/../pages/book/src/building-agents/push-notifications/receiving.md - page_book_src_building_agents_push_notifications_receiving (line 61) ... ok
+test src/../pages/book/src/building-agents/push-notifications/storage.md - page_book_src_building_agents_push_notifications_storage (line 57) - compile ... FAILED
+test src/../pages/book/src/building-agents/push-notifications/storage.md - page_book_src_building_agents_push_notifications_storage (line 12) ... ok
+test src/../pages/book/src/building-agents/stores/custom.md - page_book_src_building_agents_stores_custom (line 127) - compile ... FAILED
+test src/../pages/book/src/building-agents/push-notifications/setup.md - page_book_src_building_agents_push_notifications_setup (line 12) ... ok
+test src/../pages/book/src/building-agents/stores/custom.md - page_book_src_building_agents_stores_custom (line 12) ... ok
+test src/../pages/book/src/building-agents/stores/in-memory.md - page_book_src_building_agents_stores_in_memory (line 10) - compile ... ok
+test src/../pages/book/src/building-agents/stores/custom.md - page_book_src_building_agents_stores_custom (line 196) ... ok
+test src/../pages/book/src/building-agents/stores/postgres.md - page_book_src_building_agents_stores_postgres (line 53) - compile ... FAILED
+test src/../pages/book/src/building-agents/stores/postgres.md - page_book_src_building_agents_stores_postgres (line 18) - compile ... FAILED
+test src/../pages/book/src/building-agents/stores/push-config-stores.md - page_book_src_building_agents_stores_push_config_stores (line 69) - compile ... ok
+test src/../pages/book/src/building-agents/stores/sqlite.md - page_book_src_building_agents_stores_sqlite (line 15) - compile ... FAILED
+test src/../pages/book/src/building-agents/stores/custom.md - page_book_src_building_agents_stores_custom (line 86) ... ok
+test src/../pages/book/src/building-agents/stores/tenants.md - page_book_src_building_agents_stores_tenants (line 65) - compile ... FAILED
+test src/../pages/book/src/building-agents/tool-loop.md - page_book_src_building_agents_tool_loop (line 37) - compile ... FAILED
+test src/../pages/book/src/building-agents/tool-loop/models.md - page_book_src_building_agents_tool_loop_models (line 16) - compile ... FAILED
+test src/../pages/book/src/building-agents/tool-loop/models.md - page_book_src_building_agents_tool_loop_models (line 94) - compile ... FAILED
+test src/../pages/book/src/building-agents/stores/push-config-stores.md - page_book_src_building_agents_stores_push_config_stores (line 12) ... ok
+test src/../pages/book/src/building-agents/tool-loop/running.md - page_book_src_building_agents_tool_loop_running (line 13) - compile ... FAILED
+test src/../pages/book/src/building-agents/tool-loop/running.md - page_book_src_building_agents_tool_loop_running (line 103) - compile ... FAILED
+test src/../pages/book/src/building-agents/tool-loop/tools.md - page_book_src_building_agents_tool_loop_tools (line 100) - compile ... FAILED
+test src/../pages/book/src/building-agents/tool-loop/tools.md - page_book_src_building_agents_tool_loop_tools (line 160) - compile ... FAILED
+test src/../pages/book/src/building-agents/tool-loop/tools.md - page_book_src_building_agents_tool_loop_tools (line 27) - compile ... FAILED
+test src/../pages/book/src/building-agents/stores/tenants.md - page_book_src_building_agents_stores_tenants (line 25) ... ok
+test src/../pages/book/src/client/builder.md - page_book_src_client_builder (line 7) - compile ... ok
+test src/../pages/book/src/client/builder/grpc.md - page_book_src_client_builder_grpc (line 21) - compile ... FAILED
+test src/../pages/book/src/client/builder/grpc.md - page_book_src_client_builder_grpc (line 37) - compile ... FAILED
+test src/../pages/book/src/client/builder.md - page_book_src_client_builder (line 17) ... ok
+test src/../pages/book/src/client/builder/interceptors.md - page_book_src_client_builder_interceptors (line 12) ... ok
+test src/../pages/book/src/client/builder/interceptors.md - page_book_src_client_builder_interceptors (line 43) ... ok
+test src/../pages/book/src/client/builder/interceptors.md - page_book_src_client_builder_interceptors (line 74) ... ok
+test src/../pages/book/src/client/builder/options.md - page_book_src_client_builder_options (line 128) ... ok
+test src/../pages/book/src/client/builder/options.md - page_book_src_client_builder_options (line 48) ... ok
+test src/../pages/book/src/client/builder/options.md - page_book_src_client_builder_options (line 29) ... ok
+test src/../pages/book/src/client/builder/options.md - page_book_src_client_builder_options (line 10) ... ok
+test src/../pages/book/src/client/builder/pool.md - page_book_src_client_builder_pool (line 14) - compile ... ok
+test src/../pages/book/src/client/builder/reuse.md - page_book_src_client_builder_reuse (line 10) - compile ... ok
+test src/../pages/book/src/client/builder/reuse.md - page_book_src_client_builder_reuse (line 37) - compile ... ok
+test src/../pages/book/src/client/delegation.md - page_book_src_client_delegation (line 113) - compile ... ok
+test src/../pages/book/src/client/builder/reuse.md - page_book_src_client_builder_reuse (line 51) - compile ... ok
+test src/../pages/book/src/client/delegation.md - page_book_src_client_delegation (line 258) - compile ... ok
+test src/../pages/book/src/client/delegation.md - page_book_src_client_delegation (line 150) - compile ... ok
+test src/../pages/book/src/client/delegation.md - page_book_src_client_delegation (line 328) - compile ... ok
+test src/../pages/book/src/client/delegation.md - page_book_src_client_delegation (line 286) - compile ... ok
+test src/../pages/book/src/client/delegation.md - page_book_src_client_delegation (line 35) - compile ... ok
+test src/../pages/book/src/client/delegation.md - page_book_src_client_delegation (line 344) - compile ... FAILED
+test src/../pages/book/src/client/error-handling.md - page_book_src_client_error_handling (line 119) - compile ... ok
+test src/../pages/book/src/client/delegation.md - page_book_src_client_delegation (line 386) - compile ... ok
+test src/../pages/book/src/client/error-handling.md - page_book_src_client_error_handling (line 168) - compile ... ok
+test src/../pages/book/src/client/builder/options.md - page_book_src_client_builder_options (line 61) ... ok
+test src/../pages/book/src/client/builder/options.md - page_book_src_client_builder_options (line 89) ... ok
+test src/../pages/book/src/client/error-handling.md - page_book_src_client_error_handling (line 251) - compile ... ok
+test src/../pages/book/src/client/error-handling.md - page_book_src_client_error_handling (line 200) - compile ... ok
+test src/../pages/book/src/client/error-handling.md - page_book_src_client_error_handling (line 287) - compile ... ok
+test src/../pages/book/src/client/error-handling.md - page_book_src_client_error_handling (line 48) - compile ... ok
+test src/../pages/book/src/client/error-handling.md - page_book_src_client_error_handling (line 29) - compile ... ok
+test src/../pages/book/src/client/error-handling.md - page_book_src_client_error_handling (line 85) - compile ... ok
+test src/../pages/book/src/client/failure-classes.md - page_book_src_client_failure_classes (line 28) ... ok
+test src/../pages/book/src/client/error-handling.md - page_book_src_client_error_handling (line 217) ... ok
+test src/../pages/book/src/client/error-handling.md - page_book_src_client_error_handling (line 153) ... ok
+test src/../pages/book/src/client/failure-classes.md - page_book_src_client_failure_classes (line 74) ... ok
+test src/../pages/book/src/client/idempotency.md - page_book_src_client_idempotency (line 118) ... ok
+test src/../pages/book/src/client/idempotency.md - page_book_src_client_idempotency (line 23) ... ok
+test src/../pages/book/src/client/idempotency.md - page_book_src_client_idempotency (line 65) ... ok
+test src/../pages/book/src/client/load-balancers.md - page_book_src_client_load_balancers (line 107) - compile ... ok
+test src/../pages/book/src/client/error-handling.md - page_book_src_client_error_handling (line 9) ... ok
+test src/../pages/book/src/client/load-balancers.md - page_book_src_client_load_balancers (line 30) - compile ... ok
+test src/../pages/book/src/client/sending-messages.md - page_book_src_client_sending_messages (line 10) - compile ... ok
+test src/../pages/book/src/client/sending-messages.md - page_book_src_client_sending_messages (line 121) - compile ... ok
+test src/../pages/book/src/client/sending-messages.md - page_book_src_client_sending_messages (line 28) - compile ... ok
+test src/../pages/book/src/client/sending-messages.md - page_book_src_client_sending_messages (line 83) - compile ... ok
+test src/../pages/book/src/client/idempotency.md - page_book_src_client_idempotency (line 187) ... ok
+test src/../pages/book/src/client/streaming.md - page_book_src_client_streaming (line 102) - compile ... ok
+test src/../pages/book/src/client/streaming.md - page_book_src_client_streaming (line 137) - compile ... ok
+test src/../pages/book/src/client/streaming.md - page_book_src_client_streaming (line 160) - compile ... ok
+test src/../pages/book/src/client/streaming.md - page_book_src_client_streaming (line 57) - compile ... ok
+test src/../pages/book/src/client/sending-messages.md - page_book_src_client_sending_messages (line 155) ... ok
+test src/../pages/book/src/client/streaming.md - page_book_src_client_streaming (line 9) - compile ... ok
+test src/../pages/book/src/client/task-management.md - page_book_src_client_task_management (line 43) - compile ... ok
+test src/../pages/book/src/client/sending-messages.md - page_book_src_client_sending_messages (line 66) ... ok
+test src/../pages/book/src/client/task-management.md - page_book_src_client_task_management (line 97) - compile ... ok
+test src/../pages/book/src/client/task-management.md - page_book_src_client_task_management (line 9) - compile ... ok
+test src/../pages/book/src/concepts/agent-cards/caching.md - page_book_src_concepts_agent_cards_caching (line 32) - compile ... ok
+test src/../pages/book/src/concepts/agent-cards/caching.md - page_book_src_concepts_agent_cards_caching (line 61) - compile ... ok
+test src/../pages/book/src/client/streaming.md - page_book_src_client_streaming (line 196) ... ok
+test src/../pages/book/src/concepts/agent-cards/fields.md - page_book_src_concepts_agent_cards_fields (line 127) - compile ... ok
+test src/../pages/book/src/concepts/agent-cards/fields.md - page_book_src_concepts_agent_cards_fields (line 66) - compile ... ok
+test src/../pages/book/src/concepts/agent-cards/fields.md - page_book_src_concepts_agent_cards_fields (line 82) - compile ... ok
+test src/../pages/book/src/concepts/agent-cards/extended.md - page_book_src_concepts_agent_cards_extended (line 9) ... ok
+test src/../pages/book/src/concepts/agent-cards/local-discovery.md - page_book_src_concepts_agent_cards_local_discovery (line 14) - compile ... FAILED
+test src/../pages/book/src/concepts/agent-cards/local-discovery.md - page_book_src_concepts_agent_cards_local_discovery (line 29) - compile ... FAILED
+test src/../pages/book/src/concepts/agent-cards/serving.md - page_book_src_concepts_agent_cards_serving (line 42) ... ok
+test src/../pages/book/src/concepts/agent-cards/extended.md - page_book_src_concepts_agent_cards_extended (line 85) ... ok
+test src/../pages/book/src/concepts/agent-cards/serving.md - page_book_src_concepts_agent_cards_serving (line 76) - compile ... ok
+test src/../pages/book/src/concepts/streaming/client.md - page_book_src_concepts_streaming_client (line 15) - compile ... ok
+test src/../pages/book/src/concepts/agent-cards/extended.md - page_book_src_concepts_agent_cards_extended (line 18) ... ok
+test src/../pages/book/src/concepts/streaming/resubscribe.md - page_book_src_concepts_streaming_resubscribe (line 14) - compile ... ok
+test src/../pages/book/src/concepts/agent-cards/serving.md - page_book_src_concepts_agent_cards_serving (line 14) ... ok
+test src/../pages/book/src/concepts/tasks-and-messages.md - page_book_src_concepts_tasks_and_messages (line 130) - compile ... ok
+test src/../pages/book/src/concepts/tasks-and-messages.md - page_book_src_concepts_tasks_and_messages (line 11) ... ok
+test src/../pages/book/src/concepts/tasks-and-messages.md - page_book_src_concepts_tasks_and_messages (line 189) - compile ... ok
+test src/../pages/book/src/concepts/streaming/server.md - page_book_src_concepts_streaming_server (line 14) ... ok
+test src/../pages/book/src/concepts/tasks-and-messages.md - page_book_src_concepts_tasks_and_messages (line 160) ... ok
+test src/../pages/book/src/concepts/streaming/server.md - page_book_src_concepts_streaming_server (line 72) ... ok
+test src/../pages/book/src/concepts/tasks-and-messages.md - page_book_src_concepts_tasks_and_messages (line 211) ... ok
+test src/../pages/book/src/concepts/tasks-and-messages.md - page_book_src_concepts_tasks_and_messages (line 201) ... ok
+test src/../pages/book/src/concepts/tasks-and-messages.md - page_book_src_concepts_tasks_and_messages (line 298) - compile ... ok
+test src/../pages/book/src/concepts/tasks-and-messages.md - page_book_src_concepts_tasks_and_messages (line 315) - compile ... ok
+test src/../pages/book/src/concepts/tasks-and-messages.md - page_book_src_concepts_tasks_and_messages (line 89) - compile ... ok
+test src/../pages/book/src/concepts/tasks-and-messages.md - page_book_src_concepts_tasks_and_messages (line 236) ... ok
+test src/../pages/book/src/concepts/tasks-and-messages.md - page_book_src_concepts_tasks_and_messages (line 279) ... ok
+test src/../pages/book/src/concepts/tasks-and-messages.md - page_book_src_concepts_tasks_and_messages (line 247) ... ok
+test src/../pages/book/src/concepts/transport-layers/grpc.md - page_book_src_concepts_transport_layers_grpc (line 189) ... FAILED
+test src/../pages/book/src/concepts/transport-layers/grpc.md - page_book_src_concepts_transport_layers_grpc (line 128) - compile ... FAILED
+test src/../pages/book/src/concepts/transport-layers/grpc.md - page_book_src_concepts_transport_layers_grpc (line 89) - compile ... FAILED
+test src/../pages/book/src/concepts/transport-layers/websocket.md - page_book_src_concepts_transport_layers_websocket (line 47) - compile ... FAILED
+test src/../pages/book/src/concepts/transport-layers/grpc.md - page_book_src_concepts_transport_layers_grpc (line 53) - compile ... FAILED
+test src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 262) - compile ... FAILED
+test src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 187) - compile ... FAILED
+test src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 126) - compile ... FAILED
+test src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 302) - compile ... FAILED
+test src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 397) - compile ... FAILED
+test src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 360) - compile ... FAILED
+test src/../pages/book/src/deployment/horizontal-scaling/rate-limiting.md - page_book_src_deployment_horizontal_scaling_rate_limiting (line 17) ... FAILED
+test src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 38) - compile ... FAILED
+test src/../pages/book/src/deployment/horizontal-scaling/sustained-load.md - page_book_src_deployment_horizontal_scaling_sustained_load (line 73) ... FAILED
+test src/../pages/book/src/deployment/horizontal-scaling/shared-stores.md - page_book_src_deployment_horizontal_scaling_shared_stores (line 13) ... FAILED
+test src/../pages/book/src/deployment/langfuse.md - page_book_src_deployment_langfuse (line 89) - compile ... ok
+test src/../pages/book/src/deployment/health-checks.md - page_book_src_deployment_health_checks (line 28) ... ok
+test src/../pages/book/src/deployment/langfuse.md - page_book_src_deployment_langfuse (line 63) - compile ... ok
+test src/../pages/book/src/deployment/horizontal-scaling/shared-stores.md - page_book_src_deployment_horizontal_scaling_shared_stores (line 125) ... ok
+test src/../pages/book/src/deployment/multi-tenancy.md - page_book_src_deployment_multi_tenancy (line 317) ... ok
+test src/../pages/book/src/deployment/observability.md - page_book_src_deployment_observability (line 50) - compile ... ok
+test src/../pages/book/src/deployment/multi-tenancy.md - page_book_src_deployment_multi_tenancy (line 61) ... ok
+test src/../pages/book/src/deployment/multi-tenancy.md - page_book_src_deployment_multi_tenancy (line 93) ... ok
+test src/../pages/book/src/deployment/observability/logs.md - page_book_src_deployment_observability_logs (line 88) - compile ... ok
+test src/../pages/book/src/deployment/multi-tenancy.md - page_book_src_deployment_multi_tenancy (line 247) ... ok
+test src/../pages/book/src/deployment/observability/telemetry.md - page_book_src_deployment_observability_telemetry (line 294) - compile ... ok
+test src/../pages/book/src/deployment/observability/metrics.md - page_book_src_deployment_observability_metrics (line 453) - compile ... ok
+test src/../pages/book/src/deployment/observability/telemetry.md - page_book_src_deployment_observability_telemetry (line 158) - compile ... ok
+test src/../pages/book/src/deployment/observability/telemetry.md - page_book_src_deployment_observability_telemetry (line 65) - compile ... ok
+test src/../pages/book/src/deployment/observability/telemetry.md - page_book_src_deployment_observability_telemetry (line 80) - compile ... ok
+test src/../pages/book/src/deployment/observability/debugging.md - page_book_src_deployment_observability_debugging (line 50) ... ok
+test src/../pages/book/src/deployment/oversight.md - page_book_src_deployment_oversight (line 187) - compile ... ok
+test src/../pages/book/src/deployment/observability/trace-context.md - page_book_src_deployment_observability_trace_context (line 131) - compile ... ok
+test src/../pages/book/src/deployment/oversight.md - page_book_src_deployment_oversight (line 21) - compile ... ok
+test src/../pages/book/src/deployment/oversight.md - page_book_src_deployment_oversight (line 151) - compile ... FAILED
+test src/../pages/book/src/deployment/oversight.md - page_book_src_deployment_oversight (line 210) - compile ... ok
+test src/../pages/book/src/deployment/oversight.md - page_book_src_deployment_oversight (line 72) - compile ... ok
+test src/../pages/book/src/deployment/production.md - page_book_src_deployment_production (line 129) - compile ... ok
+test src/../pages/book/src/deployment/observability/trace-context.md - page_book_src_deployment_observability_trace_context (line 54) ... ok
+test src/../pages/book/src/deployment/production/browsers-and-webhooks.md - page_book_src_deployment_production_browsers_and_webhooks (line 19) - compile ... ok
+test src/../pages/book/src/deployment/production.md - page_book_src_deployment_production (line 180) ... ok
+test src/../pages/book/src/deployment/production.md - page_book_src_deployment_production (line 50) - compile ... FAILED
+test src/../pages/book/src/deployment/production/graceful-shutdown.md - page_book_src_deployment_production_graceful_shutdown (line 85) - compile ... ok
+test src/../pages/book/src/deployment/production/limits.md - page_book_src_deployment_production_limits (line 109) - compile ... ok
+test src/../pages/book/src/deployment/oversight.md - page_book_src_deployment_oversight (line 290) ... ok
+test src/../pages/book/src/deployment/production/graceful-shutdown.md - page_book_src_deployment_production_graceful_shutdown (line 177) ... ok
+test src/../pages/book/src/deployment/production/graceful-shutdown.md - page_book_src_deployment_production_graceful_shutdown (line 50) ... ok
+test src/../pages/book/src/deployment/production/limits.md - page_book_src_deployment_production_limits (line 128) ... ok
+test src/../pages/book/src/deployment/production/performance.md - page_book_src_deployment_production_performance (line 104) - compile ... ok
+test src/../pages/book/src/deployment/production/limits.md - page_book_src_deployment_production_limits (line 18) ... ok
+test src/../pages/book/src/deployment/production/proxies-and-tls.md - page_book_src_deployment_production_proxies_and_tls (line 23) - compile ... ok
+test src/../pages/book/src/deployment/production/proxies-and-tls.md - page_book_src_deployment_production_proxies_and_tls (line 49) - compile ... ok
+test src/../pages/book/src/deployment/production/limits.md - page_book_src_deployment_production_limits (line 45) ... ok
+test src/../pages/book/src/deployment/production/proxies-and-tls.md - page_book_src_deployment_production_proxies_and_tls (line 72) - compile ... ok
+test src/../pages/book/src/deployment/production/limits.md - page_book_src_deployment_production_limits (line 68) ... ok
+test src/../pages/book/src/deployment/production/proxies-and-tls.md - page_book_src_deployment_production_proxies_and_tls (line 99) - compile ... ok
+test src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 111) - compile ... FAILED
+test src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 153) - compile ... FAILED
+test src/../pages/book/src/deployment/production/performance.md - page_book_src_deployment_production_performance (line 33) ... ok
+test src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 129) - compile ... FAILED
+test src/../pages/book/src/deployment/security.md - page_book_src_deployment_security (line 134) - compile ... FAILED
+test src/../pages/book/src/deployment/testing/conformance.md - page_book_src_deployment_testing_conformance (line 100) ... FAILED
+test src/../pages/book/src/deployment/security.md - page_book_src_deployment_security (line 240) ... FAILED
+test src/../pages/book/src/deployment/testing/unit-and-integration.md - page_book_src_deployment_testing_unit_and_integration (line 121) - compile ... ok
+test src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 177) - compile ... FAILED
+test src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 20) - compile ... FAILED
+test src/../pages/book/src/deployment/testing/unit-and-integration.md - page_book_src_deployment_testing_unit_and_integration (line 152) - compile ... ok
+test src/../pages/book/src/deployment/testing/unit-and-integration.md - page_book_src_deployment_testing_unit_and_integration (line 17) - compile ... ok
+test src/../pages/book/src/deployment/testing/wire-and-fuzz.md - page_book_src_deployment_testing_wire_and_fuzz (line 14) - compile ... ok
+test src/../pages/book/src/deployment/testing/conformance.md - page_book_src_deployment_testing_conformance (line 22) ... FAILED
+test src/../pages/book/src/deployment/testing/unit-and-integration.md - page_book_src_deployment_testing_unit_and_integration (line 67) - compile ... ok
+test src/../pages/book/src/examples/agent-team.md - page_book_src_examples_agent_team (line 121) - compile ... ok
+test src/../pages/book/src/examples/deploy-agent.md - page_book_src_examples_deploy_agent (line 89) - compile ... ok
+test src/../pages/book/src/examples/incident-response.md - page_book_src_examples_incident_response (line 145) - compile ... ok
+test src/../pages/book/src/examples/hello-agent.md - page_book_src_examples_hello_agent (line 64) - compile ... ok
+test src/../pages/book/src/examples/echo-agent.md - page_book_src_examples_echo_agent (line 110) - compile ... ok
+test src/../pages/book/src/examples/incident-response.md - page_book_src_examples_incident_response (line 171) - compile ... ok
+test src/../pages/book/src/examples/langfuse-agent.md - page_book_src_examples_langfuse_agent (line 112) - compile ... ok
+test src/../pages/book/src/examples/mcp-bridge.md - page_book_src_examples_mcp_bridge (line 125) - compile ... ok
+test src/../pages/book/src/examples/langfuse-agent.md - page_book_src_examples_langfuse_agent (line 88) - compile ... ok
+test src/../pages/book/src/examples/overview.md - page_book_src_examples_overview (line 78) - compile ... ok
+test src/../pages/book/src/examples/multi-lang-team.md - page_book_src_examples_multi_lang_team (line 141) - compile ... ok
+test src/../pages/book/src/examples/resilient-agent.md - page_book_src_examples_resilient_agent (line 117) - compile ... FAILED
+test src/../pages/book/src/examples/multi-lang-team.md - page_book_src_examples_multi_lang_team (line 112) - compile ... ok
+test src/../pages/book/src/examples/swarm.md - page_book_src_examples_swarm (line 88) - compile ... ok
+test src/../pages/book/src/getting-started/first-agent.md - page_book_src_getting_started_first_agent (line 153) - compile ... ok
+test src/../pages/book/src/getting-started/first-agent.md - page_book_src_getting_started_first_agent (line 84) - compile ... ok
+test src/../pages/book/src/getting-started/first-agent.md - page_book_src_getting_started_first_agent (line 29) - compile ... ok
+test src/../pages/book/src/getting-started/first-agent.md - page_book_src_getting_started_first_agent (line 103) - compile ... ok
+test src/../pages/book/src/getting-started/project-structure.md - page_book_src_getting_started_project_structure (line 101) - compile ... ok
+test src/../pages/book/src/getting-started/installation.md - page_book_src_getting_started_installation (line 151) - compile ... ok
+test src/../pages/book/src/getting-started/quick-start.md - page_book_src_getting_started_quick_start (line 140) - compile ... ok
+test src/../pages/book/src/reference/mutation-history.md - page_book_src_reference_mutation_history (line 81) ... ok
+test src/../pages/book/src/reference/pitfalls/http-and-transports.md - page_book_src_reference_pitfalls_http_and_transports (line 14) - compile ... ok
+test src/../pages/book/src/reference/pitfalls/async-and-lifecycle.md - page_book_src_reference_pitfalls_async_and_lifecycle (line 14) ... ok
+test src/../pages/book/src/getting-started/quick-start.md - page_book_src_getting_started_quick_start (line 40) - compile ... ok
+test src/../pages/book/src/reference/pitfalls/http-and-transports.md - page_book_src_reference_pitfalls_http_and_transports (line 34) ... ok
+test src/../pages/book/src/reference/upgrading/0.10-to-0.11.md - page_book_src_reference_upgrading_0_10_to_0_11 (line 40) ... ok
+test src/../pages/book/src/reference/pitfalls/serialization-and-validation.md - page_book_src_reference_pitfalls_serialization_and_validation (line 45) ... ok
+test src/../pages/book/src/reference/upgrading/0.10-to-0.11.md - page_book_src_reference_upgrading_0_10_to_0_11 (line 63) ... ok
+test src/../pages/book/src/reference/upgrading/0.10-to-0.11.md - page_book_src_reference_upgrading_0_10_to_0_11 (line 78) ... ok
+test src/../pages/book/src/reference/api-reference.md - page_book_src_reference_api_reference (line 593) ... ok
+test src/../pages/book/src/reference/upgrading/0.11-to-0.12.md - page_book_src_reference_upgrading_0_11_to_0_12 (line 149) ... FAILED
+test src/../pages/book/src/reference/upgrading/0.11-to-0.12.md - page_book_src_reference_upgrading_0_11_to_0_12 (line 113) ... ok
+test src/../pages/book/src/reference/upgrading/0.11-to-0.12.md - page_book_src_reference_upgrading_0_11_to_0_12 (line 50) ... FAILED
+test src/../pages/book/src/reference/pitfalls/serialization-and-validation.md - page_book_src_reference_pitfalls_serialization_and_validation (line 22) ... ok
+test src/../pages/book/src/reference/upgrading/0.11-to-0.12.md - page_book_src_reference_upgrading_0_11_to_0_12 (line 72) ... ok
+test src/../pages/book/src/reference/upgrading/0.11-to-0.12.md - page_book_src_reference_upgrading_0_11_to_0_12 (line 29) ... ok
+test src/../pages/book/src/reference/upgrading/0.12-to-0.13.md - page_book_src_reference_upgrading_0_12_to_0_13 (line 167) ... ok
+test src/../pages/book/src/reference/upgrading/0.12-to-0.13.md - page_book_src_reference_upgrading_0_12_to_0_13 (line 188) ... ok
+test src/../pages/book/src/reference/upgrading/0.11-to-0.12.md - page_book_src_reference_upgrading_0_11_to_0_12 (line 137) ... ok
+test src/../pages/book/src/reference/upgrading/0.12-to-0.13.md - page_book_src_reference_upgrading_0_12_to_0_13 (line 117) ... ok
+test src/../pages/book/src/reference/upgrading/0.12-to-0.13.md - page_book_src_reference_upgrading_0_12_to_0_13 (line 223) ... ok
+test src/../pages/book/src/reference/upgrading/0.12-to-0.13.md - page_book_src_reference_upgrading_0_12_to_0_13 (line 145) ... ok
+test src/../pages/book/src/reference/upgrading/0.13-to-0.14.md - page_book_src_reference_upgrading_0_13_to_0_14 (line 134) ... ok
+test src/../pages/book/src/reference/upgrading/0.12-to-0.13.md - page_book_src_reference_upgrading_0_12_to_0_13 (line 76) ... ok
+test src/../pages/book/src/reference/upgrading/0.12-to-0.13.md - page_book_src_reference_upgrading_0_12_to_0_13 (line 40) ... ok
+test src/../pages/book/src/reference/upgrading/0.13-to-0.14.md - page_book_src_reference_upgrading_0_13_to_0_14 (line 153) ... ok
+test src/../pages/book/src/reference/upgrading/0.12-to-0.13.md - page_book_src_reference_upgrading_0_12_to_0_13 (line 261) ... ok
+test src/../pages/book/src/reference/upgrading/0.13-to-0.14.md - page_book_src_reference_upgrading_0_13_to_0_14 (line 52) ... ok
+test src/../pages/book/src/reference/upgrading/0.13-to-0.14.md - page_book_src_reference_upgrading_0_13_to_0_14 (line 70) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/agent-cards.md - page_book_src_reference_upgrading_0_14_to_0_15_agent_cards (line 180) ... FAILED
+test src/../pages/book/src/reference/upgrading/0.13-to-0.14.md - page_book_src_reference_upgrading_0_13_to_0_14 (line 99) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/agent-cards.md - page_book_src_reference_upgrading_0_14_to_0_15_agent_cards (line 20) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/agent-cards.md - page_book_src_reference_upgrading_0_14_to_0_15_agent_cards (line 119) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/agent-cards.md - page_book_src_reference_upgrading_0_14_to_0_15_agent_cards (line 48) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/authentication.md - page_book_src_reference_upgrading_0_14_to_0_15_authentication (line 149) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/authentication.md - page_book_src_reference_upgrading_0_14_to_0_15_authentication (line 168) - compile ... FAILED
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/authentication.md - page_book_src_reference_upgrading_0_14_to_0_15_authentication (line 214) ... FAILED
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/authentication.md - page_book_src_reference_upgrading_0_14_to_0_15_authentication (line 106) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/client.md - page_book_src_reference_upgrading_0_14_to_0_15_client (line 161) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/authentication.md - page_book_src_reference_upgrading_0_14_to_0_15_authentication (line 55) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/client.md - page_book_src_reference_upgrading_0_14_to_0_15_client (line 110) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/client.md - page_book_src_reference_upgrading_0_14_to_0_15_client (line 50) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/client.md - page_book_src_reference_upgrading_0_14_to_0_15_client (line 81) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/errors-and-rust-api.md - page_book_src_reference_upgrading_0_14_to_0_15_errors_and_rust_api (line 83) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/streams-and-executors.md - page_book_src_reference_upgrading_0_14_to_0_15_streams_and_executors (line 52) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/errors-and-rust-api.md - page_book_src_reference_upgrading_0_14_to_0_15_errors_and_rust_api (line 25) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/wire-and-bindings.md - page_book_src_reference_upgrading_0_14_to_0_15_wire_and_bindings (line 53) ... FAILED
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/telemetry.md - page_book_src_reference_upgrading_0_14_to_0_15_telemetry (line 54) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/streams-and-executors.md - page_book_src_reference_upgrading_0_14_to_0_15_streams_and_executors (line 111) ... ok
+test src/../pages/book/src/reference/upgrading/0.14-to-0.15/stores-and-tenants.md - page_book_src_reference_upgrading_0_14_to_0_15_stores_and_tenants (line 49) ... ok
+test src/../pages/book/src/reference/upgrading/0.15-to-0.16.md - page_book_src_reference_upgrading_0_15_to_0_16 (line 149) ... ok
+test src/../pages/book/src/reference/upgrading/0.15-to-0.16.md - page_book_src_reference_upgrading_0_15_to_0_16 (line 23) ... FAILED
+test src/../pages/book/src/reference/upgrading/0.15-to-0.16.md - page_book_src_reference_upgrading_0_15_to_0_16 (line 131) ... ok
+test src/../pages/book/src/reference/upgrading/0.15-to-0.16.md - page_book_src_reference_upgrading_0_15_to_0_16 (line 50) ... FAILED
+test src/../pages/book/src/reference/upgrading/0.6-to-0.7.md - page_book_src_reference_upgrading_0_6_to_0_7 (line 38) ... ok
+test src/../pages/book/src/reference/upgrading/0.6-to-0.7.md - page_book_src_reference_upgrading_0_6_to_0_7 (line 107) ... ok
+test src/../pages/book/src/reference/upgrading/0.15-to-0.16.md - page_book_src_reference_upgrading_0_15_to_0_16 (line 107) ... ok
+test src/../pages/book/src/reference/upgrading/0.6-to-0.7.md - page_book_src_reference_upgrading_0_6_to_0_7 (line 87) ... ok
+test src/../pages/book/src/reference/upgrading/0.15-to-0.16.md - page_book_src_reference_upgrading_0_15_to_0_16 (line 82) ... ok
+test src/../pages/book/src/reference/upgrading/0.7-to-0.8.md - page_book_src_reference_upgrading_0_7_to_0_8 (line 65) ... ok
+test src/../pages/book/src/reference/upgrading/0.8-to-0.9.md - page_book_src_reference_upgrading_0_8_to_0_9 (line 21) ... ok
+test src/../pages/book/src/reference/upgrading/0.8-to-0.9.md - page_book_src_reference_upgrading_0_8_to_0_9 (line 51) ... ok
+test src/../pages/book/src/reference/upgrading/0.7-to-0.8.md - page_book_src_reference_upgrading_0_7_to_0_8 (line 87) ... ok
+test src/../pages/book/src/reference/upgrading/0.9-to-0.10.md - page_book_src_reference_upgrading_0_9_to_0_10 (line 17) ... ok
+
+failures:
+
+---- src/../pages/book/src/building-agents/authentication/authorization.md - page_book_src_building_agents_authentication_authorization (line 21) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::auth::jwt`
+  --> src/../pages/book/src/building-agents/authentication/authorization.md:23:32
+   |
+23 | use a2a_protocol_server::auth::jwt::{Jwks, JwtAuthInterceptor, JwtValidator};
+   |                                ^^^ could not find `jwt` in `auth`
+   |
+note: found an item that was configured out
+  --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/auth/mod.rs:69:9
+   |
+68 | #[cfg(feature = "auth-jwt")]
+   |       -------------------- the item is gated behind the `auth-jwt` feature
+69 | pub mod jwt;
+   |         ^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/authentication/jwt.md - page_book_src_building_agents_authentication_jwt (line 48) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::auth::jwt`
+  --> src/../pages/book/src/building-agents/authentication/jwt.md:51:32
+   |
+51 | use a2a_protocol_server::auth::jwt::{JwtAuthInterceptor, JwtValidator};
+   |                                ^^^ could not find `jwt` in `auth`
+   |
+note: found an item that was configured out
+  --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/auth/mod.rs:69:9
+   |
+68 | #[cfg(feature = "auth-jwt")]
+   |       -------------------- the item is gated behind the `auth-jwt` feature
+69 | pub mod jwt;
+   |         ^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/authentication/jwt.md - page_book_src_building_agents_authentication_jwt (line 92) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::auth::jwt`
+  --> src/../pages/book/src/building-agents/authentication/jwt.md:96:32
+   |
+96 | use a2a_protocol_server::auth::jwt::{Jwks, JwtAuthInterceptor, JwtValidator};
+   |                                ^^^ could not find `jwt` in `auth`
+   |
+note: found an item that was configured out
+  --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/auth/mod.rs:69:9
+   |
+68 | #[cfg(feature = "auth-jwt")]
+   |       -------------------- the item is gated behind the `auth-jwt` feature
+69 | pub mod jwt;
+   |         ^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/dispatchers.md - page_book_src_building_agents_dispatchers (line 39) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+   --> src/../pages/book/src/building-agents/dispatchers.md:53:5
+    |
+ 53 | use a2a_protocol_server::WebSocketDispatcher;
+    |     ^^^^^^^^^^^^^^^^^^^^^-------------------
+    |                          |
+    |                          no `WebSocketDispatcher` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:213:20
+    |
+212 | #[cfg(feature = "websocket")]
+    |       --------------------- the item is gated behind the `websocket` feature
+213 | pub use dispatch::{WebSocketDispatcher, WebSocketUpgrades};
+    |                    ^^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/dispatchers/axum.md - page_book_src_building_agents_dispatchers_axum (line 17) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::RestRouter`
+   --> src/../pages/book/src/building-agents/dispatchers/axum.md:24:5
+    |
+ 24 | use a2a_protocol_server::RestRouter;
+    |     ^^^^^^^^^^^^^^^^^^^^^----------
+    |                          |
+    |                          no `RestRouter` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:205:45
+    |
+204 | #[cfg(feature = "axum")]
+    |       ---------------- the item is gated behind the `axum` feature
+205 | pub use dispatch::axum_adapter::{A2aRouter, RestRouter};
+    |                                             ^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/dispatchers/axum.md - page_book_src_building_agents_dispatchers_axum (line 59) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::RestRouter`
+   --> src/../pages/book/src/building-agents/dispatchers/axum.md:73:5
+    |
+ 73 | use a2a_protocol_server::RestRouter;
+    |     ^^^^^^^^^^^^^^^^^^^^^----------
+    |                          |
+    |                          no `RestRouter` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:205:45
+    |
+204 | #[cfg(feature = "axum")]
+    |       ---------------- the item is gated behind the `axum` feature
+205 | pub use dispatch::axum_adapter::{A2aRouter, RestRouter};
+    |                                             ^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/dispatchers/grpc.md - page_book_src_building_agents_dispatchers_grpc (line 18) stdout ----
+error[E0432]: unresolved imports `a2a_protocol_server::GrpcDispatcher`, `a2a_protocol_server::GrpcConfig`
+   --> src/../pages/book/src/building-agents/dispatchers/grpc.md:32:27
+    |
+ 32 | use a2a_protocol_server::{GrpcDispatcher, GrpcConfig};
+    |                           ^^^^^^^^^^^^^^  ^^^^^^^^^^ no `GrpcConfig` in the root
+    |                           |
+    |                           no `GrpcDispatcher` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:211:32
+    |
+210 | #[cfg(feature = "grpc")]
+    |       ---------------- the item is gated behind the `grpc` feature
+211 | pub use dispatch::{GrpcConfig, GrpcDispatcher};
+    |                                ^^^^^^^^^^^^^^
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:211:20
+    |
+210 | #[cfg(feature = "grpc")]
+    |       ---------------- the item is gated behind the `grpc` feature
+211 | pub use dispatch::{GrpcConfig, GrpcDispatcher};
+    |                    ^^^^^^^^^^
+help: a similar name exists in the module
+    |
+ 32 - use a2a_protocol_server::{GrpcDispatcher, GrpcConfig};
+ 32 + use a2a_protocol_server::{RestDispatcher, GrpcConfig};
+    |
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/dispatchers/grpc.md - page_book_src_building_agents_dispatchers_grpc (line 139) stdout ----
+error[E0433]: cannot find `GrpcDispatcher` in `a2a_protocol_server`
+   --> src/../pages/book/src/building-agents/dispatchers/grpc.md:153:39
+    |
+153 | let dispatcher = a2a_protocol_server::GrpcDispatcher::new(handler, a2a_protocol_server::GrpcConfig::default());
+    |                                       ^^^^^^^^^^^^^^ could not find `GrpcDispatcher` in `a2a_protocol_server`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:211:32
+    |
+210 | #[cfg(feature = "grpc")]
+    |       ---------------- the item is gated behind the `grpc` feature
+211 | pub use dispatch::{GrpcConfig, GrpcDispatcher};
+    |                                ^^^^^^^^^^^^^^
+help: a trait with a similar name exists
+    |
+153 - let dispatcher = a2a_protocol_server::GrpcDispatcher::new(handler, a2a_protocol_server::GrpcConfig::default());
+153 + let dispatcher = a2a_protocol_server::Dispatcher::new(handler, a2a_protocol_server::GrpcConfig::default());
+    |
+
+error[E0433]: cannot find `GrpcConfig` in `a2a_protocol_server`
+   --> src/../pages/book/src/building-agents/dispatchers/grpc.md:153:89
+    |
+153 | let dispatcher = a2a_protocol_server::GrpcDispatcher::new(handler, a2a_protocol_server::GrpcConfig::default());
+    |                                                                                         ^^^^^^^^^^ could not find `GrpcConfig` in `a2a_protocol_server`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:211:20
+    |
+210 | #[cfg(feature = "grpc")]
+    |       ---------------- the item is gated behind the `grpc` feature
+211 | pub use dispatch::{GrpcConfig, GrpcDispatcher};
+    |                    ^^^^^^^^^^
+
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0433`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/dispatchers/grpc.md - page_book_src_building_agents_dispatchers_grpc (line 72) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::dispatch::grpc`
+  --> src/../pages/book/src/building-agents/dispatchers/grpc.md:81:36
+   |
+81 | use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
+   |                                    ^^^^ could not find `grpc` in `dispatch`
+   |
+note: found an item that was configured out
+  --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/dispatch/mod.rs:16:9
+   |
+15 | #[cfg(feature = "grpc")]
+   |       ---------------- the item is gated behind the `grpc` feature
+16 | pub mod grpc;
+   |         ^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/dispatchers/websocket.md - page_book_src_building_agents_dispatchers_websocket (line 144) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+   --> src/../pages/book/src/building-agents/dispatchers/websocket.md:153:5
+    |
+153 | use a2a_protocol_server::WebSocketDispatcher;
+    |     ^^^^^^^^^^^^^^^^^^^^^-------------------
+    |                          |
+    |                          no `WebSocketDispatcher` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:213:20
+    |
+212 | #[cfg(feature = "websocket")]
+    |       --------------------- the item is gated behind the `websocket` feature
+213 | pub use dispatch::{WebSocketDispatcher, WebSocketUpgrades};
+    |                    ^^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/dispatchers/websocket.md - page_book_src_building_agents_dispatchers_websocket (line 23) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+   --> src/../pages/book/src/building-agents/dispatchers/websocket.md:31:5
+    |
+ 31 | use a2a_protocol_server::WebSocketDispatcher;
+    |     ^^^^^^^^^^^^^^^^^^^^^-------------------
+    |                          |
+    |                          no `WebSocketDispatcher` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:213:20
+    |
+212 | #[cfg(feature = "websocket")]
+    |       --------------------- the item is gated behind the `websocket` feature
+213 | pub use dispatch::{WebSocketDispatcher, WebSocketUpgrades};
+    |                    ^^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/dispatchers/websocket.md - page_book_src_building_agents_dispatchers_websocket (line 61) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+   --> src/../pages/book/src/building-agents/dispatchers/websocket.md:71:47
+    |
+ 71 | use a2a_protocol_server::{CombinedDispatcher, WebSocketDispatcher};
+    |                                               ^^^^^^^^^^^^^^^^^^^ no `WebSocketDispatcher` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:213:20
+    |
+212 | #[cfg(feature = "websocket")]
+    |       --------------------- the item is gated behind the `websocket` feature
+213 | pub use dispatch::{WebSocketDispatcher, WebSocketUpgrades};
+    |                    ^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `with_websocket` found for struct `CombinedDispatcher` in the current scope
+  --> src/../pages/book/src/building-agents/dispatchers/websocket.md:78:64
+   |
+78 | let dispatcher = CombinedDispatcher::new(Arc::clone(&handler)).with_websocket(
+   |                  ----------------------------------------------^^^^^^^^^^^^^^ method not found in `CombinedDispatcher`
+
+error: aborting due to 2 previous errors
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/push-notifications/storage.md - page_book_src_building_agents_push_notifications_storage (line 57) stdout ----
+error[E0432]: unresolved imports `a2a_protocol_server::push::PushConfigCipher`, `a2a_protocol_server::push::SqlitePushConfigStore`
+  --> src/../pages/book/src/building-agents/push-notifications/storage.md:61:33
+   |
+61 | use a2a_protocol_server::push::{PushConfigCipher, SqlitePushConfigStore};
+   |                                 ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^ no `SqlitePushConfigStore` in `push`
+   |                                 |
+   |                                 no `PushConfigCipher` in `push`
+   |
+note: found an item that was configured out
+  --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/push/mod.rs:31:17
+   |
+30 | #[cfg(any(feature = "sqlite", feature = "postgres"))]
+   |          ------------------------------------------ the item is gated here
+31 | pub use cipher::PushConfigCipher;
+   |                 ^^^^^^^^^^^^^^^^
+note: found an item that was configured out
+  --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/push/mod.rs:43:30
+   |
+42 | #[cfg(feature = "sqlite")]
+   |       ------------------ the item is gated behind the `sqlite` feature
+43 | pub use sqlite_config_store::SqlitePushConfigStore;
+   |                              ^^^^^^^^^^^^^^^^^^^^^
+help: a similar name exists in the module
+   |
+61 - use a2a_protocol_server::push::{PushConfigCipher, SqlitePushConfigStore};
+61 + use a2a_protocol_server::push::{PushConfigStore, SqlitePushConfigStore};
+   |
+help: a similar name exists in the module
+   |
+61 - use a2a_protocol_server::push::{PushConfigCipher, SqlitePushConfigStore};
+61 + use a2a_protocol_server::push::{PushConfigCipher, PushConfigStore};
+   |
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/stores/custom.md - page_book_src_building_agents_stores_custom (line 127) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::PostgresPushConfigStore`
+   --> src/../pages/book/src/building-agents/stores/custom.md:154:5
+    |
+154 | use a2a_protocol_server::PostgresPushConfigStore;
+    |     ^^^^^^^^^^^^^^^^^^^^^-----------------------
+    |                          |
+    |                          no `PostgresPushConfigStore` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:260:16
+    |
+259 | #[cfg(feature = "postgres")]
+    |       -------------------- the item is gated behind the `postgres` feature
+260 | pub use push::{PostgresPushConfigStore, TenantAwarePostgresPushConfigStore};
+    |                ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/stores/postgres.md - page_book_src_building_agents_stores_postgres (line 53) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::store::PostgresTaskStore`
+   --> src/../pages/book/src/building-agents/stores/postgres.md:56:5
+    |
+ 56 | use a2a_protocol_server::store::PostgresTaskStore;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^-----------------
+    |                                 |
+    |                                 no `PostgresTaskStore` in `store`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/store/mod.rs:136:25
+    |
+135 | #[cfg(feature = "postgres")]
+    |       -------------------- the item is gated behind the `postgres` feature
+136 | pub use postgres_store::PostgresTaskStore;
+    |                         ^^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/stores/postgres.md - page_book_src_building_agents_stores_postgres (line 18) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::store::PostgresTaskStore`
+   --> src/../pages/book/src/building-agents/stores/postgres.md:31:5
+    |
+ 31 | use a2a_protocol_server::store::PostgresTaskStore;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^-----------------
+    |                                 |
+    |                                 no `PostgresTaskStore` in `store`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/store/mod.rs:136:25
+    |
+135 | #[cfg(feature = "postgres")]
+    |       -------------------- the item is gated behind the `postgres` feature
+136 | pub use postgres_store::PostgresTaskStore;
+    |                         ^^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/stores/sqlite.md - page_book_src_building_agents_stores_sqlite (line 15) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::store::SqliteTaskStore`
+   --> src/../pages/book/src/building-agents/stores/sqlite.md:18:5
+    |
+ 18 | use a2a_protocol_server::store::SqliteTaskStore;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^---------------
+    |                                 |
+    |                                 no `SqliteTaskStore` in `store`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/store/mod.rs:123:23
+    |
+122 | #[cfg(feature = "sqlite")]
+    |       ------------------ the item is gated behind the `sqlite` feature
+123 | pub use sqlite_store::SqliteTaskStore;
+    |                       ^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/stores/tenants.md - page_book_src_building_agents_stores_tenants (line 65) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::store::TenantAwareSqliteTaskStore`
+   --> src/../pages/book/src/building-agents/stores/tenants.md:68:5
+    |
+ 68 | use a2a_protocol_server::store::TenantAwareSqliteTaskStore;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^--------------------------
+    |                                 |
+    |                                 no `TenantAwareSqliteTaskStore` in `store`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/store/mod.rs:125:30
+    |
+124 | #[cfg(feature = "sqlite")]
+    |       ------------------ the item is gated behind the `sqlite` feature
+125 | pub use tenant_sqlite_store::TenantAwareSqliteTaskStore;
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: a similar name exists in the module
+    |
+ 68 - use a2a_protocol_server::store::TenantAwareSqliteTaskStore;
+ 68 + use a2a_protocol_server::store::TenantAwareInMemoryTaskStore;
+    |
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/tool-loop.md - page_book_src_building_agents_tool_loop (line 37) stdout ----
+error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+  --> src/../pages/book/src/building-agents/tool-loop.md:43:31
+   |
+43 | use a2a_protocol_sdk::server::tool_loop::{
+   |                               ^^^^^^^^^ could not find `tool_loop` in `server`
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/tool-loop/models.md - page_book_src_building_agents_tool_loop_models (line 16) stdout ----
+error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+  --> src/../pages/book/src/building-agents/tool-loop/models.md:19:31
+   |
+19 | use a2a_protocol_sdk::server::tool_loop::OpenAiChatModel;
+   |                               ^^^^^^^^^ could not find `tool_loop` in `server`
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/tool-loop/models.md - page_book_src_building_agents_tool_loop_models (line 94) stdout ----
+error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+  --> src/../pages/book/src/building-agents/tool-loop/models.md:98:31
+   |
+98 | use a2a_protocol_sdk::server::tool_loop::{
+   |                               ^^^^^^^^^ could not find `tool_loop` in `server`
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/tool-loop/running.md - page_book_src_building_agents_tool_loop_running (line 13) stdout ----
+error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+  --> src/../pages/book/src/building-agents/tool-loop/running.md:14:31
+   |
+14 | use a2a_protocol_sdk::server::tool_loop::{OpenAiChatModel, ToolLoop, ToolSet};
+   |                               ^^^^^^^^^ could not find `tool_loop` in `server`
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/tool-loop/running.md - page_book_src_building_agents_tool_loop_running (line 103) stdout ----
+error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+   --> src/../pages/book/src/building-agents/tool-loop/running.md:105:31
+    |
+105 | use a2a_protocol_sdk::server::tool_loop::{OpenAiChatModel, ToolLoop, ToolSet};
+    |                               ^^^^^^^^^ could not find `tool_loop` in `server`
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/tool-loop/tools.md - page_book_src_building_agents_tool_loop_tools (line 100) stdout ----
+error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+   --> src/../pages/book/src/building-agents/tool-loop/tools.md:103:31
+    |
+103 | use a2a_protocol_sdk::server::tool_loop::{Tool, ToolError, ToolInvocation};
+    |                               ^^^^^^^^^ could not find `tool_loop` in `server`
+
+error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+   --> src/../pages/book/src/building-agents/tool-loop/tools.md:126:31
+    |
+126 | use a2a_protocol_sdk::server::tool_loop::ToolSet;
+    |                               ^^^^^^^^^ could not find `tool_loop` in `server`
+
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/tool-loop/tools.md - page_book_src_building_agents_tool_loop_tools (line 160) stdout ----
+error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+   --> src/../pages/book/src/building-agents/tool-loop/tools.md:161:31
+    |
+161 | use a2a_protocol_sdk::server::tool_loop::{OpenAiChatModel, ToolLoop, ToolSet};
+    |                               ^^^^^^^^^ could not find `tool_loop` in `server`
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/building-agents/tool-loop/tools.md - page_book_src_building_agents_tool_loop_tools (line 27) stdout ----
+error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+  --> src/../pages/book/src/building-agents/tool-loop/tools.md:31:31
+   |
+31 | use a2a_protocol_sdk::server::tool_loop::{Tool, ToolError, ToolInvocation};
+   |                               ^^^^^^^^^ could not find `tool_loop` in `server`
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/client/builder/grpc.md - page_book_src_client_builder_grpc (line 21) stdout ----
+error[E0432]: unresolved import `a2a_protocol_client::GrpcTransport`
+   --> src/../pages/book/src/client/builder/grpc.md:25:5
+    |
+ 25 | use a2a_protocol_client::GrpcTransport;
+    |     ^^^^^^^^^^^^^^^^^^^^^-------------
+    |                          |
+    |                          no `GrpcTransport` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-client-0.16.0/src/lib.rs:178:20
+    |
+177 | #[cfg(feature = "grpc")]
+    |       ---------------- the item is gated behind the `grpc` feature
+178 | pub use transport::GrpcTransport;
+    |                    ^^^^^^^^^^^^^
+help: a similar name exists in the module
+    |
+ 25 - use a2a_protocol_client::GrpcTransport;
+ 25 + use a2a_protocol_client::RestTransport;
+    |
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/client/builder/grpc.md - page_book_src_client_builder_grpc (line 37) stdout ----
+error[E0432]: unresolved import `a2a_protocol_client::transport::grpc`
+  --> src/../pages/book/src/client/builder/grpc.md:40:37
+   |
+40 | use a2a_protocol_client::transport::grpc::{GrpcTransport, GrpcTransportConfig};
+   |                                     ^^^^ could not find `grpc` in `transport`
+   |
+note: found an item that was configured out
+  --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-client-0.16.0/src/transport/mod.rs:30:9
+   |
+29 | #[cfg(feature = "grpc")]
+   |       ---------------- the item is gated behind the `grpc` feature
+30 | pub mod grpc;
+   |         ^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/client/delegation.md - page_book_src_client_delegation (line 344) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::store::PostgresLeaseStore`
+   --> src/../pages/book/src/client/delegation.md:349:5
+    |
+349 | use a2a_protocol_server::store::PostgresLeaseStore;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^------------------
+    |                                 |
+    |                                 no `PostgresLeaseStore` in `store`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/store/mod.rs:132:16
+    |
+131 | #[cfg(feature = "postgres")]
+    |       -------------------- the item is gated behind the `postgres` feature
+132 | pub use lease::PostgresLeaseStore;
+    |                ^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/concepts/agent-cards/local-discovery.md - page_book_src_concepts_agent_cards_local_discovery (line 14) stdout ----
+error[E0432]: unresolved import `a2a_protocol_discovery`
+  --> src/../pages/book/src/concepts/agent-cards/local-discovery.md:16:5
+   |
+16 | use a2a_protocol_discovery::{Advertisement, Announcer, Scheme};
+   |     ^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `a2a_protocol_discovery`
+   |
+help: there is a crate or module with a similar name
+   |
+16 - use a2a_protocol_discovery::{Advertisement, Announcer, Scheme};
+16 + use a2a_protocol_server::{Advertisement, Announcer, Scheme};
+   |
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/concepts/agent-cards/local-discovery.md - page_book_src_concepts_agent_cards_local_discovery (line 29) stdout ----
+error[E0432]: unresolved import `a2a_protocol_discovery`
+  --> src/../pages/book/src/concepts/agent-cards/local-discovery.md:32:5
+   |
+32 | use a2a_protocol_discovery::{discover, Browser, DiscoveryEvent};
+   |     ^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `a2a_protocol_discovery`
+   |
+help: there is a crate or module with a similar name
+   |
+32 - use a2a_protocol_discovery::{discover, Browser, DiscoveryEvent};
+32 + use a2a_protocol_server::{discover, Browser, DiscoveryEvent};
+   |
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/concepts/transport-layers/grpc.md - page_book_src_concepts_transport_layers_grpc (line 189) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::dispatch::grpc`
+   --> src/../pages/book/src/concepts/transport-layers/grpc.md:192:36
+    |
+192 | use a2a_protocol_server::dispatch::grpc::{
+    |                                    ^^^^ could not find `grpc` in `dispatch`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/dispatch/mod.rs:16:9
+    |
+ 15 | #[cfg(feature = "grpc")]
+    |       ---------------- the item is gated behind the `grpc` feature
+ 16 | pub mod grpc;
+    |         ^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/concepts/transport-layers/grpc.md - page_book_src_concepts_transport_layers_grpc (line 128) stdout ----
+error[E0432]: unresolved import `a2a_protocol_client::transport::grpc`
+   --> src/../pages/book/src/concepts/transport-layers/grpc.md:133:5
+    |
+133 | use a2a_protocol_client::transport::grpc;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^----
+    |                                     |
+    |                                     no `grpc` in `transport`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-client-0.16.0/src/transport/mod.rs:30:9
+    |
+ 29 | #[cfg(feature = "grpc")]
+    |       ---------------- the item is gated behind the `grpc` feature
+ 30 | pub mod grpc;
+    |         ^^^^
+
+error[E0599]: no method named `with_grpc_tls_config` found for struct `ClientBuilder` in the current scope
+   --> src/../pages/book/src/concepts/transport-layers/grpc.md:138:6
+    |
+137 |   let client = ClientBuilder::from_card(&card)?
+    |  ______________-
+138 | |     .with_grpc_tls_config(tls)
+    | |_____-^^^^^^^^^^^^^^^^^^^^
+    |
+help: there is a method `with_tls_config` with a similar name
+    |
+138 -     .with_grpc_tls_config(tls)
+138 +     .with_tls_config(tls)
+    |
+
+error: aborting due to 2 previous errors
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/concepts/transport-layers/grpc.md - page_book_src_concepts_transport_layers_grpc (line 89) stdout ----
+error[E0599]: no method named `build_grpc` found for struct `ClientBuilder` in the current scope
+  --> src/../pages/book/src/concepts/transport-layers/grpc.md:97:6
+   |
+95 |   let client = ClientBuilder::from_card(&card)?
+   |  ______________-
+96 | |     .with_grpc_keep_alive(Duration::from_secs(30), Duration::from_secs(10))
+97 | |     .build_grpc()
+   | |_____-^^^^^^^^^^
+   |
+help: there is a method `build` with a similar name
+   |
+97 -     .build_grpc()
+97 +     .build()
+   |
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0599`.
+Couldn't compile the test.
+---- src/../pages/book/src/concepts/transport-layers/websocket.md - page_book_src_concepts_transport_layers_websocket (line 47) stdout ----
+error[E0432]: unresolved imports `a2a_protocol_client::WebSocketTransport`, `a2a_protocol_client::WebSocketTransportConfig`
+   --> src/../pages/book/src/concepts/transport-layers/websocket.md:52:27
+    |
+ 52 | use a2a_protocol_client::{WebSocketTransport, WebSocketTransportConfig};
+    |                           ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^ no `WebSocketTransportConfig` in the root
+    |                           |
+    |                           no `WebSocketTransport` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-client-0.16.0/src/lib.rs:181:21
+    |
+180 | #[cfg(feature = "websocket")]
+    |       --------------------- the item is gated behind the `websocket` feature
+181 | pub use transport::{WebSocketTransport, WebSocketTransportConfig};
+    |                     ^^^^^^^^^^^^^^^^^^
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-client-0.16.0/src/lib.rs:181:41
+    |
+180 | #[cfg(feature = "websocket")]
+    |       --------------------- the item is gated behind the `websocket` feature
+181 | pub use transport::{WebSocketTransport, WebSocketTransportConfig};
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/concepts/transport-layers/grpc.md - page_book_src_concepts_transport_layers_grpc (line 53) stdout ----
+error[E0432]: unresolved import `a2a_protocol_client::transport::grpc`
+  --> src/../pages/book/src/concepts/transport-layers/grpc.md:71:37
+   |
+71 | use a2a_protocol_client::transport::grpc::{Certificate, ClientTlsConfig};
+   |                                     ^^^^ could not find `grpc` in `transport`
+   |
+note: found an item that was configured out
+  --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-client-0.16.0/src/transport/mod.rs:30:9
+   |
+29 | #[cfg(feature = "grpc")]
+   |       ---------------- the item is gated behind the `grpc` feature
+30 | pub mod grpc;
+   |         ^^^^
+
+error[E0599]: no method named `build_grpc` found for struct `ClientBuilder` in the current scope
+  --> src/../pages/book/src/concepts/transport-layers/grpc.md:60:47
+   |
+60 | let client = ClientBuilder::from_card(&card)?.build_grpc().await?;
+   |                                               ^^^^^^^^^^
+   |
+help: there is a method `build` with a similar name
+   |
+60 - let client = ClientBuilder::from_card(&card)?.build_grpc().await?;
+60 + let client = ClientBuilder::from_card(&card)?.build().await?;
+   |
+
+error[E0599]: no method named `build_grpc` found for struct `ClientBuilder` in the current scope
+  --> src/../pages/book/src/concepts/transport-layers/grpc.md:66:6
+   |
+64 |   let client = ClientBuilder::from_card(&card)?
+   |  ______________-
+65 | |     .with_grpc_bare_address_scheme(GrpcBareAddressScheme::Http)
+66 | |     .build_grpc()
+   | |_____-^^^^^^^^^^
+   |
+help: there is a method `build` with a similar name
+   |
+66 -     .build_grpc()
+66 +     .build()
+   |
+
+error[E0599]: no method named `with_grpc_tls_config` found for struct `ClientBuilder` in the current scope
+  --> src/../pages/book/src/concepts/transport-layers/grpc.md:77:6
+   |
+76 |   let client = ClientBuilder::from_card(&card)?
+   |  ______________-
+77 | |     .with_grpc_tls_config(tls)
+   | |_____-^^^^^^^^^^^^^^^^^^^^
+   |
+help: there is a method `with_tls_config` with a similar name
+   |
+77 -     .with_grpc_tls_config(tls)
+77 +     .with_tls_config(tls)
+   |
+
+error: aborting due to 4 previous errors
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 262) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::audit`
+   --> src/../pages/book/src/deployment/audit.md:263:26
+    |
+263 | use a2a_protocol_server::audit::{AuditLog, AuditRetention};
+    |                          ^^^^^ could not find `audit` in `a2a_protocol_server`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:119:9
+    |
+118 | #[cfg(feature = "audit")]
+    |       ----------------- the item is gated behind the `audit` feature
+119 | pub mod audit;
+    |         ^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 187) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::audit`
+   --> src/../pages/book/src/deployment/audit.md:188:26
+    |
+188 | use a2a_protocol_server::audit::AuditLog;
+    |                          ^^^^^ could not find `audit` in `a2a_protocol_server`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:119:9
+    |
+118 | #[cfg(feature = "audit")]
+    |       ----------------- the item is gated behind the `audit` feature
+119 | pub mod audit;
+    |         ^^^^^
+
+warning: method call on a diverging inference variable
+   --> src/../pages/book/src/deployment/audit.md:193:16
+    |
+193 | assert!(report.is_intact(), "{:?}", report.failure);
+    |                ^^^^^^^^^
+    |
+    = help: consider providing a type annotation
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #156047 <https://github.com/rust-lang/rust/issues/156047>
+    = note: `#[warn(method_call_on_diverging_infer_var)]` (part of `#[warn(future_incompatible)]`) on by default
+
+error[E0599]: no method named `is_intact` found for type `!` in the current scope
+   --> src/../pages/book/src/deployment/audit.md:193:16
+    |
+193 | assert!(report.is_intact(), "{:?}", report.failure);
+    |                ^^^^^^^^^ method not found in `!`
+
+error[E0609]: no field `failure` on type `!`
+   --> src/../pages/book/src/deployment/audit.md:193:44
+    |
+193 | assert!(report.is_intact(), "{:?}", report.failure);
+    |                                            ^^^^^^^ unknown field
+
+error[E0609]: no field `records` on type `!`
+   --> src/../pages/book/src/deployment/audit.md:196:12
+    |
+196 |     report.records, report.signed_through, report.unsigned_tail()
+    |            ^^^^^^^ unknown field
+
+error[E0609]: no field `signed_through` on type `!`
+   --> src/../pages/book/src/deployment/audit.md:196:28
+    |
+196 |     report.records, report.signed_through, report.unsigned_tail()
+    |                            ^^^^^^^^^^^^^^ unknown field
+
+error[E0599]: no method named `unsigned_tail` found for type `!` in the current scope
+   --> src/../pages/book/src/deployment/audit.md:196:51
+    |
+196 |     report.records, report.signed_through, report.unsigned_tail()
+    |                                                   ^^^^^^^^^^^^^ method not found in `!`
+
+error: aborting due to 6 previous errors; 1 warning emitted
+
+Some errors have detailed explanations: E0432, E0599, E0609.
+For more information about an error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 126) stdout ----
+error[E0433]: cannot find `audit` in `a2a_protocol_server`
+   --> src/../pages/book/src/deployment/audit.md:142:26
+    |
+142 | use a2a_protocol_server::audit::record::{CheckpointSigner, SigningAlg};
+    |                          ^^^^^ could not find `audit` in `a2a_protocol_server`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:119:9
+    |
+118 | #[cfg(feature = "audit")]
+    |       ----------------- the item is gated behind the `audit` feature
+119 | pub mod audit;
+    |         ^^^^^
+
+error[E0432]: unresolved import `a2a_protocol_server::audit`
+   --> src/../pages/book/src/deployment/audit.md:141:26
+    |
+141 | use a2a_protocol_server::audit::{AuditLog, SqliteAuditStore};
+    |                          ^^^^^ could not find `audit` in `a2a_protocol_server`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:119:9
+    |
+118 | #[cfg(feature = "audit")]
+    |       ----------------- the item is gated behind the `audit` feature
+119 | pub mod audit;
+    |         ^^^^^
+
+error[E0599]: no variant, associated function, or constant named `Auditable` found for enum `Profile` in the current scope
+   --> src/../pages/book/src/deployment/audit.md:154:28
+    |
+154 |     .with_profile(Profile::Auditable(Arc::new(log)))
+    |                            ^^^^^^^^^ variant, associated function, or constant not found in `Profile`
+
+error: aborting due to 3 previous errors
+
+Some errors have detailed explanations: E0432, E0433, E0599.
+For more information about an error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 302) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::audit`
+   --> src/../pages/book/src/deployment/audit.md:304:26
+    |
+304 | use a2a_protocol_server::audit::{AuditLog, AuditPrivacy, HMAC_KEY_LEN, InMemoryAuditStore};
+    |                          ^^^^^ could not find `audit` in `a2a_protocol_server`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:119:9
+    |
+118 | #[cfg(feature = "audit")]
+    |       ----------------- the item is gated behind the `audit` feature
+119 | pub mod audit;
+    |         ^^^^^
+
+error[E0432]: unresolved import `a2a_protocol_server::store::encrypted`
+   --> src/../pages/book/src/deployment/audit.md:305:33
+    |
+305 | use a2a_protocol_server::store::encrypted::{AES_256_KEY_LEN, Aes256GcmCipher};
+    |                                 ^^^^^^^^^ could not find `encrypted` in `store`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/store/mod.rs:14:9
+    |
+ 13 | #[cfg(feature = "encryption")]
+    |       ---------------------- the item is gated behind the `encryption` feature
+ 14 | pub mod encrypted;
+    |         ^^^^^^^^^
+
+warning: method call on a diverging inference variable
+   --> src/../pages/book/src/deployment/audit.md:315:30
+    |
+315 | if let Some(first) = records.first() {
+    |                              ^^^^^
+    |
+    = help: consider providing a type annotation
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #156047 <https://github.com/rust-lang/rust/issues/156047>
+    = note: `#[warn(method_call_on_diverging_infer_var)]` (part of `#[warn(future_incompatible)]`) on by default
+
+error[E0599]: no method named `first` found for type `!` in the current scope
+   --> src/../pages/book/src/deployment/audit.md:315:30
+    |
+315 | if let Some(first) = records.first() {
+    |                              ^^^^^ method not found in `!`
+
+error: aborting due to 3 previous errors; 1 warning emitted
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 397) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::audit`
+   --> src/../pages/book/src/deployment/audit.md:399:26
+    |
+399 | use a2a_protocol_server::audit::{AuditLog, InMemoryAuditStore};
+    |                          ^^^^^ could not find `audit` in `a2a_protocol_server`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:119:9
+    |
+118 | #[cfg(feature = "audit")]
+    |       ----------------- the item is gated behind the `audit` feature
+119 | pub mod audit;
+    |         ^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 360) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::audit`
+   --> src/../pages/book/src/deployment/audit.md:361:26
+    |
+361 | use a2a_protocol_server::audit::{AuditLog, Erased};
+    |                          ^^^^^ could not find `audit` in `a2a_protocol_server`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:119:9
+    |
+118 | #[cfg(feature = "audit")]
+    |       ----------------- the item is gated behind the `audit` feature
+119 | pub mod audit;
+    |         ^^^^^
+
+error[E0432]: unresolved import `a2a_protocol_server::store::TenantAwareSqliteTaskStore`
+   --> src/../pages/book/src/deployment/audit.md:362:51
+    |
+362 | use a2a_protocol_server::store::{RetentionPolicy, TenantAwareSqliteTaskStore};
+    |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^ no `TenantAwareSqliteTaskStore` in `store`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/store/mod.rs:125:30
+    |
+124 | #[cfg(feature = "sqlite")]
+    |       ------------------ the item is gated behind the `sqlite` feature
+125 | pub use tenant_sqlite_store::TenantAwareSqliteTaskStore;
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: a similar name exists in the module
+    |
+362 - use a2a_protocol_server::store::{RetentionPolicy, TenantAwareSqliteTaskStore};
+362 + use a2a_protocol_server::store::{RetentionPolicy, TenantAwareInMemoryTaskStore};
+    |
+
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/horizontal-scaling/rate-limiting.md - page_book_src_deployment_horizontal_scaling_rate_limiting (line 17) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::PostgresRateLimitCounter`
+   --> src/../pages/book/src/deployment/horizontal-scaling/rate-limiting.md:19:27
+    |
+ 19 | use a2a_protocol_server::{PostgresRateLimitCounter, RateLimitConfig, RateLimitInterceptor};
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^ no `PostgresRateLimitCounter` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:230:21
+    |
+229 | #[cfg(feature = "postgres")]
+    |       -------------------- the item is gated behind the `postgres` feature
+230 | pub use rate_limit::PostgresRateLimitCounter;
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^
+help: a similar name exists in the module
+    |
+ 19 - use a2a_protocol_server::{PostgresRateLimitCounter, RateLimitConfig, RateLimitInterceptor};
+ 19 + use a2a_protocol_server::{RateLimitCounter, RateLimitConfig, RateLimitInterceptor};
+    |
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 38) stdout ----
+error[E0433]: cannot find `audit` in `a2a_protocol_server`
+   --> src/../pages/book/src/deployment/audit.md:54:26
+    |
+ 54 | use a2a_protocol_server::audit::record::{CheckpointSigner, SigningAlg};
+    |                          ^^^^^ could not find `audit` in `a2a_protocol_server`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:119:9
+    |
+118 | #[cfg(feature = "audit")]
+    |       ----------------- the item is gated behind the `audit` feature
+119 | pub mod audit;
+    |         ^^^^^
+
+error[E0432]: unresolved import `a2a_protocol_server::audit`
+   --> src/../pages/book/src/deployment/audit.md:53:26
+    |
+ 53 | use a2a_protocol_server::audit::{AuditLog, SqliteAuditStore};
+    |                          ^^^^^ could not find `audit` in `a2a_protocol_server`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:119:9
+    |
+118 | #[cfg(feature = "audit")]
+    |       ----------------- the item is gated behind the `audit` feature
+119 | pub mod audit;
+    |         ^^^^^
+
+error[E0599]: no method named `with_audit` found for struct `RequestHandlerBuilder` in the current scope
+  --> src/../pages/book/src/deployment/audit.md:77:6
+   |
+72 |   let handler = RequestHandlerBuilder::new(MyAgent)
+   |  _______________-
+73 | |     .with_agent_card(card())
+74 | |     .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
+75 | |         ("token-for-billing-agent", "billing-agent"),
+76 | |     ]))
+77 | |     .with_audit(Arc::clone(&log))
+   | |     -^^^^^^^^^^ method not found in `RequestHandlerBuilder`
+   | |_____|
+   |
+
+error: aborting due to 3 previous errors
+
+Some errors have detailed explanations: E0432, E0433, E0599.
+For more information about an error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/horizontal-scaling/sustained-load.md - page_book_src_deployment_horizontal_scaling_sustained_load (line 73) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::store::PostgresTaskStore`
+   --> src/../pages/book/src/deployment/horizontal-scaling/sustained-load.md:74:34
+    |
+ 74 | use a2a_protocol_server::store::{PostgresTaskStore, RetentionPolicy};
+    |                                  ^^^^^^^^^^^^^^^^^ no `PostgresTaskStore` in `store`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/store/mod.rs:136:25
+    |
+135 | #[cfg(feature = "postgres")]
+    |       -------------------- the item is gated behind the `postgres` feature
+136 | pub use postgres_store::PostgresTaskStore;
+    |                         ^^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/horizontal-scaling/shared-stores.md - page_book_src_deployment_horizontal_scaling_shared_stores (line 13) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::push::PostgresPushConfigStore`
+  --> src/../pages/book/src/deployment/horizontal-scaling/shared-stores.md:21:5
+   |
+21 | use a2a_protocol_server::push::PostgresPushConfigStore;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^-----------------------
+   |                                |
+   |                                no `PostgresPushConfigStore` in `push`
+   |
+note: found an item that was configured out
+  --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/push/mod.rs:48:32
+   |
+47 | #[cfg(feature = "postgres")]
+   |       -------------------- the item is gated behind the `postgres` feature
+48 | pub use postgres_config_store::PostgresPushConfigStore;
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0432]: unresolved import `a2a_protocol_server::store::PostgresTaskStore`
+   --> src/../pages/book/src/deployment/horizontal-scaling/shared-stores.md:22:5
+    |
+ 22 | use a2a_protocol_server::store::PostgresTaskStore;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^-----------------
+    |                                 |
+    |                                 no `PostgresTaskStore` in `store`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/store/mod.rs:136:25
+    |
+135 | #[cfg(feature = "postgres")]
+    |       -------------------- the item is gated behind the `postgres` feature
+136 | pub use postgres_store::PostgresTaskStore;
+    |                         ^^^^^^^^^^^^^^^^^
+
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/oversight.md - page_book_src_deployment_oversight (line 151) stdout ----
+error[E0432]: unresolved import `a2a_protocol_types::approval::action_digest`
+   --> src/../pages/book/src/deployment/oversight.md:154:53
+    |
+154 | use a2a_protocol_types::approval::{ApprovalRequest, action_digest};
+    |                                                     ^^^^^^^^^^^^^ no `action_digest` in `approval`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0/src/approval.rs:192:8
+    |
+191 | #[cfg(feature = "signing")]
+    |       ------------------- the item is gated behind the `signing` feature
+192 | pub fn action_digest<T: Serialize>(action: &T) -> A2aResult<String> {
+    |        ^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/production.md - page_book_src_deployment_production (line 50) stdout ----
+error[E0432]: unresolved import `a2a_protocol_types::provenance::ContentSigner`
+   --> src/../pages/book/src/deployment/production.md:58:5
+    |
+ 58 | use a2a_protocol_types::provenance::ContentSigner;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-------------
+    |                                     |
+    |                                     no `ContentSigner` in `provenance`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0/src/provenance.rs:185:16
+    |
+184 | #[cfg(feature = "signing")]
+    |       ------------------- the item is gated behind the `signing` feature
+185 | pub use sign::{ContentSigner, sign_content, verify_content};
+    |                ^^^^^^^^^^^^^
+help: a similar name exists in the module
+    |
+ 58 - use a2a_protocol_types::provenance::ContentSigner;
+ 58 + use a2a_protocol_types::provenance::ContentSignature;
+    |
+
+error[E0599]: no method named `with_content_signer` found for struct `RequestHandlerBuilder` in the current scope
+  --> src/../pages/book/src/deployment/production.md:80:10
+   |
+74 |       let handler = RequestHandlerBuilder::new(Agent)
+   |  ___________________-
+75 | |         .with_agent_card(card)
+76 | |         .with_profile(Profile::Production)
+77 | |         .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([("token", "caller")]))
+78 | |         .with_halt_store(InMemoryHaltStore::new())
+79 | |         .with_lease_store(InMemoryLeaseStore::new())
+80 | |         .with_content_signer(ContentSigner::ed25519("agent-2026-10", signing_key_pkcs8)?)
+   | |_________-^^^^^^^^^^^^^^^^^^^
+   |
+help: there is a method `with_context` with a similar name
+   |
+80 -         .with_content_signer(ContentSigner::ed25519("agent-2026-10", signing_key_pkcs8)?)
+80 +         .with_context(ContentSigner::ed25519("agent-2026-10", signing_key_pkcs8)?)
+   |
+
+error: aborting due to 2 previous errors
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 111) stdout ----
+error[E0432]: unresolved imports `a2a_protocol_types::provenance::ContentSigner`, `a2a_protocol_types::provenance::sign_content`
+   --> src/../pages/book/src/deployment/provenance.md:114:38
+    |
+114 | use a2a_protocol_types::provenance::{ContentSigner, mark_ai_generated, sign_content};
+    |                                      ^^^^^^^^^^^^^                     ^^^^^^^^^^^^ no `sign_content` in `provenance`
+    |                                      |
+    |                                      no `ContentSigner` in `provenance`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0/src/provenance.rs:185:16
+    |
+184 | #[cfg(feature = "signing")]
+    |       ------------------- the item is gated behind the `signing` feature
+185 | pub use sign::{ContentSigner, sign_content, verify_content};
+    |                ^^^^^^^^^^^^^
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0/src/provenance.rs:185:31
+    |
+184 | #[cfg(feature = "signing")]
+    |       ------------------- the item is gated behind the `signing` feature
+185 | pub use sign::{ContentSigner, sign_content, verify_content};
+    |                               ^^^^^^^^^^^^
+help: a similar name exists in the module
+    |
+114 - use a2a_protocol_types::provenance::{ContentSigner, mark_ai_generated, sign_content};
+114 + use a2a_protocol_types::provenance::{ContentSignature, mark_ai_generated, sign_content};
+    |
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 153) stdout ----
+error[E0432]: unresolved import `a2a_protocol_types::provenance::ContentSigner`
+   --> src/../pages/book/src/deployment/provenance.md:155:5
+    |
+155 | use a2a_protocol_types::provenance::ContentSigner;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-------------
+    |                                     |
+    |                                     no `ContentSigner` in `provenance`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0/src/provenance.rs:185:16
+    |
+184 | #[cfg(feature = "signing")]
+    |       ------------------- the item is gated behind the `signing` feature
+185 | pub use sign::{ContentSigner, sign_content, verify_content};
+    |                ^^^^^^^^^^^^^
+help: a similar name exists in the module
+    |
+155 - use a2a_protocol_types::provenance::ContentSigner;
+155 + use a2a_protocol_types::provenance::ContentSignature;
+    |
+
+error[E0599]: no method named `with_content_signer` found for struct `RequestHandlerBuilder` in the current scope
+   --> src/../pages/book/src/deployment/provenance.md:162:6
+    |
+160 |   let handler = RequestHandlerBuilder::new(Agent)
+    |  _______________-
+161 | |     .without_agent_card()
+162 | |     .with_content_signer(ContentSigner::ed25519("agent-2026-10", pkcs8)?)
+    | |_____-^^^^^^^^^^^^^^^^^^^
+    |
+help: there is a method `with_context` with a similar name
+    |
+162 -     .with_content_signer(ContentSigner::ed25519("agent-2026-10", pkcs8)?)
+162 +     .with_context(ContentSigner::ed25519("agent-2026-10", pkcs8)?)
+    |
+
+error: aborting due to 2 previous errors
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 129) stdout ----
+error[E0432]: unresolved import `a2a_protocol_types::provenance::verify_content`
+   --> src/../pages/book/src/deployment/provenance.md:131:5
+    |
+131 | use a2a_protocol_types::provenance::verify_content;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^--------------
+    |                                     |
+    |                                     no `verify_content` in `provenance`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0/src/provenance.rs:185:45
+    |
+184 | #[cfg(feature = "signing")]
+    |       ------------------- the item is gated behind the `signing` feature
+185 | pub use sign::{ContentSigner, sign_content, verify_content};
+    |                                             ^^^^^^^^^^^^^^
+
+error[E0432]: unresolved import `a2a_protocol_types::signing`
+   --> src/../pages/book/src/deployment/provenance.md:132:25
+    |
+132 | use a2a_protocol_types::signing::Jwks;
+    |                         ^^^^^^^ could not find `signing` in `a2a_protocol_types`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0/src/lib.rs:149:9
+    |
+148 | #[cfg(feature = "signing")]
+    |       ------------------- the item is gated behind the `signing` feature
+149 | pub mod signing;
+    |         ^^^^^^^
+
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/security.md - page_book_src_deployment_security (line 134) stdout ----
+error[E0432]: unresolved import `a2a_protocol_sdk::server::store::encrypted`
+   --> src/../pages/book/src/deployment/security.md:136:38
+    |
+136 | use a2a_protocol_sdk::server::store::encrypted::{Aes256GcmCipher, EncryptedTaskStore};
+    |                                      ^^^^^^^^^ could not find `encrypted` in `store`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/store/mod.rs:14:9
+    |
+ 13 | #[cfg(feature = "encryption")]
+    |       ---------------------- the item is gated behind the `encryption` feature
+ 14 | pub mod encrypted;
+    |         ^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/testing/conformance.md - page_book_src_deployment_testing_conformance (line 100) stdout ----
+error[E0433]: cannot find `conformance` in `a2a_protocol_server`
+   --> src/../pages/book/src/deployment/testing/conformance.md:102:26
+    |
+102 | use a2a_protocol_server::conformance::halt::{check_handlers, check_store};
+    |                          ^^^^^^^^^^^ could not find `conformance` in `a2a_protocol_server`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:166:9
+    |
+165 | #[cfg(feature = "conformance")]
+    |       ----------------------- the item is gated behind the `conformance` feature
+166 | pub mod conformance;
+    |         ^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0433`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/security.md - page_book_src_deployment_security (line 240) stdout ----
+error[E0432]: unresolved import `a2a_protocol_types::signing`
+   --> src/../pages/book/src/deployment/security.md:247:25
+    |
+247 | use a2a_protocol_types::signing::sign_card_es256;
+    |                         ^^^^^^^ could not find `signing` in `a2a_protocol_types`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0/src/lib.rs:149:9
+    |
+148 | #[cfg(feature = "signing")]
+    |       ------------------- the item is gated behind the `signing` feature
+149 | pub mod signing;
+    |         ^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 177) stdout ----
+error[E0432]: unresolved import `a2a_protocol_types::signing`
+   --> src/../pages/book/src/deployment/provenance.md:181:25
+    |
+181 | use a2a_protocol_types::signing::Jwks;
+    |                         ^^^^^^^ could not find `signing` in `a2a_protocol_types`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0/src/lib.rs:149:9
+    |
+148 | #[cfg(feature = "signing")]
+    |       ------------------- the item is gated behind the `signing` feature
+149 | pub mod signing;
+    |         ^^^^^^^
+
+error[E0599]: no method named `with_content_keys` found for struct `RequestHandlerBuilder` in the current scope
+   --> src/../pages/book/src/deployment/provenance.md:196:6
+    |
+194 |   let handler = RequestHandlerBuilder::new(Agent)
+    |  _______________-
+195 | |     .without_agent_card()
+196 | |     .with_content_keys(trusted)
+    | |_____-^^^^^^^^^^^^^^^^^
+    |
+help: there is a method `with_context` with a similar name
+    |
+196 -     .with_content_keys(trusted)
+196 +     .with_context(trusted)
+    |
+
+error: aborting due to 2 previous errors
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 20) stdout ----
+error[E0432]: unresolved import `a2a_protocol_client::jwks`
+   --> src/../pages/book/src/deployment/provenance.md:22:26
+    |
+ 22 | use a2a_protocol_client::jwks::fetch_jwks;
+    |                          ^^^^ could not find `jwks` in `a2a_protocol_client`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-client-0.16.0/src/lib.rs:135:9
+    |
+134 | #[cfg(feature = "signing")]
+    |       ------------------- the item is gated behind the `signing` feature
+135 | pub mod jwks;
+    |         ^^^^
+
+error[E0599]: no method named `with_signature_keys` found for struct `CardFetchOptions` in the current scope
+  --> src/../pages/book/src/deployment/provenance.md:30:43
+   |
+30 | let options = CardFetchOptions::default().with_signature_keys(keys);
+   |                                           ^^^^^^^^^^^^^^^^^^^ method not found in `CardFetchOptions`
+
+error: aborting due to 2 previous errors
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/deployment/testing/conformance.md - page_book_src_deployment_testing_conformance (line 22) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::conformance`
+   --> src/../pages/book/src/deployment/testing/conformance.md:24:5
+    |
+ 24 | use a2a_protocol_server::conformance;
+    |     ^^^^^^^^^^^^^^^^^^^^^-----------
+    |                          |
+    |                          no `conformance` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:166:9
+    |
+165 | #[cfg(feature = "conformance")]
+    |       ----------------------- the item is gated behind the `conformance` feature
+166 | pub mod conformance;
+    |         ^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/examples/resilient-agent.md - page_book_src_examples_resilient_agent (line 117) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::store::SqliteTaskStore`
+   --> src/../pages/book/src/examples/resilient-agent.md:121:5
+    |
+121 | use a2a_protocol_server::store::SqliteTaskStore;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^---------------
+    |                                 |
+    |                                 no `SqliteTaskStore` in `store`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/store/mod.rs:123:23
+    |
+122 | #[cfg(feature = "sqlite")]
+    |       ------------------ the item is gated behind the `sqlite` feature
+123 | pub use sqlite_store::SqliteTaskStore;
+    |                       ^^^^^^^^^^^^^^^
+
+error[E0432]: unresolved import `a2a_protocol_server::SqlitePushConfigStore`
+   --> src/../pages/book/src/examples/resilient-agent.md:122:5
+    |
+122 | use a2a_protocol_server::SqlitePushConfigStore;
+    |     ^^^^^^^^^^^^^^^^^^^^^---------------------
+    |                          |
+    |                          no `SqlitePushConfigStore` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:255:16
+    |
+254 | #[cfg(feature = "sqlite")]
+    |       ------------------ the item is gated behind the `sqlite` feature
+255 | pub use push::{SqlitePushConfigStore, TenantAwareSqlitePushConfigStore};
+    |                ^^^^^^^^^^^^^^^^^^^^^
+help: a similar name exists in the module
+    |
+122 - use a2a_protocol_server::SqlitePushConfigStore;
+122 + use a2a_protocol_server::PushConfigStore;
+    |
+
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/reference/upgrading/0.11-to-0.12.md - page_book_src_reference_upgrading_0_11_to_0_12 (line 149) stdout ----
+error[E0432]: unresolved import `a2a_protocol_client::transport::grpc`
+   --> src/../pages/book/src/reference/upgrading/0.11-to-0.12.md:152:37
+    |
+152 | use a2a_protocol_client::transport::grpc::GrpcTransportConfig;
+    |                                     ^^^^ could not find `grpc` in `transport`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-client-0.16.0/src/transport/mod.rs:30:9
+    |
+ 29 | #[cfg(feature = "grpc")]
+    |       ---------------- the item is gated behind the `grpc` feature
+ 30 | pub mod grpc;
+    |         ^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/reference/upgrading/0.11-to-0.12.md - page_book_src_reference_upgrading_0_11_to_0_12 (line 50) stdout ----
+error[E0432]: unresolved import `a2a_protocol_client::WebSocketTransportConfig`
+   --> src/../pages/book/src/reference/upgrading/0.11-to-0.12.md:52:5
+    |
+ 52 | use a2a_protocol_client::WebSocketTransportConfig;
+    |     ^^^^^^^^^^^^^^^^^^^^^------------------------
+    |                          |
+    |                          no `WebSocketTransportConfig` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-client-0.16.0/src/lib.rs:181:41
+    |
+180 | #[cfg(feature = "websocket")]
+    |       --------------------- the item is gated behind the `websocket` feature
+181 | pub use transport::{WebSocketTransport, WebSocketTransportConfig};
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/reference/upgrading/0.14-to-0.15/agent-cards.md - page_book_src_reference_upgrading_0_14_to_0_15_agent_cards (line 180) stdout ----
+error[E0432]: unresolved import `a2a_protocol_types::signing`
+   --> src/../pages/book/src/reference/upgrading/0.14-to-0.15/agent-cards.md:183:25
+    |
+183 | use a2a_protocol_types::signing::sign_card_es256;
+    |                         ^^^^^^^ could not find `signing` in `a2a_protocol_types`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0/src/lib.rs:149:9
+    |
+148 | #[cfg(feature = "signing")]
+    |       ------------------- the item is gated behind the `signing` feature
+149 | pub mod signing;
+    |         ^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/reference/upgrading/0.14-to-0.15/authentication.md - page_book_src_reference_upgrading_0_14_to_0_15_authentication (line 168) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::store::tenant_sqlite_store`
+   --> src/../pages/book/src/reference/upgrading/0.14-to-0.15/authentication.md:171:33
+    |
+171 | use a2a_protocol_server::store::tenant_sqlite_store::TenantAwareSqliteTaskStore;
+    |                                 ^^^^^^^^^^^^^^^^^^^ could not find `tenant_sqlite_store` in `store`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/store/mod.rs:38:9
+    |
+ 37 | #[cfg(feature = "sqlite")]
+    |       ------------------ the item is gated behind the `sqlite` feature
+ 38 | pub mod tenant_sqlite_store;
+    |         ^^^^^^^^^^^^^^^^^^^
+
+warning: method call on a diverging inference variable
+   --> src/../pages/book/src/reference/upgrading/0.14-to-0.15/authentication.md:174:19
+    |
+174 | let moved = tasks.migrate_caller_keys(caller_keys::bearer_labels()).await?;
+    |                   ^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider providing a type annotation
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
+    = note: for more information, see issue #156047 <https://github.com/rust-lang/rust/issues/156047>
+    = note: `#[warn(method_call_on_diverging_infer_var)]` (part of `#[warn(future_incompatible)]`) on by default
+
+error[E0599]: no method named `migrate_caller_keys` found for type `!` in the current scope
+   --> src/../pages/book/src/reference/upgrading/0.14-to-0.15/authentication.md:174:19
+    |
+174 | let moved = tasks.migrate_caller_keys(caller_keys::bearer_labels()).await?;
+    |                   ^^^^^^^^^^^^^^^^^^^ method not found in `!`
+
+error: aborting due to 2 previous errors; 1 warning emitted
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/reference/upgrading/0.14-to-0.15/authentication.md - page_book_src_reference_upgrading_0_14_to_0_15_authentication (line 214) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::auth::jwt`
+   --> src/../pages/book/src/reference/upgrading/0.14-to-0.15/authentication.md:216:32
+    |
+216 | use a2a_protocol_server::auth::jwt::JwtValidator;
+    |                                ^^^ could not find `jwt` in `auth`
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/auth/mod.rs:69:9
+    |
+ 68 | #[cfg(feature = "auth-jwt")]
+    |       -------------------- the item is gated behind the `auth-jwt` feature
+ 69 | pub mod jwt;
+    |         ^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/reference/upgrading/0.14-to-0.15/wire-and-bindings.md - page_book_src_reference_upgrading_0_14_to_0_15_wire_and_bindings (line 53) stdout ----
+error[E0432]: unresolved import `a2a_protocol_types::proto`
+   --> src/../pages/book/src/reference/upgrading/0.14-to-0.15/wire-and-bindings.md:54:5
+    |
+ 54 | use a2a_protocol_types::proto as pb;
+    |     ^^^^^^^^^^^^^^^^^^^^-----^^^^^^
+    |                         |
+    |                         no `proto` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0/src/lib.rs:141:9
+    |
+140 | #[cfg(feature = "proto")]
+    |       ----------------- the item is gated behind the `proto` feature
+141 | pub mod proto;
+    |         ^^^^^
+
+error[E0609]: no field `field` on type `Infallible`
+  --> src/../pages/book/src/reference/upgrading/0.14-to-0.15/wire-and-bindings.md:59:16
+   |
+59 | assert_eq!(err.field, "task.id");
+   |                ^^^^^ unknown field
+
+error[E0609]: no field `reason` on type `Infallible`
+  --> src/../pages/book/src/reference/upgrading/0.14-to-0.15/wire-and-bindings.md:60:16
+   |
+60 | assert_eq!(err.reason, "missing required field");
+   |                ^^^^^^ unknown field
+
+error: aborting due to 3 previous errors
+
+Some errors have detailed explanations: E0432, E0609.
+For more information about an error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/reference/upgrading/0.15-to-0.16.md - page_book_src_reference_upgrading_0_15_to_0_16 (line 23) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+   --> src/../pages/book/src/reference/upgrading/0.15-to-0.16.md:26:5
+    |
+ 26 | use a2a_protocol_server::WebSocketDispatcher;
+    |     ^^^^^^^^^^^^^^^^^^^^^-------------------
+    |                          |
+    |                          no `WebSocketDispatcher` in the root
+    |
+note: found an item that was configured out
+   --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/lib.rs:213:20
+    |
+212 | #[cfg(feature = "websocket")]
+    |       --------------------- the item is gated behind the `websocket` feature
+213 | pub use dispatch::{WebSocketDispatcher, WebSocketUpgrades};
+    |                    ^^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+---- src/../pages/book/src/reference/upgrading/0.15-to-0.16.md - page_book_src_reference_upgrading_0_15_to_0_16 (line 50) stdout ----
+error[E0432]: unresolved import `a2a_protocol_server::auth::JwtValidator`
+  --> src/../pages/book/src/reference/upgrading/0.15-to-0.16.md:51:5
+   |
+51 | use a2a_protocol_server::auth::JwtValidator;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^------------
+   |                                |
+   |                                no `JwtValidator` in `auth`
+   |
+note: found an item that was configured out
+  --> /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0/src/auth/mod.rs:80:41
+   |
+79 | #[cfg(feature = "auth-jwt")]
+   |       -------------------- the item is gated behind the `auth-jwt` feature
+80 | pub use jwt::{Jwks, JwtAuthInterceptor, JwtValidator, MIN_HS256_SECRET_LEN};
+   |                                         ^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0432`.
+Couldn't compile the test.
+
+failures:
+    src/../pages/book/src/building-agents/authentication/authorization.md - page_book_src_building_agents_authentication_authorization (line 21)
+    src/../pages/book/src/building-agents/authentication/jwt.md - page_book_src_building_agents_authentication_jwt (line 48)
+    src/../pages/book/src/building-agents/authentication/jwt.md - page_book_src_building_agents_authentication_jwt (line 92)
+    src/../pages/book/src/building-agents/dispatchers.md - page_book_src_building_agents_dispatchers (line 39)
+    src/../pages/book/src/building-agents/dispatchers/axum.md - page_book_src_building_agents_dispatchers_axum (line 17)
+    src/../pages/book/src/building-agents/dispatchers/axum.md - page_book_src_building_agents_dispatchers_axum (line 59)
+    src/../pages/book/src/building-agents/dispatchers/grpc.md - page_book_src_building_agents_dispatchers_grpc (line 139)
+    src/../pages/book/src/building-agents/dispatchers/grpc.md - page_book_src_building_agents_dispatchers_grpc (line 18)
+    src/../pages/book/src/building-agents/dispatchers/grpc.md - page_book_src_building_agents_dispatchers_grpc (line 72)
+    src/../pages/book/src/building-agents/dispatchers/websocket.md - page_book_src_building_agents_dispatchers_websocket (line 144)
+    src/../pages/book/src/building-agents/dispatchers/websocket.md - page_book_src_building_agents_dispatchers_websocket (line 23)
+    src/../pages/book/src/building-agents/dispatchers/websocket.md - page_book_src_building_agents_dispatchers_websocket (line 61)
+    src/../pages/book/src/building-agents/push-notifications/storage.md - page_book_src_building_agents_push_notifications_storage (line 57)
+    src/../pages/book/src/building-agents/stores/custom.md - page_book_src_building_agents_stores_custom (line 127)
+    src/../pages/book/src/building-agents/stores/postgres.md - page_book_src_building_agents_stores_postgres (line 18)
+    src/../pages/book/src/building-agents/stores/postgres.md - page_book_src_building_agents_stores_postgres (line 53)
+    src/../pages/book/src/building-agents/stores/sqlite.md - page_book_src_building_agents_stores_sqlite (line 15)
+    src/../pages/book/src/building-agents/stores/tenants.md - page_book_src_building_agents_stores_tenants (line 65)
+    src/../pages/book/src/building-agents/tool-loop.md - page_book_src_building_agents_tool_loop (line 37)
+    src/../pages/book/src/building-agents/tool-loop/models.md - page_book_src_building_agents_tool_loop_models (line 16)
+    src/../pages/book/src/building-agents/tool-loop/models.md - page_book_src_building_agents_tool_loop_models (line 94)
+    src/../pages/book/src/building-agents/tool-loop/running.md - page_book_src_building_agents_tool_loop_running (line 103)
+    src/../pages/book/src/building-agents/tool-loop/running.md - page_book_src_building_agents_tool_loop_running (line 13)
+    src/../pages/book/src/building-agents/tool-loop/tools.md - page_book_src_building_agents_tool_loop_tools (line 100)
+    src/../pages/book/src/building-agents/tool-loop/tools.md - page_book_src_building_agents_tool_loop_tools (line 160)
+    src/../pages/book/src/building-agents/tool-loop/tools.md - page_book_src_building_agents_tool_loop_tools (line 27)
+    src/../pages/book/src/client/builder/grpc.md - page_book_src_client_builder_grpc (line 21)
+    src/../pages/book/src/client/builder/grpc.md - page_book_src_client_builder_grpc (line 37)
+    src/../pages/book/src/client/delegation.md - page_book_src_client_delegation (line 344)
+    src/../pages/book/src/concepts/agent-cards/local-discovery.md - page_book_src_concepts_agent_cards_local_discovery (line 14)
+    src/../pages/book/src/concepts/agent-cards/local-discovery.md - page_book_src_concepts_agent_cards_local_discovery (line 29)
+    src/../pages/book/src/concepts/transport-layers/grpc.md - page_book_src_concepts_transport_layers_grpc (line 128)
+    src/../pages/book/src/concepts/transport-layers/grpc.md - page_book_src_concepts_transport_layers_grpc (line 189)
+    src/../pages/book/src/concepts/transport-layers/grpc.md - page_book_src_concepts_transport_layers_grpc (line 53)
+    src/../pages/book/src/concepts/transport-layers/grpc.md - page_book_src_concepts_transport_layers_grpc (line 89)
+    src/../pages/book/src/concepts/transport-layers/websocket.md - page_book_src_concepts_transport_layers_websocket (line 47)
+    src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 126)
+    src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 187)
+    src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 262)
+    src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 302)
+    src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 360)
+    src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 38)
+    src/../pages/book/src/deployment/audit.md - page_book_src_deployment_audit (line 397)
+    src/../pages/book/src/deployment/horizontal-scaling/rate-limiting.md - page_book_src_deployment_horizontal_scaling_rate_limiting (line 17)
+    src/../pages/book/src/deployment/horizontal-scaling/shared-stores.md - page_book_src_deployment_horizontal_scaling_shared_stores (line 13)
+    src/../pages/book/src/deployment/horizontal-scaling/sustained-load.md - page_book_src_deployment_horizontal_scaling_sustained_load (line 73)
+    src/../pages/book/src/deployment/oversight.md - page_book_src_deployment_oversight (line 151)
+    src/../pages/book/src/deployment/production.md - page_book_src_deployment_production (line 50)
+    src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 111)
+    src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 129)
+    src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 153)
+    src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 177)
+    src/../pages/book/src/deployment/provenance.md - page_book_src_deployment_provenance (line 20)
+    src/../pages/book/src/deployment/security.md - page_book_src_deployment_security (line 134)
+    src/../pages/book/src/deployment/security.md - page_book_src_deployment_security (line 240)
+    src/../pages/book/src/deployment/testing/conformance.md - page_book_src_deployment_testing_conformance (line 100)
+    src/../pages/book/src/deployment/testing/conformance.md - page_book_src_deployment_testing_conformance (line 22)
+    src/../pages/book/src/examples/resilient-agent.md - page_book_src_examples_resilient_agent (line 117)
+    src/../pages/book/src/reference/upgrading/0.11-to-0.12.md - page_book_src_reference_upgrading_0_11_to_0_12 (line 149)
+    src/../pages/book/src/reference/upgrading/0.11-to-0.12.md - page_book_src_reference_upgrading_0_11_to_0_12 (line 50)
+    src/../pages/book/src/reference/upgrading/0.14-to-0.15/agent-cards.md - page_book_src_reference_upgrading_0_14_to_0_15_agent_cards (line 180)
+    src/../pages/book/src/reference/upgrading/0.14-to-0.15/authentication.md - page_book_src_reference_upgrading_0_14_to_0_15_authentication (line 168)
+    src/../pages/book/src/reference/upgrading/0.14-to-0.15/authentication.md - page_book_src_reference_upgrading_0_14_to_0_15_authentication (line 214)
+    src/../pages/book/src/reference/upgrading/0.14-to-0.15/wire-and-bindings.md - page_book_src_reference_upgrading_0_14_to_0_15_wire_and_bindings (line 53)
+    src/../pages/book/src/reference/upgrading/0.15-to-0.16.md - page_book_src_reference_upgrading_0_15_to_0_16 (line 23)
+    src/../pages/book/src/reference/upgrading/0.15-to-0.16.md - page_book_src_reference_upgrading_0_15_to_0_16 (line 50)
+
+test result: FAILED. 270 passed; 66 failed; 4 ignored; 0 measured; 0 filtered out; finished in 72.70s
+
+all doctests ran in 73.21s; merged doctests compilation took 0.49s
+error: doctest failed, to rerun pass `--doc`
+error: 1 target failed:
+    `--doc`
+cargo test --doc exit: 101

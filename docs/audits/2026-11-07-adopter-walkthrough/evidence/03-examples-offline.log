@@ -1,0 +1,155 @@
+##### hello-agent
+--- README curl
+{"jsonrpc":"2.0","id":1,"result":{"task":{"artifacts":[{"artifactId":"4c5b77d2-0063-4640-93a9-e04f869d603f","parts":[{"text":"Hello, Tom!"}]}],"contextId":"66c56d4d-82d3-47b7-ac64-ad16a9c534f4","id":"a9b1bb3a-7fcf-4a13-8060-e7ccc56d1c22","status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-11-07T12:24:11.208Z"}}}}
+--- card
+{"name":"hello-agent","description":"Greets whoever sends it a message","supportedInterfaces":[{"url":"http://127.0.0.1:3000","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"version":"0.0.0","capabilities":{"streaming":true,"extensions":[{"uri":"https://a2a-rust.com/extensions/idempotency/v1","description":"Client-supplied idempotency keys on message/send: a retried send returns the task the first one created instead of starting a second.","required":false},{"uri":"https://a2a-rust.com/extensions/failure/v1","description":"A failed task says why in a form a caller can match on, rather t
+--- GET / (a browser tab)
+HTTP 200
+exit after SIGTERM: 0
+--- stdout
+hello-agent listening on http://127.0.0.1:3000
+--- stderr
+2026-11-07T12:24:11.145711Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=console to print spans
+##### deploy-agent (no database)
+--- GET /health
+HTTP/1.1 200 OK
+content-type: application/json
+a2a-version: 1.0
+content-length: 15
+date: Sat, 07 Nov 2026 12:24:11 GMT
+
+{"status":"ok"}
+--- GET /ready
+HTTP/1.1 200 OK
+content-type: application/json
+a2a-version: 1.0
+content-length: 18
+date: Sat, 07 Nov 2026 12:24:11 GMT
+
+{"status":"ready"}
+--- GET /.well-known/agent-card.json
+HTTP/1.1 200 OK
+content-type: application/json
+access-control-allow-origin: *
+etag: W/"f56ed68082db8c34"
+last-modified: Sat, 07 Nov 2026 12:18:41 GMT
+cache-control: public, max-age=3600
+content-length: 1288
+date: Sat, 07 Nov 2026 12:24:11 GMT
+
+{"name":"deploy-agent","description":"A deployable A2A agent","supportedInterfaces":[{"url":"http://localhost:8080","protocolBinding":"HTTP+JSON","protocolVersion":"1.0"},{"url":"http://localhost:8080","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"version":"0.0.0","capabilities":{"streaming":true,"extensions":[{"uri":"https://a2a-rust.com/extensions/idempotency/v1","description":"Client-supplied idempotency keys on message/send: a retried send returns the task the first one created instead of starting a second.","required":false},{"uri":"https://a2a-rust.com/extensions/failure/v1","description":"A failed task says why in a form a 
+--- POST /message:send (README)
+{"task":{"id":"92fcde56-e89e-4a54-9ba9-80a2a18d9e74","contextId":"7aac9431-1e4a-473e-b574-fbecde04e0b9","status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-11-07T12:24:11.607Z"},"artifacts":[{"artifactId":"greeting","parts":[{"text":"Hello, Ada!"}]}]}}
+--- POST / JSON-RPC
+{"jsonrpc":"2.0","id":1,"result":{"task":{"artifacts":[{"artifactId":"greeting","parts":[{"text":"Hello, Ada!"}]}],"contextId":"46cb7f83-0c3f-4231-b111-09c7fe56c339","id":"e0c9a9f9-799d-46b0-81a6-f2146afa4b4e","status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-11-07T12:24:11.629Z"}}}}
+--- SIGTERM; readiness while draining (3 s)
+/ready during drain: HTTP 503
+/health during drain: HTTP 200
+exit after SIGTERM: 0
+--- stdout
+--- stderr
+2026-11-07T12:24:11.333562Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=console to print spans
+2026-11-07T12:24:11.334888Z  WARN deploy_agent: A2A_DATABASE_URL is unset: tasks are kept in this process's memory, so run one replica, or set A2A_DATABASE_URL to a PostgreSQL database every replica shares
+2026-11-07T12:24:11.345789Z  INFO deploy_agent: deploy-agent serving JSON-RPC and HTTP+JSON listening=0.0.0.0:8080 advertising=http://localhost:8080
+2026-11-07T12:24:11.357249Z  WARN a2a_protocol_server::serve::graceful::plaintext: plaintext listener reason=serving plaintext HTTP on 0.0.0.0:8080, which is not loopback; production deployments MUST use encrypted communication (spec §7.1). Terminate TLS here (Server::with_tls, feature tls-rustls) or in front of this listener; if it is terminated in front, this warning can be ignored
+2026-11-07T12:24:14.640623Z  INFO deploy_agent: drained cleanly, exiting
+--- bad configuration is refused at startup
+PORT=0: exit 1 : 2026-11-07T12:24:14.678424Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=c
+PORT=99999: exit 1 : 2026-11-07T12:24:15.699041Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=c
+PORT=abc: exit 1 : 2026-11-07T12:24:16.746484Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=c
+AGENT_URL=ftp://x: exit 1 : 2026-11-07T12:24:17.706237Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=c
+AGENT_VERSION=a b: exit 1 : 2026-11-07T12:24:18.741871Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=c
+TASK_RETENTION_HOURS=1.5: exit 1 : 2026-11-07T12:24:19.737678Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=c
+##### echo-agent (default run)
+exit: 0 in 2 s
+=== A2A Echo Agent — full-surface demo ===
+
+JSON-RPC  http://127.0.0.1:44057
+HTTP+JSON http://127.0.0.1:45507
+gRPC      127.0.0.1:36649
+WebSocket ws://127.0.0.1:37259
+webhook   http://127.0.0.1:36629/webhook
+
+Discovered 'Echo Agent' v1.0.0 — 4 interface(s), streaming=Some(true) push=Some(true) extended=Some(true)
+
+--- JSONRPC ---
+  [ok]   SendMessage                        task 755cc544-7408-4e5d-a0a8-b6a4f87ae952
+  [ok]   SendStreamingMessage               4 event(s), 0 lag signal(s)
+  [ok]   GetTask                            state Completed
+  [ok]   ListTasks                          2 task(s)
+  [ok]   CancelTask                         refused as expected: protocol error: [-32002] Task cannot be canceled: dead12f1-67fb-4554-bdcd-acc97f08643e
+  [ok]   SubscribeToTask                    3 event(s)
+  [ok]   CreateTaskPushNotificationConfig   config Some("cfb66685-b5de-469a-a28c-13342e650e39")
+  [ok]   ListTaskPushNotificationConfigs    1 config(s)
+  [ok]   GetTaskPushNotificationConfig      url http://127.0.0.1:36629/webhook
+  [ok]   DeleteTaskPushNotificationConfig   deleted
+  [ok]   GetExtendedAgentCard               card 'Echo Agent'
+
+--- HTTP+JSON ---
+  [ok]   SendMessage                        task 7394ae20-3a50-4104-90be-a5f126732e49
+  [ok]   SendStreamingMessage               4 event(s), 0 lag signal(s)
+  [ok]   GetTask                            state Completed
+  [ok]   ListTasks                          6 task(s)
+  [ok]   CancelTask                         refused as expected: protocol error: [-32002] Task cannot be canceled: a41351f2-a545-46d4-9555-43230ba24d81
+  [ok]   SubscribeToTask                    3 event(s)
+  [ok]   CreateTaskPushNotificationConfig   config Some("43233784-c60f-47a3-9400-00d8ac076e21")
+  [ok]   ListTaskPushNotificationConfigs    1 config(s)
+  [ok]   GetTaskPushNotificationConfig      url http://127.0.0.1:36629/webhook
+  [ok]   DeleteTaskPushNotificationConfig   deleted
+  [ok]   GetExtendedAgentCard               card 'Echo Agent'
+
+--- GRPC ---
+  [ok]   SendMessage                        task 3567fc6b-dead-4cc2-916a-77eb2bf5c41d
+  [ok]   SendStreamingMessage               4 event(s), 0 lag signal(s)
+  [ok]   GetTask                            state Completed
+  [ok]   ListTasks                          10 task(s)
+  [ok]   CancelTask                         refused as expected: protocol error: [-32002] Task cannot be canceled: df610967-4362-4c1c-bfb0-93c0db36e440
+  [ok]   SubscribeToTask                    3 event(s)
+  [ok]   CreateTaskPushNotificationConfig   config Some("5db34300-a8a5-4156-b3c2-e7b1fa0b3617")
+  [ok]   ListTaskPushNotificationConfigs    1 config(s)
+  [ok]   GetTaskPushNotificationConfig      url http://127.0.0.1:36629/webhook
+  [ok]   DeleteTaskPushNotificationConfig   deleted
+  [ok]   GetExtendedAgentCard               card 'Echo Agent'
+
+--- WEBSOCKET ---
+  [ok]   SendMessage                        task 290c6989-905e-4b42-bc38-04ec661d4fff
+  [ok]   SendStreamingMessage               4 event(s), 0 lag signal(s)
+  [ok]   GetTask                            state Completed
+  [ok]   ListTasks                          14 task(s)
+  [ok]   CancelTask                         refused as expected: protocol error: [-32002] Task cannot be canceled: a3657054-bb67-42b8-b62c-c06f0d618699
+  [ok]   SubscribeToTask                    3 event(s)
+  [ok]   CreateTaskPushNotificationConfig   config Some("d9d6ba6b-2a3e-4a11-afd7-10bcb4634815")
+  [ok]   ListTaskPushNotificationConfigs    1 config(s)
+  [ok]   GetTaskPushNotificationConfig      url http://127.0.0.1:36629/webhook
+  [ok]   DeleteTaskPushNotificationConfig   deleted
+  [ok]   GetExtendedAgentCard               card 'Echo Agent'
+
+--- counter-tests (calls that must be refused) ---
+  [ok]   GetTask on an unknown id                     refused: TaskNotFound
+  [ok]   CancelTask on an unknown id                  refused: TaskNotFound
+  [ok]   push config against a card without pushNotifications refused: PushNotificationNotSupported
+  [ok]   extended card against a card without extendedAgentCard refused: UnsupportedOperation
+  [ok]   streaming against a card without streaming   refused: protocol error: [-32004] agent does not support streaming (AgentCard.capabilities.streaming is not true)
+
+=== Coverage: every A2A method over every binding ===
+
+METHOD                             JSONRPC    HTTP+JSON     GRPC      WEBSOCKET 
+SendMessage                          ok          ok          ok          ok     
+SendStreamingMessage                 ok          ok          ok          ok     
+GetTask                              ok          ok          ok          ok     
+ListTasks                            ok          ok          ok          ok     
+CancelTask                           ok          ok          ok          ok     
+SubscribeToTask                      ok          ok          ok          ok     
+CreateTaskPushNotificationConfig     ok          ok          ok          ok     
+GetTaskPushNotificationConfig        ok          ok          ok          ok     
+ListTaskPushNotificationConfigs      ok          ok          ok          ok     
+DeleteTaskPushNotificationConfig     ok          ok          ok          ok     
+GetExtendedAgentCard                 ok          ok          ok          ok     
+
+44 exercised, 0 not applicable, 0 missing, of 44 cells
+Rows: the 11 methods `service A2AService` declares in the ratified proto (see a2a_protocol_types::method).
+Columns: 3 spec-named bindings (§9 §10 §11) plus WEBSOCKET, a §12 custom binding this SDK adds.
+
+Every A2A method was exercised over every binding, and every
+counter-test was refused as the specification requires.
+--- stderr

@@ -1,0 +1,210 @@
+   Packaging a2a-protocol-types v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-aefdbbc4b8f3742b2/crates/a2a-protocol-types)
+    Updating crates.io index
+    Packaged 157 files, 1.5MiB (352.2KiB compressed)
+   Packaging a2a-protocol-server v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-aefdbbc4b8f3742b2/crates/a2a-protocol-server)
+    Updating crates.io index
+    Packaged 957 files, 9.8MiB (2.3MiB compressed)
+   Packaging a2a-protocol-client v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-aefdbbc4b8f3742b2/crates/a2a-protocol-client)
+    Updating crates.io index
+    Packaged 285 files, 2.7MiB (660.0KiB compressed)
+   Packaging a2a-protocol-sdk v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-aefdbbc4b8f3742b2/crates/a2a-protocol-sdk)
+    Updating crates.io index
+    Packaged 55 files, 449.0KiB (107.2KiB compressed)
+   Verifying a2a-protocol-types v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-aefdbbc4b8f3742b2/crates/a2a-protocol-types)
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling a2a-protocol-types v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/package/a2a-protocol-types-0.16.0)
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling syn v3.0.9
+   Compiling serde_derive v1.0.229
+    Finished `dev` profile [unoptimized] target(s) in 11.56s
+   Verifying a2a-protocol-server v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-aefdbbc4b8f3742b2/crates/a2a-protocol-server)
+    Updating crates.io index
+   Unpacking a2a-protocol-types v0.16.0 (registry `/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/package/tmp-registry`)
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling libc v0.2.191
+   Compiling cfg-if v1.0.5
+   Compiling pin-project-lite v0.2.17
+   Compiling once_cell v1.21.4
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling futures-core v0.3.34
+   Compiling bytes v1.12.1
+   Compiling cc v1.10.0
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling errno v0.3.14
+   Compiling tracing-core v0.1.36
+   Compiling futures-sink v0.3.34
+   Compiling signal-hook-registry v1.4.8
+   Compiling socket2 v0.6.5
+   Compiling ring v0.17.14
+   Compiling mio v1.2.4
+   Compiling http v1.5.0
+   Compiling serde_core v1.0.229
+   Compiling futures-task v0.3.34
+   Compiling slab v0.4.12
+   Compiling zeroize v1.9.1
+   Compiling rustls-pki-types v1.15.1
+   Compiling getrandom v0.2.17
+   Compiling hashbrown v0.17.1
+   Compiling tokio-macros v2.7.2
+   Compiling tracing-attributes v0.1.31
+   Compiling tokio v1.54.1
+   Compiling futures-macro v0.3.34
+   Compiling equivalent v1.0.3
+   Compiling untrusted v0.9.0
+   Compiling httparse v1.10.1
+   Compiling futures-util v0.3.34
+   Compiling typenum v1.20.1
+   Compiling tracing v0.1.44
+   Compiling hybrid-array v0.4.15
+   Compiling indexmap v2.14.2
+   Compiling http-body v1.1.0
+   Compiling atomic-waker v1.1.2
+   Compiling fnv v1.0.7
+   Compiling try-lock v0.2.5
+   Compiling rustls v0.23.46
+   Compiling thiserror v2.0.21
+   Compiling want v0.3.2
+   Compiling rustls-webpki v0.103.16
+   Compiling tokio-util v0.7.20
+   Compiling thiserror-impl v2.0.21
+   Compiling h2 v0.4.20
+   Compiling futures-channel v0.3.34
+   Compiling httpdate v1.0.3
+   Compiling getrandom v0.4.3
+   Compiling smallvec v1.16.4
+   Compiling subtle v2.6.1
+   Compiling lazy_static v1.5.1
+   Compiling sharded-slab v0.1.7
+   Compiling block-buffer v0.12.1
+   Compiling crypto-common v0.2.2
+   Compiling serde_derive v1.0.229
+   Compiling thread_local v1.1.10
+   Compiling hyper v1.12.0
+   Compiling base64 v0.23.1
+   Compiling ipnet v2.12.2
+   Compiling const-oid v0.10.2
+   Compiling percent-encoding v2.3.2
+   Compiling a2a-protocol-types v0.16.0
+   Compiling tower-service v0.3.3
+   Compiling hyper-util v0.1.21
+   Compiling serde v1.0.229
+   Compiling tokio-rustls v0.26.6
+   Compiling serde_json v1.0.154
+   Compiling digest v0.11.3
+   Compiling tracing-subscriber v0.3.23
+   Compiling opentelemetry v0.33.1
+   Compiling webpki-roots v1.0.11
+   Compiling a2a-protocol-server v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/package/a2a-protocol-server-0.16.0)
+   Compiling cpufeatures v0.3.1
+   Compiling hyper-rustls v0.27.10
+   Compiling sha2 v0.11.1
+   Compiling uuid v1.29.0
+   Compiling serde_path_to_error v0.1.20
+   Compiling tracing-opentelemetry v0.34.0
+   Compiling http-body-util v0.1.5
+   Compiling mutants v0.0.4
+    Finished `dev` profile [unoptimized] target(s) in 50.75s
+   Verifying a2a-protocol-client v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-aefdbbc4b8f3742b2/crates/a2a-protocol-client)
+    Updating crates.io index
+   Compiling tokio v1.54.1
+   Compiling futures-task v0.3.34
+   Compiling serde v1.0.229
+   Compiling opentelemetry v0.33.1
+   Compiling futures-util v0.3.34
+   Compiling a2a-protocol-client v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/package/a2a-protocol-client-0.16.0)
+   Compiling tracing-opentelemetry v0.34.0
+   Compiling a2a-protocol-types v0.16.0
+   Compiling tokio-util v0.7.20
+   Compiling tokio-rustls v0.26.6
+   Compiling h2 v0.4.20
+   Compiling hyper v1.12.0
+   Compiling hyper-util v0.1.21
+   Compiling hyper-rustls v0.27.10
+    Finished `dev` profile [unoptimized] target(s) in 1m 06s
+   Verifying a2a-protocol-sdk v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-aefdbbc4b8f3742b2/crates/a2a-protocol-sdk)
+    Updating crates.io index
+   Unpacking a2a-protocol-client v0.16.0 (registry `/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/package/tmp-registry`)
+   Unpacking a2a-protocol-server v0.16.0 (registry `/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/package/tmp-registry`)
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling serde_core v1.0.229
+   Compiling memchr v2.8.3
+   Compiling anyhow v1.0.104
+   Compiling zerocopy v0.8.63
+   Compiling either v1.19.0
+   Compiling crc32fast v1.5.3
+   Compiling getrandom v0.3.4
+   Compiling tower-layer v0.3.3
+   Compiling sync_wrapper v1.0.2
+   Compiling itertools v0.14.0
+   Compiling mime v0.3.17
+   Compiling simd-adler32 v0.3.10
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.9.1
+   Compiling axum-core v0.5.6
+   Compiling futures-macro v0.3.34
+   Compiling tokio-macros v2.7.2
+   Compiling tracing-attributes v0.1.31
+   Compiling futures-util v0.3.34
+   Compiling tokio v1.54.1
+   Compiling tracing v0.1.44
+   Compiling thiserror-impl v2.0.21
+   Compiling thiserror v2.0.21
+   Compiling opentelemetry v0.33.1
+   Compiling prost-derive v0.14.4
+   Compiling pin-project-internal v1.1.13
+   Compiling async-trait v0.1.92
+   Compiling matchit v0.8.4
+   Compiling rand_core v0.9.5
+   Compiling prost v0.14.4
+   Compiling tokio-util v0.7.20
+   Compiling tokio-stream v0.1.19
+   Compiling flate2 v1.1.10
+   Compiling pin-project v1.1.13
+   Compiling ppv-lite86 v0.2.21
+   Compiling h2 v0.4.20
+   Compiling tower v0.5.3
+   Compiling base64 v0.22.1
+   Compiling rand_chacha v0.9.0
+   Compiling tracing-subscriber v0.3.23
+   Compiling rand v0.9.5
+   Compiling axum v0.8.9
+   Compiling futures-executor v0.3.34
+   Compiling serde_derive v1.0.229
+   Compiling opentelemetry_sdk v0.33.1
+   Compiling hyper v1.12.0
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling tokio-rustls v0.26.6
+   Compiling prost-types v0.14.4
+   Compiling hyper-util v0.1.21
+   Compiling a2a-protocol-types v0.16.0
+   Compiling tracing-opentelemetry v0.34.0
+   Compiling opentelemetry-http v0.33.1
+   Compiling a2a-protocol-server v0.16.0
+   Compiling a2a-protocol-client v0.16.0
+   Compiling opentelemetry-appender-tracing v0.33.1
+   Compiling serde_path_to_error v0.1.20
+   Compiling hyper-timeout v0.5.2
+   Compiling hyper-rustls v0.27.10
+   Compiling tonic v0.14.6
+   Compiling tonic-prost v0.14.6
+   Compiling tonic-types v0.14.6
+   Compiling opentelemetry-proto v0.33.1
+   Compiling opentelemetry-otlp v0.33.1
+   Compiling a2a-protocol-sdk v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/package/a2a-protocol-sdk-0.16.0)
+    Finished `dev` profile [unoptimized] target(s) in 2m 21s
+== /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/package/a2a-protocol-types-0.16.0.crate (360662 bytes, 157 files)
+== /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/package/a2a-protocol-client-0.16.0.crate (675800 bytes, 285 files)
+== /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/package/a2a-protocol-server-0.16.0.crate (2424948 bytes, 957 files)
+== /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/package/a2a-protocol-sdk-0.16.0.crate (109781 bytes, 55 files)

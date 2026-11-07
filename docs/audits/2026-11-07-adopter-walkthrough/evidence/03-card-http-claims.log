@@ -1,0 +1,59 @@
+--- GET
+HTTP/1.1 200 OK
+content-type: application/json
+access-control-allow-origin: *
+etag: W/"f56ed68082db8c34"
+last-modified: Sat, 07 Nov 2026 12:18:41 GMT
+cache-control: public, max-age=3600
+content-length: 1288
+date: Sat, 07 Nov 2026 12:55:49 GMT
+
+ETag=W/"f56ed68082db8c34"  Last-Modified=Sat, 07 Nov 2026 12:18:41 GMT
+--- If-None-Match: the ETag
+HTTP 304, 0 body bytes
+--- If-None-Match: another tag
+HTTP 200, 1288 body bytes
+--- If-None-Match: *
+HTTP 304
+--- If-Modified-Since: Last-Modified
+HTTP 304
+--- If-Modified-Since: 1970
+HTTP 200
+--- HEAD
+HTTP/1.1 200 OK
+content-type: application/json
+access-control-allow-origin: *
+etag: W/"f56ed68082db8c34"
+last-modified: Sat, 07 Nov 2026 12:18:41 GMT
+cache-control: public, max-age=3600
+content-length: 1288
+date: Sat, 07 Nov 2026 12:55:49 GMT
+--- OPTIONS (CORS preflight from a browser origin)
+HTTP/1.1 200 OK
+content-type: application/json
+a2a-version: 1.0
+content-length: 15
+date: Sat, 07 Nov 2026 12:55:49 GMT
+
+{"status":"ok"}--- POST to the card
+HTTP/1.1 405 Method Not Allowed
+allow: GET, HEAD
+content-type: application/json
+content-length: 30
+date: Sat, 07 Nov 2026 12:55:49 GMT
+
+--- trailing slash
+HTTP 400
+--- Accept: text/html
+HTTP 200 application/json
+--- the deprecated path /.well-known/agent.json
+HTTP 400
+--- extended card without credentials
+HTTP/1.1 400 Bad Request
+content-type: application/a2a+json
+a2a-version: 1.0
+vary: Accept, Content-Type
+content-length: 234
+date: Sat, 07 Nov 2026 12:55:49 GMT
+
+{"error":{"code":400,"details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"UNSUPPORTED_OPERATION"}],"message":"agent does not support extended agent card","status":"FAILED_PRECONDITION"}}

@@ -1,0 +1,2 @@
+check_doc_versions: 38 dependency snippet(s) across 26 file(s) name the current 0.16 line; 2 allowlisted as historical; the deploy-agent manifest names image 0.16.0; the README's two TCK figures agree; no current prose offers a deprecated entry point
+GREEN exit: 0

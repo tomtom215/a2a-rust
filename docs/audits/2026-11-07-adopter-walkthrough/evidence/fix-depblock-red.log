@@ -1,0 +1,10 @@
+check_doc_versions: a page's dependency block is missing crates its program uses
+
+  book/src/building-agents/stores/postgres.md:19: the program uses `tokio` and no `toml` block on the page names it
+  book/src/building-agents/stores/postgres.md:54: the program uses `tokio` and no `toml` block on the page names it
+  book/src/building-agents/stores/sqlite.md:16: the program uses `tokio` and no `toml` block on the page names it
+  book/src/building-agents/tool-loop.md:38: the program uses `tokio` and no `toml` block on the page names it
+  book/src/building-agents/tool-loop.md:38: the program uses `serde_json` and no `toml` block on the page names it
+
+A reader who types the page's [dependencies] and its program gets `unresolved import`.
+RED exit: 1

@@ -1,0 +1,26 @@
+##### A: README Quick Start, a2a-protocol-sdk with default-features = false
+project: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/readme-nodefaults
+target:  /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/readme-nodefaults/target
+7:a2a-protocol-sdk = { version = "0.16", default-features = false }
+13:a2a-protocol-sdk = { path = "/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-sdk-0.16.0" }
+    Updating crates.io index
+     Locking 81 packages to highest Rust 1.99.1 compatible versions
+    Finished `dev` profile [unoptimized] target(s) in 1m 21s
+build exit: 0
+Hello, Tom!
+artifact: e36f25a3-9a08-4dad-96be-824477fe6346
+status: Completed
+run exit: 0
+##### B: a2a-protocol-types alone (no I/O): serde_json round trip of a message
+    Updating crates.io index
+warning: patch `a2a-protocol-client v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-client-0.16.0)` was not used in the crate graph
+warning: patch `a2a-protocol-sdk v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-sdk-0.16.0)` was not used in the crate graph
+warning: patch `a2a-protocol-server v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0)` was not used in the crate graph
+help: Check that the patched package version and available features are compatible
+      with the dependency requirements. If the patch has a different version from
+      what is locked in the Cargo.lock file, run `cargo update` to use the new
+      version. This may also occur with an optional dependency that is not enabled.
+     Locking 12 packages to highest Rust 1.99.1 compatible versions
+    Finished `dev` profile [unoptimized] target(s) in 17.84s
+     Running `/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/_gs-target/debug/types-only`
+{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"hello"}]}

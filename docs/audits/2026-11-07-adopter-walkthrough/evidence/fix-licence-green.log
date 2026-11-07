@@ -1,0 +1,2 @@
+check_package_excludes: 4 publishable, 22 excluded, 5 invocation(s) across 3 file(s) agree; each publishable crate carries LICENSE and NOTICE
+GREEN exit: 0

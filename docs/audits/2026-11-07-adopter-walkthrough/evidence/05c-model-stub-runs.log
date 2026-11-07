@@ -1,0 +1,171 @@
+=== scenario 1: truncated JSON arguments
+--- stdout
+model: qwen3:1.7b at http://127.0.0.1:3501/v1
+agent: http://127.0.0.1:41455
+asked: How is the checkout service doing?
+state: TASK_STATE_COMPLETED
+[ answer ]
+I could not call the tool correctly.
+[ tool-trace ]
+list_services({"service": ) -> error: the arguments are not valid JSON (EOF while parsing a value at line 1 column 11)
+
+--- stderr (without the telemetry notice)
+
+--- exit 0 in 1 s; requests the stub saw: 2
+
+=== scenario 2: unknown tool
+--- stdout
+model: qwen3:1.7b at http://127.0.0.1:3502/v1
+agent: http://127.0.0.1:38349
+asked: How is the checkout service doing?
+state: TASK_STATE_COMPLETED
+[ answer ]
+That tool does not exist; the services are payments-api, checkout and search.
+[ tool-trace ]
+launch_missiles({}) -> error: no tool named 'launch_missiles'; the tools are: list_services, service_status
+
+--- stderr (without the telemetry notice)
+
+--- exit 0 in 0 s; requests the stub saw: 2
+
+=== scenario 3: arguments are an array
+--- stdout
+model: qwen3:1.7b at http://127.0.0.1:3503/v1
+agent: http://127.0.0.1:34189
+asked: How is the checkout service doing?
+state: TASK_STATE_COMPLETED
+[ answer ]
+The arguments were wrong.
+[ tool-trace ]
+service_status(["checkout"]) -> error: the arguments must be a JSON object
+
+--- stderr (without the telemetry notice)
+
+--- exit 0 in 0 s; requests the stub saw: 2
+
+=== scenario 4: cut by the token limit (finish_reason length)
+--- stdout
+model: qwen3:1.7b at http://127.0.0.1:3504/v1
+agent: http://127.0.0.1:34207
+asked: How is the checkout service doing?
+state: TASK_STATE_COMPLETED
+[ answer ]
+Monitoring matters because it lets you see failures before your customers do, and because
+
+--- stderr (without the telemetry notice)
+
+--- exit 0 in 0 s; requests the stub saw: 1
+
+=== scenario 5: HTTP 500 carrying a secret
+--- stdout
+model: qwen3:1.7b at http://127.0.0.1:3505/v1
+agent: http://127.0.0.1:33035
+asked: How is the checkout service doing?
+state: TASK_STATE_FAILED
+
+--- stderr (without the telemetry notice)
+2026-11-07T12:59:03.398706Z  WARN a2a_protocol_server::tool_loop::run: tool loop: the model provider failed a turn error=the model provider answered HTTP 500: {"error": {"message": "upstream failure: Authorization: Bearer sk-live-SECRET-1234 rejected at db-internal.corp:5432", "type": "server_error"}}
+2026-11-07T12:59:03.398811Z  WARN a2a_protocol_server::tool_loop::executor: the run failed error=the model provider answered HTTP 500: {"error": {"message": "upstream failure: Authorization: Bearer sk-live-SECRET-1234 rejected at db-internal.corp:5432", "type": "server_error"}}
+reason: the model provider answered HTTP 500
+
+--- exit 1 in 0 s; requests the stub saw: 1
+
+=== scenario 6: HTTP 429
+--- stdout
+model: qwen3:1.7b at http://127.0.0.1:3506/v1
+agent: http://127.0.0.1:42513
+asked: How is the checkout service doing?
+state: TASK_STATE_FAILED
+
+--- stderr (without the telemetry notice)
+2026-11-07T12:59:03.449459Z  WARN a2a_protocol_server::tool_loop::run: tool loop: the model provider failed a turn error=the model provider answered HTTP 429: {"error": {"message": "rate limited"}}
+2026-11-07T12:59:03.449546Z  WARN a2a_protocol_server::tool_loop::executor: the run failed error=the model provider answered HTTP 429: {"error": {"message": "rate limited"}}
+reason: the model provider answered HTTP 429
+
+--- exit 1 in 0 s; requests the stub saw: 1
+
+=== scenario 7: HTTP 200, not JSON
+--- stdout
+model: qwen3:1.7b at http://127.0.0.1:3507/v1
+agent: http://127.0.0.1:33843
+asked: How is the checkout service doing?
+state: TASK_STATE_FAILED
+
+--- stderr (without the telemetry notice)
+2026-11-07T12:59:03.545383Z  WARN a2a_protocol_server::tool_loop::run: tool loop: the model provider failed a turn error=the model provider's answer could not be read: not a chat completion: expected value at line 1 column 1
+2026-11-07T12:59:03.545465Z  WARN a2a_protocol_server::tool_loop::executor: the run failed error=the model provider's answer could not be read: not a chat completion: expected value at line 1 column 1
+reason: the model provider's answer could not be read
+
+--- exit 1 in 0 s; requests the stub saw: 1
+
+=== scenario 8: a 6 MiB answer
+--- stdout
+model: qwen3:1.7b at http://127.0.0.1:3508/v1
+agent: http://127.0.0.1:40279
+asked: How is the checkout service doing?
+state: TASK_STATE_COMPLETED
+[ answer ]
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+--- stderr (without the telemetry notice)
+
+--- exit 0 in 1 s; requests the stub saw: 1
+
+=== scenario 9: the same tool call forever
+--- stdout
+model: qwen3:1.7b at http://127.0.0.1:3509/v1
+agent: http://127.0.0.1:38749
+asked: How is the checkout service doing?
+state: TASK_STATE_FAILED
+
+--- stderr (without the telemetry notice)
+reason: the model asked for tools on all 8 turns without answering
+
+--- exit 1 in 0 s; requests the stub saw: 8
+
+=== scenario 10: an empty reply
+--- stdout
+model: qwen3:1.7b at http://127.0.0.1:3510/v1
+agent: http://127.0.0.1:33961
+asked: How is the checkout service doing?
+state: TASK_STATE_COMPLETED
+[ answer ]
+
+
+--- stderr (without the telemetry notice)
+
+--- exit 0 in 0 s; requests the stub saw: 1
+
+=== scenario 11: a tool call written as text
+--- stdout
+model: qwen3:1.7b at http://127.0.0.1:3511/v1
+agent: http://127.0.0.1:44373
+asked: How is the checkout service doing?
+state: TASK_STATE_COMPLETED
+[ answer ]
+The services are payments-api, checkout and search.
+[ tool-trace ]
+list_services({}) -> ["payments-api","checkout","search"]
+
+--- stderr (without the telemetry notice)
+
+--- exit 0 in 1 s; requests the stub saw: 2
+
+=== scenario 12: never answers
+--- stdout
+model: qwen3:1.7b at http://127.0.0.1:3512/v1
+agent: http://127.0.0.1:42957
+asked: How is the checkout service doing?
+state: TASK_STATE_FAILED
+
+--- stderr (without the telemetry notice)
+2026-11-07T12:59:13.129079Z  WARN a2a_protocol_server::tool_loop::run: tool loop: the model provider failed a turn error=the model provider did not answer within 8s
+2026-11-07T12:59:13.129275Z  WARN a2a_protocol_server::tool_loop::executor: the run failed error=the model provider did not answer within 8s
+reason: the model provider did not answer within 8s
+
+--- exit 1 in 8 s; requests the stub saw: 1
+
+##### what the SDK sent the model after the bad turn (scenarios 1-3: the last request's tool message)
+scenario 1: turn 2, 4 messages; tool message(s): ['error: the arguments are not valid JSON (EOF while parsing a value at line 1 column 11)']
+scenario 2: turn 2, 4 messages; tool message(s): ["error: no tool named 'launch_missiles'; the tools are: list_services, service_status"]
+scenario 3: turn 2, 4 messages; tool message(s): ['error: the arguments must be a JSON object']
+scenario 11: turn 2, 4 messages; tool message(s): ['["payments-api","checkout","search"]']

@@ -1,0 +1,43 @@
+##### SIGINT during a stream (python spawns it with the default SIGINT disposition)
+exit: -2 (a death by SIGINT is -2; 130 is the shell's rendering)
+stdout: {"task":{"id":"t1","contextId":"c1","status":{"state":"TASK_STATE_WORKING"}}}
+stderr: 2026-11-07T12:29:05.662144Z  WARN a2a_protocol_client::streaming::event_stream: JSON-RPC stream frame id mismatch: the frame does not echo the request id (spec §9.4.2); delivered, since the HTTP response binds it to this request expected=Some(String("7ca829e1-475e-4db3-81ed-e235e5659a92")) got=Some(
+##### SIGINT during a blocking send to a half-open peer
+exit: -2
+stderr: 
+##### a hard OTEL error: the README says exit 2 with one error line
+--- OTEL_EXPORTER_OTLP_PROTOCOL=carrier-pigeon
+exit 0 ; stdout 2026 bytes
+2026-11-07T12:29:09.677890Z  WARN a2a_protocol_server::otel::telemetry::subscriber: OTEL_EXPORTER_OTLP_PROTOCOL="carrier-pigeon" is not `grpc`, `http/protobuf` or `http/json`; `http/protobuf` is used
+
+--- OTEL_EXPORTER_OTLP_ENDPOINT=not-a-url
+exit 2 ; stdout 0 bytes
+error: the OTEL_* environment names a configuration Telemetry cannot use: OTEL_EXPORTER_OTLP_ENDPOINT="not-a-url": OTLP/HTTP needs a scheme: write `http://not-a-url` or `https://not-a-url`
+
+--- OTEL_EXPORTER_OTLP_TIMEOUT=abc
+exit 0 ; stdout 2026 bytes
+
+--- OTEL_EXPORTER_OTLP_HEADERS=broken
+exit 0 ; stdout 2026 bytes
+
+--- OTEL_SDK_DISABLED=maybe
+exit 0 ; stdout 2026 bytes
+2026-11-07T12:29:09.892685Z  WARN a2a_protocol_server::otel::telemetry::subscriber: OTEL_SDK_DISABLED="maybe" is not `true` or `false`, and only `true` disables the SDK; the SDK is not disabled
+
+##### 100 KB argument (under the 128 KiB single-argument limit) and above it
+100 KB: exit 0 ; stdout 100397 bytes
+200 KB: exit 126 ; scripts/live/adopter/04b-cli-followup.sh: line 67: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a: Argument list too long
+text '-' : exit 0 ; Echo: -
+##### the server's body limit: 20 MiB POSTed straight to the echo agent (REST and JSON-RPC)
+REST  : HTTP 413 in 0.001710s
+{"error":{"code":413,"message":"request body too large: 20971592 bytes exceeds 4194304 byte limit"}}
+JSONRPC: HTTP 200 in 0.001493s
+{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: request body too large: 20971592 bytes exceeds 4194304 byte limit"}}
+##### a stalled stream: how long until the CLI gives up? (library idle default: 5 min)
+exit 1 after 300 s
+stdout:
+{"task":{"id":"t1","contextId":"c1","status":{"state":"TASK_STATE_WORKING"}}}
+stderr:
+2026-11-07T12:29:10.401053Z  WARN a2a_protocol_client::streaming::event_stream: JSON-RPC stream frame id mismatch: the frame does not echo the request id (spec §9.4.2); delivered, since the HTTP response binds it to this request expected=Some(String("b07f6564-bdd9-42ba-b8b8-3e6d357d797b")) got=Some(Number(1))
+error: timeout: stream idle timeout: no data, not even a keep-alive comment, for 300s since the last data received; the task on the server is not cancelled, so resubscribe to continue
+hint: the agent card at http://127.0.0.1:3405 sent this call to http://127.0.0.1:3406 (JSONRPC); if that

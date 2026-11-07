@@ -1,0 +1,8 @@
+check_package_excludes: packaging is out of sync
+
+  crates/a2a-protocol-server/NOTICE: differs from the repository's NOTICE; copy it again (cp NOTICE crates/a2a-protocol-server/NOTICE)
+
+Cargo packages a crate's own directory: a LICENSE or NOTICE that is
+only at the repository root is in no published tarball. Copy them into
+each crate named above (Apache-2.0 §4(a), §4(d)).
+DRIFT exit: 1
