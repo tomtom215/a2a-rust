@@ -203,6 +203,17 @@ impl A2aClient {
         declared.map_or(Ok(()), |declared| declared.require(capability, method))
     }
 
+    /// Whether the card this client was built from declares `capability`.
+    ///
+    /// `false` for a client with no card to read: where
+    /// [`require_declared`](Self::require_declared) lets such a call go and
+    /// the agent answer for itself, this is for a choice that should be made
+    /// only on evidence the agent offers the capability.
+    pub(crate) fn declares(&self, capability: crate::declared::Capability) -> bool {
+        let declared = *self.declared.read().unwrap_or_else(PoisonError::into_inner);
+        declared.is_some_and(|declared| declared.declares(capability))
+    }
+
     /// Sends an intercepted request, runs the interceptors' `after` hooks on
     /// the answer, and `decode`s it into the call's typed result.
     ///

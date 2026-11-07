@@ -121,6 +121,7 @@ pub use stream_defaults::{DEFAULT_STREAM_FIRST_EVENT_TIMEOUT, DEFAULT_STREAM_IDL
 /// crate, so a field added later does not break callers.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
+#[allow(clippy::struct_excessive_bools)] // independent switches, each set by its own method
 pub struct ClientConfig {
     /// The binding ranking interface selection applied.
     ///
@@ -154,6 +155,20 @@ pub struct ClientConfig {
     /// If `true`, `send_message` returns immediately with the submitted task
     /// rather than waiting for completion.
     pub return_immediately: bool,
+
+    /// If `true`, a blocking `send_message` to an agent whose card declares
+    /// streaming is carried over `SendStreamingMessage` and answered with the
+    /// task as the agent stores it (audit B-11). Defaults to `false`.
+    ///
+    /// A blocking send is one request with no bytes on the wire until the
+    /// turn ends, so a load balancer with a 60 s idle timeout answers `504`
+    /// for a turn that takes longer while the task goes on running. A stream
+    /// carries a keep-alive comment every 30 s, which keeps that connection
+    /// open. See [`ClientBuilder::with_blocking_over_stream`] for what the
+    /// caller gets and what it costs.
+    ///
+    /// [`ClientBuilder::with_blocking_over_stream`]: crate::ClientBuilder::with_blocking_over_stream
+    pub blocking_over_stream: bool,
 
     /// Per-request timeout for non-streaming calls, except a blocking
     /// `SendMessage` (see [`send_timeout`](Self::send_timeout)).
@@ -324,6 +339,7 @@ impl ClientConfig {
             accepted_output_modes: vec!["text/plain".into(), "application/json".into()],
             history_length: None,
             return_immediately: false,
+            blocking_over_stream: false,
             request_timeout: Duration::from_secs(30),
             send_timeout: crate::transport::DEFAULT_SEND_TIMEOUT,
             stream_connect_timeout: Duration::from_secs(30),
@@ -351,6 +367,7 @@ impl Default for ClientConfig {
             accepted_output_modes: vec!["text/plain".into(), "application/json".into()],
             history_length: None,
             return_immediately: false,
+            blocking_over_stream: false,
             request_timeout: Duration::from_secs(30),
             send_timeout: crate::transport::DEFAULT_SEND_TIMEOUT,
             stream_connect_timeout: Duration::from_secs(30),
@@ -402,6 +419,13 @@ impl ClientConfig {
     #[must_use]
     pub const fn with_return_immediately(mut self, val: bool) -> Self {
         self.return_immediately = val;
+        self
+    }
+
+    /// Sets [`blocking_over_stream`](Self::blocking_over_stream).
+    #[must_use]
+    pub const fn with_blocking_over_stream(mut self, val: bool) -> Self {
+        self.blocking_over_stream = val;
         self
     }
 

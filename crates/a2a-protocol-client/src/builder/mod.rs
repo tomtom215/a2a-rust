@@ -620,6 +620,45 @@ impl ClientBuilder {
         self
     }
 
+    /// Carries a blocking `send_message` over a stream, so a load balancer's
+    /// idle timeout does not cut a long turn (audit B-11, option 2). Off by
+    /// default.
+    ///
+    /// A blocking send is one request with nothing on the wire until the turn
+    /// ends. Behind a balancer whose idle timeout is shorter than the turn the
+    /// caller gets `504` (and no task id) while the task runs on. A stream
+    /// carries a keep-alive comment every 30 s, so with this on, a blocking
+    /// send to an agent **whose card declares streaming** (a client built by
+    /// [`from_card`](Self::from_card); one built for a bare endpoint has no
+    /// card to read and sends as it always did) is opened as
+    /// `SendStreamingMessage`, read until the task is terminal or interrupted
+    /// (or the agent answers with one `Message`), and then answered with the
+    /// task as the agent **stores** it: a `GetTask` with the send's
+    /// `history_length`, repeated for a moment if the store has not yet caught
+    /// up with the stream, so the result is what the agent's own blocking
+    /// answer would be and not this client's reading of the events. A send
+    /// with `return_immediately` is not changed.
+    ///
+    /// What it costs and what differs:
+    ///
+    /// - Three wire calls instead of one (the stream, then `GetTask`), and
+    ///   [`send_timeout`](Self::with_send_timeout) bounds the whole of them.
+    /// - [`CallInterceptor`](crate::CallInterceptor)s, spans and metrics see
+    ///   `SendStreamingMessage` and `GetTask`, not `SendMessage`.
+    /// - A stream that is cut before the task is terminal or interrupted ends
+    ///   the send with the stream's error, as a cut blocking send does; the
+    ///   task goes on running and [`A2aClient::follow_task`](crate::A2aClient::follow_task)
+    ///   picks it up.
+    /// - If the stored task does not reach the state the stream reported
+    ///   within a few seconds the send fails with
+    ///   [`ClientError::InvalidAgentResponse`](crate::ClientError::InvalidAgentResponse)
+    ///   rather than answer with an older state.
+    #[must_use]
+    pub const fn with_blocking_over_stream(mut self, val: bool) -> Self {
+        self.config.blocking_over_stream = val;
+        self
+    }
+
     /// Provides a fully custom transport implementation.
     ///
     /// Overrides the transport that would normally be built from the endpoint
