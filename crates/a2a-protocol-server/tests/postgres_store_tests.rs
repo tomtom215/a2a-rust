@@ -484,11 +484,66 @@ async fn task_list_orders_most_recently_updated_first() -> A2aResult<()> {
     }
     assert_eq!(seen.len(), 3, "every task visited exactly once");
 
-    // A forged cursor (no separator) yields an empty page.
-    let forged = store
-        .list(&ListTasksParams::new().with_page_token("forged-no-separator"))
-        .await?;
-    assert!(forged.tasks.is_empty(), "forged cursor yields empty page");
+    db.drop_db().await;
+    Ok(())
+}
+
+/// A page token no store wrote is `InvalidParams` (never an empty page, which
+/// reads as the end of the listing), including one with a separator and a
+/// timestamp that `::timestamp` would refuse with a database error; and a
+/// token a store did write resumes the listing after the task it names is
+/// deleted. Both PostgreSQL stores.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn a_malformed_page_token_is_invalid_params_and_a_deleted_tasks_token_resumes()
+-> A2aResult<()> {
+    use a2a_protocol_types::error::ErrorCode;
+    let db = TestDb::create("page_token").await;
+    let plain = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+    let tenants = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant-aware postgres store");
+
+    async fn check(store: &impl TaskStore) -> A2aResult<()> {
+        for i in 0..5 {
+            store.save(&make_task(&format!("t{i}"), "ctx1")).await?;
+            tokio::time::sleep(Duration::from_millis(3)).await;
+        }
+        for token in [
+            "forged-no-separator",
+            "x\ny",
+            "2026-13-01 00:00:00.000000\nt1",
+            "2026-02-30 00:00:00.000000\nt1",
+            "2026-01-15T10:30:45Z\nt1",
+        ] {
+            let err = store
+                .list(&ListTasksParams::new().with_page_token(token))
+                .await
+                .expect_err(token);
+            assert_eq!(err.code, ErrorCode::InvalidParams, "{token:?}: {err}");
+        }
+        let ids = |r: &a2a_protocol_types::responses::TaskListResponse| {
+            r.tasks.iter().map(|t| t.id.0.clone()).collect::<Vec<_>>()
+        };
+        let first = store
+            .list(&ListTasksParams::new().with_page_size(2))
+            .await?;
+        assert_eq!(ids(&first), ["t4", "t3"]);
+        store.delete(&first.tasks[1].id).await?;
+        let second = store
+            .list(
+                &ListTasksParams::new()
+                    .with_page_size(2)
+                    .with_page_token(first.next_page_token),
+            )
+            .await?;
+        assert_eq!(ids(&second), ["t2", "t1"]);
+        Ok(())
+    }
+    check(&plain).await?;
+    TenantContext::scope("tenant-a", check(&tenants)).await?;
 
     db.drop_db().await;
     Ok(())

@@ -1305,16 +1305,14 @@ impl TaskStore for InMemoryTaskStore {
 
             // Decode the cursor: the opaque page token is the `millis:seq`
             // order key of the last item on the previous page. A malformed
-            // token yields an empty page (matching the previous "unknown
-            // cursor → empty" contract) rather than starting from the top.
-            // `None` starts a fresh listing.
+            // token is `InvalidParams` (until 0.16.0 an empty page, which a
+            // client cannot tell from the end of the listing) rather than
+            // starting from the top. `None` starts a fresh listing.
             let cursor_key: Option<OrderKey> = match params.page_token.as_deref() {
                 None => None,
                 Some(tok) => match decode_order_key(tok) {
                     Some(key) => Some(key),
-                    None => {
-                        return Ok(TaskListResponse::new(Vec::new()));
-                    }
+                    None => return Err(crate::store::pagination::unrecognised_token()),
                 },
             };
 
@@ -2233,20 +2231,33 @@ mod tests {
         );
     }
 
+    /// A token this store did not issue is `InvalidParams`, not an empty
+    /// page (which reads as the end of the listing).
     #[tokio::test]
-    async fn list_invalid_page_token_returns_empty() {
+    async fn list_invalid_page_token_is_invalid_params() {
         let store = InMemoryTaskStore::new();
         store
             .save(&make_task("t1", TaskState::Submitted))
             .await
             .unwrap();
 
-        let params = ListTasksParams::new().with_page_token("nonexistent-cursor".to_string());
-        let response = store.list(&params).await.unwrap();
-        assert!(
-            response.tasks.is_empty(),
-            "invalid page_token should yield empty results"
-        );
+        for token in [
+            "nonexistent-cursor",
+            "12",
+            "12:x",
+            "x:3",
+            ":",
+            "12:3:4",
+            "-",
+        ] {
+            let params = ListTasksParams::new().with_page_token(token.to_string());
+            let err = store.list(&params).await.unwrap_err();
+            assert_eq!(
+                err.code,
+                a2a_protocol_types::error::ErrorCode::InvalidParams,
+                "{token}"
+            );
+        }
     }
 
     #[tokio::test]

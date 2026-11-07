@@ -1003,6 +1003,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **`ListTasks` with a page token the server could not have issued is now `InvalidParams`** (adopter
+  walk-through decision 2, 2026-11-07; Google AIP-158: an invalid page token is an invalid
+  argument). All five stores (in-memory, SQLite, PostgreSQL and the two tenant-aware SQL
+  stores) answered an empty last page, which a client reads as the end of the listing and so never
+  learns that its cursor was wrong; the answer is now `-32602` on JSON-RPC and WebSocket, 400 on
+  HTTP+JSON and `INVALID_ARGUMENT` on gRPC, with a message that does not repeat the token. An empty
+  token is still no token. A token the store did issue still works after the task it names is
+  deleted. A caller that sent a hand-built token and relied on the empty page now gets an error.
+
 - **A tool-loop task whose final model reply has no text now fails, and one cut off at the output
   limit says so** (audit M-1, found by the adopter walk-through, 2026-11-07). A reply that was empty
   or only whitespace, which a reasoning model whose output limit goes on thinking sends, ended
@@ -1660,6 +1669,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **`genai-agent` reads `A2A_JWT_HS256_SECRET` as a key in base64** (example; RFC 8725 section 3.5 forbids a password as the key of HS256). It was a string used as its own bytes, so a passphrase was the key. The value is now random bytes in standard base64, at least 32 once decoded: make one with `openssl rand -base64 32`. A typed passphrase is refused at startup because it is not base64, and so is a base64 value that decodes to fewer than 32 bytes, the book's old 32-character sample among them. `scripts/adversarial/probe_auth.py --secret` takes the same base64 key. The SDK is unchanged: `JwtValidator::with_hs256_secret` checks the length only, as before, and now says so in its rustdoc and on the authentication page; the book's samples no longer show a guessable string. `examples/genai-agent/src/tests.rs` covers the decoding and both refusals, and five hand mutants of `hs256_key` fail them. The example run under `probe_auth.py` passes 27 of 27 cases, and with the variable read as text again its valid-token controls are rejected.
 
 ### Fixed
+
+- **A page token with a separator and a timestamp no store wrote made PostgreSQL answer an internal
+  error that carried the database's own message** (found while closing the change above). The SQL stores'
+  cursor decoder checked only for the separator, so a token such as `x`, a newline and an id reached
+  the `::timestamp` cast of both PostgreSQL stores, and the caller got `-32603` with `invalid input
+  syntax for type timestamp: "x"` in the message (measured against PostgreSQL on 2026-11-07, with
+  the new check turned off). The decoder now requires the shape and the calendar date and time the
+  stores write (`YYYY-MM-DD HH:MM:SS`, up to six fractional digits), and a token that fails it is
+  `InvalidParams` like any other.
 
 - **The shared PostgreSQL rate-limit counter's sweep deleted another
   component's live rows** (server, `postgres`; found while building E-F15,

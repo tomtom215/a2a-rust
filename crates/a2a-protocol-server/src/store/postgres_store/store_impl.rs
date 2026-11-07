@@ -494,10 +494,11 @@ impl TaskStore for PostgresTaskStore {
             // UTC wall-clock string; casting it back through
             // `::timestamp AT TIME ZONE 'UTC'` reconstructs the exact instant
             // independent of the session time zone. A token not produced by us
-            // decodes to None → empty page (never a full scan).
+            // decodes to None → InvalidParams (never a full scan, and never a
+            // database error from casting a forged timestamp).
             if let Some(ref token) = params.page_token {
                 let Some((cursor_ua, cursor_id)) = crate::store::cursor::decode(token) else {
-                    return Ok(TaskListResponse::new(Vec::new()));
+                    return Err(crate::store::pagination::unrecognised_token());
                 };
                 bind_values.push(cursor_ua.to_string());
                 let ua_idx = bind_values.len();

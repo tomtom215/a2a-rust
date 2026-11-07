@@ -733,21 +733,60 @@ async fn list_pagination_visits_every_task_once() {
 }
 
 #[tokio::test]
-async fn list_malformed_page_token_returns_empty() {
+async fn list_malformed_page_token_is_invalid_params() {
     let store = make_store().await;
     store
         .save(&make_task("t1", "ctx1", TaskState::Submitted))
         .await
         .unwrap();
 
-    // A token that was not produced by the store (no separator) must yield
-    // an empty page, never a full table scan.
-    let params = ListTasksParams::new().with_page_token("forged-cursor-no-separator".to_string());
-    let response = store.list(&params).await.unwrap();
-    assert!(
-        response.tasks.is_empty(),
-        "malformed page_token should yield empty results"
-    );
+    // A token the store did not produce is refused: never a full table scan,
+    // and never an empty page a client reads as the end of the listing. One
+    // with a separator and a timestamp no store wrote is refused too.
+    for token in [
+        "forged-cursor-no-separator",
+        "x\ny",
+        "2026-13-01 00:00:00.000\nt1",
+        "2026-01-15T10:30:45.123Z\nt1",
+    ] {
+        let params = ListTasksParams::new().with_page_token(token.to_string());
+        let err = store.list(&params).await.unwrap_err();
+        assert_eq!(
+            err.code,
+            a2a_protocol_types::error::ErrorCode::InvalidParams,
+            "{token:?}"
+        );
+    }
+}
+
+/// A token the store issued stays good when the task it names is deleted
+/// before the next page is asked for: the position is a key, not the row.
+#[tokio::test]
+async fn a_token_for_a_deleted_task_still_resumes_the_listing() {
+    let store = make_store().await;
+    for i in 0..5 {
+        store
+            .save(&make_task(&format!("t{i}"), "ctx1", TaskState::Submitted))
+            .await
+            .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+    }
+    let page = |token: Option<String>| {
+        let mut built = ListTasksParams::new().with_page_size(2);
+        built.page_token = token;
+        built
+    };
+    let ids = |r: &a2a_protocol_types::responses::TaskListResponse| {
+        r.tasks.iter().map(|t| t.id.0.clone()).collect::<Vec<_>>()
+    };
+    let first = store.list(&page(None)).await.unwrap();
+    assert_eq!(ids(&first), ["t4", "t3"]);
+    store.delete(&first.tasks[1].id).await.unwrap();
+    let second = store
+        .list(&page(Some(first.next_page_token)))
+        .await
+        .unwrap();
+    assert_eq!(ids(&second), ["t2", "t1"]);
 }
 
 /// Covers lines 120-122 (`to_a2a_error` conversion).
