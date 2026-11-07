@@ -22,6 +22,14 @@ means no cross-replica admission and no fence, so a SQL store several
 replicas share, or a wrapper around one, that does not override it lets two
 replicas run one task at once. A block whose `database` names PostgreSQL or
 SQLite, or forwards an inner store's, must override `turn_claims` too.
+
+The same reasoning covers `TurnClaimStore`'s steering methods (ADR 0036):
+`hand_steering` stores a message for the replica that holds a claim,
+`peek_steering` reads what is stored for it and `ack_steering` deletes what
+was delivered. Their defaults say "unsupported", "nothing" and "done", so an
+`impl TurnClaimStore` that overrides one of the three and not the others
+either stores messages nobody reads, or reads messages and delivers each one
+again at every look. An impl overrides all three or none.
 """
 
 import pathlib
@@ -38,11 +46,15 @@ SHARED_DATABASE = re.compile(
     r"StoreDatabase::(?:postgres|sqlite)\(|\.inner\.database\(\)"
 )
 IMPL = re.compile(r"\bimpl(?:<[^>]*>)?\s+(?:[\w:]+::)?TaskStore\s+for\s+([\w:<>]+)")
+CLAIM_IMPL = re.compile(
+    r"\bimpl(?:<[^>]*>)?\s+(?:[\w:]+::)?TurnClaimStore\s+for\s+([\w:<>]+)"
+)
+STEERING_METHODS = ("hand_steering", "peek_steering", "ack_steering")
 
 
-def blocks(text):
-    """Yields (name, body) for each `impl TaskStore for X { ... }`."""
-    for m in IMPL.finditer(text):
+def blocks(text, impl=IMPL):
+    """Yields (name, body, line) for each `impl <trait> for X { ... }`."""
+    for m in impl.finditer(text):
         start = text.find("{", m.end())
         if start < 0:
             continue
@@ -66,6 +78,16 @@ def main():
         if rel.parts[0] == "target" or "target" in rel.parts:
             continue
         text = path.read_text(encoding="utf-8")
+        for name, body, line in blocks(text, CLAIM_IMPL):
+            overridden = [
+                m for m in STEERING_METHODS if re.search(rf"\bfn\s+{m}\s*<", body)
+            ]
+            if overridden and len(overridden) != len(STEERING_METHODS):
+                missing = [m for m in STEERING_METHODS if m not in overridden]
+                failures.append(
+                    f"{rel}:{line}: `{name}` overrides {', '.join(overridden)} "
+                    f"but not {', '.join(missing)}"
+                )
         for name, body, line in blocks(text):
             checked += 1
             for write, try_write in PAIRS:
