@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:12793 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:12833 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -673,9 +673,9 @@
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1067 SqliteTaskStore::list"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1833 list_empty_store_returns_empty (asserts next_page_token == \"\")",
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1904 list_pagination_is_stable_across_pages",
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:2200 list_pagination_page_size",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1831 list_empty_store_returns_empty (asserts next_page_token == \"\")",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1902 list_pagination_is_stable_across_pages",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:2198 list_pagination_page_size",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:505 list_pagination"
    ],
    "notes": "",
@@ -718,7 +718,7 @@
     "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:434 PostgresTaskStore::list"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1904 list_pagination_is_stable_across_pages",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1902 list_pagination_is_stable_across_pages",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:699 list_pagination_visits_every_task_once"
    ],
    "notes": "",
@@ -740,7 +740,7 @@
     "crates/a2a-protocol-server/src/store/tenant_sqlite_store.rs:503 TenantAwareSqliteTaskStore::list"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1842 list_returns_all_tasks_most_recently_updated_first",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1840 list_returns_all_tasks_most_recently_updated_first",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:552 list_orders_most_recently_updated_first",
     "crates/a2a-protocol-server/tests/postgres_store_tests.rs:444 task_list_orders_most_recently_updated_first (ignored without PG)"
    ],
@@ -782,9 +782,9 @@
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1067 SqliteTaskStore::list"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1994 list_orders_by_status_timestamp_not_write_order",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1992 list_orders_by_status_timestamp_not_write_order",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:583 list_orders_by_status_timestamp_not_write_order",
-    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:510 task_list_status_timestamp_ordering_and_filter (ignored without PG)"
+    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:565 task_list_status_timestamp_ordering_and_filter (ignored without PG)"
    ],
    "notes": "Tasks without a parseable status timestamp fall back to write order.",
    "auditor": "A",
@@ -9000,7 +9000,7 @@
     "crates/a2a-protocol-server/src/store/retention/mod.rs:155 RetentionPolicy"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:1579 retention_does_not_cross_tenants"
+    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:1634 retention_does_not_cross_tenants"
    ],
    "notes": "In-memory TTL default 1h; persistent stores keep everything unless purge_expired is configured (documented decision); audit has its own retention.",
    "auditor": "F",
