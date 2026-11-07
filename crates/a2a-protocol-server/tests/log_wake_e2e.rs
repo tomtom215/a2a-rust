@@ -230,8 +230,9 @@ async fn an_event_on_one_replica_ends_a_long_wait_on_the_other() {
     let snapshot = stream_b.read().await.unwrap().unwrap();
     assert!(matches!(snapshot.event, StreamResponse::Task(_)));
 
-    // B now waits, polling at 250, 500, 1,000 and 2,000 ms and then napping 4 s
-    // of ever longer waits. Let it reach the fifth.
+    // B now waits, in naps of 250, 500, 1,000, 2,000 and 4,000 ms and then
+    // 8 s. The listener's first resync ends the first nap, so four timeouts
+    // mean the 4 s nap has just ended, not that the 8 s one has begun.
     let reader = tokio::spawn(async move {
         let mut last = None;
         while let Some(Ok(event)) = stream_b.read().await {
@@ -242,6 +243,14 @@ async fn an_event_on_one_replica_ends_a_long_wait_on_the_other() {
         last
     });
     idle_until(&wakes, 4).await;
+    // The fourth timeout is counted as its nap ends, and the stream then reads
+    // the store and parks in the 8 s one. Released at that instant (80 loaded
+    // runs put the release 0 to 7 ms after it), the executor's append can land
+    // before the stream's read, and the stream finds the event by polling with
+    // no notification to count (2 of 122 runs under busy loops, 2026-11-07, one
+    // with a release 0 ms after the timeout). A second on, it is parked, with 7 s of
+    // the nap left.
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     let released = Instant::now();
     gate.notify_one();
