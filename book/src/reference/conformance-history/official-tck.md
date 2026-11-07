@@ -195,8 +195,8 @@ which `README.md` and `ROADMAP.md` quote: §23 of `docs/official-tck-findings.md
 ## The 2026-09-01 re-measurement at `a2a-tck@de6af18`
 
 This is the row the rest of the repository quotes, and it is the first in the
-table where the pin moved rather than this SDK: `A2A_TCK_REVISION` floats
-(register entry W1), and `a2a-tck` landed ten commits on 2026-08-31. The
+table where the pin moved rather than this SDK: `A2A_TCK_REVISION` floated
+(register entry W1; since 2026-11-06 only the nightly run floats and pull requests are pinned, see findings §26), and `a2a-tck` landed ten commits on 2026-08-31. The
 2026-08-31 nightly and the 2026-09-01 nightly ran on the **identical** a2a-rust
 commit, `b6f3afb`; the first was green and the second was not.
 
@@ -290,3 +290,26 @@ statically against upstream `d4d6fae` (three commits after `263b9cf`, changing
 only CI, `pyproject.toml` and a task-helper test file) and found no baseline
 entry stale; the per-transport outcomes it relies on are the gate's own, in
 Official TCK run `40097907886` on `2781bb6`, which succeeded.
+
+## The measurement of 2026-11-06, at `a2a-tck@70f6f73`
+
+The first run against the pinned suite (the pin is `A2A_TCK_PIN` in
+`.github/workflows/official-tck.yml`; the job printed the commit it graded).
+CI on pull request #197 at `ffd72299`, Official TCK run `42243749206`, read
+from the job's log (`docs/official-tck-findings.md` §26); like the entries
+above it, this one states the MUST tallies, not the pytest columns.
+
+* **Full profile:** 85 `PASS`, 2 `FAIL`, 5 `SKIPPED`, 7 manual, 16 `NOT TESTED`
+  of 115 MUST; 87 graded. The two failures are `CORE-SEND-003` (three bindings,
+  §22) and `HTTP_JSON-ERR-001` (`http_json`, §26).
+* **Minimal profile:** 63 `PASS`, 2 `FAIL`, 26 `SKIPPED`, 7 manual, 17
+  `NOT TESTED` of 115; 65 graded. The same two failures.
+* **Required-extension profile:** 1 graded, `CORE-CAP-004` `PASS`.
+
+The pin is one upstream commit after `d4d6fae` (`#258`, which refreshes the
+vendored specification to A2A v1.0.1): `CORE-CANCEL-002`, `GRPC-ERR-002`,
+`HTTP_JSON-STATUS-001` and `STREAM-SUB-003` pass, `HTTP_JSON-SVC-001` is a
+`SHOULD` and no longer gated. The gate failed on this run because the baseline
+and the floors (88 and 66) were still those of `d4d6fae`; the commit that
+follows sets them from this measurement (floors 87 and 65). Whether that
+commit's own run passes is not recorded here.

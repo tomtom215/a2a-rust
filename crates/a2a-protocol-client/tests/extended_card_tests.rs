@@ -15,7 +15,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::error::A2aResult;
@@ -74,9 +74,14 @@ async fn get_extended_agent_card_returns_card() {
     );
     let dispatcher = JsonRpcDispatcher::new(handler);
 
-    let addr = serve_with_addr("127.0.0.1:0", dispatcher)
-        .await
-        .expect("serve_with_addr should bind");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0")
+            .await
+            .expect("serve_with_addr should bind");
+        let addr = bound.local_addr().expect("serve_with_addr should bind");
+        tokio::spawn(bound.serve_with_shutdown(dispatcher, std::future::pending()));
+        addr
+    };
 
     // Build a client pointing at the server.
     let base_url = format!("http://{addr}");

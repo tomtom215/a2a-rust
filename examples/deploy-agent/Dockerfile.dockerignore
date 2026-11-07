@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The build context of examples/deploy-agent/Dockerfile. BuildKit reads this
+# file, named after the Dockerfile and beside it, in place of the root
+# .dockerignore, so it travels with the Dockerfile when the two are copied into
+# another project (audit A23: a copied Dockerfile lost the root file's rules).
+# Paths are relative to the context, the directory `docker build` is given.
+
+# Build output: the image compiles everything itself.
+**/target
+
+# Secrets and local configuration a developer keeps beside the source: none
+# belongs in a build context, where every stage that copies the tree keeps it
+# in a layer and in the build cache (audit A12).
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+
+# History and editor state.
+.git
+.github
+**/.DS_Store
+**/.idea
+**/.vscode
+
+# What no build of this image reads. Left in, an edit to any of it changed the
+# `COPY . .` layer and rebuilt the workspace's own crates with link-time
+# optimisation, minutes for a typo in the book (audit A19). Everything a
+# workspace member's manifest or build script needs stays: crates/, examples/,
+# benches/, book-tests/, tck/, tools/, the root Cargo.toml and Cargo.lock.
+/*.md
+/*.cff
+acts
+bindings
+book
+deploy
+docs
+fuzz
+itk
+packaging
+proto
+scripts
+spec
+verification

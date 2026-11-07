@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::RestDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{EventEmitter, RequestHandler, agent_executor};
 use a2a_protocol_types::TaskState;
 use bytes::Bytes;
@@ -40,9 +40,14 @@ fn handler() -> Arc<RequestHandler> {
 
 /// The base URL of each HTTP+JSON dispatcher this build has.
 async fn dispatchers() -> Vec<(&'static str, String)> {
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .expect("serve");
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     #[allow(unused_mut)]
     let mut bases = vec![("RestDispatcher", format!("http://{rest}"))];
     #[cfg(feature = "axum")]

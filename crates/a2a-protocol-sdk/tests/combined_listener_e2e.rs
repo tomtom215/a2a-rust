@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use a2a_protocol_client::{ClientBuilder, resolve_agent_card};
 use a2a_protocol_server::dispatch::CombinedDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{EventEmitter, RequestHandlerBuilder, agent_executor};
 use a2a_protocol_types::Message;
 use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
@@ -47,7 +47,10 @@ async fn listener(jsonrpc_path: &str) -> String {
     let dispatcher = CombinedDispatcher::new(handler)
         .with_jsonrpc_path(jsonrpc_path)
         .unwrap();
-    serve_with_addr(addr, dispatcher).await.unwrap();
+    {
+        let bound = Server::bind(addr).await.unwrap();
+        tokio::spawn(bound.serve_with_shutdown(dispatcher, std::future::pending()));
+    }
     url
 }
 

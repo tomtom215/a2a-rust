@@ -73,7 +73,7 @@ async fn every_operation(client: &A2aClient) -> Vec<(&'static str, Result<(), St
             "CreateTaskPushNotificationConfig",
             refused(
                 client
-                    .set_push_config(TaskPushNotificationConfig::new("t1", HOOK))
+                    .create_push_config(TaskPushNotificationConfig::new("t1", HOOK))
                     .await,
             ),
         ),

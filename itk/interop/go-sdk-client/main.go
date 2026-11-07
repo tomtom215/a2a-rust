@@ -235,6 +235,8 @@ func run(ctx context.Context, s *suite, c *a2aclient.Client, binding a2a.Transpo
 	_, err = c.CancelTask(ctx, &a2a.CancelTaskRequest{ID: task.ID})
 	s.expect("CancelTask(completed) -> NotCancelable", err, a2a.ErrTaskNotCancelable)
 
+	runLineage(ctx, s, c, binding)
+
 	// ── Push-notification config CRUD ─────────────────────────────────────
 	cfg := &a2a.PushConfig{TaskID: task.ID, ID: "cfg-1", URL: hook.url, Token: "tok-crud"}
 	if _, err := c.CreateTaskPushConfig(ctx, cfg); err != nil {

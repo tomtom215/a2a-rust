@@ -145,15 +145,29 @@ fn name_after<'a>(statement: &'a str, prefix: &str) -> Option<&'a str> {
 }
 
 /// `CREATE TABLE IF NOT EXISTS name ...`, one statement, run only when no
-/// relation is named `name`.
+/// relation is named `name` in the schema it would be created in.
 fn table_if_missing(statement: &str) -> Option<String> {
     let name = name_after(statement, "CREATE TABLE IF NOT EXISTS ")?;
     if statement.contains(';') || statement.contains("$a2a_ddl$") {
         return None;
     }
+    let missing = missing_here(name);
     Some(format!(
-        "DO $a2a_ddl$ BEGIN IF to_regclass('{name}') IS NULL THEN {statement}; END IF; END $a2a_ddl$"
+        "DO $a2a_ddl$ BEGIN IF {missing} THEN {statement}; END IF; END $a2a_ddl$"
     ))
+}
+
+/// The SQL condition "no relation `name` in `current_schema()`".
+///
+/// `current_schema()` is the first schema of the `search_path` that exists,
+/// which is where an unqualified `CREATE TABLE` or `CREATE INDEX ... ON` a
+/// table found there puts the object, and where the column and function
+/// guards look. A bare `to_regclass('name')` searched the whole path instead:
+/// with `search_path=a2a,public` and another application's `public.tasks`, the
+/// store never created `a2a.tasks`, and its indexes, foreign keys and `ALTER`
+/// went to the other application's table (audit NEW-a-l-2).
+fn missing_here(name: &str) -> String {
+    format!("to_regclass(format('%I.%I', current_schema(), '{name}')) IS NULL")
 }
 
 /// This crate's version as a PostgreSQL `int[]` literal's elements:
@@ -197,7 +211,8 @@ fn function_if_older(statement: &str) -> Option<String> {
 }
 
 /// `CREATE INDEX IF NOT EXISTS name ON ...` run only when no relation is
-/// named `name`, or `None` for any other statement.
+/// named `name` in the schema it would be created in, or `None` for any other
+/// statement.
 ///
 /// `CREATE INDEX IF NOT EXISTS` asks for a `SHARE` lock on the table before
 /// it finds the index there and skips: measured on PostgreSQL 17.11, it
@@ -215,8 +230,9 @@ fn index_if_missing(statement: &str) -> Option<String> {
     if !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
         return None;
     }
+    let missing = missing_here(name);
     Some(format!(
-        "DO $$ BEGIN IF to_regclass('{name}') IS NULL THEN {statement}; END IF; END $$"
+        "DO $$ BEGIN IF {missing} THEN {statement}; END IF; END $$"
     ))
 }
 

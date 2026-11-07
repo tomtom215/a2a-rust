@@ -53,7 +53,13 @@ impl RequestHandler {
                         .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
                     // A read that activates the lease extension renews the
                     // task's lease (`lease`, ADR 0020).
-                    self.renew_lease_if_asked(&call_ctx, &task_id.0).await;
+                    if self.renew_lease_if_asked(&call_ctx, &task_id.0).await {
+                        // A renewal that asks for the lease alone is answered
+                        // with the status alone, before anything is signed
+                        // (ADR 0044): its caller reads only whether the task
+                        // has ended.
+                        return Ok(super::super::lease::renewal_only(task));
+                    }
 
                     // Apply historyLength: truncate history to the requested number
                     // of most recent messages. A value of 0 means "no history".

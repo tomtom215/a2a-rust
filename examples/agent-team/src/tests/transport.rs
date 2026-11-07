@@ -98,7 +98,14 @@ pub async fn test_ws_send_message(_ctx: &TestContext) -> TestResult {
             .expect("build ws handler"),
     );
     let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
-    let ws_addr = match dispatcher.serve_with_addr("127.0.0.1:0").await {
+    let ws_addr = match async {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        tokio::spawn(dispatcher.serve_with_shutdown(listener, std::future::pending()));
+        Ok::<_, std::io::Error>(addr)
+    }
+    .await
+    {
         Ok(a) => a,
         Err(e) => {
             return TestResult::fail(
@@ -184,7 +191,14 @@ pub async fn test_ws_streaming(_ctx: &TestContext) -> TestResult {
             .expect("build ws handler"),
     );
     let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
-    let ws_addr = match dispatcher.serve_with_addr("127.0.0.1:0").await {
+    let ws_addr = match async {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        tokio::spawn(dispatcher.serve_with_shutdown(listener, std::future::pending()));
+        Ok::<_, std::io::Error>(addr)
+    }
+    .await
+    {
         Ok(a) => a,
         Err(e) => {
             return TestResult::fail(

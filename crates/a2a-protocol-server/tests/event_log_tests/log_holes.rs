@@ -124,7 +124,7 @@ async fn a_resume_across_a_hole_in_the_log_starts_from_the_snapshot() {
     }
 
     let reader = handler
-        .on_resubscribe(
+        .on_subscribe_to_task(
             TaskIdParams::new(task.id.0.clone()),
             Some(&header("last-event-id", "1")),
         )

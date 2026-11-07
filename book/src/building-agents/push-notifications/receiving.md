@@ -68,7 +68,7 @@ let receiver = WebhookReceiver::new() // duplicate detection on: 10 000 bodies, 
 
 let mut config = TaskPushNotificationConfig::new("task-abc", "https://my-service.com/webhook");
 config.token = Some(new_notification_token());
-// ... `let config = client.set_push_config(config).await?;` ...
+// ... `let config = client.create_push_config(config).await?;` ...
 receiver.register(&config)?;
 
 # fn handle(_: a2a_protocol_sdk::types::StreamResponse) {}

@@ -21,7 +21,7 @@ use std::sync::Arc;
 use a2a_protocol_client::{A2aClient, ClientBuilder, ClientError};
 use a2a_protocol_server::RequestHandler;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_slimrpc::SlimName;
 use a2a_protocol_types::ErrorCode;
 use a2a_protocol_types::message::{Message, Part};
@@ -54,9 +54,15 @@ impl Both {
             .expect("an interface"),
         );
         let handler: Arc<RequestHandler> = handler_with_card(&card);
-        let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&handler)))
-            .await
-            .expect("serve JSON-RPC");
+        let addr = {
+            let bound = Server::bind("127.0.0.1:0").await.expect("serve JSON-RPC");
+            let addr = bound.local_addr().expect("serve JSON-RPC");
+            tokio::spawn(bound.serve_with_shutdown(
+                JsonRpcDispatcher::new(Arc::clone(&handler)),
+                std::future::pending(),
+            ));
+            addr
+        };
         let jsonrpc_client = ClientBuilder::new(format!("http://{addr}"))
             .with_protocol_binding("JSONRPC")
             .build()
@@ -178,7 +184,7 @@ async fn one_task_reads_the_same_through_slimrpc_and_jsonrpc() {
     let id = made.id.0.clone();
     let config = both
         .slim_client
-        .set_push_config(TaskPushNotificationConfig::new(id.as_str(), HOOK))
+        .create_push_config(TaskPushNotificationConfig::new(id.as_str(), HOOK))
         .await
         .expect("create a push config");
     let config_id = config.id.clone().expect("an id");

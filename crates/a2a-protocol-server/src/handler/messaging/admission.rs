@@ -211,7 +211,7 @@ impl RequestHandler {
                             // `Existing` for every later send.
                             drop((writer, reader, persistence_rx));
                             self.event_queue_manager.destroy(task_id).await;
-                            return Err(unreadable_log(task_id, &e));
+                            return Err(unreadable_log(&*self.metrics, task_id, &e));
                         }
                     }
                 }
@@ -221,15 +221,12 @@ impl RequestHandler {
                 "task {task_id} is already being processed; wait for it to reach \
                      input-required or a terminal state before sending again"
             ))),
-            QueueLease::CapacityExhausted => {
-                let cap = self
-                    .event_queue_manager
-                    .max_concurrent_queues()
-                    .map_or_else(String::new, |n| format!(" ({n})"));
-                Err(ServerError::Overloaded(format!(
-                    "server at maximum concurrent stream capacity{cap}; retry later"
-                )))
-            }
+            QueueLease::BytesExhausted => Err(ServerError::Overloaded(
+                "buffered events hold more than nine tenths of the server's byte budget \
+                 for them; retry later"
+                    .to_owned(),
+            )),
+            QueueLease::CapacityExhausted => Err(self.stream_cap_refusal()),
         }
     }
 
@@ -274,18 +271,39 @@ impl RequestHandler {
     }
 }
 
+impl RequestHandler {
+    /// The refusal of a stream past the server's concurrent-stream cap,
+    /// counted with its cause (audit H11).
+    fn stream_cap_refusal(&self) -> ServerError {
+        self.metrics
+            .on_refusal(crate::metrics::control::refusal::STREAM_CAP);
+        let cap = self
+            .event_queue_manager
+            .max_concurrent_queues()
+            .map_or_else(String::new, |n| format!(" ({n})"));
+        ServerError::Overloaded(format!(
+            "server at maximum concurrent stream capacity{cap}; retry later"
+        ))
+    }
+}
+
 /// The refusal of a turn whose log position could not be read.
 ///
 /// It is at lease time, before the executor runs and with the queue just
 /// destroyed: nothing ran, so a store that is only unavailable for now is
 /// answered as a new task's send is in the same blip, 503 with `Retry-After`,
 /// not a 500 that says retrying will not help (audit D-16).
-fn unreadable_log(task_id: &TaskId, e: &a2a_protocol_types::error::A2aError) -> ServerError {
+fn unreadable_log(
+    metrics: &dyn crate::metrics::Metrics,
+    task_id: &TaskId,
+    e: &a2a_protocol_types::error::A2aError,
+) -> ServerError {
     let refusal = format!(
         "task {task_id}: could not read the event log's last position, so this turn's \
          events could not be numbered without colliding with the previous turn's: {e}"
     );
     if e.is_unavailable() {
+        metrics.on_refusal(crate::metrics::control::refusal::EVENT_LOG);
         ServerError::Overloaded(refusal)
     } else {
         ServerError::Internal(refusal)
@@ -298,6 +316,7 @@ fn unreadable_log(task_id: &TaskId, e: &a2a_protocol_types::error::A2aError) -> 
 mod tests {
     use std::future::Future;
     use std::pin::Pin;
+    use std::sync::Arc;
 
     use a2a_protocol_types::error::{A2aError, A2aResult};
     use a2a_protocol_types::params::ListTasksParams;
@@ -370,6 +389,24 @@ mod tests {
         }
     }
 
+    /// Counts the event log's refusals.
+    #[derive(Default)]
+    struct Refusals(std::sync::atomic::AtomicUsize);
+
+    impl Refusals {
+        fn count(&self) -> usize {
+            self.0.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl crate::metrics::Metrics for Refusals {
+        fn on_refusal(&self, cause: &str) {
+            if cause == crate::metrics::control::refusal::EVENT_LOG {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+    }
+
     /// The defect this guards: the seed used to be `.unwrap_or(0)`. A store
     /// that could not report its last position therefore restarted the
     /// numbering at 1, and because appends are idempotent *by position* every
@@ -378,11 +415,13 @@ mod tests {
     /// dense sequence and no error to show for it.
     #[tokio::test]
     async fn an_unreadable_log_position_refuses_the_lease_rather_than_renumbering() {
+        let refusals = Arc::new(Refusals::default());
         let handler = RequestHandlerBuilder::new(NoopExecutor)
             .without_agent_card()
             .with_task_store(UnreadableLogStore(|| {
                 A2aError::internal("the pool is gone")
             }))
+            .with_metrics(Arc::clone(&refusals))
             .build()
             .expect("handler");
 
@@ -396,6 +435,7 @@ mod tests {
             matches!(err, ServerError::Internal(_)),
             "expected an internal error, got {err:?}"
         );
+        assert_eq!(refusals.count(), 0, "a failure, not a refusal");
 
         // And the refusal must not wedge the task: the queue it created has to
         // be released, or every later send for this id reports "already being
@@ -413,11 +453,13 @@ mod tests {
     /// still is not renumbered and nothing is left behind.
     #[tokio::test]
     async fn an_unavailable_store_refuses_the_lease_as_overloaded() {
+        let refusals = Arc::new(Refusals::default());
         let handler = RequestHandlerBuilder::new(NoopExecutor)
             .without_agent_card()
             .with_task_store(UnreadableLogStore(|| {
                 A2aError::unavailable("the database is busy")
             }))
+            .with_metrics(Arc::clone(&refusals))
             .build()
             .expect("handler");
 
@@ -431,6 +473,7 @@ mod tests {
             matches!(err, ServerError::Overloaded(_)),
             "expected overloaded, got {err:?}"
         );
+        assert_eq!(refusals.count(), 1, "counted as the event log's refusal");
         assert_eq!(err.http_status(), 503);
         assert!(err.retry_after().is_some(), "{err:?}");
         assert_eq!(handler.event_queue_manager.active_count().await, 0);

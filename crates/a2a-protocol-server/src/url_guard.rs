@@ -376,6 +376,14 @@ pub(crate) fn webhook_port(uri: &hyper::Uri) -> u16 {
     }
 }
 
+/// The bounded system lookup [`resolve`] uses, for a caller that passes it to
+/// [`resolve_with`] and has to see its answer: the push sender behind a proxy,
+/// which tells a name that does not resolve here from one that resolves to a
+/// private address (ADR 0043).
+pub(crate) async fn system_lookup(addr: String) -> std::io::Result<Vec<SocketAddr>> {
+    lookup::lookup_host(addr).await
+}
+
 /// [`resolve_public_url`], with `what` naming the URL in the error.
 pub(crate) async fn resolve(
     url: &str,

@@ -1,0 +1,27 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://a2a-rust.com/extensions/approval/v1/request.schema.json",
+ "title": "Approval request (approval/v1)",
+ "description": "On the status message of a task at input-required: what will happen if a person approves, bound by the SHA-256 of the RFC 8785 canonical JSON of the action. requestedBy is set by the server. Unknown members are ignored.",
+ "type": "object",
+ "required": [
+  "requestId",
+  "summary",
+  "digest"
+ ],
+ "properties": {
+  "requestId": {
+   "type": "string"
+  },
+  "summary": {
+   "type": "string"
+  },
+  "digest": {
+   "type": "string",
+   "pattern": "^sha256:[0-9a-f]{64}$"
+  },
+  "requestedBy": {
+   "type": "string"
+  }
+ }
+}

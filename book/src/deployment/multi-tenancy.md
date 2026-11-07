@@ -64,13 +64,13 @@ use a2a_protocol_server::tenant_config::{PerTenantConfig, TenantLimits};
 
 let config = PerTenantConfig::builder()
     .default_limits(TenantLimits::builder()
-        .max_concurrent_tasks(100)
-        .rate_limit_rps(50)
+        .with_max_concurrent_tasks(100)
+        .with_rate_limit_rps(50)
         .build())
     .with_override("premium-corp", TenantLimits::builder()
-        .max_concurrent_tasks(1000)
-        .executor_timeout(Duration::from_secs(120))
-        .rate_limit_rps(500)
+        .with_max_concurrent_tasks(1000)
+        .with_executor_timeout(Duration::from_secs(120))
+        .with_rate_limit_rps(500)
         .build())
     .build();
 
@@ -109,8 +109,9 @@ production.
 
 A tenant at `max_concurrent_tasks` is **refused**. Queueing would convert a
 declared bound into unbounded latency and unbounded memory — the limit would
-stop meaning anything under exactly the load it exists for. If you want
-queueing, build it in front of the agent where you can see its depth.
+stop meaning anything under exactly the load it exists for. A queue in front
+of the shared capacity, bounded in length and in wait, is the admission gate
+below; a tenant's own `max_concurrent_tasks` stays refuse-only.
 
 ### `max_concurrent_tasks` is per replica
 
@@ -136,8 +137,47 @@ handler sweep thresholds, the tenant-partition cap on the store wrappers — are
 and cause another tenant's requests to be refused as overloaded.
 
 Size per-tenant `max_concurrent_tasks` so the sum across active tenants stays
-within the process-wide caps. Data isolation does not depend on any of this,
-and is not affected by it.
+within the process-wide caps, or put an admission gate in front of them. Data
+isolation does not depend on any of this, and is not affected by it.
+
+### Reserving capacity, queueing, and priority: the admission gate
+
+`RequestHandlerBuilder::with_admission(Admission)` puts one gate in front of
+the send path (audit H9, ADR 0045). It is off by default, and everything it
+decides comes from the server's configuration, never from the request:
+
+```text
+Admission::new(256)                       // turns running at once through the gate
+    .with_max_queued(1024)                // sends that may wait, across tenants
+    .with_max_wait(Duration::from_millis(500))
+    .with_tenant("premium",
+        TenantShare::new().with_reserved(32).with_priority(1).with_weight(4))
+```
+
+- **Capacity.** At most `capacity` turns run through the gate. The build
+  refuses 0, and a capacity above `with_max_concurrent_streams`, which would
+  refuse what the gate admitted.
+- **Reservations.** `with_reserved(n)` keeps `n` slots for that tenant alone;
+  the rest are shared. The build refuses reservations past the capacity, and
+  a default share that reserves anything.
+- **A bounded wait.** A send with no slot waits if the queue has room, for at
+  most `max_wait` or what remains of its budget, whichever is shorter. A full
+  queue or a wait that reaches `max_wait` is refused `Overloaded` (503 with
+  `Retry-After`, as before); a wait the budget cut short is refused as a spent
+  budget is (invalid params), since retrying cannot help that send. The
+  defaults wait for nothing.
+- **Priority and weights.** A freed slot goes to the highest priority with a
+  send waiting that may take it; within a priority, tenants take turns,
+  `weight` sends each per round, oldest first within a tenant. The tenant is
+  the one the `TenantResolver` resolved, so priority follows what the server
+  decided about the caller. A higher class can starve a lower one under
+  sustained load; that is what a class means.
+
+A queued send holds its tenant's `max_concurrent_tasks` slot while it waits,
+so a tenant's waiters are bounded by its own limit. The gate is per replica,
+like every limit here. `RequestHandler::admission_load()` returns what it
+holds, and the [load signal](./health-checks.md#load-for-balancers) reports
+it.
 
 ## Where their tasks are stored
 

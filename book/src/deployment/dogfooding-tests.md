@@ -29,7 +29,7 @@ The agent team runs **100 E2E tests** across seven test modules (`coverage_gaps`
 | 16 | pagination-walk | JSON-RPC | `ListTasks` page_size=1, no duplicates |
 | 17 | agent-card-discovery | REST | `resolve_agent_card` on REST endpoint |
 | 18 | agent-card-jsonrpc | JSON-RPC | `resolve_agent_card` on JSON-RPC endpoint |
-| 19 | push-not-supported | JSON-RPC | `set_push_config` on an agent with no push sender is rejected (spec: `PushNotificationNotSupported`, -32003; code not checked) |
+| 19 | push-not-supported | JSON-RPC | `create_push_config` on an agent with no push sender is rejected (spec: `PushNotificationNotSupported`, -32003; code not checked) |
 | 20 | cancel-completed | REST | `CancelTask` on a completed task is rejected (spec: `TaskNotCancelable`, -32002; code not checked) |
 
 ## Tests 21-30: Edge Cases (`edge_cases.rs`)

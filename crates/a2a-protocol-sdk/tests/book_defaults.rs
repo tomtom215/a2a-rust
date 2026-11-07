@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 
 use a2a_protocol_sdk::client::transport::grpc::GrpcTransportConfig;
 use a2a_protocol_sdk::client::{ClientConfig, RetryPolicy};
-use a2a_protocol_sdk::server::store::TaskStoreConfig;
+use a2a_protocol_sdk::server::store::{RetentionPolicy, TaskStoreConfig};
 use a2a_protocol_sdk::server::{
     DispatchConfig, GrpcConfig, HandlerLimits, PushRetryPolicy, RateLimitConfig,
 };
@@ -188,6 +188,10 @@ fn every_documented_default_is_the_default() {
             format!("{:?}", GrpcTransportConfig::default()),
         ),
         ("RetryPolicy", format!("{:?}", RetryPolicy::default())),
+        (
+            "RetentionPolicy",
+            format!("{:?}", RetentionPolicy::new(std::time::Duration::ZERO)),
+        ),
     ] {
         let fields = debug_fields(&debug);
         compare(heading, &page, &fields, None, &mut wrong);

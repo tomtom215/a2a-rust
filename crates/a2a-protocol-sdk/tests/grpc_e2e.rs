@@ -127,7 +127,12 @@ async fn start() -> A2aClient {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
-    let addr = dispatcher.serve_with_listener(listener).expect("serve");
+    let addr = {
+        let listener = listener;
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(dispatcher.serve_with_shutdown(listener, std::future::pending()));
+        addr
+    };
 
     let endpoint = format!("http://{addr}");
     let transport = GrpcTransport::connect(&endpoint).await.expect("connect");
@@ -249,7 +254,7 @@ async fn push_config_crud_roundtrip() {
     };
 
     let created = client
-        .set_push_config(
+        .create_push_config(
             TaskPushNotificationConfig::new(task.id.0.clone(), "https://hooks.example.com/notify")
                 .with_token("tok-1"),
         )

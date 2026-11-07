@@ -47,8 +47,10 @@ pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
 /// their own before they are cancelled.
 ///
 /// Five seconds covers the blocking sends and short streams that make up most
-/// traffic, so a rolling deploy does not turn them into `Canceled` answers
-/// their callers may retry. It is deliberately short: work that is still
+/// traffic, so a rolling deploy lets them finish instead of stopping them; a
+/// turn still running after it ends `Failed`, failure class `transient` (or,
+/// when its executor can be re-run on a store with claims, is handed back to
+/// its caller, ADR 0054). It is deliberately short: work that is still
 /// running after it is usually a long delegation, which no window short of
 /// the platform's kill deadline would see finish, and which needs the time
 /// that follows — [`DEFAULT_TASK_GRACE`] — to cancel what it delegated.
@@ -167,6 +169,14 @@ pub struct ServeConfig {
 
 impl Default for ServeConfig {
     fn default() -> Self {
+        Self::defaults()
+    }
+}
+
+impl ServeConfig {
+    /// [`Default::default`], in a `const` context: the gRPC and WebSocket
+    /// dispatchers hold one from their `const fn new`.
+    pub(crate) const fn defaults() -> Self {
         Self {
             max_connections: None,
             drain_timeout: DEFAULT_DRAIN_TIMEOUT,

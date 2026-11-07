@@ -197,7 +197,7 @@ async fn subscribe_serves_concurrent_streams_for_one_task() {
     let StreamResponse::Task(task) = first else {
         panic!("a lifecycle stream starts with the Task, got {first:?}");
     };
-    let subscribe = || handler.on_resubscribe(TaskIdParams::new(task.id.0.clone()), None);
+    let subscribe = || handler.on_subscribe_to_task(TaskIdParams::new(task.id.0.clone()), None);
     let mut a = subscribe().await.expect("first subscriber");
     let mut b = subscribe().await.expect("second subscriber, concurrently");
 

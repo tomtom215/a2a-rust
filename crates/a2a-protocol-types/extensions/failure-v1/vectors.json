@@ -1,0 +1,46 @@
+{
+ "description": "Conformance vectors for https://a2a-rust.com/extensions/failure/v1. Each 'valid' value reads as the class in 'reads'. Nothing is refused: each 'tolerated' value, which a sender must not write, is read as 'reads' (null: no class, which is not an error; the task's state still says it failed). Run by crates/a2a-protocol-types/tests/extension_vectors.rs, each value read through the SDK's own reader, and checked against the schema beside it.",
+ "uri": "https://a2a-rust.com/extensions/failure/v1",
+ "metadataKey": "a2a-rust.com/failure",
+ "carrier": "Message.metadata of the failed task's status message",
+ "valid": [
+  {
+   "name": "invalid-request",
+   "value": "invalid-request",
+   "reads": "invalid-request"
+  },
+  {
+   "name": "transient",
+   "value": "transient",
+   "reads": "transient"
+  },
+  {
+   "name": "policy-refusal",
+   "value": "policy-refusal",
+   "reads": "policy-refusal"
+  },
+  {
+   "name": "budget-exhausted",
+   "value": "budget-exhausted",
+   "reads": "budget-exhausted"
+  },
+  {
+   "name": "internal",
+   "value": "internal",
+   "reads": "internal"
+  }
+ ],
+ "invalid": [],
+ "tolerated": [
+  {
+   "name": "an unrecognised token reads as internal",
+   "value": "quota-blown",
+   "reads": "internal"
+  },
+  {
+   "name": "not a string reads as no class",
+   "value": 7,
+   "reads": null
+  }
+ ]
+}

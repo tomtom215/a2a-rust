@@ -179,9 +179,22 @@ async fn a_turn_admitted_after_the_walk_stops_itself() {
         .await;
     for (tenant, stopped) in [("acme", true), ("globex", false)] {
         let (turn, token) = (ExecutorTurn::default(), CancellationToken::new());
-        TenantContext::scope(tenant, async { h.stop_if_halted(&turn, &token) }).await;
+        TenantContext::scope(tenant, async { h.stop_if_halted(&turn, &token, "job") }).await;
         assert_eq!(token.is_cancelled(), stopped, "{tenant}");
         assert_eq!(turn.is_halted(), stopped, "{tenant}");
+    }
+    // The same check by job: only the halted root, only in its tenant.
+    h.halt(HaltScope::root("globex", "job-a"), "oncall", "late job")
+        .await;
+    for (tenant, root, stopped) in [
+        ("globex", "job-a", true),
+        ("globex", "job-b", false),
+        ("initech", "job-a", false),
+    ] {
+        let (turn, token) = (ExecutorTurn::default(), CancellationToken::new());
+        TenantContext::scope(tenant, async { h.stop_if_halted(&turn, &token, root) }).await;
+        assert_eq!(token.is_cancelled(), stopped, "{tenant}/{root}");
+        assert_eq!(turn.is_halted(), stopped, "{tenant}/{root}");
     }
 }
 
@@ -231,4 +244,37 @@ async fn a_halt_and_a_resume_are_recorded_with_the_operator() {
         "{records:#?}"
     );
     assert!(log.verify("acme").await.expect("verify").is_intact());
+}
+
+/// A job's halt and resume are recorded in its tenant's chain, naming the
+/// root, with the scope `root`.
+#[cfg(feature = "audit")]
+#[tokio::test]
+async fn a_root_halt_is_recorded_with_its_root() {
+    use crate::audit::{AuditLog, InMemoryAuditStore};
+    use a2a_protocol_types::audit::kind;
+
+    let log = Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new())));
+    let h = RequestHandlerBuilder::new(Sleeper)
+        .without_agent_card()
+        .with_task_store(TenantAwareInMemoryTaskStore::new())
+        .with_audit(Arc::clone(&log))
+        .build()
+        .expect("handler");
+    h.halt(HaltScope::root("acme", "job-9"), "oncall", "loops")
+        .await;
+    assert!(
+        h.resume(HaltScope::root("acme", "job-9"), "oncall")
+            .await
+            .unwrap()
+    );
+    let records = log.export("acme").await.expect("export");
+    let halts: Vec<_> = records.iter().filter(|r| r.kind == kind::HALT).collect();
+    assert_eq!(halts.len(), 2, "{records:#?}");
+    for r in &halts {
+        assert_eq!(r.detail["scope"], "root");
+        assert_eq!(r.detail["root"], "job-9");
+    }
+    assert_eq!(halts[0].detail["action"], "halt");
+    assert_eq!(halts[1].detail["action"], "resume");
 }

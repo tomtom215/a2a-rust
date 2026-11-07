@@ -37,6 +37,8 @@ enum Flaw {
     DropsAll,
     /// A halt on tenant `all` is stored as the halt on everything.
     MergesAll,
+    /// A job's halt is keyed by its tenant and root joined with `:`.
+    JoinsJobs,
     /// Pushes writes, and a cancel for a task other than the one published.
     WrongCancel,
 }
@@ -62,6 +64,7 @@ impl Broken {
         match (scope, self.flaw) {
             (HaltScope::All, Flaw::Collides) => "all".to_owned(),
             (HaltScope::Tenant(t), Flaw::Collides) => t.clone(),
+            (HaltScope::Root { tenant, root }, Flaw::JoinsJobs) => format!("{tenant}:{root}"),
             (scope, _) => format!("{scope:?}"),
         }
     }
@@ -199,6 +202,9 @@ async fn each_flaw_is_named() {
         (Flaw::DropsAll, "scopes_do_not_collide"),
         (Flaw::MergesAll, "scopes_do_not_collide"),
         (Flaw::WrongCancel, "a_cancel_is_pushed_to_another_handle"),
+        (Flaw::JoinsJobs, "job_halts_are_kept_apart"),
+        (Flaw::KeepsRemoved, "job_halts_are_kept_apart"),
+        (Flaw::RemovesAll, "job_halts_are_kept_apart"),
         (Flaw::Mute, "a_write_is_pushed_to_another_handle"),
     ] {
         let report = grade_store(Broken::new(flaw)).await;

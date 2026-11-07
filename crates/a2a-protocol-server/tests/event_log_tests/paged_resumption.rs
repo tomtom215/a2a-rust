@@ -40,7 +40,7 @@ async fn a_replay_longer_than_the_limit_is_read_in_pages() {
     let task_id = parked_task_with_log(&store, 5).await;
 
     let reader = handler
-        .on_resubscribe(
+        .on_subscribe_to_task(
             TaskIdParams::new(task_id.0.clone()),
             Some(&header("last-event-id", "0")),
         )

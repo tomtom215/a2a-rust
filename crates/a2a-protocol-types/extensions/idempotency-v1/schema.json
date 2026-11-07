@@ -1,0 +1,8 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://a2a-rust.com/extensions/idempotency/v1/schema.json",
+ "title": "Idempotency key (idempotency/v1)",
+ "description": "The value under the key is the idempotency key itself: 16 to 255 of ASCII letters, digits and - _ . : (no other character, no non-ASCII).",
+ "type": "string",
+ "pattern": "^[A-Za-z0-9._:-]{16,255}$"
+}

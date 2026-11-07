@@ -37,8 +37,9 @@
 //! knows the address:
 //!
 //! - JSON-RPC and REST: from the [`PeerAddr`] request extension, which
-//!   [`serve`](fn@crate::serve), [`serve_with_addr`](crate::serve_with_addr) and
-//!   [`Server`](crate::Server) insert. A server of your own that calls
+//!   [`Server`](crate::Server) inserts (and so do the deprecated
+//!   [`serve`](fn@crate::serve) and [`serve_with_addr`](crate::serve_with_addr),
+//!   which run on it). A server of your own that calls
 //!   [`Dispatcher::dispatch`](crate::Dispatcher::dispatch) inserts it the same
 //!   way.
 //! - The axum router: from [`PeerAddr`], or from axum's

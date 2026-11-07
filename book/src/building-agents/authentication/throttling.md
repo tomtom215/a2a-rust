@@ -76,7 +76,9 @@ reverse proxies, set `with_trusted_proxy_hops` to the number of proxies so the
 client address they append to `x-forwarded-for` is counted instead, and name
 their address ranges with `with_trusted_proxies` so that a connection from
 anywhere else cannot choose the address that is counted by sending the header
-itself. An IPv6 peer is counted by its `/64`, as the rate limiter keys it: a
+itself (hops with no ranges log a warning when the throttle is built). A proxy
+that writes RFC 7239 `Forwarded` rather than `x-forwarded-for` is read with
+`with_forwarded_header(ForwardedHeader::Forwarded)`. An IPv6 peer is counted by its `/64`, as the rate limiter keys it: a
 host is routinely given a whole `/64` and could otherwise rotate addresses
 without reaching the limit. A call with no known address is not throttled.
 

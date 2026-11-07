@@ -27,60 +27,7 @@ impl A2aClient {
     /// Returns [`ClientError::Protocol`] with [`a2a_protocol_types::ErrorCode::TaskNotFound`]
     /// if no task with the given ID exists.
     pub async fn get_task(&self, params: TaskQueryParams) -> ClientResult<Task> {
-        self.read_task(params, false).await
-    }
-
-    /// Renews the lease of a task this client delegated with one
-    /// (`a2a_protocol_types::lease`, ADR 0020) and returns the task: a
-    /// `GetTask` that activates the lease extension, beside any extensions
-    /// this client already asks for.
-    ///
-    /// A WebSocket transport sends `A2A-Extensions` only with its upgrade,
-    /// so over WebSocket this renews only when the connection asked for the
-    /// lease extension (`WebSocketTransportConfig::with_extensions`).
-    ///
-    /// # Errors
-    ///
-    /// As [`get_task`](Self::get_task).
-    pub async fn renew_lease(&self, params: TaskQueryParams) -> ClientResult<Task> {
-        self.read_task(params, true).await
-    }
-
-    /// `GetTask`, activating the lease extension when `renew`.
-    async fn read_task(&self, mut params: TaskQueryParams, renew: bool) -> ClientResult<Task> {
-        const METHOD: &str = "GetTask";
-
-        params.tenant = self.tenant_or_default(params.tenant.take());
-        let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
-
-        let mut req = ClientRequest::new(METHOD, params_value);
-        self.interceptors.run_before(&mut req).await?;
-        if renew {
-            let lease = a2a_protocol_types::lease::LEASE_EXTENSION_URI;
-            // The header an interceptor set, in whatever case it used.
-            let key = req
-                .extra_headers
-                .keys()
-                .find(|k| k.eq_ignore_ascii_case(crate::extensions::HEADER))
-                .cloned()
-                .unwrap_or_else(|| crate::extensions::HEADER.to_owned());
-            let asked = req.extra_headers.entry(key).or_default();
-            if !asked.split(',').any(|uri| uri.trim() == lease) {
-                if !asked.trim().is_empty() {
-                    asked.push_str(", ");
-                }
-                asked.push_str(lease);
-            }
-        }
-
-        self.send_decoded(METHOD, &mut req, |result| {
-            let task =
-                serde_json::from_value::<Task>(result).map_err(ClientError::Serialization)?;
-            crate::received::task(METHOD, &task)?;
-            self.content.task(&task)?;
-            Ok(task)
-        })
-        .await
+        self.read_task(params, &[]).await
     }
 
     /// Lists tasks visible to the caller.

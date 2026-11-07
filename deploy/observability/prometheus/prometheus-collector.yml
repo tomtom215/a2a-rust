@@ -9,6 +9,13 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+storage:
+  tsdb:
+    # Whichever comes first (audit C-19).
+    retention:
+      time: 7d
+      size: 5GB
+
 rule_files:
   - rules/*.yml
 
@@ -21,6 +28,11 @@ scrape_configs:
     honor_labels: true
     static_configs:
       - targets: ["otel-collector:8889"]
+  # The Collector's own metrics (service.telemetry in
+  # ../otel-collector/config.yaml), watched by rules/stack-alerts.yml.
+  - job_name: otelcol
+    static_configs:
+      - targets: ["otel-collector:8888"]
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]

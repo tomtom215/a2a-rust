@@ -170,6 +170,7 @@ pub struct RequestHandlerBuilder {
     task_store_config: TaskStoreConfig,
     push_config_store: Option<Arc<dyn PushConfigStore>>,
     push_sender: Option<Arc<dyn PushSender>>,
+    push_outbox: Option<Arc<dyn crate::push::outbox::PushOutbox>>,
     interceptors: ServerInterceptorChain,
     agent_card: CardSetting,
     extended_agent_card: Option<Box<AgentCard>>,
@@ -186,6 +187,8 @@ pub struct RequestHandlerBuilder {
     tenant_isolation: TenantIsolation,
     caller_isolation: Option<CallerIsolation>,
     inbound_trace_policy: crate::handler::InboundTracePolicy,
+    baggage: a2a_protocol_types::trace_context::baggage::BaggagePolicy,
+    propagators: Option<a2a_protocol_types::trace_context::baggage::Propagators>,
     span_settings: crate::rpc_span::SpanSettings,
     outbound: crate::provenance::Outbound,
     inbound: crate::provenance::Inbound,
@@ -193,6 +196,8 @@ pub struct RequestHandlerBuilder {
     allow_undeclared_input_modes: bool,
     refuse_private_file_urls: bool,
     approval_gate: Option<crate::approval::ApprovalGate>,
+    admission: Option<crate::admission::Admission>,
+    load_reporting: bool,
     halt_store: Option<Arc<dyn crate::store::HaltStore>>,
     halt_poll_interval: std::time::Duration,
     lease_store: Option<Arc<dyn crate::store::LeaseStore>>,
@@ -240,6 +245,7 @@ impl RequestHandlerBuilder {
             task_store_config: TaskStoreConfig::default(),
             push_config_store: None,
             push_sender: None,
+            push_outbox: None,
             interceptors: ServerInterceptorChain::new(),
             agent_card: CardSetting::Unset,
             extended_agent_card: None,
@@ -256,6 +262,8 @@ impl RequestHandlerBuilder {
             tenant_isolation: TenantIsolation::Required,
             caller_isolation: None,
             inbound_trace_policy: crate::handler::InboundTracePolicy::Continue,
+            baggage: a2a_protocol_types::trace_context::baggage::BaggagePolicy::Off,
+            propagators: None,
             span_settings: crate::rpc_span::SpanSettings {
                 agent: true,
                 content: false,
@@ -269,6 +277,8 @@ impl RequestHandlerBuilder {
             allow_undeclared_input_modes: false,
             refuse_private_file_urls: false,
             approval_gate: None,
+            admission: None,
+            load_reporting: false,
             halt_store: None,
             halt_poll_interval: crate::handler::DEFAULT_HALT_POLL_INTERVAL,
             lease_store: None,
@@ -397,6 +407,24 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Keeps webhook deliveries in `outbox` until they are delivered, instead
+    /// of in memory (ADR 0037): a delivery waiting or being retried when the
+    /// process stops is delivered after it, by this replica or any other that
+    /// shares the outbox, with the same `A2A-Delivery-Id`, and a webhook that
+    /// is down is retried with backoff for up to
+    /// [`push_outbox_max_age`](crate::handler::HandlerLimits::push_outbox_max_age).
+    /// Delivery is then at least once. Needs a push sender; without one there
+    /// is nothing to deliver with and the outbox is not used.
+    ///
+    /// The handler's worker claims rows from the moment the handler is built
+    /// inside a Tokio runtime (or, built outside one, from its first event),
+    /// so a replica that restarts delivers what an earlier process left.
+    #[must_use]
+    pub fn with_push_outbox(mut self, outbox: Arc<dyn crate::push::outbox::PushOutbox>) -> Self {
+        self.push_outbox = Some(outbox);
+        self
+    }
+
     /// Records every call, run, task event and cancel request in `log`, a
     /// hash chain per tenant (the `audit` feature; ADR 0015).
     ///
@@ -441,6 +469,36 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub fn with_approval_gate(mut self, gate: crate::approval::ApprovalGate) -> Self {
         self.approval_gate = Some(gate);
+        self
+    }
+
+    /// Puts an admission gate in front of the send path (audit H9, ADR
+    /// 0045): a capacity, slots reserved per tenant, a bounded wait inside
+    /// the send's budget, priority classes and weighted fairness, all set by
+    /// the server. Without one, which is the default, a send the server has
+    /// no room for is refused at once, as before.
+    ///
+    /// # Errors at build
+    ///
+    /// [`ServerError::Config`](crate::error::ServerError::Config) when the
+    /// gate's capacity is 0 or above the concurrent-stream cap
+    /// ([`with_max_concurrent_streams`](Self::with_max_concurrent_streams)),
+    /// when its default share reserves slots, or when its reservations sum
+    /// past its capacity.
+    #[must_use]
+    pub fn with_admission(mut self, admission: crate::admission::Admission) -> Self {
+        self.admission = Some(admission);
+        self
+    }
+
+    /// Reports this replica's load for balancers (audit H7, ADR 0046): `GET
+    /// /load` answers it as JSON on the HTTP+JSON binding and the axum
+    /// router, and every response the crate's server or the axum router
+    /// sends carries it in [`LOAD_HEADER`](crate::LOAD_HEADER). Off by
+    /// default; readiness does not change with it.
+    #[must_use]
+    pub const fn with_load_reporting(mut self) -> Self {
+        self.load_reporting = true;
         self
     }
 
@@ -928,6 +986,36 @@ impl RequestHandlerBuilder {
         policy: crate::handler::InboundTracePolicy,
     ) -> Self {
         self.inbound_trace_policy = policy;
+        self
+    }
+
+    /// Which entries of a caller's W3C `baggage` header the call's
+    /// OpenTelemetry context takes, and so the executor and the calls it
+    /// makes: none by default (audit C-10). Baggage can carry user data
+    /// across a trust boundary, so a receiving agent names the keys it
+    /// accepts ([`BaggagePolicy::keys`](a2a_protocol_types::trace_context::baggage::BaggagePolicy::keys)).
+    /// Read only under [`InboundTracePolicy::Continue`](crate::handler::InboundTracePolicy::Continue),
+    /// within the W3C limits (64 members, 8192 bytes); never a metric label.
+    #[must_use]
+    pub fn with_baggage_propagation(
+        mut self,
+        policy: a2a_protocol_types::trace_context::baggage::BaggagePolicy,
+    ) -> Self {
+        self.baggage = policy;
+        self
+    }
+
+    /// Which propagators inbound calls are read with, instead of
+    /// `OTEL_PROPAGATORS` (read when the handler is built; default
+    /// `tracecontext,baggage`). Without `tracecontext` a caller's
+    /// `traceparent` is not continued (a `Continue` policy acts as
+    /// `Restart`); without `baggage` no baggage is read.
+    #[must_use]
+    pub fn with_propagators(
+        mut self,
+        propagators: a2a_protocol_types::trace_context::baggage::Propagators,
+    ) -> Self {
+        self.propagators = Some(propagators);
         self
     }
 
@@ -1458,6 +1546,17 @@ impl RequestHandlerBuilder {
                 }
             });
         let stores_isolate = task_store.isolates_tenants() && push_config_store.isolates_tenants();
+        let propagators = self
+            .propagators
+            .clone()
+            .unwrap_or_else(a2a_protocol_types::trace_context::baggage::Propagators::from_env);
+        for _name in &propagators.unknown {
+            trace_warn!(
+                propagator = %_name,
+                "OTEL_PROPAGATORS names a propagator this server does not read; ignored \
+                 (it reads tracecontext and baggage)"
+            );
+        }
         let refuse_unisolated_tenants =
             !stores_isolate && self.tenant_isolation == TenantIsolation::Required;
         if isolate_callers && !stores_isolate {
@@ -1568,13 +1667,35 @@ impl RequestHandlerBuilder {
             )
         });
         let in_flight = crate::handler::InFlight::default();
-        let push_lanes = crate::handler::PushLanes::new(
+        let push_lanes = crate::handler::PushLanes::with_outbox(
             Arc::clone(&push_config_store),
             push_sender.clone(),
             self.handler_limits.clone(),
             Arc::clone(&self.metrics),
             in_flight.background().clone(),
+            self.push_outbox
+                .map(|outbox| (outbox, in_flight.shutdown_token())),
         );
+        if let Some((unready_at, ready_at)) = self.handler_limits.saturation_readiness
+            && ready_at >= unready_at
+        {
+            return Err(crate::error::ServerError::Config(format!(
+                "saturation readiness ({unready_at}, {ready_at}): the ready threshold must be \
+                 below the unready one, or readiness has no band to keep it from flapping"
+            )));
+        }
+        let admission = match self.admission {
+            None => None,
+            Some(admission) => {
+                let cap = self
+                    .max_concurrent_streams
+                    .unwrap_or(DEFAULT_MAX_CONCURRENT_STREAMS);
+                if let Some(why) = admission.invalid(cap) {
+                    return Err(crate::error::ServerError::Config(why));
+                }
+                Some(crate::admission::gate::AdmissionGate::new(admission))
+            }
+        };
         let handler = RequestHandler {
             executor: self.executor,
             task_store,
@@ -1593,6 +1714,9 @@ impl RequestHandlerBuilder {
                         .unwrap_or(DEFAULT_MAX_CONCURRENT_STREAMS),
                 );
                 mgr = mgr.with_metrics(Arc::clone(&self.metrics));
+                if let Some(max) = self.handler_limits.max_buffered_event_bytes {
+                    mgr = mgr.with_max_buffered_bytes(max);
+                }
                 // An executor that fills the queue while the consumer retries
                 // a write waits as long as that retry may last, rather than
                 // failing a turn the store was about to take again.
@@ -1618,7 +1742,19 @@ impl RequestHandlerBuilder {
             require_resolved_tenant: self.require_resolved_tenant,
             refuse_unisolated_tenants,
             caller_isolation,
-            inbound_trace_policy: self.inbound_trace_policy,
+            inbound_trace_policy: if propagators.tracecontext
+                || self.inbound_trace_policy != crate::handler::InboundTracePolicy::Continue
+            {
+                self.inbound_trace_policy
+            } else {
+                crate::handler::InboundTracePolicy::Restart
+            },
+            #[cfg(feature = "otel")]
+            baggage: if propagators.baggage {
+                self.baggage
+            } else {
+                a2a_protocol_types::trace_context::baggage::BaggagePolicy::Off
+            },
             span_settings: self.span_settings,
             outbound: self.outbound,
             inbound: self.inbound,
@@ -1634,9 +1770,11 @@ impl RequestHandlerBuilder {
             tenant_slots: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             in_flight,
             halts: Arc::default(),
+            subscribers: Arc::default(),
             leases: self.lease_store.map(|store| crate::handler::lease::Leases {
                 store,
                 max_ttl: self.max_lease_ttl,
+                watch: Arc::default(),
             }),
             halt_sync: self.halt_store.map(|store| {
                 Arc::new(crate::handler::halt::sync::HaltSync::new(
@@ -1649,6 +1787,13 @@ impl RequestHandlerBuilder {
             #[cfg(feature = "audit")]
             audit: self.audit,
             draining: std::sync::atomic::AtomicBool::new(false),
+            admission,
+            load_reporting: if self.load_reporting {
+                crate::handler::LoadReporting::On
+            } else {
+                crate::handler::LoadReporting::Off
+            },
+            saturated: std::sync::atomic::AtomicBool::new(false),
         };
         // Started now when a runtime is running, which is the usual case (a
         // handler is built in `#[tokio::main]`): until 2026-11-01 it started
@@ -1733,6 +1878,17 @@ impl RequestHandlerBuilder {
     }
 }
 
+impl RequestHandlerBuilder {
+    /// The agent card setting, as `Debug` names it.
+    const fn card_setting(&self) -> &'static str {
+        match self.agent_card {
+            CardSetting::Unset => "unset",
+            CardSetting::Card(_) => "card",
+            CardSetting::Without => "without",
+        }
+    }
+}
+
 impl std::fmt::Debug for RequestHandlerBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut d = f.debug_struct("RequestHandlerBuilder");
@@ -1741,15 +1897,9 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("task_store_config", &self.task_store_config)
             .field("push_config_store", &self.push_config_store.is_some())
             .field("push_sender", &self.push_sender.is_some())
+            .field("push_outbox", &self.push_outbox.is_some())
             .field("interceptors", &self.interceptors)
-            .field(
-                "agent_card",
-                &match self.agent_card {
-                    CardSetting::Unset => "unset",
-                    CardSetting::Card(_) => "card",
-                    CardSetting::Without => "without",
-                },
-            )
+            .field("agent_card", &self.card_setting())
             .field("extended_agent_card", &self.extended_agent_card.is_some())
             .field(
                 "extended_card_provider",
@@ -1777,18 +1927,19 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             )
             .field("refuse_private_file_urls", &self.refuse_private_file_urls)
             .field("approval_gate", &self.approval_gate)
+            .field("admission", &self.admission)
+            .field("load_reporting", &self.load_reporting)
             .field("halt_store", &self.halt_store.is_some())
             .field("halt_poll_interval", &self.halt_poll_interval)
             .field("lease_store", &self.lease_store.is_some())
             .field("max_lease_ttl", &self.max_lease_ttl)
             .field("turn_claims", &self.turn_claims)
-            .field(
-                "allow_process_local_stores",
-                &self.allow_process_local_stores,
-            )
             .field("turn_claim_ttl", &self.turn_claim_ttl)
             .field("turn_claim_renewal", &self.turn_claim_renewal)
-            .field("replica_name", &self.replica_name);
+            .field("replica_name", &self.replica_name)
+            .field("propagation", &(&self.baggage, &self.propagators));
+        let local = self.allow_process_local_stores;
+        d.field("allow_process_local_stores", &local);
         d.field("profiles", &self.profiles);
         #[cfg(feature = "audit")]
         d.field("audit", &self.audit.is_some());
@@ -2108,10 +2259,10 @@ mod tests {
             .with_tenant_resolver(HeaderTenantResolver::default())
             .with_tenant_config(
                 PerTenantConfig::builder()
-                    .default_limits(TenantLimits::builder().rate_limit_rps(100).build())
+                    .default_limits(TenantLimits::builder().with_rate_limit_rps(100).build())
                     .with_override(
                         "premium",
-                        TenantLimits::builder().rate_limit_rps(1000).build(),
+                        TenantLimits::builder().with_rate_limit_rps(1000).build(),
                     )
                     .build(),
             )
@@ -2391,6 +2542,7 @@ mod tests {
             AgentExtension::new(idempotency::IDEMPOTENCY_EXTENSION_URI),
             AgentExtension::new(a2a_protocol_types::failure::FAILURE_EXTENSION_URI),
             AgentExtension::new(a2a_protocol_types::budget::BUDGET_EXTENSION_URI),
+            AgentExtension::new(a2a_protocol_types::lineage::LINEAGE_EXTENSION_URI),
         ]);
         card.signatures = Some(vec![a_signature()]);
 

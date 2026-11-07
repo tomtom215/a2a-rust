@@ -15,7 +15,7 @@
 //! |---|---|
 //! | [`crate::methods::send_message`] | `send_message`, `stream_message` |
 //! | [`crate::methods::tasks`] | `get_task`, `list_tasks`, `cancel_task`, `resubscribe` |
-//! | [`crate::methods::push_config`] | `set_push_config`, `get_push_config`, `list_push_configs`, `delete_push_config` |
+//! | [`crate::methods::push_config`] | `create_push_config`, `get_push_config`, `list_push_configs`, `delete_push_config` |
 //! | [`crate::methods::extended_card`] | `get_authenticated_extended_card` |
 //!
 //! [`ClientBuilder`]: crate::ClientBuilder

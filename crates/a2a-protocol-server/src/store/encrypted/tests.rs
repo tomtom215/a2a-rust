@@ -479,3 +479,17 @@ async fn the_wrapper_hands_on_turn_claims() {
     let store = EncryptedTaskStore::from_arc(Arc::new(inner), cipher("k", 1).into_arc());
     assert!(store.turn_claims().is_some());
 }
+
+/// `trim_event_log` reaches the wrapped store: positions are not encrypted,
+/// so nothing needs opening (ADR 0047).
+#[tokio::test]
+async fn a_trim_reaches_the_wrapped_log() {
+    let (store, inner) = wrapped(cipher("k1", 1));
+    store.save(&task("t1")).await.unwrap();
+    let id = TaskId::new("t1");
+    for (seq, event) in (1..).zip(&events(&task("t1"))) {
+        store.append_event(&id, seq, event).await.unwrap();
+    }
+    assert_eq!(store.trim_event_log(&id, 3).await.unwrap(), 2);
+    assert_eq!(inner.earliest_event_seq(&id).await.unwrap(), Some(3));
+}

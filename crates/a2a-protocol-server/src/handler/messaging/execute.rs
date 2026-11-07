@@ -14,12 +14,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::super::turn_slots::TurnSlots;
 use a2a_protocol_types::error::A2aError;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::failure::{FailureClass, error_class, set_class};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::task::{TaskId, TaskState, TaskStatus};
-use tokio::sync::OwnedSemaphorePermit;
 use tokio::task::JoinHandle;
 
 use crate::executor::AgentExecutor;
@@ -218,17 +218,13 @@ impl RequestHandler {
         &self,
         ctx: RequestContext,
         writer: Arc<InMemoryQueueWriter>,
-        tenant_slot: Option<OwnedSemaphorePermit>,
+        slots: TurnSlots,
         turn: Arc<ExecutorTurn>,
         claim: Option<Arc<TurnClaim>>,
     ) -> JoinHandle<()> {
-        self.in_flight.executors().spawn(self.executor_future(
-            ctx,
-            writer,
-            tenant_slot,
-            turn,
-            claim,
-        ))
+        self.in_flight
+            .executors()
+            .spawn(self.executor_future(ctx, writer, slots, turn, claim))
     }
 
     /// Builds the executor for a task whose queue, token and row all exist,
@@ -237,33 +233,50 @@ impl RequestHandler {
         &self,
         ctx: RequestContext,
         writer: Arc<InMemoryQueueWriter>,
-        tenant_slot: Option<OwnedSemaphorePermit>,
+        slots: TurnSlots,
         turn: Arc<ExecutorTurn>,
         claim: Option<Arc<TurnClaim>>,
     ) -> DeferredExecutor {
         DeferredExecutor {
-            run: Some(Box::pin(self.executor_future(
-                ctx,
-                writer,
-                tenant_slot,
-                turn,
-                claim,
-            ))),
+            run: Some(Box::pin(
+                self.executor_future(ctx, writer, slots, turn, claim),
+            )),
             tracker: self.in_flight.executors().clone(),
         }
+    }
+
+    /// The executor span of the turn `ctx`. Opened before `ctx` moves into
+    /// the executor's future: the span records the ids, the agent, the turn's
+    /// lineage (ADR 0034) and — when captured — the request's message when it
+    /// is created. The call's own span learns the task and context here too,
+    /// the first point both are known.
+    fn open_executor_span(&self, ctx: &RequestContext) -> crate::rpc_span::ExecutorSpan {
+        #[cfg(feature = "tracing")]
+        crate::rpc_span::record_task(&ctx.task_id.0, Some(ctx.context_id.as_ref()));
+        let span = crate::rpc_span::ExecutorSpan::open(
+            &ctx.task_id.0,
+            ctx.context_id.as_ref(),
+            self.agent_card.as_ref(),
+            self.span_settings,
+            &ctx.message,
+        );
+        #[cfg(feature = "tracing")]
+        span.record_lineage(ctx.lineage());
+        span
     }
 
     /// The executor's whole run, from its first poll to its cleanup.
     ///
     /// The future owns the only writer clone needed, so the channel closes —
     /// and readers see EOF — when the executor finishes. It also owns the
-    /// tenant's concurrency permit, which is returned when the future ends,
-    /// however it ends: dropping the future drops the permit.
+    /// tenant's concurrency permit and the admission gate's, which are
+    /// returned when the future ends, however it ends: dropping the future
+    /// drops them.
     fn executor_future(
         &self,
         ctx: RequestContext,
         writer: Arc<InMemoryQueueWriter>,
-        tenant_slot: Option<OwnedSemaphorePermit>,
+        slots: TurnSlots,
         turn: Arc<ExecutorTurn>,
         claim: Option<Arc<TurnClaim>>,
     ) -> impl std::future::Future<Output = ()> + Send + 'static {
@@ -293,29 +306,18 @@ impl RequestHandler {
         #[cfg(feature = "audit")]
         let audit = self.audit_hook();
 
-        // Opened before `ctx` moves into the executor's future: the span
-        // records the ids, the agent and — when captured — the request's
-        // message when it is created. The call's own span learns the task
-        // and context here too, the first point both are known.
-        #[cfg(feature = "tracing")]
-        crate::rpc_span::record_task(&ctx.task_id.0, Some(ctx.context_id.as_ref()));
-        let span = crate::rpc_span::ExecutorSpan::open(
-            &ctx.task_id.0,
-            ctx.context_id.as_ref(),
-            self.agent_card.as_ref(),
-            self.span_settings,
-            &ctx.message,
-        );
+        let span = self.open_executor_span(&ctx);
         #[cfg(feature = "tracing")]
         let recorder = span.recorder(continues(&ctx.task_id, ctx.stored_task.as_ref()));
         span.instrument(tenant.scope(async move {
-            // Owned by this future, so the slot is returned when the executor
-            // finishes, fails, panics, or is aborted.
-            let _tenant_slot = tenant_slot;
-            // The turn's claim (`handler::claims`), held here and by the
-            // turn's event consumer: released when the last of the two ends,
-            // so no write of this turn comes after another replica's next.
-            let _claim = claim;
+            // Owned by this future, so the slots are returned when the
+            // executor finishes, fails, panics, or is aborted.
+            let _slots = slots.into_parts();
+            // The turn's claim (`handler::claims`) is held by this future,
+            // which reads it when the executor returns (`Stop::after_run`),
+            // and by the turn's event consumer: released when the last of the
+            // two ends, so no write of this turn comes after another
+            // replica's next.
             trace_debug!(task_id = %ctx.task_id, "executor started");
 
             // Armed before the executor runs; see the type's docs for when it
@@ -340,7 +342,7 @@ impl RequestHandler {
                 run_executor(executor.as_ref(), &ctx, &writer, timeout, expose_internal)
             })
             .await;
-            let stop = Stop::of(turn.is_halted(), shutdown.is_cancelled(), turn.is_lapsed());
+            let stop = Stop::after_run(&turn, shutdown.is_cancelled(), claim.is_some(), &*executor);
             run.finish(run_outcome(
                 &result,
                 stop != Stop::No || ctx.cancellation_token.is_cancelled(),

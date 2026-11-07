@@ -198,6 +198,8 @@ impl RequestHandler {
 }
 
 #[cfg(test)]
+mod hand_off_tests;
+#[cfg(test)]
 mod idempotency_tests;
 #[cfg(test)]
 mod inline_executor_tests;

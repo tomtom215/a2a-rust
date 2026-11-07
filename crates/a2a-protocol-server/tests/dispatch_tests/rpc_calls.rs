@@ -8,7 +8,7 @@
 
 use std::sync::Mutex;
 
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{Metrics, RpcCall};
 
 use super::*;
@@ -69,9 +69,15 @@ fn failed(system: &str, method: Option<&str>, code: &str) -> Call {
 #[tokio::test]
 async fn jsonrpc_records_every_refusal_with_the_code_it_answered() {
     let seen = Seen::default();
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler(&seen)))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(handler(&seen)),
+            std::future::pending(),
+        ));
+        addr
+    };
 
     // Not JSON: refused before any method is named.
     post(addr, "/", "not json at all").await;
@@ -134,9 +140,15 @@ async fn jsonrpc_records_every_refusal_with_the_code_it_answered() {
 #[tokio::test]
 async fn jsonrpc_records_a_version_refusal_per_answer() {
     let seen = Seen::default();
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler(&seen)))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(handler(&seen)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let request = r#"{"jsonrpc":"2.0","id":1,"method":"GetTask","params":{"id":"t"}}"#;
     for body in [
         request.to_owned(),
@@ -162,9 +174,14 @@ async fn jsonrpc_records_a_version_refusal_per_answer() {
 #[tokio::test]
 async fn rest_records_the_http_status_it_answered() {
     let seen = Seen::default();
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler(&seen)))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler(&seen)), std::future::pending()),
+        );
+        addr
+    };
 
     let req = hyper::Request::builder()
         .method("GET")
@@ -272,9 +289,14 @@ fn refused_before_routing() -> [Call; 3] {
 #[tokio::test]
 async fn rest_records_each_request_refused_before_routing() {
     let seen = Seen::default();
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler(&seen)))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler(&seen)), std::future::pending()),
+        );
+        addr
+    };
     refuse_before_routing(addr).await;
     assert_eq!(*seen.lock().unwrap(), refused_before_routing());
 }
@@ -382,9 +404,15 @@ async fn the_axum_router_records_an_unreadable_query_as_the_method_refused() {
     )
     .await;
     let rest_seen = Seen::default();
-    let rest_addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler(&rest_seen)))
-        .await
-        .expect("serve");
+    let rest_addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(handler(&rest_seen)),
+            std::future::pending(),
+        ));
+        addr
+    };
 
     for addr in [axum_addr, rest_addr] {
         assert_eq!(

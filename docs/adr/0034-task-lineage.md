@@ -4,10 +4,12 @@
 # ADR 0034: Task lineage is an extension, and a job is halted by its root
 
 **Date:** 2026-10-31
-**Status:** Proposed. Nothing here is built or run. The shape follows the
-maintainer's recorded decision H-D5 (a lineage extension whose `root` defaults
-to the originating context). The maintainer asked on 2026-10-31 that the
-design be recorded for a later session.
+**Status:** Accepted, amended 2026-11-04 (below) and built for 0.16.0. The
+shape follows the maintainer's recorded decision H-D5 (a lineage extension
+whose `root` defaults to the originating context). The maintainer asked on
+2026-10-31 that the design be recorded for a later session, and on
+2026-11-04 that it ship in 0.16.0; the amendment settles the open questions
+and is the maintainer's to veto in review.
 **Author:** Tom F.
 
 ---
@@ -96,7 +98,7 @@ A2A project adopts one.
 * A halt by root does not stop parked tasks, as no halt does.
 * The registry of running turns grows by a lineage per turn.
 
-## What would settle it (nothing is run)
+## What would settle it (as proposed on 2026-10-31)
 
 * Two handlers on one `InMemoryHaltStore`, tasks under two roots across both:
   halting root A stops A's tasks on both and none of B's; a new send under A
@@ -118,3 +120,108 @@ A2A project adopts one.
 * Whether `covers` should take the lineage or the registry should filter
   first. `covers` is private today.
 * Whether a stored root index belongs in the `TaskStore` contract.
+
+## Amendment, 2026-11-04: the open questions settled, and what is built
+
+The maintainer's instruction of 2026-11-04 puts every open audit item in
+0.16.0, so this ADR is built rather than left Proposed (audit H10). These are
+the choices the section above left open, each with the reason.
+
+1. **Wire shape.** `Message.metadata["a2a-rust.com/lineage"]` is
+   `{"root": string, "depth": integer, "parentTaskId"?: string}`, and the
+   message declares `https://a2a-rust.com/extensions/lineage/v1` in
+   `Message.extensions`. Unknown members are ignored, so a later `v1` may add
+   optional ones. The server reads the metadata key whether or not the URI is
+   declared, as it does for the lease and the budget.
+2. **`parentTaskId` is carried, optionally.** It is the parent's task id on
+   the parent's agent, and nothing else: no agent URL or card. A task id is an
+   opaque name the child cannot use to reach the parent, so the leak the Open
+   list feared (an agent location at every hop) does not happen, and with it a
+   tree is built from the tasks alone, without a trace backend
+   (`a2a_protocol_types::lineage::tree`). `Delegation` sets it through
+   `RequestContext::child_lineage`.
+3. **The root and parent are bounded strings, not unreserved characters.**
+   1 to 1024 bytes, no control characters. The default root is the
+   originating `contextId`, which may be any string a server accepts (the
+   default `max_id_length` is 1024 bytes); a character set narrower than the
+   context id's would make a child refuse the root its parent was given.
+   A hop whose context ids are longer than 1024 bytes names an explicit root.
+4. **The depth cap is 16** (`MAX_LINEAGE_DEPTH`), the same number as the actor
+   chain of ADR 0021: a tree deeper than that already fails token exchange.
+   `Lineage::child` refuses to go past it at the parent, and the server
+   refuses a message past it before any work.
+5. **A task's lineage is fixed when it is created.** A new task records the
+   lineage its message carried in `Task.metadata` under the same key (nothing
+   is written for a message that carried none, so a caller that does not use
+   the extension sees no change on the wire). A continuation keeps the
+   lineage recorded on its task; a continuation whose message names another
+   root is refused as `InvalidParams`. A task with no recorded lineage takes
+   the continuation's, or else its own `contextId`.
+6. **`HaltScope::Root { tenant, root }`**, a struct variant on the
+   `#[non_exhaustive]` enum: the halt names its tenant explicitly, since
+   `halt` is called by operator code, not inside a tenant's request.
+7. **The halt store key** of a root halt is `root:<n>:<tenant><root>`, `<n>`
+   the tenant's length in bytes, in decimal. Tenants and roots may contain
+   `:`, so a separator alone could not tell `("a:b", "c")` from
+   `("a", "b:c")`; a length prefix can, for any two strings. The `root:`
+   prefix differs from `all` and `tenant:`, so no key of one kind is a key of
+   another (the second addition the triage asked for).
+8. **Mixed versions.** A 0.16 replica reads a row it cannot parse as a halt
+   of everything (audit NEW-h-designs-4, fixed in the same release), so an
+   older 0.16 replica sees a newer scope kind as a halt of everything, which
+   fails closed. A replica of 0.15 or older fails its whole load on such a
+   row. The triage asked for the tolerant parsing to ship a release before
+   any new scope kind; the instruction to ship both in 0.16.0 overrides that,
+   so the rule moves to the operator: **do not give a root halt until every
+   replica sharing the halt store runs 0.16**. The upgrade page says so.
+9. **`covers` takes the running turn's tenant and root.** The registry of
+   running turns keeps each turn's lineage; a halt walks it once, and the
+   poller of a halt store does the same for a scope another replica wrote.
+10. **The tree view** is two things. `RequestHandler::running_in_root` lists
+    the turns of one root running in this process, which is what a halt of
+    that root would stop here. `a2a_protocol_types::lineage::tree` arranges any set of tasks
+    (`ListTasks` from each agent, a dump of the task tables) by
+    `parentTaskId`, attaching a child only to a parent exactly one level up,
+    so a forged or inconsistent set cannot make a cycle. A stored root index
+    and a `rootId` filter on `ListTasks` stay unbuilt, for the reason in
+    Decision 5.
+11. **Spans** carry `a2a.lineage.root` and `a2a.lineage.depth` on the
+    executor's span; no metric label carries either (audit H11).
+12. **Halt refusals are machine-readable.** A send refused by any halt
+    carries a `google.rpc.ErrorInfo` detail with `reason: "HALTED"` and
+    `domain: "a2a-rust.com"` on every binding, beside the existing HTTP 503 /
+    gRPC `UNAVAILABLE`, so a hop in another language can tell a halt from a
+    server fault on JSON-RPC, where the code stays `-32603` (ADR 0049).
+
+### Not built
+
+* A stored root index, a `rootId` filter on `ListTasks`, and a
+  protocol-level `parentTaskId` proposed upstream (outward-facing; the
+  maintainer's say-so).
+* Halting parked tasks: a halt by root stops none, as no halt does.
+* A halt that crosses agents which do not share the halt store. Across such
+  a hop a halt travels as the cancels of the parent's cascade, one hop at a
+  time (ADR 0049 states what a hop in another language must do).
+
+### What was checked (2026-11-04)
+
+The checks the section "What would settle it" asked for, as tests:
+
+* Two handlers on one `InMemoryHaltStore`, tasks of two roots on each:
+  `handler::halt::root_tests::halting_a_root_stops_that_job_on_every_replica_and_no_other`.
+  The PostgreSQL halt store runs the same store contract, root scopes
+  included (`store::halt::tests::postgres_keeps_the_contract`); a two-replica
+  run on PostgreSQL through the handler is not written.
+* Malformed lineage and a depth past the cap refused before the executor
+  runs: `a_bad_lineage_is_refused_before_the_executor_runs`, and the
+  published vectors (`lineage::vectors_tests`).
+* Tenant scoping: `a_root_halt_is_scoped_to_its_tenant`.
+* Across a real hop: `a2a-protocol-client/tests/delegation_lineage_tests.rs`
+  halts the root on the child's server and the parent's `Delegation` sees
+  the child canceled.
+* The key encoding: `store::halt::tests::scope_keys_round_trip_and_do_not_collide`.
+* From other languages: the a2a-python and a2a-go interop clients carry a
+  lineage to the echo agent and read it back (ADR 0049). The Python run found
+  that a protobuf-`Struct` SDK writes the depth as `2.0`; `depth` now reads any
+  whole JSON number, and the vectors include that case.
+* The swarm example with a killed parent is not run.

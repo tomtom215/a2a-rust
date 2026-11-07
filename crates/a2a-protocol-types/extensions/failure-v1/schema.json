@@ -1,0 +1,14 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://a2a-rust.com/extensions/failure/v1/schema.json",
+ "title": "Failure class (failure/v1)",
+ "description": "The class of a failed task, a token on its status message. A receiver reads an unrecognised token as internal, so a newer class never becomes unreadable; the enum lists the classes of v1. transient alone is retryable as is; policy-refusal alone needs a person.",
+ "type": "string",
+ "enum": [
+  "invalid-request",
+  "transient",
+  "policy-refusal",
+  "budget-exhausted",
+  "internal"
+ ]
+}

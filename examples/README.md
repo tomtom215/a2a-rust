@@ -28,7 +28,7 @@ command. "Exits" means a default run checks itself and exits with a status;
 | Example | What it shows | Run | Needs | Default run |
 |---|---|---|---|---|
 | [hello-agent](hello-agent/) | The smallest complete agent: an executor, a card and a JSON-RPC listener in one file | `cargo run -p hello-agent` | Nothing | Serves |
-| [deploy-agent](deploy-agent/) | The same agent made deployable: `PORT`/`AGENT_URL`/`DATABASE_URL` configuration, `/health` and `/ready`, graceful shutdown, a Dockerfile and a Kubernetes manifest | `cargo run -p deploy-agent` | Docker or Kubernetes, optionally | Serves |
+| [deploy-agent](deploy-agent/) | The same agent made deployable: `PORT`/`AGENT_URL`/`A2A_DATABASE_URL` configuration, `/health` and `/ready`, graceful shutdown, a Dockerfile and a Kubernetes manifest | `cargo run -p deploy-agent` | Docker or Kubernetes, optionally | Serves |
 | [echo-agent](echo-agent/) | All four bindings behind one handler; drives every method over each and prints the coverage matrix, then runs counter-tests against an agent that declares no optional capabilities | `cargo run -p echo-agent` | Nothing | Exits |
 | [incident-response](incident-response/) | Three agents handling an incident: multi-turn `INPUT_REQUIRED`, delegation, streaming progress, artifacts, cooperative cancellation; then the surface matrix and sixteen production-hardening checks (tenancy, four authentication mechanisms, limits, retries, three task stores, signing, telemetry, HTTPS push, shutdown) | `cargo run -p incident-response` | A model and PostgreSQL, optionally | Serves after the demo; `INCIDENT_EXIT_WHEN_DONE=1` exits |
 | [agent-team](agent-team/) | A team of agents over JSON-RPC, REST and gRPC, plus one serving all four bindings: 100 end-to-end tests, with a feature table computed from the results; the SDK's dogfood suite | `cargo run -p agent-team` | Nothing | Exits |
@@ -86,7 +86,7 @@ screen of code, and is compiled and tested in CI:
 2. A handler: `RequestHandlerBuilder::new(executor).with_agent_card(card).build()`,
    wrapped in an `Arc`.
 3. A dispatcher for each binding the agent serves (`JsonRpcDispatcher`,
-   `RestDispatcher`, the gRPC and WebSocket dispatchers, or `A2aRouter` for
+   `RestDispatcher`, the gRPC and WebSocket dispatchers, or `RestRouter` for
    Axum), handed to `serve`, or to a `Server` with a `ServeConfig` in
    production.
 

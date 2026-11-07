@@ -53,12 +53,12 @@ fn tenant_overrides_resolve_ahead_of_the_defaults() {
         .without_agent_card()
         .with_tenant_config(
             PerTenantConfig::builder()
-                .default_limits(TenantLimits::builder().max_concurrent_tasks(1).build())
+                .default_limits(TenantLimits::builder().with_max_concurrent_tasks(1).build())
                 .with_override(
                     "premium",
                     TenantLimits::builder()
-                        .executor_timeout(Duration::from_secs(999))
-                        .max_concurrent_tasks(64)
+                        .with_executor_timeout(Duration::from_secs(999))
+                        .with_max_concurrent_tasks(64)
                         .build(),
                 )
                 .build(),
@@ -234,7 +234,7 @@ fn tenant_resolver_returns_none_when_not_configured() {
 #[test]
 fn tenant_config_returns_some_when_configured() {
     let config = PerTenantConfig::builder()
-        .default_limits(TenantLimits::builder().rate_limit_rps(50).build())
+        .default_limits(TenantLimits::builder().with_rate_limit_rps(50).build())
         .build();
 
     let handler = RequestHandlerBuilder::new(DummyExecutor)
@@ -263,8 +263,11 @@ fn tenant_config_returns_none_when_not_configured() {
 #[test]
 fn tenant_config_preserves_values() {
     let config = PerTenantConfig::builder()
-        .default_limits(TenantLimits::builder().rate_limit_rps(100).build())
-        .with_override("vip", TenantLimits::builder().rate_limit_rps(500).build())
+        .default_limits(TenantLimits::builder().with_rate_limit_rps(100).build())
+        .with_override(
+            "vip",
+            TenantLimits::builder().with_rate_limit_rps(500).build(),
+        )
         .build();
 
     let handler = RequestHandlerBuilder::new(DummyExecutor)
@@ -287,7 +290,7 @@ fn handler_with_both_tenant_fields() {
         .with_tenant_resolver(HeaderTenantResolver::default())
         .with_tenant_config(
             PerTenantConfig::builder()
-                .default_limits(TenantLimits::builder().rate_limit_rps(10).build())
+                .default_limits(TenantLimits::builder().with_rate_limit_rps(10).build())
                 .build(),
         )
         .build()

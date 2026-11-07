@@ -77,7 +77,11 @@ let handler = Arc::new(
         .with_agent_card(card)
         .build()?,
 );
-serve("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await?;
+let report = Server::bind("127.0.0.1:3000")
+    .await?
+    .serve_with_shutdown(JsonRpcDispatcher::new(handler), shutdown_signal())
+    .await;
+# let _ = report;
 # Ok(())
 # }
 ```

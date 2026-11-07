@@ -57,7 +57,7 @@ async fn authentication_without_credentials_is_refused_at_creation() {
     let id = task(&handler).await;
     for missing in [None, Some(""), Some("   ")] {
         match handler
-            .on_set_push_config(with_auth(&id, missing), None)
+            .on_create_push_config(with_auth(&id, missing), None)
             .await
         {
             Err(ServerError::InvalidField { field, .. }) => {
@@ -67,11 +67,11 @@ async fn authentication_without_credentials_is_refused_at_creation() {
         }
     }
     handler
-        .on_set_push_config(with_auth(&id, Some("secret")), None)
+        .on_create_push_config(with_auth(&id, Some("secret")), None)
         .await
         .expect("credentials given");
     handler
-        .on_set_push_config(
+        .on_create_push_config(
             TaskPushNotificationConfig::new(&id, "https://hooks.example/h"),
             None,
         )

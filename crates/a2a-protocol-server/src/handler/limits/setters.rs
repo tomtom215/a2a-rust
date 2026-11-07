@@ -75,6 +75,30 @@ impl HandlerLimits {
         self
     }
 
+    /// Sets the most `SubscribeToTask` streams open on one task; see
+    /// [`max_subscribers_per_task`](Self::max_subscribers_per_task).
+    #[must_use]
+    pub const fn with_max_subscribers_per_task(mut self, max: usize) -> Self {
+        self.max_subscribers_per_task = max;
+        self
+    }
+
+    /// Sets the most `SubscribeToTask` streams open on the handler; see
+    /// [`max_subscribers`](Self::max_subscribers).
+    #[must_use]
+    pub const fn with_max_subscribers(mut self, max: usize) -> Self {
+        self.max_subscribers = max;
+        self
+    }
+
+    /// Sets how long a handed-back turn waits for its caller; see
+    /// [`hand_off_window`](Self::hand_off_window).
+    #[must_use]
+    pub const fn with_hand_off_window(mut self, window: Duration) -> Self {
+        self.hand_off_window = window;
+        self
+    }
+
     /// Sets how many logged events one read of the event log returns; see
     /// [`subscribe_replay_limit`](Self::subscribe_replay_limit).
     #[must_use]
@@ -214,6 +238,31 @@ impl HandlerLimits {
         self
     }
 
+    /// Sets how many webhook deliveries one store partition may have in
+    /// flight; see
+    /// [`push_max_in_flight_per_partition`](Self::push_max_in_flight_per_partition).
+    #[must_use]
+    pub const fn with_push_max_in_flight_per_partition(mut self, max: usize) -> Self {
+        self.push_max_in_flight_per_partition = max;
+        self
+    }
+
+    /// Sets how long the push outbox keeps trying a delivery; see
+    /// [`push_outbox_max_age`](Self::push_outbox_max_age).
+    #[must_use]
+    pub const fn with_push_outbox_max_age(mut self, max_age: Duration) -> Self {
+        self.push_outbox_max_age = max_age;
+        self
+    }
+
+    /// Sets the longest wait between two attempts of an outbox delivery; see
+    /// [`push_outbox_backoff_max`](Self::push_outbox_backoff_max).
+    #[must_use]
+    pub const fn with_push_outbox_backoff_max(mut self, max: Duration) -> Self {
+        self.push_outbox_backoff_max = max;
+        self
+    }
+
     /// Sets the maximum number of push notification configs per task.
     #[must_use]
     pub const fn with_max_push_configs_per_task(mut self, max: usize) -> Self {
@@ -240,6 +289,24 @@ impl HandlerLimits {
     #[must_use]
     pub const fn with_max_context_locks(mut self, max: usize) -> Self {
         self.max_context_locks = max;
+        self
+    }
+
+    /// Bounds the bytes of events held in event queues at once, across
+    /// every task; see
+    /// [`max_buffered_event_bytes`](Self::max_buffered_event_bytes).
+    #[must_use]
+    pub const fn with_max_buffered_event_bytes(mut self, max: usize) -> Self {
+        self.max_buffered_event_bytes = Some(max);
+        self
+    }
+
+    /// Makes `/ready` answer `"saturated"` from `unready_at` percent of
+    /// capacity until `ready_at` percent or below; see
+    /// [`saturation_readiness`](Self::saturation_readiness).
+    #[must_use]
+    pub const fn with_saturation_readiness(mut self, unready_at: u8, ready_at: u8) -> Self {
+        self.saturation_readiness = Some((unready_at, ready_at));
         self
     }
 }

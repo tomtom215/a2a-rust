@@ -5,14 +5,20 @@
 
 //! [`GrpcDispatcher`] — builds and serves the gRPC transport.
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::bounded_incoming::BoundedIncoming;
 use super::native::A2aServiceImpl;
 use super::{A2aServiceServer, GrpcConfig};
 use crate::handler::RequestHandler;
+
+/// How often [`GrpcDispatcher`] sends an HTTP/2 PING on a connection that has
+/// carried nothing, by default: 60 s (ADR 0042).
+pub const DEFAULT_GRPC_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(60);
+
+/// How long [`GrpcDispatcher`] waits for a PING to be answered before it
+/// closes the connection, by default: 20 s (ADR 0042).
+pub const DEFAULT_GRPC_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// gRPC dispatcher that routes A2A requests to a [`RequestHandler`].
 ///
@@ -21,20 +27,24 @@ use crate::handler::RequestHandler;
 /// the deprecated pre-0.7 JSON-tunnel service, and the `grpc-legacy-json`
 /// feature that gated it, were removed in 0.8.
 ///
-/// Create via [`GrpcDispatcher::new`] and serve with [`GrpcDispatcher::serve`]
-/// or build a tonic service with [`GrpcDispatcher::into_service`].
+/// Create via [`GrpcDispatcher::new`], give it the listener settings it shares
+/// with [`Server`](crate::serve::Server) with
+/// [`with_serve_config`](GrpcDispatcher::with_serve_config), and serve it with
+/// [`serve_with_shutdown`](GrpcDispatcher::serve_with_shutdown); or build a
+/// tonic service with [`GrpcDispatcher::into_service`].
 pub struct GrpcDispatcher {
     pub(super) handler: Arc<RequestHandler>,
     config: GrpcConfig,
     keepalive: Option<(Duration, Duration)>,
     max_connection_age: Option<Duration>,
-    pub(super) max_connections: Option<usize>,
-    pub(super) completion_grace: Duration,
-    pub(super) task_grace: Duration,
-    pub(super) drain_timeout: Duration,
+    /// The listener settings it shares with `Server` (ADR 0052): see
+    /// [`with_serve_config`](Self::with_serve_config).
+    pub(super) serve: crate::serve::ServeConfig,
     agent_card_max_age: u32,
     #[cfg(feature = "grpc-tls")]
     tls: Option<tonic::transport::ServerTlsConfig>,
+    #[cfg(all(feature = "grpc-tls", feature = "tls-rustls"))]
+    pub(super) rustls: Option<crate::tls::Tls>,
 }
 
 impl GrpcDispatcher {
@@ -44,15 +54,17 @@ impl GrpcDispatcher {
         Self {
             handler,
             config,
-            keepalive: None,
+            keepalive: Some((
+                DEFAULT_GRPC_KEEPALIVE_INTERVAL,
+                DEFAULT_GRPC_KEEPALIVE_TIMEOUT,
+            )),
             max_connection_age: None,
-            max_connections: None,
-            completion_grace: crate::serve::DEFAULT_COMPLETION_GRACE,
-            task_grace: crate::serve::DEFAULT_TASK_GRACE,
-            drain_timeout: crate::serve::DEFAULT_DRAIN_TIMEOUT,
+            serve: crate::serve::ServeConfig::defaults(),
             agent_card_max_age: crate::dispatch::DEFAULT_AGENT_CARD_MAX_AGE,
             #[cfg(feature = "grpc-tls")]
             tls: None,
+            #[cfg(all(feature = "grpc-tls", feature = "tls-rustls"))]
+            rustls: None,
         }
     }
 
@@ -64,30 +76,6 @@ impl GrpcDispatcher {
     #[must_use]
     pub const fn with_agent_card_max_age(mut self, seconds: u32) -> Self {
         self.agent_card_max_age = seconds;
-        self
-    }
-
-    /// Caps the connections served at once. Default: **unbounded**.
-    ///
-    /// The same knob the WebSocket binding has had since 2026-08-19
-    /// ([`with_max_connections`](crate::dispatch::websocket::WebSocketDispatcher::with_max_connections)),
-    /// and the gap the measurement under [`with_http2_keepalive`](Self::with_http2_keepalive)
-    /// left open: keepalive closes a peer that stops *answering*, and nothing
-    /// bounded how many peers could be answering at once. tonic's server has
-    /// no connection ceiling of its own — `concurrency_limit` is per
-    /// connection — so this one is enforced in front of it: the permit is
-    /// taken **before** `accept()`, and load past the ceiling waits in the
-    /// kernel's listen backlog until a served connection ends, or is refused
-    /// by the kernel when that fills. The permit travels with the accepted
-    /// socket and is released when tonic drops it, so it covers TLS, HTTP/2
-    /// and the RPCs on it alike.
-    ///
-    /// Applied by every `serve*` method. [`into_service`](Self::into_service)
-    /// hands the service to a server the caller runs, and that server's
-    /// accept loop is the caller's to bound.
-    #[must_use]
-    pub const fn with_max_connections(mut self, max: usize) -> Self {
-        self.max_connections = Some(max);
         self
     }
 
@@ -117,15 +105,47 @@ impl GrpcDispatcher {
     /// A configuration tonic rejects (a key that does not match its
     /// certificate, an unparsable PEM) is reported by the `serve*` call as an
     /// `std::io::Error`, not a panic.
+    ///
+    /// tonic's configuration holds the certificate as bytes and cannot rotate
+    /// it; [`with_rustls`](Self::with_rustls) can. The later of the two calls
+    /// is the one used.
     #[cfg(feature = "grpc-tls")]
     #[must_use]
     pub fn with_tls(mut self, tls: tonic::transport::ServerTlsConfig) -> Self {
         self.tls = Some(tls);
+        #[cfg(feature = "tls-rustls")]
+        {
+            self.rustls = None;
+        }
+        self
+    }
+
+    /// Serves TLS from a `rustls::ServerConfig`, used as built: its crypto
+    /// provider, its client verifier (mutual TLS) and its certificate
+    /// resolver, so a [`ReloadingCertResolver`](crate::ReloadingCertResolver)
+    /// rotates this listener's certificate with no restart (audit B-14, ADR
+    /// 0041). `h2` and `http/1.1` are offered when `config` names no ALPN.
+    ///
+    /// The handshake is this crate's, on a task per connection, bounded to
+    /// 10 s, and counted against [`ServeConfig::max_connections`](crate::serve::ServeConfig::max_connections)
+    /// from the accept; a client certificate reaches interceptors as
+    /// [`CallContext::peer_certificate`](crate::CallContext::peer_certificate),
+    /// as under [`with_tls`](Self::with_tls). The later of the two calls is
+    /// the one used.
+    #[cfg(all(feature = "grpc-tls", feature = "tls-rustls"))]
+    #[must_use]
+    pub fn with_rustls(mut self, config: rustls::ServerConfig) -> Self {
+        self.rustls = Some(crate::tls::Tls::new(config, &[b"h2", b"http/1.1"]));
+        self.tls = None;
         self
     }
 
     /// Sends an HTTP/2 PING every `interval` on an idle connection and closes
-    /// it if no answer arrives within `timeout`. Default: **off**.
+    /// it if no answer arrives within `timeout`. Default: **on**, every
+    /// [`DEFAULT_GRPC_KEEPALIVE_INTERVAL`] (60 s), closing after
+    /// [`DEFAULT_GRPC_KEEPALIVE_TIMEOUT`] (20 s) unanswered; it was off until
+    /// 0.16.0 (audit D-20, ADR 0042).
+    /// [`without_http2_keepalive`](Self::without_http2_keepalive) turns it off.
     ///
     /// [`GrpcConfig`] bounds message size and per-connection concurrency, and
     /// nothing bounded a connection that is simply *there*. MEASURED
@@ -143,14 +163,21 @@ impl GrpcDispatcher {
     /// RPC that is waiting for its next event is quiet and healthy, and this
     /// leaves it alone.
     ///
-    /// Off by default, matching this workspace's other connection knobs: a
-    /// deployment may have clients that are configured to object to PINGs, and
-    /// choosing an interval for someone is choosing their traffic profile.
-    /// `(Duration::from_secs(30), Duration::from_secs(10))` is a conventional
-    /// starting point.
+    /// On by default since 0.16.0, as the HTTP listener's idle bound is: a
+    /// client's HTTP/2 stack answers a server's PING without being asked to,
+    /// and the "too many pings" policies gRPC implementations enforce apply to
+    /// PINGs a client sends, not to the server's.
     #[must_use]
     pub const fn with_http2_keepalive(mut self, interval: Duration, timeout: Duration) -> Self {
         self.keepalive = Some((interval, timeout));
+        self
+    }
+
+    /// Turns HTTP/2 keep-alive off: a peer that stops answering keeps its
+    /// connection until the TCP stack notices, which takes hours by default.
+    #[must_use]
+    pub const fn without_http2_keepalive(mut self) -> Self {
+        self.keepalive = None;
         self
     }
 
@@ -169,112 +196,6 @@ impl GrpcDispatcher {
     pub const fn with_max_connection_age(mut self, age: Duration) -> Self {
         self.max_connection_age = Some(age);
         self
-    }
-
-    /// How long in-flight tasks get to finish on their own once
-    /// [`serve_with_shutdown`](Self::serve_with_shutdown)'s signal fires,
-    /// before they are cancelled. Default
-    /// [`DEFAULT_COMPLETION_GRACE`](crate::serve::DEFAULT_COMPLETION_GRACE);
-    /// the HTTP server's [`ServeConfig::with_completion_grace`](crate::serve::ServeConfig::with_completion_grace)
-    /// is the same setting.
-    #[must_use]
-    pub const fn with_completion_grace(mut self, grace: Duration) -> Self {
-        self.completion_grace = grace;
-        self
-    }
-
-    /// How long cancelled tasks get to act on their cancellation before the
-    /// drain starts. Default [`DEFAULT_TASK_GRACE`](crate::serve::DEFAULT_TASK_GRACE).
-    #[must_use]
-    pub const fn with_task_grace(mut self, grace: Duration) -> Self {
-        self.task_grace = grace;
-        self
-    }
-
-    /// How long [`serve_with_shutdown`](Self::serve_with_shutdown) waits for
-    /// connections to close after the tasks have ended. Default
-    /// [`DEFAULT_DRAIN_TIMEOUT`](crate::serve::DEFAULT_DRAIN_TIMEOUT).
-    #[must_use]
-    pub const fn with_drain_timeout(mut self, timeout: Duration) -> Self {
-        self.drain_timeout = timeout;
-        self
-    }
-
-    /// Starts a gRPC server on the given address.
-    ///
-    /// Blocks until the server shuts down. Uses the configured message
-    /// size limits and concurrency settings.
-    ///
-    /// It takes no shutdown signal; use
-    /// [`serve_with_shutdown`](Self::serve_with_shutdown) for a graceful
-    /// stop.
-    ///
-    /// # Errors
-    ///
-    /// Returns `std::io::Error` if binding fails.
-    pub async fn serve(self, addr: impl tokio::net::ToSocketAddrs) -> std::io::Result<()> {
-        let addr = super::helpers::resolve_addr(addr).await?;
-
-        trace_info!(
-            addr = %addr,
-            "A2A gRPC server listening"
-        );
-
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        let incoming = BoundedIncoming::new(listener, self.max_connections);
-        let router = self.build_router()?;
-        router
-            .serve_with_incoming(incoming)
-            .await
-            .map_err(std::io::Error::other)
-    }
-
-    /// Starts a gRPC server and returns the bound [`SocketAddr`].
-    ///
-    /// Like [`serve`](Self::serve), but returns the address immediately
-    /// and runs the server in a background task. Useful for tests.
-    ///
-    /// # Errors
-    ///
-    /// Returns `std::io::Error` if binding fails.
-    pub async fn serve_with_addr(
-        self,
-        addr: impl tokio::net::ToSocketAddrs,
-    ) -> std::io::Result<SocketAddr> {
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        self.serve_with_listener(listener)
-    }
-
-    /// Starts a gRPC server on a pre-bound [`TcpListener`](tokio::net::TcpListener).
-    ///
-    /// This is the recommended approach when you need to know the server
-    /// address before constructing the handler (e.g., for agent cards with
-    /// correct URLs). Pre-bind the listener, extract the address, build
-    /// your handler, then pass the listener here.
-    ///
-    /// Returns the local address and runs the server in a background task.
-    ///
-    /// # Errors
-    ///
-    /// Returns `std::io::Error` if the listener's local address cannot be read.
-    pub fn serve_with_listener(
-        self,
-        listener: tokio::net::TcpListener,
-    ) -> std::io::Result<SocketAddr> {
-        let local_addr = listener.local_addr()?;
-        let incoming = BoundedIncoming::new(listener, self.max_connections);
-
-        trace_info!(
-            %local_addr,
-            "A2A gRPC server listening"
-        );
-
-        let router = self.build_router()?;
-        tokio::spawn(async move {
-            let _ = router.serve_with_incoming(incoming).await;
-        });
-
-        Ok(local_addr)
     }
 
     /// Builds the canonical tonic service for use with a custom server setup.
@@ -306,7 +227,7 @@ impl GrpcDispatcher {
     pub(super) fn build_router(&self) -> std::io::Result<tonic::transport::server::Router> {
         // Every serve path builds its router here: where a ceiling of 0 is
         // refused (audit NEW-g-api-2) and a card without gRPC is reported (§5.2).
-        crate::dispatch::connection_limit::refuse_zero(self.max_connections)?;
+        crate::dispatch::connection_limit::refuse_zero(self.serve.max_connections)?;
         self.handler.warn_if_undeclared("GRPC");
         // Spec §8.1: the agent card on this listener too; a card fetch is
         // usually HTTP/1.1. See `well_known`.
@@ -345,8 +266,12 @@ impl GrpcDispatcher {
 impl GrpcDispatcher {
     /// Whether this listener serves TLS.
     #[allow(clippy::unused_self)]
-    const fn serves_tls(&self) -> bool {
-        #[cfg(feature = "grpc-tls")]
+    pub(super) const fn serves_tls(&self) -> bool {
+        #[cfg(all(feature = "grpc-tls", feature = "tls-rustls"))]
+        {
+            self.tls.is_some() || self.rustls.is_some()
+        }
+        #[cfg(all(feature = "grpc-tls", not(feature = "tls-rustls")))]
         {
             self.tls.is_some()
         }
@@ -382,119 +307,12 @@ impl std::fmt::Debug for GrpcDispatcher {
             .field("config", &self.config)
             .field("keepalive", &self.keepalive)
             .field("max_connection_age", &self.max_connection_age)
-            .field("max_connections", &self.max_connections)
-            .field("completion_grace", &self.completion_grace)
-            .field("task_grace", &self.task_grace)
-            .field("drain_timeout", &self.drain_timeout)
+            .field("serve", &self.serve)
             .field("agent_card_max_age", &self.agent_card_max_age);
-        #[cfg(feature = "grpc-tls")]
-        s.field("tls", &self.tls.is_some());
-        s.finish()
+        s.field("tls", &self.serves_tls());
+        s.finish_non_exhaustive()
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Whether the listener serves TLS, which the agent card's span records
-    /// as `url.scheme`, is whether it was given a TLS configuration.
-    #[cfg(feature = "grpc-tls")]
-    #[test]
-    fn it_serves_tls_exactly_when_given_a_tls_configuration() {
-        use crate::RequestHandlerBuilder;
-        use crate::agent_executor;
-        struct DummyExec;
-        agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
-        let handler = Arc::new(
-            RequestHandlerBuilder::new(DummyExec)
-                .without_agent_card()
-                .build()
-                .unwrap(),
-        );
-        let plain = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default());
-        assert!(!plain.serves_tls());
-        let tls = plain.with_tls(tonic::transport::ServerTlsConfig::new());
-        assert!(tls.serves_tls());
-    }
-
-    // ── Connection-level bounds ──────────────────────────────────────────
-    //
-    // `GrpcConfig` bounds message size and per-connection concurrency, and
-    // until 2026-08-19 nothing bounded a connection that simply exists.
-    // MEASURED then: 400 TCP connections opened against this dispatcher and
-    // left silent were all accepted, none refused, and the oldest was still
-    // alive twelve seconds later. Same shape as the WebSocket dispatcher's
-    // missing post-handshake bounds, one binding over.
-
-    /// The defaults are off, and both knobs record what they were asked for.
-    ///
-    /// Asserted on the fields rather than behaviourally. tonic owns the actual
-    /// PING timing, so a behavioural test here would be testing tonic; what
-    /// this dispatcher is responsible for is recording the operator's choice
-    /// and *not* inventing one. See the note at the `build_router` call for
-    /// what this does not cover. A default that nothing asserts is a
-    /// default that changes by accident — and defaulting a keepalive on would
-    /// start sending PINGs to every existing deployment's clients.
-    #[test]
-    fn connection_knobs_are_off_by_default_and_carry_what_they_are_given() {
-        use crate::RequestHandlerBuilder;
-        use crate::agent_executor;
-        use std::sync::Arc;
-        struct DummyExec;
-        agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
-        let handler = Arc::new(
-            RequestHandlerBuilder::new(DummyExec)
-                .without_agent_card()
-                .build()
-                .unwrap(),
-        );
-
-        let default = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default());
-        assert!(
-            default.keepalive.is_none(),
-            "HTTP/2 keepalive must be opt-in: enabling it by default would start \
-             pinging the clients of every deployment that upgrades"
-        );
-        assert!(
-            default.max_connection_age.is_none(),
-            "and so must connection ageing, which forces reconnects"
-        );
-
-        let tuned = GrpcDispatcher::new(handler, GrpcConfig::default())
-            .with_http2_keepalive(Duration::from_secs(30), Duration::from_secs(10))
-            .with_max_connection_age(Duration::from_secs(600));
-        assert_eq!(
-            tuned.keepalive,
-            Some((Duration::from_secs(30), Duration::from_secs(10)))
-        );
-        assert_eq!(tuned.max_connection_age, Some(Duration::from_secs(600)));
-
-        // Build the router with them set. This catches a tonic rename or a
-        // signature change, at compile time — it does **not** catch the
-        // passthrough being dropped, because tonic exposes no way to read a
-        // `Router`'s keepalive back. Verified by mutation: deleting the two
-        // `http2_keepalive_*` calls leaves this test green. Covering that would
-        // need a client that deliberately stops answering PINGs, which is a
-        // raw HTTP/2 exercise rather than a dispatcher one; recorded here
-        // rather than implied by a passing test.
-        let _router = tuned.build_router();
-    }
-
-    #[test]
-    fn grpc_dispatcher_debug_does_not_panic() {
-        use crate::RequestHandlerBuilder;
-        use crate::agent_executor;
-        use std::sync::Arc;
-        struct DummyExec;
-        agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
-        let handler = Arc::new(
-            RequestHandlerBuilder::new(DummyExec)
-                .without_agent_card()
-                .build()
-                .unwrap(),
-        );
-        let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default());
-        let _ = format!("{dispatcher:?}");
-    }
-}
+mod tests;

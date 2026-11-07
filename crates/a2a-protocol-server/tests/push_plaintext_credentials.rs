@@ -76,7 +76,7 @@ fn warnings_storing(mut config: TaskPushNotificationConfig) -> Vec<String> {
             };
             config.task_id = Some(task.id.to_string());
             handler
-                .on_set_push_config(config, None)
+                .on_create_push_config(config, None)
                 .await
                 .expect("stored as asked");
         });

@@ -109,11 +109,26 @@ spec:
             # Not optional on purpose: a pod with no database would start, run
             # in memory, and lose tasks behind the balancer. For one replica
             # with no database, delete this entry and set `replicas: 1`.
-            - name: DATABASE_URL
+            # A2A_DATABASE_URL, not the generic DATABASE_URL (still read when
+            # this is unset, with a warning): see ADR 0040.
+            - name: A2A_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: deploy-agent-db
                   key: url
+            # Threads and allocator arenas sized to the pod, not to the node
+            # (audit A26). With no CPU limit, tokio starts one worker per CPU
+            # of the node, and jemalloc sizes its arenas from the node's CPUs
+            # even under a CPU limit (it reads the CPU affinity, never the
+            # cgroup quota): on a 64-core node, 64 workers and up to 256
+            # arenas against the 256Mi limit below. Two workers suit the
+            # 100m request; raise both with the CPU you give the pod.
+            # `background_thread` returns freed pages to the system from a
+            # thread of jemalloc's own instead of on the next allocation.
+            - name: TOKIO_WORKER_THREADS
+              value: "2"
+            - name: _RJEM_MALLOC_CONF
+              value: "narenas:2,background_thread:true"
             # How long a finished task is kept in PostgreSQL. The agent sweeps
             # its own database hourly: without PostgreSQL the in-memory store
             # keeps an hour, and the SDK's PostgreSQL stores keep everything for

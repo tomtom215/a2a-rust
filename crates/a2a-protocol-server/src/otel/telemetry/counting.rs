@@ -113,6 +113,9 @@ impl Notice {
 pub(super) struct Counting<E> {
     inner: E,
     lost: Arc<AtomicU64>,
+    /// Never reset: what `a2a.telemetry.export.failed` reports
+    /// (`self_metrics.rs`).
+    total: Option<Arc<AtomicU64>>,
     notice: Option<Notice>,
 }
 
@@ -121,8 +124,15 @@ impl<E> Counting<E> {
         Self {
             inner,
             lost,
+            total: None,
             notice: None,
         }
+    }
+
+    /// Also add each lost export to `total`, which is never reset.
+    pub(super) fn with_total(mut self, total: Arc<AtomicU64>) -> Self {
+        self.total = Some(total);
+        self
     }
 
     /// Also report a lost export, rate-limited, naming `signal` and where it
@@ -153,6 +163,9 @@ impl<E> Counting<E> {
     fn count(&self, result: OTelSdkResult) -> OTelSdkResult {
         if let Err(error) = &result {
             self.lost.fetch_add(1, Ordering::Relaxed);
+            if let Some(total) = &self.total {
+                total.fetch_add(1, Ordering::Relaxed);
+            }
             if let Some(notice) = &self.notice {
                 notice.lost(error);
             }

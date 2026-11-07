@@ -58,6 +58,14 @@ pub(super) const DELETE_FOR_TASK_SQL: &str = "DELETE FROM task_events WHERE task
 /// nothing. See `TaskStore::earliest_event_seq`.
 pub(super) const EARLIEST_SEQ_SQL: &str = "SELECT MIN(seq) FROM task_events WHERE task_id = $1";
 
+/// Drops a task's events below a position: `TaskStore::trim_event_log`.
+pub(super) const TRIM_BELOW_SQL: &str = "DELETE FROM task_events WHERE task_id = $1 AND seq < $2";
+
+/// The tasks whose logs hold more than `$1` events: the candidates for
+/// compaction (`RetentionPolicy::max_events_per_live_task`).
+pub(super) const OVER_SQL: &str =
+    "SELECT task_id FROM task_events GROUP BY task_id HAVING COUNT(*) > $1 ORDER BY task_id";
+
 /// The payload stored at a position, for classifying an append that changed
 /// no row: the same document is a replay, a different one means another
 /// writer holds the position and this event was discarded.

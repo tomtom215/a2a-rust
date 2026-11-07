@@ -156,25 +156,23 @@ pub trait Metrics: Send + Sync + 'static {
     /// inside; an agent built on the tool loop also has the `gen_ai.*`
     /// metrics for its model and tool calls.
     fn on_executor_run(&self, _outcome: &str, _duration: Duration) {}
-}
 
-/// How an executor's run ended, as [`Metrics::on_executor_run`] reports it.
-///
-/// A bounded set, so a dashboard can list every value.
-pub mod executor_outcome {
-    /// The executor returned `Ok`.
-    pub const COMPLETED: &str = "completed";
-    /// It returned an error that is not a spent budget.
-    pub const ERROR: &str = "error";
-    /// A budget ran out: the executor timeout passed (the future was
-    /// dropped), or the caller's deadline or tokens did.
-    pub const BUDGET_EXHAUSTED: &str = "budget_exhausted";
-    /// The task was canceled or halted, or the server was shutting down,
-    /// when the executor returned.
-    pub const CANCELED: &str = "canceled";
-    /// The future ended without returning a result: the executor panicked,
-    /// or the run was dropped.
-    pub const ABORTED: &str = "aborted";
+    /// Called when a request is refused before any work, with why: one of
+    /// [`control::refusal`]. The same refusal is also an
+    /// [`on_error`](Metrics::on_error) of class `overloaded`; this says which
+    /// limit or store refused it (audit H11).
+    fn on_refusal(&self, _cause: &str) {}
+
+    /// Called on a task lease event: one of [`control::lease`].
+    fn on_lease(&self, _event: &str) {}
+
+    /// Called when a halt or a resume is applied: `scope` is one of
+    /// [`control::halt_scope`], `action` one of [`control::halt_action`], and
+    /// `stopped` how many running tasks a halt stopped (0 for a resume).
+    fn on_halt(&self, _scope: &str, _action: &str, _stopped: usize) {}
+
+    /// Called on a turn-claim event: one of [`control::claim`].
+    fn on_claim(&self, _event: &str) {}
 }
 
 /// One finished inbound call, as [`Metrics::on_rpc_call`] reports it.
@@ -209,199 +207,19 @@ pub struct RpcCall<'a> {
     /// call dropped before it finished. A `GetTask` for an unknown task over
     /// gRPC is `status_code` `NOT_FOUND` with no `error_type`.
     pub error_type: Option<&'a str>,
+    /// The tenant the call was resolved to, when the handler resolved one
+    /// (`None` for a call refused before that, or with no tenant). Not
+    /// bounded by itself: an implementation that labels by it bounds it, as
+    /// `OtelMetrics::with_tenant_dimension` does with an allow-list.
+    pub tenant: Option<&'a str>,
 }
 
-/// Operation labels passed to [`Metrics::on_persistence_error`].
-///
-/// Named constants rather than string literals at the call sites, so the set
-/// stays bounded and greppable — an operator building a dashboard needs to know
-/// every value this can take, and a typo at one call site would otherwise
-/// create a silent second series.
-pub mod persistence_operation {
-    /// Persisting a task status transition.
-    pub const STATUS_UPDATE: &str = "status_update";
-    /// Persisting parts appended to an existing artifact.
-    pub const ARTIFACT_APPEND: &str = "artifact_append";
-    /// Persisting a newly added artifact.
-    pub const ARTIFACT_PUSH: &str = "artifact_push";
-    /// Appending one event to a task's event log.
-    pub const EVENT_APPEND: &str = "event_append";
-    /// Persisting a whole-task snapshot event.
-    pub const TASK_SNAPSHOT: &str = "task_snapshot";
-    /// Persisting the failed state after an invalid transition was rejected.
-    pub const FAILED_STATE: &str = "failed_state";
-    /// Persisting an agent message appended to the task's history.
-    pub const HISTORY_APPEND: &str = "history_append";
-    /// Waiting for a task's event log to catch up with what was already
-    /// broadcast, on a resubscribe that asked to resume.
-    ///
-    /// Reported when the wait bounded by
-    /// [`HandlerLimits::subscribe_replay_catchup`](crate::handler::HandlerLimits::subscribe_replay_catchup)
-    /// expired with the log still short of the writer's position. The replay
-    /// was served with what the log held, so the subscriber is missing the
-    /// shortfall — this is the only signal that it happened.
-    pub const EVENT_LOG_CATCHUP: &str = "event_log_catchup";
-    /// Handing an event from the executor's queue to the persistence processor.
-    ///
-    /// Reported with `error_kind = "channel_closed"` when the processor is
-    /// gone and the event was dropped: the stream still serves live
-    /// subscribers, but the task's stored state stops advancing, and until
-    /// 0.12 a default build said nothing about it.
-    pub const QUEUE_HANDOFF: &str = "queue_handoff";
-    /// One PostgreSQL statement, run again after its connection was lost
-    /// (`store::pg_retry`); reported only through
-    /// [`Metrics::on_store_retry`](super::Metrics::on_store_retry).
-    pub const STATEMENT: &str = "statement";
-    /// Reading a task's webhook list to deliver an event.
-    ///
-    /// Reported through [`Metrics::on_store_retry`](super::Metrics::on_store_retry)
-    /// while the read is retried; when it gives up, the event's push is
-    /// reported as a `failed` delivery (`push_outcome::FAILED`).
-    pub const PUSH_CONFIG_LIST: &str = "push_config_list";
-    /// Writing a record to the audit log (the `audit` feature).
-    ///
-    /// A call or event whose record failed was served or processed unrecorded; the
-    /// gap shows in the chain only as a missing record, so this is how it
-    /// is noticed.
-    pub const AUDIT_APPEND: &str = "audit_append";
-}
-
-/// Error kinds passed to [`Metrics::on_persistence_error`] for
-/// [`persistence_operation::EVENT_LOG_CATCHUP`].
-pub mod event_log_catchup_error {
-    /// The bounded wait expired with the log still behind the position the
-    /// writer had already broadcast. The replay was served short.
-    pub const TIMED_OUT: &str = "timed_out";
-}
-
-/// Error kinds passed to [`Metrics::on_persistence_error`] for
-/// [`persistence_operation::EVENT_APPEND`].
-///
-/// # Why an append that raised nothing is reported here
-///
-/// An append is `INSERT ... ON CONFLICT (task_id, seq) DO NOTHING`, because
-/// `seq` is a *position*: writing one twice must leave one row. That is the
-/// safety property, and it is also a way to lose an event without an error.
-/// Two replicas each running their own in-process event queue number one
-/// task's events from the same place — nothing here hands out a
-/// database-backed lease — so replica B's event *n* lands on the position
-/// replica A already wrote, and the row that stays is A's. Until these labels
-/// existed the store returned `Ok(())` and nothing anywhere said so.
-///
-/// The first two kinds mean **an event the agent emitted is not in the log**,
-/// which is what [`Metrics::on_persistence_error`] is for; the third,
-/// [`HOLD_CEILING`](event_append_error::HOLD_CEILING), that a stream lost its
-/// copy of one the log held. A retried append of the
-/// *same* event is not reported here: see
-/// [`POSITION_CONFLICT`](event_append_error::POSITION_CONFLICT).
-pub mod event_append_error {
-    /// The position was already held, and the store could not establish that
-    /// the row already there is this same event.
-    ///
-    /// On a collision the store reads the stored payload back and compares it
-    /// with what it was asked to write. Identical bytes mean a replay of the
-    /// event already recorded, which loses nothing and is **not** counted.
-    /// This label covers the rest: the stored event is a different one, or the
-    /// comparison could not be made (the read-back failed, or the event would
-    /// not serialize). It errs towards reporting.
-    ///
-    /// A non-zero rate is the shape the design has no other defence against:
-    /// two writers numbering one task's log. Look for a second replica
-    /// serving the same task id.
-    pub const POSITION_CONFLICT: &str = "position_conflict";
-
-    /// The store held no such task, so there was nowhere to put the event.
-    ///
-    /// Only the two in-memory stores raise this: they keep the log on the task
-    /// entry, so eviction takes the log with it and the event processor can
-    /// outlive the sweep that removed the task it is still writing for. The
-    /// append stays a success on purpose — failing it would turn a swept task
-    /// into a failed agent — and this is the report that it happened.
-    pub const TASK_ABSENT: &str = "task_absent";
-
-    /// The append succeeded, and the log, at its held-events ceiling, dropped
-    /// its oldest event though an attached stream still owed it.
-    ///
-    /// Unlike the two above, the event was in the log; what is lost is one
-    /// stream's copy of it. Only the two in-memory stores raise this (since
-    /// 2026-10-20): an attached stream holds the events it owes past
-    /// [`max_events_per_task`](crate::store::TaskStoreConfig::max_events_per_task),
-    /// up to [`max_held_events_factor`](crate::store::TaskStoreConfig::max_held_events_factor)
-    /// times it. That stream ends with `streamLagged` after what it
-    /// delivered. A non-zero rate is a client reading far slower than its
-    /// task writes, or one that stopped reading and kept its connection.
-    pub const HOLD_CEILING: &str = "hold_ceiling";
-}
-
-/// Error kinds passed to [`Metrics::on_persistence_error`] for
-/// [`persistence_operation::QUEUE_HANDOFF`].
-pub mod queue_handoff_error {
-    /// The persistence channel's receiver was dropped; the event was not
-    /// persisted.
-    pub const CHANNEL_CLOSED: &str = "channel_closed";
-}
-
-/// Outcome labels passed to [`Metrics::on_push_delivery`].
-pub mod push_outcome {
-    /// The webhook accepted the delivery.
-    pub const DELIVERED: &str = "delivered";
-    /// The webhook was reached and refused it, or the sender errored.
-    ///
-    /// Also reported, once for the event and not once per config, when the
-    /// task's webhook list could not be read (after the retry that a task
-    /// write gets, `persistence_operation::PUSH_CONFIG_LIST`), so none of its
-    /// webhooks was tried. Until 2026-10-31 that case reported nothing at all
-    /// (audit D-04).
-    pub const FAILED: &str = "failed";
-    /// The delivery did not complete within the configured timeout.
-    pub const TIMEOUT: &str = "timeout";
-    /// The delivery was cut short by `push_delivery_timeout` while the sender's
-    /// own schedule still had attempts left.
-    ///
-    /// Distinct from [`TIMEOUT`], which is a webhook that did not answer inside
-    /// the time it was given. This one is a *configuration* result: the sender
-    /// reports (via `PushSender::max_delivery_duration`) that it wanted longer
-    /// than the handler allows, so retries it advertises can never run in full.
-    /// At the shipped defaults that can only be the last attempt — a 38-second
-    /// schedule against a 30-second bound, in which every attempt starts and
-    /// the third has 2 seconds when the first two run to their timeouts. It
-    /// is worth its own label because the fix is a config change, not a
-    /// webhook investigation.
-    pub const TIMEOUT_TRUNCATED: &str = "timeout_truncated";
-    /// A delivery dropped before it started: its task's push lane was full.
-    ///
-    /// The lane (`HandlerLimits::push_queue_capacity`) fills when the webhook
-    /// is slower than the agent or not answering. Counted once per dropped
-    /// delivery (one event, or one blocking send's batch), not per config.
-    /// A terminal or interrupted status is never dropped.
-    pub const DROPPED: &str = "dropped";
-    /// A delivery not attempted, because its webhook is suspended.
-    ///
-    /// A webhook is suspended after
-    /// [`HandlerLimits::push_suspend_after`](crate::handler::HandlerLimits::push_suspend_after)
-    /// failed deliveries in a row, for
-    /// [`push_suspend_for`](crate::handler::HandlerLimits::push_suspend_for) and
-    /// longer after each failed probe. Counted once per skipped delivery, one
-    /// per config. A delivery that ends a turn is attempted anyway, and
-    /// counted as whatever it came to; a success ends the suspension (audit
-    /// D-05).
-    pub const SUSPENDED: &str = "suspended";
-    /// The webhook answered `410 Gone` and its config was removed.
-    ///
-    /// See [`HandlerLimits::push_remove_gone`](crate::handler::HandlerLimits::push_remove_gone).
-    /// Counted for each delivery that learned it; a blocking send's batch
-    /// reads its configs once, so its later events are counted too, and the
-    /// config takes no delivery after that (audit D-05).
-    pub const GONE: &str = "gone";
-    /// No longer reported.
-    ///
-    /// It counted configs the per-event delivery budget never reached; since
-    /// 2026-10-11 every config is attempted (spec §4.3.3) and the budget sets
-    /// concurrency instead, so nothing is skipped. Kept so code matching on
-    /// the label still compiles; removing a public constant is a semver break
-    /// (see RELEASING.md).
-    pub const SKIPPED: &str = "skipped";
-}
+mod labels;
+pub use labels::{
+    control, event_append_error, event_log_catchup_error, executor_outcome, persistence_operation,
+    queue_handoff_error,
+};
+pub mod push_outcome;
 
 /// A no-op [`Metrics`] implementation that discards all events.
 #[derive(Debug, Default)]
@@ -484,6 +302,22 @@ impl<T: Metrics + ?Sized> Metrics for Arc<T> {
 
     fn on_executor_run(&self, outcome: &str, duration: Duration) {
         (**self).on_executor_run(outcome, duration);
+    }
+
+    fn on_refusal(&self, cause: &str) {
+        (**self).on_refusal(cause);
+    }
+
+    fn on_lease(&self, event: &str) {
+        (**self).on_lease(event);
+    }
+
+    fn on_halt(&self, scope: &str, action: &str, stopped: usize) {
+        (**self).on_halt(scope, action, stopped);
+    }
+
+    fn on_claim(&self, event: &str) {
+        (**self).on_claim(event);
     }
 }
 

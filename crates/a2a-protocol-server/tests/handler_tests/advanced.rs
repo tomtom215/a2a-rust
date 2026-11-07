@@ -19,7 +19,10 @@ async fn resubscribe_nonexistent_task_fails() {
         .expect("build handler");
 
     let params = TaskIdParams::new("nonexistent");
-    let err = handler.on_resubscribe(params, None).await.unwrap_err();
+    let err = handler
+        .on_subscribe_to_task(params, None)
+        .await
+        .unwrap_err();
     assert!(
         matches!(err, a2a_protocol_server::ServerError::TaskNotFound(ref id) if id.0.as_str() == "nonexistent"),
         "expected TaskNotFound for 'nonexistent', got {err:?}"

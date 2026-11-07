@@ -139,7 +139,7 @@ impl WebhookReceiver {
 
     /// Expects notifications for `config`, identified by its token.
     ///
-    /// Register the config as the agent stored it — what `set_push_config`
+    /// Register the config as the agent stored it — what `create_push_config`
     /// returns, with the id the agent assigned. Registering a config with
     /// the same task and id again replaces it (a rotated token, say).
     ///

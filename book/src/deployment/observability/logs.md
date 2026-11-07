@@ -121,6 +121,29 @@ Each line then carries the event's fields and its span's fields, including
 `a2a.task.id` from the executor's span; it does not carry the OpenTelemetry
 trace id, so linking a line to its trace needs the OTLP path below.
 
+## JSON lines with the trace context
+
+`install_subscriber` prints `tracing`'s text by default. With
+`A2A_LOG_FORMAT=json`, or `TelemetryBuilder::with_console_format(ConsoleFormat::Json)`
+in code (which wins), it prints one JSON object per line on standard error, for
+a log shipper that parses JSON (audit C-06):
+
+```json
+{"timestamp":"2026-11-05T10:12:03.418Z","level":"INFO","target":"deploy_agent","message":"handled","task":"t-1","trace_id":"0638744fb64c3d489f5a84e6f8a0c745","span_id":"9f5a84e6f8a0c745","trace_flags":"01"}
+```
+
+The event's own fields follow `message`; a field named `timestamp`, `level`,
+`target` or `message` does not replace the line's own. `trace_id`, `span_id`
+and `trace_flags` are the names and hex forms of the OpenTelemetry
+compatibility note "Trace Context in non-OTLP Log Formats", written inside a
+span that has an OpenTelemetry context (a span the tracer records) and left out
+elsewhere. Any other value of `A2A_LOG_FORMAT` is noted at `WARN` and the text
+format used. `RUST_LOG` chooses what is printed in either format.
+
+The `console` log exporter (`OTEL_LOGS_EXPORTER=console`) writes the same
+context as `trace_id=` and `span_id=`; until 0.16.0 its keys were `trace=` and
+`span=`.
+
 ## Logs in Loki, linked to traces
 
 The compose stack (`deploy/observability/docker-compose.yml`) sends logs over
@@ -132,7 +155,14 @@ sources and links them both ways:
 
 * **From a span to its logs.** Tempo's `tracesToLogsV2` points at Loki with
   `filterByTraceID: true`, searching five minutes either side of the span, so
-  a span in Tempo opens the log lines written inside its trace.
+  a span in Tempo opens the log lines written inside its trace. The trace id
+  is structured metadata in Loki, not part of the line, so a plain line filter
+  (`|= "<trace id>"`) finds nothing; Grafana 13.2.4's link filters on the
+  metadata as well. Checked on 2026-11-04 (audit C-18): the span's *Links*
+  menu, *Logs for this trace*, opened Loki with
+  `{service_name="hello-agent"} | label_format log_line_contains_trace_id=… |
+  log_line_contains_trace_id="true" or trace_id="<trace id>"` and showed the
+  trace's line, while `|= "<trace id>"` alone returned none.
 * **From a log line to its trace.** Loki's derived field `trace_id` points at
   Tempo, so a log line that carries a trace id opens its trace.
 

@@ -135,7 +135,7 @@ async fn run_every_dependent_call(client: &A2aClient) -> Vec<(&'static str, Opti
             "set_push_config",
             refusal(
                 client
-                    .set_push_config(TaskPushNotificationConfig::new(
+                    .create_push_config(TaskPushNotificationConfig::new(
                         "t-1",
                         "https://hooks.example.com/a2a",
                     ))
@@ -374,7 +374,7 @@ async fn the_extended_card_replaces_the_capabilities_checked() {
         })
         .build()
         .expect("build");
-    let create = || client.set_push_config(TaskPushNotificationConfig::new("t-1", "https://h/"));
+    let create = || client.create_push_config(TaskPushNotificationConfig::new("t-1", "https://h/"));
 
     assert_eq!(refusal(create().await), Some("pushNotifications"));
     client
@@ -418,7 +418,7 @@ async fn a_failed_extended_card_fetch_changes_nothing() {
     assert_eq!(
         refusal(
             client
-                .set_push_config(TaskPushNotificationConfig::new("t-1", "https://h/"))
+                .create_push_config(TaskPushNotificationConfig::new("t-1", "https://h/"))
                 .await
         ),
         Some("pushNotifications")
@@ -449,7 +449,7 @@ async fn an_extended_card_does_not_turn_the_checks_on() {
     assert_eq!(
         refusal(
             client
-                .set_push_config(TaskPushNotificationConfig::new("t-1", "https://h/"))
+                .create_push_config(TaskPushNotificationConfig::new("t-1", "https://h/"))
                 .await
         ),
         None

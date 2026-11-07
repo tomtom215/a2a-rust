@@ -16,7 +16,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     CallContext, RequestHandler, RequestHandlerBuilder, ServerInterceptor, agent_executor,
 };
@@ -99,9 +99,15 @@ async fn call_from_known_port(
 #[tokio::test]
 async fn json_rpc_sees_the_connection_address() {
     let seen = Seen::default();
-    let server = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler(&seen)))
-        .await
-        .unwrap();
+    let server = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(handler(&seen)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let (local, status) = call_from_known_port(server, "POST", "/", GET_TASK).await;
     assert_eq!(status, 200);
     assert_eq!(seen.only(), Some(local));
@@ -110,9 +116,14 @@ async fn json_rpc_sees_the_connection_address() {
 #[tokio::test]
 async fn rest_sees_the_connection_address() {
     let seen = Seen::default();
-    let server = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler(&seen)))
-        .await
-        .unwrap();
+    let server = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler(&seen)), std::future::pending()),
+        );
+        addr
+    };
     let (local, status) = call_from_known_port(server, "GET", "/tasks/nope", "").await;
     assert_eq!(status, 404);
     assert_eq!(seen.only(), Some(local));
@@ -179,12 +190,17 @@ async fn websocket_sees_the_connection_address() {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
     let seen = Seen::default();
-    let server = Arc::new(a2a_protocol_server::WebSocketDispatcher::new(handler(
-        &seen,
-    )))
-    .serve_with_addr("127.0.0.1:0")
-    .await
-    .unwrap();
+    let server = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            Arc::new(a2a_protocol_server::WebSocketDispatcher::new(handler(
+                &seen,
+            )))
+            .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let stream = tokio::net::TcpStream::connect(server).await.unwrap();
     let local = stream.local_addr().unwrap();
     let mut request = format!("ws://{server}/").into_client_request().unwrap();

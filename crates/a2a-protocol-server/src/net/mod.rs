@@ -19,11 +19,20 @@
 //!   `SSL_CERT_DIR`) and the `rustls` configuration built from it;
 //! - [`client`]: the pooled client, tuned for the load balancers in front of
 //!   a receiver (a 50 s idle pool, a bounded connect, TCP keepalive).
+//!
+//! The proxy rules, the resolver and the client are in every build: until
+//! 0.16.0 a build without `tls-rustls` had none of them, and its push sender
+//! read no proxy variable (audit NEW-b-3).
 
-// `client` is the push, JWKS and model client: it needs only `tls-rustls`; OTLP
-// builds its own on the connector in `proxy`.
-#[cfg(feature = "tls-rustls")]
+// `client` is the push, JWKS and model client; OTLP builds its own on the
+// connector in `proxy`. Without `tls-rustls` the push client is plaintext and
+// dials through `plain` (audit NEW-b-3).
 pub mod client;
+// Built for tests as well: the mutation run builds with every feature,
+// `tls-rustls` among them, which leaves this module out, so every mutant in it
+// compiled to nothing and none could be caught (the class audit N8 names).
+#[cfg(any(test, not(feature = "tls-rustls")))]
+pub mod plain;
 pub mod proxy;
 pub mod resolver;
 #[cfg(feature = "tls-rustls")]

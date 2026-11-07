@@ -19,7 +19,7 @@ use std::pin::Pin;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use sqlx::postgres::PgPool;
 
-use super::LeaseStore;
+use super::{LapsedLeases, LeaseStore};
 
 const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS a2a_leases (
     tenant       TEXT NOT NULL,
@@ -75,6 +75,24 @@ const LAPSED_SQL: &str = concat!(
     "SELECT ",
     now_ms!(),
     " > deadline_ms FROM a2a_leases WHERE tenant = $1 AND task_id = $2"
+);
+
+/// Whether each of a list of leases has lapsed, in one statement
+/// (`LeaseStore::lapsed_many`); a lease that is gone has no row.
+const LAPSED_MANY_SQL: &str = concat!(
+    "SELECT l.tenant, l.task_id, ",
+    now_ms!(),
+    " > l.deadline_ms FROM a2a_leases l
+    JOIN unnest($1::text[], $2::text[]) AS k(tenant, task_id)
+      ON l.tenant = k.tenant AND l.task_id = k.task_id"
+);
+
+/// Leases whose deadline passed more than `$1` milliseconds ago, on the
+/// database's clock (`LeaseStore::sweep`).
+const SWEEP_SQL: &str = concat!(
+    "DELETE FROM a2a_leases WHERE deadline_ms < ",
+    now_ms!(),
+    " - $1"
 );
 
 /// Leases in a PostgreSQL table, `a2a_leases`, created if absent.
@@ -185,6 +203,31 @@ impl LeaseStore for PostgresLeaseStore {
         })
     }
 
+    fn lapsed_many<'a>(
+        &'a self,
+        leases: &'a [(String, String)],
+    ) -> Pin<Box<dyn Future<Output = A2aResult<LapsedLeases>> + Send + 'a>> {
+        Box::pin(async move {
+            let (tenants, tasks): (Vec<&str>, Vec<&str>) = leases
+                .iter()
+                .map(|(tenant, task)| (tenant.as_str(), task.as_str()))
+                .unzip();
+            let rows: Vec<(String, String, bool)> =
+                crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
+                    sqlx::query_as(LAPSED_MANY_SQL)
+                        .bind(&tenants)
+                        .bind(&tasks)
+                        .fetch_all(&self.pool)
+                })
+                .await
+                .map_err(|e| failed("read", &e))?;
+            Ok(rows
+                .into_iter()
+                .map(|(tenant, task, lapsed)| ((tenant, task), lapsed))
+                .collect())
+        })
+    }
+
     fn release<'a>(
         &'a self,
         tenant: &'a str,
@@ -202,6 +245,25 @@ impl LeaseStore for PostgresLeaseStore {
             .await
             .map_err(|e| failed("release", &e))?;
             Ok(())
+        })
+    }
+
+    fn sweep(
+        &self,
+        _now_ms: i64,
+        lapsed_for_ms: i64,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + '_>> {
+        Box::pin(async move {
+            // Retried: a second run deletes only rows that are just as old,
+            // and the count is a log line's.
+            let done = crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
+                sqlx::query(SWEEP_SQL)
+                    .bind(lapsed_for_ms)
+                    .execute(&self.pool)
+            })
+            .await
+            .map_err(|e| failed("sweep", &e))?;
+            Ok(done.rows_affected())
         })
     }
 }

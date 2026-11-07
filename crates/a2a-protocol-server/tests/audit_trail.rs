@@ -16,7 +16,7 @@ use std::sync::Arc;
 use a2a_protocol_server::audit::record::{AuditRecord, kind, verify_chain};
 use a2a_protocol_server::audit::{AuditLog, AuditStore, InMemoryAuditStore};
 use a2a_protocol_server::dispatch::RestDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     BearerTokenAuthInterceptor, EventEmitter, RequestHandlerBuilder, agent_executor,
 };
@@ -61,9 +61,15 @@ async fn server(log: Arc<AuditLog>) -> std::net::SocketAddr {
         .with_audit(log)
         .build()
         .unwrap();
-    serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::new(handler)))
-        .await
-        .unwrap()
+    {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    }
 }
 
 async fn call(
@@ -256,9 +262,15 @@ async fn a_cancel_request_names_who_asked() {
         .with_audit(Arc::clone(&log))
         .build()
         .unwrap();
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::new(handler)))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let body = serde_json::json!({
         "message": {"messageId": "m-2", "role": "ROLE_USER", "parts": [{"text": "wait"}]},
         "configuration": {"returnImmediately": true}
@@ -423,9 +435,15 @@ async fn each_tenant_gets_its_own_chain() {
         .with_audit(Arc::clone(&log))
         .build()
         .unwrap();
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::new(handler)))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let mut tasks = Vec::new();
     for tenant in ["acme", "globex"] {
         let (status, body) = call(

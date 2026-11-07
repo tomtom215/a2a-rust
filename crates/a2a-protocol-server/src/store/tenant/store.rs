@@ -653,6 +653,20 @@ impl TaskStore for TenantAwareInMemoryTaskStore {
         })
     }
 
+    fn trim_event_log<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        below: u64,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            // As `earliest_event_seq`: trimming must not create a partition.
+            match self.get_existing_store().await {
+                Some(store) => store.trim_event_log(task_id, below).await,
+                None => Ok(0),
+            }
+        })
+    }
+
     fn read_events<'a>(
         &'a self,
         task_id: &'a TaskId,

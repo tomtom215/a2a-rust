@@ -63,6 +63,8 @@ mod actors;
 pub mod caller_id;
 mod credentials;
 pub(crate) mod declared;
+#[cfg(any(feature = "tls-rustls", feature = "grpc-tls"))]
+mod forwarded_cert;
 #[cfg(feature = "auth-jwt")]
 pub mod jwt;
 #[cfg(any(feature = "tls-rustls", feature = "grpc-tls"))]
@@ -72,6 +74,8 @@ pub mod throttle;
 #[cfg(feature = "auth-jwt")]
 pub use actors::MAX_ACTORS;
 pub use credentials::CredentialSet;
+#[cfg(any(feature = "tls-rustls", feature = "grpc-tls"))]
+pub use forwarded_cert::{AWS_ALB_CERT_HEADER, ENVOY_XFCC_HEADER, ForwardedClientCert};
 #[cfg(feature = "auth-jwt")]
 pub use jwt::{Jwks, JwtAuthInterceptor, JwtValidator, MIN_HS256_SECRET_LEN};
 #[cfg(any(feature = "tls-rustls", feature = "grpc-tls"))]

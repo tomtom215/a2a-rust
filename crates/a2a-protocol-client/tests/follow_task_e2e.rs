@@ -21,7 +21,7 @@ use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_server::{EventEmitter, RequestHandlerBuilder};
 use a2a_protocol_types::Message;
@@ -62,9 +62,15 @@ async fn agent(streaming: bool) -> (A2aClient, Arc<Notify>) {
         .without_agent_card()
         .build()
         .expect("handler");
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::new(handler)))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let card = AgentCard::new("a", "1", AgentInterface::jsonrpc(format!("http://{addr}")))
         .with_description("d")
         .with_skill(AgentSkill::new("s", "S", "d").with_tags(["t"]))

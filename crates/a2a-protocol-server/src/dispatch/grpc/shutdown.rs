@@ -95,37 +95,51 @@ impl GrpcDispatcher {
     ///    step 2; it is how tonic stops.
     /// 2. **End in-flight tasks** with
     ///    [`RequestHandler::finish_in_flight`](crate::RequestHandler::finish_in_flight):
-    ///    up to [`with_completion_grace`](Self::with_completion_grace) for
-    ///    them to finish on their own, then their cancellation tokens fire
-    ///    and executors get [`with_task_grace`](Self::with_task_grace) to
-    ///    act on it. A stream whose task ends gets its terminal event.
-    /// 3. **Drain**, for up to [`with_drain_timeout`](Self::with_drain_timeout).
+    ///    up to [`ServeConfig::completion_grace`](crate::serve::ServeConfig::completion_grace)
+    ///    for them to finish on their own, then their cancellation tokens
+    ///    fire and executors get
+    ///    [`ServeConfig::task_grace`](crate::serve::ServeConfig::task_grace)
+    ///    to act on it. A stream whose task ends gets its terminal event.
+    /// 3. **Drain**, for up to
+    ///    [`ServeConfig::drain_timeout`](crate::serve::ServeConfig::drain_timeout).
+    ///
+    /// With a [`drain_delay`](crate::serve::ServeConfig::drain_delay), the
+    /// handler's readiness turns to "draining" when the signal fires and the
+    /// listener goes on accepting for the delay before step 1. The settings
+    /// are [`with_serve_config`](Self::with_serve_config)'s.
     ///
     /// Call [`RequestHandler::shutdown`](crate::RequestHandler::shutdown)
     /// after it returns. Dropping the returned future stops the server
     /// without any of this.
     ///
-    /// It takes a bound listener, as
-    /// [`serve_with_listener`](Self::serve_with_listener) does, so the caller
-    /// knows the address — port `0` included — before serving starts.
+    /// It takes a bound listener, so the caller knows the address — port `0`
+    /// included — before serving starts. A listener that refuses to start
+    /// (a ceiling of zero connections, or a
+    /// [`production`](crate::serve::ServeConfig::production) setting it does
+    /// not meet) returns at once, `Ok`, with
+    /// [`ServeReport::refused`](crate::serve::ServeReport::refused) saying why.
     ///
     /// # Errors
     ///
     /// A TLS configuration tonic rejects, or the error the server stopped
-    /// with. [`serve_with_listener`](Self::serve_with_listener) discards the
-    /// latter; this returns it.
+    /// with.
     pub async fn serve_with_shutdown(
         self,
         listener: tokio::net::TcpListener,
         shutdown: impl Future<Output = ()> + Send,
     ) -> io::Result<ServeReport> {
-        if self.max_connections == Some(0) {
+        if let Some(why) = crate::serve::start::refusal(
+            &self.serve,
+            listener.local_addr().ok(),
+            self.serves_tls(),
+            self.handler.undeclared_binding("GRPC"),
+        ) {
             return Ok(ServeReport {
                 accepted: 0,
                 drained: true,
                 abandoned: 0,
                 tasks: None,
-                refused: Some(crate::dispatch::connection_limit::ZERO_CONNECTIONS.into()),
+                refused: Some(why),
             });
         }
         trace_info!(
@@ -135,10 +149,19 @@ impl GrpcDispatcher {
 
         let accepted = Arc::new(AtomicU64::new(0));
         let stop = CancellationToken::new();
-        let (incoming, open) = StopAccepting::new(listener, self.max_connections, &stop, &accepted);
+        let (incoming, open) =
+            StopAccepting::new(listener, self.serve.max_connections, &stop, &accepted);
         let handler = Arc::clone(&self.handler);
-        let (completion, grace, drain) =
-            (self.completion_grace, self.task_grace, self.drain_timeout);
+        let (completion, grace, drain) = (
+            self.serve.completion_grace,
+            self.serve.task_grace,
+            self.serve.drain_timeout,
+        );
+        let shutdown = crate::serve::start::signalled(
+            shutdown,
+            Some(Arc::clone(&handler)),
+            self.serve.drain_delay,
+        );
 
         // Polled in place rather than spawned, so dropping this future drops
         // the server with it.
@@ -149,9 +172,8 @@ impl GrpcDispatcher {
         // stream — open through the whole drain. A signal is still passed,
         // because passing one is what makes tonic send `GOAWAY` and wait for
         // connections rather than return at once.
-        let serving = self
-            .build_router()?
-            .serve_with_incoming_shutdown(incoming, std::future::pending::<()>());
+        let mut serving = self.serving(incoming, true)?;
+        let serving = serving.as_mut();
         tokio::pin!(serving);
 
         tokio::select! {

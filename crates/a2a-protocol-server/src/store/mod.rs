@@ -8,7 +8,7 @@
 pub mod applied;
 pub mod claim;
 pub(crate) mod database;
-#[cfg(feature = "postgres")]
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
 mod delegation_journal;
 #[cfg(feature = "encryption")]
 pub mod encrypted;
@@ -113,6 +113,8 @@ pub(crate) fn status_timestamp_rfc3339(ts: Option<&str>) -> Option<String> {
     Some(a2a_protocol_types::unix_millis_to_iso8601(millis))
 }
 
+#[cfg(feature = "sqlite")]
+pub use delegation_journal::SqliteDelegationJournal;
 #[cfg(feature = "sqlite")]
 pub use halt::SqliteHaltStore;
 #[cfg(feature = "sqlite")]

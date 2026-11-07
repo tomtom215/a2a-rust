@@ -185,7 +185,7 @@ async fn a_subscriber_and_the_follow_up_s_stream_carry_the_same_payload() {
     let handler = handler();
     let id = parked(&handler).await;
     let mut subscriber = handler
-        .on_resubscribe(TaskIdParams::new(id.clone()), None)
+        .on_subscribe_to_task(TaskIdParams::new(id.clone()), None)
         .await
         .expect("subscribe");
     let first = subscriber.read().await.expect("a frame").expect("no error");

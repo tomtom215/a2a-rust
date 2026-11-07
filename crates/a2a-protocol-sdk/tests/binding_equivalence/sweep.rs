@@ -123,7 +123,7 @@ pub async fn sweep(client: &A2aClient) -> Result<(), String> {
     }
 
     let config = client
-        .set_push_config(TaskPushNotificationConfig::new(id.as_str(), HOOK))
+        .create_push_config(TaskPushNotificationConfig::new(id.as_str(), HOOK))
         .await
         .map_err(fail("CreateTaskPushNotificationConfig"))?;
     let config_id = config.id.ok_or("the created config has no id")?;

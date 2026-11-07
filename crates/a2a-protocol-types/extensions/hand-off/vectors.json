@@ -1,0 +1,33 @@
+{
+ "description": "Conformance vectors for a2a-rust.com/hand-off. Each 'valid' value marks a hand-off ('reads' true); each 'invalid' one does not, and the task is treated as any other working task. Run by crates/a2a-protocol-types/tests/extension_vectors.rs, each value read through the SDK's own reader, and checked against the schema beside it.",
+ "uri": null,
+ "metadataKey": "a2a-rust.com/hand-off",
+ "carrier": "Message.metadata of the task's working status message",
+ "valid": [
+  {
+   "name": "true",
+   "value": true,
+   "reads": true
+  }
+ ],
+ "invalid": [
+  {
+   "name": "false",
+   "value": false
+  },
+  {
+   "name": "the string \"true\"",
+   "value": "true"
+  },
+  {
+   "name": "the number 1",
+   "value": 1
+  },
+  {
+   "name": "an object",
+   "value": {
+    "handedOff": true
+   }
+  }
+ ]
+}

@@ -953,7 +953,11 @@ impl SyncCollector {
         // unbounded and unordered against the next turn's (audit D-06).
         let ends_turn = job.events.iter().any(super::background::ends_turn);
         let task_id = job.task_id.clone();
-        self.push_lanes.enqueue(&task_id, ends_turn, job.run());
+        // Recorded in the push outbox instead, when the handler has one
+        // (ADR 0037).
+        let events = job.events.clone();
+        self.push_lanes
+            .enqueue_events(&task_id, ends_turn, events, job.run());
     }
 }
 
@@ -2505,7 +2509,7 @@ mod tests {
             "taskId": "t-panic-push", "url": "https://hook.example.com/a"
         }))
         .unwrap();
-        handler.on_set_push_config(config, None).await.unwrap();
+        handler.on_create_push_config(config, None).await.unwrap();
 
         let (writer, reader) = collected_queue();
         let executor_handle = tokio::spawn(async {

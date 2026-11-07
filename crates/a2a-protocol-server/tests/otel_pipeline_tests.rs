@@ -30,6 +30,9 @@
 //! provider down so the periodic export task does not outlive it.
 
 #![cfg(feature = "otlp")]
+// The deprecated pipeline's own tests, kept until its removal (no earlier
+// than 0.17.0).
+#![allow(deprecated)]
 
 use a2a_protocol_server::otel::init_otlp_pipeline;
 

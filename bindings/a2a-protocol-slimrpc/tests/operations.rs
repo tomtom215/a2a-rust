@@ -227,7 +227,7 @@ async fn push_configs_round_trip_over_the_fabric() {
     config.authentication =
         Some(AuthenticationInfo::new("Bearer").with_credentials("hook-credential"));
     let created = client
-        .set_push_config(config.clone())
+        .create_push_config(config.clone())
         .await
         .expect("create");
     let config_id = created.id.clone().expect("the server assigns an id");

@@ -19,10 +19,10 @@ fn default_limits_are_all_none() {
 #[test]
 fn builder_sets_all_fields() {
     let limits = TenantLimits::builder()
-        .max_concurrent_tasks(10)
-        .executor_timeout(Duration::from_secs(30))
-        .event_queue_capacity(256)
-        .rate_limit_rps(100)
+        .with_max_concurrent_tasks(10)
+        .with_executor_timeout(Duration::from_secs(30))
+        .with_event_queue_capacity(256)
+        .with_rate_limit_rps(100)
         .build();
 
     assert_eq!(limits.max_concurrent_tasks, Some(10));
@@ -34,10 +34,16 @@ fn builder_sets_all_fields() {
 #[test]
 fn per_tenant_config_returns_override() {
     let config = PerTenantConfig::builder()
-        .default_limits(TenantLimits::builder().max_concurrent_tasks(10).build())
+        .default_limits(
+            TenantLimits::builder()
+                .with_max_concurrent_tasks(10)
+                .build(),
+        )
         .with_override(
             "premium",
-            TenantLimits::builder().max_concurrent_tasks(1000).build(),
+            TenantLimits::builder()
+                .with_max_concurrent_tasks(1000)
+                .build(),
         )
         .build();
 
@@ -47,7 +53,7 @@ fn per_tenant_config_returns_override() {
 #[test]
 fn per_tenant_config_falls_back_to_default() {
     let config = PerTenantConfig::builder()
-        .default_limits(TenantLimits::builder().rate_limit_rps(50).build())
+        .default_limits(TenantLimits::builder().with_rate_limit_rps(50).build())
         .build();
 
     assert_eq!(config.get("unknown-tenant").rate_limit_rps, Some(50));
@@ -64,8 +70,8 @@ fn per_tenant_config_default_is_empty() {
 fn multiple_overrides() {
     let config = PerTenantConfig::builder()
         .default_limits(TenantLimits::default())
-        .with_override("a", TenantLimits::builder().rate_limit_rps(10).build())
-        .with_override("b", TenantLimits::builder().rate_limit_rps(20).build())
+        .with_override("a", TenantLimits::builder().with_rate_limit_rps(10).build())
+        .with_override("b", TenantLimits::builder().with_rate_limit_rps(20).build())
         .build();
 
     assert_eq!(config.get("a").rate_limit_rps, Some(10));
@@ -76,7 +82,9 @@ fn multiple_overrides() {
 #[test]
 fn tenant_limits_builder_returns_functional_builder() {
     // Verifies TenantLimits::builder() returns a real builder (not Default::default()).
-    let limits = TenantLimits::builder().max_concurrent_tasks(42).build();
+    let limits = TenantLimits::builder()
+        .with_max_concurrent_tasks(42)
+        .build();
     assert_eq!(limits.max_concurrent_tasks, Some(42));
 }
 
@@ -84,7 +92,7 @@ fn tenant_limits_builder_returns_functional_builder() {
 fn per_tenant_config_builder_returns_functional_builder() {
     // Verifies PerTenantConfig::builder() returns a real builder (not Default::default()).
     let config = PerTenantConfig::builder()
-        .default_limits(TenantLimits::builder().rate_limit_rps(99).build())
+        .default_limits(TenantLimits::builder().with_rate_limit_rps(99).build())
         .build();
     assert_eq!(config.get("any").rate_limit_rps, Some(99));
 }
@@ -120,4 +128,29 @@ fn every_setter_sets_its_field() {
     );
     assert_eq!(cfg.overrides["a"].rate_limit_rps, Some(9));
     assert_eq!(cfg.overrides["b"].rate_limit_rps, Some(8));
+}
+
+/// The bare setters deprecated in 0.16.0 build what their `with_` names
+/// build. Their own test, their only caller in the workspace; removed with
+/// them, no earlier than 0.17.0 (ADR 0053).
+#[test]
+#[allow(deprecated)]
+fn the_bare_builder_setters_are_the_with_setters() {
+    let old = TenantLimits::builder()
+        .max_concurrent_tasks(7)
+        .executor_timeout(Duration::from_secs(9))
+        .event_queue_capacity(11)
+        .rate_limit_rps(13)
+        .build();
+    let new = TenantLimits::builder()
+        .with_max_concurrent_tasks(7)
+        .with_executor_timeout(Duration::from_secs(9))
+        .with_event_queue_capacity(11)
+        .with_rate_limit_rps(13)
+        .build();
+    assert_eq!(old.max_concurrent_tasks, Some(7));
+    assert_eq!(old.executor_timeout, Some(Duration::from_secs(9)));
+    assert_eq!(old.event_queue_capacity, Some(11));
+    assert_eq!(old.rate_limit_rps, Some(13));
+    assert_eq!(format!("{old:?}"), format!("{new:?}"));
 }

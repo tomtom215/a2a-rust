@@ -382,7 +382,7 @@ async fn a_lagged_subscription_catches_up_from_where_it_attached() {
     }
 
     let mut subscriber = handler
-        .on_resubscribe(TaskIdParams::new(task.id.0.clone()), None)
+        .on_subscribe_to_task(TaskIdParams::new(task.id.0.clone()), None)
         .await
         .expect("subscribe");
     let snapshot = subscriber.read().await.unwrap().unwrap();

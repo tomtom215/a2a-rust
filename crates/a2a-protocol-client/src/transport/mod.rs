@@ -24,11 +24,14 @@
 //! [`RestTransport`]: rest::RestTransport
 
 pub(crate) mod connector;
+pub(crate) mod dns;
 mod empty_result;
 #[cfg(feature = "grpc")]
 pub mod grpc;
 pub(crate) mod in_flight;
 pub mod jsonrpc;
+#[cfg(feature = "tls-rustls")]
+pub(crate) mod resolver;
 pub mod rest;
 #[cfg(feature = "websocket")]
 pub mod websocket;
@@ -44,7 +47,7 @@ pub(crate) type HttpClient = crate::tls::HttpsClient;
 /// The HTTP client the JSON-RPC and HTTP+JSON transports share.
 #[cfg(not(feature = "tls-rustls"))]
 pub(crate) type HttpClient = hyper_util::client::legacy::Client<
-    hyper_util::client::legacy::connect::HttpConnector,
+    connector::TcpConnector,
     http_body_util::Full<hyper::body::Bytes>,
 >;
 

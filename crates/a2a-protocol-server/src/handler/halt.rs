@@ -5,8 +5,9 @@
 
 //! Stopping an agent on a person's word: [`RequestHandler::halt`].
 //!
-//! A halt refuses every new send for its scope — one tenant, or the whole
-//! server — and fires the cancellation token of every task of that scope
+//! A halt refuses every new send for its scope — one job of one tenant
+//! ([`HaltScope::Root`], the job's lineage root, ADR 0034), one tenant, or
+//! the whole server — and fires the cancellation token of every task of that scope
 //! that is running, so their executors stop and anything they delegated is
 //! cancelled with them by whatever cascade they use
 //! (`a2a_protocol_client::delegation` for one). An executor that returns on
@@ -37,6 +38,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, PoisonError};
 
+use a2a_protocol_types::lineage::Lineage;
+use a2a_protocol_types::task::TaskId;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::{ServerError, ServerResult};
@@ -56,14 +59,47 @@ pub enum HaltScope {
     All,
     /// One tenant; `""` is a server without tenants.
     Tenant(String),
+    /// One job of one tenant: the tasks whose lineage root is `root`
+    /// ([`a2a_protocol_types::lineage`], ADR 0034). A task sent without a
+    /// lineage is the root of its own job, named by its `contextId`.
+    ///
+    /// Give one only once every replica sharing the halt store runs 0.16 or
+    /// later: an older one cannot read the row (ADR 0034, amendment 8).
+    Root {
+        /// The job's tenant; `""` is a server without tenants.
+        tenant: String,
+        /// The job's lineage root.
+        root: String,
+    },
 }
 
 impl HaltScope {
-    /// Whether a halt of this scope stops `tenant`'s tasks.
-    fn covers(&self, tenant: &str) -> bool {
+    /// A halt of the job `root` in `tenant`.
+    #[must_use]
+    pub fn root(tenant: impl Into<String>, root: impl Into<String>) -> Self {
+        Self::Root {
+            tenant: tenant.into(),
+            root: root.into(),
+        }
+    }
+
+    /// Whether a halt of this scope stops the tasks of the job `root` in
+    /// `tenant`.
+    fn covers(&self, tenant: &str, root: &str) -> bool {
         match self {
             Self::All => true,
             Self::Tenant(t) => t == tenant,
+            Self::Root { tenant: t, root: r } => t == tenant && r == root,
+        }
+    }
+
+    /// The audit chain a halt of this scope is recorded in: the tenant's,
+    /// and `""` for [`HaltScope::All`].
+    #[cfg(feature = "audit")]
+    fn chain(&self) -> &str {
+        match self {
+            Self::All => "",
+            Self::Tenant(t) | Self::Root { tenant: t, .. } => t,
         }
     }
 }
@@ -86,6 +122,8 @@ pub struct HaltReport {
 pub struct Halts {
     all: Option<String>,
     tenants: HashMap<String, String>,
+    /// By `(tenant, root)`.
+    roots: HashMap<(String, String), String>,
 }
 
 impl Halts {
@@ -95,11 +133,23 @@ impl Halts {
             .or_else(|| self.tenants.get(tenant).map(String::as_str))
     }
 
+    /// Why a send of the job `root` in `tenant` is refused, if it is.
+    fn reason_for_root(&self, tenant: &str, root: &str) -> Option<&str> {
+        self.reason_for(tenant).or_else(|| {
+            self.roots
+                .get(&(tenant.to_owned(), root.to_owned()))
+                .map(String::as_str)
+        })
+    }
+
     fn set(&mut self, scope: &HaltScope, reason: String) {
         match scope {
             HaltScope::All => self.all = Some(reason),
             HaltScope::Tenant(t) => {
                 self.tenants.insert(t.clone(), reason);
+            }
+            HaltScope::Root { tenant, root } => {
+                self.roots.insert((tenant.clone(), root.clone()), reason);
             }
         }
     }
@@ -108,6 +158,9 @@ impl Halts {
         match scope {
             HaltScope::All => self.all.take().is_some(),
             HaltScope::Tenant(t) => self.tenants.remove(t).is_some(),
+            HaltScope::Root { tenant, root } => {
+                self.roots.remove(&(tenant.clone(), root.clone())).is_some()
+            }
         }
     }
 
@@ -115,6 +168,9 @@ impl Halts {
         match scope {
             HaltScope::All => self.all.is_some(),
             HaltScope::Tenant(t) => self.tenants.contains_key(t),
+            HaltScope::Root { tenant, root } => {
+                self.roots.contains_key(&(tenant.clone(), root.clone()))
+            }
         }
     }
 
@@ -123,6 +179,11 @@ impl Halts {
             .iter()
             .map(|_| HaltScope::All)
             .chain(self.tenants.keys().map(|t| HaltScope::Tenant(t.clone())))
+            .chain(
+                self.roots
+                    .keys()
+                    .map(|(tenant, root)| HaltScope::root(tenant, root)),
+            )
     }
 }
 
@@ -163,7 +224,7 @@ impl RequestHandler {
             let tokens = self.cancellation_tokens.read().await;
             tokens
                 .iter()
-                .filter(|(_, e)| scope.covers(&e.tenant))
+                .filter(|(_, e)| scope.covers(&e.tenant, &e.lineage.root))
                 .map(|(id, e)| {
                     stop(&e.turn, &e.token);
                     id.0.clone()
@@ -179,6 +240,11 @@ impl RequestHandler {
         };
         drop(held);
         let report = HaltReport { stopped, persisted };
+        self.metrics.on_halt(
+            halt_scope(&scope),
+            crate::metrics::control::halt_action::HALT,
+            report.stopped.len(),
+        );
         self.record_halt(&scope, by, "halt", Some(reason), Some(&report.stopped))
             .await;
         report
@@ -216,6 +282,11 @@ impl RequestHandler {
         drop(held);
         if was {
             trace_warn!(scope = ?scope, by, "resumed");
+            self.metrics.on_halt(
+                halt_scope(&scope),
+                crate::metrics::control::halt_action::RESUME,
+                0,
+            );
             self.record_halt(&scope, by, "resume", None, None).await;
         }
         Ok(was)
@@ -234,6 +305,8 @@ impl RequestHandler {
                 sync.apply(&self.halts, &self.cancellation_tokens)
                     .await
                     .map_err(|e| {
+                        self.metrics
+                            .on_refusal(crate::metrics::control::refusal::HALT_STORE);
                         // Temporary, and refused before any work began, so a
                         // client may send again: `Overloaded` goes out with
                         // `Retry-After` and `RetryInfo`, as the idempotency
@@ -253,7 +326,19 @@ impl RequestHandler {
         Ok(())
     }
 
-    /// Why sends for `tenant` are refused, if they are.
+    /// Whether a halt of every tenant ([`HaltScope::All`]) is held, which
+    /// `/ready` and the load report show (ADR 0046).
+    #[must_use]
+    pub fn is_halted_everywhere(&self) -> bool {
+        self.halts
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .holds(&HaltScope::All)
+    }
+
+    /// Why every send for `tenant` is refused, if it is: a halt of
+    /// [`HaltScope::All`] or of the tenant. A halt of one job refuses only
+    /// that job's sends; see [`halt_reason_for_root`](Self::halt_reason_for_root).
     #[must_use]
     pub fn halt_reason(&self, tenant: &str) -> Option<String> {
         self.halts
@@ -263,12 +348,42 @@ impl RequestHandler {
             .map(str::to_owned)
     }
 
-    /// Refuses a send in the current tenant scope while it is halted, or
-    /// while a halt store has never been read: a process that cannot tell
-    /// whether it is halted does not start work.
-    pub(crate) async fn refuse_if_halted(&self) -> ServerResult<()> {
+    /// Why a send of the job `root` in `tenant` is refused, if it is: a halt
+    /// of [`HaltScope::All`], of the tenant, or of that job.
+    #[must_use]
+    pub fn halt_reason_for_root(&self, tenant: &str, root: &str) -> Option<String> {
+        self.halts
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .reason_for_root(tenant, root)
+            .map(str::to_owned)
+    }
+
+    /// The turns of the job `root` in `tenant` running in this process, with
+    /// each one's lineage, in task-id order: what a halt of
+    /// [`HaltScope::Root`] would stop here now. A live view of one replica;
+    /// [`a2a_protocol_types::lineage::tree`] arranges stored tasks from every
+    /// agent into the job's tree.
+    pub async fn running_in_root(&self, tenant: &str, root: &str) -> Vec<(TaskId, Lineage)> {
+        let scope = HaltScope::root(tenant, root);
+        let mut running: Vec<(TaskId, Lineage)> = self
+            .cancellation_tokens
+            .read()
+            .await
+            .iter()
+            .filter(|(_, e)| scope.covers(&e.tenant, &e.lineage.root) && !e.token.is_cancelled())
+            .map(|(id, e)| (id.clone(), e.lineage.clone()))
+            .collect();
+        running.sort_unstable_by(|a, b| a.0.0.cmp(&b.0.0));
+        running
+    }
+
+    /// Refuses a send of the job `root` in the current tenant scope while it
+    /// is halted, or while a halt store has never been read: a process that
+    /// cannot tell whether it is halted does not start work.
+    pub(crate) async fn refuse_if_halted(&self, root: &str) -> ServerResult<()> {
         self.sync_halts().await?;
-        self.halt_reason(&TenantContext::current())
+        self.halt_reason_for_root(&TenantContext::current(), root)
             .map_or(Ok(()), |reason| Err(ServerError::Halted(reason)))
     }
 
@@ -289,8 +404,16 @@ impl RequestHandler {
         }
     }
 
-    pub(crate) fn stop_if_halted(&self, turn: &ExecutorTurn, token: &CancellationToken) {
-        if self.halt_reason(&TenantContext::current()).is_some() {
+    pub(crate) fn stop_if_halted(
+        &self,
+        turn: &ExecutorTurn,
+        token: &CancellationToken,
+        root: &str,
+    ) {
+        if self
+            .halt_reason_for_root(&TenantContext::current(), root)
+            .is_some()
+        {
             stop(turn, token);
         }
     }
@@ -305,17 +428,13 @@ impl RequestHandler {
         stopped: Option<&[String]>,
     ) {
         let Some(log) = &self.audit else { return };
-        let chain = match scope {
-            HaltScope::All => String::new(),
-            HaltScope::Tenant(t) => t.clone(),
-        };
         crate::audit::record_halt(
             log,
             &*self.metrics,
-            &chain,
+            scope.chain(),
             by,
             action,
-            matches!(scope, HaltScope::All),
+            scope,
             reason,
             stopped,
         )
@@ -342,9 +461,22 @@ pub(super) fn stop(turn: &ExecutorTurn, token: &CancellationToken) {
     token.cancel();
 }
 
+/// What `scope` covers, as a metric label.
+const fn halt_scope(scope: &HaltScope) -> &'static str {
+    match scope {
+        HaltScope::All => crate::metrics::control::halt_scope::ALL,
+        HaltScope::Tenant(_) => crate::metrics::control::halt_scope::TENANT,
+        HaltScope::Root { .. } => crate::metrics::control::halt_scope::ROOT,
+    }
+}
+
 #[cfg(test)]
 mod push_tests;
+#[cfg(test)]
+mod root_tests;
 #[cfg(test)]
 mod store_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod window_tests;

@@ -73,9 +73,15 @@ pub async fn serve_combined(bind_addr: &str, handler: Arc<RequestHandler>) -> So
 pub fn serve_grpc(listener: tokio::net::TcpListener, handler: Arc<RequestHandler>) -> SocketAddr {
     use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
 
-    GrpcDispatcher::new(handler, GrpcConfig::default())
-        .serve_with_listener(listener)
-        .expect("start gRPC server")
+    {
+        let listener = listener;
+        let addr = listener.local_addr().expect("start gRPC server");
+        tokio::spawn(
+            GrpcDispatcher::new(handler, GrpcConfig::default())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    }
 }
 
 /// Starts the WebSocket binding (§12 custom) and returns the bound address.
@@ -84,7 +90,12 @@ pub fn serve_grpc(listener: tokio::net::TcpListener, handler: Arc<RequestHandler
 /// rather than sharing the combined router, hence a separate port.
 pub async fn serve_websocket(addr: &str, handler: Arc<RequestHandler>) -> SocketAddr {
     let ws = Arc::new(a2a_protocol_server::dispatch::websocket::WebSocketDispatcher::new(handler));
-    ws.serve_with_addr(addr)
-        .await
-        .expect("bind websocket listener")
+    {
+        let listener = tokio::net::TcpListener::bind(addr)
+            .await
+            .expect("bind websocket listener");
+        let addr = listener.local_addr().expect("bind websocket listener");
+        tokio::spawn(ws.serve_with_shutdown(listener, std::future::pending()));
+        addr
+    }
 }

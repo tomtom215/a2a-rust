@@ -49,6 +49,7 @@ use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use tokio::time::Instant;
 
+use super::gate::admission::Admission;
 use super::{PushConfigStore, PushSender};
 use crate::handler::{HandlerLimits, ends_turn};
 use crate::metrics::push_outcome;
@@ -74,6 +75,13 @@ pub fn rejected(why: String, status: u16) -> A2aError {
 /// The status a webhook refused a delivery with, if `err` says.
 fn status_of(err: &A2aError) -> Option<u64> {
     err.data.as_ref()?.get(STATUS_KEY)?.as_u64()
+}
+
+/// Whether the webhook refused the delivery with a status no retry will
+/// change (a `4xx` other than `408` and `429`, as `request::judge` decides):
+/// the outbox ends such a row rather than retrying it (ADR 0037).
+pub fn refused_for_good(err: &A2aError) -> bool {
+    status_of(err).is_some()
 }
 
 /// The outcome label an error from [`watched`]'s sender stands for, if it is
@@ -236,15 +244,23 @@ impl PushHealth {
 /// of the two, so a webhook that never answers, which is the usual way a
 /// webhook is down for good, is always cut off here and never returns an
 /// error: without this it would never be counted, and never suspended.
+///
+/// Not when it is dropped while it still waits for a slot in the push gate:
+/// no request was made, and another caller's slow webhooks are not this
+/// webhook's failure (audit NEW-f-2).
 struct Unanswered<'a> {
     health: &'a PushHealth,
     /// `None` once the answer has come.
     key: Option<Key>,
+    admission: Option<Arc<Admission>>,
 }
 
 impl Drop for Unanswered<'_> {
     fn drop(&mut self) {
-        if let Some(key) = self.key.take() {
+        let waiting = self.admission.as_ref().is_some_and(|a| a.waiting());
+        if let Some(key) = self.key.take()
+            && !waiting
+        {
             self.health.failed(key);
         }
     }
@@ -268,6 +284,7 @@ impl PushSender for PushHealth {
             let mut unanswered = Unanswered {
                 health: self,
                 key: Some(key.clone()),
+                admission: super::gate::admission::current(),
             };
             let answer = self.inner.send(url, event, config).await;
             unanswered.key = None;

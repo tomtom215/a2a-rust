@@ -181,7 +181,7 @@ async fn settle() {
 }
 
 fn map_len(gate: &PushGate) -> usize {
-    gate.hosts.lock().unwrap().len()
+    gate.shared.hosts.len()
 }
 
 #[tokio::test(start_paused = true)]
@@ -454,6 +454,6 @@ fn gated_puts_the_gate_in_front_of_a_sender() {
             "{:?}",
             PushGate::new(Arc::new(Answers(true)), &limits, metrics)
         ),
-        "PushGate { per_host: 64, .. }"
+        "PushGate { per_host: 64, per_partition: 256, .. }"
     );
 }

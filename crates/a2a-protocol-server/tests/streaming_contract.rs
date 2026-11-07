@@ -22,7 +22,7 @@ use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::handler::{RequestHandler, SendMessageResult};
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::streaming::{EventQueueReader, EventQueueWriter};
 use a2a_protocol_server::{EventEmitter, agent_executor};
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
@@ -87,9 +87,15 @@ async fn streaming_methods_are_refused_when_the_card_does_not_declare_streaming(
                 .build()
                 .expect("handler"),
         );
-        let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&handler)))
-            .await
-            .unwrap();
+        let addr = {
+            let bound = Server::bind("127.0.0.1:0").await.unwrap();
+            let addr = bound.local_addr().unwrap();
+            tokio::spawn(bound.serve_with_shutdown(
+                JsonRpcDispatcher::new(Arc::clone(&handler)),
+                std::future::pending(),
+            ));
+            addr
+        };
 
         // A finished task to subscribe to, so the refusal cannot be a
         // TaskNotFound in disguise.
@@ -172,7 +178,7 @@ async fn closing_one_stream_leaves_the_other_streaming() {
         panic!("a task stream begins with the task (§3.1.2), got {first:?}");
     };
     let mut kept = handler
-        .on_resubscribe(TaskIdParams::new(task.id.0.clone()), None)
+        .on_subscribe_to_task(TaskIdParams::new(task.id.0.clone()), None)
         .await
         .expect("subscriber");
     drop(originating);

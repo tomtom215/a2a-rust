@@ -262,8 +262,9 @@ impl TrustedKey {
 /// # Errors
 ///
 /// Returns an error naming why it does not verify: unsigned, malformed
-/// header, unknown algorithm, no trusted key with that `kid` and `alg`, or a
-/// bad signature.
+/// header, a header that names critical extensions (`crit`, which no verifier
+/// here understands), unknown algorithm, no trusted key with that `kid` and
+/// `alg`, or a bad signature.
 pub fn verify_checkpoint(checkpoint: &Checkpoint, keys: &[TrustedKey]) -> A2aResult<()> {
     if !checkpoint.is_signed() {
         return Err(A2aError::invalid_params("checkpoint is unsigned"));
@@ -273,6 +274,14 @@ pub fn verify_checkpoint(checkpoint: &Checkpoint, keys: &[TrustedKey]) -> A2aRes
         .map_err(|_| A2aError::invalid_params("checkpoint header is not base64url"))?;
     let header: serde_json::Value = serde_json::from_slice(&header)
         .map_err(|_| A2aError::invalid_params("checkpoint header is not JSON"))?;
+    // RFC 7515 4.1.11: a JWS naming critical extensions is invalid to a
+    // verifier that understands none, as this one does. Until 2026-11-06 the
+    // member was ignored here.
+    if header.get("crit").is_some() {
+        return Err(A2aError::invalid_params(
+            "checkpoint header names critical extensions (crit), which this verifier does not support",
+        ));
+    }
     let alg_name = header["alg"].as_str().unwrap_or_default();
     let alg = SigningAlg::from_jws(alg_name)
         .ok_or_else(|| A2aError::invalid_params(format!("unsupported alg {alg_name:?}")))?;
@@ -293,3 +302,6 @@ pub fn verify_checkpoint(checkpoint: &Checkpoint, keys: &[TrustedKey]) -> A2aRes
         .verify(input.as_bytes(), &sig)
         .map_err(|_| A2aError::invalid_params("checkpoint signature does not verify"))
 }
+
+#[cfg(test)]
+mod tests;

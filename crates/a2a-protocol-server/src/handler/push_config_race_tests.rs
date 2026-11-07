@@ -136,8 +136,8 @@ async fn two_replicas_creating_at_once_cannot_exceed_the_per_task_cap() {
         let (a, b) = (replica(&tasks, &configs, 1), replica(&tasks, &configs, 1));
 
         let (ra, rb) = tokio::join!(
-            a.on_set_push_config(create(1), None),
-            b.on_set_push_config(create(2), None),
+            a.on_create_push_config(create(1), None),
+            b.on_create_push_config(create(2), None),
         );
 
         let stored = configs.inner.list("t1").await.unwrap();
@@ -189,7 +189,7 @@ async fn updating_a_config_never_withdraws_it_even_when_the_task_is_over_the_cap
     let updated =
         TaskPushNotificationConfig::new("t1".to_owned(), "https://example.com/moved".to_owned())
             .with_id("cfg-1".to_owned());
-    h.on_set_push_config(updated, None)
+    h.on_create_push_config(updated, None)
         .await
         .expect("an update is not a new config");
 
@@ -199,7 +199,7 @@ async fn updating_a_config_never_withdraws_it_even_when_the_task_is_over_the_cap
     assert_eq!(moved.url, "https://example.com/moved");
 
     // A new config on the over-cap task is refused and leaves nothing behind.
-    let refused = h.on_set_push_config(create(4), None).await;
+    let refused = h.on_create_push_config(create(4), None).await;
     assert!(
         matches!(refused, Err(ServerError::InvalidParams(_))),
         "{refused:?}"

@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
 use a2a_protocol_server::interceptor::ServerInterceptor;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{CallContext, RequestHandler, RequestHandlerBuilder, agent_executor};
 use a2a_protocol_types::error::{A2aError, A2aResult, ErrorCode};
 use http_body_util::{BodyExt, Full};
@@ -77,9 +77,14 @@ async fn jsonrpc_invalid_params_name_the_field() {
             .build()
             .unwrap(),
     );
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     let v = call(
         "POST",
         format!("http://{addr}/"),
@@ -107,12 +112,22 @@ async fn unary_errors_keep_their_data() {
                 .unwrap(),
         )
     };
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .unwrap();
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let structure = "type.googleapis.com/google.protobuf.Struct";
 
     let v = call(

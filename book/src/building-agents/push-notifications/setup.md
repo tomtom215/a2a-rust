@@ -61,14 +61,14 @@ let config = TaskPushNotificationConfig::new(
     "https://my-service.com/webhook",    // Webhook URL
 );
 
-let saved = client.set_push_config(config).await?;
+let saved = client.create_push_config(config).await?;
 println!("Config ID: {:?}", saved.id);
 # Ok(())
 # }
 ```
 
 Spec §13.2 says webhook URLs SHOULD use HTTPS: the payload, the token and any
-credentials travel with the request. `set_push_config` (and a send carrying a
+credentials travel with the request. `create_push_config` (and a send carrying a
 push config inline) logs a warning for an `http://` URL to a host other than
 loopback; build the client with `ClientBuilder::require_https_webhooks()` to
 refuse such a config with `ClientError::InsecureWebhook` before anything is

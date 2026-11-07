@@ -230,3 +230,32 @@ async fn the_wrapper_hands_on_turn_claims() {
     };
     assert!(traced.turn_claims().is_some());
 }
+
+/// `trim_event_log` reaches the wrapped store (ADR 0047).
+#[tokio::test]
+async fn a_trim_reaches_the_wrapped_log() {
+    use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+    use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
+    let inner = Arc::new(InMemoryTaskStore::new());
+    let store = traced(Arc::clone(&inner) as Arc<dyn TaskStore>);
+    let id = TaskId::new("t-1");
+    store
+        .save(&Task::new(
+            "t-1",
+            "c-1",
+            TaskStatus::new(TaskState::Working),
+        ))
+        .await
+        .unwrap();
+    let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        id.clone(),
+        ContextId::new("c-1"),
+        TaskStatus::new(TaskState::Working),
+    ));
+    for seq in 1..=3 {
+        store.append_event(&id, seq, &event).await.unwrap();
+    }
+    assert_eq!(store.trim_event_log(&id, 3).await.unwrap(), 2);
+    assert_eq!(inner.earliest_event_seq(&id).await.unwrap(), Some(3));
+}

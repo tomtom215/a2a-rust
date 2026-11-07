@@ -1,0 +1,16 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://a2a-rust.com/extensions/lease/v1/schema.json",
+ "title": "Lease grant (lease/v1)",
+ "description": "How long a delegated task may go unrenewed before its agent stops it. Unknown members are ignored. A receiver also applies its own range (this SDK: 1 000 ms to its configured maximum, 1 hour by default). The schema cannot say that a float past 2^53 is refused; the vectors do.",
+ "type": "object",
+ "required": [
+  "ttlMs"
+ ],
+ "properties": {
+  "ttlMs": {
+   "type": "integer",
+   "minimum": 0
+  }
+ }
+}

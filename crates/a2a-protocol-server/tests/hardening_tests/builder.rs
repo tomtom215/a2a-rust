@@ -72,7 +72,7 @@ async fn builder_with_push_sender_enables_push() {
     // Push config operations should succeed (not return PushNotSupported).
     let config = TaskPushNotificationConfig::new(&task_id, "https://example.com/hook");
     let saved = handler
-        .on_set_push_config(config, None)
+        .on_create_push_config(config, None)
         .await
         .expect("set push config should succeed when push is enabled");
     let id = saved.id.as_ref().expect("saved config should have an ID");
@@ -87,7 +87,10 @@ async fn builder_without_push_sender_rejects_push_config() {
         .expect("build without push sender");
 
     let config = TaskPushNotificationConfig::new("task-1", "https://example.com/hook");
-    let err = handler.on_set_push_config(config, None).await.unwrap_err();
+    let err = handler
+        .on_create_push_config(config, None)
+        .await
+        .unwrap_err();
     assert!(
         matches!(err, a2a_protocol_server::ServerError::PushNotSupported),
         "should reject push config when no push sender is configured"

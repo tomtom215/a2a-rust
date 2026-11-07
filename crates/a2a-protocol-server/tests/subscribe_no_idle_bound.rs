@@ -48,7 +48,7 @@ fn handler(store: Arc<InMemoryTaskStore>, limits: HandlerLimits) -> RequestHandl
 
 async fn subscribe(handler: &RequestHandler, id: &str) -> impl EventQueueReader {
     let mut reader = handler
-        .on_resubscribe(TaskIdParams::new(id.to_owned()), None)
+        .on_subscribe_to_task(TaskIdParams::new(id.to_owned()), None)
         .await
         .expect("resubscribe to a parked task");
     let snapshot = reader.read().await.expect("a snapshot").expect("no error");

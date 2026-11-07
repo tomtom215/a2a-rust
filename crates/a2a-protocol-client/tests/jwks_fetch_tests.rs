@@ -8,6 +8,7 @@
 //! with an error, an oversized body or junk — is refused.
 #![cfg(feature = "signing")]
 
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use a2a_protocol_client::ClientError;
@@ -59,6 +60,43 @@ async fn key_server(status: u16, body: Vec<u8>) -> String {
         }
     });
     format!("http://127.0.0.1:{}/jwks.json", addr.port())
+}
+
+/// Serves `body` as a JWK Set at every path, and records the header fields of
+/// each request it is sent.
+async fn recording_key_server(body: Vec<u8>) -> (String, Arc<Mutex<Vec<hyper::HeaderMap>>>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let seen: Arc<Mutex<Vec<hyper::HeaderMap>>> = Arc::default();
+    let log = Arc::clone(&seen);
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let (body, log) = (body.clone(), Arc::clone(&log));
+            tokio::spawn(async move {
+                let service = hyper::service::service_fn(move |req| {
+                    log.lock().unwrap().push(req.headers().clone());
+                    let body = body.clone();
+                    async move {
+                        Ok::<_, std::convert::Infallible>(
+                            hyper::Response::builder()
+                                .header("content-type", "application/jwk-set+json")
+                                .body(Full::new(Bytes::from(body)))
+                                .unwrap(),
+                        )
+                    }
+                });
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
+                    .await;
+            });
+        }
+    });
+    (format!("http://127.0.0.1:{}/jwks.json", addr.port()), seen)
+}
+
+fn one_key_set() -> Jwks {
+    let key = VerifyingKey::from_bytes("ES256", &hex(P256_POINT)).unwrap();
+    Jwks::new(vec![Jwk::from_verifying_key(&key, Some("k1"))])
 }
 
 fn signed_card() -> AgentCard {
@@ -155,4 +193,61 @@ async fn a_fetched_key_whose_certificate_has_expired_is_not_used() {
         let outcome = verify_card_with_jwks(&signed_card(), &fetched);
         assert_eq!(outcome.is_ok(), verifies, "{outcome:?}");
     }
+}
+
+/// RFC 8725 section 3.10 advises no cookies in a key fetch, and a key server
+/// is another trust domain than the agent: what was set for the card, an
+/// `Authorization` and a `Cookie` among it, is not sent to it. Until
+/// 2026-11-06 it was.
+#[tokio::test]
+async fn a_key_server_is_never_sent_the_headers_set_for_the_card() {
+    let (url, seen) = recording_key_server(serde_json::to_vec(&one_key_set()).unwrap()).await;
+    let options = options()
+        .with_header("authorization", "Bearer card-secret")
+        .with_header("cookie", "card=session")
+        .with_header("x-card-only", "1");
+    fetch_jwks(&url, &options).await.unwrap();
+
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    for name in ["authorization", "cookie", "x-card-only"] {
+        assert!(seen[0].get(name).is_none(), "{name} reached the key server");
+    }
+    assert!(
+        seen[0]["accept"].to_str().unwrap().contains("jwk-set"),
+        "its own Accept is still sent"
+    );
+}
+
+/// The headers set for the key fetch are sent, and win over the card's of the
+/// same name: here both are set, and the key server sees its own.
+#[tokio::test]
+async fn a_key_server_is_sent_the_headers_set_for_it() {
+    let (url, seen) = recording_key_server(serde_json::to_vec(&one_key_set()).unwrap()).await;
+    let options = options()
+        .with_header("authorization", "Bearer card-secret")
+        .with_jwks_header("authorization", "Bearer key-server-token")
+        .with_jwks_header("x-keys", "1");
+    fetch_jwks(&url, &options).await.unwrap();
+
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0]["authorization"], "Bearer key-server-token");
+    assert_eq!(seen[0]["x-keys"], "1");
+}
+
+/// The two sets of headers are kept apart, and `Debug` prints names only.
+#[test]
+fn jwks_headers_are_kept_apart_from_the_cards_and_never_printed() {
+    let options = CardFetchOptions::default()
+        .with_header("x-card", "c1")
+        .with_jwks_header("x-keys", "s3cret-key-token");
+    assert_eq!(options.headers().len(), 1);
+    assert!(options.headers().contains_key("x-card"));
+    assert_eq!(options.jwks_headers().len(), 1);
+    assert_eq!(options.jwks_headers()["x-keys"], "s3cret-key-token");
+
+    let shown = format!("{options:?}");
+    assert!(shown.contains("x-keys"), "{shown}");
+    assert!(!shown.contains("s3cret-key-token"), "{shown}");
 }

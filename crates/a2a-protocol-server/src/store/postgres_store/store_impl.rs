@@ -695,6 +695,25 @@ impl TaskStore for PostgresTaskStore {
         })
     }
 
+    fn trim_event_log<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        below: u64,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            let below = seq_to_i64(below)?;
+            let done = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query(event_log::TRIM_BELOW_SQL)
+                    .bind(task_id.0.as_str())
+                    .bind(below)
+                    .execute(&self.pool)
+            })
+            .await
+            .map_err(to_a2a_error)?;
+            Ok(done.rows_affected())
+        })
+    }
+
     fn read_events<'a>(
         &'a self,
         task_id: &'a TaskId,

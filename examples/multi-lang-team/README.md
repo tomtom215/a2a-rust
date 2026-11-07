@@ -70,7 +70,8 @@ request that fans out to every reachable worker, then drives every A2A method
 over every binding against itself, prints the coverage matrix, and exits
 (`0` complete, `1` a call failed, `2` a matrix cell never ran). Set
 `A2A_BIND_ADDR=127.0.0.1:8080` instead to keep it serving on JSON-RPC until
-Ctrl+C.
+Ctrl+C. `A2A_PUBLIC_URL` sets the URL its card advertises (unset: the bound address,
+and `localhost` for `0.0.0.0` or `[::]`).
 
 ## Expected output
 

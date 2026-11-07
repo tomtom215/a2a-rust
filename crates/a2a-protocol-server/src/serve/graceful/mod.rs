@@ -111,7 +111,6 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
 
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
@@ -121,12 +120,15 @@ use super::{Dispatcher, connections, pause_after_accept_error};
 mod idle;
 use idle::IdleTimeout;
 pub(super) use idle::Serving;
+#[cfg(feature = "websocket")]
+pub(super) use idle::ServingGuard;
 
 mod connection;
 use connection::{Accepted, spawn_connection};
 
 mod plaintext;
 mod production;
+pub mod start;
 #[cfg(feature = "tls-rustls")]
 mod tls;
 
@@ -288,13 +290,9 @@ impl Server {
             (Some(binding), Some(handler)) => handler.undeclared_binding(binding),
             _ => None,
         };
-        let refusal = if config.max_connections == Some(0) {
-            Some("max_connections is 0: a server that may serve no connection accepts none".into())
-        } else {
-            production::refusal(&config, listener.local_addr().ok(), encrypted, undeclared)
-        };
-        if let Some(why) = refusal {
-            trace_error!(reason = %why, "listener refused to start");
+        if let Some(why) =
+            start::refusal(&config, listener.local_addr().ok(), encrypted, undeclared)
+        {
             return ServeReport {
                 accepted: 0,
                 drained: true,
@@ -336,21 +334,11 @@ impl Server {
 
         // On the signal, readiness turns to "draining" at once; accepting
         // goes on for `drain_delay`, while load balancers learn of it.
-        let draining = dispatcher.request_handler().cloned();
-        let drain_delay = config.drain_delay;
-        let shutdown = async move {
-            shutdown.await;
-            if let Some(handler) = &draining {
-                handler.begin_draining();
-            }
-            if !drain_delay.is_zero() {
-                trace_info!(
-                    delay_ms = u64::try_from(drain_delay.as_millis()).unwrap_or(u64::MAX),
-                    "shutdown signalled; not ready, still accepting for the drain delay"
-                );
-                tokio::time::sleep(drain_delay).await;
-            }
-        };
+        let shutdown = start::signalled(
+            shutdown,
+            dispatcher.request_handler().cloned(),
+            config.drain_delay,
+        );
         let mut shutdown = std::pin::pin!(shutdown);
         loop {
             // Hold the permit before accepting, so an over-limit burst waits in
@@ -413,10 +401,16 @@ impl Server {
             None => None,
         };
 
+        // One deadline for the drain: the HTTP connections and the upgraded
+        // ones (ADR 0055) close side by side within it, not one after the
+        // other.
+        let deadline = tokio::time::Instant::now() + config.drain_timeout;
         let mut report = drain(
             graceful,
+            dispatcher
+                .close_upgraded(deadline.saturating_duration_since(tokio::time::Instant::now())),
             accepted.load(Ordering::Relaxed),
-            config.drain_timeout,
+            deadline,
         )
         .await;
         report.tasks = tasks;
@@ -424,11 +418,13 @@ impl Server {
     }
 }
 
-/// Waits out the in-flight connections, or reports the ones left behind.
+/// Waits out the in-flight connections, and the dispatcher's `upgraded`
+/// ones closing beside them, or reports the ones left behind.
 async fn drain(
     graceful: hyper_util::server::graceful::GracefulShutdown,
+    upgraded: impl Future<Output = bool>,
     accepted: u64,
-    timeout: Duration,
+    deadline: tokio::time::Instant,
 ) -> ServeReport {
     // `count()` is read before the race because `shutdown()` consumes the
     // handle: after it, there is nothing left to ask how many were open.
@@ -439,10 +435,11 @@ async fn drain(
         "shutdown signalled; draining connections"
     );
 
-    if tokio::time::timeout(timeout, graceful.shutdown())
-        .await
-        .is_ok()
-    {
+    let (http, upgraded) = tokio::join!(
+        tokio::time::timeout_at(deadline, graceful.shutdown()),
+        upgraded
+    );
+    if http.is_ok() && upgraded {
         ServeReport {
             accepted,
             drained: true,

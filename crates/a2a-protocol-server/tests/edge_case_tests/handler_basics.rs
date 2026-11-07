@@ -222,7 +222,7 @@ async fn push_config_not_supported_without_sender() {
         "task-1",
         "http://example.com/webhook",
     );
-    let result = handler.on_set_push_config(config, None).await;
+    let result = handler.on_create_push_config(config, None).await;
     let err = result.expect_err("should return PushNotSupported");
     assert!(
         matches!(err, ServerError::PushNotSupported),

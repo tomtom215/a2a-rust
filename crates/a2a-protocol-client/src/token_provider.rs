@@ -63,6 +63,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(not(feature = "tls-rustls"))]
+use crate::transport::connector::TcpConnector;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use http_body_util::Full;
@@ -70,15 +72,13 @@ use hyper::body::Bytes;
 #[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::Client;
 #[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::connect::HttpConnector;
-#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::rt::TokioExecutor;
 
 use crate::error::{ClientError, ClientResult};
 use crate::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
 
 #[cfg(not(feature = "tls-rustls"))]
-type TokenHttpClient = Client<HttpConnector, Full<Bytes>>;
+type TokenHttpClient = Client<TcpConnector, Full<Bytes>>;
 #[cfg(feature = "tls-rustls")]
 type TokenHttpClient = crate::tls::HttpsClient;
 
@@ -102,7 +102,7 @@ const DEFAULT_REFRESH_LEEWAY: Duration = Duration::from_secs(30);
 const DEFAULT_FAILURE_BACKOFF: Duration = Duration::from_secs(1);
 
 mod exchange;
-mod flight;
+pub(crate) mod flight;
 mod trusted_hosts;
 
 pub use exchange::{
@@ -797,10 +797,10 @@ fn token_http_client_with(tls: rustls::ClientConfig) -> TokenHttpClient {
 fn build_token_http_client() -> TokenHttpClient {
     #[cfg(not(feature = "tls-rustls"))]
     {
-        let mut connector = HttpConnector::new();
-        connector.set_connect_timeout(Some(TOKEN_CONNECT_TIMEOUT));
-        connector.set_nodelay(true);
-        Client::builder(TokioExecutor::new()).build(connector)
+        // The lookup, not only the connect, bounded by the timeout (B-28).
+        Client::builder(TokioExecutor::new()).build(crate::transport::connector::http_connector(
+            TOKEN_CONNECT_TIMEOUT,
+        ))
     }
     #[cfg(feature = "tls-rustls")]
     {

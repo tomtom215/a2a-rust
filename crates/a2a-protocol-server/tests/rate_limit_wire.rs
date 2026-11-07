@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     RateLimitConfig, RateLimitInterceptor, RequestHandler, RequestHandlerBuilder, agent_executor,
 };
@@ -31,7 +31,7 @@ fn handler() -> Arc<RequestHandler> {
     let limiter = RateLimitInterceptor::new(
         RateLimitConfig::default()
             .with_requests_per_window(1)
-            .with_window_secs(WINDOW_SECS),
+            .with_window(std::time::Duration::from_secs(WINDOW_SECS)),
     )
     .expect("limiter");
     Arc::new(
@@ -82,9 +82,14 @@ fn retry_delay_secs(details: &serde_json::Value) -> u64 {
 
 #[tokio::test]
 async fn a_throttled_rest_call_is_429_with_retry_after() {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let url = format!("http://{addr}/tasks");
     let (status, _, body) = call("GET", url.clone(), None).await;
     assert_eq!(status, 200, "the first call is within the limit: {body}");
@@ -105,9 +110,14 @@ async fn a_throttled_rest_call_is_429_with_retry_after() {
 
 #[tokio::test]
 async fn a_throttled_jsonrpc_call_carries_retry_info() {
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let url = format!("http://{addr}/");
     let (_, _, body) = call("POST", url.clone(), Some(LIST)).await;
     assert!(body.get("result").is_some(), "within the limit: {body}");

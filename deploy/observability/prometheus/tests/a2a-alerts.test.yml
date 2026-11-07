@@ -12,12 +12,13 @@ rule_files:
 evaluation_interval: 30s
 
 tests:
-  # 10 calls a minute, 2 of them failed (20%), against a healthy job.
+  # 10 calls a minute, 2 of them failed (20%, -32603: an internal error),
+  # against a healthy job.
   - interval: 1m
     input_series:
       - series: 'rpc_server_call_duration_seconds_count{job="bad",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/GetTask"}'
         values: '0+8x30'
-      - series: 'rpc_server_call_duration_seconds_count{job="bad",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/GetTask",error_type="-32001"}'
+      - series: 'rpc_server_call_duration_seconds_count{job="bad",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/GetTask",rpc_status_code="-32603",error_type="-32603"}'
         values: '0+2x30'
       - series: 'rpc_server_call_duration_seconds_count{job="good",rpc_system_name="grpc",rpc_method="lf.a2a.v1.A2AService/GetTask",rpc_status_code="OK"}'
         values: '0+10x30'
@@ -28,7 +29,8 @@ tests:
           - exp_labels: {severity: warning, job: bad}
             exp_annotations:
               summary: "bad: 20% of A2A calls failed over 5m"
-              description: "More than 5% of calls to bad failed for 10 minutes, by the RPC conventions' definition of failure (error_type set, other than a stream the client abandoned), while the job took more than 0.1 calls a second. Split by rpc_method and rpc_system_name with a2a:rpc_server_errors:rate5m."
+              description: "More than 5% of calls to bad failed for 10 minutes while the job took more than 0.1 calls a second. Failed means the server's failure: error_type set, other than a call the client abandoned or one refused as the caller's mistake (a status A2A maps to a 4xx, such as TaskNotFound -32001). Split by rpc_method and rpc_system_name with a2a:rpc_server_errors:rate5m; caller mistakes are a2a:rpc_server_caller_errors:rate5m."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aservererrorratiohigh"
       - eval_time: 8m
         alertname: A2AServerErrorRatioHigh
         exp_alerts: []
@@ -56,33 +58,93 @@ tests:
         eval_time: 25m
         exp_samples: []
 
+  # Audit C-09, gRPC. A gRPC call the peer abandons is recorded with
+  # rpc.status_code=CANCELLED and no error.type (semantic conventions,
+  # grpc.md); the other bindings keep error.type=cancelled. The cancelled
+  # rule sees both, whichever binding a job serves, and neither is an error.
+  - interval: 1m
+    input_series:
+      - series: 'rpc_server_call_duration_seconds_count{job="impatient-both",rpc_system_name="grpc",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage",rpc_status_code="OK"}'
+        values: '0+8x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="impatient-both",rpc_system_name="grpc",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage",rpc_status_code="CANCELLED"}'
+        values: '0+2x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="impatient-both",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage"}'
+        values: '0+8x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="impatient-both",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage",error_type="cancelled"}'
+        values: '0+3x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2AServerErrorRatioHigh
+        exp_alerts: []
+    promql_expr_test:
+      - expr: count(a2a:rpc_server_cancelled:rate5m > 0)
+        eval_time: 25m
+        exp_samples:
+          - labels: '{}'
+            value: 2
+      - expr: sum(a2a:rpc_server_cancelled:rate5m{rpc_system_name="grpc"})
+        eval_time: 25m
+        exp_samples:
+          - labels: '{}'
+            value: 0.03333333333333333
+      - expr: sum(a2a:rpc_server_cancelled:rate5m{rpc_system_name="jsonrpc"})
+        eval_time: 25m
+        exp_samples:
+          - labels: '{}'
+            value: 0.05
+      - expr: count(a2a:rpc_server_errors:rate5m)
+        eval_time: 25m
+        exp_samples: []
+
   # Audit C-09. Half of the calls failed, but at 0.03 a second: too little
   # traffic for a ratio to mean anything, so no page.
   - interval: 1m
     input_series:
       - series: 'rpc_server_call_duration_seconds_count{job="quiet",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/GetTask"}'
         values: '0+1x30'
-      - series: 'rpc_server_call_duration_seconds_count{job="quiet",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/GetTask",error_type="-32001"}'
+      - series: 'rpc_server_call_duration_seconds_count{job="quiet",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/GetTask",rpc_status_code="-32603",error_type="-32603"}'
         values: '0+1x30'
     alert_rule_test:
       - eval_time: 25m
         alertname: A2AServerErrorRatioHigh
         exp_alerts: []
 
+  # Job a: one failed write on a counter exported from zero; job b: none;
+  # job c: a write fails every minute. Both a and c warn at once; only c,
+  # whose writes keep failing, pages, and only after 10 minutes of it.
   - interval: 1m
     input_series:
       - series: 'a2a_server_persistence_errors_total{job="a",operation="save"}'
-        values: '0 0 0 1 1 1 1 1 1 1'
+        values: '0 0 0 1x30'
       - series: 'a2a_server_persistence_errors_total{job="b",operation="save"}'
-        values: '0x10'
+        values: '0x33'
+      - series: 'a2a_server_persistence_errors_total{job="c",operation="save"}'
+        values: '0+1x33'
     alert_rule_test:
       - eval_time: 5m
         alertname: A2APersistenceErrors
         exp_alerts:
-          - exp_labels: {severity: critical, job: a, operation: save}
+          - exp_labels: {severity: warning, job: a, operation: save}
+            exp_annotations: &persist-warn-a
+              summary: "a: task writes failed in the last hour (save)"
+              description: "The background processor could not persist a task write in the last hour. A streaming client already received those events, so the stored task and what clients saw have diverged; a later GetTask returns the wrong answer. It stays firing for an hour after the last failure. Sustained failures page as A2APersistenceFailing."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2apersistenceerrors"
+          - exp_labels: {severity: warning, job: c, operation: save}
             exp_annotations:
-              summary: "a: task writes are failing (save)"
-              description: "The background processor could not persist task writes. A streaming client already received these events, so the stored task and what clients saw have diverged; a later GetTask returns the wrong answer."
+              summary: "c: task writes failed in the last hour (save)"
+              description: "The background processor could not persist a task write in the last hour. A streaming client already received those events, so the stored task and what clients saw have diverged; a later GetTask returns the wrong answer. It stays firing for an hour after the last failure. Sustained failures page as A2APersistenceFailing."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2apersistenceerrors"
+      - eval_time: 9m
+        alertname: A2APersistenceFailing
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: A2APersistenceFailing
+        exp_alerts:
+          - exp_labels: {severity: critical, job: c, operation: save}
+            exp_annotations:
+              summary: "c: task writes keep failing (save)"
+              description: "Task writes have failed in every five-minute window for 10 minutes: the store is refusing writes, not one write that failed. Every task updated meanwhile may read back wrong."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2apersistencefailing"
 
   - interval: 1m
     input_series:
@@ -109,6 +171,7 @@ tests:
             exp_annotations:
               summary: "a/1: requests without a response"
               description: "Requests arrived that produced no response for 15 minutes: a panicking executor, dropped connections, or a process exiting mid-request."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2arequestsunanswered"
 
   - interval: 1m
     input_series:
@@ -126,6 +189,7 @@ tests:
             exp_annotations:
               summary: "a/1: 0.03333333333333333 event queues and rising"
               description: "Active event queues have grown for 30 minutes. Each open stream holds one; a depth that never comes down is subscribers that stopped reading without disconnecting."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aqueuedepthgrowing"
 
   - interval: 1m
     input_series:
@@ -143,6 +207,7 @@ tests:
             exp_annotations:
               summary: "a: push deliveries abandoned with retries left"
               description: "push_delivery_timeout is shorter than the sender's retry schedule, so deliveries are given up with attempts remaining. A configuration problem: it will not resolve on its own and no webhook reports it."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2apushdeliverytruncated"
       - eval_time: 25m
         alertname: A2APushDeliveryFailing
         exp_alerts:
@@ -150,23 +215,40 @@ tests:
             exp_annotations:
               summary: "a: 50% of push deliveries not delivered"
               description: "Over 20% of push-notification attempts failed, timed out or were cut short by push_delivery_timeout for 15 minutes. Split by outcome with a2a:push_deliveries:rate5m."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2apushdeliveryfailing"
 
-  # Every call 3 s against a control at 50 ms; streaming calls excluded.
+  # Ten calls a minute, two of them over 5 s (20%), against a control at
+  # 50 ms; streaming calls, every one over 5 s, are excluded; and a method
+  # with one slow call a minute is under the traffic floor.
   - interval: 1m
     input_series:
-      - series: 'rpc_server_call_duration_seconds_bucket{job="slow",rpc_method="lf.a2a.v1.A2AService/SendMessage",le="2.5"}'
-        values: '0x30'
       - series: 'rpc_server_call_duration_seconds_bucket{job="slow",rpc_method="lf.a2a.v1.A2AService/SendMessage",le="5"}'
+        values: '0+8x30'
+      - series: 'rpc_server_call_duration_seconds_bucket{job="slow",rpc_method="lf.a2a.v1.A2AService/SendMessage",le="10"}'
         values: '0+10x30'
       - series: 'rpc_server_call_duration_seconds_bucket{job="slow",rpc_method="lf.a2a.v1.A2AService/SendMessage",le="+Inf"}'
+        values: '0+10x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="slow",rpc_method="lf.a2a.v1.A2AService/SendMessage"}'
         values: '0+10x30'
       - series: 'rpc_server_call_duration_seconds_bucket{job="slow",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage",le="5"}'
         values: '0x30'
       - series: 'rpc_server_call_duration_seconds_bucket{job="slow",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage",le="+Inf"}'
         values: '0+10x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="slow",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage"}'
+        values: '0+10x30'
+      - series: 'rpc_server_call_duration_seconds_bucket{job="slow",rpc_method="lf.a2a.v1.A2AService/GetTask",le="5.0"}'
+        values: '0x30'
+      - series: 'rpc_server_call_duration_seconds_bucket{job="slow",rpc_method="lf.a2a.v1.A2AService/GetTask",le="+Inf"}'
+        values: '0+1x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="slow",rpc_method="lf.a2a.v1.A2AService/GetTask"}'
+        values: '0+1x30'
       - series: 'rpc_server_call_duration_seconds_bucket{job="fast",rpc_method="lf.a2a.v1.A2AService/SendMessage",le="0.05"}'
         values: '0+10x30'
+      - series: 'rpc_server_call_duration_seconds_bucket{job="fast",rpc_method="lf.a2a.v1.A2AService/SendMessage",le="5"}'
+        values: '0+10x30'
       - series: 'rpc_server_call_duration_seconds_bucket{job="fast",rpc_method="lf.a2a.v1.A2AService/SendMessage",le="+Inf"}'
+        values: '0+10x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="fast",rpc_method="lf.a2a.v1.A2AService/SendMessage"}'
         values: '0+10x30'
     alert_rule_test:
       - eval_time: 25m
@@ -174,8 +256,16 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, job: slow, rpc_method: lf.a2a.v1.A2AService/SendMessage}
             exp_annotations:
-              summary: "slow lf.a2a.v1.A2AService/SendMessage: p99 4.975s"
-              description: "The 99th percentile of non-streaming calls has been above 2.5 s for 15 minutes. A blocking SendMessage includes the executor's work; set the threshold per method if your agents run long turns."
+              summary: "slow lf.a2a.v1.A2AService/SendMessage: 20% of calls over 5 s"
+              description: "More than 1% of non-streaming calls took longer than 5 s for 15 minutes, while the method took more than 0.1 calls a second. Read from the 5 s bucket bound itself, so no interpolation. A blocking SendMessage includes the executor's work; set the threshold per method if your agents run long turns."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aunarylatencyhigh"
+    promql_expr_test:
+      # The `le="5.0"` spelling is read too: every GetTask call is over 5 s.
+      - expr: a2a:rpc_server_unary_over_5s:ratio_rate5m{rpc_method="lf.a2a.v1.A2AService/GetTask"}
+        eval_time: 25m
+        exp_samples:
+          - labels: 'a2a:rpc_server_unary_over_5s:ratio_rate5m{job="slow",rpc_method="lf.a2a.v1.A2AService/GetTask"}'
+            value: 1
 
   # A rollout at minute 20: instance 1 stops and instance 3 replaces it;
   # instance 2 keeps going. Nothing fires, past the hour either.
@@ -219,6 +309,7 @@ tests:
             exp_annotations:
               summary: "a: no instance has pushed telemetry for 10 minutes"
               description: "Over OTLP there is no scrape and so no `up` series; target_info comes with every export, so a job seen in the last day none of whose instances has sent any for 10 minutes has stopped, or its exporters have. Keyed on the job: a rollout or restart, which replaces instances, does not fire it, and it stays firing for a day."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aagentsilent"
       - eval_time: 140m
         alertname: A2AAgentSilent
         exp_alerts: *silent
@@ -241,6 +332,7 @@ tests:
             exp_annotations:
               summary: "a: 1 instance(s) pushing telemetry, fewer than an hour ago"
               description: "Fewer instances of the job sent telemetry in the last 10 minutes than in the same 10 minutes an hour before: an instance stopped and was not replaced, or the job was scaled in. A rollout replaces instances and does not fire it. It resolves within the hour, once the smaller count is what the hour before saw too."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aagentinstanceslost"
       - eval_time: 90m
         alertname: A2AAgentSilent
         exp_alerts: []

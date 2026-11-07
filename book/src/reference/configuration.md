@@ -23,6 +23,8 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 | `with_event_queue_capacity` | `usize` | 256 | Bounded channel size per event queue. A reader that falls further behind than this catches up from the event log; raise it to reduce how often a slow reader has to. |
 | `with_max_event_size` | `usize` | 16 MiB | Max serialized SSE event size |
 | `with_max_concurrent_streams` | `usize` | 1,024 | Limit concurrent event queues: one per task being run, whether its send blocks or streams; a send that would open one more is refused as overloaded (pass `usize::MAX` to disable) |
+| `with_admission` | `Admission` | None (refuse-only) | A gate in front of the send path: a capacity, per-tenant reserved slots, a bounded wait inside the send's budget, priority classes and weighted rounds, all from server configuration. The build refuses a capacity of 0 or above `with_max_concurrent_streams`, and reservations past the capacity. See [Multi-tenancy](../deployment/multi-tenancy.md#reserving-capacity-queueing-and-priority-the-admission-gate) (ADR 0045) |
+| `with_load_reporting()` | — | Off | Serve `GET /load` and add `endpoint-load-metrics` to every response of the crate's server and the axum router. See [Health checks](../deployment/health-checks.md#load-for-balancers) (ADR 0046) |
 | `with_metrics` | `impl Metrics` | `OtelMetrics` on the global meter provider (`otel`, on by default); `NoopMetrics` without it | Metrics observer for handler activity |
 | `with_handler_limits` | `HandlerLimits` | See below | Configurable validation limits |
 | `allow_undeclared_input_modes()` | — | Off | Accept message parts whose `mediaType` the card's input modes do not declare; by default, when the card declares any, such a part is refused with `ContentTypeNotSupportedError` |
@@ -49,8 +51,11 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 | `push_suspend_after` | `usize` | 5 | Failed deliveries to one webhook in a row before it is suspended; zero turns suspension off. A suspended webhook is skipped (`suspended`) for `push_suspend_for`, then one event is tried; the events that end a turn are always tried. Per replica, in memory |
 | `push_suspend_for` | `Duration` | 30s | How long a suspended webhook is left alone before one event is tried again; each failed probe doubles it, up to 32 times as long |
 | `push_remove_gone` | `bool` | `true` | Remove the config of a webhook that answers `410 Gone` (`gone`). Only `410`: a `404` counts as any other failure |
-| `push_max_in_flight` | `usize` | 512 | Webhook deliveries in flight at once across every task. A delivery over the bound waits, so every config is still attempted; the wait counts against `push_delivery_timeout`, and each delivery that waited is counted once as the error `push_throttled` on method `PushDelivery`. Covers any sender behind the handler, a custom one included. Zero is read as one. A choice, not a measurement |
-| `push_max_in_flight_per_host` | `usize` | 64 | Deliveries in flight at once to one destination (host and port). Bounds how many requests a third party sees from this agent when a caller registers many webhooks at its address; not a rate limit. Raise it for one receiver that takes every agent's callbacks. Zero is read as one |
+| `push_max_in_flight` | `usize` | 512 | Webhook deliveries in flight at once across every task. A delivery over the bound waits, so every config is still attempted. The wait is bounded by `push_delivery_timeout` but does not spend it: the webhook's time starts when the delivery is let through, and one never let through is the outcome `throttled` (until 0.16.0 the wait counted against the timeout). Each delivery that waited is counted once as the error `push_throttled` on method `PushDelivery`. Covers any sender behind the handler, a custom one included. Zero is read as one. A choice, not a measurement |
+| `push_max_in_flight_per_host` | `usize` | 64 | Deliveries in flight at once to one destination (host and port). Bounds how many requests a third party sees from this agent when a caller registers many webhooks at its address; not a rate limit. The same bound holds on each address the bundled sender connects to, so names that resolve to one address (a wildcard record) share its count. Raise it for one receiver that takes every agent's callbacks. Zero is read as one |
+| `push_max_in_flight_per_partition` | `usize` | 256 | Deliveries in flight at once for one store partition (a tenant, or a tenant and caller where callers are isolated), so one caller's slow webhooks cannot hold every overall permit. A share, not a reservation: a deployment with one partition runs at most this many at once, so raise it with `push_max_in_flight` there. Zero is read as one |
+| `push_outbox_max_age` | `Duration` | 24 hours | With `with_push_outbox`: a delivery still not delivered this long after it was recorded is dropped when next due and counted `expired`. A choice, not a measurement |
+| `push_outbox_backoff_max` | `Duration` | 1 hour | With `with_push_outbox`: the longest wait between two attempts of one delivery; the wait doubles from 1 s up to this, less up to a fifth of jitter |
 | `executor_drain_timeout` | `Duration` | 5s | Bound on the blocking path's wait for the queue to close after the executor finished; also how long a continuation waits for a parked (`input-required`/`auth-required`) turn to finish: its executor to return and its events to be stored |
 | `max_artifacts_per_task` | `usize` | 1,000 | Maximum artifacts per task (prevents O(n²) serialization) |
 | `max_context_locks` | `usize` | 10,000 | Max per-context locks before cleanup |
@@ -60,9 +65,14 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 | `subscribe_reattach_interval` | `Duration` | 250ms | The first wait of a `SubscribeToTask` stream between turns before it checks the store: for the task finishing, the next turn's queue, or events logged meanwhile, which it replays. It doubles while nothing changes, up to the next row, and starts over at any change |
 | `subscribe_reattach_max_interval` | `Duration` | 4s | The longest wait between two checks of an idle `SubscribeToTask` stream (audit E-F25); below the interval, no back-off. The first frame after a long quiet can be this late. `subscribe_max_idle`, when set, is still met at its own time |
 | `subscribe_max_idle` | `Option<Duration>` | none | If set, how long a `SubscribeToTask` stream waits on a parked task before ending without a terminal state; the client resubscribes. Unset, the stream ends at the terminal state or when the client goes (§3.1.6) |
+| `max_subscribers_per_task` | `usize` | 256 | The most `SubscribeToTask` streams open on one task; one more is refused before any work as overloaded, with a retry delay on every binding (audit H5, ADR 0044) |
+| `max_subscribers` | `usize` | 10,000 | The most `SubscribeToTask` streams open on the handler, over all tasks, refused the same way; nothing else bounds them unless the server's `max_connections` is set |
+| `hand_off_window` | `Duration` | 600s | How long the reaper leaves a turn a graceful shutdown handed back to its caller (an executor with `resumes_after_hand_off`, on a store with turn claims) before it ends the task failed, class transient; the caller continues the task inside it (ADR 0054) |
 | `subscribe_replay_limit` | `usize` | 1,000 | Maximum logged events one read of the event log returns, for a lag's catch-up, a missed turn or a `Last-Event-ID` resumption. The offset is client-supplied, so the cap bounds each read; a longer replay is read a page at a time |
 | `final_task_snapshot` | `bool` | `false` | Whether a stream sends the finished task once more, as a final `Task`, after its terminal state (§11.7); sent only when the store shows the finished task within `subscribe_replay_catchup` |
 | `subscribe_replay_catchup` | `Duration` | 2s | How long a resuming stream waits for the event log to catch up with what was already broadcast. Zero disables the wait; on expiry the shortfall is logged and counted under `event_log_catchup` |
+| `max_buffered_event_bytes` | `Option<usize>` | `None` | The most bytes of events held in event queues at once, across every task: each event is charged its serialized size until its last holder (processor, subscriber, broadcast buffer) drops it. A write that finds it spent waits as long as for a full queue, then fails; a new turn is refused `Overloaded` while under a tenth is free (ADR 0047) |
+| `saturation_readiness` | `Option<(u8, u8)>` | `None` | `(unready_at, ready_at)` in percent of capacity: `/ready` answers 503 `"saturated"` from `unready_at` until utilization is at or below `ready_at` (ADR 0046). Off by default; prefer `with_load_reporting` for a balancer that reads load |
 | `store_write_retry` | `Duration` | 30s | How long a turn's event consumer goes on writing one event, to the log or the task, while the store answers it is unavailable for now (a lost connection, a restart, a lock or statement timeout): after 50 ms, then doubling up to 1 s. The events after it wait, in order. Zero writes each once; an outage longer than this still loses the event it was writing |
 
 > **Build-time validation:** `max_id_length`, `max_metadata_size`, and
@@ -84,6 +94,21 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 | `idempotency_key_ttl` | `Option<Duration>` | 24 hours | How long an idempotency key is honoured, matching the SQL stores' one day; `None` keeps keys forever |
 | `max_idempotency_keys` | `Option<usize>` | 100,000 | How many keys the index holds at once (per store, so per tenant partition); a send with a new key past it is refused with `503` / `RESOURCE_EXHAUSTED` and runs nothing, and no held key is evicted; `None` is no limit |
 
+### RetentionPolicy
+
+What `purge_expired` on the SQL stores removes; built with
+`RetentionPolicy::new(terminal_max_age)` and the `with_*` setters. See
+[Retention, Erasure and Audit](../building-agents/stores/retention.md) for why a persistent store
+deletes nothing unless asked.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `terminal_max_age` | `Duration` | — | Terminal tasks whose last update is older than this are deleted; required by `new` |
+| `batch_size` | `u32` | 1,000 | Rows per `DELETE`; zero is taken as one |
+| `idempotency_key_max_age` | `Option<Duration>` | 24 hours | Idempotency keys older than this are deleted, never below `terminal_max_age`; `None` keeps them |
+| `max_batches` | `Option<u32>` | `None` | Stop a sweep after this many batches; `None` runs until nothing is left |
+| `max_events_per_live_task` | `Option<u64>` | `None` | Compact each live task's event log to its newest this many events, dropping only events the stored task already reflects; a reader resuming from before the cut is answered with the snapshot. `0` is taken as `1`. `None` lets a live task's log grow for as long as it runs (ADR 0047) |
+
 ### InMemoryPushConfigStore
 
 | Constructor | Default | Description |
@@ -96,18 +121,19 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 
 Shared configuration for JSON-RPC, REST, and Axum dispatchers. Pass to
 `JsonRpcDispatcher::with_config()`, `RestDispatcher::with_config()`, or
-`A2aRouter::with_config()`.
+`RestRouter::with_config()`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `max_request_body_size` | `usize` | 4 MiB | Larger bodies return 413 |
 | `body_read_timeout` | `Duration` | 30s | Slow loris protection |
-| `max_query_string_length` | `usize` | 4,096 | `RestDispatcher` only (not `A2aRouter`, whose query parsing is Axum's); longer queries return 414 |
+| `max_query_string_length` | `usize` | 4,096 | `RestDispatcher` only (not `RestRouter`, whose query parsing is Axum's); longer queries return 414 |
 | `sse_keep_alive_interval` | `Duration` | 30s | Periodic keep-alive comment interval for SSE streams |
 | `sse_channel_capacity` | `usize` | 64 | SSE response body channel buffer size |
 | `max_batch_size` | `usize` | 100 | Maximum requests in a JSON-RPC batch |
 | `require_version_header` | `bool` | true | Reject a data-plane request with no `A2A-Version` header as `VersionNotSupported` (spec §3.6.2: absent means 0.3) |
 | `agent_card_max_age` | `u32` | 3600 | `Cache-Control: max-age`, in seconds, for the public agent card; set it to how often the card changes (spec §8.6.1) |
+| `base_path` | `Option<String>` | none | `with_base_path("/agents/billing")`: a path prefix a reverse proxy keeps, taken off a request's path before routing (the card is then under the prefix, a tenant segment after it); a request outside it is routed as before |
 
 ### GrpcConfig
 
@@ -135,18 +161,23 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `requests_per_window` | `u64` | 100 | Max requests per caller per window |
-| `window_secs` | `u64` | 60 | Window duration in seconds |
+| `window_secs` | `u64` | 60 | Window duration in seconds; set it with `with_window(Duration)`, which rounds a fraction of a second up (`with_window_secs` is deprecated since 0.16.0) |
 | `trusted_proxy_hops` | `usize` | 0 | How many `X-Forwarded-For` hops to trust (0 = ignore XFF entirely) |
-| `trusted_proxies` | `Vec<TrustedProxy>` | `[]` | Address ranges the proxies connect from; when set, XFF is believed only from a peer in one (no effect while `trusted_proxy_hops` is 0) |
+| `trusted_proxies` | `Vec<TrustedProxy>` | `[]` | Address ranges the proxies connect from; when set, XFF is believed only from a peer in one (no effect while `trusted_proxy_hops` is 0). `RateLimitInterceptor::new` logs a warning when hops are set and this is empty |
+| `forwarded_header` | `ForwardedHeader` | `XForwardedFor` | The header the proxies write the client address into: `X-Forwarded-For` or RFC 7239 `Forwarded` (its `for=` parameter); only that one is read |
 | `max_buckets` | `usize` | 10,000 | Bound on tracked caller buckets. When full of live buckets, callers without one share a single `overflow` bucket holding one caller's limit (`RateLimitInterceptor::overflowed()` counts its requests); they used to be refused outright, which locked every new caller out while `max_buckets` callers stayed active |
 
 ### ServeConfig
 
 Limits for a `Server` (`Server::bind(addr).await?.with_config(config)`). The
 three shutdown phases run in order — `completion_grace`, then `task_grace`, then
-`drain_timeout` — and the gRPC and WebSocket dispatchers' `serve_with_shutdown`
-take the same three through their own `with_completion_grace`,
-`with_task_grace` and `with_drain_timeout`.
+`drain_timeout` — and the gRPC and WebSocket dispatchers take the same
+`ServeConfig` through `with_serve_config` (ADR 0052): both apply
+`max_connections`, the three shutdown phases, `drain_delay` and `production`;
+the WebSocket dispatcher applies `idle_timeout` as its idle bound (with a
+Ping at half); neither applies `header_read_timeout` or the `Host` check.
+Their own `with_max_connections`, `with_completion_grace`, `with_task_grace`
+and `with_drain_timeout` are deprecated since 0.16.0.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -165,7 +196,9 @@ take the same three through their own `with_completion_grace`,
 |------|----------|
 | `CorsConfig::new(origin)` | `allow_methods` `GET, POST, PUT, DELETE, OPTIONS`; `allow_headers` `content-type, authorization, a2a-version, a2a-extensions, last-event-id, x-a2a-notification-token`; `max_age_secs` 86400 |
 | `TenantStoreConfig` | `max_tenants` 1,000 partitions (each caller's partition counts when tasks are isolated by caller); `max_total_tasks` none |
-| `WebSocketDispatcher` | handshake timeout 10s (`with_handshake_timeout`); write timeout 30s (`with_write_timeout`: a peer that stops reading is dropped at it, and the connection with it); idle timeout off (`with_idle_timeout`; `DEFAULT_WS_IDLE_TIMEOUT` is 75s); `with_max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
+| `WebSocketDispatcher` | on its own listener (`serve_with_shutdown`), or on the HTTP port through `CombinedDispatcher::with_websocket` / `RestRouter::with_websocket` (ADR 0055), where the listener settings (TLS, handshake timeout) are the HTTP server's and its own `ServeConfig::max_connections` (`with_serve_config`) caps upgrades; handshake timeout 10s (`with_handshake_timeout`); write timeout 30s (`with_write_timeout`: a peer that stops reading is dropped at it, and the connection with it); idle timeout `DEFAULT_WS_IDLE_TIMEOUT`, 75s, pinging at half (`ServeConfig::idle_timeout`, or `with_idle_timeout`, `without_idle_timeout`; off until 0.16.0); `ServeConfig::max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
+| `GrpcDispatcher` | HTTP/2 keep-alive: a PING after 60s idle (`DEFAULT_GRPC_KEEPALIVE_INTERVAL`), closing at 20s unanswered (`DEFAULT_GRPC_KEEPALIVE_TIMEOUT`; `with_http2_keepalive`, `without_http2_keepalive`; off until 0.16.0); `ServeConfig::max_connections` unbounded (`with_serve_config`); `with_max_connection_age` off; under `with_rustls` a 10s TLS handshake bound |
+| `ReloadingCertResolver` | nothing re-read until `reload()`, or every interval given to `watch(interval)` |
 | `HttpPushSender` | 10s request timeout (`HttpPushSender::with_timeout`), 5s DNS lookup bound (`with_dns_timeout`), `PushRetryPolicy` above; SSRF guard on unless `allow_private_urls()` |
 | `JwtValidator`, `JwtAuthInterceptor` | clock-skew leeway 60s (`JwtValidator::with_leeway`); a remote JWKS is cached for 3,600s (`JwtAuthInterceptor::with_jwks_ttl`) and refetched for an unknown key id at most every 10s (`with_jwks_refetch_interval`) |
 
@@ -256,6 +289,22 @@ Every setting is fixed when `build()` is called. A zero duration is refused.
 | `with_max_connection_lifetime` | `Duration` | not recycled | Use new connections once the current ones are this old, spread by up to 10% either way; calls and streams already running are not cut |
 | `with_http2_keep_alive` | `(Duration, Duration)` | no PING | `(interval, timeout)`: an HTTP/2 PING every `interval`, idle or not, and a connection that does not answer within `timeout` is closed. Applies to connections that speak HTTP/2 |
 | `with_http2_prior_knowledge` | — | negotiate | Speak HTTP/2 without negotiating it, including over plain `http://` |
+| `with_ejection` | `Ejection` | off | A circuit breaker per origin shared by the pool's clients: `consecutive_failures` failures in a row open it for `base`, doubling up to `max` while its probe fails; calls are refused with `CircuitOpen` while open |
+| `with_max_in_flight_per_origin` | `usize` | no cap | Calls waiting for a response from one origin across the pool's clients; one more is refused with `TooManyPendingRequests`. Zero is refused |
+| `with_retry_budget` | `RetryBudget` | none | One retry budget per origin for every client of the pool, besides each client's own |
+
+### BalancePolicy (`ClientBuilder::with_balancing`)
+
+How a client spreads calls over the endpoints of an `EndpointSource`
+(see [Behind a load balancer](../client/load-balancers.md#balancing-in-the-client)).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `ejection` | `Option<Ejection>` | `Ejection::default()`: 5 failures in a row, 30 s doubling to 300 s | When an endpoint is taken out of rotation; on a pool, the pool's policy applies and setting this is refused |
+| `max_ejected_percent` | `u8` | 50 | The most of the set out of rotation at once, rounded down; 100 lets every endpoint out, and calls then fail with `CircuitOpen` |
+| `hedge` | `Option<Hedge>` | None (off) | `Hedge { delay, budget }`: a slow idempotent unary call is copied to a second endpoint after `delay`, paid from `budget` (default 5% of calls, reserve 1) |
+
+`DnsEndpoints` resolves its name again every 30 s by default (`with_refresh_every`).
 
 ### SSE Parser Limits
 
@@ -291,7 +340,7 @@ Every setting is fixed when `build()` is called. A zero duration is refused.
 | `otlp-json` | Off | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off because `opentelemetry-otlp`'s `http-json` also makes JSON the default of any exporter built without a protocol (implies `otlp`) |
 | `otel-prometheus` | Off | `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` for a Prometheus that scrapes, with no collector in between; off by default because it adds `opentelemetry-prometheus` and a listener (implies `otlp`) |
 | `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
-| `axum` | Off | Axum framework integration (`A2aRouter`) |
+| `axum` | Off | Axum framework integration (`RestRouter`) |
 | `tool-loop` | Off | Tool calling inside a task: `tool_loop::ToolLoop`, `ToolLoopExecutor`, `OpenAiChatModel` |
 | `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
 | `encryption` | Off | Encryption at rest for task content (`EncryptedTaskStore`) |
@@ -351,6 +400,53 @@ Every setting is fixed when `build()` is called. A zero duration is refused.
 | `OTEL_*` | Read by `Telemetry` (server `otlp` feature, on in the SDK) and the OpenTelemetry crates beneath it: `OTEL_SDK_DISABLED`, `OTEL_TRACES_EXPORTER` / `OTEL_METRICS_EXPORTER` / `OTEL_LOGS_EXPORTER` (a list of `otlp`, `console` and, for metrics with the `otel-prometheus` feature, `prometheus`; or `none`), `OTEL_EXPORTER_OTLP_ENDPOINT` / `_PROTOCOL` / `_HEADERS` / `_COMPRESSION` / `_TIMEOUT` (10 s) / `_CERTIFICATE` / `_CLIENT_CERTIFICATE` / `_CLIENT_KEY` and their per-signal forms, `_INSECURE` (only for a scheme-less OTLP/gRPC endpoint), `OTEL_EXPORTER_PROMETHEUS_HOST` / `_PORT`, `OTEL_PROPAGATORS`, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`; and `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` for the export; see [Observability](../deployment/observability.md) |
 | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | Read by `Langfuse::from_env()`; the base URL defaults to `http://localhost:3000` |
 | `PROTOC` | The `proto`/`grpc` build scripts use a vendored `protoc` unless this names another |
+| `SSL_CERT_FILE`, `SSL_CERT_DIR` | A PEM file, and a directory of PEM files, of CA certificates trusted beside the bundled Mozilla roots: by the client (every binding, gRPC included, card discovery, JWKS and the token provider) and by the server's push delivery, JWKS and OIDC discovery and the tool loop's model client (telemetry export takes `OTEL_EXPORTER_OTLP_CERTIFICATE` instead). Read once per process; a file that cannot be read is reported and skipped, never replacing the bundled roots |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` (and lower-case) | Not only the telemetry export's: the client's HTTP, gRPC and WebSocket transports, and the server's push delivery, JWKS and OIDC fetches go through them; loopback never does unless `A2A_PROXY_LOOPBACK` says so |
+| `HOSTNAME` (`COMPUTERNAME` on Windows) | The replica's name in a turn claim, and the telemetry resource's `host.name`; Kubernetes sets it to the pod's name |
+| `NO_COLOR` | Set, the subscriber `Telemetry` installs writes no colour |
+| `A2A_TEST_POSTGRES_URL` | Tests only: the PostgreSQL the `#[ignore]`d live tests run against (`scripts/run_postgres_suites.py`) |
+
+### What each binary in the repository reads
+
+The SDK's crates read only the variables above. Each example and tool reads
+its own, and they were named one binary at a time, so the same setting has
+more than one spelling ([ADR 0040](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0040-first-run-configuration-and-scope.md)
+records why none is renamed in 0.16.0, and the rule for new ones: a platform's
+name where a platform injects it, `A2A_` otherwise). Every one of them also
+reads `OTEL_*`. Read from each crate's source (`std::env::var` calls) on
+2026-11-04.
+
+| Setting | Variable | Read by |
+|---|---|---|
+| Where to listen | `PORT` (all addresses) | `deploy-agent` |
+| | `A2A_BIND_ADDR` (`host:port`) | `echo-agent`, `genai-agent`, `rig-agent`, `mcp-agent`, `multi-lang-team` (each starts its server mode when it is set) |
+| | `SUT_HOST` | `tck/sut` |
+| | none: `127.0.0.1:3000` | `hello-agent` |
+| Extra listeners | `A2A_GRPC_BIND_ADDR`, `A2A_WS_BIND_ADDR` | `echo-agent` |
+| | `A2A_GRPC_ADDR`, `A2A_WS_ADDR` | `genai-agent` |
+| | `SUT_GRPC_HOST`, `SUT_WS_HOST` | `tck/sut` |
+| The URL on the agent card | `AGENT_URL` | `deploy-agent` |
+| | `A2A_PUBLIC_URL` | the five `A2A_BIND_ADDR` examples; unset, the card names the bound address, or `http://localhost:<port>` for a bind to every address (`0.0.0.0`, `[::]`), which a client elsewhere cannot use |
+| | `SUT_ADVERTISE_URL`, `SUT_GRPC_ADVERTISE_URL`, `SUT_WS_ADVERTISE_URL` | `tck/sut` |
+| Another agent to call | `A2A_AGENT_URL` (the remote agent: not the card URL above, despite the name) | `mcp-bridge` |
+| Database | `A2A_DATABASE_URL`, else `DATABASE_URL` with a warning; `DATABASE_POOL_SIZE`, `DATABASE_PUSH_POOL_SIZE`, `TASK_RETENTION_HOURS` | `deploy-agent` |
+| | `A2A_TEST_POSTGRES_URL` | `resilient-agent`, `incident-response` (their PostgreSQL acts) |
+| Shutdown and version | `DRAIN_DELAY_SECONDS`, `AGENT_VERSION` | `deploy-agent` |
+| Model endpoint | `OPENAI_BASE_URL`, `OPENAI_API_KEY` | `rig-agent`, `mcp-agent` |
+| | `TOOL_LOOP_BASE_URL`, `TOOL_LOOP_API_KEY` | `tool-loop-agent` |
+| | `LIVE_BASE_URL` | `live-model` |
+| | `SWARM_LLM_URL` | `swarm` |
+| Model, thinking, output cap | `GENAI_MODEL`, `GENAI_THINKING`, `GENAI_MAX_TOKENS` | `genai-agent` |
+| | `RIG_MODEL`, `RIG_THINKING`, `RIG_MAX_TOKENS` | `rig-agent` (`mcp-agent` reads `RIG_MODEL` too, with `MCP_THINKING`, `MCP_MAX_TOKENS`) |
+| | `INCIDENT_MODEL`, `INCIDENT_THINKING`, `INCIDENT_MAX_TOKENS` | `incident-response` |
+| | `LIVE_MODEL`, `LIVE_THINKING`, `LIVE_EXTRA_BODY`, `LIVE_MODEL_TIMEOUT_SECS` | `live-model` |
+| | `TOOL_LOOP_MODEL`, `TOOL_LOOP_THINKING`, `TOOL_LOOP_EXTRA_BODY`, `TOOL_LOOP_MODEL_TIMEOUT_SECS` | `tool-loop-agent` |
+| Authentication and limits | `A2A_API_KEY`, `A2A_BEARER_TOKEN`, `A2A_JWT_HS256_SECRET`, `A2A_JWT_ISS`, `A2A_JWT_AUD`, `A2A_MAX_CONCURRENT_TASKS`, `A2A_ALLOW_PRIVATE_WEBHOOKS`, `A2A_ALLOW_FALLBACK` | `genai-agent` |
+| | `A2A_INTEROP_API_KEY`, `A2A_INTEROP_CARD` | `echo-agent` (the Go interop legs) |
+| Test-run switches | `RESILIENT_REQUIRE_ALL`, `INCIDENT_REQUIRE_ALL`, `INCIDENT_EXIT_WHEN_DONE`, `SWARM_*` sizes, `SWARM_DEBUG`, `SUT_PROFILE` | `resilient-agent`, `incident-response`, `swarm`, `tck/sut` |
+| Other | `MCP_SERVER_BIN` | `mcp-agent` (the tool server it spawns) |
+| | `LANGFUSE_*` | `langfuse-agent`, through `Langfuse::from_env()` |
+| | none of its own | `a2a` (the CLI is configured by flags; it reads the SDK's variables above) |
 
 Examples:
 ```bash

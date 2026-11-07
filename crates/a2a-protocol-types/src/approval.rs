@@ -53,7 +53,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{A2aError, A2aResult};
+use crate::error::A2aResult;
 use crate::message::Message;
 
 /// The extension URI a card declares and a message names in `extensions`.
@@ -191,7 +191,7 @@ impl ApprovalDecision {
 #[cfg(feature = "signing")]
 pub fn action_digest<T: Serialize>(action: &T) -> A2aResult<String> {
     let value = serde_json::to_value(action)
-        .map_err(|e| A2aError::internal(format!("action serialization: {e}")))?;
+        .map_err(|e| crate::error::A2aError::internal(format!("action serialization: {e}")))?;
     let canonical = crate::signing::canonicalize(&value)?;
     let d = ring::digest::digest(&ring::digest::SHA256, &canonical);
     let mut out = String::with_capacity(7 + 64);
@@ -227,9 +227,7 @@ fn read<T: for<'de> Deserialize<'de>>(message: &Message, what: &str) -> A2aResul
     else {
         return Ok(None);
     };
-    serde_json::from_value(value.clone())
-        .map(Some)
-        .map_err(|e| A2aError::invalid_params(format!("malformed approval {what}: {e}")))
+    crate::extension_value::read_object(value, &format!("approval {what}")).map(Some)
 }
 
 #[cfg(test)]

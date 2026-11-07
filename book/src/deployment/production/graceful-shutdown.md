@@ -38,6 +38,44 @@ client does not repeat a cancelled task. A `canceled` that the `cancel` hook
 writes during shutdown is written as the transient failure instead. A halt
 ([operator oversight](../oversight.md)) still ends tasks `canceled`.
 
+### Handing a long turn back to its caller
+
+A turn longer than the completion window loses its work on every deploy:
+it ends `failed`/`transient` and is sent again as a new task. An executor
+for which running a turn twice is safe (its tool calls carry idempotency
+keys, its other side effects are checked before they are made) can say so,
+and on a store that hands out turn claims (the SQLite and PostgreSQL stores)
+shutdown then hands the turn back instead (ADR 0054):
+
+```rust
+# use std::future::Future;
+# use std::pin::Pin;
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+impl AgentExecutor for MyAgent {
+    // `execute` as usual: it returns when its cancellation token fires.
+#   fn execute<'a>(&'a self, ctx: &'a RequestContext, _: &'a dyn EventQueueWriter)
+#       -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+#       Box::pin(async move { ctx.cancellation_token.cancelled().await; Ok(()) })
+#   }
+    fn resumes_after_hand_off(&self) -> bool {
+        true
+    }
+}
+```
+
+The task stays `working`. Its status message says it was handed back and
+carries `{"a2a-rust.com/hand-off": true}` in its metadata
+(`HAND_OFF_METADATA_KEY`); the cancel hook is not run and the claim is
+released. The caller sends the turn's message again, with a new message id,
+to the same task id; whichever replica receives it runs the turn with the
+caller's own credentials and the stored task in `ctx.stored_task`. A task
+nobody continues is ended `failed`/`transient` by the reaper once
+`HandlerLimits::hand_off_window` (ten minutes by default) has passed. A crash
+hands nothing back: the reaper ends the task as before. This SDK's
+`Delegation` continues a handed-back child by itself, at most three times by
+default (`HandOffPolicy`, [delegation](../../client/delegation.md)).
+
 <figure class="diagram">
 <a href="../../images/diagrams/dep-shutdown-order.light.svg"><img class="diagram-light" src="../../images/diagrams/dep-shutdown-order.light.svg" alt="The shutdown sequence of Server::serve_with_shutdown: stop accepting, let tasks finish for up to 5 s, cancel the rest and wait up to 10 s, drain connections for up to 15 s, then handler.shutdown and the telemetry flush, all before Kubernetes sends SIGKILL."></a>
 <a href="../../images/diagrams/dep-shutdown-order.dark.svg"><img class="diagram-dark" src="../../images/diagrams/dep-shutdown-order.dark.svg" alt=""></a>
@@ -87,17 +125,19 @@ such as `SO_REUSEPORT` — use `Server::from_listener(listener)` in place of
 
 ## With Axum or another server
 
-With Axum (or anything else that owns the sockets), call
-`handler.finish_in_flight(completion, grace)` at the end of the future you pass to
-`with_graceful_shutdown`, so it runs before Axum starts draining, and
-`handler.shutdown()` after
-`serve` returns. The gRPC and WebSocket dispatchers have their own
-`serve_with_shutdown(listener, signal)`, which runs the same three steps. The
-WebSocket one (called on an `Arc<WebSocketDispatcher>`) returns a `ServeReport`;
-the gRPC one an `io::Result<ServeReport>`, whose error is a TLS configuration
-tonic rejects or the error the server stopped with. Set the three durations with
-`with_completion_grace`, `with_task_grace` and `with_drain_timeout` on the
-dispatcher. Two differences follow from the transports. gRPC connections are
+The axum router is a `Dispatcher` (ADR 0052): give `RestRouter::new(handler)`
+to `Server::serve_with_shutdown` and it gets the order above. When the router
+is merged into an application served by `axum::serve` (or anything else that
+owns the sockets), call `handler.finish_in_flight(completion, grace)` at the end
+of the future you pass to `with_graceful_shutdown`, so it runs before Axum
+starts draining, and `handler.shutdown()` after `serve` returns. The gRPC and
+WebSocket dispatchers have their own `serve_with_shutdown(listener, signal)`,
+which runs the same three steps. The WebSocket one (called on an
+`Arc<WebSocketDispatcher>`) returns a `ServeReport`; the gRPC one an
+`io::Result<ServeReport>`, whose error is a TLS configuration tonic rejects or
+the error the server stopped with. Both take the three durations, and the drain
+delay, from the `ServeConfig` given to their `with_serve_config`, as `Server`
+does. Two differences follow from the transports. gRPC connections are
 sent `GOAWAY` when accepting stops, so they take no new calls during the
 completion window, where HTTP and WebSocket connections still take reads and
 cancels (sends are refused, as above). And a

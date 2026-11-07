@@ -132,7 +132,10 @@ impl HaltSync {
         if !newly.is_empty() {
             trace_warn!(scopes = ?newly, "halted by another replica");
             for entry in tokens.read().await.values() {
-                if newly.iter().any(|scope| scope.covers(&entry.tenant)) {
+                if newly
+                    .iter()
+                    .any(|scope| scope.covers(&entry.tenant, &entry.lineage.root))
+                {
                     stop(&entry.turn, &entry.token);
                 }
             }

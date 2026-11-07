@@ -205,10 +205,12 @@ let tls = ServerTlsConfig::new()
     // Add `.client_auth_optional(true)` to admit clients that present none.
     .client_ca_root(Certificate::from_pem(client_ca_pem));
 
-GrpcDispatcher::new(handler, GrpcConfig::default())
+let listener = tokio::net::TcpListener::bind("0.0.0.0:50051").await?;
+let report = GrpcDispatcher::new(handler, GrpcConfig::default())
     .with_tls(tls)
-    .serve("0.0.0.0:50051")
+    .serve_with_shutdown(listener, a2a_protocol_server::serve::shutdown_signal())
     .await?;
+# let _ = report;
 # Ok(())
 # }
 ```
@@ -219,6 +221,15 @@ builds its acceptor from the process-level rustls crypto provider; when none
 is installed and more than one is linked, the dispatcher installs `ring`
 rather than letting rustls panic, and never overrides a provider the
 application installed first.
+
+tonic's configuration holds the certificate as bytes, so a listener built
+from it rotates its certificate only by restarting. `with_rustls` takes a
+`rustls::ServerConfig` instead (with `tls-rustls`, a default feature): any
+crypto provider, any client verifier, and a certificate resolver such as
+`ReloadingCertResolver`, which replaces the certificate when its files change
+([Proxies, certificates and DNS](../../deployment/production/proxies-and-tls.md#rotating-certificates-without-a-restart)).
+The handshake is then the SDK's, bounded to 10 s on a task per connection;
+a client certificate reaches interceptors as it does under `with_tls`.
 
 ## Protocol
 

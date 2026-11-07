@@ -5,19 +5,24 @@
 
 [`deploy/observability/`](https://github.com/tomtom215/a2a-rust/tree/main/deploy/observability)
 ships what turns the [metrics](./metrics.md) into something to watch: three
-Grafana dashboards, 13 Prometheus recording rules, 8 alerts with `promtool`
+Grafana dashboards, 22 Prometheus recording rules, 20 alerts with `promtool`
 unit tests, and the provisioning that loads them. This page describes each
-panel, each alert and what to do when it fires, and each recording rule. To
-run them, see [Walkthrough: the local stack](./walkthrough.md).
+panel, the alerts in brief, and each recording rule; [Alerts and
+runbooks](./alerts.md) says what each alert means and what to check first.
+To run them, see [Walkthrough: the local stack](./walkthrough.md).
 
 | File | What it is |
 |---|---|
 | `grafana/dashboards/a2a-server.json`, `a2a-client.json`, `a2a-genai.json` | The three dashboards, folder "A2A", data source uid `a2a-prometheus` |
 | `grafana/provisioning/dashboards/a2a.yml`, `datasources/prometheus.yml` | Dashboard and Prometheus data source provisioning; set `A2A_DASHBOARDS_DIR` and `PROMETHEUS_URL` (both are required: unset, Grafana substitutes an empty string and the dashboards or the data source are missing) |
 | `grafana/provisioning/traces-and-logs.yml` | Tempo and Loki data sources, linked both ways; set `TEMPO_URL` and `LOKI_URL` |
-| `prometheus/rules/a2a-recording.yml` | The 13 recording rules |
-| `prometheus/rules/a2a-alerts.yml` | The 8 alerts |
-| `prometheus/tests/a2a-alerts.test.yml` | `promtool` unit tests: each alert fires on the input it is for and not on a control |
+| `prometheus/rules/a2a-recording.yml` | The 22 recording rules |
+| `prometheus/rules/a2a-alerts.yml` | The 14 alerts on the agents |
+| `prometheus/rules/stack-alerts.yml` | The 6 alerts on the stack itself: the Collector, Prometheus's rule evaluation and alert delivery |
+| `prometheus/tests/*.test.yml` | `promtool` unit tests: each alert fires on the input it is for and not on a control |
+| `alertmanager/alertmanager.yml` | Alertmanager: grouping, inhibit rules, and one receiver that notifies nobody until you add an integration |
+| `grafana/provisioning/alertmanager.yml` | The Alertmanager data source; set `ALERTMANAGER_URL` |
+| `scripts/check_stack.py` | Static checks CI runs: the rules' caller-class pattern against the crates' error codes, compose image digests, the compose Prometheus file against `prometheus.yml`, and the generated Kubernetes manifests |
 | `scripts/check_dashboards.py` | The live check: rules healthy and recording rules populated; every dashboard query returns data through Grafana's query API (or Prometheus's) |
 
 The rules and dashboards use the names Prometheus gives the metrics on every
@@ -40,26 +45,55 @@ push notifications to a working webhook and an unreachable one.
 
 | Row | Panels | From |
 |---|---|---|
-| Calls | Calls per second by binding; failed calls (ratio); calls per second by method; failed calls per second by method and binding | `rpc.server.call.duration` through `a2a:rpc_server_*` |
+| Calls | Calls per second by binding; failed calls (ratio); calls per second by method; failed calls per second by method and binding; caller errors per second by method and binding; server span duration (p95) from traces, with exemplars | `rpc.server.call.duration` through `a2a:rpc_server_*`; Tempo's span metrics |
 | Duration (non-streaming calls) | p50 / p95 / p99 by method | `a2a:rpc_server_unary_latency:*` |
 | A2A server signals | Errors by method and kind; requests without a response; active event queues; persistence errors by operation and error; push deliveries by outcome; HTTP connections (active, idle, closed per second) | `a2a.server.*` |
 | Task store | Store operations per second by operation and outcome; store operation duration (p95) by operation | `db.client.operation.duration` |
 | Agent executor | Executor run duration (p50 / p95) by outcome; executor runs per second by outcome | `a2a.server.executor.duration` |
 
 A call with no `rpc.method` (refused before it named one) is shown as
-`(unrouted)`. Persistence errors are empty in the screenshot because no store
+`(unrouted)`. *Failed calls* counts the server's failures, not the caller's
+mistakes ([what counts as a failure](./alerts.md#what-counts-as-a-failure));
+those are *Caller errors*. *Server span duration* comes from Tempo's metrics
+generator (`traces_spanmetrics_latency_bucket`), not the SDK's histogram: its
+diamonds are exemplars, each one span, and clicking one opens its trace in
+Tempo. It needs traces sent to Tempo. The quantiles under *Duration* are
+interpolated inside a bucket, and the default buckets jump from 1 s to 5 s,
+so a value between them is a straight-line estimate. Persistence errors are empty in the screenshot because no store
 write failed; the HTTP connections panel needs an agent served by the SDK's
-`serve`, `serve_with_addr` or `Server::serve_with_shutdown`.
+`Server::serve_with_shutdown` (or the deprecated `serve` and `serve_with_addr`, which run on it).
 
 ![The A2A server dashboard](../../images/dashboards/a2a-server.png)
 
-The screenshot predates the *Agent executor* row, which sits below *Task store*.
+The screenshot predates the *Agent executor* row, which sits below *Task
+store*, and the two panels added to *Calls* in 0.16.0.
 
 ### A2A client
 
 Calls per second by agent and binding, failed calls (ratio) by agent,
-failures by kind (`error_type`), and the p95 of non-streaming calls, from
-`rpc.client.call.duration`.
+failures by kind (`error_type`), the p95 of non-streaming calls, and calls in
+the range by processes that started in it, from `rpc.client.call.duration`.
+The ratio counts the agent's failures and calls that got no answer; a `404` or
+`TaskNotFound` is the caller's own mistake and shows under *Failures by kind*
+only.
+
+**A short-lived client** (the `a2a` CLI, a batch job) exports once, at exit,
+under a fresh `instance` (a random `service.instance.id` per process), and
+`rate()` needs two samples of a series (audit L11). With Prometheus's
+`created-timestamp-zero-ingestion` flag, which the compose stack sets, each
+point also writes a zero at the process's start time, so such a process does
+show on the rate panels ([Prometheus](./prometheus.md#the-prometheus-feature-flags)).
+Without the flag the rate panels never show it. *Calls in the range by
+processes that started in it* counts their calls either way: each series that
+first appears inside the dashboard's range contributes its last value (a
+process's whole count, since its counter started at zero), so 50 CLI runs in
+the last hour read 50 over a one-hour range. A process already running when
+the range begins is not counted there. Each run is still a new set of series
+(13 buckets, `+Inf`, sum and count per method, agent and error); a CI job
+that runs the CLI thousands of times a day grows the series count by that
+much. Give a batch job a stable `service.instance.id` only with the flag on:
+otherwise each run restarts the counter under the same series and its rate
+reads near zero. Tempo has every call either way, as a trace.
 
 ![The A2A client dashboard](../../images/dashboards/a2a-client.png)
 
@@ -87,60 +121,50 @@ GenAI model-call p99 at 81.92 s.
 
 ## The alerts
 
-`prometheus/rules/a2a-alerts.yml`, group `a2a-alerts`. Thresholds are starting
-points: tune `for:` and the ratios to your traffic.
+`prometheus/rules/a2a-alerts.yml` and `stack-alerts.yml`. [Alerts and
+runbooks](./alerts.md) has a section for each, linked from its `runbook_url`
+annotation; this table is the summary. Prometheus sends them to Alertmanager,
+which in the shipped configuration **notifies nobody** until you give its
+receiver an integration ([where alerts go](./alerts.md#where-alerts-go)).
 
-| Alert | Severity | Fires when | What it means |
-|---|---|---|---|
-| `A2AServerErrorRatioHigh` | warning | `a2a:rpc_server_error_ratio:rate5m > 0.05` for 10 m, while the job takes more than 0.1 calls a second | More than 5% of a job's calls failed, by the RPC conventions' definition (`error_type` set: every JSON-RPC error, an HTTP 5xx, six server-side gRPC codes), leaving out `cancelled` (a stream the client abandoned) — not `errors / requests`. The traffic floor keeps one failure in two calls an hour from paging. Split by method and binding with `a2a:rpc_server_errors:rate5m`; abandoned streams are `a2a:rpc_server_cancelled:rate5m` |
-| `A2APersistenceErrors` | critical | `rate(a2a_server_persistence_errors_total[5m]) > 0`, by job and operation, for 1 m | Task writes are failing. A streaming client already received these events, so the stored task and what clients saw have diverged; a later `GetTask` returns the wrong answer |
-| `A2ARequestsUnanswered` | warning | `a2a:server_unanswered:rate5m > 0.01` for 15 m | Requests that produced neither a response nor an error: a panicking executor, dropped connections, a process exiting mid-request. The threshold sits above floating-point noise, since the rule is a difference of rates |
-| `A2AQueueDepthGrowing` | warning | `deriv(a2a_server_queue_depth[30m]) > 0` and the depth above 100, for 30 m | Each open stream holds a queue; a depth that never comes down is subscribers that stopped reading without disconnecting |
-| `A2APushDeliveryTruncated` | warning | Any `timeout_truncated` push delivery over 15 m, for 5 m | `push_delivery_timeout` is shorter than the sender's retry schedule, so deliveries are given up with attempts remaining. A configuration problem: it will not resolve on its own and no webhook reports it |
-| `A2APushDeliveryFailing` | warning | `a2a:push_delivery_failure_ratio:rate5m > 0.2` for 15 m | Over 20% of push deliveries failed, timed out or were truncated. Split by outcome with `a2a:push_deliveries:rate5m` |
-| `A2AUnaryLatencyHigh` | warning | `a2a:rpc_server_unary_latency:p99_5m > 2.5` for 15 m | The p99 of non-streaming calls, per job and method, is above 2.5 s. A blocking `SendMessage` includes the executor's work: set the threshold per method if your agents run long turns |
-| `A2AAgentSilent` | critical | A job with `target_info` in the last day and none from any instance in the last 10 m | The agent, or its exporters, have stopped. Over OTLP there is no scrape and so no `up` series; `target_info` comes with every export |
-| `A2AAgentInstancesLost` | warning | Fewer instances of a job sent `target_info` in the last 10 m than in the same 10 m an hour before, for 5 m | An instance stopped and was not replaced, or the job was scaled in |
+| Alert | Severity | Fires when |
+|---|---|---|
+| `A2AServerErrorRatioHigh` | warning | Over 5% of a job's calls failed for 10 m (the server's failures: not abandoned calls, not the caller's mistakes), above 0.1 calls/s |
+| `A2APersistenceErrors` | warning | A task write failed in the last hour |
+| `A2APersistenceFailing` | critical | Task writes failed in every 5-minute window for 10 m |
+| `A2ARequestsUnanswered` | warning | `a2a:server_unanswered:rate5m > 0.01` for 15 m |
+| `A2AQueueDepthGrowing` | warning | Event queues above 100 and rising for 30 m |
+| `A2APushDeliveryTruncated` | warning | Any `timeout_truncated` push delivery over 15 m, for 5 m |
+| `A2APushDeliveryFailing` | warning | Over 20% of push deliveries not delivered for 15 m |
+| `A2AUnaryLatencyHigh` | warning | Over 1% of a method's non-streaming calls slower than 5 s for 15 m, above 0.1 calls/s (read from the bucket bound, not an interpolated quantile) |
+| `A2AAgentSilent` | critical | A job seen in the last day with no instance exporting for 10 m |
+| `A2AAgentInstancesLost` | warning | Fewer instances exporting than an hour before, for 5 m |
+| `A2AStoreRetriesHigh` | warning | Store retries above 0.1/s for 15 m, by cause |
+| `A2AExecutorFailureRatioHigh` | warning | Over 10% of executor runs `error` or `aborted` for 15 m, above 0.05 runs/s |
+| `A2AModelCallsFailing` | warning | Over 10% of the tool loop's model calls failed for 15 m, above 0.05 calls/s |
+| `A2AClientErrorRatioHigh` | warning | Over 5% of a client job's calls to one agent failed for 10 m, above 0.1 calls/s |
+| `OTelCollectorDown` | critical | The Collector's telemetry endpoint unscraped for 2 m |
+| `OTelCollectorExportFailing` | warning | An exporter gave up on items in every 5-minute window for 10 m |
+| `OTelCollectorRefusing` | warning | A receiver refused or failed items for 10 m |
+| `OTelCollectorQueueFilling` | warning | An exporter queue over 80% full for 5 m |
+| `PrometheusRuleEvaluationFailing` | warning | A rule group failed to evaluate for 10 m |
+| `PrometheusNotificationsFailing` | warning | Sending to Alertmanager failed for 10 m |
 
 `A2AAgentSilent` is keyed on the job, so a rollout or a restart, which
 replaces instances, does not fire it, and a job that stays down keeps it
 firing for a day. Until 2026-10-30 it was keyed on the instance over an
 hour: every instance a rollout retired paged, and a fleet that was really
-down stopped paging after an hour (audit C-04). `A2AAgentInstancesLost`
-compares counts, so it too ignores a rollout; it resolves within the hour,
-once the smaller fleet is what the hour before saw. A stable
+down stopped paging after an hour (audit C-04). A stable
 `service.instance.id` per replica
 ([Resource attributes](./resource.md#one-identity-per-replica)) keeps a
 restart from being a new series.
 
-### What each signal tells you
-
-The alerts above cover these signals:
-
-* **Failed calls** (`A2AServerErrorRatioHigh`). Split by `rpc_method`: a rising
-  error rate confined to `SendStreamingMessage` is a different incident from
-  one across everything.
-* **Persistence errors above zero, at all** (`A2APersistenceErrors`). A store
-  write that fails means the task's recorded state and its actual state have
-  diverged. Streams recover from loss by refetching; this is the case where
-  refetching returns the wrong answer. The alert fires on any non-zero rate
-  rather than a threshold.
-* **Requests without a response** (`A2ARequestsUnanswered`).
-* **Queue depth that does not come down** (`A2AQueueDepthGrowing`).
-* **`push_deliveries{outcome="timeout_truncated"}`** (`A2APushDeliveryTruncated`).
-  Not a network failure; see the [outcome labels](./metrics.md#the-a2aserver-counters).
-* **Push deliveries failing** (`A2APushDeliveryFailing`), **unary latency**
-  (`A2AUnaryLatencyHigh`) and **an agent gone silent** (`A2AAgentSilent`).
-
-One signal is worth watching and is **not** covered by a shipped rule or panel:
-**`a2a.server.store_retries` rising**. Each retry is a write or statement that
-failed once and then succeeded, so nothing was lost; a failover shows as a
-burst. A rate that keeps rising is the store degrading before
-`persistence_errors` starts counting what it lost. Neither the alert file nor
-any dashboard queries `a2a_server_store_retries_total`; if you want it, a rule
-in the style of the others is
-`sum by (job, operation, cause) (rate(a2a_server_store_retries_total[5m]))`,
-with a threshold you choose for your store.
+Changed in 0.16.0 (audit C-14, NEW-c-1, C-15): the error ratios leave out the
+caller's mistakes; `A2AUnaryLatencyHigh` reads the 5 s bucket bound instead of
+comparing an interpolated p99 with 2.5 s; one failed write is a warning that
+stays for the hour (`A2APersistenceErrors`), and sustained failures page
+(`A2APersistenceFailing`); and the store-retry, executor, model-call,
+client, Collector and Prometheus alerts are new.
 
 ## The recording rules
 
@@ -151,9 +175,12 @@ because a streaming method's duration is its stream's.
 | Rule | By | What it is |
 |---|---|---|
 | `a2a:rpc_server_calls:rate5m` | job, binding, method | Calls per second, from `rpc_server_call_duration_seconds_count` |
-| `a2a:rpc_server_errors:rate5m` | job, binding, method | Failed calls per second (`error_type` set) |
-| `a2a:rpc_server_error_ratio:rate5m` | job | Failed calls over all calls (abandoned streams are not failed calls) |
+| `a2a:rpc_server_errors:rate5m` | job, binding, method | The server's failed calls per second: `error_type` set, not `cancelled`, not a caller-class status |
+| `a2a:rpc_server_caller_errors:rate5m` | job, binding, method | Calls refused as the caller's mistake, on every binding (a status A2A maps to a 4xx) |
+| `a2a:rpc_server_error_ratio:rate5m` | job | The two rules above: failed calls over all calls |
 | `a2a:rpc_server_cancelled:rate5m` | job, system, method | Streams the client abandoned before the agent finished |
+| `a2a:rpc_server_unary_calls:rate5m` | job, method | Non-streaming calls per second |
+| `a2a:rpc_server_unary_over_5s:ratio_rate5m` | job, method | The share of non-streaming calls slower than 5 s, from the `le="5"` bucket (exact) |
 | `a2a:rpc_server_unary_latency:p50_5m` | job, method | p50 of non-streaming calls |
 | `a2a:rpc_server_unary_latency:p95_5m` | job, method | p95 of non-streaming calls |
 | `a2a:rpc_server_unary_latency:p99_5m` | job, method | p99 of non-streaming calls |
@@ -161,9 +188,14 @@ because a streaming method's duration is its stream's.
 | `a2a:server_errors_by_kind:rate5m` | job, method, error | `a2a_server_errors_total` per second |
 | `a2a:push_deliveries:rate5m` | job, outcome | Push deliveries per second |
 | `a2a:push_delivery_failure_ratio:rate5m` | job | Deliveries not `delivered` over all deliveries |
+| `a2a:store_retries:rate5m` | job, operation, cause | Store operations run again after a failure that passed |
+| `a2a:executor_runs:rate5m` | job, outcome | Executor runs per second |
+| `a2a:executor_failure_ratio:rate5m` | job | Runs ending `error` or `aborted` over all runs |
 | `a2a:rpc_client_calls:rate5m` | job, binding, method, agent | Client calls per second, from `rpc_client_call_duration_seconds_count` |
-| `a2a:rpc_client_error_ratio:rate5m` | job, agent | Failed client calls over all client calls |
+| `a2a:rpc_client_error_ratio:rate5m` | job, agent | The agent's failures and calls with no answer, over all client calls (not abandoned calls, not the caller's mistakes) |
 | `a2a:rpc_client_unary_latency:p95_5m` | job, agent, method | p95 of non-streaming client calls |
+| `a2a:gen_ai_inference_calls:rate5m` | job | The tool loop's model calls per second |
+| `a2a:gen_ai_inference_error_ratio:rate5m` | job | Failed model calls over all model calls |
 
 "Binding" is the `rpc_system_name` label, "method" `rpc_method` (or `method`
 on the `a2a_server_*` series), and "agent" `server_address`.
@@ -171,16 +203,26 @@ on the `a2a_server_*` series), and "agent" `server_address`.
 ## Testing the rules
 
 ```bash
-promtool check config deploy/observability/prometheus/prometheus.yml
-promtool check rules deploy/observability/prometheus/rules/*.yml
-promtool test rules deploy/observability/prometheus/tests/a2a-alerts.test.yml
+cd deploy/observability/prometheus
+for f in prometheus.yml prometheus-compose.yml prometheus-collector.yml; do promtool check config "$f"; done
+promtool check rules rules/*.yml
+promtool test rules tests/*.test.yml
+amtool check-config ../alertmanager/alertmanager.yml
+python3 ../scripts/check_stack.py
 ```
 
-The tests feed each alert the series it is for and check it fires, with a
-control for `A2AServerErrorRatioHigh` and `A2AAgentSilent` that must not.
-When they were written, each alert's expression was broken in turn (a
-threshold, the outcome label, a range) and the tests failed every time (8 of
-8 caught); a ninth case proves the unanswered-requests rule subtracts errors.
+CI runs exactly these (`.github/workflows/observability.yml`, with promtool
+3.15.1 and amtool 0.34.2 from their release tarballs, pinned by SHA-256 in
+`scripts/install_tools.sh`), and `scripts/prove_workflow_gates_fail.py` proves
+in ci.yml that the test step fails on an empty tests directory, an unmet
+expectation and a broken rule. Until 0.16.0 no workflow ran promtool at all. The tests feed each alert the
+series it is for and check it fires, with a control that must not; the
+cases for the 0.16.0 changes (`tests/a2a-failure-classes.test.yml`) each
+failed against the rules before them. Each new or changed rule was then
+broken in turn by `scripts/hand_mutate.py` (a threshold, a `for:`, an entry
+of the caller-class pattern, a label filter, one arm of an `or`) and every
+mutant failed the tests or `check_stack.py`: 22 of 22 in the recording
+rules, 17 of 17 in `a2a-alerts.yml`, 14 of 14 in `stack-alerts.yml`.
 Against a live stack, `scripts/check_dashboards.py` checks that every rule is
 healthy, every recording rule has data and every dashboard query returns data:
 
@@ -196,8 +238,13 @@ agent did not report connections). `deploy/observability/README.md` records
 each run: on 2026-10-23 all 21 rules were healthy and every query returned
 data but the two named; on 2026-10-24, with the GenAI agents, every query but
 "Persistence errors". Alerts fired live on that traffic:
-`A2AServerErrorRatioHigh` (11% of calls were a deliberate task-not-found), and
-`A2AAgentSilent` for CLI runs made before they were given an instance id. The
+`A2AServerErrorRatioHigh` (11% of calls were a deliberate task-not-found, which
+since 0.16.0 is a caller error and no longer counts), and `A2AAgentSilent`
+for CLI runs made before they were given an instance id. On 2026-11-04 the
+0.16.0 stack ran with `hello-agent` and the CLI: every panel whose traffic was
+sent had data, `OTelCollectorExportFailing` went pending with Loki stopped,
+and the 42 rules were healthy once a first draft of `OTelCollectorRefusing`
+had been fixed (`PrometheusRuleEvaluationFailing` caught it). The
 check found two defects before anything was committed: the unanswered-requests
 rule first subtracted only responses, which counts every error as unanswered;
 and a Collector comment named port 4317 for an exporter that defaults to

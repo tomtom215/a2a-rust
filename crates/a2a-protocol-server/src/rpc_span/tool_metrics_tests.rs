@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{Status, TwoCalls, recorded};
 use crate::otel::test_reader::{collect, recording_meter};
-use crate::rpc_span::{GenAiMeter, GenAiSpan, Reply};
+use crate::rpc_span::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 use crate::tool_loop::{
     ChatRequest, LoopError, ModelError, ModelTurn, ToolCall, ToolLoop, ToolModel, ToolSet,
 };
@@ -88,6 +88,32 @@ const DURATION_BUCKETS: [f64; 14] = [
     0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92,
 ];
 
+/// A run prints the instruments it holds by name and not by contents (they
+/// are handles into a meter provider); the derived `Debug` of a run, or of a
+/// measure, is what a failure message or a log line shows of them.
+#[test]
+fn a_run_shows_the_instruments_it_holds_by_name() {
+    let (meter, _reader, _provider) = recording_meter();
+    let run = AgentRun::start(&GenAiMeter::new(&meter), Some("planner"), "qwen3:1.7b");
+    let shown = format!("{run:?}");
+    assert!(shown.contains("instruments: Instruments { .. }"), "{shown}");
+}
+
+/// A meter shows whether it records to one it was given or to the global
+/// provider, which is what tells two of them apart in a log line.
+#[test]
+fn a_meter_shows_whether_it_was_given_or_is_global() {
+    assert_eq!(
+        format!("{:?}", GenAiMeter::default()),
+        "GenAiMeter(\"global\")"
+    );
+    let (meter, _reader, _provider) = recording_meter();
+    assert_eq!(
+        format!("{:?}", GenAiMeter::new(&meter)),
+        "GenAiMeter(\"given\")"
+    );
+}
+
 #[test]
 fn a_turn_records_its_duration_and_its_tokens_in_both_families() {
     let (meter, reader, _provider) = recording_meter();
@@ -95,7 +121,7 @@ fn a_turn_records_its_duration_and_its_tokens_in_both_families() {
         "openai",
         "qwen3:1.7b",
         Some(("127.0.0.1", 8080)),
-        &GenAiMeter::new(meter),
+        &GenAiMeter::new(&meter),
     );
     span.answered(Reply {
         input_tokens: Some(120),
@@ -158,7 +184,7 @@ fn a_turn_records_its_duration_and_its_tokens_in_both_families() {
 #[test]
 fn zero_tokens_are_observed_but_not_counted_and_unreported_ones_are_neither() {
     let (meter, reader, _provider) = recording_meter();
-    GenAiSpan::chat("openai", "m", None, &GenAiMeter::new(meter)).answered(Reply {
+    GenAiSpan::chat("openai", "m", None, &GenAiMeter::new(&meter)).answered(Reply {
         input_tokens: Some(0),
         output_tokens: None,
         ..Reply::default()
@@ -180,7 +206,7 @@ fn zero_tokens_are_observed_but_not_counted_and_unreported_ones_are_neither() {
 #[test]
 fn a_failed_turn_or_call_records_its_error_type() {
     let (meter, reader, _provider) = recording_meter();
-    let meter = GenAiMeter::new(meter);
+    let meter = GenAiMeter::new(&meter);
     GenAiSpan::chat("openai", "m", None, &meter).failed("503");
     GenAiSpan::tool("t", true, "c1", None, &meter).failed("tool_error");
     let rm = collect(&reader);
@@ -200,7 +226,7 @@ fn a_failed_turn_or_call_records_its_error_type() {
 #[test]
 fn an_unknown_tool_is_one_series() {
     let (meter, reader, _provider) = recording_meter();
-    let meter = GenAiMeter::new(meter);
+    let meter = GenAiMeter::new(&meter);
     GenAiSpan::tool("made-up-1", false, "c1", None, &meter).failed("unknown_tool");
     let rm = collect(&reader);
     let tool = only(&rm, "gen_ai.execute_tool.duration");
@@ -214,7 +240,7 @@ fn an_unknown_tool_is_one_series() {
 #[test]
 fn an_abandoned_turn_or_call_is_recorded_as_cancelled() {
     let (meter, reader, _provider) = recording_meter();
-    let meter = GenAiMeter::new(meter);
+    let meter = GenAiMeter::new(&meter);
     let spans = recorded(|| {
         drop(GenAiSpan::chat("openai", "m", None, &meter));
         drop(GenAiSpan::tool("t", true, "c1", None, &meter));
@@ -243,7 +269,7 @@ async fn a_run_records_its_duration_and_how_many_turns_and_calls_it_took() {
     let tools = ToolSet::new().with(Status).unwrap();
     let tool_loop = ToolLoop::new(TwoCalls(AtomicUsize::new(0)), tools)
         .with_agent_name("status-agent")
-        .with_meter(meter);
+        .with_meter(&meter);
     tool_loop
         .run("hi", &CancellationToken::new())
         .await
@@ -311,7 +337,7 @@ async fn a_run_that_fails_records_why() {
     let tools = ToolSet::new().with(Status).unwrap();
     let tool_loop = ToolLoop::new(Insists, tools)
         .with_max_turns(2)
-        .with_meter(meter);
+        .with_meter(&meter);
     let result = tool_loop.run("hi", &CancellationToken::new()).await;
     assert!(matches!(result, Err(LoopError::TurnLimit(2))), "{result:?}");
     let rm = collect(&reader);
@@ -343,7 +369,7 @@ impl ToolModel for Silent {
 #[tokio::test]
 async fn a_run_dropped_mid_turn_is_recorded_as_cancelled() {
     let (meter, reader, _provider) = recording_meter();
-    let tool_loop = ToolLoop::new(Silent, ToolSet::new()).with_meter(meter);
+    let tool_loop = ToolLoop::new(Silent, ToolSet::new()).with_meter(&meter);
     let cancel = CancellationToken::new();
     let timed_out = tokio::time::timeout(
         std::time::Duration::from_millis(20),
@@ -367,7 +393,7 @@ async fn a_run_dropped_mid_turn_is_recorded_as_cancelled() {
 #[tokio::test]
 async fn a_run_cancelled_mid_turn_is_recorded_as_cancelled() {
     let (meter, reader, _provider) = recording_meter();
-    let tool_loop = ToolLoop::new(Silent, ToolSet::new()).with_meter(meter);
+    let tool_loop = ToolLoop::new(Silent, ToolSet::new()).with_meter(&meter);
     let cancel = CancellationToken::new();
     let trigger = cancel.clone();
     tokio::spawn(async move {

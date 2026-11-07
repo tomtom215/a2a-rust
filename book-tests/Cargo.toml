@@ -97,3 +97,6 @@ uuid       = { workspace = true }
 # no `tokio-util` dependency is needed here any more.
 http-body-util     = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+# The client streaming page drives `EventStream` with `StreamExt` and
+# `select_all` (audit G-12); `alloc` is what `select_all` needs.
+futures-util = { version = ">=0.3.30, <0.4", default-features = false, features = ["alloc"] }

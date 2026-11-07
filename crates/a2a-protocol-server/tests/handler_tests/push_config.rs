@@ -34,7 +34,7 @@ async fn push_config_crud_lifecycle() {
     // Create push config.
     let config = TaskPushNotificationConfig::new(&task_id, "https://example.com/webhook");
     let created = handler
-        .on_set_push_config(config, None)
+        .on_create_push_config(config, None)
         .await
         .expect("set push config");
     assert!(
@@ -93,7 +93,10 @@ async fn push_config_not_supported_without_sender() {
         .expect("build handler");
 
     let config = TaskPushNotificationConfig::new("task-1", "https://example.com/webhook");
-    let err = handler.on_set_push_config(config, None).await.unwrap_err();
+    let err = handler
+        .on_create_push_config(config, None)
+        .await
+        .unwrap_err();
     assert!(
         matches!(err, a2a_protocol_server::ServerError::PushNotSupported),
         "expected PushNotSupported, got {err:?}"

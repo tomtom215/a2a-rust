@@ -69,7 +69,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | **Retry policy** | Configurable `RetryPolicy` with jittered exponential backoff (connection errors, timeouts, 429/502/503/504) |
 | **Idempotency keys** | A client-supplied key on `SendMessage` that the server deduplicates on, so a send that failed ambiguously can be retried without starting a second task. An extension (`https://a2a-rust.com/extensions/idempotency/v1`), **not** part of A2A v1.0, advertised on the agent card exactly when the configured `TaskStore` supports it |
 | **TLS support** | HTTPS via `rustls`, no OpenSSL dependency — on by default in the client/SDK (`tls-rustls`; `default-features = false` opts either out), and on the server it gives the push sender HTTPS webhooks and `Server` TLS on its own listener (`Server::with_tls`, `with_tls_pem`) |
-| **Axum integration** | Feature-gated `A2aRouter` for idiomatic Axum servers (`axum` feature) |
+| **Axum integration** | Feature-gated `RestRouter` for idiomatic Axum servers (`axum` feature) |
 | **Zero framework lock-in** | Core built on raw `hyper` 1.x; Axum optional, or bring your own |
 
 ### Observability & Operations
@@ -163,6 +163,13 @@ a2a-protocol-sdk = "0.16"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
+This README is the one on `main`, and its snippets name the release line `main`
+is preparing. If [crates.io](https://crates.io/crates/a2a-protocol-sdk) does not
+have that line yet (cargo says `failed to select a version`), read the README
+at the [latest release tag](https://github.com/tomtom215/a2a-rust/releases), or
+build against `main` with
+`a2a-protocol-sdk = { git = "https://github.com/tomtom215/a2a-rust" }`.
+
 ### A complete agent, and a client that calls it
 
 One file, `src/main.rs`. It starts the agent on port 3000 with the agent card
@@ -179,13 +186,11 @@ struct MyAgent;
 // `agent_executor!` writes the `AgentExecutor` impl: no `Pin<Box<dyn Future>>`
 // by hand.
 agent_executor!(MyAgent, |ctx, queue| async {
-    let emit = EventEmitter::new(ctx, queue);
-    emit.status(TaskState::Working).await?;
     let who = ctx.message.text().unwrap_or("world");
-    emit.artifact("greeting", vec![Part::text(format!("Hello, {who}!"))], None, Some(true))
-        .await?;
-    emit.status(TaskState::Completed).await?;
-    Ok(())
+    // The answer as the task's artifact, then the terminal `Completed` status.
+    EventEmitter::new(ctx, queue)
+        .complete_with_text(format!("Hello, {who}!"))
+        .await
 });
 
 #[tokio::main]
@@ -198,7 +203,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_skill(AgentSkill::new("greet", "Greet", "Says hello").with_tags(["greeting"]))
         .with_streaming(true);
     let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card).build()?);
-    serve_with_addr("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await?;
+    let server = Server::bind("127.0.0.1:3000").await?;
+    tokio::spawn(server.serve_with_shutdown(JsonRpcDispatcher::new(handler), shutdown_signal()));
 
     // A client for it.
     let client = ClientBuilder::new(url).build()?;
@@ -227,9 +233,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 `AgentExecutor` is object-safe — its methods return `Pin<Box<dyn Future>>` —
 so `RequestHandler` and the dispatchers are not generic over your agent; they
-hold it as `Arc<dyn AgentExecutor>`. `serve_with_addr` returns once the
-listener is bound; `serve` runs until the process ends, for a standalone
-server. `RestDispatcher` serves the HTTP+JSON binding the same way, and the
+hold it as `Arc<dyn AgentExecutor>`. `Server::bind` returns once the
+listener is bound, and `serve_with_shutdown` serves until its signal (here
+SIGTERM or Ctrl-C), then lets the tasks in flight end and drains; await it
+instead of spawning it for a standalone server. `RestDispatcher` serves the HTTP+JSON binding the same way, and the
 [book](https://a2a-rust.com/) covers the gRPC and WebSocket
 ones.
 
@@ -277,6 +284,13 @@ whose probes point at those endpoints. Its sharpest test asserts the agent card
 advertises the **public** URL and never leaks the bind address — the deployment
 bug whose only symptom is clients failing to call back. See
 [`examples/deploy-agent`](examples/deploy-agent).
+
+The published image is the ready-to-run server: it runs that trivial agent, and
+what is ready is the wrapper around it. There is no configurable gateway
+binary; an agent of your own is a crate built with the same Dockerfile
+(`--build-arg PACKAGE=`), as the book's
+[Docker and Kubernetes](https://a2a-rust.com/deployment/containers.html) page
+lists ([ADR 0040](docs/adr/0040-first-run-configuration-and-scope.md)).
 
 ### Echo Agent
 
@@ -393,7 +407,7 @@ Commands, flags, a captured transcript and the exit-code table are in
 ┌─────────────────────▼──────────────────────┐
 │  Transport Layer                           │
 │  JsonRpcDispatcher · RestDispatcher        │
-│  A2aRouter (axum, feature-gated)           │
+│  RestRouter (axum, feature-gated)           │
 │  WebSocketDispatcher (feature-gated)       │
 │  GrpcDispatcher (feature-gated)            │
 │  JsonRpcTransport · RestTransport          │
@@ -409,7 +423,7 @@ Commands, flags, a captured transcript and the exit-code table are in
 The server uses a 3-layer architecture:
 1. **You implement `AgentExecutor`** — your agent logic, produces events via `EventQueueWriter`
 2. **`RequestHandler` orchestrates** — manages tasks, stores, push notifications, interceptors
-3. **Dispatchers handle HTTP/gRPC** — `JsonRpcDispatcher` (JSON-RPC 2.0), `RestDispatcher` (REST), `A2aRouter` (Axum), `WebSocketDispatcher` (WebSocket), and `GrpcDispatcher` (gRPC) wire hyper/tonic/axum to the handler
+3. **Dispatchers handle HTTP/gRPC** — `JsonRpcDispatcher` (JSON-RPC 2.0), `RestDispatcher` (REST), `RestRouter` (Axum), `WebSocketDispatcher` (WebSocket), and `GrpcDispatcher` (gRPC) wire hyper/tonic/axum to the handler
 
 ## Supported Methods
 
@@ -473,7 +487,7 @@ cd fuzz && cargo +nightly fuzz run json_deser
 
 Published as `0.x`. All 11 A2A methods are implemented across the four transports, alongside HTTP caching, agent-card signing, optional `tracing` and OpenTelemetry, TLS, and the request-hardening features listed above. The API is still stabilizing — minor versions may carry breaking changes, as described under [Stability](#stability). [`docs/implementation/plan.md`](docs/implementation/plan.md) covers the implementation history and beyond-spec extensions.
 
-Against the A2A project's official Technology Compatibility Kit, **81 of 114 MUST requirements pass and 7 fail** on the full profile, with 5 skipped and 21 that have no upstream test (measured 2026-10-16 at `d05a7fc`, in CI and locally, against `a2a-tck@263b9cf`; [§1](docs/official-tck-findings.md) has every dated measurement). The capability-negotiation requirements a full-capability server cannot exercise (`CORE-CAP-*`) are graded by CI's minimal and required-extension profiles instead. One failure, `CORE-SEND-003`, is a defect in the suite: the requirement declares no expected error, so it demands that a message part with an unsupported media type be accepted, and it began failing when 0.14.0 started answering the `ContentTypeNotSupportedError` that §3.1.1 requires ([§22](docs/official-tck-findings.md#22-core-send-003-the-suite-demands-success-where-311-requires-an-error)). The other four failures are the same cause, and it is not a deviation from the specification: the suite grades §5.4's error-mapping table against the copy of the specification it vendors, which its own `specification/version.json` records as A2A **v1.0.0**, taken 2026-03-13. A2A released **v1.0.1** on 2026-05-28, which rewrote six of that table's nine rows. Each of the four fails on exactly the one binding whose cell the two copies disagree about and passes on the bindings where they agree; this SDK answers what the published table says, as does the official Python SDK. They are baselined in `tck/conformance-baseline.json` with the evidence in [§20](docs/official-tck-findings.md#20-grpc-err-002-and-http_json-status-001-the-suites-vendored-specification-is-stale) and [§21](docs/official-tck-findings.md#21-core-cancel-002-and-stream-sub-003-two-more-rows-of-20s-stale-table), and they clear when the suite refreshes its copy — reported upstream as [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231). The same stale copy accounts for the last two, `HTTP_JSON-SVC-001` and `HTTP_JSON-ERR-001`: its §11.1 says `application/json`, where v1.0.1 says `application/a2a+json` SHOULD be used, which this SDK answers ([§23](docs/official-tck-findings.md#23-http_json-svc-001-and-http_json-err-001-111s-media-type-from-the-same-stale-copy)). Of the remaining 22, 21 have no test function in the upstream suite and one (`CARD-EXT-002`) has a test whose precondition this SDK's SUT cannot meet, so the official suite grades none of them. Each is instead evidenced in this repository: [`tck/untested-musts.toml`](tck/untested-musts.toml) maps every one of the 22, requirement ID by ID, to the tests here that assert it — among them cross-binding tests that drive one agent over all four bindings for `BIND-EQUIV-*` — and CI fails if a cited test disappears or is ignored. That is this repository's evidence, not a pass from the official suite, and they are counted as neither passing nor failing in the figures above. [`docs/official-tck-findings.md`](docs/official-tck-findings.md) has the per-requirement breakdown and reproduction steps; [§16](docs/official-tck-findings.md#16-what-the-21-not-tested-musts-actually-are-one-family-at-a-time) accounts for the 21 family by family — six the upstream suite tags unautomatable, two it has ruled out of scope, and thirteen open backlog items in its own tracker — and shows why the official suite cannot grade any of them from this repository.
+Against the A2A project's official Technology Compatibility Kit, **85 of 115 MUST requirements pass and 2 fail** on the full profile, with 5 skipped, 7 that the suite reports as manual and 16 that it does not test (measured 2026-11-06 in CI at `ffd72299`, against `a2a-tck@70f6f73`, the commit CI pins for pull requests; [§26](docs/official-tck-findings.md#26-the-suite-is-pinned-for-pull-requests-the-nightly-run-floats-decided-2026-11-06) has the measurement and [§1](docs/official-tck-findings.md) the earlier dated ones). The capability-negotiation requirements a full-capability server cannot exercise (`CORE-CAP-*`) are graded by CI's minimal and required-extension profiles instead. Both failures are defects in the suite, as read from its source. `CORE-SEND-003`: the requirement declares no expected error, so it demands that a message part with an unsupported media type be accepted, and it began failing when 0.14.0 started answering the `ContentTypeNotSupportedError` that §3.1.1 requires ([§22](docs/official-tck-findings.md#22-core-send-003-the-suite-demands-success-where-311-requires-an-error)). `HTTP_JSON-ERR-001`: its test fails an HTTP+JSON error response whose Content-Type is `application/a2a+json`, the type the suite's own vendored A2A v1.0.1 section 11.6 example shows and this SDK sends, because it accepts only a type containing `application/json` ([§26](docs/official-tck-findings.md#26-the-suite-is-pinned-for-pull-requests-the-nightly-run-floats-decided-2026-11-06)). Four requirements that failed against the suite's previous revision pass at this one: that revision graded §5.4's error-mapping table against a vendored copy of A2A **v1.0.0**, and v1.0.1 rewrote six of that table's nine rows; the suite refreshed its copy in [a2aproject/a2a-tck#258](https://github.com/a2aproject/a2a-tck/pull/258), and this SDK had answered what the published table says all along ([§20](docs/official-tck-findings.md#20-grpc-err-002-and-http_json-status-001-the-suites-vendored-specification-is-stale), [§21](docs/official-tck-findings.md#21-core-cancel-002-and-stream-sub-003-two-more-rows-of-20s-stale-table)). The requirements the suite does not grade (skipped, manual or not tested) are counted as neither passing nor failing in the figures above. At the previous revision 22 of them had no test function upstream or a precondition this SDK's SUT cannot meet, and [`tck/untested-musts.toml`](tck/untested-musts.toml) maps each of those 22, requirement ID by ID, to the tests here that assert it (among them cross-binding tests that drive one agent over all four bindings for `BIND-EQUIV-*`), and CI fails if a cited test disappears or is ignored; the map has not been reconciled with the pin's lists ([§26](docs/official-tck-findings.md#26-the-suite-is-pinned-for-pull-requests-the-nightly-run-floats-decided-2026-11-06)). That is this repository's evidence, not a pass from the official suite. [`docs/official-tck-findings.md`](docs/official-tck-findings.md) has the per-requirement breakdown and reproduction steps; [§16](docs/official-tck-findings.md#16-what-the-21-not-tested-musts-actually-are-one-family-at-a-time) accounts for the 21 that had no test at the previous revision family by family: six the upstream suite tags unautomatable, two it has ruled out of scope, and thirteen open backlog items in its own tracker.
 
 Against the A2A project's second suite, **ACTS** (a2aproject/a2a-itk), the ITK agent in [`itk/`](itk) is rated **conformant on all three bindings it grades, with every test passing at every level**: JSON-RPC 101/101, gRPC 88/88, HTTP+JSON 94/94 (measured 2026-10-08 against a2a-itk `82458cea`; the reports are in [`acts/reports/2026-10-08/`](acts/reports/2026-10-08/)). `REST-CT-001`, the one failure on earlier runs, passes since HTTP+JSON responses negotiate `application/a2a+json`: a client that asks for it gets it, and one that asks for `application/json`, as the official Go SDK does, keeps getting that.
 

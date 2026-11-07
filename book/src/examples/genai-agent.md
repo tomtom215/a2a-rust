@@ -92,13 +92,14 @@ is on.
 | Variable | Effect |
 |---|---|
 | `A2A_BIND_ADDR` | Serve JSON-RPC here, until Ctrl+C |
+| `A2A_PUBLIC_URL` | The URL the agent card advertises, for callers elsewhere (a container, a proxy). Unset, the card names the bound address, and `http://localhost:<port>` for `0.0.0.0` or `[::]`; until 0.16.0 it named `0.0.0.0`, which a client dials as its own loopback (audit NEW-a-l-5) |
 | `A2A_GRPC_ADDR`, `A2A_WS_ADDR` | Also serve gRPC, WebSocket on the same handler (`echo-agent` names these `A2A_GRPC_BIND_ADDR` and `A2A_WS_BIND_ADDR`) |
 | `A2A_ALLOW_PRIVATE_WEBHOOKS=1` | Permit push-notification URLs on loopback, private or link-local addresses |
 | `A2A_ALLOW_FALLBACK=1` | Complete a task with a labelled mechanical answer when no model is reachable, instead of failing it |
 | `A2A_MAX_CONCURRENT_TASKS` | Cap on tasks a tenant runs at once; a request past it is refused with `Overloaded` |
 | `A2A_BEARER_TOKEN` | Require `Authorization: Bearer <token>` |
 | `A2A_API_KEY` | Require `x-api-key: <key>` |
-| `A2A_JWT_HS256_SECRET` | Require an HS256 JWT; the secret must be at least 32 bytes. `A2A_JWT_ISS` and `A2A_JWT_AUD` add issuer and audience checks; each unset one is not checked, and the agent says so at startup |
+| `A2A_JWT_HS256_SECRET` | Require an HS256 JWT. The value is a random key in base64, at least 32 bytes once decoded: make one with `openssl rand -base64 32`. A typed passphrase is refused at startup. `A2A_JWT_ISS` and `A2A_JWT_AUD` add issuer and audience checks; each unset one is not checked, and the agent says so at startup |
 
 Set one authentication scheme: each adds an interceptor, and several would all
 have to pass. The plain agent card stays public.

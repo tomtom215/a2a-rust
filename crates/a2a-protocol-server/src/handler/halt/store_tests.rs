@@ -362,6 +362,7 @@ async fn the_poll_that_reads_a_halt_stops_what_it_covers() {
                 created_at: std::time::Instant::now(),
                 turn: Arc::new(ExecutorTurn::default()),
                 tenant: tenant.to_owned(),
+                lineage: a2a_protocol_types::lineage::Lineage::origin(""),
             },
         );
         fired.push(token);

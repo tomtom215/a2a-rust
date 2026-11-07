@@ -93,10 +93,17 @@ fn request(
 /// origin connects unless one is required.
 #[tokio::test]
 async fn only_listed_origins_may_upgrade() {
-    let addr = Arc::new(dispatcher().with_allowed_origins(["https://app.example.com"]))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("serve");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(
+            Arc::new(dispatcher().with_allowed_origins(["https://app.example.com"]))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let url = format!("ws://{addr}/");
 
     let (mut ws, _) =
@@ -123,14 +130,21 @@ async fn only_listed_origins_may_upgrade() {
 
 #[tokio::test]
 async fn require_origin_refuses_an_upgrade_without_one() {
-    let addr = Arc::new(
-        dispatcher()
-            .with_allowed_origins(["https://app.example.com"])
-            .require_origin(),
-    )
-    .serve_with_addr("127.0.0.1:0")
-    .await
-    .expect("serve");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(
+            Arc::new(
+                dispatcher()
+                    .with_allowed_origins(["https://app.example.com"])
+                    .require_origin(),
+            )
+            .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     match tokio_tungstenite::connect_async(request(&format!("ws://{addr}/"), None)).await {
         Err(tokio_tungstenite::tungstenite::Error::Http(resp)) => assert_eq!(resp.status(), 403),
         other => panic!("expected a 403 refusal, got {:?}", other.map(|_| ())),
@@ -143,10 +157,14 @@ async fn require_origin_refuses_an_upgrade_without_one() {
 /// WebSocket is outside CORS.
 #[tokio::test]
 async fn by_default_a_browser_origin_is_refused() {
-    let addr = Arc::new(dispatcher())
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("serve");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(Arc::new(dispatcher()).serve_with_shutdown(listener, std::future::pending()));
+        addr
+    };
     let url = format!("ws://{addr}/");
     for origin in ["https://evil.example", &format!("http://{addr}"), "null"] {
         match tokio_tungstenite::connect_async(request(&url, Some(origin))).await {
@@ -170,10 +188,17 @@ async fn by_default_a_browser_origin_is_refused() {
 /// chooses it.
 #[tokio::test]
 async fn allow_any_origin_accepts_every_origin() {
-    let addr = Arc::new(dispatcher().allow_any_origin())
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("serve");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(
+            Arc::new(dispatcher().allow_any_origin())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     tokio_tungstenite::connect_async(request(
         &format!("ws://{addr}/"),
         Some("https://evil.example"),
@@ -212,14 +237,21 @@ mod tls {
     }
 
     async fn tls_server(certs: &Certs) -> std::net::SocketAddr {
-        Arc::new(
-            dispatcher()
-                .with_tls_pem(certs.cert_pem.as_bytes(), certs.key_pem.as_bytes())
-                .expect("pem"),
-        )
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("serve")
+        {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("serve");
+            let addr = listener.local_addr().expect("serve");
+            tokio::spawn(
+                Arc::new(
+                    dispatcher()
+                        .with_tls_pem(certs.cert_pem.as_bytes(), certs.key_pem.as_bytes())
+                        .expect("pem"),
+                )
+                .serve_with_shutdown(listener, std::future::pending()),
+            );
+            addr
+        }
     }
 
     /// A TLS session to `addr` trusting only the test CA, offering
@@ -312,15 +344,22 @@ mod tls {
     #[tokio::test]
     async fn the_origin_allowlist_applies_under_tls() {
         let certs = certs();
-        let addr = Arc::new(
-            dispatcher()
-                .with_allowed_origins(["https://app.example.com"])
-                .with_tls_pem(certs.cert_pem.as_bytes(), certs.key_pem.as_bytes())
-                .expect("pem"),
-        )
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("serve");
+        let addr = {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("serve");
+            let addr = listener.local_addr().expect("serve");
+            tokio::spawn(
+                Arc::new(
+                    dispatcher()
+                        .with_allowed_origins(["https://app.example.com"])
+                        .with_tls_pem(certs.cert_pem.as_bytes(), certs.key_pem.as_bytes())
+                        .expect("pem"),
+                )
+                .serve_with_shutdown(listener, std::future::pending()),
+            );
+            addr
+        };
         let tls = session(addr, &certs.ca).await;
         let url = format!("wss://localhost:{}/", addr.port());
         match tokio_tungstenite::client_async(request(&url, Some("https://evil.example")), tls)

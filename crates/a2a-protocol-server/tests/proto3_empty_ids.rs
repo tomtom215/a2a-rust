@@ -21,11 +21,11 @@ use std::sync::Arc;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 
+use a2a_protocol_server::Server;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve_with_addr;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
@@ -59,9 +59,14 @@ async fn start() -> std::net::SocketAddr {
             .build()
             .expect("build handler"),
     );
-    serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-        .await
-        .expect("serve")
+    {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    }
 }
 
 async fn rpc(addr: std::net::SocketAddr, params: serde_json::Value) -> serde_json::Value {

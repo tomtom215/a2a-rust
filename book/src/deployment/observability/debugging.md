@@ -21,9 +21,9 @@ SIGTERM, which printed the metrics a last time), shortened at the right:
 
 ```text
 2026-10-26T11:49:38.791Z LOG INFO dispatching JSON-RPC request method="\"SendMessage\""
-2026-10-26T11:49:38.791Z LOG INFO handling send message trace=041b7a3f712ac2bfa0b7597940c4458e span=5aaeaa8e92dbcf3f method=SendMessage streaming=false
-2026-10-26T11:49:38.792Z SPAN "invoke_agent hello-agent" internal 1.1ms trace=041b7a3f712ac2bfa0b7597940c4458e span=aab988af2f4d0357 parent=5aaeaa8e92dbcf3f events=4 target=a2a_protocol_server::rpc a2a.task.id=…
-2026-10-26T11:49:38.791Z SPAN lf.a2a.v1.A2AService/SendMessage server 2.7ms trace=041b7a3f712ac2bfa0b7597940c4458e span=5aaeaa8e92dbcf3f events=7 target=a2a_protocol_server::rpc rpc.system.name=jsonrpc …
+2026-10-26T11:49:38.791Z LOG INFO handling send message trace_id=041b7a3f712ac2bfa0b7597940c4458e span_id=5aaeaa8e92dbcf3f method=SendMessage streaming=false
+2026-10-26T11:49:38.792Z SPAN "invoke_agent hello-agent" internal 1.1ms trace_id=041b7a3f712ac2bfa0b7597940c4458e span_id=aab988af2f4d0357 parent=5aaeaa8e92dbcf3f events=4 target=a2a_protocol_server::rpc a2a.task.id=…
+2026-10-26T11:49:38.791Z SPAN lf.a2a.v1.A2AService/SendMessage server 2.7ms trace_id=041b7a3f712ac2bfa0b7597940c4458e span_id=5aaeaa8e92dbcf3f events=7 target=a2a_protocol_server::rpc rpc.system.name=jsonrpc …
 2026-10-26T11:49:39.300Z METRIC a2a.server.requests{method=SendMessage} sum 1 {request} cumulative
 2026-10-26T11:49:39.300Z METRIC rpc.server.call.duration{rpc.system.name=jsonrpc,rpc.method=lf.a2a.v1.A2AService/SendMessage} histogram count=1 sum=0.002532315 s cumulative min=0.002532315 max=0.002532315
 ```
@@ -137,6 +137,17 @@ errors from everywhere, plus the startup line; `RUST_LOG=my_agent=debug,warn`
 `shutdown` and `force_flush` return `TelemetryError::Export` naming each signal
 that lost exports and how many, so a process that exits with an error from
 `shutdown` lost telemetry even if no warning was seen.
+
+When metrics are exported, the same losses are a metric too (audit C-13):
+`a2a.telemetry.export.failed` (Prometheus: `a2a_telemetry_export_failed_total`),
+a cumulative counter of exports that failed after the exporter's retries, with
+a `signal` attribute (`traces`, `metrics`, `logs`), under the
+`a2a-protocol-server` scope. It counts batches, not spans or records, which
+is why it is not the semantic conventions' `otel.sdk.exporter.*.exported`. A
+metrics exporter that is failing loses its own count with the batch, so for
+the `metrics` series to be seen, scrape it (`prometheus`) or export metrics two
+ways; for traces and logs any working metrics exporter carries it. An alert:
+`increase(a2a_telemetry_export_failed_total[15m]) > 0`.
 
 ## A value the process ignores, and one it refuses
 

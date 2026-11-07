@@ -154,7 +154,7 @@ async fn a_subscription_ends_with_the_finished_task() {
         tokio::time::sleep(Duration::from_millis(5)).await;
     };
     let subscriber = handler
-        .on_resubscribe(TaskIdParams::new(task_id.0.clone()), None)
+        .on_subscribe_to_task(TaskIdParams::new(task_id.0.clone()), None)
         .await
         .expect("subscribe");
     RELEASE.notify_one();

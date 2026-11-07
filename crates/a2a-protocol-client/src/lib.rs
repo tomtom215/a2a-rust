@@ -110,6 +110,7 @@ mod https_client;
 mod legacy_card;
 mod loopback;
 mod message_id;
+mod origin;
 mod plaintext;
 #[cfg(feature = "tls-rustls")]
 mod pool;
@@ -117,10 +118,12 @@ mod pool;
 mod proxy;
 mod received;
 mod redact;
+mod single_flight;
 #[cfg(test)]
 mod test_tracing;
 
 pub mod auth;
+pub mod balance;
 pub mod builder;
 pub mod client;
 pub mod config;
@@ -131,6 +134,7 @@ pub mod interceptor;
 #[cfg(feature = "signing")]
 pub mod jwks;
 pub mod methods;
+pub mod otel_baggage;
 pub mod retry;
 pub mod streaming;
 #[cfg(feature = "tls-rustls")]
@@ -160,6 +164,8 @@ pub use discovery::resolve_agent_card;
 pub use error::{ClientError, ClientResult};
 pub use interceptor::{CallInterceptor, ClientRequest, ClientResponse, InterceptorChain};
 pub use message_id::new_message_id;
+pub use origin::OriginSnapshot;
+pub use otel_baggage::{BaggagePolicy, Propagators};
 #[cfg(feature = "tls-rustls")]
 pub use pool::{HttpPool, HttpPoolBuilder};
 pub use retry::{RetryBudget, RetryPolicy};

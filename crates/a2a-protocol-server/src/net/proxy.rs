@@ -33,20 +33,35 @@
 //!   refusing to start over a variable that is set for every other tool in
 //!   the process.
 
+// The rules (`matcher`, `intercept`) are in every build: the plaintext push
+// client follows them too (`net::plain`, audit NEW-b-3). The connector below
+// them speaks TLS and is built where rustls is.
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 use std::future::Future;
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 use std::pin::Pin;
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 use std::sync::Arc;
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 use std::task::{Context, Poll};
 
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 use hyper::rt::{Read, ReadBufCursor, Write};
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 use hyper_util::client::legacy::connect::proxy::Tunnel;
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 use hyper_util::client::legacy::connect::{Connected, Connection};
 use hyper_util::client::proxy::matcher::{Intercept, Matcher};
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 use hyper_util::rt::TokioIo;
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 use pin_project_lite::pin_project;
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 use tokio::net::TcpStream;
 
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 use super::resolver::{Tcp, system_tcp};
 
 /// Where variables come from: the process environment, or a test's table.
@@ -59,6 +74,7 @@ pub fn process_env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.trim().is_empty())
 }
 
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// Where the proxy rules come from.
@@ -194,12 +210,13 @@ pub fn intercept(rules: &Matcher, dst: &http::Uri) -> Option<Intercept> {
 
 /// Whether a proxy applies to `dst` but is of a kind not supported, so the
 /// caller can say so.
-fn unsupported(rules: &Matcher, dst: &http::Uri) -> Option<String> {
+pub(super) fn unsupported(rules: &Matcher, dst: &http::Uri) -> Option<String> {
     let found = rules.intercept(dst)?;
     (found.uri().scheme_str() != Some("http"))
         .then(|| found.uri().scheme_str().unwrap_or("").to_owned())
 }
 
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 pin_project! {
     /// A connection the export client uses: straight to the collector or
     /// through a CONNECT tunnel (`Stream`, TLS where the scheme says so), or
@@ -211,6 +228,7 @@ pin_project! {
     }
 }
 
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 impl Connection for Conn {
     fn connected(&self) -> Connected {
         match self {
@@ -221,6 +239,7 @@ impl Connection for Conn {
     }
 }
 
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 impl Read for Conn {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -234,6 +253,7 @@ impl Read for Conn {
     }
 }
 
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 impl Write for Conn {
     fn poll_write(
         self: Pin<&mut Self>,
@@ -261,6 +281,7 @@ impl Write for Conn {
     }
 }
 
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 /// A connector for an HTTP client that sends each destination straight or
 /// through the proxy the rules name for it.
 #[derive(Clone)]
@@ -272,6 +293,7 @@ pub struct ProxyConnector {
     said_unsupported: Arc<AtomicBool>,
 }
 
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 impl ProxyConnector {
     #[cfg_attr(not(feature = "otlp"), allow(dead_code))]
     pub fn new(tls: &rustls::ClientConfig, rules: Arc<Matcher>) -> Self {
@@ -309,6 +331,7 @@ impl ProxyConnector {
     }
 }
 
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 /// A `CONNECT` tunnel through `proxy`, authenticated when its URL carried a
 /// user.
 pub fn tunnel(proxy: &Intercept, tcp: Tcp) -> Tunnel<Tcp> {
@@ -319,6 +342,7 @@ pub fn tunnel(proxy: &Intercept, tcp: Tcp) -> Tunnel<Tcp> {
     }
 }
 
+#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 impl tower_service::Service<http::Uri> for ProxyConnector {
     type Response = Conn;
     type Error = BoxError;
@@ -369,6 +393,8 @@ impl tower_service::Service<http::Uri> for ProxyConnector {
     }
 }
 
+// The connector tests need rustls (`tests.rs` says so); the rules tests run
+// in every build.
 #[cfg(test)]
 mod tests;
 

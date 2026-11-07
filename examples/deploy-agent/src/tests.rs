@@ -8,6 +8,10 @@ use std::time::Duration;
 
 use super::{CombinedDispatcher, Config, ServeConfig, Vars, bind, handler, redacted};
 
+// The tests of which variable names the database and of the pools the stores
+// open from it (audit A14, A15), with the helpers that read the start's log.
+mod database;
+
 fn config(port: u16) -> Config {
     Config::from_vars(Vars {
         port: Some(port.to_string()),
@@ -211,6 +215,30 @@ fn invalid_configuration_is_rejected() {
                 .err()
                 .expect("refused")
                 .contains("DATABASE_POOL_SIZE"),
+            "{bad}"
+        );
+    }
+    // The push-config pool: 2 unless DATABASE_PUSH_POOL_SIZE says otherwise
+    // (audit A15), refused like the other.
+    assert_eq!(ok.push_pool_size, 2);
+    let push = |raw: &str| {
+        Config::from_vars(Vars {
+            push_pool_size: Some(raw.into()),
+            ..Vars::default()
+        })
+    };
+    assert_eq!(push("5").expect("a size").push_pool_size, 5);
+    assert_eq!(
+        push("5").expect("a size").pool_size,
+        10,
+        "the other is untouched"
+    );
+    for bad in ["0", "-1", "two"] {
+        assert!(
+            push(bad)
+                .err()
+                .expect("refused")
+                .contains("DATABASE_PUSH_POOL_SIZE"),
             "{bad}"
         );
     }

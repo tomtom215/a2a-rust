@@ -134,7 +134,8 @@ pub fn sign_content<C: Content>(content: &mut C, signer: &ContentSigner) -> A2aR
 /// # Errors
 ///
 /// Returns an error when the content carries no provenance or no signature,
-/// the header is malformed, the set has no candidate key, or no candidate
+/// the header is malformed or names critical extensions (`crit`, which no
+/// verifier here understands), the set has no candidate key, or no candidate
 /// verifies — any change to the content after signing, marker included.
 pub fn verify_content<C: Content + Clone>(content: &C, jwks: &Jwks) -> A2aResult<Provenance> {
     let provenance = provenance_of(content)?
@@ -148,6 +149,14 @@ pub fn verify_content<C: Content + Clone>(content: &C, jwks: &Jwks) -> A2aResult
         .ok()
         .and_then(|h| serde_json::from_slice(&h).ok())
         .ok_or_else(|| A2aError::invalid_params("malformed signature header"))?;
+    // RFC 7515 4.1.11: a JWS naming critical extensions is invalid to a
+    // verifier that understands none, as this one does. Until 2026-11-06 the
+    // member was ignored here.
+    if header.get("crit").is_some() {
+        return Err(A2aError::invalid_params(
+            "signature header names critical extensions (crit), which this verifier does not support",
+        ));
+    }
     let alg = header["alg"].as_str().unwrap_or_default();
     let kid = header["kid"].as_str();
     let candidates = jwks.candidates(kid, alg);

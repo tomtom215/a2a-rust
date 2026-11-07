@@ -235,6 +235,15 @@ jobs:
       - name: Spec ledger covers every requirement and cites only tests that exist
         run: python3 scripts/check_spec_ledger.py
 
+      # docs/compliance/rfc-ledger.json does the same for the RFCs the SDK
+      # implements (JWS, JWT and the JWT best-practice RFC; their vendored
+      # texts are in docs/implementation/rfc/): every MUST, SHOULD and MAY is a
+      # row, each row's code and test are checked to be where it says, and a
+      # security row cannot say TESTED without a named test that was seen to
+      # fail with the check removed.
+      - name: RFC ledger covers every requirement and cites only code and tests that exist
+        run: python3 scripts/check_rfc_ledger.py
+
       # The official TCK does not grade 22 of its MUSTs against this SDK: 21
       # have no test in the suite and CARD-EXT-002's precondition cannot hold
       # on our SUT (docs/official-tck-findings.md §16). tck/untested-musts.toml
@@ -349,6 +358,18 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
+
+      # observability.yml's `promtool test rules` is proved here like every
+      # other gate, so the harness needs promtool: the same pinned release
+      # tarball, digest-checked, by the script observability.yml uses.
+      - name: Install promtool for the harness (pinned by SHA-256)
+        run: |
+          # Outside a runner (scripts/preflight.sh) RUNNER_TEMP and GITHUB_PATH
+          # are unset: install to the temp directory, and the harness reports
+          # the probe NOT RUN unless promtool is on your PATH.
+          bin="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/a2a-obs-bin"
+          deploy/observability/scripts/install_tools.sh "$bin" promtool
+          echo "$bin" >> "${GITHUB_PATH:-/dev/null}"
 
       - name: Workflow verdict gates can fail
         run: python3 -m pip install --quiet --require-hashes -r .github/requirements/pyyaml.txt && ./scripts/prove_workflow_gates_fail.py

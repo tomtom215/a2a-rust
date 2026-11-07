@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
 use a2a_protocol_server::push::PushSender;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{RequestHandler, RequestHandlerBuilder, agent_executor};
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::StreamResponse;
@@ -101,9 +101,14 @@ fn assert_refused(resp: &Value, what: &str) {
 
 #[tokio::test]
 async fn jsonrpc_send_message_id_with_crlf_is_invalid_params() {
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     assert_refused(
         &rpc(addr, "SendMessage", send(INJECTED, None)).await,
         "messageId",
@@ -126,9 +131,14 @@ async fn jsonrpc_send_message_id_with_crlf_is_invalid_params() {
 
 #[tokio::test]
 async fn jsonrpc_task_id_with_crlf_is_invalid_params() {
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     for method in ["GetTask", "CancelTask", "SubscribeToTask"] {
         assert_refused(&rpc(addr, method, json!({"id": INJECTED})).await, method);
     }
@@ -145,9 +155,14 @@ async fn jsonrpc_task_id_with_crlf_is_invalid_params() {
 /// checked only for being empty, and a created config's `id` not at all.
 #[tokio::test]
 async fn jsonrpc_push_config_ids_with_crlf_are_invalid_params() {
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let task = rpc(addr, "SendMessage", send("m-1", None)).await;
     let task_id = task["result"]["task"]["id"].as_str().expect("task id");
 
@@ -215,9 +230,14 @@ async fn jsonrpc_push_config_ids_with_crlf_are_invalid_params() {
 
 #[tokio::test]
 async fn jsonrpc_tenant_with_control_character_is_invalid_params() {
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     for tenant in [INJECTED, "acme\u{1f}alice", "acme\u{85}"] {
         let resp = rpc(addr, "GetTask", json!({"id": "t", "tenant": tenant})).await;
         assert_refused(&resp, &format!("tenant {tenant:?}"));
@@ -226,9 +246,14 @@ async fn jsonrpc_tenant_with_control_character_is_invalid_params() {
 
 #[tokio::test]
 async fn rest_message_and_task_ids_with_crlf_are_400() {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let (status, body) = post(addr, "POST", "/message:send", send(INJECTED, None)).await;
     assert_eq!(status, 400, "messageId: {body}");
 

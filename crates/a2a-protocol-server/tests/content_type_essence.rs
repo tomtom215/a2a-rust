@@ -18,7 +18,7 @@ use a2a_protocol_server::RequestHandler;
 use a2a_protocol_server::agent_executor;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use serde_json::Value;
@@ -76,9 +76,14 @@ fn rest_reason(v: &Value) -> &Value {
 
 #[tokio::test]
 async fn json_rpc_reads_the_media_type() {
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let body = r#"{"jsonrpc":"2.0","id":1,"method":"GetTask","params":{"id":"nope"}}"#;
     for ct in ACCEPTED {
         let v = post(addr, "/", ct, body).await;
@@ -92,9 +97,14 @@ async fn json_rpc_reads_the_media_type() {
 
 #[tokio::test]
 async fn http_json_reads_the_media_type() {
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     for ct in ACCEPTED {
         let v = post(addr, "/tasks/nope:cancel", ct, "{}").await;
         assert_eq!(*rest_reason(&v), "TASK_NOT_FOUND", "{ct}: {v}");

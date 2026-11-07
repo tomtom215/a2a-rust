@@ -33,6 +33,7 @@
 //! # }
 //! use std::sync::Arc;
 //! use a2a_protocol_server::dispatch::grpc::{GrpcDispatcher, GrpcConfig};
+//! use a2a_protocol_server::serve::{ServeConfig, shutdown_signal};
 //! use a2a_protocol_server::RequestHandlerBuilder;
 //! # struct MyExec;
 //! # impl a2a_protocol_server::AgentExecutor for MyExec {
@@ -47,8 +48,12 @@
 //!     RequestHandlerBuilder::new(MyExec).with_agent_card(card()).build().unwrap()
 //! );
 //! let config = GrpcConfig::default();
-//! let dispatcher = GrpcDispatcher::new(handler, config);
-//! dispatcher.serve("127.0.0.1:50051").await?;
+//! let listener = tokio::net::TcpListener::bind("127.0.0.1:50051").await?;
+//! let report = GrpcDispatcher::new(handler, config)
+//!     .with_serve_config(ServeConfig::new().with_max_connections(1024))
+//!     .serve_with_shutdown(listener, shutdown_signal())
+//!     .await?;
+//! assert_eq!(report.refused, None);
 //! # Ok(())
 //! # }
 //! ```
@@ -60,6 +65,8 @@ mod details;
 mod dispatcher;
 mod helpers;
 mod native;
+mod serve_config;
+mod serving;
 mod shutdown;
 #[cfg(test)]
 mod undeclared_tests;
@@ -81,7 +88,9 @@ pub(crate) mod pb {
 }
 
 pub use config::GrpcConfig;
-pub use dispatcher::GrpcDispatcher;
+pub use dispatcher::{
+    DEFAULT_GRPC_KEEPALIVE_INTERVAL, DEFAULT_GRPC_KEEPALIVE_TIMEOUT, GrpcDispatcher,
+};
 pub(crate) use helpers::grpc_status_name;
 pub use native::A2aServiceImpl;
 pub use pb::a2a_service_server::A2aServiceServer;

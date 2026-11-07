@@ -21,6 +21,16 @@
 # Collector killed for memory; its limits are a share of the container's
 # memory limit, so give the container one. `health_check` answers on 13133
 # for a liveness or readiness probe (`GET /` is 200 once the pipelines run).
+#
+# `deltatocumulative` turns delta sums and histograms (an agent started with
+# OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta) into the
+# cumulative series the rules read; cumulative points pass through unchanged
+# (audit C-21). It keeps per-series state in memory, so run one Collector per
+# set of agents, or this processor's state is split between replicas.
+#
+# The Collector's own metrics are served on 8888 (`service.telemetry`);
+# prometheus-collector.yml scrapes them as job `otelcol`, and
+# rules/stack-alerts.yml watches them (audit C-15).
 
 extensions:
   health_check:
@@ -39,6 +49,7 @@ processors:
     check_interval: 1s
     limit_percentage: 80
     spike_limit_percentage: 20
+  deltatocumulative: {}
   batch: {}
 
 exporters:
@@ -54,10 +65,19 @@ exporters:
 
 service:
   extensions: [health_check]
+  telemetry:
+    metrics:
+      level: normal
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
   pipelines:
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
+      processors: [memory_limiter, deltatocumulative, batch]
       exporters: [prometheus]
     traces:
       receivers: [otlp]

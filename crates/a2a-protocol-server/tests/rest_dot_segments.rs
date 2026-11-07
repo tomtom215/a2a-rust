@@ -15,7 +15,7 @@ use std::sync::Arc;
 use a2a_protocol_server::agent_executor;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::RestDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Empty};
 
@@ -31,9 +31,14 @@ async fn an_id_with_two_dots_is_routed_and_a_dot_segment_is_refused() {
             .build()
             .expect("handler"),
     );
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
         .build_http::<Empty<Bytes>>();
     let get = |path: &'static str| {

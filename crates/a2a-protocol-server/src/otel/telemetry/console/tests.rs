@@ -119,7 +119,7 @@ fn a_span_is_one_line_with_ids_status_and_attributes() {
     assert!(line.contains(" status=error:\"boom bang\""), "{line}");
     assert!(line.contains(" n=42 msg=\"hello world\""), "{line}");
     let trace = line
-        .split_once(" trace=")
+        .split_once(" trace_id=")
         .and_then(|(_, rest)| rest.split_whitespace().next())
         .expect("a trace id");
     assert_eq!(trace.len(), 32, "{line}");

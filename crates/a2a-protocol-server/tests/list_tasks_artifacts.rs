@@ -13,7 +13,7 @@ use std::sync::Arc;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::RestDispatcher;
 use a2a_protocol_server::handler::RequestHandler;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{EventEmitter, agent_executor};
 use a2a_protocol_types::params::{ListTasksParams, MessageSendParams};
 use a2a_protocol_types::{Message, Part, TaskState};
@@ -91,9 +91,14 @@ async fn artifacts_are_omitted_unless_asked_for() {
 #[tokio::test]
 async fn the_rest_listing_omits_artifacts_by_default() {
     let handler = handler_with_a_task().await;
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
         .build_http::<Full<Bytes>>();
     let get = |query: &'static str| {

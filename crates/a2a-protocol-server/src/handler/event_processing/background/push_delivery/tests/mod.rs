@@ -21,11 +21,13 @@ use crate::push::{InMemoryPushConfigStore, PushConfigStore};
 
 use super::*;
 
+mod admission;
 mod budget;
 mod config_list;
 mod dead_webhook;
 #[cfg(feature = "tracing")]
 mod log_redaction;
+mod outbox;
 
 fn make_status_event(task_id: &str, state: TaskState) -> StreamResponse {
     StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(

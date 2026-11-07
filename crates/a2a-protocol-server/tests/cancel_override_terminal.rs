@@ -119,7 +119,7 @@ async fn a_cancel_the_hook_does_not_write_ends_a_subscription() {
     let handler = handler();
     let (task_id, stream) = working_stream(&handler).await;
     let subscription = handler
-        .on_resubscribe(TaskIdParams::new(task_id.0.clone()), None)
+        .on_subscribe_to_task(TaskIdParams::new(task_id.0.clone()), None)
         .await
         .expect("subscribe");
 

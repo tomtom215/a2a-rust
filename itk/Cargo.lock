@@ -8,6 +8,7 @@ version = "0.16.0"
 dependencies = [
  "a2a-protocol-types",
  "base64 0.23.1",
+ "futures-core",
  "http-body-util",
  "httpdate",
  "hyper",
@@ -24,6 +25,7 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tonic-types",
+ "tower-service",
  "tracing",
  "tracing-opentelemetry",
  "uuid",

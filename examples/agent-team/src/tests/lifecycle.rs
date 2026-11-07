@@ -387,7 +387,7 @@ pub async fn test_push_not_supported(ctx: &TestContext) -> TestResult {
         "any-task-id".to_owned(),
         format!("http://{}/webhook", ctx.webhook_addr),
     );
-    match client.set_push_config(config).await {
+    match client.create_push_config(config).await {
         Ok(_) => TestResult::fail(
             "push-not-supported",
             start.elapsed().as_millis(),

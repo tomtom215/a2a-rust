@@ -85,7 +85,7 @@ async fn a_token_or_credentials_a_header_cannot_carry_is_refused_at_creation() {
         (None, Some("bell\u{7}"), "credentials"),
     ] {
         let err = handler
-            .on_set_push_config(config(&task, token, credentials), None)
+            .on_create_push_config(config(&task, token, credentials), None)
             .await
             .expect_err(field)
             .to_a2a_error();
@@ -95,7 +95,7 @@ async fn a_token_or_credentials_a_header_cannot_carry_is_refused_at_creation() {
     // What a header can carry is stored as before: a tab, a space, any
     // visible character.
     handler
-        .on_set_push_config(config(&task, Some("a\tb c~"), Some("tok.en_-/+=")), None)
+        .on_create_push_config(config(&task, Some("a\tb c~"), Some("tok.en_-/+=")), None)
         .await
         .expect("a token and credentials a header can carry");
 }

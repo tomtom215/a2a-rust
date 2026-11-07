@@ -179,6 +179,7 @@ async fn seed_cancelled_tokens(handler: &RequestHandler, n: usize) -> Vec<TaskId
                 token,
                 created_at: Instant::now(),
                 tenant: String::new(),
+                lineage: a2a_protocol_types::lineage::Lineage::origin(""),
             },
         );
         ids.push(id);
@@ -1986,6 +1987,7 @@ async fn a_live_token_alone_refuses_a_resend() {
             token: tokio_util::sync::CancellationToken::new(),
             created_at: Instant::now(),
             tenant: String::new(),
+            lineage: a2a_protocol_types::lineage::Lineage::origin(""),
         },
     );
 
@@ -2027,6 +2029,7 @@ async fn a_cancelled_token_alone_does_not_refuse_a_resend() {
             token,
             created_at: Instant::now(),
             tenant: String::new(),
+            lineage: a2a_protocol_types::lineage::Lineage::origin(""),
         },
     );
 
@@ -2123,6 +2126,7 @@ async fn seed_aged_token(handler: &RequestHandler, id: &str) -> TaskId {
                 .checked_sub(std::time::Duration::from_secs(2))
                 .expect("two seconds ago is representable on any booted host"),
             tenant: String::new(),
+            lineage: a2a_protocol_types::lineage::Lineage::origin(""),
         },
     );
     id
@@ -2196,6 +2200,7 @@ fn second_send_blocked_iff_token_live() {
         token: tokio_util::sync::CancellationToken::new(),
         created_at: Instant::now(),
         tenant: String::new(),
+        lineage: a2a_protocol_types::lineage::Lineage::origin(""),
     };
     assert!(
         second_send_blocked(&live),
@@ -2209,6 +2214,7 @@ fn second_send_blocked_iff_token_live() {
         token,
         created_at: Instant::now(),
         tenant: String::new(),
+        lineage: a2a_protocol_types::lineage::Lineage::origin(""),
     };
     assert!(
         !second_send_blocked(&cancelled),
@@ -2259,6 +2265,7 @@ fn token_still_evictable_spares_fresh_live_token() {
         token: tokio_util::sync::CancellationToken::new(),
         created_at: now,
         tenant: String::new(),
+        lineage: a2a_protocol_types::lineage::Lineage::origin(""),
     };
     assert!(
         !token_still_evictable(&fresh, now, max_age),
@@ -2271,6 +2278,7 @@ fn token_still_evictable_spares_fresh_live_token() {
         token: tokio_util::sync::CancellationToken::new(),
         created_at: now,
         tenant: String::new(),
+        lineage: a2a_protocol_types::lineage::Lineage::origin(""),
     };
     cancelled.token.cancel();
     assert!(token_still_evictable(&cancelled, now, max_age));
@@ -2286,6 +2294,7 @@ fn token_still_evictable_spares_fresh_live_token() {
         token: tokio_util::sync::CancellationToken::new(),
         created_at: now,
         tenant: String::new(),
+        lineage: a2a_protocol_types::lineage::Lineage::origin(""),
     };
     let later = now
         .checked_add(max_age)

@@ -73,7 +73,7 @@ async fn a_tenant_executor_timeout_overrides_the_handlers() {
         .with_tenant_config(config_with(
             "impatient",
             TenantLimits::builder()
-                .executor_timeout(Duration::from_millis(50))
+                .with_executor_timeout(Duration::from_millis(50))
                 .build(),
         ))
         .build()
@@ -103,7 +103,7 @@ async fn a_tenant_without_an_override_keeps_the_handlers_timeout() {
         .with_executor_timeout(Duration::from_millis(50))
         .with_tenant_config(config_with(
             "quiet",
-            TenantLimits::builder().max_concurrent_tasks(4).build(),
+            TenantLimits::builder().with_max_concurrent_tasks(4).build(),
         ))
         .build()
         .expect("build");
@@ -143,7 +143,9 @@ fn capped_handler(tenant: &str, cap: usize) -> Arc<RequestHandler> {
             .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
             .with_tenant_config(config_with(
                 tenant,
-                TenantLimits::builder().max_concurrent_tasks(cap).build(),
+                TenantLimits::builder()
+                    .with_max_concurrent_tasks(cap)
+                    .build(),
             ))
             .build()
             .expect("build"),
@@ -194,7 +196,7 @@ async fn the_slot_is_released_when_the_executor_finishes() {
             .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
             .with_tenant_config(config_with(
                 "serial",
-                TenantLimits::builder().max_concurrent_tasks(1).build(),
+                TenantLimits::builder().with_max_concurrent_tasks(1).build(),
             ))
             .build()
             .expect("build"),
@@ -218,11 +220,11 @@ async fn the_concurrency_limit_is_per_tenant_not_global() {
                 PerTenantConfig::builder()
                     .with_override(
                         "loud",
-                        TenantLimits::builder().max_concurrent_tasks(1).build(),
+                        TenantLimits::builder().with_max_concurrent_tasks(1).build(),
                     )
                     .with_override(
                         "quiet",
-                        TenantLimits::builder().max_concurrent_tasks(1).build(),
+                        TenantLimits::builder().with_max_concurrent_tasks(1).build(),
                     )
                     .build(),
             )

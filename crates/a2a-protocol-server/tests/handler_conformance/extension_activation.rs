@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_server::{EventEmitter, HttpPushSender, RequestHandlerBuilder};
 use a2a_protocol_types::TaskState;
@@ -73,12 +73,24 @@ async fn the_executor_sees_only_the_declared_extensions_the_client_asked_for() {
             .build()
             .expect("handler"),
     );
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("JSON-RPC");
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("HTTP+JSON");
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("JSON-RPC");
+        let addr = bound.local_addr().expect("JSON-RPC");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("HTTP+JSON");
+        let addr = bound.local_addr().expect("HTTP+JSON");
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let asked = format!("{V2}, {UNKNOWN}, {V1}");
     let extra = [("A2A-Extensions", asked.as_str())];
 
@@ -115,9 +127,15 @@ async fn an_unsupported_version_alone_is_ignored_for_the_interaction() {
             .build()
             .expect("handler"),
     );
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("JSON-RPC");
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("JSON-RPC");
+        let addr = bound.local_addr().expect("JSON-RPC");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let answer = jsonrpc(rpc, "SendMessage", &send("m-1"), &[("A2A-Extensions", V2)]).await;
     assert_eq!(
         answer.json()["result"]["task"]["status"]["state"],

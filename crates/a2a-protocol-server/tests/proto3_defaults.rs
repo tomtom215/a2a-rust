@@ -101,7 +101,7 @@ async fn a_push_config_with_an_empty_id_is_given_one() {
         }))
         .expect("a create body");
         let stored = handler
-            .on_set_push_config(config, None)
+            .on_create_push_config(config, None)
             .await
             .expect("create");
         let id = stored.id.expect("an id");

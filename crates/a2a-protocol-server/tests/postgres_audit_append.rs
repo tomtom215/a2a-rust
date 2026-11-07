@@ -25,6 +25,7 @@ use a2a_protocol_server::audit::record::{AuditRecord, kind};
 use a2a_protocol_server::audit::{AuditLog, AuditStore, PostgresAuditStore};
 use a2a_protocol_types::error::A2aResult;
 use sqlx::postgres::{PgPool, PgPoolOptions};
+use tokio::sync::Barrier;
 
 const URL_ENV: &str = "A2A_TEST_POSTGRES_URL";
 
@@ -201,13 +202,30 @@ async fn appenders_to_one_chain_are_serialised_and_to_different_chains_are_not()
         chain: &'static str,
         in_flight: Arc<AtomicUsize>,
         peak: Arc<AtomicUsize>,
+        meet: Option<Arc<Barrier>>,
     ) {
         let seal = |head: Option<(u64, String)>, _ms: Option<i64>| {
             let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
             peak.fetch_max(now, Ordering::SeqCst);
             let in_flight = Arc::clone(&in_flight);
+            let meet = meet.clone();
             Box::pin(async move {
-                tokio::time::sleep(Duration::from_millis(300)).await;
+                match meet {
+                    // Two chains: each sealer holds the seal until the other
+                    // is inside it too, however long its connection and its
+                    // lock took to get there. A fixed pause here made the
+                    // overlap depend on the second appender's round trips
+                    // fitting in it, which a starved CPU defeats (30 of 40
+                    // runs, one CPU, eight at once). If the chains were
+                    // serialised the other could never arrive, the wait would
+                    // end at the deadline, and the peak below would be 1.
+                    Some(both) => {
+                        let _ = tokio::time::timeout(Duration::from_secs(30), both.wait()).await;
+                    }
+                    // One chain: nobody else can get in while this one holds
+                    // it, whatever the pause, so a fixed pause is enough.
+                    None => tokio::time::sleep(Duration::from_millis(300)).await,
+                }
                 in_flight.fetch_sub(1, Ordering::SeqCst);
                 let (seq, prev) = match head {
                     Some((seq, hash)) => (seq + 1, Some(hash)),
@@ -225,9 +243,22 @@ async fn appenders_to_one_chain_are_serialised_and_to_different_chains_are_not()
         let in_flight = Arc::new(AtomicUsize::new(0));
         let peak = Arc::new(AtomicUsize::new(0));
         let (one, other) = (db.store().await, db.store().await);
+        let meet = (chains[0] != chains[1]).then(|| Arc::new(Barrier::new(2)));
         tokio::join!(
-            run(one, chains[0], Arc::clone(&in_flight), Arc::clone(&peak)),
-            run(other, chains[1], Arc::clone(&in_flight), Arc::clone(&peak)),
+            run(
+                one,
+                chains[0],
+                Arc::clone(&in_flight),
+                Arc::clone(&peak),
+                meet.clone()
+            ),
+            run(
+                other,
+                chains[1],
+                Arc::clone(&in_flight),
+                Arc::clone(&peak),
+                meet.clone()
+            ),
         );
         assert_eq!(
             peak.load(Ordering::SeqCst),

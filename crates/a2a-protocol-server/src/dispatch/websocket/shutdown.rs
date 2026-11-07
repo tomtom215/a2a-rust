@@ -26,13 +26,23 @@ impl WebSocketDispatcher {
     ///    same as the HTTP server.
     /// 2. **End in-flight tasks** with
     ///    [`RequestHandler::finish_in_flight`](crate::RequestHandler::finish_in_flight):
-    ///    up to [`with_completion_grace`](Self::with_completion_grace) for
-    ///    them to finish on their own, then their cancellation tokens fire
-    ///    and executors get [`with_task_grace`](Self::with_task_grace) to act
-    ///    on it. A subscription whose task ends gets its terminal event.
+    ///    up to [`ServeConfig::completion_grace`](crate::serve::ServeConfig::completion_grace)
+    ///    for them to finish on their own, then their cancellation tokens
+    ///    fire and executors get
+    ///    [`ServeConfig::task_grace`](crate::serve::ServeConfig::task_grace)
+    ///    to act on it. A subscription whose task ends gets its terminal
+    ///    event.
     /// 3. **Close the connections.** Each stops reading, lets the requests it
     ///    already read finish, and sends a Close frame — for up to
-    ///    [`with_drain_timeout`](Self::with_drain_timeout) in all.
+    ///    [`ServeConfig::drain_timeout`](crate::serve::ServeConfig::drain_timeout)
+    ///    in all.
+    ///
+    /// With a [`drain_delay`](crate::serve::ServeConfig::drain_delay), the
+    /// handler's readiness turns to "draining" when the signal fires and the
+    /// listener goes on accepting for the delay before step 1. The settings
+    /// are [`with_serve_config`](Self::with_serve_config)'s; a listener that
+    /// refuses to start under them returns at once with
+    /// [`ServeReport::refused`] saying why.
     ///
     /// A WebSocket is one long-lived connection carrying many requests, so
     /// unlike HTTP it has no natural end between requests: without step 3 a
@@ -48,13 +58,23 @@ impl WebSocketDispatcher {
         listener: TcpListener,
         shutdown: impl Future<Output = ()> + Send,
     ) -> ServeReport {
-        if self.max_connections == Some(0) {
+        #[cfg(feature = "tls-rustls")]
+        let tls = self.tls.is_some();
+        #[cfg(not(feature = "tls-rustls"))]
+        let tls = false;
+        if let Some(why) = crate::serve::start::refusal(
+            &self.serve,
+            listener.local_addr().ok(),
+            tls,
+            self.handler
+                .undeclared_binding(a2a_protocol_types::WEBSOCKET_BINDING_URI),
+        ) {
             return ServeReport {
                 accepted: 0,
                 drained: true,
                 abandoned: 0,
                 tasks: None,
-                refused: Some(super::super::connection_limit::ZERO_CONNECTIONS.into()),
+                refused: Some(why),
             };
         }
         trace_info!(
@@ -65,8 +85,16 @@ impl WebSocketDispatcher {
         );
         let conns = Connections::default();
         let handler = Arc::clone(&self.handler);
-        let (completion, grace, drain) =
-            (self.completion_grace, self.task_grace, self.drain_timeout);
+        let (completion, grace, drain) = (
+            self.serve.completion_grace,
+            self.serve.task_grace,
+            self.serve.drain_timeout,
+        );
+        let shutdown = crate::serve::start::signalled(
+            shutdown,
+            Some(Arc::clone(&handler)),
+            self.serve.drain_delay,
+        );
 
         // Returns with the listener dropped.
         Arc::clone(&self)

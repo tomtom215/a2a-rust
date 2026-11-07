@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{RequestHandler, RequestHandlerBuilder, agent_executor};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
@@ -57,9 +57,14 @@ async fn post(url: String, body: Vec<u8>) -> (u16, serde_json::Value) {
 
 #[tokio::test]
 async fn a_body_that_is_not_utf8_is_refused_on_both_http_bindings() {
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let (_, body) = post(
         format!("http://{rpc}/"),
         latin1_body(
@@ -70,9 +75,14 @@ async fn a_body_that_is_not_utf8_is_refused_on_both_http_bindings() {
     .await;
     assert_eq!(body["error"]["code"], -32700, "{body}");
 
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let (status, body) = post(format!("http://{rest}/message:send"), latin1_body("", "")).await;
     assert_eq!(status, 400, "{body}");
 }

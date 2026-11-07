@@ -296,7 +296,7 @@ mod postgres {
         let config = RateLimitConfig::default()
             .with_requests_per_window(LIMIT)
             // Wide enough that the window cannot roll mid-check.
-            .with_window_secs(300);
+            .with_window(std::time::Duration::from_secs(300));
         let mut limiter = RateLimitInterceptor::new(config).map_err(|e| format!("limiter: {e}"))?;
         if let Some(counter) = counter {
             limiter = limiter.with_shared_counter(counter);

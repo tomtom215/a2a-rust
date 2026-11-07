@@ -237,10 +237,17 @@ impl OpenAiChatModel {
             .map_err(|e| ModelError::Transport(with_causes(&e)))?;
         let status = response.status();
         if !status.is_success() {
+            // Read before the body consumes the response.
+            let retry_after =
+                super::retry::parse_retry_after(response.headers(), std::time::SystemTime::now());
             let body = read_prefix(response.into_body(), ERROR_BODY_LIMIT).await;
+            let body = truncated(&body, ERROR_BODY_LIMIT);
+            if status == hyper::StatusCode::TOO_MANY_REQUESTS {
+                return Err(ModelError::RateLimited { retry_after, body });
+            }
             return Err(ModelError::Status {
                 status: status.as_u16(),
-                body: truncated(&body, ERROR_BODY_LIMIT),
+                body,
             });
         }
         Ok(response)

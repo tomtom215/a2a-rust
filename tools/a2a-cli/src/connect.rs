@@ -26,6 +26,9 @@ use a2a_protocol_client::{
 use crate::cli::GlobalOpts;
 use crate::error::CliError;
 
+mod route;
+pub use route::Route;
+
 /// The library's default TCP connect timeout. Kept rather than replaced by
 /// `--timeout`, except when `--timeout` is shorter: a 5-second request budget
 /// should not spend 10 seconds connecting.
@@ -86,7 +89,14 @@ struct Target {
 pub(crate) fn fetch_options(opts: &GlobalOpts, with_headers: bool) -> CardFetchOptions {
     let mut options = CardFetchOptions::default().with_timeout(Duration::from_secs(opts.timeout));
     if with_headers {
-        options = options.with_headers(header_map(opts));
+        let headers = header_map(opts);
+        // The caller decided that `--header` goes to the JWK Set's host too
+        // (`card verify` decides that; see `offline.rs`), so it is set for the
+        // key fetch as well: `fetch_jwks` sends only these, never the card's.
+        for (name, value) in &headers {
+            options = options.with_jwks_header(name, value);
+        }
+        options = options.with_headers(headers);
     }
     match &opts.tls_flags.built {
         Some(tls) => options.with_tls_config(tls.client.clone()),
@@ -201,18 +211,20 @@ fn pinned_interface_unusable(endpoint: &str, cause: &a2a_protocol_client::Client
     ))
 }
 
-/// Builds a client for `url` from the global flags.
+/// Builds a client for `url` from the global flags, and the [`Route`] it
+/// takes, through which the caller maps the client's errors.
 ///
 /// # Errors
 ///
 /// Discovery failures, an unusable card, an unknown binding on the card, and
 /// any transport-construction failure, each as a [`CliError`] that exits 1.
-pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<A2aClient, CliError> {
+pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<(A2aClient, Route), CliError> {
     let Target {
         endpoint,
         binding,
         builder,
     } = resolve_target(url, opts).await?;
+    let route = Route::new(url, &endpoint, &binding, opts);
 
     let timeout = Duration::from_secs(opts.timeout);
     let headers = header_map(opts);
@@ -244,7 +256,7 @@ pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<A2aClient, CliError
     }
 
     let client = if binding.eq_ignore_ascii_case(BINDING_GRPC) {
-        builder.build_grpc().await?
+        builder.build_grpc().await.map_err(|e| route.explain(e))?
     } else if binding.eq_ignore_ascii_case(BINDING_WEBSOCKET) {
         // The builder has no WebSocket arm; the transport is constructed
         // here and handed over. Headers ride the upgrade request — the
@@ -257,7 +269,9 @@ pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<A2aClient, CliError
         if let Some(tls) = &opts.tls_flags.built {
             config = config.with_tls_config(tls.client.clone());
         }
-        let transport = WebSocketTransport::connect_with_config(endpoint, config).await?;
+        let transport = WebSocketTransport::connect_with_config(endpoint, config)
+            .await
+            .map_err(|e| route.explain(e))?;
         builder.with_custom_transport(transport).build()?
     } else if pins_the_interface(opts) {
         builder
@@ -266,7 +280,7 @@ pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<A2aClient, CliError
     } else {
         builder.build()?
     };
-    Ok(client)
+    Ok((client, route))
 }
 
 #[cfg(test)]

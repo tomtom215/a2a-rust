@@ -22,7 +22,12 @@ has a `crit` member is refused: the validator understands no critical
 extension, and RFC 7515 section 4.1.11 says to reject what it does not
 understand. Keys come from a
 static `Jwks`, a shared HS256 secret, or a remote JWKS endpoint. A remote
-JWKS or discovery URL must be `https://`, or `http://` to a loopback host.
+JWKS or discovery URL must be `https://`, or `http://` to a loopback host:
+`localhost` or a loopback address such as `127.0.0.1` or `[::1]`. A name under
+`.localhost` (`http://idp.localhost/`) is refused since 0.16.0: glibc and musl
+send such a name to DNS unless nss-myhostname or systemd-resolved answers it,
+so it is not guaranteed to stay on this host. Use `localhost` with a port, a
+loopback address, or `https://`.
 
 ```toml
 a2a-protocol-server = { version = "0.16", features = ["auth-jwt", "tls-rustls"] }
@@ -72,8 +77,12 @@ the set holds no usable key, the call is refused with a server error (not
 `401`), because no verdict about the token could be reached; a refetch for an
 unknown `kid` that fails leaves the keys in hand, and the token is refused
 with `401`. Only RSA keys and P-256 EC keys are
-loaded, and an RS256 key must be 2048 to 8192 bits; entries with
-`"use": "enc"` or another key type are skipped.
+loaded, and an RS256 key must be 2048 to 8192 bits; entries of another key
+type are skipped, and so is any entry that is not for verifying signatures: a
+`use` other than `"sig"`, or a `key_ops` that does not list `"verify"`. A key
+that names an `alg` verifies only tokens that name it (RFC 8725 section 3.1), so
+an RSA key that says `RS512` verifies nothing here, where only `RS256` is
+accepted; a key that names none verifies the one algorithm its type fixes.
 
 ## Static keys and HS256
 
@@ -83,6 +92,7 @@ key), or a shared secret for HS256:
 ```rust
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let jwks_bytes: &[u8] = br#"{"keys": []}"#;
+# let key_from_your_secret_store: Vec<u8> = vec![0x5a; 32];
 use a2a_protocol_server::auth::jwt::{Jwks, JwtAuthInterceptor, JwtValidator};
 
 // RS256/ES256 from a JWKS document:
@@ -92,9 +102,11 @@ let interceptor = JwtAuthInterceptor::new(
     jwks,
 );
 
-// HS256 shared secret (no JWKS). At least 32 bytes (RFC 7518 §3.2);
+// HS256 shared secret (no JWKS): a random key of at least 32 bytes (RFC 7518
+// §3.2), not a password (RFC 8725 §3.5). `openssl rand -base64 32` makes one;
+// keep it in a secret store and decode it when you load it.
 // `try_with_hs256_secret` refuses a shorter one here, at startup.
-let secret = b"0123456789abcdef0123456789abcdef".to_vec(); // load yours from a secret store
+let secret = key_from_your_secret_store;
 let interceptor = JwtAuthInterceptor::new(
     JwtValidator::new()
         .with_issuer("https://issuer")

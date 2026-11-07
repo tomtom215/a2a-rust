@@ -67,7 +67,7 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use crate::call_context::CallContext;
 use crate::error::{ServerError, ServerResult};
 use crate::interceptor::{CallOutcome, ServerInterceptor};
-use crate::rate_limit::TrustedProxy;
+use crate::rate_limit::{ForwardedHeader, TrustedProxy};
 
 /// Configuration for an [`AuthFailureThrottle`].
 #[derive(Debug, Clone)]
@@ -87,6 +87,9 @@ pub struct AuthFailureThrottleConfig {
     /// other is counted by its own address. See
     /// [`RateLimitConfig::trusted_proxies`](crate::RateLimitConfig::trusted_proxies).
     pub trusted_proxies: Vec<TrustedProxy>,
+    /// The header the trusted proxies write the client's address into. See
+    /// [`RateLimitConfig::forwarded_header`](crate::RateLimitConfig::forwarded_header).
+    pub forwarded_header: ForwardedHeader,
     /// Maximum number of peers tracked at once. Must be non-zero.
     pub max_peers: usize,
 }
@@ -98,6 +101,7 @@ impl Default for AuthFailureThrottleConfig {
             window_secs: 300,
             trusted_proxy_hops: 0,
             trusted_proxies: Vec::new(),
+            forwarded_header: ForwardedHeader::XForwardedFor,
             max_peers: crate::rate_limit::DEFAULT_MAX_BUCKETS,
         }
     }
@@ -130,6 +134,13 @@ impl AuthFailureThrottleConfig {
     #[must_use]
     pub fn with_trusted_proxies(mut self, proxies: impl IntoIterator<Item = TrustedProxy>) -> Self {
         self.trusted_proxies = proxies.into_iter().collect();
+        self
+    }
+
+    /// Sets the header the trusted proxies write the client's address into.
+    #[must_use]
+    pub const fn with_forwarded_header(mut self, header: ForwardedHeader) -> Self {
+        self.forwarded_header = header;
         self
     }
 
@@ -195,6 +206,16 @@ impl AuthFailureThrottle {
                 )));
             }
         }
+        if let Some(_why) = crate::rate_limit::untrusted_hops_warning(
+            config.trusted_proxy_hops,
+            &config.trusted_proxies,
+        ) {
+            trace_warn!(
+                interceptor = "AuthFailureThrottle",
+                trusted_proxy_hops = config.trusted_proxy_hops,
+                "{_why}"
+            );
+        }
         Ok(Self {
             config,
             peers: Mutex::new(HashMap::new()),
@@ -217,8 +238,11 @@ impl AuthFailureThrottle {
     fn peer_key(&self, ctx: &CallContext) -> Option<String> {
         crate::rate_limit::identity::forwarded_client(
             ctx,
-            self.config.trusted_proxy_hops,
-            &self.config.trusted_proxies,
+            crate::rate_limit::identity::ProxyChain::new(
+                self.config.trusted_proxy_hops,
+                &self.config.trusted_proxies,
+            )
+            .with_header(self.config.forwarded_header),
         )
         .or_else(|| {
             ctx.peer_addr()

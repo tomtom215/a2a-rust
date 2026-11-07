@@ -44,13 +44,8 @@ agent_executor!(CalcExecutor, |ctx, queue| async {
     // Evaluate (very basic: one `a op b` expression with + - * /)
     let result = evaluate(expr);
 
-    // Send the result as an artifact
-    emit.artifact("result", vec![Part::text(&result)], None, Some(true))
-        .await?;
-
-    // Done
-    emit.status(TaskState::Completed).await?;
-    Ok(())
+    // Send the result as an artifact, then the terminal `Completed` status
+    emit.complete_with_text(result).await
 });
 
 fn evaluate(expr: &str) -> String {
@@ -124,18 +119,26 @@ async fn main() -> std::io::Result<()> {
 
     println!("Calculator agent listening on http://127.0.0.1:3000");
 
-    // One-liner server startup (replaces ~25 lines of hyper boilerplate)
-    serve("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await
+    // Serves until SIGTERM or Ctrl-C, then lets the tasks in flight end and
+    // drains the connections.
+    let report = Server::bind("127.0.0.1:3000")
+        .await?
+        .serve_with_shutdown(JsonRpcDispatcher::new(handler), shutdown_signal())
+        .await;
+    match report.refused {
+        Some(why) => Err(std::io::Error::other(why)),
+        None => Ok(()),
+    }
 }
 ```
 
-> **Note:** `serve()` is re-exported from the prelude. It binds a TCP listener
-> and runs the accept loop until the process ends, with a 30-second header-read
-> timeout, a 75-second idle timeout, no connection ceiling, no TLS and no
-> graceful shutdown. `serve_with_addr()` is the same server spawned in the
-> background; it returns the bound address, which is what you want for port `0`
-> in tests. For a deployment that needs TLS, a connection ceiling or a draining
-> shutdown, bind a `Server` (`Server::bind`, `serve_with_shutdown`).
+> **Note:** `Server` and `shutdown_signal` are re-exported from the prelude.
+> `Server::bind` binds a TCP listener; `serve_with_shutdown` runs the accept
+> loop until the signal, with a 30-second header-read timeout, a 75-second idle
+> timeout, no connection ceiling and no TLS (`with_config` and `with_tls` change
+> those). For port `0` in a test, read `server.local_addr()` before serving. The
+> free `serve()` and `serve_with_addr()` this page used to show are deprecated
+> since 0.16.0: neither can be stopped.
 
 Steps 1 to 3 go in `src/main.rs`, in that order. Start the agent:
 
@@ -200,7 +203,7 @@ Almost every executor follows this pattern:
 
 For streaming clients, these arrive as individual SSE events. For synchronous clients, the handler collects them into a final `Task` response.
 
-`EventEmitter` exists for exactly this pattern: it caches `task_id` and `context_id` off the `RequestContext` so each of the three steps is one line rather than a struct literal of four to six fields. Build the `StreamResponse` values yourself only when you need a field `EventEmitter` does not expose — per-event `metadata`, say.
+`EventEmitter` exists for exactly this pattern: it caches `task_id` and `context_id` off the `RequestContext` so each of the three steps is one line rather than a struct literal of four to six fields, and `complete_with_text` (or `complete_with`, for parts other than text) is steps 2 and 3 together. The steps one at a time are `status`, `text_artifact` (one complete text artifact) and `artifact_chunk` (one chunk of an artifact streamed in several, placed by `ArtifactChunk::first()`, `append()`, `last()` or `whole()`). Build the `StreamResponse` values yourself only when you need a field `EventEmitter` does not expose — per-event `metadata`, say.
 
 ## Next Steps
 

@@ -31,6 +31,7 @@ dependencies = [
  "a2a-protocol-server",
  "a2a-protocol-types",
  "axum",
+ "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -99,6 +100,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "criterion",
+ "futures-core",
  "futures-util",
  "http-body-util",
  "httpdate",
@@ -186,6 +188,7 @@ dependencies = [
  "futures-util",
  "http",
  "http-body-util",
+ "httpdate",
  "hyper",
  "hyper-rustls",
  "hyper-util",
@@ -1182,6 +1185,7 @@ dependencies = [
  "tikv-jemallocator",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1586,6 +1590,7 @@ dependencies = [
  "a2a-protocol-client",
  "a2a-protocol-server",
  "a2a-protocol-types",
+ "base64 0.23.1",
  "bytes",
  "genai",
  "http-body-util",

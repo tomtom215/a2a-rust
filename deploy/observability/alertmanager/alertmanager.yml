@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Alertmanager of docker-compose.yml. Prometheus sends it every firing alert
+# (prometheus-compose.yml, `alerting`); it groups them, silences what the
+# inhibit rules below say is a consequence of something already firing, and
+# sends the rest to a receiver.
+#
+# The one receiver here, `default`, has no integration: it notifies nobody
+# (audit C-14 b). Alerts are visible in Alertmanager's UI (127.0.0.1:9093)
+# and in Grafana (Alerting, data source "Alertmanager"), and nowhere else,
+# until you add an email, Slack, PagerDuty or webhook integration to it. The
+# book's alerts page (deployment/observability/alerts.md) has an example.
+# Check a change with `amtool check-config alertmanager.yml`.
+
+route:
+  receiver: default
+  group_by: [alertname, job]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # A critical alert is a page; repeat it sooner.
+    - matchers: [severity="critical"]
+      receiver: default
+      repeat_interval: 1h
+
+receivers:
+  - name: default
+
+inhibit_rules:
+  # Writes that keep failing already page; the hour-long warning for the
+  # same job and operation adds nothing.
+  - source_matchers: [alertname="A2APersistenceFailing"]
+    target_matchers: [alertname="A2APersistenceErrors"]
+    equal: [job, operation]
+  # A job with no instance left also has fewer instances than an hour ago.
+  - source_matchers: [alertname="A2AAgentSilent"]
+    target_matchers: [alertname="A2AAgentInstancesLost"]
+    equal: [job]
+  # With the Collector down no agent's telemetry arrives, so every job goes
+  # silent; the Collector is the one alert to act on. This stack has one
+  # Collector; with several, or agents that push past it, narrow this rule.
+  - source_matchers: [alertname="OTelCollectorDown"]
+    target_matchers: [alertname=~"A2AAgentSilent|A2AAgentInstancesLost"]

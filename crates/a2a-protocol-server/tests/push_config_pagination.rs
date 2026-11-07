@@ -58,7 +58,7 @@ async fn task_with_configs(h: &RequestHandler, n: usize) -> String {
     for i in 0..n {
         let mut config = TaskPushNotificationConfig::new(&task, format!("http://127.0.0.1:9/{i}"));
         config.id = Some(format!("cfg-{i}"));
-        h.on_set_push_config(config, None).await.unwrap();
+        h.on_create_push_config(config, None).await.unwrap();
     }
     task
 }
@@ -240,10 +240,15 @@ async fn the_websocket_binding_carries_the_page_and_its_token() {
 
     let h = handler();
     let task = task_with_configs(&h, 3).await;
-    let addr = Arc::new(WebSocketDispatcher::new(Arc::clone(&h)))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap();
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(Arc::clone(&h)))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let mut req = format!("ws://{addr}/").into_client_request().unwrap();
     req.headers_mut()
         .insert("a2a-version", "1.0".parse().unwrap());

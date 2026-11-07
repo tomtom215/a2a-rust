@@ -14,6 +14,7 @@ use super::idempotency::{self, Secret};
 pub use super::loop_error::LoopError;
 use super::model::{ChatMessage, ChatRequest, ToolCall, ToolModel};
 use super::recover;
+use super::retry::ModelRetry;
 use super::tool::{ToolError, ToolInvocation, ToolSet};
 use crate::rpc_span::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 
@@ -59,6 +60,7 @@ pub struct ToolLoop {
     secret: Secret,
     agent_name: Option<String>,
     meter: GenAiMeter,
+    model_retry: Option<ModelRetry>,
 }
 
 impl fmt::Debug for ToolLoop {
@@ -69,6 +71,7 @@ impl fmt::Debug for ToolLoop {
             .field("max_turns", &self.max_turns)
             .field("recover_text_calls", &self.recover_text_calls)
             .field("agent_name", &self.agent_name)
+            .field("model_retry", &self.model_retry)
             .finish_non_exhaustive()
     }
 }
@@ -87,6 +90,7 @@ impl ToolLoop {
             secret: idempotency::fresh_secret(),
             agent_name: None,
             meter: GenAiMeter::default(),
+            model_retry: None,
         }
     }
 
@@ -101,9 +105,12 @@ impl ToolLoop {
     /// Records the loop's metrics (`gen_ai.client.inference.duration` and
     /// the rest; ADR 0013) to `meter` rather than to the global provider's
     /// meter, which is looked up each time one is recorded.
+    ///
+    /// Takes the meter by reference since 0.16.0: the instruments are built
+    /// from it once, here, and the meter itself is not kept (audit C-23).
     #[cfg(feature = "otel")]
     #[must_use]
-    pub fn with_meter(mut self, meter: opentelemetry::metrics::Meter) -> Self {
+    pub fn with_meter(mut self, meter: &opentelemetry::metrics::Meter) -> Self {
         self.meter = GenAiMeter::new(meter);
         self
     }
@@ -257,7 +264,9 @@ impl ToolLoop {
             run.inference_call();
             let sink = drafts.map(|tx| super::model::TextSink::new(turn + 1, tx.clone()));
             let request = ChatRequest::new(&self.preamble, &messages, &specs);
-            let reply = self.turn(request, cancel, sink.as_ref()).await?;
+            let reply = self
+                .retried_turn(request, cancel, sink.as_ref(), budget)
+                .await?;
             charge_usage(budget, &reply)?;
 
             let mut text = reply.text;
@@ -480,6 +489,9 @@ fn parse_arguments(raw: &str) -> Result<Value, String> {
         Err(e) => Err(format!("the arguments are not valid JSON ({e})")),
     }
 }
+
+#[path = "run_retried.rs"]
+mod retried;
 
 #[cfg(test)]
 #[path = "run_tests/mod.rs"]

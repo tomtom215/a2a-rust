@@ -5,7 +5,7 @@
 
 //! `Last-Event-ID` resumption over a real HTTP connection.
 //!
-//! `tests/event_log_tests/resumption.rs` calls `on_resubscribe` directly with
+//! `tests/event_log_tests/resumption.rs` calls `on_subscribe_to_task` directly with
 //! a `HashMap` the test built. That proves the handler replays, and proves
 //! nothing about whether a header a client actually sent reaches it — which
 //! is the part that decides whether the feature exists on the wire. Every

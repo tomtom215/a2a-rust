@@ -11,6 +11,7 @@
 
 pub mod extended_card;
 pub mod follow;
+mod get_task;
 pub mod push_config;
 pub mod send_message;
 mod status_timestamp;
@@ -115,7 +116,7 @@ mod tests {
         let _ = client.list_tasks(ListTasksParams::default()).await;
         let _ = client.cancel_task("task-1").await;
         let _ = client.subscribe_to_task("task-1").await;
-        let _ = client.set_push_config(push_config(None)).await;
+        let _ = client.create_push_config(push_config(None)).await;
         let _ = client.get_push_config("task-1", "cfg-1").await;
         let _ = client
             .list_push_configs(ListPushConfigsParams::new("task-1"))
@@ -161,6 +162,24 @@ mod tests {
         }
     }
 
+    /// The deprecated `set_push_config` sends exactly what
+    /// `create_push_config` sends, and returns what it returns.
+    #[tokio::test]
+    // The deprecated name's own test, its only caller in the workspace;
+    // removed with it, no earlier than 0.17.0 (ADR 0053).
+    #[allow(deprecated)]
+    async fn set_push_config_is_create_push_config() {
+        let transport = CapturingTransport::default();
+        let client = client_with(transport.clone(), Some("acme"));
+        let new = client.create_push_config(push_config(None)).await;
+        let old = client.set_push_config(push_config(None)).await;
+        assert_eq!(format!("{old:?}"), format!("{new:?}"));
+        let calls = transport.calls.lock().expect("calls lock").clone();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0], calls[1]);
+        assert_eq!(calls[1].0, "CreateTaskPushNotificationConfig");
+    }
+
     /// The rule says the *selected interface's* value; a caller who names a
     /// tenant on the request itself is naming a different interface's or a
     /// deliberate override, and that wins over the client default.
@@ -174,7 +193,7 @@ mod tests {
         let _ = client
             .list_tasks(ListTasksParams::new().with_tenant("globex"))
             .await;
-        let _ = client.set_push_config(push_config(Some("globex"))).await;
+        let _ = client.create_push_config(push_config(Some("globex"))).await;
         let _ = client
             .list_push_configs(ListPushConfigsParams::new("task-1").with_tenant("globex"))
             .await;

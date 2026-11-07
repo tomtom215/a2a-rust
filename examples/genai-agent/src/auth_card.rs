@@ -2,7 +2,7 @@
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! The security schemes the authentication environment variables turn on,
-//! declared in the agent card.
+//! declared in the agent card, and how `A2A_JWT_HS256_SECRET` is read.
 
 use a2a_protocol_types::agent_card::AgentCard;
 
@@ -46,4 +46,29 @@ pub fn declare(card: &mut AgentCard) {
         )]);
         card.security_schemes = Some(schemes);
     }
+}
+
+/// The HS256 key `A2A_JWT_HS256_SECRET` holds, decoded.
+///
+/// It is a key, not a password (RFC 8725 section 3.5): random bytes in
+/// standard base64, as `openssl rand -base64 32` writes them. A passphrase
+/// someone typed is therefore refused here (it is not base64) or, when it
+/// happens to be base64, by the validator's 32-byte floor once decoded, rather
+/// than used as the HMAC key. Surrounding whitespace, such as the newline of a
+/// key read from a file, is ignored.
+///
+/// # Errors
+///
+/// A message naming the variable and how to make a key, when `value` is not
+/// base64.
+pub fn hs256_key(value: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .decode(value.trim())
+        .map_err(|e| {
+            format!(
+                "A2A_JWT_HS256_SECRET is not base64 ({e}); \
+                 make a key with `openssl rand -base64 32`"
+            )
+        })
 }

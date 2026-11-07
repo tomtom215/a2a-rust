@@ -138,7 +138,7 @@
       "id": 3,
       "type": "timeseries",
       "title": "Failed calls (ratio)",
-      "description": "Calls with error.type set, over all calls (the RPC conventions' definition of failure).",
+      "description": "The server's failed calls over all calls: error.type set, other than a call the client abandoned or one refused as the caller's mistake (a status A2A maps to a 4xx, such as a JSON-RPC TaskNotFound). The ratio A2AServerErrorRatioHigh pages on.",
       "datasource": {
         "type": "prometheus",
         "uid": "a2a-prometheus"
@@ -226,7 +226,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Failed calls per second, by method and binding",
-      "description": "Only calls the conventions count as failed.",
+      "description": "The server's failed calls, as in the ratio beside it: caller mistakes and abandoned calls are not counted.",
       "datasource": {
         "type": "prometheus",
         "uid": "a2a-prometheus"
@@ -265,6 +265,91 @@
       }
     },
     {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Caller errors per second, by method and binding",
+      "description": "Calls refused as the caller's mistake, on every binding: a JSON-RPC code A2A maps to a 4xx (TaskNotFound -32001, invalid params -32602, ...), an HTTP 4xx, a gRPC NOT_FOUND or INVALID_ARGUMENT. Not failures of the server; a client polling for tasks retention removed shows here.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "label_replace(sum by (rpc_method, rpc_system_name) (a2a:rpc_server_caller_errors:rate5m{job=~\"$job\"}), \"rpc_method\", \"(unrouted)\", \"rpc_method\", \"\")",
+          "legendFormat": "{{rpc_method}} {{rpc_system_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Server span duration (p95), from traces",
+      "description": "From Tempo's span metrics (tempo.yaml, metrics_generator), by span name. The diamonds are exemplars: each is one span, and its trace_id opens the trace in Tempo. Needs traces sent to Tempo; the SDK's own metrics carry no exemplars (OpenTelemetry Rust 0.33).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, span_name) (rate(traces_spanmetrics_latency_bucket{service=~\"$job\", span_kind=\"SPAN_KIND_SERVER\"}[5m])))",
+          "legendFormat": "{{span_name}}",
+          "exemplar": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
       "id": 6,
       "type": "row",
       "title": "Duration (non-streaming calls)",
@@ -273,7 +358,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 25
       },
       "panels": []
     },
@@ -281,7 +366,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "p50 / p95 / p99",
-      "description": "Quantiles of non-streaming calls; a streaming call lasts as long as its stream.",
+      "description": "Quantiles of non-streaming calls; a streaming call lasts as long as its stream. Interpolated inside a bucket: the default buckets jump from 1 s to 5 s, so a value between them is a straight-line estimate. A2AUnaryLatencyHigh reads the 5 s bucket bound instead.",
       "datasource": {
         "type": "prometheus",
         "uid": "a2a-prometheus"
@@ -290,7 +375,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 26
       },
       "targets": [
         {
@@ -347,7 +432,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 34
       },
       "panels": []
     },
@@ -364,7 +449,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 27
+        "y": 35
       },
       "targets": [
         {
@@ -406,7 +491,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 27
+        "y": 35
       },
       "targets": [
         {
@@ -448,7 +533,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 35
+        "y": 43
       },
       "targets": [
         {
@@ -490,7 +575,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 35
+        "y": 43
       },
       "targets": [
         {
@@ -532,7 +617,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 43
+        "y": 51
       },
       "targets": [
         {
@@ -574,7 +659,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 43
+        "y": 51
       },
       "targets": [
         {
@@ -630,7 +715,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 59
       },
       "panels": []
     },
@@ -647,7 +732,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 52
+        "y": 60
       },
       "targets": [
         {
@@ -689,7 +774,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 52
+        "y": 60
       },
       "targets": [
         {
@@ -728,7 +813,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 68
       },
       "panels": []
     },
@@ -745,7 +830,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 61
+        "y": 69
       },
       "targets": [
         {
@@ -797,7 +882,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 61
+        "y": 69
       },
       "targets": [
         {

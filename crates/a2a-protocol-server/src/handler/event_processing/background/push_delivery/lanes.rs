@@ -23,18 +23,28 @@
 //! path stored them. Shutdown waits for the worker as it waited for the
 //! processor. A delivery is built where it is enqueued, so it carries that
 //! turn's tenant, caller and span rather than the worker's.
+//!
+//! With a push outbox (ADR 0037) a lane does not deliver: it records each
+//! event's deliveries in the outbox, in the same order, and the outbox's
+//! worker (`outbox_worker`) delivers them from there, retrying past a
+//! restart.
 
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::task::TaskId;
+use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+
+use super::outbox_worker::{self, Outboxed};
 
 use crate::handler::limits::HandlerLimits;
 use crate::metrics::{Metrics, push_outcome};
+use crate::push::outbox::PushOutbox;
 use crate::push::{PushConfigStore, PushSender};
 use crate::store::tenant::TenantContext;
 
@@ -64,12 +74,18 @@ impl std::fmt::Debug for PushLanes {
     }
 }
 
-struct Lanes {
-    store: Arc<dyn PushConfigStore>,
-    sender: Arc<dyn PushSender>,
-    limits: HandlerLimits,
-    metrics: Arc<dyn Metrics>,
+pub(super) struct Lanes {
+    pub(super) store: Arc<dyn PushConfigStore>,
+    pub(super) sender: Arc<dyn PushSender>,
+    pub(super) limits: HandlerLimits,
+    pub(super) metrics: Arc<dyn Metrics>,
     tracker: TaskTracker,
+    /// The outbox deliveries are recorded in, when there is one.
+    pub(super) outbox: Option<Outboxed>,
+    /// Fires at shutdown, ending the outbox's worker.
+    shutdown: CancellationToken,
+    /// The outbox's worker has been started.
+    started: AtomicBool,
     /// A key is present exactly while its worker runs: the worker removes it
     /// under this lock when it finds the queue empty, and an enqueue that
     /// finds no key starts a worker.
@@ -77,7 +93,9 @@ struct Lanes {
 }
 
 impl PushLanes {
-    /// Lanes delivering through `sender`, or inert lanes when there is none.
+    /// Lanes delivering through `sender`, or inert lanes when there is none,
+    /// with no outbox: what the tests build.
+    #[cfg(test)]
     pub fn new(
         store: Arc<dyn PushConfigStore>,
         sender: Option<Arc<dyn PushSender>>,
@@ -85,16 +103,87 @@ impl PushLanes {
         metrics: Arc<dyn Metrics>,
         tracker: TaskTracker,
     ) -> Self {
-        Self(sender.map(|sender| {
+        Self::with_outbox(store, sender, limits, metrics, tracker, None)
+    }
+
+    /// [`new`](Self::new), recording deliveries in `outbox` when it is given,
+    /// with its worker ended by its token (ADR 0037). The worker starts now
+    /// when there is a Tokio runtime, and otherwise with the first delivery.
+    pub fn with_outbox(
+        store: Arc<dyn PushConfigStore>,
+        sender: Option<Arc<dyn PushSender>>,
+        limits: HandlerLimits,
+        metrics: Arc<dyn Metrics>,
+        tracker: TaskTracker,
+        outbox: Option<(Arc<dyn PushOutbox>, CancellationToken)>,
+    ) -> Self {
+        let lanes = Self(sender.map(|sender| {
+            let (outbox, shutdown) = outbox.map_or_else(
+                || (None, CancellationToken::new()),
+                |(outbox, shutdown)| (Some(Outboxed::new(outbox)), shutdown),
+            );
             Arc::new(Lanes {
                 store,
                 sender,
                 limits,
                 metrics,
                 tracker,
+                outbox,
+                shutdown,
+                started: AtomicBool::new(false),
                 queues: Mutex::default(),
             })
-        }))
+        }));
+        if tokio::runtime::Handle::try_current().is_ok() {
+            lanes.start_worker();
+        }
+        lanes
+    }
+
+    /// Starts the outbox's worker, once, if there is an outbox.
+    fn start_worker(&self) {
+        if let Some(lanes) = &self.0
+            && lanes.outbox.is_some()
+            && !lanes.started.swap(true, Ordering::SeqCst)
+        {
+            tokio::spawn(outbox_worker::run(
+                Arc::downgrade(lanes),
+                lanes.shutdown.clone(),
+            ));
+        }
+    }
+
+    /// Queues the delivery of `events` (the blocking path's batch, from one
+    /// request): recorded in the outbox when there is one, and otherwise
+    /// `deliver`, run in the lane. `ends_turn`: one of them ends a turn.
+    pub fn enqueue_events(
+        &self,
+        task_id: &TaskId,
+        ends_turn: bool,
+        events: Vec<StreamResponse>,
+        deliver: impl Future<Output = ()> + Send + 'static,
+    ) {
+        match self.recording(task_id, events) {
+            Some(record) => self.enqueue(task_id, ends_turn, record),
+            None => self.enqueue(task_id, ends_turn, deliver),
+        }
+    }
+
+    /// The lane job that records `events` in the outbox, when there is one.
+    fn recording(
+        &self,
+        task_id: &TaskId,
+        events: Vec<StreamResponse>,
+    ) -> Option<impl Future<Output = ()> + Send + 'static> {
+        let lanes = Arc::clone(self.0.as_ref()?);
+        lanes.outbox.as_ref()?;
+        self.start_worker();
+        let task_id = task_id.clone();
+        Some(async move {
+            if let Some(outboxed) = lanes.outbox.as_ref() {
+                outbox_worker::record(&lanes, outboxed, &task_id, &events).await;
+            }
+        })
     }
 
     /// Queues `event`'s delivery to every config of `task_id`, in the
@@ -103,6 +192,10 @@ impl PushLanes {
         let Some(lanes) = &self.0 else {
             return;
         };
+        if let Some(record) = self.recording(task_id, vec![event.clone()]) {
+            self.enqueue(task_id, ends_turn(event), record);
+            return;
+        }
         let delivery = {
             let lanes = Arc::clone(lanes);
             let task_id = task_id.clone();

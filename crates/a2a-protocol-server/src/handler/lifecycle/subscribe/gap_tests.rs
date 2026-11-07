@@ -200,7 +200,7 @@ async fn drain(reader: &mut InMemoryQueueReader) -> (Vec<Option<u64>>, Option<A2
 /// The snapshot, then a lag that counts the three positions it lacks.
 async fn assert_snapshot_then_lag(handler: &RequestHandler, id: &TaskId) {
     let mut reader = handler
-        .on_resubscribe(params(id), None)
+        .on_subscribe_to_task(params(id), None)
         .await
         .expect("subscribed");
     let (seen, lag) = drain(&mut reader).await;
@@ -253,7 +253,7 @@ async fn a_whole_log_fills_what_the_snapshot_lacks() {
         handler_with(Wrapped::new(Arc::new(InMemoryTaskStore::new())), 3).await;
     log(&handler, &id, &[1, 2, 3]).await;
     let mut reader = handler
-        .on_resubscribe(params(&id), None)
+        .on_subscribe_to_task(params(&id), None)
         .await
         .expect("subscribed");
     let (seen, lag) = drain(&mut reader).await;
@@ -287,7 +287,7 @@ async fn a_whole_snapshot_needs_no_report_when_a_resume_cannot_be_served() {
     writer.applied_mark().seed(3);
     let headers = std::collections::HashMap::from([("last-event-id".to_owned(), "1".to_owned())]);
     let mut reader = handler
-        .on_resubscribe(params(&id), Some(&headers))
+        .on_subscribe_to_task(params(&id), Some(&headers))
         .await
         .expect("subscribed");
     let (seen, lag) = drain(&mut reader).await;
@@ -312,7 +312,7 @@ async fn the_log_is_held_while_the_snapshot_waits_for_the_store() {
     ));
     let (handler, id, _writer, _reader) = handler_with(Wrapped::new(inner), 6).await;
 
-    let (subscribed, ()) = tokio::join!(handler.on_resubscribe(params(&id), None), async {
+    let (subscribed, ()) = tokio::join!(handler.on_subscribe_to_task(params(&id), None), async {
         // Inside the wait: the hold is taken before it begins.
         tokio::time::sleep(Duration::from_millis(10)).await;
         log(&handler, &id, &[1, 2, 3, 4, 5, 6]).await;

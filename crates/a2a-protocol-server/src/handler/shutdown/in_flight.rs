@@ -150,6 +150,10 @@ impl RequestHandler {
     /// written a terminal state, the handler then calls its
     /// [`cancel`](crate::executor::AgentExecutor::cancel) hook, for what it
     /// releases, and ends the task `Failed` with failure class `transient`
+    /// (unless the executor can be re-run and the handler has turn claims:
+    /// then the turn is handed back to its caller, `working`, with no hook
+    /// run; see
+    /// [`resumes_after_hand_off`](crate::executor::AgentExecutor::resumes_after_hand_off))
     /// (a `Canceled` the hook writes is written as that failure), so every
     /// open stream ends with a terminal event that tells its caller it may
     /// send again, instead of simply stopping. Not `Canceled`: nobody
@@ -196,9 +200,9 @@ impl RequestHandler {
     ///
     /// This is the order
     /// [`Server::serve_with_shutdown`](crate::serve::Server::serve_with_shutdown)
-    /// uses. Cancelling at once ends a two-second blocking send that would
-    /// have succeeded as `Canceled`, on every rolling deploy, and its caller
-    /// may then retry work that was nearly done. Waiting without ever
+    /// uses. Cancelling at once stops a two-second blocking send that would
+    /// have succeeded, on every rolling deploy, and ends it `Failed`
+    /// (`transient`), so its caller retries work that was nearly done. Waiting without ever
     /// cancelling orphans a delegation that will not finish in any window
     /// the platform allows. The window serves the first kind and the cancel
     /// serves the second; a `completion` of zero is `cancel_in_flight`.

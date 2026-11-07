@@ -47,7 +47,7 @@ use a2a_benchmarks::server;
 use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_types::responses::SendMessageResponse;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -74,7 +74,12 @@ fn bench_subscribe_to_task(c: &mut Criterion) {
     );
     let dispatcher = JsonRpcDispatcher::new(handler);
     let addr = runtime
-        .block_on(serve_with_addr("127.0.0.1:0", dispatcher))
+        .block_on(async {
+            let bound = Server::bind("127.0.0.1:0").await?;
+            let addr = bound.local_addr()?;
+            tokio::spawn(bound.serve_with_shutdown(dispatcher, std::future::pending()));
+            Ok::<_, std::io::Error>(addr)
+        })
         .expect("serve");
     let url = format!("http://{addr}");
     let client = ClientBuilder::new(&url).build().expect("build client");
@@ -206,7 +211,12 @@ fn bench_cancel_subscribe_race(c: &mut Criterion) {
     );
     let dispatcher = JsonRpcDispatcher::new(handler);
     let addr = runtime
-        .block_on(serve_with_addr("127.0.0.1:0", dispatcher))
+        .block_on(async {
+            let bound = Server::bind("127.0.0.1:0").await?;
+            let addr = bound.local_addr()?;
+            tokio::spawn(bound.serve_with_shutdown(dispatcher, std::future::pending()));
+            Ok::<_, std::io::Error>(addr)
+        })
         .expect("serve");
     let url = format!("http://{addr}");
 
@@ -390,7 +400,7 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
             "https://hooks.example.com/webhook",
         );
         client
-            .set_push_config(config)
+            .create_push_config(config)
             .await
             .expect("create initial push config for set_roundtrip")
     });
@@ -402,7 +412,7 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
             let config = config.clone();
             async move {
                 client
-                    .set_push_config(config)
+                    .create_push_config(config)
                     .await
                     .expect("set_push_config");
             }
@@ -416,7 +426,7 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
             "https://hooks.example.com/webhook-bench",
         );
         client
-            .set_push_config(config)
+            .create_push_config(config)
             .await
             .expect("setup push config")
     });
@@ -462,7 +472,7 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
             "https://hooks.example.com/webhook-delete",
         );
         client
-            .set_push_config(config)
+            .create_push_config(config)
             .await
             .expect("create initial push config for delete_roundtrip")
     });
@@ -476,7 +486,7 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
             async move {
                 // Re-create (upsert) then delete to have something to delete each iteration.
                 let saved = client
-                    .set_push_config(template)
+                    .create_push_config(template)
                     .await
                     .expect("set before delete");
                 let id = saved.id.unwrap_or_default();

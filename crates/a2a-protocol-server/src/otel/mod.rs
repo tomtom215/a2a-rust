@@ -19,7 +19,7 @@
 //! | (this file) | `OtelMetrics` struct and `Metrics` trait impl |
 //! | `builder` | `OtelMetricsBuilder` — fluent configuration |
 //! | `telemetry` | `Telemetry` — OTLP export of traces, metrics and logs from the `OTEL_*` environment (feature `otlp`) |
-//! | `pipeline` | `init_otlp_pipeline` / `init_otlp_pipeline_with_endpoint` — the older metrics-only, gRPC-only setup |
+//! | `pipeline` | `init_otlp_pipeline` / `init_otlp_pipeline_with_endpoint` — the older metrics-only, gRPC-only setup, deprecated since 0.16.0 |
 //!
 //! # Feature flags
 //!
@@ -51,7 +51,9 @@
 //! ```
 
 mod builder;
+mod control;
 mod global;
+mod instrument;
 #[cfg(feature = "otlp")]
 mod pipeline;
 #[cfg(feature = "otlp")]
@@ -67,12 +69,16 @@ use crate::metrics::{ConnectionPoolStats, Metrics, RpcCall};
 
 pub use builder::OtelMetricsBuilder;
 pub(crate) use global::GlobalOtelMetrics;
+pub(crate) use instrument::GlobalInstrument;
 #[cfg(feature = "otlp")]
+#[allow(deprecated)] // re-exported until their removal, no earlier than 0.17.0
 pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};
+#[cfg(feature = "otel-prometheus")]
+pub use telemetry::PrometheusScrape;
 #[cfg(feature = "otlp")]
 pub use telemetry::{
-    LANGFUSE_SELF_HOSTED, Langfuse, OtlpCompression, OtlpProtocol, Telemetry, TelemetryBuilder,
-    TelemetryError,
+    ConsoleFormat, LANGFUSE_SELF_HOSTED, Langfuse, OtlpCompression, OtlpProtocol, Telemetry,
+    TelemetryBuilder, TelemetryError,
 };
 
 // ── OtelMetrics ──────────────────────────────────────────────────────────────
@@ -122,6 +128,10 @@ pub struct OtelMetrics {
     store_retry_counter: Counter<u64>,
     push_delivery_counter: Counter<u64>,
     executor_histogram: Histogram<f64>,
+    /// The control plane's counters (`control.rs`; audit H11).
+    control: control::Control,
+    /// The opt-in tenant and agent labels.
+    dims: control::Dimensions,
 }
 
 impl std::fmt::Debug for OtelMetrics {
@@ -187,6 +197,8 @@ impl OtelMetrics {
             store_retry_counter,
             push_delivery_counter,
             executor_histogram,
+            control: control::Control::build(meter),
+            dims: control::Dimensions::default(),
         }
     }
 
@@ -388,7 +400,7 @@ impl Metrics for OtelMetrics {
     }
 
     fn on_rpc_call(&self, call: &RpcCall<'_>) {
-        let mut attributes = Vec::with_capacity(4);
+        let mut attributes = Vec::with_capacity(6);
         attributes.push(KeyValue::new("rpc.system.name", call.system.to_owned()));
         if let Some(method) = call.method {
             attributes.push(KeyValue::new("rpc.method", method.to_owned()));
@@ -399,15 +411,33 @@ impl Metrics for OtelMetrics {
         if let Some(error) = call.error_type {
             attributes.push(KeyValue::new("error.type", error.to_owned()));
         }
+        self.dims.extend(&mut attributes, call.tenant);
         self.rpc_call_histogram
             .record(call.duration.as_secs_f64(), &attributes);
     }
 
     fn on_executor_run(&self, outcome: &str, duration: Duration) {
-        self.executor_histogram.record(
-            duration.as_secs_f64(),
-            &[KeyValue::new("outcome", outcome.to_owned())],
-        );
+        let mut attributes = vec![KeyValue::new("outcome", outcome.to_owned())];
+        let tenant = crate::store::tenant::TenantContext::current();
+        self.dims.extend(&mut attributes, Some(&tenant));
+        self.executor_histogram
+            .record(duration.as_secs_f64(), &attributes);
+    }
+
+    fn on_refusal(&self, cause: &str) {
+        self.control.refusal(&self.dims, cause);
+    }
+
+    fn on_lease(&self, event: &str) {
+        self.control.lease(&self.dims, event);
+    }
+
+    fn on_halt(&self, scope: &str, action: &str, stopped: usize) {
+        self.control.halt(&self.dims, scope, action, stopped);
+    }
+
+    fn on_claim(&self, event: &str) {
+        self.control.claim(&self.dims, event);
     }
 }
 
@@ -424,6 +454,8 @@ pub const RPC_DURATION_BUCKETS: [f64; 13] = [
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
+#[cfg(test)]
+mod control_tests;
 #[cfg(test)]
 mod rpc_tests;
 #[cfg(test)]

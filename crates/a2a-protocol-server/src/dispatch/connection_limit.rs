@@ -12,9 +12,8 @@
 //! above its maximum) and `0` started a server that accepted nothing and said
 //! nothing.
 
-/// Why a ceiling of 0 is refused.
-pub const ZERO_CONNECTIONS: &str =
-    "max_connections is 0: a server that may serve no connection accepts none";
+/// Why a ceiling of 0 is refused: the message `Server` refuses with too.
+pub use crate::serve::start::ZERO_CONNECTIONS;
 
 /// The permits a limiter for at most `max` connections holds. `None` is
 /// unbounded, which is the most a semaphore can hold, and so is a ceiling

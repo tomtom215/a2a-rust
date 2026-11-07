@@ -111,7 +111,8 @@ let handler = Arc::new(
         .with_agent_card(card(&url))
         .build()?,
 );
-serve_with_addr(addr, JsonRpcDispatcher::new(handler)).await?;
+let server = Server::bind(addr).await?;
+tokio::spawn(server.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()));
 ```
 
 Each tool implements `Tool`: a name, a description, a JSON Schema for its
@@ -120,6 +121,26 @@ goes back to the model as that call's result, not as a task failure, so
 `service_status` writes its error for the model to read. For an unknown name it
 says "no service named '…'; call list_services for the inventory", which is
 the hint the model follows in the first transcript.
+
+### Sharing one provider between loops
+
+Every task runs its own loop, so a swarm of tasks can send more turns at once
+than a provider serves. Two opt-in pieces bound that (ADR 0048):
+
+```text
+let limit = InferenceLimit::new(4); // at most 4 turns in flight, across every loop
+let model = LimitedModel::new(OpenAiChatModel::new(base, name)?, &limit);
+let tool_loop = ToolLoop::new(model, tools::catalogue()?)
+    .with_model_retry(ModelRetry::new()); // a 429 is sent again, not a failed task
+```
+
+A turn the provider refuses with 429 is `ModelError::RateLimited`, carrying its
+`Retry-After`. Without `with_model_retry` it ends the run and the task fails as
+`transient`, as before. With it, the loop waits the provider's delay (spread by
+up to a quarter) or a doubling backoff from 0.5 s, at most three times by
+default, and never longer than `max_delay` or what remains of the task's
+budget. While it waits it holds no `InferenceLimit` slot. Other statuses are
+not retried in the loop. The limit is per process; a fleet needs a gateway.
 
 ## How it fits together
 

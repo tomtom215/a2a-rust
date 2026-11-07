@@ -107,7 +107,10 @@ impl ResponseMediaType {
 /// card, a §8.2 well-known resource served by `StaticAgentCardHandler`, and
 /// the health probes.
 pub fn is_negotiable_path(path: &str) -> bool {
-    !matches!(path, "/.well-known/agent-card.json" | "/health" | "/ready")
+    !matches!(
+        path,
+        "/.well-known/agent-card.json" | "/health" | "/ready" | "/load"
+    )
 }
 
 /// The `type/subtype` of a media type, without parameters or whitespace.

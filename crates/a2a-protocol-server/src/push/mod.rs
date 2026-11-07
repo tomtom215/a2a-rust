@@ -10,6 +10,7 @@ pub mod cipher;
 pub mod config_store;
 pub(crate) mod gate;
 pub(crate) mod health;
+pub mod outbox;
 mod pinning;
 mod request;
 pub mod sender;
@@ -29,6 +30,12 @@ pub mod tenant_postgres_config_store;
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 pub use cipher::PushConfigCipher;
 pub use config_store::{InMemoryPushConfigStore, PushConfigStore};
+#[cfg(feature = "postgres")]
+pub use outbox::PostgresPushOutbox;
+#[cfg(feature = "sqlite")]
+pub use outbox::SqlitePushOutbox;
+pub use outbox::{InMemoryPushOutbox, PushOutbox};
+pub use request::{current_delivery_id, with_delivery_id};
 pub use sender::{HttpPushSender, PushRetryPolicy, PushSender};
 pub use tenant_config_store::TenantAwareInMemoryPushConfigStore;
 

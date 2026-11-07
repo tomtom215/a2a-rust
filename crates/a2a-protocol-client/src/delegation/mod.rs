@@ -84,6 +84,7 @@ use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 
+mod continuation;
 mod drop;
 mod journal;
 mod options;
@@ -94,6 +95,7 @@ mod renewal;
 mod resume;
 #[cfg(test)]
 mod testing;
+pub use continuation::{HAND_OFF_METADATA_KEY, HandOffPolicy};
 pub use options::DelegationOptions;
 use origin::Origin;
 pub use outcome::{Delegated, Outcome};
@@ -151,6 +153,18 @@ pub struct Delegation {
     events_since_open: u32,
     /// The delegation's record in a journal, when it keeps one.
     journal: Option<journal::Journaled>,
+    /// The message the child was started with, to send again when a
+    /// shutdown hands its turn back (`continuation`); `None` after a
+    /// reattach, which has no message.
+    message: Option<a2a_protocol_types::message::Message>,
+    /// The child's context id, once an event names it.
+    context_id: Option<String>,
+    /// The last event said the child's turn was handed back.
+    handed_back: bool,
+    /// Continuations sent for this child.
+    continued: u32,
+    /// How a handed-back child is continued.
+    hand_off_policy: HandOffPolicy,
 }
 
 impl Delegation {
@@ -179,6 +193,7 @@ impl Delegation {
             .flatten()
             .map(str::to_owned);
         let tenant = params.tenant.clone();
+        let message = params.message.clone();
         let stream = client.stream_message(params).await?;
         Ok(Self {
             client,
@@ -198,6 +213,11 @@ impl Delegation {
             resumed_at: None,
             opened_at: Some(tokio::time::Instant::now()),
             events_since_open: 0,
+            message: Some(message),
+            context_id: None,
+            handed_back: false,
+            continued: 0,
+            hand_off_policy: HandOffPolicy::default(),
             journal: None,
         })
     }
@@ -273,10 +293,14 @@ impl Delegation {
         let status = match ev {
             StreamResponse::Task(t) => {
                 self.task_id.get_or_insert_with(|| t.id.to_string());
+                self.context_id
+                    .get_or_insert_with(|| t.context_id.to_string());
                 &t.status
             }
             StreamResponse::StatusUpdate(u) => {
                 self.task_id.get_or_insert_with(|| u.task_id.to_string());
+                self.context_id
+                    .get_or_insert_with(|| u.context_id.to_string());
                 report = BudgetStatus::read_from(u.metadata.as_ref()).ok().flatten();
                 &u.status
             }
@@ -289,6 +313,7 @@ impl Delegation {
             // Artifact updates, and kinds a newer protocol adds, name no state.
             _ => return,
         };
+        self.handed_back = continuation::handed_back(status);
         if self.settled.is_none() {
             self.settled = Outcome::of(status.clone());
             // Only the report on the event that settled the child is its
@@ -351,10 +376,15 @@ impl Delegation {
                 () = &mut hand_off => return self.hand_off().await,
                 ev = self.next_event() => {
                     let error = match ev {
-                        Some(Ok(_)) => continue,
+                        Some(Ok(_)) if !self.handed_back => continue,
                         Some(Err(e)) => Some(e),
-                        None => None,
+                        Some(Ok(_)) | None => None,
                     };
+                    // A turn a shutdown handed back runs again only when it
+                    // is sent again (ADR 0054).
+                    if self.handed_back && self.continue_handed_back().await {
+                        continue;
+                    }
                     match self.resume().await {
                         Resumed::Streaming => {}
                         Resumed::Settled(outcome) => return self.finish(*outcome).await,

@@ -8,15 +8,28 @@
 # underscores (`rpc.system.name` -> `rpc_system_name`), and the resource's
 # service.name / service.instance.id become `job` / `instance`.
 #
-# The `error_type` label is set only on a call the OpenTelemetry RPC
-# conventions count as failed (a JSON-RPC error, an HTTP 5xx on HTTP+JSON,
-# one of six server-side gRPC codes), so an error ratio counts exactly those.
+# What a failed call is. The `error_type` label is set on every call the
+# OpenTelemetry RPC conventions count as failed: on JSON-RPC that is every
+# error code ("All JSON RPC error codes SHOULD be considered errors"), on
+# HTTP+JSON a 5xx, on gRPC six server-side codes. The instrumentation follows
+# the conventions; these rules do not take them as the definition of the
+# server failing, for two reasons:
 #
-# One value is set on a call that did not fail: `error_type="cancelled"`, an
-# abandoned stream (the client went away before the agent finished). The error
-# ratios leave it out, because a client hanging up is not the server failing
-# and a fleet of impatient clients would otherwise page the on-call
-# (a2a:rpc_server_cancelled:rate5m keeps them visible).
+# * `error_type="cancelled"` is an abandoned call (the client went away
+#   before the agent finished): a client hanging up is not the server
+#   failing (audit C-09).
+# * On JSON-RPC a caller's mistake (TaskNotFound -32001, invalid params
+#   -32602, method not found -32601, version not supported -32009, ...) is an
+#   error code too, while the same call over HTTP+JSON (404) or gRPC
+#   (NOT_FOUND) is not counted, so the ratio paged on the binding the client
+#   chose (audit NEW-c-1). The rules below leave out every status that A2A
+#   §5.4 maps to a 4xx: the JSON-RPC codes other than -32603 (internal error)
+#   and -32006 (invalid agent response), any 4xx, and the gRPC codes outside
+#   the six server-side failures. A code not listed still counts as failed.
+#
+# The caller-class pattern appears three times below (server errors, server
+# caller errors, client errors) and must be the same each time:
+# deploy/observability/scripts/check_stack.py checks that it is.
 
 groups:
   - name: a2a-rpc-server
@@ -24,17 +37,51 @@ groups:
     rules:
       - record: a2a:rpc_server_calls:rate5m
         expr: sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count[5m]))
+      # The server's own failures: error_type set, neither an abandoned
+      # call nor the caller's mistake.
       - record: a2a:rpc_server_errors:rate5m
-        expr: sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{error_type!="",error_type!="cancelled"}[5m]))
+        expr: sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{error_type!="",error_type!~"cancelled|-32700|-32600|-32601|-32602|-32001|-32002|-32003|-32004|-32005|-32007|-32008|-32009|4[0-9][0-9]|CANCELLED|INVALID_ARGUMENT|NOT_FOUND|ALREADY_EXISTS|PERMISSION_DENIED|RESOURCE_EXHAUSTED|FAILED_PRECONDITION|ABORTED|OUT_OF_RANGE|UNAUTHENTICATED"}[5m]))
+      # Calls refused as the caller's mistake, on every binding: kept visible
+      # (a client polling for tasks that retention removed shows here), not
+      # counted as failures.
+      - record: a2a:rpc_server_caller_errors:rate5m
+        expr: sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{rpc_status_code=~"-32700|-32600|-32601|-32602|-32001|-32002|-32003|-32004|-32005|-32007|-32008|-32009|4[0-9][0-9]|CANCELLED|INVALID_ARGUMENT|NOT_FOUND|ALREADY_EXISTS|PERMISSION_DENIED|RESOURCE_EXHAUSTED|FAILED_PRECONDITION|ABORTED|OUT_OF_RANGE|UNAUTHENTICATED"}[5m]))
+      # Calls the client abandoned. The bindings record that two ways: a
+      # gRPC call with rpc.status_code=CANCELLED and no error.type (semantic
+      # conventions, grpc.md; audit C-09), every other binding with
+      # error.type=cancelled and no status code. The two sets never share a
+      # series (rpc_system_name differs), so `or` is their union.
       - record: a2a:rpc_server_cancelled:rate5m
-        expr: sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{error_type="cancelled"}[5m]))
+        expr: |
+          sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{error_type="cancelled"}[5m]))
+            or
+          sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{rpc_status_code="CANCELLED"}[5m]))
+      # Over the rules above, which this group has already evaluated at this
+      # timestamp (rules in a group run in order).
       - record: a2a:rpc_server_error_ratio:rate5m
         expr: |
-          sum by (job) (rate(rpc_server_call_duration_seconds_count{error_type!="",error_type!="cancelled"}[5m]))
+          sum by (job) (a2a:rpc_server_errors:rate5m)
             /
-          sum by (job) (rate(rpc_server_call_duration_seconds_count[5m]))
-      # Streaming methods last as long as their stream, so latency quantiles
-      # are taken over unary calls only.
+          sum by (job) (a2a:rpc_server_calls:rate5m)
+      # Streaming methods last as long as their stream, so latency is taken
+      # over unary calls only.
+      - record: a2a:rpc_server_unary_calls:rate5m
+        expr: sum by (job, rpc_method) (rate(rpc_server_call_duration_seconds_count{rpc_method!~".*/(SendStreamingMessage|SubscribeToTask)"}[5m]))
+      # The share of unary calls slower than 5 s, read from the bucket bound
+      # itself, so it is exact. The default buckets jump from 1 s to 5 s, and
+      # a quantile between them is a straight-line guess (audit C-14): 98
+      # calls under 1 s and 2 at 1.1 s read as a p99 of 3.0 s. The alert is on
+      # this ratio; the quantiles below are for the dashboard. `le` is
+      # matched as "5" or "5.0", since Prometheus writes a classic histogram's
+      # bounds either way depending on how the series arrived. Streaming
+      # methods drop out at the division: the rule above has none.
+      - record: a2a:rpc_server_unary_over_5s:ratio_rate5m
+        expr: |
+          1 - (
+            sum by (job, rpc_method) (rate(rpc_server_call_duration_seconds_bucket{le=~"5|5\\.0"}[5m]))
+              /
+            a2a:rpc_server_unary_calls:rate5m
+          )
       - record: a2a:rpc_server_unary_latency:p50_5m
         expr: histogram_quantile(0.50, sum by (job, rpc_method, le) (rate(rpc_server_call_duration_seconds_bucket{rpc_method!~".*/(SendStreamingMessage|SubscribeToTask)"}[5m])))
       - record: a2a:rpc_server_unary_latency:p95_5m
@@ -63,16 +110,50 @@ groups:
           sum by (job) (rate(a2a_server_push_deliveries_total{outcome!="delivered"}[5m]))
             /
           sum by (job) (rate(a2a_server_push_deliveries_total[5m]))
+      # A store operation run again after a failure that then passed: nothing
+      # lost, but a rate that stays up is a store degrading before
+      # persistence_errors counts what it lost.
+      - record: a2a:store_retries:rate5m
+        expr: sum by (job, operation, cause) (rate(a2a_server_store_retries_total[5m]))
+      - record: a2a:executor_runs:rate5m
+        expr: sum by (job, outcome) (rate(a2a_server_executor_duration_seconds_count[5m]))
+      # Runs that returned an error or never returned (a panic, a dropped
+      # run), over all runs. `budget_exhausted` (a timeout, or the caller's
+      # deadline) and `canceled` are not counted: the first is often the
+      # caller's budget, the second the caller's choice.
+      - record: a2a:executor_failure_ratio:rate5m
+        expr: |
+          sum by (job) (a2a:executor_runs:rate5m{outcome=~"error|aborted"})
+            /
+          sum by (job) (a2a:executor_runs:rate5m)
 
   - name: a2a-rpc-client
     interval: 30s
     rules:
       - record: a2a:rpc_client_calls:rate5m
         expr: sum by (job, rpc_system_name, rpc_method, server_address) (rate(rpc_client_call_duration_seconds_count[5m]))
+      # A client records every failure, a 404 included. Counted here: the
+      # agent's failures by the rule the server side applies (above), and
+      # every failure with no status (timeout, transport, a response that
+      # does not decode). Not counted: abandoned calls and the caller's own
+      # mistakes, which "Failures by kind" on the client dashboard still shows.
       - record: a2a:rpc_client_error_ratio:rate5m
         expr: |
-          sum by (job, server_address) (rate(rpc_client_call_duration_seconds_count{error_type!="",error_type!="cancelled"}[5m]))
+          sum by (job, server_address) (rate(rpc_client_call_duration_seconds_count{error_type!="",error_type!~"cancelled|-32700|-32600|-32601|-32602|-32001|-32002|-32003|-32004|-32005|-32007|-32008|-32009|4[0-9][0-9]|CANCELLED|INVALID_ARGUMENT|NOT_FOUND|ALREADY_EXISTS|PERMISSION_DENIED|RESOURCE_EXHAUSTED|FAILED_PRECONDITION|ABORTED|OUT_OF_RANGE|UNAUTHENTICATED"}[5m]))
             /
           sum by (job, server_address) (rate(rpc_client_call_duration_seconds_count[5m]))
       - record: a2a:rpc_client_unary_latency:p95_5m
         expr: histogram_quantile(0.95, sum by (job, server_address, rpc_method, le) (rate(rpc_client_call_duration_seconds_bucket{rpc_method!~".*/(SendStreamingMessage|SubscribeToTask)"}[5m])))
+
+  - name: a2a-genai
+    interval: 30s
+    rules:
+      - record: a2a:gen_ai_inference_calls:rate5m
+        expr: sum by (job) (rate(gen_ai_client_inference_duration_seconds_count[5m]))
+      # Every failed model call counts: the model provider is a dependency,
+      # and a 429 or a timeout from it fails the agent's turn.
+      - record: a2a:gen_ai_inference_error_ratio:rate5m
+        expr: |
+          sum by (job) (rate(gen_ai_client_inference_duration_seconds_count{error_type!=""}[5m]))
+            /
+          a2a:gen_ai_inference_calls:rate5m

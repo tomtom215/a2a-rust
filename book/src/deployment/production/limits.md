@@ -97,8 +97,8 @@ Use `TaskStore::count()` for monitoring capacity utilization.
 
 ## Connections
 
-`serve::Server` (and so `serve` and `serve_with_addr`, which run on it) accepts
-any number of connections by default. `ServeConfig::with_max_connections`
+`serve::Server` (and so the deprecated `serve` and `serve_with_addr`, which
+run on it) accepts any number of connections by default. `ServeConfig::with_max_connections`
 holds a permit before each accept, so a burst over the ceiling waits in the
 kernel's backlog rather than becoming tasks. Two timeouts are on by default:
 a peer has 30 seconds to send its request headers
@@ -145,7 +145,7 @@ RequestHandlerBuilder::new(executor)
         RateLimitInterceptor::new(
             RateLimitConfig::default()
                 .with_requests_per_window(100)
-                .with_window_secs(60)
+                .with_window(std::time::Duration::from_secs(60))
                 // Set to the number of trusted reverse proxies so the client
                 // IP is taken from X-Forwarded-For; 0 (default) ignores it.
                 .with_trusted_proxy_hops(1),

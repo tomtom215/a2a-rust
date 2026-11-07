@@ -7,6 +7,10 @@
 
 //! What the limiter is configured with, separate from what it does with it.
 
+use std::time::Duration;
+
+use super::forwarded::ForwardedHeader;
+use super::identity::ProxyChain;
 use super::trusted::TrustedProxy;
 
 /// Configuration for [`RateLimitInterceptor`](super::RateLimitInterceptor).
@@ -53,7 +57,17 @@ pub struct RateLimitConfig {
     /// in one of them; any other connection is keyed by its own address, as
     /// if no proxy were configured. Has no effect while
     /// [`trusted_proxy_hops`](Self::trusted_proxy_hops) is `0`.
+    ///
+    /// [`RateLimitInterceptor::new`](super::RateLimitInterceptor::new) logs a
+    /// warning when hops are set and this is empty.
     pub trusted_proxies: Vec<TrustedProxy>,
+
+    /// The header the trusted proxies write the client's address into:
+    /// `x-forwarded-for` (the default) or RFC 7239 `forwarded`. Only that one
+    /// is read; the other is ignored, since a proxy that writes one passes a
+    /// client's own copy of the other through. Has no effect while
+    /// [`trusted_proxy_hops`](Self::trusted_proxy_hops) is `0`.
+    pub forwarded_header: ForwardedHeader,
 
     /// Maximum number of caller buckets tracked at once.
     ///
@@ -79,6 +93,7 @@ impl Default for RateLimitConfig {
             window_secs: 60,
             trusted_proxy_hops: 0,
             trusted_proxies: Vec::new(),
+            forwarded_header: ForwardedHeader::XForwardedFor,
             max_buckets: DEFAULT_MAX_BUCKETS,
         }
     }
@@ -92,7 +107,30 @@ impl RateLimitConfig {
         self
     }
 
+    /// Sets the window's length.
+    ///
+    /// The window is counted in whole seconds
+    /// ([`window_secs`](Self::window_secs)), so a fractional second is
+    /// rounded **up**: 1.5 s is a window of 2 s, and no non-zero duration
+    /// becomes the zero window
+    /// [`RateLimitInterceptor::new`](super::RateLimitInterceptor::new)
+    /// refuses. `Duration::ZERO` is that zero window, and is refused.
+    #[must_use]
+    pub const fn with_window(mut self, window: Duration) -> Self {
+        let whole = window.as_secs();
+        self.window_secs = if window.subsec_nanos() == 0 {
+            whole
+        } else {
+            whole.saturating_add(1)
+        };
+        self
+    }
+
     /// Sets the window duration in seconds. Must be non-zero.
+    #[deprecated(
+        since = "0.16.0",
+        note = "use `with_window(Duration)`; removed no earlier than 0.17.0"
+    )]
     #[must_use]
     pub const fn with_window_secs(mut self, secs: u64) -> Self {
         self.window_secs = secs;
@@ -116,6 +154,14 @@ impl RateLimitConfig {
         self
     }
 
+    /// Sets the header the trusted proxies write the client's address into.
+    /// See [`forwarded_header`](Self::forwarded_header).
+    #[must_use]
+    pub const fn with_forwarded_header(mut self, header: ForwardedHeader) -> Self {
+        self.forwarded_header = header;
+        self
+    }
+
     /// Sets the maximum number of caller buckets tracked at once. Must be
     /// non-zero.
     #[must_use]
@@ -123,10 +169,34 @@ impl RateLimitConfig {
         self.max_buckets = max;
         self
     }
+
+    /// The proxies this configuration trusts, as the keying reads them.
+    pub(super) fn proxy_chain(&self) -> ProxyChain<'_> {
+        ProxyChain::new(self.trusted_proxy_hops, &self.trusted_proxies)
+            .with_header(self.forwarded_header)
+    }
+}
+
+/// The warning for a forwarded header believed on the hop count alone, which
+/// lets any client that can reach this server without going through the proxy
+/// name its own key (audit B-09); `None` when the configuration does not.
+/// The interceptors that key by the header log it once, when they are built.
+pub const fn untrusted_hops_warning(hops: usize, trusted: &[TrustedProxy]) -> Option<&'static str> {
+    if hops != 0 && trusted.is_empty() {
+        Some(
+            "trusted_proxy_hops is set but trusted_proxies is empty: the forwarded header is \
+             believed from any peer, so a client that reaches this server directly can choose \
+             its own key; name the proxies' address ranges with with_trusted_proxies",
+        )
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::{RateLimitConfig, TrustedProxy};
 
     /// Every setter writes its own field, against values that differ from
@@ -137,15 +207,43 @@ mod tests {
         let proxy: TrustedProxy = "10.0.0.0/8".parse().expect("a range");
         let cfg = RateLimitConfig::default()
             .with_requests_per_window(d.requests_per_window + 1)
-            .with_window_secs(d.window_secs + 1)
+            .with_window(std::time::Duration::from_secs(d.window_secs + 1))
             .with_trusted_proxy_hops(d.trusted_proxy_hops + 1)
             .with_trusted_proxies([proxy])
+            .with_forwarded_header(super::ForwardedHeader::Forwarded)
             .with_max_buckets(d.max_buckets + 1);
         assert_eq!(cfg.requests_per_window, d.requests_per_window + 1);
         assert_eq!(cfg.window_secs, d.window_secs + 1);
         assert_eq!(cfg.trusted_proxy_hops, d.trusted_proxy_hops + 1);
         assert_eq!(cfg.trusted_proxies, [proxy]);
         assert!(d.trusted_proxies.is_empty(), "off unless asked for");
+        assert_eq!(cfg.forwarded_header, super::ForwardedHeader::Forwarded);
+        assert_eq!(d.forwarded_header, super::ForwardedHeader::XForwardedFor);
         assert_eq!(cfg.max_buckets, d.max_buckets + 1);
+    }
+
+    /// The window is whole seconds, rounded up, so no non-zero duration
+    /// becomes the refused zero window.
+    #[test]
+    fn with_window_rounds_a_fraction_up() {
+        let window = |d| RateLimitConfig::default().with_window(d).window_secs;
+        assert_eq!(window(Duration::from_secs(90)), 90);
+        assert_eq!(window(Duration::from_millis(1500)), 2);
+        assert_eq!(window(Duration::from_nanos(1)), 1);
+        assert_eq!(window(Duration::from_millis(999)), 1);
+        assert_eq!(window(Duration::ZERO), 0);
+        assert_eq!(window(Duration::MAX), u64::MAX);
+    }
+
+    /// The integer setter deprecated in 0.16.0 still sets the window. Its own
+    /// test, its only caller in the workspace; removed with it, no earlier
+    /// than 0.17.0 (ADR 0053).
+    #[test]
+    #[allow(deprecated)]
+    fn with_window_secs_still_sets_the_window() {
+        assert_eq!(
+            RateLimitConfig::default().with_window_secs(45).window_secs,
+            45
+        );
     }
 }

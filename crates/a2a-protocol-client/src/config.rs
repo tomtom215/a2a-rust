@@ -277,12 +277,21 @@ pub struct ClientConfig {
     /// ids.
     pub propagate_trace: bool,
 
+    /// Which W3C baggage entries a call sends: none by default, as baggage
+    /// can carry user data to another organisation's agent
+    /// ([`otel_baggage`](crate::otel_baggage); audit C-10).
+    pub baggage: crate::BaggagePolicy,
+
+    /// Which propagators calls use: `OTEL_PROPAGATORS` when this config was
+    /// made (default `tracecontext,baggage`).
+    pub propagators: crate::Propagators,
+
     /// Whether a push-notification config whose webhook URL is `http://` to
     /// a host other than loopback is refused before it is sent (default: no).
     ///
     /// Spec §13.2: webhook URLs SHOULD use HTTPS, since the payload, the
     /// notification token and any credentials travel with it. Off, such a
-    /// config is sent and a warning logged; on, `set_push_config`, and a send
+    /// config is sent and a warning logged; on, `create_push_config`, and a send
     /// carrying the config inline, fail with
     /// [`ClientError::InsecureWebhook`](crate::ClientError::InsecureWebhook).
     /// `http://` to `localhost`, `127.0.0.0/8` or `::1` is allowed either way.
@@ -326,6 +335,8 @@ impl ClientConfig {
             tls: TlsConfig::Disabled,
             tenant: None,
             propagate_trace: true,
+            baggage: crate::BaggagePolicy::Off,
+            propagators: crate::Propagators::from_env(),
             require_https_webhooks: false,
         }
     }
@@ -351,6 +362,8 @@ impl Default for ClientConfig {
             tls: TlsConfig::default(),
             tenant: None,
             propagate_trace: true,
+            baggage: crate::BaggagePolicy::Off,
+            propagators: crate::Propagators::from_env(),
             require_https_webhooks: false,
         }
     }

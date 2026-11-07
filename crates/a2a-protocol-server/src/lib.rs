@@ -29,9 +29,9 @@
 //! |---|---|
 //! | [`on_send_message`] | `SendMessage`, `SendStreamingMessage` |
 //! | [`on_get_task`], [`on_list_tasks`], [`on_cancel_task`] | `GetTask`, `ListTasks`, `CancelTask` |
-//! | [`on_resubscribe`] | `SubscribeToTask` |
+//! | [`on_subscribe_to_task`] | `SubscribeToTask` |
 //! | [`on_get_extended_agent_card`] | `GetExtendedAgentCard` |
-//! | [`on_set_push_config`], [`on_get_push_config`], [`on_list_push_configs`], [`on_delete_push_config`] | Push-config CRUD |
+//! | [`on_create_push_config`], [`on_get_push_config`], [`on_list_push_configs`], [`on_delete_push_config`] | Push-config CRUD |
 //!
 //! What the dispatchers add on top is wire-format decoding and reply encoding.
 //! Task lifecycle, idempotency, streaming, push delivery, interceptors,
@@ -42,9 +42,9 @@
 //! [`on_get_task`]: RequestHandler::on_get_task
 //! [`on_list_tasks`]: RequestHandler::on_list_tasks
 //! [`on_cancel_task`]: RequestHandler::on_cancel_task
-//! [`on_resubscribe`]: RequestHandler::on_resubscribe
+//! [`on_subscribe_to_task`]: RequestHandler::on_subscribe_to_task
 //! [`on_get_extended_agent_card`]: RequestHandler::on_get_extended_agent_card
-//! [`on_set_push_config`]: RequestHandler::on_set_push_config
+//! [`on_create_push_config`]: RequestHandler::on_create_push_config
 //! [`on_get_push_config`]: RequestHandler::on_get_push_config
 //! [`on_list_push_configs`]: RequestHandler::on_list_push_configs
 //! [`on_delete_push_config`]: RequestHandler::on_delete_push_config
@@ -62,7 +62,7 @@
 //! | [`streaming`] | Event queues, SSE response builder |
 //! | [`push`] | Push config store, push sender |
 //! | [`agent_card`] | Static/dynamic agent card handlers |
-//! | [`serve`](mod@serve) | [`serve()`](serve::serve), [`serve_with_addr`], [`Dispatcher`] |
+//! | [`serve`](mod@serve) | [`Server`], [`ServeConfig`], [`Dispatcher`], [`shutdown_signal`] (and the deprecated [`serve()`](serve::serve), [`serve_with_addr`]) |
 //! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`], [`CombinedDispatcher`] (both on one listener), `GrpcDispatcher` (`grpc` feature), `WebSocketDispatcher` (`websocket` feature) |
 //! | [`interceptor`] | [`ServerInterceptor`], [`ServerInterceptorChain`] |
 //! | [`auth`] | [`ApiKeyAuthInterceptor`], [`BearerTokenAuthInterceptor`], `JwtAuthInterceptor` (`auth-jwt` feature), `MutualTlsAuthInterceptor` (`tls-rustls` or `grpc-tls`) |
@@ -77,7 +77,7 @@
 //!
 //! # Axum integration
 //!
-//! Enable the `axum` feature flag to use `A2aRouter` for idiomatic Axum
+//! Enable the `axum` feature flag to use `RestRouter` (also named `A2aRouter`) for idiomatic Axum
 //! integration. See the `dispatch::axum_adapter` module for details.
 //!
 //! # gRPC transport
@@ -112,6 +112,7 @@ mod trace;
 
 mod rpc_span;
 
+pub mod admission;
 pub mod agent_card;
 pub mod approval;
 #[cfg(feature = "audit")]
@@ -150,9 +151,10 @@ pub mod tenant_resolver;
 mod causes;
 #[cfg(feature = "tls-rustls")]
 mod tls;
+#[cfg(feature = "tls-rustls")]
+pub use tls::ReloadingCertResolver;
 // Outbound HTTP shared by push delivery, JWKS and OIDC discovery, the tool
 // loop's model client and OTLP export: proxies, trusted roots, pool tuning.
-#[cfg(any(feature = "tls-rustls", feature = "otlp"))]
 mod net;
 #[cfg(feature = "tool-loop")]
 pub mod tool_loop;
@@ -199,22 +201,22 @@ pub use builder::RequestHandlerBuilder;
 pub use call_context::{
     CallContext, PEER_ADDR_KEY, PEER_CERTIFICATE_KEY, PeerAddr, PeerCertificate,
 };
-#[cfg(feature = "websocket")]
-pub use dispatch::WebSocketDispatcher;
 #[cfg(feature = "axum")]
-pub use dispatch::axum_adapter::A2aRouter;
+pub use dispatch::axum_adapter::{A2aRouter, RestRouter};
 pub use dispatch::{
     A2A_VERSION_METADATA_KEY, CombinedDispatcher, CorsConfig, DispatchConfig, JsonRpcDispatcher,
     RestDispatcher, validate_version_metadata,
 };
 #[cfg(feature = "grpc")]
 pub use dispatch::{GrpcConfig, GrpcDispatcher};
-pub use error::{ServerError, ServerResult};
+#[cfg(feature = "websocket")]
+pub use dispatch::{WebSocketDispatcher, WebSocketUpgrades};
+pub use error::{A2A_RUST_ERROR_DOMAIN, HALTED_REASON, ServerError, ServerResult};
 pub use executor::AgentExecutor;
-pub use executor_helpers::{EventEmitter, boxed_future};
+pub use executor_helpers::{ArtifactChunk, EventEmitter, boxed_future};
 pub use handler::{
-    HaltReport, HaltScope, HandlerLimits, InFlightReport, InboundTracePolicy, RequestHandler,
-    SendMessageResult, ShutdownReport,
+    HaltReport, HaltScope, HandlerLimits, InFlightReport, InboundTracePolicy, LOAD_HEADER,
+    LoadReport, RequestHandler, SendMessageResult, ShutdownReport,
 };
 pub use interceptor::{CallOutcome, ServerInterceptor, ServerInterceptorChain};
 pub use metrics::{ConnectionPoolStats, Metrics, RpcCall};
@@ -227,13 +229,16 @@ pub use push::{
 #[cfg(feature = "postgres")]
 pub use rate_limit::PostgresRateLimitCounter;
 pub use rate_limit::{
-    InvalidTrustedProxy, RateLimitConfig, RateLimitCounter, RateLimitInterceptor, TrustedProxy,
+    ForwardedHeader, InvalidTrustedProxy, RateLimitConfig, RateLimitCounter, RateLimitInterceptor,
+    TrustedProxy,
 };
 pub use request_context::RequestContext;
 pub use rpc_span::{BindingSpan, CustomBinding, StreamEnd, StreamOutcome};
-pub use serve::{
-    Dispatcher, ServeConfig, ServeReport, Server, serve, serve_with_addr, shutdown_signal,
-};
+// The two free functions are deprecated (ADR 0052); re-exported here until
+// they are removed, no earlier than 0.17.0.
+pub use serve::{Dispatcher, ServeConfig, ServeReport, Server, shutdown_signal};
+#[allow(deprecated)]
+pub use serve::{serve, serve_with_addr};
 pub use store::{
     InMemoryTaskStore, TaskStore, TaskStoreConfig, TenantAwareInMemoryTaskStore, TenantContext,
     TenantStoreConfig,

@@ -15,7 +15,7 @@ use a2a_protocol_server::agent_card::ExtendedCardProvider;
 use a2a_protocol_server::auth::BearerTokenAuthInterceptor;
 use a2a_protocol_server::dispatch::RestDispatcher;
 use a2a_protocol_server::error::ServerResult;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{CallContext, RequestHandlerBuilder, agent_executor};
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::extensions::AgentExtension;
@@ -76,9 +76,15 @@ async fn extended_card_exposes_quota_capabilities_the_public_card_lacks() {
         .with_interceptor(BearerTokenAuthInterceptor::new(["tok"]))
         .build()
         .unwrap();
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::new(handler)))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
 
     let extended = http(
         addr,

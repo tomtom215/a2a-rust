@@ -118,9 +118,40 @@ pub fn build_https_client_with_connect_timeout(
     };
     let rules = Arc::new(crate::proxy::matcher_from_env());
     HttpsClient {
-        kind: Kind::Own(Arc::new(build_inner(tls_config, &settings, rules))),
+        kind: Kind::Own(Arc::new(build_inner(tls_config, &settings, rules, None))),
     }
 }
+
+/// The settings of a pinned client: the pool's defaults, with the connect
+/// timeout the caller gave.
+fn pinned_settings(connection_timeout: Duration) -> crate::pool::Settings {
+    crate::pool::Settings {
+        connect_timeout: connection_timeout,
+        ..crate::pool::Settings::default()
+    }
+}
+
+/// A client of its own whose connections to `host` go to `addr` (ADR 0050):
+/// the URL, `Host` header and certificate check keep the name.
+pub fn build_pinned_https_client(
+    tls_config: ClientConfig,
+    connection_timeout: Duration,
+    pin: &Pin,
+) -> HttpsClient {
+    let settings = pinned_settings(connection_timeout);
+    let rules = Arc::new(crate::proxy::matcher_from_env());
+    HttpsClient {
+        kind: Kind::Own(Arc::new(build_inner(
+            tls_config,
+            &settings,
+            rules,
+            Some(pin),
+        ))),
+    }
+}
+
+/// A host name and the address its connections go to.
+pub type Pin = (String, std::net::SocketAddr);
 
 /// Builds one hyper client from `settings`, routed by `rules`.
 ///
@@ -134,8 +165,13 @@ pub fn build_inner(
     tls_config: ClientConfig,
     settings: &crate::pool::Settings,
     rules: Arc<hyper_util::client::proxy::matcher::Matcher>,
+    pin: Option<&Pin>,
 ) -> Inner {
-    let tcp = crate::transport::connector::http_connector(settings.connect_timeout);
+    use crate::transport::resolver::Resolver;
+    let resolver = pin.map_or_else(Resolver::system, |(host, addr)| {
+        Resolver::pinned(host, *addr)
+    });
+    let tcp = crate::transport::connector::resolving_connector(settings.connect_timeout, resolver);
     let connector = crate::proxy::ProxyConnector::new(tls_config, Arc::clone(&rules), tcp);
     let mut builder = Client::builder(TokioExecutor::new());
     // The default (50 s) is below the 60 s idle timeout of common load
@@ -162,3 +198,6 @@ pub fn build_inner(
         rules,
     }
 }
+
+#[cfg(test)]
+mod tests;

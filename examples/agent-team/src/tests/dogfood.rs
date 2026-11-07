@@ -110,7 +110,7 @@ pub async fn test_push_list_jsonrpc_regression(ctx: &TestContext) -> TestResult 
             format!("http://{}/webhook", ctx.webhook_addr),
         )
         .with_token(format!("regression-token-{i}"));
-        client.set_push_config(config).await.unwrap();
+        client.create_push_config(config).await.unwrap();
     }
     match client
         .list_push_configs(ListPushConfigsParams::new(tid.clone()).with_page_size(10))
@@ -157,7 +157,7 @@ pub async fn test_push_event_classification(ctx: &TestContext) -> TestResult {
                         .with_authentication(
                             AuthenticationInfo::new("bearer").with_credentials("test-cred"),
                         );
-                let _ = client.set_push_config(push_config).await;
+                let _ = client.create_push_config(push_config).await;
             }
             while stream.next().await.is_some() {}
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;

@@ -36,6 +36,9 @@ impl Dispatcher for MockDispatcher {
     }
 }
 
+// The deprecated free function's own test, one of its only callers in the
+// workspace; removed with it, no earlier than 0.17.0 (ADR 0052).
+#[allow(deprecated)]
 #[tokio::test]
 async fn serve_with_addr_returns_bound_address() {
     let addr = serve_with_addr("127.0.0.1:0", MockDispatcher)
@@ -56,6 +59,9 @@ async fn serve_with_addr_returns_bound_address() {
     assert_eq!(&body[..], b"ok");
 }
 
+// The deprecated free function's own test, one of its only callers in the
+// workspace; removed with it, no earlier than 0.17.0 (ADR 0052).
+#[allow(deprecated)]
 #[tokio::test]
 async fn serve_with_addr_handles_multiple_connections() {
     let addr = serve_with_addr("127.0.0.1:0", MockDispatcher)
@@ -133,6 +139,9 @@ async fn backoff_pauses_only_on_fd_exhaustion() {
 /// The two defaults tell the outcomes apart: with the header timeout the
 /// connection closes at about 30 s; without it, the 75 s idle timeout would,
 /// and the 40 s ceiling (inside nextest's 45 s limit) fails first.
+// The deprecated free function's own test, one of its only callers in the
+// workspace; removed with it, no earlier than 0.17.0 (ADR 0052).
+#[allow(deprecated)]
 #[tokio::test]
 async fn serve_with_addr_cuts_off_a_peer_that_never_finishes_its_headers() {
     use std::time::{Duration, Instant};
@@ -173,6 +182,9 @@ async fn serve_with_addr_cuts_off_a_peer_that_never_finishes_its_headers() {
 /// Every other test in this module drives `serve_with_addr`, a different
 /// function. `serve` itself was never called, so a body that bound nothing
 /// and returned success was indistinguishable from a working one.
+// The deprecated free function's own test, one of its only callers in the
+// workspace; removed with it, no earlier than 0.17.0 (ADR 0052).
+#[allow(deprecated)]
 #[tokio::test]
 async fn serve_binds_and_answers_requests() {
     // Reserve an ephemeral port and release it: `serve` takes an address

@@ -166,8 +166,8 @@ version of A2A **MUST** use the method names from that version's proto. The
 | `GetTask` | unary | `on_get_task` |
 | `ListTasks` | unary | `on_list_tasks` |
 | `CancelTask` | unary | `on_cancel_task` |
-| `SubscribeToTask` | unary→stream | `on_resubscribe` |
-| `CreateTaskPushNotificationConfig` | unary | `on_set_push_config` |
+| `SubscribeToTask` | unary→stream | `on_subscribe_to_task` |
+| `CreateTaskPushNotificationConfig` | unary | `on_create_push_config` |
 | `GetTaskPushNotificationConfig` | unary | `on_get_push_config` |
 | `ListTaskPushNotificationConfigs` | unary | `on_list_push_configs` |
 | `DeleteTaskPushNotificationConfig` | unary | `on_delete_push_config` |

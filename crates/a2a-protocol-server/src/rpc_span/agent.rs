@@ -32,8 +32,9 @@
 //! `RequestHandlerBuilder::with_span_content_capture(true)` the request's
 //! message and the agent's replies and artifacts are recorded, in the
 //! conventions' JSON message format (`model/gen-ai/gen-ai-*-messages.json`),
-//! within [`CONTENT_LIMIT`] bytes per attribute. Raw bytes are never
-//! recorded, only their type and size.
+//! within [`CONTENT_LIMIT`] bytes per attribute, every byte of a part's JSON
+//! charged (`content.rs`). Raw bytes are never recorded, only their type and
+//! size.
 
 use std::future::Future;
 #[cfg(feature = "tracing")]
@@ -44,13 +45,22 @@ use a2a_protocol_types::agent_card::AgentCard;
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::Message;
 #[cfg(feature = "tracing")]
-use a2a_protocol_types::message::{MessageRole, Part, PartContent};
+use a2a_protocol_types::message::MessageRole;
 #[cfg(feature = "tracing")]
 use a2a_protocol_types::task::TaskState;
 #[cfg(feature = "tracing")]
 use serde_json::{Value, json};
 
-/// The most bytes of text and structured data one message attribute holds.
+#[cfg(feature = "tracing")]
+mod lineage;
+
+#[cfg(feature = "tracing")]
+use super::content::{Budget, parts_json};
+
+/// The most bytes one message attribute's parts serialise to (plus
+/// `content::MARKER_SLACK`, 41 bytes, for a cut text's marker):
+/// every byte of each part's JSON is charged, not only its text and data
+/// (audit NEW-c-4).
 /// Langfuse's own default field limit is 2 MiB
 /// (`LANGFUSE_OBSERVATION_FIELD_SIZE_LIMIT_BYTES`); a span attribute is held
 /// in memory until export, so this is far below it.
@@ -159,6 +169,8 @@ fn executor_span(
         a2a.task.id = task_id,
         a2a.context.id = context_id,
         a2a.task.state = tracing::field::Empty,
+        a2a.lineage.root = tracing::field::Empty,
+        a2a.lineage.depth = tracing::field::Empty,
         otel.status_code = tracing::field::Empty,
         error.type = tracing::field::Empty,
         gen_ai.operation.name = tracing::field::Empty,
@@ -189,10 +201,12 @@ fn executor_span(
         super::a2a::record_agent(&span, card);
     }
     if settings.content {
-        let mut budget = CONTENT_LIMIT;
+        let mut budget = Budget::new(CONTENT_LIMIT);
+        let mut parts = parts_json(&input.parts, &mut budget);
+        parts.extend(budget.omitted_marker());
         let input = json!([{
             "role": role(input.role),
-            "parts": parts_json(&input.parts, &mut budget),
+            "parts": parts,
         }]);
         span.record("gen_ai.input.messages", input.to_string().as_str());
     }
@@ -205,9 +219,10 @@ fn executor_span(
 pub struct OutputRecorder {
     span: tracing::Span,
     content: bool,
-    /// Output parts, bytes left, turn ended, and task stream (a continued
-    /// task, or task/status/artifact seen: a `Message` is no reply, §3.1.2).
-    output: Mutex<(Vec<Value>, usize, bool, bool)>,
+    /// Output parts, the budget left for them, turn ended, and task stream (a
+    /// continued task, or task/status/artifact seen: a `Message` is no reply,
+    /// §3.1.2). Parts past the budget are counted in it, not kept.
+    output: Mutex<(Vec<Value>, Budget, bool, bool)>,
 }
 
 #[cfg(feature = "tracing")]
@@ -216,7 +231,7 @@ impl OutputRecorder {
         Self {
             span,
             content: settings.content,
-            output: Mutex::new((Vec::new(), CONTENT_LIMIT, false, continues)),
+            output: Mutex::new((Vec::new(), Budget::new(CONTENT_LIMIT), false, continues)),
         }
     }
 
@@ -284,8 +299,10 @@ impl OutputRecorder {
         if let Some(reason) = state.and_then(finish_reason) {
             super::a2a::record_finish_reason(&self.span, reason);
         }
-        if self.content && !collected.is_empty() {
-            let message = json!({ "role": "assistant", "parts": collected });
+        if self.content && (!collected.is_empty() || budget.omitted_marker().is_some()) {
+            let mut parts = std::mem::take(collected);
+            parts.extend(budget.omitted_marker());
+            let message = json!({ "role": "assistant", "parts": parts });
             self.span.record(
                 "gen_ai.output.messages",
                 json!([message]).to_string().as_str(),
@@ -335,166 +352,5 @@ const fn role(role: MessageRole) -> &'static str {
     }
 }
 
-#[cfg(feature = "tracing")]
-/// The conventions' `modality` for a media type: image, video and audio by
-/// their top-level type, anything else a document.
-fn modality(media_type: Option<&str>) -> &'static str {
-    match media_type.and_then(|m| m.split('/').next()) {
-        Some("image") => "image",
-        Some("video") => "video",
-        Some("audio") => "audio",
-        _ => "document",
-    }
-}
-
-#[cfg(feature = "tracing")]
-/// `parts` as the conventions' message parts, spending at most `budget`
-/// bytes on text and data; whatever does not fit is cut, and says so.
-fn parts_json(parts: &[Part], budget: &mut usize) -> Vec<Value> {
-    parts
-        .iter()
-        .map(|part| {
-            let media = part.media_type.as_deref();
-            match &part.content {
-                PartContent::Text(text) => json!({ "type": "text", "content": take(text, budget) }),
-                PartContent::Url(url) => json!({
-                    "type": "uri",
-                    "uri": take(url, budget),
-                    "mime_type": media,
-                    "modality": modality(media),
-                }),
-                // Bytes are not content anyone reads in a trace, and an
-                // inline file would dwarf every other attribute.
-                PartContent::Raw(base64) => json!({
-                    "type": "a2a.raw",
-                    "mime_type": media,
-                    "filename": part.filename,
-                    "base64_length": base64.len(),
-                }),
-                PartContent::Data(value) => {
-                    let text = value.to_string();
-                    if text.len() <= *budget {
-                        *budget -= text.len();
-                        json!({ "type": "a2a.data", "content": value })
-                    } else {
-                        json!({ "type": "a2a.data", "truncated": true, "length": text.len() })
-                    }
-                }
-                _ => json!({ "type": "a2a.unknown" }),
-            }
-        })
-        .collect()
-}
-
-#[cfg(feature = "tracing")]
-/// `s`, or as much of it as `budget` allows on a character boundary followed
-/// by a marker, and charges the budget.
-fn take(s: &str, budget: &mut usize) -> String {
-    if s.len() <= *budget {
-        *budget -= s.len();
-        return s.to_owned();
-    }
-    let mut end = *budget;
-    while !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    *budget = 0;
-    format!("{}…[truncated {} bytes]", &s[..end], s.len() - end)
-}
-
-#[cfg(all(test, feature = "tracing"))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_part_kind_maps_to_a_conventions_part() {
-        let parts = vec![
-            Part::text("hi"),
-            Part::url("https://x/y.png").with_media_type("image/png"),
-            Part::raw("AAAA").with_media_type("application/pdf"),
-            Part::data(json!({"k": 1})),
-        ];
-        let mut budget = CONTENT_LIMIT;
-        let got = parts_json(&parts, &mut budget);
-        assert_eq!(got[0], json!({"type": "text", "content": "hi"}));
-        assert_eq!(
-            got[1],
-            json!({"type": "uri", "uri": "https://x/y.png", "mime_type": "image/png", "modality": "image"})
-        );
-        assert_eq!(got[2]["type"], "a2a.raw");
-        assert_eq!(got[2]["base64_length"], 4);
-        assert!(
-            got[2].get("content").is_none(),
-            "raw bytes must never be recorded"
-        );
-        assert_eq!(got[3], json!({"type": "a2a.data", "content": {"k": 1}}));
-    }
-
-    #[test]
-    fn text_past_the_budget_is_cut_on_a_char_boundary_and_marked() {
-        let mut budget = 5;
-        // "héllo wörld": 'é' is two bytes, so byte 5 falls inside nothing
-        // awkward but byte 2 would; cut at 5 lands after "héll".
-        let cut = take("héllo wörld", &mut budget);
-        assert!(cut.starts_with("héll"), "{cut}");
-        assert!(cut.contains("truncated"), "{cut}");
-        assert_eq!(budget, 0);
-        let mut budget = 2;
-        let cut = take("é!", &mut budget);
-        assert!(cut.starts_with('é'), "{cut}");
-        assert_eq!(take("rest", &mut budget), "…[truncated 4 bytes]");
-    }
-
-    /// What fits is charged to the budget exactly, for text and for data.
-    #[test]
-    fn what_fits_is_charged_exactly() {
-        let mut budget = 10;
-        assert_eq!(take("abc", &mut budget), "abc");
-        assert_eq!(budget, 7);
-        let mut budget = 100;
-        // `{"a":1}` is seven bytes.
-        let got = parts_json(&[Part::data(json!({"a": 1}))], &mut budget);
-        assert_eq!(got[0]["content"], json!({"a": 1}));
-        assert_eq!(budget, 93);
-    }
-
-    /// A budget ending inside a character cuts before it, not after.
-    #[test]
-    fn a_cut_inside_a_character_moves_back_to_its_start() {
-        let mut budget = 2;
-        // 'é' is bytes 1 and 2 of "aé"; byte 2 is inside it.
-        assert_eq!(take("aé", &mut budget), "a…[truncated 2 bytes]");
-    }
-
-    #[test]
-    fn data_that_does_not_fit_is_replaced_not_cut() {
-        let mut budget = 3;
-        let got = parts_json(&[Part::data(json!({"long": "value"}))], &mut budget);
-        assert_eq!(got[0]["truncated"], true);
-        assert_eq!(budget, 3);
-    }
-
-    /// The conventions name the agent's side `assistant`.
-    #[test]
-    fn roles_map_to_the_conventions_names() {
-        assert_eq!(role(MessageRole::Agent), "assistant");
-        assert_eq!(role(MessageRole::User), "user");
-    }
-
-    #[test]
-    fn modality_follows_the_media_type() {
-        assert_eq!(modality(Some("audio/ogg")), "audio");
-        assert_eq!(modality(Some("video/mp4")), "video");
-        assert_eq!(modality(Some("text/plain")), "document");
-        assert_eq!(modality(None), "document");
-    }
-
-    #[cfg(feature = "otel")]
-    #[test]
-    fn only_completed_and_failed_claim_a_finish_reason() {
-        assert_eq!(finish_reason(TaskState::Completed), Some("stop"));
-        assert_eq!(finish_reason(TaskState::Failed), Some("error"));
-        assert_eq!(finish_reason(TaskState::Canceled), None);
-        assert_eq!(finish_reason(TaskState::InputRequired), None);
-    }
-}
+#[cfg(test)]
+mod tests;

@@ -76,6 +76,7 @@ fn on_rpc_call_records_the_semconv_histogram() {
         duration: Duration::from_millis(30),
         status_code: Some("OK"),
         error_type: None,
+        tenant: None,
     });
     metrics.on_rpc_call(&RpcCall {
         system: "jsonrpc",
@@ -83,6 +84,7 @@ fn on_rpc_call_records_the_semconv_histogram() {
         duration: Duration::from_millis(1),
         status_code: Some("-32700"),
         error_type: Some("-32700"),
+        tenant: None,
     });
 
     let mut points = rpc_call_points(&reader);

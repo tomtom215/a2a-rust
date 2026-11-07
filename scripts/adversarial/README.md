@@ -86,7 +86,7 @@ by default):
 ```bash
 # Auth: require a JWT-HS256 credential on every binding.
 A2A_ALLOW_FALLBACK=1 \
-  A2A_JWT_HS256_SECRET=top-secret-shared-key-0123456789 \
+  A2A_JWT_HS256_SECRET=YDVouIyoSi9W6gLLiubA/BUIpN6Xz0vb1dm+xpdF1tg= \
   A2A_JWT_ISS=https://issuer.test A2A_JWT_AUD=a2a-agent \
   A2A_BIND_ADDR=127.0.0.1:8090 A2A_GRPC_ADDR=127.0.0.1:8091 A2A_WS_ADDR=127.0.0.1:8092 \
   cargo run -p genai-a2a-agent &

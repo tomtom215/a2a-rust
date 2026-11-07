@@ -10,13 +10,17 @@
 //! together into an [`A2aClient`].
 
 use crate::client::A2aClient;
-use crate::config::{BINDING_GRPC, BINDING_HTTP_JSON, BINDING_JSONRPC, ClientConfig};
+use crate::config::BINDING_JSONRPC;
 use crate::error::{ClientError, ClientResult};
 use crate::retry::RetryTransport;
-use crate::transport::{JsonRpcTransport, RestTransport, Transport};
+use crate::transport::Transport;
 
 use super::ClientBuilder;
-use super::selection::canonical_binding;
+
+mod balanced;
+mod http;
+
+use http::{build_http_transport, http_client, http_transport};
 
 /// What [`ClientBuilder::with_pool`] stores. Without `tls-rustls` there is no
 /// pool, and this cannot be built, so no signature needs a `cfg`.
@@ -91,6 +95,21 @@ impl ClientBuilder {
         Ok(())
     }
 
+    /// `transport` under the retry policy, when one is configured, paying
+    /// each retry from the pool's budget for the origin too when it keeps
+    /// one.
+    fn retry(&mut self, transport: Box<dyn Transport>) -> Box<dyn Transport> {
+        let Some(policy) = self.retry_policy.take() else {
+            return transport;
+        };
+        let retry = RetryTransport::new(transport, policy)
+            .with_peer_honouring_idempotency(self.peer_honours_idempotency);
+        Box::new(match self.shared_budget() {
+            Some(origin) => retry.with_shared_budget(origin),
+            None => retry,
+        })
+    }
+
     /// Puts the in-flight cap, if one was asked for, under the retry layer, so
     /// that a call it refuses is retried like any other transient failure.
     fn limit_in_flight(max: Option<usize>, transport: Box<dyn Transport>) -> Box<dyn Transport> {
@@ -120,6 +139,7 @@ impl ClientBuilder {
     /// - [`ClientError::Transport`] if the selected transport cannot be
     ///   initialized; after fallbacks, it names every interface tried.
     pub fn build(mut self) -> ClientResult<A2aClient> {
+        crate::otel_baggage::warn_unknown(&self.config.propagators);
         if self.config.request_timeout.is_zero() || self.config.send_timeout.is_zero() {
             return Err(ClientError::Config(
                 "request_timeout and send_timeout must be non-zero".into(),
@@ -138,6 +158,7 @@ impl ClientBuilder {
         self.check_max_in_flight()?;
         #[cfg(feature = "tls-rustls")]
         self.check_pool()?;
+        self.check_balancing()?;
         self.send_extensions()?;
 
         let custom = self.transport_override.as_ref().map(|t| {
@@ -145,27 +166,23 @@ impl ClientBuilder {
         });
         let transport: Box<dyn Transport> = if let Some(t) = self.transport_override.take() {
             t
+        } else if let Some((source, policy)) = self.balancing.take() {
+            self.balanced_transport(source, &policy)?
         } else {
             let binding = self
                 .preferred_binding
                 .clone()
                 .unwrap_or_else(|| BINDING_JSONRPC.into());
-            match http_transport(&self.config, self.pool.as_ref(), &binding, &self.endpoint) {
-                Ok(t) => t,
-                Err(first) => self.fall_back(&binding, first)?,
-            }
+            let transport =
+                match http_transport(&self.config, self.pool.as_ref(), &binding, &self.endpoint) {
+                    Ok(t) => t,
+                    Err(first) => self.fall_back(&binding, first)?,
+                };
+            self.guard_origin(transport)
         };
 
-        // Wrap with retry transport if a policy is configured.
         let transport = Self::limit_in_flight(self.max_in_flight, transport);
-        let transport: Box<dyn Transport> = if let Some(policy) = self.retry_policy {
-            Box::new(
-                RetryTransport::new(transport, policy)
-                    .with_peer_honouring_idempotency(self.peer_honours_idempotency),
-            )
-        } else {
-            transport
-        };
+        let transport = self.retry(transport);
 
         // After selection: a fallback moves the endpoint and binding.
         let peer = custom.unwrap_or_else(|| {
@@ -329,7 +346,7 @@ impl ClientBuilder {
     #[cfg(feature = "grpc")]
     pub async fn build_grpc(mut self) -> ClientResult<A2aClient> {
         use crate::transport::grpc::GrpcTransport;
-
+        crate::otel_baggage::warn_unknown(&self.config.propagators);
         if self.config.request_timeout.is_zero() || self.config.send_timeout.is_zero() {
             return Err(ClientError::Config(
                 "request_timeout and send_timeout must be non-zero".into(),
@@ -351,6 +368,14 @@ impl ClientBuilder {
             ));
         }
         self.check_max_in_flight()?;
+        if self.balancing.is_some() {
+            return Err(ClientError::Config(
+                "ClientBuilder::with_balancing balances the HTTP bindings (JSON-RPC, \
+                 HTTP+JSON), and build_grpc builds a gRPC client: tonic balances its own \
+                 channels; drop one of the two"
+                    .into(),
+            ));
+        }
         self.send_extensions()?;
 
         let peer = if let Some(t) = &self.transport_override {
@@ -405,88 +430,6 @@ const GRPC_NOT_SYNC: &str = "gRPC transport requires async connect; \
      with_custom_transport(GrpcTransport::connect(...))";
 #[cfg(not(feature = "grpc"))]
 const GRPC_NOT_SYNC: &str = "gRPC transport requires the `grpc` feature flag";
-
-/// Constructs the HTTP transport for `binding` at `endpoint`.
-///
-/// `binding` is matched ignoring ASCII case. `HTTP+JSON` is the spec name
-/// for the REST binding and `REST` the legacy alias; a card published by an
-/// official Go/Python/Java SDK advertises the spec name, so both resolve to
-/// the REST transport.
-fn http_transport(
-    config: &ClientConfig,
-    pool: Option<&PoolHandle>,
-    binding: &str,
-    endpoint: &str,
-) -> ClientResult<Box<dyn Transport>> {
-    match canonical_binding(binding) {
-        Some(BINDING_JSONRPC) => Ok(Box::new(
-            JsonRpcTransport::from_client(
-                endpoint,
-                http_client(config, pool, endpoint)?,
-                config.request_timeout,
-                config.stream_connect_timeout,
-            )?
-            .with_max_response_size(config.max_response_size)
-            .with_send_timeout(config.send_timeout),
-        )),
-        Some(BINDING_HTTP_JSON) => Ok(Box::new(
-            RestTransport::from_client(
-                endpoint,
-                http_client(config, pool, endpoint)?,
-                config.request_timeout,
-                config.stream_connect_timeout,
-            )?
-            .with_max_response_size(config.max_response_size)
-            .with_send_timeout(config.send_timeout),
-        )),
-        Some(BINDING_GRPC) => Err(ClientError::Config(GRPC_NOT_SYNC.into())),
-        _ => Err(ClientError::Config(format!(
-            "unknown protocol binding: {binding}"
-        ))),
-    }
-}
-
-/// The HTTP client for a transport to `endpoint`: the pool's, when the
-/// builder was given one, and otherwise one of its own as `config.tls` asks.
-fn http_client(
-    config: &ClientConfig,
-    pool: Option<&PoolHandle>,
-    endpoint: &str,
-) -> ClientResult<crate::transport::HttpClient> {
-    use crate::config::TlsConfig;
-
-    #[cfg(feature = "tls-rustls")]
-    if let Some(pool) = pool {
-        return Ok(pool.client());
-    }
-    // Without `tls-rustls` a pool cannot exist.
-    #[cfg(not(feature = "tls-rustls"))]
-    let _ = pool;
-
-    let https = endpoint
-        .get(..8)
-        .is_some_and(|s| s.eq_ignore_ascii_case("https://"));
-    if matches!(config.tls, TlsConfig::Disabled) && https {
-        return Err(ClientError::InvalidEndpoint(format!(
-            "{endpoint} is https:// and TLS is disabled (ClientBuilder::without_tls)"
-        )));
-    }
-    #[cfg(feature = "tls-rustls")]
-    {
-        let tls = match &config.tls {
-            TlsConfig::Custom(tls) => (**tls).clone(),
-            _ => crate::tls::default_tls_config(),
-        };
-        Ok(crate::tls::build_https_client_with_connect_timeout(
-            tls,
-            config.connection_timeout,
-        ))
-    }
-    #[cfg(not(feature = "tls-rustls"))]
-    Ok(crate::transport::plain_http_client(
-        config.connection_timeout,
-    ))
-}
 
 #[cfg(test)]
 #[path = "transport_factory_tests.rs"]

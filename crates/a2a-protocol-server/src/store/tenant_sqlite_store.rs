@@ -233,7 +233,7 @@ impl TenantAwareSqliteTaskStore {
         &self,
         policy: &super::retention::RetentionPolicy,
     ) -> A2aResult<super::retention::PurgeReport> {
-        super::retention::sqlite::purge(
+        let mut report = super::retention::sqlite::purge(
             &self.pool,
             "tenant_tasks",
             &[evlog::SQLITE_DELETE_ORPHANS],
@@ -241,7 +241,21 @@ impl TenantAwareSqliteTaskStore {
             policy,
         )
         .await
-        .map_err(|e| to_a2a_error(&e))
+        .map_err(|e| to_a2a_error(&e))?;
+        if let Some(keep) = super::retention::compact::live_log_bound(policy) {
+            let over: Vec<(String, String)> = sqlx::query_as(evlog::SQLITE_OVER)
+                .bind(super::retention::compact::over(keep))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+            for (partition, task_id) in over {
+                let task_id = TaskId::new(task_id);
+                let compact = super::retention::compact::compact_task(self, &task_id, keep);
+                report.events_compacted +=
+                    TenantContext::scope_partition(&partition, "", compact).await?;
+            }
+        }
+        Ok(report)
     }
 }
 
@@ -740,6 +754,23 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                 .await
                 .map_err(|e| to_a2a_error(&e))?;
             min.map(seq_from_i64).transpose()
+        })
+    }
+
+    fn trim_event_log<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        below: u64,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            let done = sqlx::query(evlog::SQLITE_TRIM_BELOW)
+                .bind(TenantContext::partition())
+                .bind(task_id.0.as_str())
+                .bind(seq_to_i64(below)?)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+            Ok(done.rows_affected())
         })
     }
 

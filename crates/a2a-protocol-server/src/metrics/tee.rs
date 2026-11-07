@@ -76,4 +76,24 @@ impl<A: Metrics, B: Metrics> Metrics for Tee<A, B> {
         self.first.on_executor_run(outcome, duration);
         self.second.on_executor_run(outcome, duration);
     }
+
+    fn on_refusal(&self, cause: &str) {
+        self.first.on_refusal(cause);
+        self.second.on_refusal(cause);
+    }
+
+    fn on_lease(&self, event: &str) {
+        self.first.on_lease(event);
+        self.second.on_lease(event);
+    }
+
+    fn on_halt(&self, scope: &str, action: &str, stopped: usize) {
+        self.first.on_halt(scope, action, stopped);
+        self.second.on_halt(scope, action, stopped);
+    }
+
+    fn on_claim(&self, event: &str) {
+        self.first.on_claim(event);
+        self.second.on_claim(event);
+    }
 }

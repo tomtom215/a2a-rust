@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The observability stack's rules, configuration and generated manifests
+# (deploy/observability, deploy/kubernetes/observability), checked by the
+# tools that will load them. Until 0.16.0 nothing ran promtool: the rule
+# tests were read, never run, by CI (audit C, PLAN group J).
+#
+# promtool and amtool come from the Prometheus and Alertmanager release
+# tarballs at the versions the compose stack runs, each checked against the
+# SHA-256 its release lists, by deploy/observability/scripts/install_tools.sh
+# (the one place those pins live; ci.yml uses it too, so the harness there
+# can prove `promtool test rules` fails on an empty tests directory, an unmet
+# expectation and a broken rule).
+#
+# check_stack.py: the caller-class pattern in the rules matches the codes the
+# crates define (NEW-c-1), prometheus-compose.yml keeps prometheus.yml's
+# shared blocks, every compose image is pinned by digest, and the Kubernetes
+# manifests are what their sources generate (C-22).
+
+name: Observability
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  promtool:
+    name: Prometheus rules and stack configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install promtool and amtool (pinned by SHA-256)
+        run: |
+          deploy/observability/scripts/install_tools.sh "$RUNNER_TEMP/obs-bin" promtool amtool
+          echo "$RUNNER_TEMP/obs-bin" >> "$GITHUB_PATH"
+
+      - name: promtool check config
+        working-directory: deploy/observability/prometheus
+        run: |
+          set -euo pipefail
+          for f in prometheus.yml prometheus-compose.yml prometheus-collector.yml; do
+            promtool check config "$f"
+          done
+
+      - name: promtool check rules
+        run: promtool check rules deploy/observability/prometheus/rules/*.yml
+
+      # Every test file, and at least one: a glob that matched nothing would
+      # otherwise pass having tested no rule.
+      - name: promtool test rules
+        working-directory: deploy/observability/prometheus
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          tests=(tests/*.test.yml)
+          if [ "${#tests[@]}" -eq 0 ]; then
+            echo "::error::no promtool test files under deploy/observability/prometheus/tests"; exit 1
+          fi
+          promtool test rules "${tests[@]}"
+
+      - name: amtool check-config
+        run: amtool check-config deploy/observability/alertmanager/alertmanager.yml
+
+      - name: Stack consistency and generated Kubernetes manifests
+        run: python3 -m pip install --quiet --require-hashes -r .github/requirements/pyyaml.txt && python3 deploy/observability/scripts/check_stack.py

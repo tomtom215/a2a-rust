@@ -21,9 +21,10 @@ use a2a_protocol_types::budget::ChildGrant;
 use a2a_protocol_types::delegation_journal::DelegationJournal;
 use a2a_protocol_types::idempotency;
 use a2a_protocol_types::lease::Lease;
+use a2a_protocol_types::lineage::Lineage;
 
 use super::renewal::Renewal;
-use super::{Delegation, ResumePolicy, fresh_key, journal, refused};
+use super::{Delegation, HandOffPolicy, ResumePolicy, fresh_key, journal, refused};
 use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
 
@@ -52,6 +53,8 @@ pub struct DelegationOptions {
     journal: Option<JournalChoice>,
     resume: Option<ResumePolicy>,
     id_wait: Option<Duration>,
+    lineage: Option<Lineage>,
+    hand_off: Option<HandOffPolicy>,
 }
 
 impl std::fmt::Debug for DelegationOptions {
@@ -62,6 +65,8 @@ impl std::fmt::Debug for DelegationOptions {
             .field("journal", &self.journal.is_some())
             .field("resume", &self.resume)
             .field("id_wait", &self.id_wait)
+            .field("lineage", &self.lineage)
+            .field("hand_off", &self.hand_off)
             .finish()
     }
 }
@@ -123,6 +128,18 @@ impl DelegationOptions {
         self
     }
 
+    /// Gives the child `lineage`, the job it belongs to (ADR 0034): from an
+    /// executor, `RequestContext::child_lineage` in `a2a-protocol-server`,
+    /// which names this turn's job one level down with this task as the
+    /// parent. Then halting the job by its root stops the child on an agent
+    /// that honours the extension, as it stops this turn. An agent that does
+    /// not ignores it. A reattach sends no message, so it carries none.
+    #[must_use]
+    pub fn with_lineage(mut self, lineage: Lineage) -> Self {
+        self.lineage = Some(lineage);
+        self
+    }
+
     /// Sets how a lost stream is resumed (see [`ResumePolicy`]).
     #[must_use]
     pub const fn with_resume(mut self, policy: ResumePolicy) -> Self {
@@ -135,6 +152,15 @@ impl DelegationOptions {
     #[must_use]
     pub const fn with_id_wait(mut self, wait: Duration) -> Self {
         self.id_wait = Some(wait);
+        self
+    }
+
+    /// Sets how a child whose turn a shutdown handed back is continued (see
+    /// [`HandOffPolicy`]; the default continues three times).
+    /// [`HandOffPolicy::never`] opts out.
+    #[must_use]
+    pub const fn with_hand_off(mut self, policy: HandOffPolicy) -> Self {
+        self.hand_off = Some(policy);
         self
     }
 }
@@ -164,8 +190,13 @@ impl Delegation {
             journal,
             resume,
             id_wait,
+            lineage,
+            hand_off,
         } = options;
         let new_record = new_record_of(journal)?;
+        if let Some(lineage) = &lineage {
+            lineage.attach(&mut params.message);
+        }
         prepare(&client, &mut params, budget.as_ref(), lease);
         let tenant = params.tenant.clone();
         let record = begin_record(new_record, &params).await?;
@@ -188,7 +219,7 @@ impl Delegation {
         if let Some((journal, id)) = record {
             this = this.with_journal(journal, id);
         }
-        Ok(this.with_options(resume, id_wait))
+        Ok(this.with_options(resume, id_wait, hand_off))
     }
 
     /// [`reattach`](Self::reattach) with the lease, the journal record, the
@@ -246,7 +277,7 @@ impl Delegation {
         if let Some((journal, record)) = existing {
             this = this.with_journal(journal, record);
         }
-        Ok(this.with_options(options.resume, options.id_wait))
+        Ok(this.with_options(options.resume, options.id_wait, options.hand_off))
     }
 
     /// [`start`](Self::start), granting the child a lease of `ttl` and
@@ -301,17 +332,22 @@ impl Delegation {
         Self::start_with(client, params, options).await
     }
 
-    /// Applies the resume policy and the id wait of the options, where given.
+    /// Applies the resume policy, the id wait and the hand-off policy of the
+    /// options, where given.
     const fn with_options(
         mut self,
         resume: Option<ResumePolicy>,
         id_wait: Option<Duration>,
+        hand_off: Option<HandOffPolicy>,
     ) -> Self {
         if let Some(policy) = resume {
             self.resume_policy = policy;
         }
         if let Some(wait) = id_wait {
             self.id_wait = wait;
+        }
+        if let Some(policy) = hand_off {
+            self.hand_off_policy = policy;
         }
         self
     }

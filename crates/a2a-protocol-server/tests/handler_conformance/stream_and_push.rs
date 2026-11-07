@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::handler::SendMessageResult;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::streaming::{EventQueueReader, InMemoryQueueReader};
 use a2a_protocol_server::{PushSender, RequestHandler, RequestHandlerBuilder};
 use a2a_protocol_types::error::A2aResult;
@@ -142,9 +142,14 @@ async fn progress_reaches_the_stream_while_the_executor_still_runs() {
 #[tokio::test]
 async fn progress_reaches_an_sse_client_while_the_executor_still_runs() {
     let (handler, seen) = handler(Recorder::default());
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-        .await
-        .expect("JSON-RPC");
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("JSON-RPC");
+        let addr = bound.local_addr().expect("JSON-RPC");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     let envelope = json!({"jsonrpc": "2.0", "id": 1, "method": "SendStreamingMessage",
         "params": {"message": {"messageId": "m-1", "role": "ROLE_USER", "parts": [{"text": "wait"}]}}});
     let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
@@ -207,7 +212,7 @@ async fn a_push_config_reads_back_whole_and_lasts_through_completion() {
     }))
     .expect("config");
     let created = handler
-        .on_set_push_config(asked, None)
+        .on_create_push_config(asked, None)
         .await
         .expect("create");
     let id = created.id.clone().expect("an id");

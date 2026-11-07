@@ -10,12 +10,17 @@ mod generations;
 #[cfg(test)]
 mod tests;
 
-use std::sync::{Arc, OnceLock};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 pub use generations::Generations;
 
+use crate::balance::Ejection;
 use crate::error::{ClientError, ClientResult};
+use crate::origin::{OriginSnapshot, Origins};
+use crate::retry::RetryBudget;
 use crate::tls::{ClientConfig, HttpsClient, default_tls_config};
 
 /// How long an idle connection is kept: below the 60 s idle timeout of
@@ -105,11 +110,47 @@ impl Default for Settings {
 /// client's calls over the replicas behind a layer-4 load balancer that
 /// pins a long-lived HTTP/2 connection to one of them.
 ///
+/// # Per-origin state (ADR 0050)
+///
+/// A pool keeps, for each origin its clients call (scheme, host and port),
+/// the calls in flight and how the origin has been doing. Three policies use
+/// it, each off unless asked for, and each shared by every client of the
+/// pool:
+///
+/// - [`with_ejection`](HttpPoolBuilder::with_ejection): a **circuit
+///   breaker**. An origin that fails a number of calls in a row is refused
+///   with [`ClientError::CircuitOpen`] until its ejection ends, and then one
+///   call probes it. A balanced client
+///   ([`with_balancing`](crate::ClientBuilder::with_balancing)) takes it out
+///   of rotation instead.
+/// - [`with_max_in_flight_per_origin`](HttpPoolBuilder::with_max_in_flight_per_origin):
+///   a call that would exceed the cap is refused with
+///   [`ClientError::TooManyPendingRequests`], whichever client makes it.
+/// - [`with_retry_budget`](HttpPoolBuilder::with_retry_budget): retries
+///   towards one origin, from every client with a retry policy, are paid
+///   from one budget.
+///
+/// [`origins`](HttpPool::origins) shows the state.
+///
 /// Cloning is cheap and shares the connections.
 #[derive(Clone, Debug)]
 pub struct HttpPool {
     generations: Arc<Generations>,
+    shared: Arc<Shared>,
 }
+
+/// What a pool keeps beside its connections.
+#[derive(Debug)]
+struct Shared {
+    origins: Arc<Origins>,
+    /// The connections of each pinned endpoint (ADR 0050): one set per host
+    /// and address, so that clients of the pool share them too.
+    pinned: Mutex<HashMap<(String, SocketAddr), Arc<Generations>>>,
+}
+
+/// How many pinned connection sets a pool keeps before it forgets the ones
+/// no client uses.
+const PINNED_PRUNE_ABOVE: usize = 256;
 
 impl HttpPool {
     /// A builder with the defaults.
@@ -128,11 +169,23 @@ impl HttpPool {
     pub fn shared() -> Self {
         static SHARED: OnceLock<HttpPool> = OnceLock::new();
         SHARED
-            .get_or_init(|| Self::from_parts(default_tls_config(), Settings::default(), None))
+            .get_or_init(|| {
+                Self::from_parts(
+                    default_tls_config(),
+                    Settings::default(),
+                    None,
+                    Origins::new(None, None, None),
+                )
+            })
             .clone()
     }
 
-    fn from_parts(tls: ClientConfig, settings: Settings, lifetime: Option<Duration>) -> Self {
+    fn from_parts(
+        tls: ClientConfig,
+        settings: Settings,
+        lifetime: Option<Duration>,
+        origins: Origins,
+    ) -> Self {
         let rules = Arc::new(crate::proxy::matcher_from_env());
         Self {
             generations: Arc::new(Generations::new(
@@ -142,12 +195,51 @@ impl HttpPool {
                 lifetime,
                 generations::random_bits,
             )),
+            shared: Arc::new(Shared {
+                origins: Arc::new(origins),
+                pinned: Mutex::new(HashMap::new()),
+            }),
         }
     }
 
     /// A client that sends through this pool.
     pub(crate) fn client(&self) -> HttpsClient {
         HttpsClient::pooled(Arc::clone(&self.generations))
+    }
+
+    /// A client that sends through this pool's connections to `host`
+    /// pinned at `addr`, shared with every client of the pool that pins the
+    /// same.
+    pub(crate) fn pinned_client(&self, host: &str, addr: SocketAddr) -> HttpsClient {
+        let key = (host.to_ascii_lowercase(), addr);
+        let mut pinned = self
+            .shared
+            .pinned
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(generations) = pinned.get(&key) {
+            return HttpsClient::pooled(Arc::clone(generations));
+        }
+        if pinned.len() >= PINNED_PRUNE_ABOVE {
+            pinned.retain(|_, g| Arc::strong_count(g) > 1);
+        }
+        let generations = Arc::new(self.generations.pinned(key.clone()));
+        pinned.insert(key, Arc::clone(&generations));
+        drop(pinned);
+        HttpsClient::pooled(generations)
+    }
+
+    /// The per-origin state of this pool's clients.
+    pub(crate) fn origin_registry(&self) -> &Arc<Origins> {
+        &self.shared.origins
+    }
+
+    /// Every origin this pool keeps state for, sorted by origin: calls in
+    /// flight, and whether it is ejected. Empty for a pool without
+    /// per-origin policies and without balanced clients.
+    #[must_use]
+    pub fn origins(&self) -> Vec<OriginSnapshot> {
+        self.shared.origins.snapshot()
     }
 
     /// The pool behind `self` and `other` is the same one.
@@ -170,6 +262,9 @@ pub struct HttpPoolBuilder {
     tls: Option<ClientConfig>,
     settings: Settings,
     max_connection_lifetime: Option<Duration>,
+    ejection: Option<Ejection>,
+    max_in_flight_per_origin: Option<usize>,
+    retry_budget: Option<RetryBudget>,
 }
 
 impl HttpPoolBuilder {
@@ -180,7 +275,42 @@ impl HttpPoolBuilder {
             tls: None,
             settings: Settings::default(),
             max_connection_lifetime: None,
+            ejection: None,
+            max_in_flight_per_origin: None,
+            retry_budget: None,
         }
+    }
+
+    /// Opens an origin's circuit after `ejection.consecutive_failures`
+    /// failures in a row (a connection error, a timeout, `502`, `503`,
+    /// `504`), for `ejection.base`, doubling up to `ejection.max` while its
+    /// probes fail. While it is open, the pool's clients' calls to it are
+    /// refused with [`ClientError::CircuitOpen`] without being sent; balanced
+    /// clients take it out of rotation. Default: off.
+    #[must_use]
+    pub const fn with_ejection(mut self, ejection: Ejection) -> Self {
+        self.ejection = Some(ejection);
+        self
+    }
+
+    /// The most calls the pool's clients may have waiting for a response
+    /// from one origin at once (a stream counts until it has opened); one
+    /// past it is refused with [`ClientError::TooManyPendingRequests`],
+    /// which is retryable. Default: no cap.
+    #[must_use]
+    pub const fn with_max_in_flight_per_origin(mut self, max: usize) -> Self {
+        self.max_in_flight_per_origin = Some(max);
+        self
+    }
+
+    /// Pays every retry the pool's clients make towards one origin from one
+    /// [`RetryBudget`] for that origin, as well as from the client's own
+    /// budget if its [`RetryPolicy`](crate::RetryPolicy) has one. Default:
+    /// none.
+    #[must_use]
+    pub const fn with_retry_budget(mut self, budget: RetryBudget) -> Self {
+        self.retry_budget = Some(budget);
+        self
     }
 
     /// The TLS configuration every connection of the pool uses: the roots it
@@ -264,7 +394,8 @@ impl HttpPoolBuilder {
     ///
     /// # Errors
     ///
-    /// [`ClientError::Config`], naming the setting, when a duration is zero.
+    /// [`ClientError::Config`], naming the setting, when a duration or the
+    /// in-flight cap is zero.
     pub fn build(self) -> ClientResult<HttpPool> {
         let zero = |name: &str, value: Duration| -> ClientResult<()> {
             if value.is_zero() {
@@ -283,10 +414,21 @@ impl HttpPoolBuilder {
             zero("with_http2_keep_alive (interval)", interval)?;
             zero("with_http2_keep_alive (timeout)", timeout)?;
         }
+        if self.max_in_flight_per_origin == Some(0) {
+            return Err(ClientError::Config(
+                "HttpPoolBuilder: with_max_in_flight_per_origin is zero; it must be at least 1"
+                    .into(),
+            ));
+        }
         Ok(HttpPool::from_parts(
             self.tls.unwrap_or_else(default_tls_config),
             self.settings,
             self.max_connection_lifetime,
+            Origins::new(
+                self.ejection,
+                self.max_in_flight_per_origin,
+                self.retry_budget,
+            ),
         ))
     }
 }
@@ -298,6 +440,9 @@ impl std::fmt::Debug for HttpPoolBuilder {
             .field("custom_tls", &self.tls.is_some())
             .field("settings", &self.settings)
             .field("max_connection_lifetime", &self.max_connection_lifetime)
+            .field("ejection", &self.ejection)
+            .field("max_in_flight_per_origin", &self.max_in_flight_per_origin)
+            .field("retry_budget", &self.retry_budget)
             .finish()
     }
 }

@@ -30,6 +30,20 @@ pub enum CliError {
         /// `result_large_err` limit when `serde_json`'s `preserve_order` grows it.
         source: Box<ClientError>,
     },
+    /// A call failed to reach the interface the agent card named, which is
+    /// not the URL the user typed (audit A21: `a2a send http://localhost:8080`
+    /// through a port-forward dialled the card's in-cluster URL and printed
+    /// an error naming neither).
+    Unreachable {
+        /// The failure.
+        source: Box<ClientError>,
+        /// The URL the user typed, the card's base.
+        typed: String,
+        /// The interface URL the card named, where the call went.
+        endpoint: String,
+        /// That interface's binding, in agent-card spelling.
+        binding: String,
+    },
     /// A response could not be rendered as JSON. Should not happen — every
     /// protocol type serializes — but a panic would be the wrong answer.
     Json(serde_json::Error),
@@ -129,6 +143,23 @@ impl fmt::Display for CliError {
                 plain(url),
                 plain(&source.to_string())
             ),
+            Self::Unreachable {
+                source,
+                typed,
+                endpoint,
+                binding,
+            } => write!(
+                f,
+                "{}\nhint: the agent card at {} sent this call to {} ({}); if that address cannot \
+                 be reached from here (a port-forward, a proxy, a card that advertises a bind \
+                 address), pass --binding {} to call {} directly",
+                plain(&source.to_string()),
+                plain(typed),
+                plain(endpoint),
+                plain(binding),
+                binding_flag(binding),
+                plain(typed)
+            ),
             Self::Json(e) => write!(
                 f,
                 "could not render response as JSON: {}",
@@ -138,6 +169,23 @@ impl fmt::Display for CliError {
             Self::Failed(why) => f.write_str(&plain(why)),
         }
     }
+}
+
+/// The `--binding` value for a binding in agent-card spelling; the card's
+/// spelling, made safe to print, for one this tool does not name.
+fn binding_flag(binding: &str) -> String {
+    let flag = if binding.eq_ignore_ascii_case(a2a_protocol_client::config::BINDING_JSONRPC) {
+        "jsonrpc"
+    } else if binding.eq_ignore_ascii_case(a2a_protocol_client::config::BINDING_HTTP_JSON) {
+        "rest"
+    } else if binding.eq_ignore_ascii_case(a2a_protocol_client::config::BINDING_GRPC) {
+        "grpc"
+    } else if binding.eq_ignore_ascii_case("WEBSOCKET") {
+        "websocket"
+    } else {
+        return format!("<{}>", plain(binding));
+    };
+    flag.to_owned()
 }
 
 impl std::error::Error for CliError {}
@@ -218,6 +266,52 @@ mod tests {
         assert!(
             !cut(None).contains("--from"),
             "no id, nothing to resume after"
+        );
+    }
+
+    /// Audit A21: a call that cannot reach the card's interface names both
+    /// URLs and the flag that uses the typed one, in this tool's spelling.
+    #[test]
+    fn an_unreachable_card_interface_names_both_urls_and_the_way_out() {
+        let e = |binding: &str| {
+            CliError::Unreachable {
+                source: Box::new(ClientError::HttpClient(
+                    "client error (Connect): dns error".into(),
+                )),
+                typed: "http://localhost:8080".into(),
+                endpoint: "http://deploy-agent.default.svc.cluster.local".into(),
+                binding: binding.into(),
+            }
+            .to_string()
+        };
+        assert_eq!(
+            e("HTTP+JSON"),
+            "HTTP client error: client error (Connect): dns error\n\
+             hint: the agent card at http://localhost:8080 sent this call to \
+             http://deploy-agent.default.svc.cluster.local (HTTP+JSON); if that address cannot \
+             be reached from here (a port-forward, a proxy, a card that advertises a bind \
+             address), pass --binding rest to call http://localhost:8080 directly"
+        );
+        for (card, flag) in [
+            ("JSONRPC", "--binding jsonrpc "),
+            ("jsonrpc", "--binding jsonrpc "),
+            ("GRPC", "--binding grpc "),
+            ("WEBSOCKET", "--binding websocket "),
+            ("SLIMRPC", "--binding <SLIMRPC> "),
+        ] {
+            assert!(e(card).contains(flag), "{card}: {}", e(card));
+        }
+        assert_eq!(e("X\u{1b}[2J").lines().count(), 2, "escaped");
+        assert_eq!(e("HTTP+JSON").lines().count(), 2);
+        assert_eq!(
+            CliError::Unreachable {
+                source: Box::new(ClientError::Transport("x".into())),
+                typed: String::new(),
+                endpoint: String::new(),
+                binding: String::new(),
+            }
+            .exit_code(),
+            1
         );
     }
 

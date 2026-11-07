@@ -625,12 +625,7 @@ impl GrpcTransport {
     ) -> Result<tonic::transport::Channel, tonic::transport::Error> {
         #[cfg(feature = "tls-rustls")]
         if let Ok(dst) = endpoint_str.parse::<hyper::Uri>() {
-            let mut tcp = hyper_util::client::legacy::connect::HttpConnector::new();
-            tcp.set_nodelay(true);
-            tcp.set_connect_timeout(Some(config.connect_timeout));
-            tcp.set_keepalive(Some(super::connector::TCP_KEEPALIVE_TIME));
-            tcp.set_keepalive_interval(Some(super::connector::TCP_KEEPALIVE_INTERVAL));
-            tcp.set_keepalive_retries(Some(super::connector::TCP_KEEPALIVE_RETRIES));
+            let tcp = super::connector::http_connector(config.connect_timeout);
             if let Some(tunnel) = crate::proxy::grpc_tunnel(&dst, tcp) {
                 return endpoint.connect_with_connector(tunnel).await;
             }

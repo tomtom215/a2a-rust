@@ -43,7 +43,7 @@ use a2a_protocol_server::store::SqliteTaskStore;
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -75,9 +75,12 @@ async fn start_multi_event_server(event_pairs: usize) -> (String, std::net::Sock
             .expect("build handler"),
     );
     let dispatcher = JsonRpcDispatcher::new(handler);
-    let addr = serve_with_addr("127.0.0.1:0", dispatcher)
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(dispatcher, std::future::pending()));
+        addr
+    };
     (format!("http://{addr}"), addr)
 }
 
@@ -232,9 +235,14 @@ async fn start_appending_server(chunks: usize, store: StoreKind) -> String {
         }
     };
     let handler = Arc::new(builder.build().expect("build handler"));
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     format!("http://{addr}")
 }
 

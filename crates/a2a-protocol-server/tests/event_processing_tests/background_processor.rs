@@ -244,7 +244,7 @@ async fn streaming_mode_push_delivery_with_cooperative_executor() {
 
     let config = TaskPushNotificationConfig::new(&task_id, "https://example.com/push-test");
     handler
-        .on_set_push_config(config, None)
+        .on_create_push_config(config, None)
         .await
         .expect("set push config");
 

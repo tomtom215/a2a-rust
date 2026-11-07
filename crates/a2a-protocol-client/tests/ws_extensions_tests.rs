@@ -63,10 +63,17 @@ async fn seen_with(config: WebSocketTransportConfig) -> Vec<Vec<String>> {
             .build()
             .expect("handler"),
     );
-    let addr = Arc::new(WebSocketDispatcher::new(handler))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("serve");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let transport = WebSocketTransport::connect_with_config(format!("ws://{addr}"), config)
         .await
         .expect("connect");

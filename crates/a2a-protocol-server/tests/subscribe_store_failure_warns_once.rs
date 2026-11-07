@@ -112,7 +112,7 @@ async fn a_failing_store_is_reported_once_per_run_of_failures() {
         .build()
         .unwrap();
     let mut reader = handler
-        .on_resubscribe(TaskIdParams::new("t-flaky".to_owned()), None)
+        .on_subscribe_to_task(TaskIdParams::new("t-flaky".to_owned()), None)
         .await
         .expect("resubscribe to a parked task");
     let _snapshot = reader.read().await.expect("a snapshot").expect("no error");

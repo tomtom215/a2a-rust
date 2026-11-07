@@ -1,0 +1,118 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The deployment files, built and validated on every pull request (audit
+# NEW-a-l-4a). Until 0.16.0 nothing built examples/deploy-agent/Dockerfile or
+# read its manifests: the image's build stages had never run when the release
+# workflow was given a job that publishes it, and a workspace change that
+# breaks `cargo chef prepare`/`cook` (a member needing a file the image's
+# ignore file leaves out, a path dependency outside the copied tree, a
+# toolchain past the pinned rust image) or a typo in a manifest would have
+# been found first by a newcomer following the README, or by the release.
+#
+# No path filter, on purpose: the image builds the whole workspace's
+# manifests, so a change anywhere can break it.
+
+name: Deploy files
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # The image as release.yml builds it, loaded into the runner instead of
+  # pushed, then run: its HEALTHCHECK must report healthy, /ready and the card
+  # must answer, and a `docker stop` must end the process cleanly (exit 0, the
+  # binary is PID 1 and drains on SIGTERM).
+  image:
+    name: deploy-agent image (build, run, stop)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: examples/deploy-agent/Dockerfile
+          load: true
+          tags: deploy-agent:ci
+          build-args: AGENT_VERSION=0.0.0-ci
+          # The dependency stage is reused across runs until a manifest or
+          # Cargo.lock changes; the release build stays cold.
+          cache-from: type=gha,scope=deploy-agent
+          cache-to: type=gha,scope=deploy-agent,mode=max
+      - name: Run it, wait for its health check, call it, stop it
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name agent -p 8080:8080 \
+            --read-only --cap-drop ALL --security-opt no-new-privileges \
+            -e AGENT_URL=http://localhost:8080 deploy-agent:ci
+          status=starting
+          for _ in $(seq 60); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' agent)
+            [ "$status" = healthy ] && break
+            [ "$status" = unhealthy ] && break
+            sleep 2
+          done
+          if [ "$status" != healthy ]; then
+            docker logs agent
+            echo "FAIL: the container's health check says $status, not healthy"
+            exit 1
+          fi
+          curl -fsS http://localhost:8080/ready || { echo "FAIL: /ready did not answer 200"; exit 1; }
+          curl -fsS http://localhost:8080/.well-known/agent-card.json > card.json
+          cat card.json
+          grep -q '"version":"0.0.0-ci"' card.json \
+            || { echo "FAIL: the card does not carry the build's AGENT_VERSION"; exit 1; }
+          grep -q '"url":"http://localhost:8080"' card.json \
+            || { echo "FAIL: the card does not advertise AGENT_URL"; exit 1; }
+          curl -fsS -X POST http://localhost:8080/message:send \
+            -H 'content-type: application/json' -H 'A2A-Version: 1.0' \
+            -d '{"message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"CI"}]}}' \
+            > reply.json || { echo "FAIL: message:send was refused"; exit 1; }
+          grep -q 'Hello, CI!' reply.json || { echo "FAIL: the agent did not answer the message"; exit 1; }
+          docker stop --time 30 agent
+          code=$(docker inspect --format '{{.State.ExitCode}}' agent)
+          docker logs agent 2>&1 | tail -5
+          [ "$code" = 0 ] || { echo "FAIL: the agent exited $code on SIGTERM, not 0"; exit 1; }
+
+  # Every object in the manifests against the Kubernetes API schemas, strict
+  # (an unknown field such as a misspelt `imagePullPolicy` fails). kubeconform
+  # is a pinned release, checked against its published sha256 before it runs.
+  manifests:
+    name: deploy-agent manifests (kubeconform)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KUBECONFORM_VERSION: v0.7.0
+      KUBECONFORM_SHA256: c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
+      KUBERNETES_VERSION: 1.31.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install kubeconform
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "${KUBECONFORM_SHA256}  kubeconform.tar.gz" | sha256sum -c -
+          tar -xzf kubeconform.tar.gz kubeconform
+      - name: Validate the manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./kubeconform -strict -summary -kubernetes-version "${KUBERNETES_VERSION}" \
+            examples/deploy-agent/deployment.yaml examples/deploy-agent/network.yaml

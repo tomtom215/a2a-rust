@@ -47,6 +47,37 @@ while let Some(event) = stream.next().await {
 # }
 ```
 
+## Stream combinators
+
+`EventStream` is a `futures_core::Stream` of the same events `next()`
+returns, read from the same state, so `StreamExt` (from `futures` or
+`futures-util`), `select_all`, tokio's `StreamMap` and axum's `Sse` take it
+as it is. Two tasks' events, merged as they arrive:
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+use futures_util::StreamExt;
+
+# async fn f(client: A2aClient, first: MessageSendParams, second: MessageSendParams) -> Result<(), ClientError> {
+let a = client.stream_message(first).await?;
+let b = client.stream_message(second).await?;
+let mut both = futures_util::stream::select_all([a, b]);
+while let Some(event) = both.next().await {
+    match event? {
+        StreamResponse::StatusUpdate(ev) => println!("{}: {:?}", ev.task_id, ev.status.state),
+        _ => {}
+    }
+}
+# Ok(())
+# }
+```
+
+With `StreamExt` in scope, `stream.next()` on an `EventStream` still calls
+the inherent method (inherent methods win), and the two never disagree. The
+silence bounds below are deadlines counted from the last data received, not
+per-call timeouts: polling inside a `select!` whose other branch keeps winning
+does not restart them.
+
 ## Event ordering
 
 A typical stream delivers events in this order:

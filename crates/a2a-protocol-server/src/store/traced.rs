@@ -133,12 +133,17 @@ impl TracedTaskStore {
         failure: Option<&str>,
     ) {
         use opentelemetry::KeyValue;
-        let histogram = opentelemetry::global::meter("a2a.server")
-            .f64_histogram("db.client.operation.duration")
-            .with_unit("s")
-            .with_description("Duration of database client operations.")
-            .with_boundaries(DURATION_BUCKETS.to_vec())
-            .build();
+        // Built once per global provider, not per operation (audit C-23).
+        static HISTOGRAM: crate::otel::GlobalInstrument<opentelemetry::metrics::Histogram<f64>> =
+            crate::otel::GlobalInstrument::new(|meter| {
+                meter
+                    .f64_histogram("db.client.operation.duration")
+                    .with_unit("s")
+                    .with_description("Duration of database client operations.")
+                    .with_boundaries(DURATION_BUCKETS.to_vec())
+                    .build()
+            });
+        let histogram = HISTOGRAM.get();
         let mut attributes = vec![
             KeyValue::new("db.system.name", self.db.system.clone()),
             KeyValue::new("db.operation.name", operation),
@@ -341,6 +346,10 @@ impl TaskStore for TracedTaskStore {
             "event_log_covers",
             self.inner.event_log_covers(task_id, after_seq),
         )
+    }
+
+    fn trim_event_log<'a>(&'a self, task_id: &'a TaskId, below: u64) -> Fut<'a, u64> {
+        self.run("trim_event_log", self.inner.trim_event_log(task_id, below))
     }
 }
 

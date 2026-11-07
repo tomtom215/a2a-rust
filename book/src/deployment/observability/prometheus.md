@@ -11,7 +11,7 @@ translation that connects an OpenTelemetry instrument to its series.
 
 | Path | Signals | Use it when | Configuration |
 |---|---|---|---|
-| Agent → Collector → Prometheus's OTLP receiver | all three (traces to Tempo, logs to Loki) | You want traces and logs too; the compose stack does this | `docker-compose.yml`, `otel-collector/config-compose.yaml`, `prometheus/prometheus.yml` |
+| Agent → Collector → Prometheus's OTLP receiver | all three (traces to Tempo, logs to Loki) | You want traces and logs too; the compose stack does this | `docker-compose.yml`, `otel-collector/config-compose.yaml`, `prometheus/prometheus-compose.yml` |
 | Agent → Prometheus's OTLP receiver | metrics | You run Prometheus and nothing else | `prometheus/prometheus.yml` |
 | Agent → Collector ← Prometheus scrapes `:8889` | all three (traces and logs to the Collector's `debug` exporter until you add backends) | You already scrape a Collector | `otel-collector/config.yaml`, `prometheus/prometheus-collector.yml` |
 | Prometheus scrapes the agent's `/metrics` | metrics | No collector at all, Prometheus scrapes pods | `otel-prometheus` feature, `OTEL_METRICS_EXPORTER=prometheus` |
@@ -54,7 +54,25 @@ my-agent
 Both Collector configurations put `memory_limiter` first in every pipeline (a
 burst is refused and the agent retries, rather than the Collector being killed
 for memory; its limits are 80% and 20% of the container's memory limit) and
-answer health checks on 13133 (`GET /` is 200 once the pipelines run).
+answer health checks on 13133 (`GET /` is 200 once the pipelines run). The
+compose file gives the Collector a 1 GiB limit, so the limiter refuses above
+819 MiB (its startup log said so on 2026-11-04); until 0.16.0 only the
+production overlay set one, and without it the limiter takes its share of the
+host's memory (audit C-15). Its exporters keep their queues on disk
+(`file_storage`), so a restart sends what was queued.
+
+### The Collector watches itself
+
+Both configurations serve the Collector's own metrics on 8888
+(`service.telemetry.metrics`), and Prometheus scrapes them as job `otelcol`:
+received, refused and failed items per receiver, sent and failed items and
+the queue's size and capacity per exporter. `rules/stack-alerts.yml` alerts on
+a Collector that cannot be scraped, an exporter that gives up on items, a
+receiver that refuses, and a queue over 80% full ([Alerts and
+runbooks](./alerts.md#otelcollectordown)). otelcol-contrib 0.163.2 names
+these counters without `_total` (`otelcol_receiver_refused_spans`,
+`otelcol_exporter_send_failed_log_records`); the rules accept both spellings.
+The compose Prometheus also scrapes Alertmanager, Tempo and Loki.
 
 ## Scrape a Collector
 
@@ -107,13 +125,36 @@ no other exporter named gets its default; until 2026-11-01 it was an error and
 the process did not start. The feature is off by
 default, in the SDK as well, and `deploy-agent` is built without it.
 
+The listener serves at most 16 connections at once (a further one waits in the
+listen backlog), one request per connection (`Connection: close`), and closes
+any connection after 30 seconds however far it got, with 10 seconds for the
+request's headers; until 2026-11-04 it took every connection and kept each
+open as long as the client liked (audit C-16).
+
+### On the application's own port
+
+To serve `/metrics` behind the application's own authentication and
+connection limits, bind nothing and serve the same text yourself: build with
+`Telemetry::builder().without_prometheus_listener()` (then
+`OTEL_EXPORTER_PROMETHEUS_HOST` and `_PORT` are not read), take
+`telemetry.prometheus()`, and answer `GET /metrics` in your own router, behind
+your own authentication, with `200`, a `Content-Type` of
+`PrometheusScrape::CONTENT_TYPE` and the body `scrape.render()?`.
+
+`Telemetry::prometheus()` is `None` unless the `prometheus` exporter is
+chosen, and `prometheus_addr()` is `None` without the listener. The default
+host stays `localhost`, the specification's (ADR 0038 §3).
+
 A scraped agent has an `up` series; one that pushes has none, which is why
 the shipped `A2AAgentSilent` alert watches `target_info` instead.
 
 ## The Prometheus configuration
 
 `prometheus/prometheus.yml` is Prometheus for agents that push OTLP to it,
-directly or through the compose stack's Collector:
+directly or through a Collector. `prometheus/prometheus-compose.yml`, which
+the compose stack runs, is the same file plus an `alerting` block (its
+Alertmanager) and scrape jobs for the stack's own components;
+`scripts/check_stack.py` fails if their shared blocks differ:
 
 ```yaml
 otlp:
@@ -125,6 +166,9 @@ otlp:
 storage:
   tsdb:
     out_of_order_time_window: 30m
+    retention:
+      time: 7d
+      size: 5GB
 
 rule_files:
   - rules/*.yml
@@ -142,12 +186,51 @@ rule_files:
 * **`out_of_order_time_window: 30m`.** OTLP pushes arrive out of order under
   retries; this accepts samples up to 30 minutes late rather than dropping
   them.
+* **`retention`.** Seven days or 5 GB of blocks, whichever comes first; the
+  size bound keeps a burst of new series from filling the disk (audit C-19).
+  Until 0.16.0 the compose stack set only `--storage.tsdb.retention.time=7d`,
+  a flag Prometheus 3.15 marks deprecated in favour of this block.
 * **`rule_files`** loads the recording and alerting rules
   ([Dashboards, alerts and recording rules](./dashboards.md)).
   `prometheus-collector.yml` loads the same rules.
 
-The compose stack also starts Prometheus with
-`--storage.tsdb.retention.time=7d`.
+## The Prometheus feature flags
+
+The compose stack starts Prometheus with
+`--enable-feature=exemplar-storage,otlp-deltatocumulative,created-timestamp-zero-ingestion`
+and `--web.enable-remote-write-receiver`. Pass the same to your own
+Prometheus for the same behaviour:
+
+* **`otlp-deltatocumulative`** converts delta sums and histograms to the
+  cumulative series every rule and panel reads ([below](#delta-temporality)).
+* **`created-timestamp-zero-ingestion`** writes a zero at each OTLP point's
+  start time. A process that exports once (a CLI run, a batch job) then has
+  two samples, `0` at its start and its count at exit, so `rate()` sees it.
+  Measured on 2026-11-04: 69 one-shot `a2a` CLI runs, each its own
+  `instance`, showed as 0.3 calls a second on the client dashboard; without
+  the flag each series is a single sample and the rate panels stay empty
+  (audit L11). Each run is still a new series; see
+  [Dashboards](./dashboards.md#a2a-client).
+* **`exemplar-storage`** keeps exemplars: the trace id of one measurement
+  behind a point. Tempo's span metrics carry them (remote-written, hence
+  `--web.enable-remote-write-receiver`), and Grafana links each to its trace.
+  The SDK's own metrics carry none: OpenTelemetry Rust 0.33 records no
+  exemplars.
+
+## Delta temporality
+
+`OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta` makes the exporter
+send each export's change instead of the running total. Prometheus stores
+cumulative series only: measured on Prometheus 3.15.1, a delta sum sent to
+its OTLP receiver without `otlp-deltatocumulative` is refused with HTTP 500
+and the log line `invalid temporality and type combination`, so the series
+never appear and every shipped panel and rule is empty (audit C-21). With the
+flag three delta points of 2 were stored as 2, 4, 6, and five CLI runs with
+the variable set showed as five series. For the scrape path
+(`otel-collector/config.yaml`), the Collector's `deltatocumulative` processor
+does the same before its Prometheus exporter. Either converter keeps state
+per series, so all of a series' points must reach the same one: one
+Prometheus, or one Collector, per set of agents.
 
 ## What the names become
 

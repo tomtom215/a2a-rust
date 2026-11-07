@@ -112,6 +112,12 @@ TOUCHED=()
 INJECT_WORKDIR=""
 PACKAGE_CLONE=""
 
+# Set by `prepare_baseline` for a gate that installs something into
+# `$RUNNER_TEMP` (only `promtool_pin`): an empty directory that gate sees as its
+# RUNNER_TEMP, for the baseline and the injected run alike. Reset, and the
+# directory removed, by `revert_all`, so it cannot leak into the next gate.
+GATE_RUNNER_TEMP=""
+
 note_touched() { TOUCHED+=("$1"); }
 
 # Renames `fn $2()` in $1 to `$2_renamed`, refusing unless it occurs once.
@@ -171,6 +177,10 @@ revert_all() {
     if [ -n "$PACKAGE_CLONE" ]; then
         rm -rf "$PACKAGE_CLONE"
         PACKAGE_CLONE=""
+    fi
+    if [ -n "$GATE_RUNNER_TEMP" ]; then
+        rm -rf "$GATE_RUNNER_TEMP"
+        GATE_RUNNER_TEMP=""
     fi
     INJECT_WORKDIR=""
 }
@@ -285,6 +295,10 @@ inject_failing_test_always() {
 }
 
 TYPES_LIB=crates/a2a-protocol-types/src/lib.rs
+# An example that serves its agent with `Server` and so is not on
+# scripts/example_accept_loops.txt: the file the `example_accept_loop`
+# injection appends a hand-written accept loop to.
+EXAMPLE_ACCEPT_PROBE=examples/hello-agent/src/main.rs
 CLIENT_LIB=crates/a2a-protocol-client/src/lib.rs
 SERVER_LIB=crates/a2a-protocol-server/src/lib.rs
 
@@ -376,12 +390,25 @@ injection_for() {
             echo "compliance_map" ;;
         *"check_spec_ledger.py"*)
             echo "spec_ledger" ;;
+        *"check_rfc_ledger.py"*)
+            echo "rfc_ledger" ;;
         *"check_tck_untested_map.py"*)
             echo "tck_untested_map" ;;
         *"check_package_excludes.py"*)
             echo "package_excludes" ;;
         *"check_no_model_artifacts.py"*)
             echo "no_model_artifacts" ;;
+        *"check_net_copies.py"*)
+            echo "net_copies" ;;
+        *"hand_mutate.py"*)
+            echo "hand_mutate" ;;
+        *"check_example_servers.py"*)
+            echo "example_accept_loop:$EXAMPLE_ACCEPT_PROBE" ;;
+        # The observability harness's promtool install, by the script that
+        # holds the pin. Matched on the script and not on `promtool`, which the
+        # harness's other steps name too.
+        *"install_tools.sh"*)
+            echo "promtool_pin" ;;
         # The binding's packaging gate is a wrapper, not a bare `cargo package`
         # (B23), so it is matched here rather than in the SLIMRPC block above.
         # The injection is unchanged: a manifest the wrapper must still reject.
@@ -572,9 +599,24 @@ expected_marker() {
         compliance_map)   printf '%s\n%s\n' "no \`fn verify_rejects_tampered_card\`" \
                               "AIA-50-1: cites neither a test nor a CI step" ;;
         spec_ledger)      echo "no \`fn a_message_only_stream_is_exactly_one_message\`" ;;
+        rfc_ledger)       echo "no \`fn alg_none_is_rejected\`" ;;
         tck_untested_map) echo "no \`fn card_sign_002_signatures_are_not_part_of_the_signed_payload\`" ;;
         package_excludes) echo "not excluded" ;;
         no_model_artifacts) echo "a model-format file (.gguf)" ;;
+        # The function's name and the verb, not the label that opens the line:
+        # the label is the pair of paths, which any drift in that pair shares.
+        net_copies)       echo "\`truthy\` differs between the client's and the server's copy" ;;
+        # The self-test's own line for the mutant it must skip. It reads
+        # MISSED only if the ambiguous pattern was applied and the command,
+        # which cannot fail on it, ran: a self-test that died for any other
+        # reason prints no such line.
+        hand_mutate)      echo "MISSED   ambiguous" ;;
+        # The file the injection wrote the loop into, with the count the
+        # checker found and the count the allowlist gave it.
+        example_accept_loop) echo "${1##*:}: 1 hand-rolled accept loop(s), 0 allowed" ;;
+        # The mismatch itself. A download that failed, a tarball that did not
+        # unpack and a missing `curl` all exit non-zero without this line.
+        promtool_pin)     echo "computed checksum did NOT match" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         block_scalars)    echo "MISMATCH" ;;
         cancellation_release) echo "no \`Drop\` that releases it" ;;
@@ -697,6 +739,89 @@ PY
         no_model_artifacts)
             printf 'gate probe\n' >crates/a2a-protocol-types/src/gate_probe_model.gguf
             git add -N crates/a2a-protocol-types/src/gate_probe_model.gguf >/dev/null 2>&1 || true ;;
+        # One function changed in the server's copy and left alone in the
+        # client's: the drift the pair exists to refuse (audit N-B-1). `truthy`
+        # reads the `A2A_PROXY_LOOPBACK` switch, and dropping `on` from its
+        # accepted spellings is a behaviour change, not a whitespace one, which
+        # the comparison ignores. The edit is anchored on the exact accepted
+        # list so a reworded function aborts here instead of passing as
+        # "no drift injected".
+        net_copies)
+            local server_proxy=crates/a2a-protocol-server/src/net/proxy.rs
+            note_touched "$server_proxy"
+            python3 - "$server_proxy" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+s = p.read_text(encoding="utf-8")
+old = '"1" | "true" | "yes" | "on"'
+if s.count(old) != 1:
+    sys.exit(f"net_copies: expected exactly one `{old}` in {p}; found {s.count(old)}")
+p.write_text(s.replace(old, '"1" | "true" | "yes"'), encoding="utf-8")
+PY
+            ;;
+        # The self-test proves the tool's own rules refuse what they must, so
+        # the defect is one of those rules gone: a mutant whose pattern occurs
+        # more than once is applied instead of skipped. The tool's header
+        # promises it is "skipped and counted, never applied"; with this edit
+        # the self-test's `ambiguous` mutant (the pattern `a`, five times in
+        # the file) is applied, the command that cannot fail on it exits 0, and
+        # the outcome is MISSED where the self-test requires SKIPPED. Nothing
+        # else about the file changes, so the line it prints is this rule's.
+        hand_mutate)
+            note_touched "scripts/hand_mutate.py"
+            python3 - <<'PY'
+import pathlib, sys
+p = pathlib.Path("scripts/hand_mutate.py")
+s = p.read_text(encoding="utf-8")
+old = "            if n != 1:\n                counts[\"SKIPPED\"] += 1\n"
+new = "            if n < 1:\n                counts[\"SKIPPED\"] += 1\n"
+if s.count(old) != 1:
+    sys.exit(f"hand_mutate: expected exactly one once-only guard in {p}; found {s.count(old)}")
+p.write_text(s.replace(old, new), encoding="utf-8")
+PY
+            ;;
+        # An example serving its agent with a hyper accept loop it wrote itself
+        # (audit G-05): the shape `Server` replaced, with the `continue` that
+        # spins a core on a persistent accept error. Appended to a file the
+        # allowlist does not name, so the checker's "unlisted" half is what
+        # objects. It is never compiled by this gate, which reads text, and the
+        # loop is in a function nothing calls.
+        example_accept_loop)
+            note_touched "$rest"
+            {
+                printf '\n'
+                printf 'async fn gate_probe_accept_loop<S>(listener: tokio::net::TcpListener, svc: S) {\n'
+                printf '    loop {\n'
+                printf '        let Ok((stream, _)) = listener.accept().await else { continue };\n'
+                printf '        let io = hyper_util::rt::TokioIo::new(stream);\n'
+                printf '        let _ = hyper::server::conn::http1::Builder::new().serve_connection(io, svc).await;\n'
+                printf '    }\n'
+                printf '}\n'
+            } >>"$rest" ;;
+        # A wrong digest for the pinned Prometheus tarball: the first hex digit
+        # of the pin changed to another, so the value is still 64 hex digits
+        # and only the comparison against the real download can refuse it. The
+        # install is made into an empty directory (`prepare_baseline`) and the
+        # directory is emptied again here, because the script returns without
+        # downloading anything when it finds the tool already at the pinned
+        # version, and the baseline run has just put it there. Without that the
+        # corrupted pin would never be read and the step would pass with it.
+        promtool_pin)
+            local tools=deploy/observability/scripts/install_tools.sh
+            note_touched "$tools"
+            rm -rf "${GATE_RUNNER_TEMP:?promtool_pin: no directory prepared}/a2a-obs-bin"
+            python3 - "$tools" <<'PY'
+import pathlib, re, sys
+p = pathlib.Path(sys.argv[1])
+s = p.read_text(encoding="utf-8")
+pin = re.compile(r"(?m)^(PROMETHEUS_SHA256=)([0-9a-f])")
+if len(pin.findall(s)) != 1:
+    sys.exit(f"promtool_pin: expected exactly one PROMETHEUS_SHA256 pin in {p}")
+# Any other hex digit: `0` unless it already is one, so the change is certain.
+s = pin.sub(lambda m: m.group(1) + ("1" if m.group(2) == "0" else "0"), s, count=1)
+p.write_text(s, encoding="utf-8")
+PY
+            ;;
         file_length)
             python3 -c "open('crates/a2a-protocol-types/src/gate_probe_long.rs','w').write('// gate probe\n'*600)"
             git add -N crates/a2a-protocol-types/src/gate_probe_long.rs >/dev/null 2>&1 || true ;;
@@ -976,6 +1101,8 @@ PY
         spec_ledger)
             rename_test crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs \
                 a_message_only_stream_is_exactly_one_message ;;
+        rfc_ledger)
+            rename_test crates/a2a-protocol-server/src/auth/jwt.rs alg_none_is_rejected ;;
         tck_untested_map)
             rename_test crates/a2a-protocol-types/tests/tck_card_signing.rs \
                 card_sign_002_signatures_are_not_part_of_the_signed_payload ;;
@@ -1619,6 +1746,22 @@ PY
     esac
 }
 
+# What a gate needs in place before its baseline run, so that the baseline and
+# the injected run start from the same state.
+#
+# Only the promtool install step has any: it skips the download when the tool
+# is already in `$RUNNER_TEMP/a2a-obs-bin` at the pinned version. A developer's
+# machine usually has it there, so the baseline would pass without reading the
+# pin, which would let a pin that is wrong in HEAD pass as "green before the
+# injection". An empty directory of its own makes the baseline download and
+# verify the real tarball, as a fresh CI runner does.
+prepare_baseline() {
+    case "${1%%:*}" in
+        promtool_pin)
+            GATE_RUNNER_TEMP=$(mktemp -d "${TMPDIR:-/tmp}/a2a-promprobe.XXXXXX") ;;
+    esac
+}
+
 # ── Drift guard ──────────────────────────────────────────────────────────────
 
 # The full set of completeness guards, not just the SKIP_STEPS one.
@@ -1752,7 +1895,9 @@ run_quiet() {
     # status-swallowing defect this script exists to catch, in the script
     # that catches it. It was written that way first, and every gate came
     # back UNPROVEN until this line changed.
-    (cd "${INJECT_WORKDIR:-$REPO_ROOT}" && eval "$cmd") >"$log" 2>&1 || status=$?
+    (cd "${INJECT_WORKDIR:-$REPO_ROOT}" \
+        && { [ -z "$GATE_RUNNER_TEMP" ] || export RUNNER_TEMP="$GATE_RUNNER_TEMP"; } \
+        && eval "$cmd") >"$log" 2>&1 || status=$?
     return "$status"
 }
 
@@ -1772,6 +1917,7 @@ for entry in "${ALL_GATES[@]}"; do
     printf '        injection: %s\n' "$spec"
 
     revert_all
+    prepare_baseline "$spec"
 
     # Baseline: the gate must pass with nothing injected.
     #

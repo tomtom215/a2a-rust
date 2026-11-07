@@ -50,6 +50,37 @@ survivors. Live runs are listed per group and are in addition to, not instead of
 | 18 | P (wave 6) | Release policy and the changelog | 2 | F6 F11 | S |
 | 19 | Q (wave 6) | Examples that teach the right thing | 3 | none | M |
 
+<!-- status-0.16-start -->
+
+## Status at 0.16.0 (2026-11-05)
+
+The 69 items that were still open when the final 0.16.0 work began (the maintainer's instruction: all of them go into 0.16.0)
+now have a final status in `../2026-10-29/README.md`: its `Status` and `Note` for each, and one row per item in section O with
+the commit. Rows that earlier work fixed are recorded in section O and in the table dated 2026-11-02 below, which is history and
+not touched. The table here reads the register, so it cannot disagree with it. `closed` is `fixed`, `refuted` or `not a defect`;
+an item that is `fixed (part)` has its remainder in the register's note (and, for a deliberate limit, in CHANGELOG.md's
+`### Known Limitations`). Nothing here is released: there is no tag, and the pull request's CI is what decides.
+
+| Group | Of the 69 | Closed | Still partial or open |
+|---|---|---|---|
+| B | 2 | 2 |  |
+| D | 2 | 1 | B-29 (fixed (part)) |
+| G | 13 | 10 | A15 (fixed (part)), A26 (fixed (part)), NEW-a-l-4a (fixed (part)) |
+| H | 1 | 1 |  |
+| E | 8 | 7 | B-28 (fixed (part)) |
+| F | 2 | 2 |  |
+| I | 10 | 10 |  |
+| J | 8 | 7 | C-05 (fixed (part)) |
+| K | 3 | 2 | SEC-14 (fixed (part)) |
+| M | 2 | 1 | D-21 (fixed (part)) |
+| O | 1 | 1 |  |
+| R | 12 | 9 | H5 (fixed (part)), H13 (fixed (part)), H19 (fixed (part)) |
+| N | 5 | 5 |  |
+
+58 of the 69 are closed. `scripts/audit/plan_status.py` counts 191 of the 191 plan items with at least one commit.
+
+<!-- status-0.16-end -->
+
 ## Status when the pull request was opened (2026-11-02)
 
 96 of the 191 items have at least one commit on the branch; 95 do not. (Counted by
@@ -85,7 +116,7 @@ request because the session had grown too long to continue in; CI runs the rest.
 | P | done | `0b06ec2` `d75efc9` | |
 | Q | done | `c4c5c29` | |
 
-**Build next, in this order:** the rest of I and G (observability and deploy), then J (it needs `promtool`,
+(Superseded by the status above; kept as written on 2026-11-02.) **Build next, in this order:** the rest of I and G (observability and deploy), then J (it needs `promtool`,
 which the maintainer has allowed). The client pull request that carried `HttpPool`, HTTP/2 PING and a
 connection lifetime for the HTTP bindings, B-11 and the live proof of M is the pull request that carries this
 note; what it leaves is in the rows above. Rows that wait on the maintainer are in `DECISIONS.md` (forks F14 to F16, and the choice of

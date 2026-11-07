@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# What deployment.yaml leaves to the cluster: who may reach the pods, and how
+# callers outside the cluster reach them over TLS (audit A25). Apply it after
+# deployment.yaml, once the two values marked EDIT below are yours:
+#   kubectl apply -f examples/deploy-agent/network.yaml
+#
+# Both objects assume an ingress controller (ingress-nginx here) in its own
+# namespace. CI validates this file against the Kubernetes schemas
+# (.github/workflows/deploy.yml); it has not been applied to a cluster here.
+#
+# Metrics: there is no ServiceMonitor, because this binary is built without
+# the SDK's `otel-prometheus` feature and so serves no /metrics. Its metrics
+# leave by OTLP (deployment.yaml, the commented OTEL_* entries) to a
+# Collector, and a Prometheus Operator scrapes the Collector's own Prometheus
+# exporter.
+---
+# Only the ingress controller reaches the agent, and only on its HTTP port.
+# The agent is unauthenticated (README, "What this does not cover"): without a
+# policy any pod in the cluster can send it tasks. In a namespace with a
+# default-deny policy this is also what lets the ingress through at all.
+# Egress is not restricted: the agent dials PostgreSQL, a Collector, push
+# webhooks and DNS, whose addresses are the deployment's; add an egress policy
+# naming them where the cluster's rules demand one.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deploy-agent
+spec:
+  podSelector:
+    matchLabels:
+      app: deploy-agent
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              # EDIT: the namespace your ingress controller runs in.
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# TLS ends here, at the ingress; the pods speak plain HTTP inside the cluster.
+# The host must be the one AGENT_URL names in deployment.yaml, with https://:
+# the agent card advertises AGENT_URL, and a card naming the in-cluster URL
+# sends outside callers to an address they cannot reach. The certificate is
+# the Secret `deploy-agent-tls` (kubernetes.io/tls), made by hand or by
+# cert-manager (uncomment the annotation and name your issuer).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: deploy-agent
+  annotations:
+    # Streams (SendStreamingMessage, SubscribeToTask) are server-sent events:
+    # buffered, the caller sees nothing until the buffer fills; with the 60 s
+    # default read timeout, a quiet stream is cut after a minute.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    # cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["agent.example.com"]   # EDIT: your host, as in AGENT_URL
+      secretName: deploy-agent-tls
+  rules:
+    - host: agent.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: deploy-agent
+                port:
+                  name: http

@@ -267,7 +267,7 @@ pub async fn sweep(
     let mut created_config_id: Option<String> = None;
 
     match client
-        .set_push_config(
+        .create_push_config(
             TaskPushNotificationConfig::new(push_task_id.clone(), webhook_url.to_owned())
                 .with_token("echo-demo-token"),
         )

@@ -27,7 +27,7 @@ use a2a_protocol_sdk::server::approval::ApprovalGate;
 use a2a_protocol_sdk::server::dispatch::{JsonRpcDispatcher, RestDispatcher};
 use a2a_protocol_sdk::server::executor::AgentExecutor;
 use a2a_protocol_sdk::server::request_context::RequestContext;
-use a2a_protocol_sdk::server::serve::serve_with_addr;
+use a2a_protocol_sdk::server::serve::Server;
 use a2a_protocol_sdk::server::streaming::EventQueueWriter;
 use a2a_protocol_sdk::server::tool_loop::{
     ANSWER_ARTIFACT_ID, ChatMessage, ChatRequest, OpenAiChatModel, ToolLoop, ToolLoopExecutor,
@@ -107,16 +107,42 @@ impl Worker {
                 .with_executor_timeout(EXECUTOR_TIMEOUT)
                 .build()?,
         );
-        let jsonrpc =
-            serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&handler))).await?;
-        let http_json =
-            serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::clone(&handler))).await?;
-        let grpc = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
-            .serve_with_addr("127.0.0.1:0")
-            .await?;
-        let websocket = Arc::new(WebSocketDispatcher::new(Arc::clone(&handler)))
-            .serve_with_addr("127.0.0.1:0")
-            .await?;
+        let jsonrpc = {
+            let bound = Server::bind("127.0.0.1:0").await?;
+            let addr = bound.local_addr()?;
+            tokio::spawn(bound.serve_with_shutdown(
+                JsonRpcDispatcher::new(Arc::clone(&handler)),
+                std::future::pending(),
+            ));
+            addr
+        };
+        let http_json = {
+            let bound = Server::bind("127.0.0.1:0").await?;
+            let addr = bound.local_addr()?;
+            tokio::spawn(bound.serve_with_shutdown(
+                RestDispatcher::new(Arc::clone(&handler)),
+                std::future::pending(),
+            ));
+            addr
+        };
+        let grpc = {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            tokio::spawn(
+                GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
+                    .serve_with_shutdown(listener, std::future::pending()),
+            );
+            addr
+        };
+        let websocket = {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            tokio::spawn(
+                Arc::new(WebSocketDispatcher::new(Arc::clone(&handler)))
+                    .serve_with_shutdown(listener, std::future::pending()),
+            );
+            addr
+        };
         Ok(Self {
             handler,
             restarts,
@@ -236,7 +262,14 @@ pub async fn serve_coordinator(worker: A2aClient) -> Result<String, Box<dyn std:
         .with_executor_timeout(EXECUTOR_TIMEOUT)
         .build()?,
     );
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler)).await?;
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await?;
+        let addr = bound.local_addr()?;
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     Ok(format!("http://{addr}"))
 }
 
@@ -311,6 +344,13 @@ pub async fn serve_approver(model: OpenAiChatModel) -> Result<String, Box<dyn st
             .with_executor_timeout(EXECUTOR_TIMEOUT)
             .build()?,
     );
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler)).await?;
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await?;
+        let addr = bound.local_addr()?;
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     Ok(format!("http://{addr}"))
 }

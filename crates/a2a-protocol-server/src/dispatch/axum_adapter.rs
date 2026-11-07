@@ -5,8 +5,10 @@
 
 //! Axum framework integration for A2A servers.
 //!
-//! Provides [`A2aRouter`], which builds an [`axum::Router`] that handles all
-//! A2A v1.0 methods using the existing [`RequestHandler`].
+//! Provides [`A2aRouter`] (also named [`RestRouter`]), which builds an
+//! [`axum::Router`] that handles all A2A v1.0 methods using the existing
+//! [`RequestHandler`], and is itself a [`Dispatcher`](crate::serve::Dispatcher)
+//! that [`Server`](crate::serve::Server) serves (ADR 0052).
 //!
 //! # Quick start
 //!
@@ -18,7 +20,8 @@
 //! #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 //! # }
 //! use std::sync::Arc;
-//! use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
+//! use a2a_protocol_server::dispatch::axum_adapter::RestRouter;
+//! use a2a_protocol_server::serve::{Server, shutdown_signal};
 //! use a2a_protocol_server::RequestHandlerBuilder;
 //! # struct MyExecutor;
 //! # impl a2a_protocol_server::executor::AgentExecutor for MyExecutor {
@@ -37,17 +40,23 @@
 //!         .expect("build handler"),
 //! );
 //!
-//! let app = A2aRouter::new(handler).into_router();
-//!
-//! let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-//! axum::serve(listener, app).await.unwrap();
+//! // `Server` gives the router its header-read and idle timeouts, connection
+//! // cap, loopback `Host` check, production refusal and a shutdown that ends
+//! // the tasks in flight before it drains.
+//! let report = Server::bind("0.0.0.0:3000")
+//!     .await
+//!     .unwrap()
+//!     .serve_with_shutdown(RestRouter::new(handler), shutdown_signal())
+//!     .await;
+//! assert_eq!(report.refused, None);
 //! # }
 //! ```
 //!
 //! # Composability
 //!
-//! The returned router can be merged with other Axum routes, middleware, and
-//! layers:
+//! [`into_router`](A2aRouter::into_router) returns the router, to be merged
+//! with other Axum routes, middleware, and layers, and served with
+//! `axum::serve`, which then owns the timeouts and the shutdown:
 //!
 //! ```rust
 //! # use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
@@ -73,7 +82,7 @@
 //! REST dispatcher ([`crate::dispatch::rest`]), which strips that prefix and
 //! threads the tenant through. Requests to a tenant-prefixed path therefore
 //! **404 here** — fail-safe, but surprising if you are porting from
-//! `serve()`, where the same URL works.
+//! `RestDispatcher`, where the same URL works.
 //!
 //! Tenancy itself is not lost. This router forwards request headers to the
 //! handler, so a configured
@@ -108,6 +117,7 @@ use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::build_sse_response;
 use unreadable::{refuse_unreadable, send_method};
 
+mod dispatcher;
 mod unreadable;
 mod validate;
 
@@ -139,7 +149,20 @@ mod validate;
 pub struct A2aRouter {
     handler: Arc<RequestHandler>,
     config: super::DispatchConfig,
+    #[cfg(feature = "websocket")]
+    websocket: Option<super::websocket::WebSocketUpgrades>,
+    /// The router [`Dispatcher::dispatch`](crate::serve::Dispatcher::dispatch)
+    /// calls, built on the first request (`dispatcher.rs`).
+    router: std::sync::OnceLock<Router>,
 }
+
+/// [`A2aRouter`] under a name that says which binding it serves.
+///
+/// The binding is HTTP+JSON, which this crate's identifiers call REST
+/// ([`RestDispatcher`](super::RestDispatcher), `AgentInterface::rest`). The
+/// same type; the documentation uses this name, and `A2aRouter` is not
+/// deprecated (ADR 0053).
+pub type RestRouter = A2aRouter;
 
 impl std::fmt::Debug for A2aRouter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -153,38 +176,85 @@ impl A2aRouter {
     /// Creates a new [`A2aRouter`] wrapping the given handler.
     #[must_use]
     pub fn new(handler: Arc<RequestHandler>) -> Self {
-        Self {
-            handler,
-            config: super::DispatchConfig::default(),
-        }
+        Self::with_config(handler, super::DispatchConfig::default())
     }
 
     /// Creates a new [`A2aRouter`] with custom dispatch configuration.
     #[must_use]
     pub const fn with_config(handler: Arc<RequestHandler>, config: super::DispatchConfig) -> Self {
-        Self { handler, config }
+        Self {
+            handler,
+            config,
+            #[cfg(feature = "websocket")]
+            websocket: None,
+            router: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Serves the WebSocket binding on this router too (audit B-25, ADR
+    /// 0055): an HTTP/1.1 `GET /` with `Upgrade: websocket` is upgraded and
+    /// served as [`CombinedDispatcher::with_websocket`](super::CombinedDispatcher::with_websocket)
+    /// serves it. `axum::serve` enables upgrades. Its shutdown does not know
+    /// upgraded connections: call [`websocket_upgrades`](Self::websocket_upgrades)
+    /// before [`into_router`](Self::into_router) and `close` the handle in
+    /// the application's own shutdown.
+    #[cfg(feature = "websocket")]
+    #[must_use]
+    pub fn with_websocket(mut self, websocket: super::WebSocketDispatcher) -> Self {
+        self.websocket = Some(super::websocket::WebSocketUpgrades::new(websocket));
+        self
+    }
+
+    /// The upgraded connections' handle, when [`with_websocket`](Self::with_websocket)
+    /// set one.
+    #[cfg(feature = "websocket")]
+    #[must_use]
+    pub fn websocket_upgrades(&self) -> Option<super::websocket::WebSocketUpgrades> {
+        self.websocket.clone()
     }
 
     /// Builds the Axum [`Router`] with all A2A REST routes.
     ///
     /// The router uses `Arc<RequestHandler>` as shared state (via Axum's
-    /// `State` extractor). Returns the configured `Router`.
+    /// `State` extractor). Returns the configured `Router`, for an
+    /// application that composes it with its own routes and serves it with
+    /// `axum::serve`. To serve it alone, give the `A2aRouter` itself to
+    /// [`Server`](crate::serve::Server), which it is a
+    /// [`Dispatcher`](crate::serve::Dispatcher) for (ADR 0052).
     pub fn into_router(self) -> Router {
+        self.build()
+    }
+
+    /// The router [`into_router`](Self::into_router) returns.
+    fn build(&self) -> Router {
         // Honor the configured body cap on the Axum transport too. Without this
         // the `Bytes` extractor falls back to Axum's own `DefaultBodyLimit`
         // (2 MiB) and silently ignores `max_request_body_size`, so the knob that
         // works on the JSON-RPC/REST dispatchers would be a no-op here.
         let max_body = self.config.max_request_body_size;
+        let base_path = self.config.base_path.clone();
         self.handler.warn_if_undeclared("HTTP+JSON"); // §5.2, as every other listener does
+        #[cfg(feature = "websocket")]
+        let websocket = self.websocket.clone().map_or_else(Router::new, |upgrades| {
+            self.handler
+                .warn_if_undeclared(a2a_protocol_types::WEBSOCKET_BINDING_URI);
+            Router::new()
+                .route("/", get(handle_websocket_upgrade))
+                .with_state(upgrades)
+        });
+        // No upgrade route without the feature: merging an empty router adds none.
+        #[cfg(not(feature = "websocket"))]
+        let websocket = Router::new();
         let card_handler = card_handler(&self.handler, self.config.agent_card_max_age);
         let state = A2aState {
-            handler: self.handler,
-            config: Arc::new(self.config),
+            handler: Arc::clone(&self.handler),
+            config: Arc::new(self.config.clone()),
             card_handler,
         };
         let checks = state.clone();
+        let loads = Arc::clone(&state.handler);
 
-        Router::new()
+        let router = Router::new()
             // Messaging (colon-suffixed paths are literal — no conflict)
             .route("/message:send", post(handle_send_message))
             .route("/message:stream", post(handle_stream_message))
@@ -202,17 +272,103 @@ impl A2aRouter {
             // Health check
             .route("/health", get(handle_health))
             .route("/ready", get(handle_ready))
+            .route("/load", get(handle_load))
             // Not a router-wide `fallback`: that would answer every unknown path of an app
             // this router is merged into, and axum refuses to merge two routers that both have one.
             .method_not_allowed_fallback(method_not_allowed)
             .with_state(state)
+            .merge(websocket)
             .layer(axum::extract::DefaultBodyLimit::max(max_body))
             .layer(axum::middleware::from_fn_with_state(
                 checks,
                 validate::validate_a2a_request,
             ))
             .layer(axum::middleware::from_fn(negotiate_media_type))
+            .layer(axum::middleware::from_fn_with_state(loads, stamp_load));
+        // `DispatchConfig::base_path` (audit B-08): the same routes under the
+        // prefix, which `nest` strips before they see the path, and at the
+        // root, as the hyper dispatchers serve both.
+        match base_path {
+            Some(base) => Router::new().nest(&base, router.clone()).merge(router),
+            None => router,
+        }
     }
+}
+
+/// The axum router as a [`Dispatcher`](crate::serve::Dispatcher), so it
+/// runs on [`Server`](crate::serve::Server) under a
+/// [`ServeConfig`](crate::serve::ServeConfig) (audit G-09, ADR 0052): the
+/// header-read and idle timeouts, the connection cap, the loopback `Host`
+/// check, the production refusal and the shutdown that ends the tasks before
+/// it drains the connections. Under plain `axum::serve` it had none of them.
+impl crate::serve::Dispatcher for A2aRouter {
+    /// Calls the router [`into_router`](A2aRouter::into_router) would
+    /// return, built once, on the first request.
+    fn dispatch(
+        &self,
+        req: hyper::Request<hyper::body::Incoming>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = crate::serve::DispatchResponse> + Send + '_>,
+    > {
+        let mut router = self.router.get_or_init(|| self.build()).clone();
+        Box::pin(async move {
+            // An axum router is always ready and never fails: both are
+            // `Infallible`.
+            let Ok(()) = std::future::poll_fn(|cx| {
+                tower_service::Service::<hyper::Request<hyper::body::Incoming>>::poll_ready(
+                    &mut router,
+                    cx,
+                )
+            })
+            .await;
+            let Ok(response) = tower_service::Service::call(&mut router, req).await;
+            response.map(|body| {
+                http_body_util::combinators::BoxBody::new(dispatcher::Truncating::new(body))
+            })
+        })
+    }
+
+    /// The handler, so [`Server`](crate::serve::Server) ends its tasks before
+    /// it drains and stamps its load (ADR 0046) on every response.
+    fn request_handler(&self) -> Option<&Arc<RequestHandler>> {
+        Some(&self.handler)
+    }
+
+    /// `HTTP+JSON`; none when [`with_websocket`](A2aRouter::with_websocket)
+    /// makes it serve two bindings.
+    fn protocol_binding(&self) -> Option<&'static str> {
+        #[cfg(feature = "websocket")]
+        if self.websocket.is_some() {
+            return None;
+        }
+        Some("HTTP+JSON")
+    }
+
+    /// Closes the connections [`with_websocket`](A2aRouter::with_websocket)
+    /// upgraded, in [`Server`](crate::serve::Server)'s drain.
+    #[cfg(feature = "websocket")]
+    fn close_upgraded(
+        &self,
+        within: std::time::Duration,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + '_>> {
+        match &self.websocket {
+            Some(websocket) => Box::pin(websocket.close(within)),
+            None => Box::pin(std::future::ready(true)),
+        }
+    }
+}
+
+/// `GET /` with `Upgrade: websocket` (ADR 0055); any other `GET /` is not
+/// this router's.
+#[cfg(feature = "websocket")]
+async fn handle_websocket_upgrade(
+    State(upgrades): State<super::websocket::WebSocketUpgrades>,
+    req: axum::extract::Request,
+) -> axum::response::Response {
+    if !super::websocket::WebSocketUpgrades::is_upgrade(&req) {
+        return plain_error(426, "this path serves WebSocket upgrades only");
+    }
+    upgrades.upgrade(req).await.map(Body::new)
 }
 
 /// Labels the response's media type exactly as `RestDispatcher` does (§11.1;
@@ -538,7 +694,7 @@ fn rpc_call(
     method: &str,
     (http_method, route): (&str, &str),
     hdrs: &HashMap<String, String>,
-    call: impl std::future::Future<Output = axum::response::Response>,
+    call: impl std::future::Future<Output = axum::response::Response> + Send,
 ) -> impl std::future::Future<Output = axum::response::Response> {
     crate::rpc_span::ServerSpan::open(
         handler,
@@ -682,17 +838,33 @@ async fn handle_health() -> axum::response::Response {
 /// — a bounded discriminant, never the store's message, which could carry a
 /// connection string.
 async fn handle_ready(State(state): State<A2aState>) -> axum::response::Response {
-    match state.handler.readiness().await {
-        Ok(()) => axum::Json(serde_json::json!({"status": "ready"})).into_response(),
-        Err(reason) => (
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            axum::Json(serde_json::json!({
-                "status": "not_ready",
-                "reason": reason,
-            })),
-        )
-            .into_response(),
+    let readiness = state.handler.readiness().await;
+    let (status, body) =
+        crate::dispatch::rest::ready_body(readiness, state.handler.is_halted_everywhere());
+    let status = axum::http::StatusCode::from_u16(status)
+        .unwrap_or(axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    (status, axum::Json(body)).into_response()
+}
+
+/// `GET /load` (ADR 0046): the load as JSON when load reporting is on, else
+/// the router's own 404.
+async fn handle_load(State(state): State<A2aState>) -> axum::response::Response {
+    if !state.handler.reports_load() {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
     }
+    axum::Json(state.handler.load().to_json()).into_response()
+}
+
+/// Adds the load header to every response of the router, when load
+/// reporting is on (ADR 0046).
+async fn stamp_load(
+    State(handler): State<Arc<RequestHandler>>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let mut resp = next.run(req).await;
+    handler.stamp_load(resp.headers_mut());
+    resp
 }
 
 // ── Inner handlers (shared by route handlers and catch-all) ──────────────────
@@ -802,7 +974,7 @@ async fn handle_subscribe_inner(
     if params.tenant.is_none() {
         params.tenant = tenant;
     }
-    match state.handler.on_resubscribe(params, Some(hdrs)).await {
+    match state.handler.on_subscribe_to_task(params, Some(hdrs)).await {
         Ok(reader) => hyper_to_axum(build_sse_response(
             reader,
             Some(state.config.sse_keep_alive_interval),
@@ -837,7 +1009,11 @@ async fn handle_create_push_config_inner(
             Ok(c) => c,
             Err(e) => return refuse_unreadable(state, method, hdrs, e).await,
         };
-    match state.handler.on_set_push_config(config, Some(hdrs)).await {
+    match state
+        .handler
+        .on_create_push_config(config, Some(hdrs))
+        .await
+    {
         Ok(result) => a2a_json(&result),
         Err(e) => handler_error_to_response(&e),
     }

@@ -83,6 +83,69 @@ are that old, without cutting a call or a stream that is running. A layer-7
 balancer, which reads HTTP, spreads requests over replicas itself and needs
 none of this.
 
+### Balancing in the client
+
+Recycling spreads connections over time, not calls at a given moment. A
+client that knows the replicas can spread its own calls
+(`ClientBuilder::with_balancing`, ADR 0050). Each call goes to the endpoint
+with the fewest calls in flight (a stream counts until it is dropped), a tie
+to the one chosen longest ago, so calls one after another go round the set.
+The endpoints come from an `EndpointSource`:
+
+| Source | Endpoints |
+|---|---|
+| `StaticEndpoints::new([...])` | A list of replica URLs |
+| `StaticEndpoints::from_card(&card, binding)` | The card's interfaces of one binding and tenant, for an agent that publishes one URL per replica |
+| `DnsEndpoints::new(url)` | Every address the URL's host resolves to, one endpoint each, resolved again every 30 s (`with_refresh_every`): a Kubernetes headless Service |
+| your own type | Implement `endpoints()` and, if it changes, `refresh_every()` |
+
+An endpoint from `DnsEndpoints` is *pinned*: the connection goes to its
+address, and the `Host` header, TLS server name and certificate check keep
+the name, so one certificate for the service name serves every pod. Through a
+proxy the proxy resolves the name, and the pins have no effect.
+
+```rust,no_run
+use std::time::Duration;
+use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_client::balance::{BalancePolicy, DnsEndpoints, Hedge};
+
+# fn main() -> a2a_protocol_client::ClientResult<()> {
+let url = "https://agent.ns.svc.cluster.local:8443";
+let client = ClientBuilder::new(url)
+    .with_balancing(
+        DnsEndpoints::new(url)?,
+        BalancePolicy::new().with_hedge(Hedge::after(Duration::from_millis(200))),
+    )
+    .build()?;
+# drop(client);
+# Ok(())
+# }
+```
+
+**Ejection.** An endpoint that fails 5 calls in a row (a connection error, a
+timeout, `502`, `503` or `504`; any other answer counts as the endpoint
+answering) is out of rotation for 30 s, then one call probes it: success puts
+it back, failure keeps it out twice as long, up to 300 s
+(`BalancePolicy::with_ejection(Ejection::new(..))`, `without_ejection()`).
+No more than half the set (`with_max_ejected_percent`, rounded down) is out at
+once: past that, the endpoints whose ejection ends soonest stay in use, so a
+blip on every replica does not become an outage on the client. At 100 the set
+is a circuit breaker: with every endpoint out, calls fail at once with
+`ClientError::CircuitOpen`, which is retryable.
+
+**Hedging** is off unless asked for (`Hedge::after(delay)`). A unary call
+with no answer after `delay` is sent to a second endpoint too, and the first
+answer that is not an error is returned. Only idempotent methods are hedged
+(`GetTask`, `ListTasks`, `CancelTask`, `GetExtendedAgentCard`, the
+push-config reads and delete) and a `SendMessage` carrying an idempotency key
+to a peer known to honour it; a send without a key never is, nor a stream.
+Copies are paid from a budget, by default 5% of calls.
+
+Balancing applies to the HTTP bindings (JSON-RPC, HTTP+JSON); `build_grpc` and
+a custom transport refuse it. With an [`HttpPool`](./builder/pool.md), the
+pool's connections and its per-origin state are used, so ejection is shared by
+every client of the pool.
+
 ## Keep-alive PINGs and the next hop
 
 An HTTP/2 PING is answered by the next hop. Through a layer-4 balancer, which

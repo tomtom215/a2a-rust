@@ -15,10 +15,19 @@ one of them lacked). An exporter name it does not have, a protocol, a
 compression, a timeout or a Prometheus port it cannot read, an
 `OTEL_PROPAGATORS` name it does not have and a proxy kind it does not speak are
 each noted in `Telemetry::notices`, which `install_subscriber` prints at
-`WARN`, with what was used instead; the OpenTelemetry crates fall back on their
-own for others (an unrecognised `OTEL_TRACES_SAMPLER` becomes
-`parentbased_always_on`, with a warning printed before any subscriber exists, so
-it is usually not seen). What stays an error naming the variable, and `build`
+`WARN`, with what was used instead. Three variables are read by the
+OpenTelemetry crates themselves, which fall back on their own and warn before
+any subscriber exists, so that warning is not seen: `OTEL_TRACES_SAMPLER` (an
+unrecognised or unimplemented sampler becomes `parentbased_always_on`),
+`OTEL_TRACES_SAMPLER_ARG` (a ratio sampler without a number samples every
+trace) and `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` (anything but
+`cumulative`, `delta` or `lowmemory` is `cumulative`). Since 0.16.0
+`Telemetry` checks those values by the crates' own rules and notes each it
+falls back on, as it does `OTEL_METRIC_EXPORT_INTERVAL` when that is not a
+number (audit NEW-c-3); the sampler only when traces are built, the
+temporality only when metrics go over OTLP. `OTEL_METRICS_EXEMPLAR_FILTER`
+set to anything but `always_off` is noted as well: the pinned OpenTelemetry SDK
+(0.33.1) records no exemplars, whatever it says (audit C-05). What stays an error naming the variable, and `build`
 fails, is what it cannot do without: an OTLP/HTTP endpoint with no scheme or
 that is not a URL, a certificate or key file that cannot be read or is not PEM,
 a client certificate without its key, a header name that is not one, a
@@ -45,14 +54,15 @@ signal's own form wins over the general one.
 | `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY` | yes | `with_client_certificate_pem` | **The variables** | none | PEM files of the client certificate chain and its key, for a collector that requires mutual TLS; one without the other is an error |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` (either case) | — | `with_proxy`, `without_proxy` | **The code** | direct | Export goes through an `http://` proxy, as curl reads them; see [TLS, proxies and compression](./tls-proxies.md#proxies) |
 | `OTEL_EXPORTER_PROMETHEUS_HOST`, `OTEL_EXPORTER_PROMETHEUS_PORT` | — | — | — | `localhost`, 9464 | Where `prometheus` serves `/metrics`; port `0` lets the operating system choose (`Telemetry::prometheus_addr` returns it); a port that is not a number is noted and 9464 used |
-| `OTEL_PROPAGATORS` | — | — | — | `tracecontext,baggage` | `tracecontext`, `baggage`, `none`, in a list; another name (`b3`, `jaeger`, …) is reported and skipped (`Telemetry::notices`), not an error |
+| `OTEL_PROPAGATORS` | — | `with_propagators` (client and server builders) | **The code** | `tracecontext,baggage` | `tracecontext`, `baggage`, `none`, in a list; another name (`b3`, `jaeger`, …) is reported and skipped (`Telemetry::notices`, a warning from the client and the server), not an error. Also decides what the A2A wire carries: without `tracecontext` no `traceparent` is sent or continued, without `baggage` none is read or written ([Trace context](./trace-context.md#baggage-opt-in-by-key)) |
 | `OTEL_SERVICE_NAME` | — | `with_default_service_name` | **The variable** | `unknown_service` | `service.name`; see [Resource attributes](./resource.md) |
 | `OTEL_RESOURCE_ATTRIBUTES` | — | — | — | — | Resource attributes, `key=value,…`. `service.name` here also wins over `with_default_service_name`. `,` and `=` inside a value are written percent-encoded (`prod%2Cwest` is `prod,west`) and decoded; an entry that is not valid percent-encoding is kept as written and reported at startup |
 | `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | — | — | — | `parentbased_always_on` | Read by the OpenTelemetry SDK itself |
 | `OTEL_BSP_*`, `OTEL_BLRP_*` | — | — | — | the SDK's | The span and log batch processors' queue size, batch size and delay, read by the OpenTelemetry SDK |
 | `OTEL_METRIC_EXPORT_INTERVAL` | — | — | — | 60 s | Milliseconds between metric exports, read by the OpenTelemetry SDK |
 | `OTEL_SPAN_*_LIMIT` | — | — | — | the SDK's | Span attribute, event and link limits, read by the OpenTelemetry SDK |
-| `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | metrics only | — | — | cumulative | `delta` for a backend that wants it, read by `opentelemetry-otlp` |
+| `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | metrics only | — | — | cumulative | `delta` for a backend that wants it, read by `opentelemetry-otlp`. **Prometheus refuses delta** unless it converts it: without `--enable-feature=otlp-deltatocumulative` its OTLP receiver answers HTTP 500 ("invalid temporality and type combination") and the series never appear, so every shipped panel and rule goes empty. The compose stack enables the conversion; [Prometheus](./prometheus.md#delta-temporality) has the details |
+| `A2A_LOG_FORMAT` | — | `with_console_format` | **The code** | `text` | `json` prints one JSON object per line with `trace_id`, `span_id`, `trace_flags`; see [Logs](./logs.md#json-lines-with-the-trace-context) |
 | `RUST_LOG` | — | — | — | `warn` | What `install_subscriber` prints to standard error, in `target=level` form, not what is exported; see [Logs](./logs.md#what-is-exported-and-what-is-printed) |
 | `NO_COLOR` | — | — | — | unset | Any non-empty value turns off colour in what `install_subscriber` prints; colour is used only on a terminal anyway |
 | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | — | `Langfuse::new` | — | base URL `http://localhost:3000` | Read by `Langfuse::from_env()`; see [Langfuse](../langfuse.md) |

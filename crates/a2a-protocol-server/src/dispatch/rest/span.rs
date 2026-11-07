@@ -33,7 +33,7 @@ impl RestDispatcher {
         method: &str,
         route: &str,
         headers: &HashMap<String, String>,
-        call: impl std::future::Future<Output = hyper::Response<BoxBody<Bytes, Infallible>>>,
+        call: impl std::future::Future<Output = hyper::Response<BoxBody<Bytes, Infallible>>> + Send,
     ) -> impl std::future::Future<Output = hyper::Response<BoxBody<Bytes, Infallible>>> {
         let prefixed;
         let route = if http.tenant_in_path {

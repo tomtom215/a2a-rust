@@ -22,7 +22,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     CallContext, RequestHandler, RequestHandlerBuilder, ServerInterceptor, agent_executor,
 };
@@ -152,12 +152,23 @@ async fn status(addr: std::net::SocketAddr, verb: &str, path: &str, body: Option
 #[tokio::test]
 async fn an_authorizer_sees_the_task_every_method_names_and_can_refuse_it() {
     let seen: Seen = Arc::default();
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler(&seen)))
-        .await
-        .expect("serve");
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler(&seen)))
-        .await
-        .expect("serve");
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(handler(&seen)),
+            std::future::pending(),
+        ));
+        addr
+    };
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler(&seen)), std::future::pending()),
+        );
+        addr
+    };
 
     for method in Method::ALL {
         let name = method.wire_name();

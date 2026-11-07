@@ -31,7 +31,7 @@ let tool_loop = ToolLoop::new(model, tools)
 | `with_recover_text_calls(bool)` | on | Whether a final reply that is exactly one JSON object naming a tool in the set (bare, in a code fence, or between `<tool_call>` tags) is run as that call rather than returned as the answer |
 | `with_idempotency_secret([u8; 32])` | drawn per loop | The secret call keys are derived under; see [Idempotency keys](./tools.md#idempotency-keys) |
 | `with_agent_name(name)` | none | Recorded as `gen_ai.agent.name` on the run's metrics |
-| `with_meter(Meter)` | the global meter provider | Where the loop's metrics go (`otel` feature); see [Spans and metrics](./telemetry.md) |
+| `with_meter(&Meter)` | the global meter provider | Where the loop's metrics go (`otel` feature); see [Spans and metrics](./telemetry.md) |
 
 The preamble matters more than it looks. Without one, small models tell the
 caller to call a tool rather than call it, and restate a tool's numbers from

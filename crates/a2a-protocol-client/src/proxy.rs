@@ -38,11 +38,16 @@ use std::task::{Context, Poll};
 use hyper::http;
 use hyper::rt::{Read, ReadBufCursor, Write};
 use hyper_util::client::legacy::connect::proxy::Tunnel;
-use hyper_util::client::legacy::connect::{Connected, Connection, HttpConnector};
+use hyper_util::client::legacy::connect::{Connected, Connection};
 use hyper_util::client::proxy::matcher::{Intercept, Matcher};
+
+use crate::transport::resolver::Tcp;
 use hyper_util::rt::TokioIo;
 use pin_project_lite::pin_project;
 use tokio::net::TcpStream;
+
+#[cfg(feature = "grpc")]
+use crate::transport::connector::TcpConnector;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -196,7 +201,7 @@ pub async fn tunnelled_tcp(dst: &http::Uri) -> Option<Result<TcpStream, BoxError
         }
         return None;
     };
-    let mut tcp = HttpConnector::new();
+    let mut tcp = hyper_util::client::legacy::connect::HttpConnector::new();
     tcp.enforce_http(false);
     let mut tunnel = tunnel(&proxy, tcp);
     Some(
@@ -212,7 +217,7 @@ pub async fn tunnelled_tcp(dst: &http::Uri) -> Option<Result<TcpStream, BoxError
 /// names for `dst`, with `tcp`'s settings toward the proxy; `None` when no
 /// supported proxy applies. Tonic layers its own TLS over what this returns.
 #[cfg(feature = "grpc")]
-pub fn grpc_tunnel(dst: &http::Uri, tcp: HttpConnector) -> Option<Tunnel<HttpConnector>> {
+pub fn grpc_tunnel(dst: &http::Uri, mut tcp: TcpConnector) -> Option<Tunnel<TcpConnector>> {
     let rules = matcher_from_env();
     let proxy = intercept(&rules, dst);
     if proxy.is_none()
@@ -223,7 +228,6 @@ pub fn grpc_tunnel(dst: &http::Uri, tcp: HttpConnector) -> Option<Tunnel<HttpCon
              proxies are); connecting directly"
         );
     }
-    let mut tcp = tcp;
     tcp.enforce_http(false);
     proxy.map(|p| tunnel(&p, tcp))
 }
@@ -301,15 +305,14 @@ impl Write for Conn {
 #[derive(Clone)]
 pub struct ProxyConnector {
     tls: rustls::ClientConfig,
-    direct: hyper_rustls::HttpsConnector<HttpConnector>,
-    tcp: HttpConnector,
+    direct: hyper_rustls::HttpsConnector<Tcp>,
+    tcp: Tcp,
     rules: Arc<Matcher>,
     said_unsupported: Arc<AtomicBool>,
 }
 
 impl ProxyConnector {
-    pub fn new(tls: rustls::ClientConfig, rules: Arc<Matcher>, tcp: HttpConnector) -> Self {
-        let mut tcp = tcp;
+    pub fn new(tls: rustls::ClientConfig, rules: Arc<Matcher>, mut tcp: Tcp) -> Self {
         tcp.enforce_http(false);
         let direct = hyper_rustls::HttpsConnectorBuilder::new()
             .with_tls_config(tls.clone())
@@ -327,10 +330,7 @@ impl ProxyConnector {
     }
 
     /// TLS to the destination over a `CONNECT` tunnel through `proxy`.
-    fn tunnelled_tls(
-        &self,
-        proxy: &Intercept,
-    ) -> hyper_rustls::HttpsConnector<Tunnel<HttpConnector>> {
+    fn tunnelled_tls(&self, proxy: &Intercept) -> hyper_rustls::HttpsConnector<Tunnel<Tcp>> {
         hyper_rustls::HttpsConnectorBuilder::new()
             .with_tls_config(self.tls.clone())
             .https_only()
@@ -342,7 +342,7 @@ impl ProxyConnector {
 
 /// A `CONNECT` tunnel through `proxy`, authenticated when its URL carried a
 /// user.
-pub fn tunnel(proxy: &Intercept, tcp: HttpConnector) -> Tunnel<HttpConnector> {
+pub fn tunnel<C>(proxy: &Intercept, tcp: C) -> Tunnel<C> {
     let tunnel = Tunnel::new(proxy.uri().clone(), tcp);
     match proxy.basic_auth() {
         Some(auth) => tunnel.with_auth(auth.clone()),
@@ -415,85 +415,5 @@ mod conn_tests;
 mod rules_tests;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn env(vars: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
-        move |name| {
-            vars.iter()
-                .find(|(n, _)| *n == name)
-                .map(|(_, v)| (*v).to_owned())
-        }
-    }
-
-    fn uri(s: &str) -> http::Uri {
-        s.parse().unwrap()
-    }
-
-    #[test]
-    fn https_proxy_applies_to_https_and_no_proxy_exempts() {
-        let rules = matcher_from(&env(&[
-            ("HTTPS_PROXY", "http://proxy:3128"),
-            ("no_proxy", "internal.example,10.0.0.0/8,[::1]"),
-        ]));
-        let p = intercept(&rules, &uri("https://agent.example.com/")).expect("proxied");
-        assert_eq!(p.uri().host(), Some("proxy"));
-        assert!(intercept(&rules, &uri("https://a.internal.example/")).is_none());
-        assert!(intercept(&rules, &uri("https://10.1.2.3/")).is_none());
-        assert!(intercept(&rules, &uri("https://[::1]:8443/")).is_none());
-        assert!(
-            intercept(&rules, &uri("http://agent.example.com/")).is_none(),
-            "HTTP_PROXY unset"
-        );
-    }
-
-    #[test]
-    fn lower_case_names_are_read_and_empty_values_ignored() {
-        let rules = matcher_from(&env(&[("HTTP_PROXY", ""), ("http_proxy", "http://p:8080")]));
-        assert!(intercept(&rules, &uri("http://agent/")).is_some());
-    }
-
-    #[test]
-    fn cgi_ignores_proxy_variables() {
-        let rules = matcher_from(&env(&[
-            ("REQUEST_METHOD", "GET"),
-            ("HTTP_PROXY", "http://attacker:80"),
-        ]));
-        assert!(intercept(&rules, &uri("http://agent/")).is_none());
-    }
-
-    #[cfg(feature = "websocket")]
-    #[test]
-    fn a_websocket_url_is_matched_as_its_http_equivalent() {
-        assert_eq!(
-            http_equivalent(&uri("ws://a.example:81/x")),
-            uri("http://a.example:81/x")
-        );
-        assert_eq!(
-            http_equivalent(&uri("wss://a.example/")),
-            uri("https://a.example/")
-        );
-        assert_eq!(
-            http_equivalent(&uri("https://a.example/")),
-            uri("https://a.example/")
-        );
-        let rules = matcher_from(&env(&[
-            ("HTTPS_PROXY", "http://p:3128"),
-            ("NO_PROXY", "b.example"),
-        ]));
-        assert!(intercept(&rules, &http_equivalent(&uri("wss://a.example/"))).is_some());
-        assert!(intercept(&rules, &http_equivalent(&uri("wss://b.example/"))).is_none());
-        assert!(
-            intercept(&rules, &http_equivalent(&uri("ws://a.example/"))).is_none(),
-            "only HTTPS_PROXY set: a plaintext ws:// goes direct"
-        );
-    }
-
-    #[test]
-    fn a_socks_proxy_is_not_spoken_but_noticed() {
-        let rules = matcher_from(&env(&[("ALL_PROXY", "socks5://p:1080")]));
-        let dst = uri("https://agent/");
-        assert!(intercept(&rules, &dst).is_none());
-        assert_eq!(unsupported(&rules, &dst).as_deref(), Some("socks5"));
-    }
-}
+#[path = "proxy_tests.rs"]
+mod tests;

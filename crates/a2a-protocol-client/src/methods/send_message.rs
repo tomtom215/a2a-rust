@@ -63,7 +63,7 @@ impl A2aClient {
     /// A send carrying an inline push-notification config needs the push
     /// capability as much as `CreateTaskPushNotificationConfig` does; a
     /// conformant agent refuses it with the same error (spec §3.3.4). Its
-    /// webhook URL gets the same §13.2 check `set_push_config` applies.
+    /// webhook URL gets the same §13.2 check `create_push_config` applies.
     fn require_inline_push_declared(
         &self,
         params: &MessageSendParams,

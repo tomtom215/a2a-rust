@@ -26,14 +26,27 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Highlights
 
-- **Action required if you build against the SDK (eleven breaking items, each with its migration in `book/src/reference/upgrading/0.15-to-0.16.md`):** `RequestContext.context_id` is a `ContextId`; forty wire structs (`Task`, `Message`, `Part`, `AgentCard`, the update events, the method parameters and responses, the security schemes and flows) are `#[non_exhaustive]`, built with `new` and `with_*`; `AgentCard::new` declares streaming; `a2a-protocol-server` enables `tls-rustls` by default; `sign_agent_card` is removed; configuration errors are `ServerError::Config`/`ClientError::Config`; internal error text is withheld from callers; `JwtValidator` checks `iss` and `aud`; the WebSocket listener refuses browsers unless allowed; `ServeReport` is `#[must_use]`; `tls::HttpsClient` is a struct.
-- **Action required if you deploy it:** loopback is never sent to a proxy (`A2A_PROXY_LOOPBACK=1` restores it); `Profile::Production` refuses an in-memory halt, lease, push-config or audit store over a shared task store (`allow_process_local_stores()` opts out); a wrong `OTEL_*` value is noted instead of stopping the process; an exporter named `zipkin` no longer takes a fleet down.
+- **Action required if you build against the SDK (each breaking item has its migration in `book/src/reference/upgrading/0.15-to-0.16.md`):** `RequestContext.context_id` is a `ContextId`; forty wire structs (`Task`, `Message`, `Part`, `AgentCard`, the update events, the method parameters and responses, the security schemes and flows) are `#[non_exhaustive]`, built with `new` and `with_*`; `AgentCard::new` declares streaming; `a2a-protocol-server` enables `tls-rustls` by default; `sign_agent_card` is removed; configuration errors are `ServerError::Config`/`ClientError::Config`; internal error text is withheld from callers; `JwtValidator` checks `iss` and `aud`; the WebSocket listener refuses browsers unless allowed; `ServeReport` is `#[must_use]`; `tls::HttpsClient` is a struct; `Telemetry` is `#[must_use]` and `install_subscriber()` returns `()`; `OpenAiChatModel` answers a 429 with `ModelError::RateLimited`; every agent card declares the lineage extension.
+- **Action required if you deploy it:** loopback is never sent to a proxy (`A2A_PROXY_LOOPBACK=1` restores it); `Profile::Production` refuses an in-memory halt, lease, push-config or audit store over a shared task store (`allow_process_local_stores()` opts out); a wrong `OTEL_*` value is noted instead of stopping the process; an exporter named `zipkin` no longer takes a fleet down; the gRPC and WebSocket listeners now probe idle peers (`without_http2_keepalive()` and `without_idle_timeout()` restore 0.15); the shipped alert rules no longer count a caller's mistake, and a gRPC call the peer abandoned is `rpc_status_code="CANCELLED"`.
 - **Several replicas on one PostgreSQL database need no session affinity:** each turn claims its task, a cancel reaches the executor on another replica within about a second, a dead replica's tasks are handed over, and a replica that stalls past its claim writes nothing more.
+- **Swarms and fleets:** task lineage and halting one job, a durable push outbox, an opt-in admission gate and load signal, live-log compaction, client load balancing and card discovery at fleet scale, the WebSocket binding on the HTTP port, certificate reload, and the swarm extensions as a published wire contract with schemas and vectors.
+- **Observability:** control-plane, process and runtime metrics, baggage and `OTEL_PROPAGATORS` on the A2A wire, JSON console logs with the trace context, alerts that watch the stack itself, and the stack on Kubernetes and in CI.
 - **A task's ending always reaches its webhooks, its log and its caller;** an executor that panics leaves the task `failed`; a blocking send over gRPC is no longer cut at the request timeout; credentials go only to the host the caller named; a private CA and mutual TLS reach every binding, the token provider included.
 - **Shipping:** a signed `deploy-agent` image on GHCR with build provenance, a card that reports its version, and retention of finished tasks; OpenTelemetry export through proxies with gzip, console and Prometheus exporters, resource detection and lost-export warnings; WebSocket connections that detect a dead peer.
-- **Not in this release:** the swarm designs beyond the four fixes, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
+- **Serving and API shape:** every listener has one graceful `serve_with_shutdown` and takes `ServeConfig` (the axum router now runs on `Server`), `EventStream` is a `futures_core::Stream`, a one-shot agent answers with `complete_with_text`, and 23 names are deprecated (26 in the release, counting the ones under `### Deprecated` that this package did not add), to be removed no earlier than 0.17.0.
+- **Not in this release:** agent skills (ADR 0035) and steering (ADR 0036), the parts listed under Known Limitations, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
 
 ### Added
+
+- **An RFC requirements ledger and a CI gate for it** (`docs/compliance/rfc-ledger.json`,
+  `scripts/check_rfc_ledger.py`; 2026-11-06). One row for each MUST, SHOULD and
+  MAY of RFC 7515 (JWS), RFC 7519 (JWT) and RFC 8725 (JWT best practice), 152 in
+  all, with the code and test that answer it, checked to be where the row says
+  (the vendored texts are in `docs/implementation/rfc/`). A security row can say
+  `TESTED` only with a named test that was seen to fail with the check removed;
+  a refusal of a MUST is a `DEVIATION` that names the decision (RFC 7519
+  section 8's `none` is refused by ADR 0010). The A2A specification's ledger is
+  unchanged.
 
 - **`HttpPool`: one set of HTTP connections many clients share**
   (client, `tls-rustls`; audit D-12, ADR 0032). `HttpPool::builder()...build()`
@@ -614,6 +627,77 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   overview table and the doctest harness; the overview no longer says five
   examples have no page.
 
+<!-- changelog-final-0.16: packages merged 2026-11-05 -->
+- **A durable push outbox** (audit H14, ADR 0037): `RequestHandlerBuilder::with_push_outbox`, the `push::outbox::PushOutbox` trait and `InMemoryPushOutbox`, `SqlitePushOutbox` and `PostgresPushOutbox` (table `a2a_push_outbox`; `with_cipher` seals event bodies). A delivery is recorded once the event is stored and is sent by a worker on any replica, in order per webhook, retried with backoff (1 s doubling to `push_outbox_backoff_max`, 1 h) for up to `push_outbox_max_age` (24 h), at least once with a stable `A2A-Delivery-Id` (`push::with_delivery_id`, `push::current_delivery_id`). New: `HandlerLimits::push_outbox_max_age`, `push_outbox_backoff_max` and `push_outcome::EXPIRED`.
+
+- **Push fairness between callers** (audit NEW-f-2, ADR 0043): `HandlerLimits::push_max_in_flight_per_partition` (default 256) and `with_push_max_in_flight_per_partition`: one tenant, or one caller where callers are isolated, holds at most this many webhook deliveries at once, so one caller's slow webhooks cannot occupy the whole push gate. `push_outcome::THROTTLED` (`throttled`) names a delivery that waited `push_delivery_timeout` for a slot and was never let through; no request was made and the webhook's health is not charged.
+
+- **`HttpPushSender::with_proxy_resolved_names()`** (audit NEW-b-1, ADR 0043): behind a proxy that resolves names itself, a webhook whose name this process cannot resolve is sent to the proxy by name instead of failing; the form check and a private answer still refuse. Off by default.
+
+- **`AgentExecutor::resumes_after_hand_off`** (audit D-21, ADR 0054): an executor whose turns are safe to run twice can have a graceful shutdown hand a long turn back to its caller (task left `working`, status metadata `a2a-rust.com/hand-off`, claim released) instead of ending it `failed`; the caller re-sends the message to the task id and another replica runs it; the reaper ends a task nobody continued after ten minutes (`HandlerLimits::hand_off_window`, 600 s). Needs a store with turn claims. `Delegation` continues a handed-back child by itself, at most three times by default (`HandOffPolicy`, `DelegationOptions::with_hand_off`; `HandOffPolicy::never()` opts out). `TurnClaimStore::abandoned_except_handed_off` is new, with a default.
+
+- **A lease renewal can ask for the lease alone** (audit NEW-h-designs-3, ADR 0044): `https://a2a-rust.com/extensions/lease/v1/renewal-only` and `A2aClient::renew_lease_status`. The server answers with the task's status and no history, artifacts or metadata, so a content signer signs no artifact per renewal; a delegation's renewals use it, and older servers answer the whole task as before.
+
+- **`HandlerLimits::max_subscribers_per_task` (256) and `max_subscribers` (10,000)** (audit H5, ADR 0044): bound open `SubscribeToTask` streams; one more is refused before any work as overloaded, with a retry delay. `LeaseStore::lapsed_many` and `LeaseStore::sweep` are new, each with a default.
+
+- **`SqliteDelegationJournal`** (the server crate's `sqlite` feature; audit NEW-h-s0-4): a supervisor on one host keeps its delegation journal in a SQLite file across restarts, with the same table and contract as `PostgresDelegationJournal`.
+
+- **An opt-in admission gate** (audit H9, ADR 0045): `RequestHandlerBuilder::with_admission(Admission)` with a capacity, per-tenant reserved slots (`TenantShare::with_reserved`), a bounded wait inside the send's budget (`with_max_queued`, `with_max_wait`), priority classes and weighted rounds, all from server configuration; `RequestHandler::admission_load()`.
+
+- **A load signal and saturation readiness** (audit H7, ADR 0046): `RequestHandlerBuilder::with_load_reporting()` serves `GET /load` and adds `endpoint-load-metrics` (ORCA text form) to every response of the crate's server and the axum router; `RequestHandler::load()`, `LoadReport`, `LOAD_HEADER`. `HandlerLimits::with_saturation_readiness(unready_at, ready_at)` makes `/ready` answer `503 saturated` with hysteresis. Both are off by default.
+
+- **A process-wide byte budget over buffered events** (audit H13, ADR 0047): `HandlerLimits::with_max_buffered_event_bytes(n)` and `EventQueueManager::with_max_buffered_bytes`; a new turn is refused `Overloaded` while under a tenth of the budget is free.
+
+- **Live-log compaction** (audit H13, ADR 0047): `RetentionPolicy::with_max_events_per_live_task` makes `purge_expired` on the SQLite and PostgreSQL stores (and their tenant-aware variants) cut each live task's event log to its newest N events, never past the snapshot and never the last event; `TaskStore::trim_event_log` (default `unsupported_operation`, so no out-of-tree store breaks); `PurgeReport::events_compacted`.
+
+- **A shared inference limit and a 429 backoff for the tool loop** (audit H17, ADR 0048; `tool-loop` feature): `InferenceLimit` and `LimitedModel` (a shared in-flight turn limit), `ModelRetry` and `ToolLoop::with_model_retry` (a 429 sent again after `Retry-After` or a jittered backoff, inside the budget; off by default).
+
+- **Task lineage and halting one job** (server, types, client; audit H10, ADR 0034): a task names its job in `Message.metadata["a2a-rust.com/lineage"]` (`root`, `depth` up to 16, optional `parentTaskId`; URI `https://a2a-rust.com/extensions/lineage/v1`). A send without one is the root of its own job, named by its `contextId`. `HaltScope::root(tenant, root)` refuses that job's sends and stops its running turns on every replica sharing the halt store; `RequestHandler::running_in_root` and `halt_reason_for_root` show it; `RequestContext::lineage` / `child_lineage` and `DelegationOptions::with_lineage` carry it to delegated children; `a2a_protocol_types::lineage::tree` builds a job's tree from tasks of many agents. The executor span records `a2a.lineage.root` and `a2a.lineage.depth`, and the halt conformance kit grades job halts.
+
+- **The swarm controls as a wire contract** (audit H19, ADR 0049): the book page *Swarm Extensions: the Wire Contract*, JSON Schemas and conformance vectors for every extension (`crates/a2a-protocol-types/extensions/`: lineage, lease, budget, idempotency, failure, approval, provenance, hand-off), all run through the Rust readers, and lineage, lease and budget checks in the Python and Go interop clients.
+
+- **The WebSocket binding on the HTTP port** (audit B-25, ADR 0055): `CombinedDispatcher::with_websocket` and `A2aRouter::with_websocket` upgrade an HTTP/1.1 `GET` with `Upgrade: websocket` at the JSON-RPC path. Before the `101` the upgrade is checked as the separate listener checks it (RFC 6455 version 13 and key, origin, `A2A-Version`, the connection cap) and the interceptor chain admits its headers. The upgraded connection keeps the server's connection permit, and `Server::serve_with_shutdown` closes it with a Close frame in its drain (new defaulted `Dispatcher::close_upgraded`).
+
+- **A path prefix from a reverse proxy** (server; audit B-08): `DispatchConfig::with_base_path("/agents/billing")` takes the prefix off a request's path before routing on `RestDispatcher`, `JsonRpcDispatcher`, `CombinedDispatcher` and the axum `A2aRouter`, so the prefix is no longer read as a tenant and the card is served under it.
+
+- **RFC 7239 `Forwarded`** (server; audit B-09): `RateLimitConfig` and `AuthFailureThrottleConfig::with_forwarded_header(ForwardedHeader::Forwarded)` key callers by the `for=` the trusted proxies wrote. Exactly one header is read, so a client cannot choose its key through the one the proxy does not write.
+
+- **Certificate reload without a restart** (server; audit B-14, ADR 0041): `ReloadingCertResolver` serves two PEM files and replaces the certificate on `reload()` or `watch(interval)`, keeping the old one when a pair does not load; `server_config()` builds a configuration for `Server::with_tls` and `WebSocketDispatcher::with_tls`. `GrpcDispatcher::with_rustls(ServerConfig)` serves gRPC TLS through the SDK's own handshake, so the gRPC listener rotates too and takes any crypto provider and client verifier.
+
+- **mTLS behind a TLS-terminating proxy** (server; audit B-26): `MutualTlsAuthInterceptor::with_forwarded(ForwardedClientCert::envoy(..) | url_encoded_pem(header, ..) | aws_alb(..))` names the caller from the certificate the proxy forwarded, read only from a peer in the given `TrustedProxy` ranges and only when the connection's own handshake gave none.
+
+- **Client load balancing** (audit H12, ADR 0050; ADR 0032 decision 5): `ClientBuilder::with_balancing(source, BalancePolicy)` and the `balance` module spread calls over the endpoints of an `EndpointSource` (`StaticEndpoints` from a list or a card's interfaces, `DnsEndpoints` with each address pinned while the name keeps the TLS check) by fewest calls in flight; failing endpoints are ejected with exponential backoff and a half-open probe, at most half the set at once; opt-in `Hedge` for idempotent unary calls under a budget. `HttpPoolBuilder::with_ejection`, `with_max_in_flight_per_origin` and `with_retry_budget` give a pool a circuit breaker, an in-flight cap and a retry budget per origin; `HttpPool::origins()` returns `OriginSnapshot`s; `ClientError::CircuitOpen { origin, retry_after }` is a call refused before sending because its origin, or every endpoint of a balanced client, is out of rotation (retryable). Defaults are unchanged.
+
+- **Card discovery at fleet scale** (audit H8, ADR 0051): `discovery::CardCache` (one shared card resolver per URL, bounded to 1024 URLs, least recently used dropped, 10% refresh jitter); `CachingCardResolver::with_stale_if_error`, `with_refresh_jitter` and `with_pool`; a card's own `Cache-Control: stale-if-error` is honoured (RFC 5861).
+
+- **JSON console lines with the trace context** (server; audit C-06): `TelemetryBuilder::with_console_format(ConsoleFormat::Json)` or `A2A_LOG_FORMAT=json` makes `install_subscriber` print one JSON object per line with `trace_id`, `span_id` and `trace_flags` inside a span.
+
+- **`/metrics` on the application's own port** (server; audit C-16): `Telemetry::prometheus()` returns a `PrometheusScrape` that renders the text format, and `TelemetryBuilder::without_prometheus_listener()` binds no listener of its own.
+
+- **Process and runtime metrics, and export self-metrics** (server; audit C-13): `process.cpu.time`, `process.memory.usage`, `process.memory.virtual`, `process.thread.count` and `process.unix.file_descriptor.count` (read from `/proc` on Linux, absent elsewhere) and `tokio.runtime.worker.count`, `tokio.runtime.task.count` and `tokio.runtime.global_queue.depth`, on by default when metrics are exported (`without_process_metrics()`, `with_tokio_runtime(handle)`); the counter `a2a.telemetry.export.failed` counts exports lost after the exporter's retries, per `signal`.
+
+- **Control-plane metrics** (server; audit H11, ADR 0038): `Metrics::on_refusal`, `on_lease`, `on_halt` and `on_claim` (no-op defaults) and the counters `a2a.server.refusals`, `a2a.server.lease.events`, `a2a.server.halts`, `a2a.server.halt.stopped_tasks` and `a2a.server.claim.events`; opt-in `OtelMetrics::with_tenant_dimension(allowed)` (other tenants recorded as `_OTHER`) and `with_agent_name`. There is no job dimension (ADR 0034 section 4).
+
+- **W3C baggage across A2A, opt-in by key** (client and server; audit C-10, ADR 0038): `with_baggage_propagation(BaggagePolicy::keys([...]))` on `ClientBuilder`, `ClientConfig` and `RequestHandlerBuilder`; bounded to 64 members and 8192 bytes, never a metric label. `OTEL_PROPAGATORS` now decides what the A2A wire carries (`with_propagators` overrides it).
+
+- **`Telemetry::init_where_configured()`** (server; audit G-14): builds each signal only where an endpoint is configured. `Telemetry::init()` keeps the specification's default of exporting to `localhost`.
+
+- **A first-run path for deploy-agent** (audit A14, A15, A19, A23, A25, ADR 0040): it reads `A2A_DATABASE_URL` (the generic `DATABASE_URL` is still read when it is unset, with a warning) and `DATABASE_PUSH_POOL_SIZE` (default 2); `examples/deploy-agent/network.yaml` holds a NetworkPolicy and a TLS Ingress; the image has a `HEALTHCHECK`, `PACKAGE` and `BIN` build arguments and a `Dockerfile.dockerignore`. A new CI workflow, `deploy.yml`, builds, runs and stops the image and validates the manifests with kubeconform (audit NEW-a-l-4a). The five `A2A_BIND_ADDR` examples take `A2A_PUBLIC_URL`, so the card advertises a URL a client can dial (audit NEW-a-l-5). The `a2a` CLI names the card's endpoint and `--binding` when a call it routed there cannot connect (audit A21).
+
+- **Alerts and a stack that watches itself** (`deploy/observability`; audit C-14, C-15): Alertmanager in the compose stack (its receiver notifies nobody until configured); the recording rule `a2a:rpc_server_caller_errors:rate5m` and a server panel *Caller errors*; alerts `A2AStoreRetriesHigh`, `A2AExecutorFailureRatioHigh`, `A2AModelCallsFailing`, `A2AClientErrorRatioHigh` and `rules/stack-alerts.yml` (`OTelCollectorDown`, `OTelCollectorExportFailing`, `OTelCollectorRefusing`, `OTelCollectorQueueFilling`, `PrometheusRuleEvaluationFailing`, `PrometheusNotificationsFailing`); every alert carries a `runbook_url` into the new book page *Alerts and runbooks*. The Collector serves its own metrics on 8888, Prometheus scrapes them, and exporter queues persist on disk.
+
+- **Metrics-to-traces links in the stack** (`deploy/observability`; audit C-05, stack side): Tempo's metrics generator (span metrics and a service graph) with exemplars, Prometheus exemplar storage, exemplar and trace-to-metrics links in Grafana, and a server span-duration panel with exemplars. The SDK does not emit exemplars yet (see Known Limitations).
+
+- **The stack on Kubernetes and in CI** (audit C-22, group J): `deploy/kubernetes/observability/` holds a generated `PrometheusRule` and Grafana dashboard ConfigMaps with a kustomization, with the book page *The stack on Kubernetes*; the CI workflow `observability.yml` runs `promtool check config` and `check rules`, `promtool test rules`, `amtool check-config` and `deploy/observability/scripts/check_stack.py` (the caller-class pattern against the crates' error codes, image digests, the generated manifests). A client dashboard panel, *Calls in the range by processes that started in it*, shows one-shot CLI and batch clients (audit L11).
+
+- `EventEmitter::text_artifact(id, text)`, `complete_with(parts)` and `complete_with_text(text)` (the result artifact, then the terminal `Completed` status, so a one-shot agent is one call), and `artifact_chunk(id, parts, ArtifactChunk)` with `ArtifactChunk::{whole, first, append, last}` in place of two positional `Option<bool>`s; `ArtifactChunk` is in the SDK prelude. `artifact` stays, not deprecated: only it can send `append: false` or leave out `lastChunk`. hello-agent, the quick start and the first-agent page use the short form (audit G-16).
+
+- `EventStream` implements `futures_core::Stream`, reading the same state as `next()`: `StreamExt`, `select_all`, `StreamMap` and axum's `Sse` take it as it is. A dropped poll does not restart the silence deadline. `futures-core` 0.3 is now a public dependency of the client (`STABILITY.md` section 6) (audit G-12).
+
+- The axum router is a `Dispatcher`: `Server::serve_with_shutdown(RestRouter::new(handler), signal)` gives it `ServeConfig`'s header-read and idle timeouts, connection cap, `Host` check, production refusal and task-first shutdown, and closes its WebSocket upgrades in the drain. `GrpcDispatcher::with_serve_config` and `WebSocketDispatcher::with_serve_config` take the same `ServeConfig` (connection cap, graces, drain timeout and delay, production refusal; on WebSocket also the idle bound). `ServeConfig` and `RestRouter` are in the SDK prelude (audit G-09, ADR 0052).
+
+- `RestRouter`, a type alias for `A2aRouter` that names the binding it serves (HTTP+JSON), and the names that follow the wire methods: `RequestHandler::on_subscribe_to_task` and `on_create_push_config`, `A2aClient::create_push_config`, `RateLimitConfig::with_window(Duration)`, `TenantLimitsBuilder::with_*`. A naming rule for new public items is in `CONTRIBUTING.md` (audit G-15, ADR 0053).
+
 ### Breaking Changes
 
 - **Thirteen protocol structs are `#[non_exhaustive]`** (types; audit G-10):
@@ -766,6 +850,18 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   write a card signature with no `kid` that spec §8.4.2 requires; 0.15.0 made
   it refuse `None`. Use `sign_card_es256(card, pkcs8, key_id)`, whose key id
   is a `&str`. The test that pinned the deprecation went with it.
+
+- **Alert and recording rules no longer count a caller's mistake** (`deploy/observability`; audit NEW-c-1, C-14): `a2a:rpc_server_errors:rate5m`, `a2a:rpc_server_error_ratio:rate5m` and `a2a:rpc_client_error_ratio:rate5m` leave out any status A2A section 5.4 maps to a 4xx (JSON-RPC codes other than -32603 and -32006, HTTP 4xx, gRPC codes outside the six server failures), so `A2AServerErrorRatioHigh` no longer pages on JSON-RPC `TaskNotFound` traffic. `A2AUnaryLatencyHigh` fires on more than 1% of a method's calls over 5 s, read from the bucket bound, instead of an interpolated p99 over 2.5 s. `A2APersistenceErrors` is a `warning` that stays firing for an hour; sustained failures page as the new `A2APersistenceFailing` (`critical`).
+
+- **Every agent card declares the lineage extension** (audit H10): a card signed before the builder must declare `https://a2a-rust.com/extensions/lineage/v1` or `build()` refuses it. A root halt in a shared halt store cannot be read by 0.15 replicas: upgrade every replica first.
+
+- **`Telemetry::install_subscriber()` returns `()`**, and `try_install_subscriber()` returns whether it installed one (audit G-14; removes a lint allow). **`Telemetry` is `#[must_use]`**: `Telemetry::init()?;` alone on a line dropped the guard and shut export down; it is now a warning (an error under `-D warnings`).
+
+- **`ToolLoop::with_meter` takes `&Meter`** instead of `Meter` (audit C-23). **`HaltScope::Root` is labelled `scope="root"`** on `a2a.server.halts`. The `console` exporter's lines say `trace_id=` and `span_id=` instead of `trace=` and `span=` (audit C-06).
+
+- **gRPC calls the peer abandons move from `error_type="cancelled"` to `rpc_status_code="CANCELLED"`** in `rpc.server.call.duration` (audit C-09); a rule counting cancelled calls must select both, as the shipped `a2a:rpc_server_cancelled:rate5m` now does.
+
+- **`ModelError::RateLimited { retry_after, body }`** (audit H17): `OpenAiChatModel` answers a 429 with it instead of `ModelError::Status { status: 429, .. }`.
 
 ### Behaviour Changes
 
@@ -1385,7 +1481,81 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   only a destination written as an IP). The startup line says `via proxy`, and
   a lost export names the proxy. `without_proxy()` restores the old behaviour.
 
+- **The gRPC and WebSocket listeners probe idle peers by default** (server; audit D-20, ADR 0042; a documented 0.15 decision reversed): `GrpcDispatcher` sends an HTTP/2 PING after 60 s of silence and closes the connection if it is unanswered for 20 s; `WebSocketDispatcher`'s idle bound is 75 s, pinging at half. Conformant clients answer without their application, so a quiet subscription stays open. `without_http2_keepalive()` and `without_idle_timeout()` restore the 0.15 behaviour; the settings apply to the `serve*` methods, not to `GrpcDispatcher::into_service`. Not measured against another implementation's client (grpc-go, grpc-java).
+
+- **Push deliveries**: a deployment with one partition runs at most 256 deliveries at once (was 512) until it raises `push_max_in_flight_per_partition`. A delivery's wait for a slot no longer spends its `push_delivery_timeout`, so a delivery can take up to twice that end to end; a delivery that waited the whole bound without being let through is reported as `throttled` (not `timeout`) and no longer counts towards suspending a webhook. `push_max_in_flight_per_host` also bounds each resolved address the bundled sender connects to, so names that resolve to one address share a count. An `http://` webhook is pinned to its checked addresses in the client's resolver, as `https://` was, and the connector tries them in turn within an attempt.
+
+- **A forwarded chain too short to read is keyed by the connection's peer** (audit B-09): the rate limiter no longer puts such callers in the one shared `anon` bucket, which a client connecting directly with a short header could exhaust for all of them. Building a `RateLimitInterceptor` or `AuthFailureThrottle` with hops and no trusted ranges logs a warning.
+
+- **`http://` JWKS and OIDC discovery to a name under `.localhost` is refused** (server; audit NEW-b-5): glibc and musl can send such a name to DNS. `localhost` and loopback addresses are still allowed. **The client's name lookup is bounded by its connect timeout** (audit B-28): the lookup ran before the timeout started, so a black-holed resolver (Kubernetes `ndots: 5` with an unreachable upstream) could stall a request for as long as the system resolver retried.
+
+- **Leases and the control plane** (audit H5, NEW-h-s0-6): a handler checks every lease its turns hold in one store read per interval instead of one per turn (50 turns: 150 reads in three intervals before, 3 after); the reaper deletes lease rows an hour after they lapse. A graceful shutdown hands a turn back only when the executor opts in and the handler has turn claims.
+
+- **Readiness and startup** (audit H7): `/ready` bodies carry `"halted":true` while a halt of every tenant is held; `ServeConfig::production()` warns at startup when `max_connections` is unset; an event writer's persistence hand-off shares the write's one deadline (audit H13). The admission gate, load signal, saturation readiness, byte budget, model retry and live-log compaction are all off unless configured.
+
+- **Error details**: a halt refusal carries a `google.rpc.ErrorInfo` (`reason` `HALTED`, `domain` `a2a-rust.com`) on every binding. On HTTP+JSON an error with a JSON-RPC-standard code carries an `ErrorInfo` in `a2a-protocol.org` first in `details` (`INVALID_PARAMS`, `INTERNAL_ERROR`, `METHOD_NOT_FOUND`, `INVALID_REQUEST`, `PARSE_ERROR`), the reasons a2a-go and a2a-python map by, so both read a refusal of invalid params as one; credential refusals carry none, and JSON-RPC and gRPC are unchanged. A send whose lineage is malformed or deeper than 16 is refused as invalid params before any work; a continuation naming another root is refused.
+
+- **Metrics**: with metrics exported there are 5 new `process.*` series (Linux) and 3 `tokio.runtime.*` series by default. The Prometheus scrape listener serves at most 16 connections, one request each, 30 s per exchange. Instruments are built once per meter provider instead of at every measurement (audit C-23). `OTEL_METRICS_EXEMPLAR_FILTER` asking for exemplars is a notice: the pinned OpenTelemetry SDK records none (audit C-05).
+
+- **deploy-agent**: the image installs its binary as `/usr/local/bin/agent` (was `/usr/local/bin/deploy-agent`); the manifest sets `TOKIO_WORKER_THREADS=2` and `_RJEM_MALLOC_CONF=narenas:2,background_thread:true` (audit A26; the effect on memory under a 256 Mi limit on a many-core node is not measured).
+
+- **`CachingCardResolver` builds its HTTP client once** and reuses its connections; concurrent resolves on one resolver and its clones make one fetch and share its outcome (audit H8). The HTTP server now serves connections with upgrades enabled; a dispatcher that answers no `101` sees no difference. `tower-service` became a non-optional dependency of the client crate, and `http`, `tower-service` and hyper-util's `client-proxy` feature of the server crate (all already in the dependency graph).
+
+- **A gRPC or WebSocket listener can take `ServeConfig`** (audit G-09, ADR 0052). Nothing changes until `with_serve_config` is called. Under `ServeConfig::production()` the listener then refuses to start on plaintext beyond loopback without its own TLS, or on a card that does not declare its binding (`ServeReport::refused` says why), and `drain_delay` keeps it accepting, not ready, for that long after the shutdown signal. The four setters that took the same settings still work, deprecated, and write the same fields.
+
+- **`fetch_jwks` no longer sends the headers set for the card fetch** (client, a2a-cli; RFC 8725 section 3.10 advises no cookies in a key fetch). A key server is another trust domain than the agent, but `fetch_jwks` sent it every `CardFetchOptions::with_header` value, so an `Authorization` or `Cookie` set for the card was also sent to the host named by the key-set URL. It now sends `Accept` and only the headers set for it with the new `CardFetchOptions::with_jwks_header` (read back with `jwks_headers()`; `Debug` prints their names, never their values); a caller that relied on the old behaviour sets the same headers there. `a2a card verify` sets `--header` for the key fetch exactly when it already decided to send it there (the JWK Set on the card's own host, a card read from a file, or `--follow-card-origin`). `jwks_fetch_tests.rs` records what a key server receives; hand-mutating the fetch to send the card's headers, none, or both fails those tests, as does mutating the option's setter, getter or `Debug`, and the `card_origin` e2e tests fail for a `connect.rs` that sets no key-fetch headers or sets them when `--header` is withheld.
+
+- **`genai-agent` reads `A2A_JWT_HS256_SECRET` as a key in base64** (example; RFC 8725 section 3.5 forbids a password as the key of HS256). It was a string used as its own bytes, so a passphrase was the key. The value is now random bytes in standard base64, at least 32 once decoded: make one with `openssl rand -base64 32`. A typed passphrase is refused at startup because it is not base64, and so is a base64 value that decodes to fewer than 32 bytes, the book's old 32-character sample among them. `scripts/adversarial/probe_auth.py --secret` takes the same base64 key. The SDK is unchanged: `JwtValidator::with_hs256_secret` checks the length only, as before, and now says so in its rustdoc and on the authentication page; the book's samples no longer show a guessable string. `examples/genai-agent/src/tests.rs` covers the decoding and both refusals, and five hand mutants of `hs256_key` fail them. The example run under `probe_auth.py` passes 27 of 27 cases, and with the variable read as text again its valid-token controls are rejected.
+
 ### Fixed
+
+- **A `304` no longer makes a cached agent card forget its lifetime** (RFC 9111
+  §4.3.4, §3.2). `CachingCardResolver` read a revalidated card's freshness from
+  the `304`'s own headers alone, so an origin or proxy that left `Cache-Control`
+  off its `304` (RFC 9110 §15.4.5 says an origin MUST send it) cost the card its
+  stored `max-age` and `stale-if-error` window, and the card was revalidated on
+  every use. The stored `Cache-Control`, `Expires` and `Vary` are now updated
+  field by field from the `304`, and `Date` and `Age` are the `304`'s own. A card
+  with no `ETag`, no `Last-Modified` and no lifetime is also now kept when a
+  stale-if-error window can apply to it (ADR 0051, amended 2026-11-06).
+- **Content provenance and audit checkpoints accepted a signature that names
+  `crit`, and the JWT validator accepted `"crit": null`** (types, server; found
+  by the RFC ledger, 2026-11-06). RFC 7515 section 4.1.11 makes a JWS invalid
+  when a critical extension it names is not understood, and no verifier here
+  understands one. Agent cards and the JWT validator already refused any
+  `crit` member; `verify_content` and `verify_checkpoint` read only `alg` and
+  `kid` and verified such a signature, and the JWT validator read `"crit":
+  null` as no member. All four now refuse any `crit` member
+  (`a_signature_that_names_a_critical_extension_does_not_verify`,
+  `a_checkpoint_that_names_a_critical_extension_does_not_verify`,
+  `a_critical_member_is_refused_whatever_it_holds`; each fails with the
+  refusal removed). Only the key holder can add `crit` to a signature, so the
+  exposure was a verifier more lenient than its documentation, not a forgery.
+- **`algorithm_confusion_rejected` did not test algorithm confusion** (server
+  tests; found by the RFC ledger, 2026-11-06). The test, which
+  `docs/compliance/control-map.md` cites for the refusal, presented an HS256
+  token no validator could verify. It now signs an HS256 token with the RSA
+  public key's bytes, and `algorithms.rs` runs the attack over nine encodings of
+  a public key, `none` in seven spellings, an empty key and unlisted algorithm
+  names; each is paired with an accepted control and each fails with the
+  matching check removed. The validator was not wrong.
+- **The server's JWKS parser ignored a key's own `alg` and `key_ops`, and loaded
+  a key whose `use` was anything but `enc`** (server; found by the RFC ledger,
+  fixed 2026-11-06). RFC 8725 section 3.1 requires each key to be used with
+  exactly one algorithm, checked when the signature is verified, and RFC 7517
+  sections 4.2 and 4.3 say a key marked for another use or operation is not a
+  verification key. `Jwks::from_json` now skips a key whose `use` is present and
+  is not `sig`, or whose `key_ops` is present and does not list `verify`; a key
+  whose `alg` is present verifies only a token whose header names that
+  algorithm, so an RSA key that declares `RS512`, `PS256` or `RSA-OAEP` (and an
+  EC key that declares anything but `ES256`) verifies nothing, and the
+  refusal is a rejection, not a missing key, so it does not make the caller
+  refetch the key set. A `key_ops` that is not an array of strings makes the
+  document invalid. **Compatibility:** a key set that declares an `alg` other
+  than `RS256` for an RSA key or `ES256` for a P-256 key, while its issuer signs
+  with the algorithm this validator accepts, stops verifying until the set says
+  what the issuer does; sets that name no `alg` are unaffected. Tests:
+  `jwt/tests/keys.rs`.
 
 - **The book's recovery loop lost the leased children it was meant to
   recover** (docs; found by the live proof of audit group M, 2026-11-04).
@@ -2373,6 +2543,56 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   Dockerfile's claim that the agent reads the image's CA certificates (the SDK
   trusts its bundled Mozilla roots only) and its manifest's grace period,
   now 45 s to include the telemetry flush.
+
+- **`NO_PROXY` is matched against an `http://` webhook's host name** as written in its URL (audit NEW-b-4): the URL was rewritten to the checked address first, so a `NO_PROXY` entry naming the host or its domain did not apply. Without the `tls-rustls` feature the push sender now follows `HTTP_PROXY`, `ALL_PROXY` and `NO_PROXY` as the TLS build does (audit NEW-b-3).
+
+- **PostgreSQL stores under `search_path=a2a,public`** beside another application's `public.tasks` create their own tables in `a2a`; they adopted the other table and the start failed (audit NEW-a-l-2).
+
+- **`OTEL_*` values the OpenTelemetry crates ignore are now reported** (server; audit NEW-c-3): an unknown or unimplemented `OTEL_TRACES_SAMPLER`, a ratio sampler without a numeric `OTEL_TRACES_SAMPLER_ARG`, an unreadable `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` and a non-numeric `OTEL_METRIC_EXPORT_INTERVAL` are noted in `Telemetry::notices` (printed at `WARN` by `install_subscriber`) with the value used instead. The crates' own warning came before any subscriber existed and was never seen.
+
+- **Captured message content is bounded by every byte it adds** (server; audit NEW-c-4): with `with_span_content_capture(true)`, `mime_type`, `filename`, part type and JSON framing are charged to the 64 KiB budget, parts past it are counted in one `{"type":"a2a.truncated","parts_omitted":N}` part rather than kept, and a long stream no longer holds a value per chunk for the whole turn.
+
+- **A call the peer abandons is not a server error on its span** (server; audit C-09): on gRPC it records `rpc.status_code=CANCELLED` and no `error.type`; on the other bindings `error.type=cancelled` and no `rpc.status_code`; no binding sets the span's `Error` status for it.
+
+- **Alerts and delta temporality** (audit C-14, C-21): a single failed task write fires `A2APersistenceErrors` even when the counter's first exported sample is already 1 (before, it never fired); an agent exporting delta temporality no longer silently disappears from the compose stack (Prometheus refused it with HTTP 500).
+
+- **Extensions read what clients send** (audit H19): every integer an extension reads from `metadata` (lease `ttlMs`, budget `remainingMs`/`meters`/`spent`, lineage `depth`) accepts a whole double such as `30000.0`, as a2a-python sends it, while a fraction, a negative or an out-of-range value is still refused; an extension value written as a JSON array is refused as invalid params; the SQL claim stores honour the hand-off marker only for the JSON boolean `true` (PostgreSQL also took the string `"true"`, SQLite the number `1`).
+
+- **Lease rows nobody releases** (a replica that died after its task ended, a parked child never continued) are deleted by the reaper an hour after they lapse (audit NEW-h-s0-6). The reaper's query on `tenant_tasks` is pinned to the state index by a PostgreSQL `EXPLAIN` test (audit NEW-h-s0-8, refuted: measured 3.0 ms at 500,000 rows). `TaskStore::save_appending_history`'s docs no longer say the SQL stores splice the history in place; they take the default (audit NEW-h-designs-6).
+
+### Deprecated
+
+- `init_otlp_pipeline` and `init_otlp_pipeline_with_endpoint` (audit C-12), to be removed no earlier than 0.17.0; the book's Telemetry page gives the `Telemetry` equivalent.
+
+- `BearerTokenTenantResolver::new()` (audit SEC-11), `since = "0.16.0"` and removed no earlier than 0.17.0: it is `default()` under another name and, like it, trusts the token it is given. `with_mapper` with a closure that checks the token is the replacement; the upgrade guide has the paragraph.
+
+- **The serve entry points that cannot be stopped** (audit G-09, ADR 0052), each `since = "0.16.0"` and removed no earlier than 0.17.0: `serve::serve` and `serve::serve_with_addr` (also at the crate root and in the SDK prelude), for `Server::bind(addr).await?.serve_with_shutdown(dispatcher, shutdown_signal())`; `GrpcDispatcher::{serve, serve_with_addr, serve_with_listener}` and `WebSocketDispatcher::{serve, serve_with_addr}`, for `serve_with_shutdown(listener, signal)`.
+
+- **The listener settings the gRPC and WebSocket dispatchers repeated** (audit G-09): `with_max_connections`, `with_completion_grace`, `with_task_grace` and `with_drain_timeout` on both, for `with_serve_config(ServeConfig::new().with_...)`; same `since` and removal.
+
+- **Names that disagreed with the wire methods and the crate's conventions** (audit G-15, ADR 0053), same `since` and removal: `RequestHandler::on_resubscribe` for `on_subscribe_to_task`; `RequestHandler::on_set_push_config` for `on_create_push_config`; `A2aClient::set_push_config` for `create_push_config`; `RateLimitConfig::with_window_secs(u64)` for `with_window(Duration)`; `TenantLimitsBuilder::{max_concurrent_tasks, executor_timeout, event_queue_capacity, rate_limit_rps}` for the `with_` forms. Each old name calls the new one. The table is in `book/src/reference/upgrading/0.15-to-0.16.md`.
+
+### Known Limitations
+
+- **Exemplars** (audit C-05): the stack stores and links them, but the SDK records none until the pinned `opentelemetry_sdk` does; ROADMAP has a *Waiting on upstream* row.
+
+- **Hand-off on shutdown** (audit D-21): covers a graceful shutdown with turn claims; it does not cover a crashed replica, a handler without claims, or reattaching after a supervisor restart.
+
+- **Control-plane cost** (audit H5): renewals stay one per child per ttl/3; lease groups (a wire change) are not built and wait for a measurement at 10^4 to 10^5 leased tasks per replica (ADR 0044).
+
+- **Memory and payload scaling** (audit H13): blob offload, holds on the SQL stores (a stream owing events below a compaction cut ends with `streamLagged` and resumes from the snapshot) and the SQL `save_appending_history` overrides are decided and not built (ADR 0047).
+
+- **Load and admission** (audit H7, H9, H17): ORCA over gRPC trailers, a queue-cap gauge, priority from the request, preemption, fleet-wide admission, a tool-loop limit across processes and retrying a turn that failed mid-stream are not built (ADRs 0045 to 0048). The ORCA header format was not checked against Envoy.
+
+- **Push** (audit H14, SEC-14): the outbox row is written after the event is stored, so a crash between the two loses that event's deliveries; per-destination rate limits, the verification handshake and a per-caller configuration quota are not built (ADR 0043, ADR 0037).
+
+- **Network** (audit B-25, B-28, B-29): the WebSocket upgrade's same-origin check does not defend against DNS rebinding (the HTTP endpoints have no Host or Origin check either); there is no DNS cache; there is no `fips` feature and no CRL or OCSP helper (ADR 0041).
+
+- **Swarm contract** (audit H19): schemas and vectors exist for every extension, but middleware and bindings for other SDKs are not built, and the two upstream drafts (`docs/upstream/`) are written and not sent.
+
+- **Deployment** (audit A15, A26, NEW-a-l-4a): readiness still checks the task pool only (documented); A26's effect on memory is not measured; the steps of `deploy.yml` that need Docker have not run anywhere yet, so the first CI run is their first execution.
+
+- **`ServeConfig` on gRPC and WebSocket** (audit G-09): `idle_timeout`, `header_read_timeout` and `allowed_hosts` are not applied to a gRPC listener (a quiet server stream is healthy, HTTP/2 has no header phase, and keepalive closes a peer that stops answering), and `header_read_timeout`, `allowed_hosts` and `host_check` are not applied to a WebSocket listener (its handshake timeout and `Origin` check stand in). `GrpcDispatcher::into_service` and `A2aRouter::into_router` hand the service to a server the caller runs, which applies none of it.
 
 ### Internal
 

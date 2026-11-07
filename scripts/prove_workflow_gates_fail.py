@@ -52,6 +52,9 @@ Verdicts are kept distinct and never rounded toward success:
                 which proves nothing
   EXEMPT        registered as out of scope, with a reason, and its step is
                 still asserted to exist
+  NOT RUN       local runs only: the probe needs a program not on PATH
+                (promtool), which ci.yml installs before this harness; in CI
+                the same case is UNPROVEN
 
 Usage:
     scripts/prove_workflow_gates_fail.py            # every registered gate
@@ -261,6 +264,12 @@ class Probe:
     # Some steps read files relative to the repo root rather than a scratch
     # directory. Those run with cwd=REPO and must not write to it.
     cwd_is_repo: bool = False
+    # Programs the step needs that a developer machine may lack (promtool).
+    # ci.yml installs them before running this harness. Under GitHub Actions,
+    # or with `--only`, a missing one makes the gate UNPROVEN; elsewhere the
+    # probe is reported NOT RUN, and only if ci.yml's harness job installs
+    # the program. See `missing_tools`.
+    tools: tuple[str, ...] = ()
 
 
 @dataclass
@@ -566,10 +575,10 @@ def build_registry() -> dict[str, Probe | Exempt]:
     # These three are the reason this harness exists. The full-profile one is
     # where the `| tee` masking was found; the other two share its shape.
     reg["official-tck.yml::official-tck::Gate against the conformance baseline"] = (
-        _tck_gate_probe("full-compatibility.json", 88)
+        _tck_gate_probe("full-compatibility.json", 87)
     )
     reg["official-tck.yml::official-tck::Gate the minimal-profile run"] = _tck_gate_probe(
-        "minimal-compatibility.json", 66
+        "minimal-compatibility.json", 65
     )
     reg["official-tck.yml::official-tck::Gate the required-extension run"] = Probe(
         healthy=lambda d: write_report(
@@ -692,6 +701,65 @@ def build_registry() -> dict[str, Probe | Exempt]:
     # (Rust signs, Python rejects) and the script exits 1; the fixed CLI exits
     # 0. Expected divergences are asserted too, so an SDK change that makes
     # them agree also exits 1.
+    # promtool test rules over every test file, which must exist. The probe
+    # runs the step on a copy of the real rules and tests (healthy), on an
+    # empty tests directory (the glob matching nothing must not pass having
+    # tested no rule), on a test whose expectation the rules do not meet, and
+    # on a rule broken under its tests. promtool is installed by the
+    # observability job itself, which runs this probe after that install.
+    obs_prom = REPO / "deploy" / "observability" / "prometheus"
+
+    def _promtool_tree(edit: Callable[[Path], None] | None = None) -> Setup:
+        def setup(d: Path) -> dict[str, str]:
+            root = d / "prometheus"
+            shutil.copytree(obs_prom / "rules", root / "rules")
+            shutil.copytree(obs_prom / "tests", root / "tests")
+            if edit is not None:
+                edit(root)
+            return {"__cwd__": str(root)}
+
+        return setup
+
+    def _empty_tests(root: Path) -> None:
+        shutil.rmtree(root / "tests")
+        (root / "tests").mkdir()
+
+    def _unmet_expectation(root: Path) -> None:
+        # Expect the Collector alert on input that never trips it.
+        (root / "tests" / "unmet.test.yml").write_text(
+            "rule_files:\n  - ../rules/stack-alerts.yml\n"
+            "evaluation_interval: 1m\n"
+            "tests:\n"
+            "  - interval: 1m\n"
+            "    input_series:\n"
+            "      - series: 'up{job=\"otelcol\",instance=\"c:8888\"}'\n"
+            "        values: '1x20'\n"
+            "    alert_rule_test:\n"
+            "      - eval_time: 15m\n"
+            "        alertname: OTelCollectorDown\n"
+            "        exp_alerts:\n"
+            "          - exp_labels: {severity: critical, job: otelcol, instance: \"c:8888\"}\n",
+            encoding="utf-8",
+        )
+
+    def _broken_rule(root: Path) -> None:
+        # The NEW-c-1 regression: -32001 counted as the server failing again.
+        f = root / "rules" / "a2a-recording.yml"
+        text = f.read_text(encoding="utf-8")
+        broken = text.replace("|-32001|", "|")
+        assert broken != text, "a2a-recording.yml no longer lists -32001"
+        f.write_text(broken, encoding="utf-8")
+
+    reg["observability.yml::promtool::promtool test rules"] = Probe(
+        healthy=_promtool_tree(),
+        defects=[
+            Defect("no test files at all", _promtool_tree(_empty_tests), "no promtool test files"),
+            Defect("a test whose expectation the rules do not meet", _promtool_tree(_unmet_expectation), "FAILED"),
+            Defect("a recording rule broken under its tests (-32001 counted again)", _promtool_tree(_broken_rule), "FAILED"),
+        ],
+        tools=("promtool",),
+    )
+
     reg["tck.yml::card-signature-interop::Sign and verify both ways"] = Exempt(
         "requires the official a2a-sdk from PyPI and a built a2a CLI; verified "
         "by hand against the pre-fix CLI (exit 1) and the fixed one (exit 0)"
@@ -709,6 +777,68 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "requires full repository history and a manifest pinned at the release "
         "commit; verified by hand against four injected defects, and it refuses "
         "on a shallow clone rather than reporting a flattering figure"
+    )
+
+    # ── deploy.yml ───────────────────────────────────────────────────────────
+    #
+    # The step runs the image the job just built, which a fixture cannot have.
+    # What it decides is still a verdict over data: the health status Docker
+    # reports, the card and the reply the agent serves, the exit code `docker
+    # stop` leaves. So the fixture puts a `docker` and a `curl` on PATH that
+    # answer with those data, healthy or with one thing wrong, and the step's
+    # real body runs against them.
+    _FAKE_DOCKER = """#!/bin/bash
+    case "$1" in
+      run|stop) echo fake ;;
+      logs) echo "fake log line" ;;
+      inspect) case "$3" in
+        *Health*) echo "${FAKE_HEALTH:-healthy}" ;;
+        *ExitCode*) echo "${FAKE_EXIT:-0}" ;;
+      esac ;;
+    esac
+    """
+    _FAKE_CURL = """#!/bin/bash
+    for a in "$@"; do url=$a; case "$a" in http*) break ;; esac; done
+    case "$url" in
+      */ready) [ "${FAKE_READY:-200}" = 200 ] || exit 22; echo '{"status":"ready"}' ;;
+      */.well-known/agent-card.json)
+        echo "{\\"url\\":\\"${FAKE_URL:-http://localhost:8080}\\",\\"version\\":\\"${FAKE_VERSION:-0.0.0-ci}\\"}" ;;
+      */message:send) [ "${FAKE_SEND:-200}" = 200 ] || exit 22; echo "${FAKE_REPLY:-Hello, CI!}" ;;
+    esac
+    """
+
+    def _deploy_image(**fake):
+        def setup(d):
+            bin_dir = d / "bin"
+            bin_dir.mkdir()
+            for name, body in (("docker", _FAKE_DOCKER), ("curl", _FAKE_CURL)):
+                f = bin_dir / name
+                f.write_text(body)
+                f.chmod(0o755)
+            env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+            env.update({f"FAKE_{k.upper()}": v for k, v in fake.items()})
+            return {"__cwd__": str(d), "__env__": env}
+
+        return setup
+
+    reg["deploy.yml::image::Run it, wait for its health check, call it, stop it"] = Probe(
+        healthy=_deploy_image(),
+        defects=[
+            Defect("the health check fails", _deploy_image(health="unhealthy"),
+                   "health check says unhealthy"),
+            Defect("/ready does not answer", _deploy_image(ready="503"),
+                   "/ready did not answer 200"),
+            Defect("the card has another version", _deploy_image(version="0.16.0"),
+                   "does not carry the build's AGENT_VERSION"),
+            Defect("the card advertises the bind address", _deploy_image(url="http://0.0.0.0:8080"),
+                   "does not advertise AGENT_URL"),
+            Defect("message:send is refused", _deploy_image(send="500"),
+                   "message:send was refused"),
+            Defect("the agent answers something else", _deploy_image(reply="Hi"),
+                   "did not answer the message"),
+            Defect("SIGTERM kills it instead of draining it", _deploy_image(exit="137"),
+                   "exited 137 on SIGTERM"),
+        ],
     )
 
     # ── docs.yml ─────────────────────────────────────────────────────────────
@@ -2039,7 +2169,7 @@ def main() -> int:
                 print(f"      reason: {e.reason}")
         return 0
 
-    proven = unproven = exempt = skipped = 0
+    proven = unproven = exempt = skipped = not_run = 0
     rows: list[tuple[str, str, str]] = []
 
     for key in sorted(registry):
@@ -2059,6 +2189,15 @@ def main() -> int:
             continue
 
         step = gates[key]
+        missing = [t for t in entry.tools if shutil.which(t) is None]
+        if missing:
+            verdict, detail = missing_tools(missing, selected=bool(args.only))
+            if verdict == "NOT RUN":
+                not_run += 1
+            else:
+                unproven += 1
+            rows.append((verdict, key, detail))
+            continue
         print(f"\n\033[1m{key}\033[0m")
         verdict, detail = run_probe(step, entry)
         if verdict == "PROVEN":
@@ -2071,16 +2210,41 @@ def main() -> int:
 
     print("\n\033[1m── prove_workflow_gates_fail summary ──\033[0m")
     for verdict, key, detail in rows:
-        color = "32" if verdict in ("PROVEN",) else "33" if verdict == "EXEMPT" else "31"
+        color = "32" if verdict in ("PROVEN",) else "33" if verdict in ("EXEMPT", "NOT RUN") else "31"
         print(f"  \033[{color}m{verdict:12s}\033[0m {key}")
         if verdict not in ("PROVEN",):
             print(f"               {detail}")
     print(
         f"\n  {proven} proven, {unproven} unproven, {exempt} exempt, "
-        f"{skipped} not selected (of {len(registry)} registered)\n"
+        f"{not_run} not run (tool missing), {skipped} not selected (of {len(registry)} registered)\n"
     )
 
     return 1 if unproven else 0
+
+
+# The step of ci.yml's harness job that puts a probe's tools on PATH.
+CI_TOOL_INSTALL = "deploy/observability/scripts/install_tools.sh"
+
+
+def missing_tools(missing: list[str], *, selected: bool) -> tuple[str, str]:
+    """A probe whose programs are not on PATH.
+
+    In CI the harness job installs them, so their absence there is a broken
+    job: UNPROVEN. A run with `--only` asked for these gates: UNPROVEN. On a
+    developer machine the probe is NOT RUN, said in the summary, and only
+    while ci.yml's harness job still installs every missing program; without
+    that nothing would ever run it, and it is UNPROVEN everywhere.
+    """
+    need = ", ".join(missing)
+    if os.environ.get("GITHUB_ACTIONS") == "true" or selected:
+        return "UNPROVEN", f"{need} not on PATH, so nothing proved this gate"
+    ci = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+    harness = ci.find("./scripts/prove_workflow_gates_fail.py")
+    installs = [m.start() for m in re.finditer(re.escape(CI_TOOL_INSTALL) + r"[^\n]*", ci)
+                if all(t in ci[m.start():ci.index("\n", m.start())] for t in missing)]
+    if harness == -1 or not any(i < harness for i in installs):
+        return "UNPROVEN", f"{need} not on PATH, and ci.yml does not install it before this harness"
+    return "NOT RUN", f"{need} not on PATH here; ci.yml installs it and runs this probe"
 
 
 def _scenario(step: Step, probe: Probe, setup: Setup) -> Outcome:

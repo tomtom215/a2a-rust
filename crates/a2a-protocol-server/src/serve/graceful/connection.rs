@@ -41,6 +41,9 @@ pub fn spawn_connection(
     let serving = super::idle::Serving::default();
     let io = IdleTimeout::new(stream, config.idle_timeout).with_serving(serving.clone());
     let header_read_timeout = config.header_read_timeout;
+    // Shared with each request, so a connection upgraded to a WebSocket keeps
+    // it after hyper lets go of the socket (ADR 0055).
+    let permit = Arc::new(permit);
 
     tokio::spawn(async move {
         let requests = connection.as_ref().map(connections::Connection::requests);
@@ -54,7 +57,7 @@ pub fn spawn_connection(
                     let service = super::super::service(
                         dispatcher,
                         requests,
-                        serving,
+                        slot(&permit, &serving),
                         peer,
                         certificate,
                         true,
@@ -73,14 +76,38 @@ pub fn spawn_connection(
             drop(permit);
             return;
         }
-        let service =
-            super::super::service(dispatcher, requests, serving, peer, None, false, host_guard);
+        let service = super::super::service(
+            dispatcher,
+            requests,
+            slot(&permit, &serving),
+            peer,
+            None,
+            false,
+            host_guard,
+        );
         let result = serve_io(io, service, watcher, header_read_timeout).await;
         if let Some(connection) = connection {
             connection.close(result.is_err());
         }
         drop(permit);
     });
+}
+
+/// The connection's [`UpgradeSlot`](super::super::UpgradeSlot), for its
+/// requests.
+fn slot(
+    permit: &Arc<tokio::sync::OwnedSemaphorePermit>,
+    serving: &super::Serving,
+) -> super::super::UpgradeSlot {
+    // Without `websocket` nothing upgrades a connection, so the slot carries
+    // only the idle timer the request already suspends.
+    #[cfg(not(feature = "websocket"))]
+    let _ = permit;
+    super::super::UpgradeSlot {
+        #[cfg(feature = "websocket")]
+        permit: Arc::clone(permit),
+        serving: serving.clone(),
+    }
 }
 
 /// A socket the accept loop handed over, and how to open it.
@@ -128,7 +155,9 @@ where
         .timer(hyper_util::rt::TokioTimer::new())
         .header_read_timeout(header_read_timeout);
     builder.http2().timer(hyper_util::rt::TokioTimer::new());
-    let conn = builder.serve_connection(io, service);
+    // With upgrades: a dispatcher may answer `101` and serve the socket as a
+    // WebSocket (ADR 0055); hyper hands it over once this future has let go.
+    let conn = builder.serve_connection_with_upgrades(io, service);
     // Unlike `serve`'s old accept loop, the outcome is not discarded: a connection that died
     // before serving anything is a fact an operator can act on, and
     // dropping it makes the two cases indistinguishable.

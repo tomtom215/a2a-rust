@@ -142,8 +142,13 @@ pub(crate) async fn start_agent(
 
     {
         use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
-        GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
-            .serve_with_listener(grpc_listener)?;
+        {
+            let listener = grpc_listener;
+            tokio::spawn(
+                GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
+                    .serve_with_shutdown(listener, std::future::pending()),
+            );
+        }
     }
     {
         let ws = Arc::new(
@@ -151,7 +156,10 @@ pub(crate) async fn start_agent(
                 &handler,
             )),
         );
-        ws.serve_with_addr(ws_bind.as_str()).await?;
+        {
+            let listener = tokio::net::TcpListener::bind(ws_bind.as_str()).await?;
+            tokio::spawn(ws.serve_with_shutdown(listener, std::future::pending()));
+        }
     }
 
     Ok(endpoints)

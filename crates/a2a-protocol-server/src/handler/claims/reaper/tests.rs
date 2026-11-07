@@ -49,6 +49,24 @@ impl PushSender for Recorder {
     }
 }
 
+/// Counts the reaped-claim events the reaper reports.
+#[derive(Default)]
+struct Reaped(std::sync::atomic::AtomicUsize);
+
+impl Reaped {
+    fn count(&self) -> usize {
+        self.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl crate::metrics::Metrics for Reaped {
+    fn on_claim(&self, event: &str) {
+        if event == crate::metrics::control::claim::REAPED {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
 pub(super) fn task(id: &str, state: TaskState) -> Task {
     Task::new(
         TaskId::new(id),
@@ -60,11 +78,17 @@ pub(super) fn task(id: &str, state: TaskState) -> Task {
 type Age = Box<dyn Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 /// The scenario, with tasks in partition `scope`; `age(id)` makes a task
-/// look unwritten for a minute.
+/// look unwritten for an hour.
+///
+/// The claim time to live is ten minutes: an aged task is six times past it,
+/// and the task written just now stays inside it unless the run takes ten
+/// minutes. Until 2026-11-05 it was 3 s against a minute's age, and a run of
+/// 9 to 17 s on a loaded machine turned the fresh task into an orphan (9 of
+/// 10 runs failed under load).
 #[allow(clippy::too_many_lines)] // one scenario: four tasks, then each pass checked in turn
 async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope: &str, age: Age) {
     let claims_store = store.turn_claims().expect("SQL stores claim turns");
-    let ttl = Duration::from_secs(3);
+    let ttl = Duration::from_secs(600);
     let run = |id: &str| format!("{id}-{}", uuid::Uuid::new_v4());
     let (orphan, running, fresh, parked, mine) = (
         run("orphan"),
@@ -95,7 +119,13 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
         age(running.clone()).await;
         assert!(
             claims_store
-                .claim(scope, &running, "alive", &run("t"), Duration::from_secs(60))
+                .claim(
+                    scope,
+                    &running,
+                    "alive",
+                    &run("t"),
+                    Duration::from_secs(3_600)
+                )
                 .await
                 .unwrap()
         );
@@ -164,6 +194,18 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
             .await
             .unwrap();
     }
+    // NEW-h-s0-6: a lease left by a replica that died after its task ended,
+    // lapsed longer ago than the sweep's margin, and one that lapsed a moment
+    // ago, which a watcher may still be about to read.
+    let margin = i64::try_from(super::LEASE_SWEEP_MARGIN.as_millis()).unwrap();
+    leases
+        .grant(&tenant, "left-behind", 1, now_unix_ms() - margin - 1_000)
+        .await
+        .unwrap();
+    leases
+        .grant(&tenant, "just-lapsed", 1, now_unix_ms() - 1_000)
+        .await
+        .unwrap();
     let claims = Arc::new(super::super::TurnClaims::new(
         claims_store,
         Some("reaper".into()),
@@ -180,6 +222,7 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
             lapsed: false,
         },
     );
+    let claim_events = Arc::new(Reaped::default());
     let reaper = super::Reaper {
         claims: Arc::downgrade(&claims),
         task_store: Arc::clone(&store),
@@ -187,14 +230,18 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
         push_sender: Some(Arc::clone(&sender) as Arc<dyn PushSender>),
         leases: Some(Arc::clone(&leases) as Arc<dyn LeaseStore>),
         limits: crate::handler::limits::HandlerLimits::default(),
-        metrics: Arc::new(crate::metrics::NoopMetrics),
+        metrics: Arc::clone(&claim_events) as Arc<dyn crate::metrics::Metrics>,
     };
 
     // Other runs' leftovers in a shared database may be ended too; this
     // run's orphan must be among them.
-    assert!(
-        reaper.look().await.is_some_and(|n| n >= 1),
-        "the orphan ended"
+    let first = reaper.look().await;
+    assert!(first.is_some_and(|n| n >= 1), "the orphan ended");
+    // Each ending is counted once as a reaped claim (audit H11).
+    assert_eq!(
+        Some(claim_events.count()),
+        first,
+        "each ending counted once"
     );
     TenantContext::scope(scope.to_owned(), async {
         let ended = store.get(&TaskId::new(&*orphan)).await.unwrap().unwrap();
@@ -266,6 +313,19 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
         "nothing left to renew for an ended task"
     );
     assert!(leases.deadline(&tenant, &running).await.unwrap().is_some());
+    assert_eq!(
+        leases.deadline(&tenant, "left-behind").await.unwrap(),
+        None,
+        "swept"
+    );
+    assert!(
+        leases
+            .deadline(&tenant, "just-lapsed")
+            .await
+            .unwrap()
+            .is_some(),
+        "inside the margin: kept"
+    );
     let sent = sender.0.lock().unwrap().clone();
     let told = sent.iter().filter(|(_, e)| matches!(e, StreamResponse::StatusUpdate(e) if e.task_id.0 == orphan && e.status.state == TaskState::Failed)).count();
     assert_eq!(told, 1, "the orphan's webhook was told once: {sent:?}");
@@ -302,7 +362,7 @@ pub(super) fn sqlite_age(pool: sqlx::SqlitePool, table: &'static str) -> Age {
         Box::pin(async move {
             // `table` is one of this file's constants.
             sqlx::query(sqlx::AssertSqlSafe(format!(
-                "UPDATE {table} SET updated_at = strftime('%Y-%m-%d %H:%M:%f','now','-60 seconds') WHERE id = ?1"
+                "UPDATE {table} SET updated_at = strftime('%Y-%m-%d %H:%M:%f','now','-3600 seconds') WHERE id = ?1"
             )))
             .bind(id)
             .execute(&pool)
@@ -346,7 +406,7 @@ fn pg_age(pool: sqlx::PgPool, table: &'static str) -> Age {
             // the stores make is: unmarked, the upgrade guard would read it
             // as a 0.15 replica's turn and hold the task for it.
             sqlx::query(sqlx::AssertSqlSafe(format!(
-                "UPDATE {table} SET updated_at = now() - interval '60 seconds' \
+                "UPDATE {table} SET updated_at = now() - interval '3600 seconds' \
                  WHERE id = $1 AND set_config('a2a.claims', 'on', true) = 'on'"
             )))
             .bind(id)

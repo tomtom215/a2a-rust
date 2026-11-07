@@ -428,18 +428,15 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         &'a self,
         task_id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<u64>>> + Send + 'a>> {
-        Box::pin(async move {
-            let tenant = TenantContext::partition();
-            let (min,): (Option<i64>,) = crate::store::pg_retry::retry(&*self.metrics, || {
-                sqlx::query_as(evlog::PG_EARLIEST_SEQ)
-                    .bind(&tenant)
-                    .bind(task_id.0.as_str())
-                    .fetch_one(&self.pool)
-            })
-            .await
-            .map_err(|e| to_a2a_error(&e))?;
-            min.map(seq_from_i64).transpose()
-        })
+        Box::pin(self.earliest_seq(task_id))
+    }
+
+    fn trim_event_log<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        below: u64,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(self.trim_log(task_id, below))
     }
 
     fn read_events<'a>(

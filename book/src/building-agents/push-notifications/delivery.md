@@ -9,9 +9,9 @@ What `HttpPushSender` does with each event: which URLs it will deliver to, how i
 
 The built-in `HttpPushSender` includes:
 
-- **HTTPS delivery** — With the `tls-rustls` feature (enabled by default via the `a2a-protocol-sdk` crate) it delivers to both `http://` and `https://` webhooks. In a build with the feature disabled it is plaintext-HTTP only and fails fast on an `https://` target with a clear error.
-- **SSRF protection** — Resolves the host at delivery and rejects a URL that is, or resolves to, a private, loopback, link-local, CGNAT, multicast, reserved or benchmarking address (among them `0.0.0.0/8`, `192.0.0.0/24`, `198.18.0.0/15` and everything from `224.0.0.0` up; in IPv6 also site-local, multicast, Teredo, discard-only and local-use NAT64 ranges, and an IPv4 address inside a mapped, NAT64 or 6to4 one; the documentation ranges stay allowed), a numeric IPv4 spelling such as `0x7f.1`, or an internal name (`localhost`, `*.localhost`, `*.local`, `*.internal`, `*.home.arpa`, a name with no dot such as `metadata`, or one with an empty label); a trailing dot changes none of it (`url_guard::resolve_public_addrs`, public for your own senders). Resolving before validating prevents DNS rebinding attacks where a hostname initially resolves to a public IP but later resolves to a private IP, and the delivery then connects only to the addresses it checked, never to a second lookup of the name: an `http://` request dials one of them with the original `Host` header, and for `https://` the client's resolver is told, for the length of the delivery, that the name is those addresses, so the connection still asks for the name and the certificate is verified against it. Until 0.16.0 `https://` was not pinned and relied on TLS alone, which stops a rebound server from impersonating the host but not a TCP connection and a `ClientHello` to an internal address. A host with several addresses (an `A` and an `AAAA` record, or several `A` records) is tried in turn: the connector goes on to the next for `https://`, and each attempt takes the next for `http://`. An address that drops packets rather than refusing costs its share of the 10 s connect bound, which the connector divides across the host's addresses. Behind a proxy there is no pin, since the proxy resolves the name (see below). A config is also screened when it is created, without a DNS lookup, so a hostname that resolves privately is stored but never delivered to. At most 32 lookups hold a thread of the blocking pool at once, counting those whose caller has timed out, so a domain whose name server answers slowly cannot fill it; one past that waits for a slot inside the 5 s lookup bound. `with_allowed_hosts([..])` restricts webhooks to listed hosts (checked at creation and at delivery); `allow_private_urls()` turns the screen off for tests.
-- **Bounded concurrency** — At most `HandlerLimits::push_max_in_flight` deliveries (512) run at once across all tasks, and at most `push_max_in_flight_per_host` (64) to one destination, so a caller who registers webhooks at a third party's address cannot make this agent open a connection per config per task. A delivery over a bound waits rather than being dropped, so every webhook is still attempted; the wait counts against `push_delivery_timeout`, and each delivery that waited is counted once as the error `push_throttled` on method `PushDelivery`. The bounds sit in front of whatever sender the handler was given, a custom one included. These numbers are choices, not measurements: raise the per-host bound for a single receiver that takes every agent's callbacks.
+- **HTTPS delivery** — With the `tls-rustls` feature (on by default) it delivers to both `http://` and `https://` webhooks. In a build with the feature disabled it is plaintext-HTTP only and fails fast on an `https://` target with a clear error; it follows the same proxy variables, pins and connection settings (until 0.16.0 that build read no proxy variable, audit NEW-b-3).
+- **SSRF protection** — Resolves the host at delivery and rejects a URL that is, or resolves to, a private, loopback, link-local, CGNAT, multicast, reserved or benchmarking address (among them `0.0.0.0/8`, `192.0.0.0/24`, `198.18.0.0/15` and everything from `224.0.0.0` up; in IPv6 also site-local, multicast, Teredo, discard-only and local-use NAT64 ranges, and an IPv4 address inside a mapped, NAT64 or 6to4 one; the documentation ranges stay allowed), a numeric IPv4 spelling such as `0x7f.1`, or an internal name (`localhost`, `*.localhost`, `*.local`, `*.internal`, `*.home.arpa`, a name with no dot such as `metadata`, or one with an empty label); a trailing dot changes none of it (`url_guard::resolve_public_addrs`, public for your own senders). Resolving before validating prevents DNS rebinding attacks where a hostname initially resolves to a public IP but later resolves to a private IP, and the delivery then connects only to the addresses it checked, never to a second lookup of the name: the client's resolver is told, for the length of the delivery, that the name is those addresses, so the request still names the host (its `Host` header, and for `https://` the name the certificate is verified against) and the proxy rules are matched against the name. Until 0.16.0 an `http://` URL was rewritten to one of the addresses instead, so `NO_PROXY` saw the address and not the name (audit NEW-b-4). Until 0.16.0 `https://` was not pinned and relied on TLS alone, which stops a rebound server from impersonating the host but not a TCP connection and a `ClientHello` to an internal address. A host with several addresses (an `A` and an `AAAA` record, or several `A` records) is tried in turn: the connector goes on to the next within each attempt. An address that drops packets rather than refusing costs its share of the 10 s connect bound, which the connector divides across the host's addresses. Behind a proxy there is no pin, since the proxy resolves the name (see below). A config is also screened when it is created, without a DNS lookup, so a hostname that resolves privately is stored but never delivered to. At most 32 lookups hold a thread of the blocking pool at once, counting those whose caller has timed out, so a domain whose name server answers slowly cannot fill it; one past that waits for a slot inside the 5 s lookup bound. `with_allowed_hosts([..])` restricts webhooks to listed hosts (checked at creation and at delivery); `allow_private_urls()` turns the screen off for tests.
+- **Bounded concurrency** — At most `HandlerLimits::push_max_in_flight` deliveries (512) run at once across all tasks, at most `push_max_in_flight_per_host` (64) to one destination, and at most `push_max_in_flight_per_partition` (256) for one tenant, or one caller where callers are isolated. The destination bound is counted by name and port before the lookup and by address after it, so a caller who registers webhooks at a third party's address, or at a thousand names that resolve to it, cannot make this agent open a connection per config per task; and one caller's slow webhooks leave at least half the overall bound to everyone else. A delivery over a bound waits rather than being dropped, so every webhook is still attempted. The wait does not spend the webhook's time: it is bounded by `push_delivery_timeout` of its own, the webhook has the whole of `push_delivery_timeout` from when the delivery is let through, and a delivery never let through is counted as `throttled` and not held against its webhook's health. Each delivery that waited is counted once as the error `push_throttled` on method `PushDelivery`. So a delivery can take up to twice `push_delivery_timeout` end to end. The bounds sit in front of whatever sender the handler was given, a custom one included. These numbers are choices, not measurements: raise the per-host bound for a single receiver that takes every agent's callbacks.
 - **A delivery id** — Every request carries `A2A-Delivery-Id`, one UUID per event per webhook, the same on every attempt of it. A receiver that sees an id twice knows the sender is retrying (the first attempt may have been handled and its answer lost). `push::webhook::delivery_id(&headers)` reads it. It is not kept across a restart and not shared between the paths that can send one event, so it deduplicates retries, not every duplicate; `WebhookReceiver` in the client crate deduplicates by body and is unchanged.
 - **Header injection prevention** — Validates credentials contain no `\r` or `\n`
 - **HTTPS only, if you ask** — `HttpPushSender::new().https_only()` refuses an `http://` webhook (spec §13.2: webhook URLs SHOULD use HTTPS). A push config with one is refused at creation with `InvalidParams`, and a delivery to one is refused before connecting. Off by default.
@@ -36,7 +36,18 @@ a proxy the pin does not apply: an `https://` webhook is a `CONNECT host:port`
 and an `http://` one a forward request, and it is the proxy that resolves
 `host`: the screen checked one answer, the proxy may dial another. Deny private, loopback and link-local ranges (and the cloud metadata
 address) in the proxy's own policy, and use `NO_PROXY` for the hosts that must
-be reached directly.
+be reached directly. `NO_PROXY` is matched against the webhook's host name, as
+written in its URL, for `http://` and `https://` alike.
+
+**When only the proxy can resolve names.** The screen resolves each webhook's
+host in this process, and by default a host it cannot resolve fails the
+delivery, with an error that says a proxy carries it. Where the local resolver
+answers only internal names and the proxy resolves everything else (Squid,
+Zscaler), `HttpPushSender::new().with_proxy_resolved_names()` sends such a
+webhook to the proxy by name instead: the name is still screened by its form,
+and a name that does resolve here is still refused for a private answer. The
+proxy is then the only screen for names only it can resolve, so turn this on
+only when the proxy denies private destinations itself (ADR 0043).
 
 ## Retries and time limits
 
@@ -119,6 +130,46 @@ answer held each later event out of the store for up to
 buffered, and held the turn's claim, so a continuation sent to another
 replica was refused as "already being processed".
 
+## Durable delivery: the outbox
+
+Everything above is held in memory: a delivery waiting in a lane, or being
+retried, when the process stops is not delivered by this replica or any
+other, terminal events included. `RequestHandlerBuilder::with_push_outbox`
+keeps them in a store instead (ADR 0037): open one, for example
+`PostgresPushOutbox::new(&database_url).await?`, and pass it as
+`.with_push_outbox(Arc::new(outbox))` next to `.with_push_sender(...)`.
+
+- **What is stored.** One row per event and webhook (`a2a_push_outbox`),
+  written by the task's lane once the event is stored, in order. A row names
+  the config, not its credentials, so a config that is deleted, or removed
+  after a `410`, ends its rows. The event body is in the row; `with_cipher`
+  seals it with the push configs' `PushConfigCipher`. The write is not in the
+  event's own transaction: a crash between the two writes loses that event's
+  deliveries, one write's window where without the outbox it is everything
+  queued.
+- **Who delivers.** A worker per handler claims rows that are due, under a
+  lease (three times `push_delivery_timeout` plus 30 s), from whichever
+  replica: PostgreSQL's claim is `FOR UPDATE SKIP LOCKED`, so replicas never
+  take the same row or wait on each other. A webhook's later row is not
+  claimed while an earlier one is unfinished, so it sees a task's events in
+  order. At shutdown the worker releases what it holds; a process that is
+  killed leaves its rows to the next claim after their lease.
+- **Retries.** A delivery that fails, times out or is throttled is due again
+  after 1 s, doubling to `push_outbox_backoff_max` (1 h), less up to a fifth
+  of jitter; a suspended webhook's rows wait the same way. A `2xx` ends the
+  row, and so does a refusal no retry will change (a `4xx` other than `408`
+  and `429`). A row older than `push_outbox_max_age` (24 h) when it is next
+  due is dropped and counted `expired`. At most `push_queue_capacity` rows
+  wait per webhook of a task, dropping as the lanes drop.
+- **At least once.** A delivery whose answer was lost, or whose process
+  stopped after sending it, is sent again, from any replica, with the same
+  `A2A-Delivery-Id`: deduplicate on it. A custom `PushSender` reads the row's
+  id with `push::current_delivery_id()`.
+- **Stores.** `PostgresPushOutbox` for a fleet, `SqlitePushOutbox` for one
+  process with a file, `InMemoryPushOutbox` where nothing survives a restart
+  anyway (its retries still outlast one delivery). `PushOutbox::pending`
+  counts what waits, for a gauge.
+
 ## Outcomes
 
 Each delivery is counted once in `a2a.server.push_deliveries`, labelled with
@@ -133,6 +184,8 @@ its outcome:
 | `timeout_truncated` | The same, for a sender whose own schedule (`PushSender::max_delivery_duration`) is longer than `push_delivery_timeout`, so its last attempts could never run in full. At the defaults (38 s against 30 s) every timeout is this one; the fix is to lengthen the timeout or shorten the schedule. |
 | `suspended` | Not attempted: the webhook failed `push_suspend_after` deliveries in a row and is inside its pause. Counted once per skipped delivery. |
 | `gone` | The webhook answered `410 Gone` and its config was removed (`push_remove_gone`). Counted for each delivery that learned it: a blocking send's batch reads its configs once, so the rest of that batch's events also reach the webhook and are counted. |
+| `throttled` | Not attempted: the delivery waited `push_delivery_timeout` for a slot in the push gate and was not let through. Not held against the webhook. |
+| `expired` | The push outbox gave up on it: older than `push_outbox_max_age` when next due. |
 
 `suspended` and `gone` are in `a2a:push_delivery_failure_ratio:rate5m` with
 `failed`, as `dropped` is: it is the share of deliveries that did not reach a

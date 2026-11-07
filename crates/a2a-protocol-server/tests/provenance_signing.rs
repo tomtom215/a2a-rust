@@ -334,7 +334,7 @@ async fn a_cancel_and_a_subscription_verify() {
 
     let mut reader = s
         .handler
-        .on_resubscribe(TaskIdParams::new(parked.id.0.clone()), None)
+        .on_subscribe_to_task(TaskIdParams::new(parked.id.0.clone()), None)
         .await
         .expect("subscribe");
     // The snapshot is the first frame; the task waits, so read just that.

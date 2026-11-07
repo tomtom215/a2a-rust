@@ -44,10 +44,11 @@ def call(url, body=None, auth=None):
         return json.load(resp)
 
 
-def substitute(expr):
+def substitute(expr, lookback=15):
     for name in ("$job", "$instance", "$server"):
         expr = expr.replace(f'"{name}"', '".*"')
-    return expr
+    # A panel over the dashboard's whole range: the range checked is LOOKBACK.
+    return expr.replace("$__range", f"{lookback}m")
 
 
 def frames_have_values(result):
@@ -127,7 +128,7 @@ def main():
             for t in panel["targets"]:
                 n += 1
                 if not a.grafana:
-                    q = urllib.parse.urlencode({"query": substitute(t["expr"]), "start": start / 1000,
+                    q = urllib.parse.urlencode({"query": substitute(t["expr"], a.lookback), "start": start / 1000,
                                                 "end": now / 1000, "step": 15})
                     res = call(f"{a.prometheus}/api/v1/query_range?{q}")
                     if res.get("status") != "success":
@@ -135,7 +136,7 @@ def main():
                     has_data |= any(r["values"] for r in res["data"]["result"])
                     continue
                 body = {"from": str(start), "to": str(now), "queries": [{
-                    "refId": t["refId"], "datasource": t["datasource"], "expr": substitute(t["expr"]),
+                    "refId": t["refId"], "datasource": t["datasource"], "expr": substitute(t["expr"], a.lookback),
                     "intervalMs": 15000, "maxDataPoints": 500, "range": True}]}
                 try:
                     res = call(f"{a.grafana}/api/ds/query", body, auth=a.auth)["results"][t["refId"]]

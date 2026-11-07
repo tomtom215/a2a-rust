@@ -5,6 +5,16 @@
 # docker-compose.yml. The Collector forwards spans to it over OTLP/gRPC; Grafana
 # reads them on 3200. Not a production configuration: traces live in the
 # container's volume and are kept for 24 hours.
+#
+# The metrics generator (audit C-05) derives two sets of series from the
+# spans and remote-writes them to Prometheus, with exemplars (the trace id of
+# a span behind a point): span metrics (`traces_spanmetrics_calls_total`,
+# `traces_spanmetrics_latency_bucket`, by service, span name, kind and
+# status), which Grafana's trace-to-metrics links query, and the service
+# graph (`traces_service_graph_request_*`), which Tempo's Service Graph tab
+# draws. This is the metrics-to-traces link the stack can offer today: the
+# Rust OpenTelemetry SDK (0.33) attaches no exemplars to the agent's own
+# metrics.
 stream_over_http_enabled: true
 server:
   http_listen_port: 3200
@@ -17,6 +27,19 @@ distributor:
 compactor:
   compaction:
     block_retention: 24h
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+overrides:
+  defaults:
+    metrics_generator:
+      processors: [service-graphs, span-metrics]
 storage:
   trace:
     backend: local

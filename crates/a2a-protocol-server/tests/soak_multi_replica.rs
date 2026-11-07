@@ -220,7 +220,7 @@ async fn spawn_replica(
     let limiter = RateLimitInterceptor::new(
         RateLimitConfig::default()
             .with_requests_per_window(REQUESTS_PER_WINDOW)
-            .with_window_secs(WINDOW_SECS),
+            .with_window(std::time::Duration::from_secs(WINDOW_SECS)),
     )
     .expect("limiter")
     .with_shared_counter(counter);

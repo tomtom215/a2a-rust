@@ -1,0 +1,182 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# promtool unit tests for what the rules count as a failure (audit NEW-c-1),
+# how slow is measured (audit C-14 a) and what one failed task write does
+# (audit C-14 d). Each case below failed against the rules before those
+# fixes; the commit that added this file says how. Run:
+#   promtool test rules deploy/observability/prometheus/tests/a2a-failure-classes.test.yml
+
+rule_files:
+  - ../rules/a2a-recording.yml
+  - ../rules/a2a-alerts.yml
+
+evaluation_interval: 30s
+
+tests:
+  # Audit NEW-c-1. A client polls GetTask for tasks that retention removed:
+  # 20% of its JSON-RPC calls end in TaskNotFound (-32001), as many over
+  # HTTP+JSON end in 404 and over gRPC in NOT_FOUND. The server is healthy and
+  # answered every one correctly, so nothing pages, whatever the binding. The
+  # caller errors stay visible on their own rule, on all three bindings.
+  - interval: 1m
+    input_series:
+      - series: 'rpc_server_call_duration_seconds_count{job="callers",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/GetTask"}'
+        values: '0+8x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="callers",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/GetTask",rpc_status_code="-32001",error_type="-32001"}'
+        values: '0+2x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="callers",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendMessage",rpc_status_code="-32602",error_type="-32602"}'
+        values: '0+1x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="callers",rpc_system_name="jsonrpc",rpc_status_code="-32009",error_type="-32009"}'
+        values: '0+1x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="callers",rpc_system_name="a2a_http_json",rpc_method="lf.a2a.v1.A2AService/GetTask",rpc_status_code="404"}'
+        values: '0+2x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="callers",rpc_system_name="grpc",rpc_method="lf.a2a.v1.A2AService/GetTask",rpc_status_code="NOT_FOUND"}'
+        values: '0+2x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2AServerErrorRatioHigh
+        exp_alerts: []
+    promql_expr_test:
+      - expr: a2a:rpc_server_errors:rate5m{job="callers"}
+        eval_time: 25m
+        exp_samples: []
+      - expr: sum by (rpc_system_name) (a2a:rpc_server_caller_errors:rate5m{job="callers"}) * 60
+        eval_time: 25m
+        exp_samples:
+          - labels: '{rpc_system_name="jsonrpc"}'
+            value: 4
+          - labels: '{rpc_system_name="a2a_http_json"}'
+            value: 2
+          - labels: '{rpc_system_name="grpc"}'
+            value: 2
+
+  # The server's own failures still page: -32603 (internal error) and -32006
+  # (invalid agent response), the two codes A2A maps to a 5xx, at 20% of a
+  # job's calls. A code this file does not know counts as failed.
+  - interval: 1m
+    input_series:
+      - series: 'rpc_server_call_duration_seconds_count{job="broken",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendMessage"}'
+        values: '0+16x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="broken",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendMessage",rpc_status_code="-32603",error_type="-32603"}'
+        values: '0+2x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="broken",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendMessage",rpc_status_code="-32006",error_type="-32006"}'
+        values: '0+1x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="broken",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendMessage",rpc_status_code="-32099",error_type="-32099"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2AServerErrorRatioHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, job: broken}
+            exp_annotations:
+              summary: "broken: 20% of A2A calls failed over 5m"
+              description: "More than 5% of calls to broken failed for 10 minutes while the job took more than 0.1 calls a second. Failed means the server's failure: error_type set, other than a call the client abandoned or one refused as the caller's mistake (a status A2A maps to a 4xx, such as TaskNotFound -32001). Split by rpc_method and rpc_system_name with a2a:rpc_server_errors:rate5m; caller mistakes are a2a:rpc_server_caller_errors:rate5m."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aservererrorratiohigh"
+    promql_expr_test:
+      - expr: a2a:rpc_server_error_ratio:rate5m{job="broken"}
+        eval_time: 25m
+        exp_samples:
+          - labels: 'a2a:rpc_server_error_ratio:rate5m{job="broken"}'
+            value: 0.2
+
+  # The client's view of the same classes: a CLI whose GetTask calls end in
+  # 404 or TaskNotFound has no failing agent; one whose calls time out has.
+  - interval: 1m
+    input_series:
+      - series: 'rpc_client_call_duration_seconds_count{job="cli",server_address="gone",rpc_system_name="a2a_http_json",rpc_method="lf.a2a.v1.A2AService/GetTask"}'
+        values: '0+8x30'
+      - series: 'rpc_client_call_duration_seconds_count{job="cli",server_address="gone",rpc_system_name="a2a_http_json",rpc_method="lf.a2a.v1.A2AService/GetTask",error_type="404"}'
+        values: '0+1x30'
+      - series: 'rpc_client_call_duration_seconds_count{job="cli",server_address="gone",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/GetTask",error_type="-32001"}'
+        values: '0+1x30'
+      - series: 'rpc_client_call_duration_seconds_count{job="cli",server_address="slow",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendMessage"}'
+        values: '0+8x30'
+      - series: 'rpc_client_call_duration_seconds_count{job="cli",server_address="slow",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/SendMessage",error_type="timeout"}'
+        values: '0+2x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2AClientErrorRatioHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, job: cli, server_address: slow}
+            exp_annotations:
+              summary: "cli: 20% of calls to slow failed over 5m"
+              description: "More than 5% of the calls cli made to the agent at slow failed for 10 minutes while it made more than 0.1 calls a second to it. Failed means the agent's failure or no answer at all (a timeout, a transport error, a response that did not decode); a call the caller abandoned or one refused as its own mistake (a 404, TaskNotFound) is not counted. Split by kind on the client dashboard's Failures by kind panel."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2aclienterrorratiohigh"
+    promql_expr_test:
+      - expr: a2a:rpc_client_error_ratio:rate5m{server_address="gone"}
+        eval_time: 25m
+        exp_samples: []
+
+  # Audit C-14 (a). 49 calls a minute under 1 s and one at 1.1 s: the default
+  # buckets jump from 1 s to 5 s, so a p99 interpolated in (1, 5] reads 3.0 s
+  # although no call took over 1.1 s. Nothing pages: no call was over 5 s.
+  - interval: 1m
+    input_series:
+      - series: 'rpc_server_call_duration_seconds_bucket{job="coarse",rpc_method="lf.a2a.v1.A2AService/GetTask",le="1"}'
+        values: '0+49x30'
+      - series: 'rpc_server_call_duration_seconds_bucket{job="coarse",rpc_method="lf.a2a.v1.A2AService/GetTask",le="5"}'
+        values: '0+50x30'
+      - series: 'rpc_server_call_duration_seconds_bucket{job="coarse",rpc_method="lf.a2a.v1.A2AService/GetTask",le="+Inf"}'
+        values: '0+50x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="coarse",rpc_method="lf.a2a.v1.A2AService/GetTask"}'
+        values: '0+50x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2AUnaryLatencyHigh
+        exp_alerts: []
+    promql_expr_test:
+      - expr: round(a2a:rpc_server_unary_latency:p99_5m{job="coarse"}, 0.01)
+        eval_time: 25m
+        exp_samples:
+          - labels: '{job="coarse",rpc_method="lf.a2a.v1.A2AService/GetTask"}'
+            value: 3
+
+  # Audit C-14 (d). One task write fails, on a counter whose first sample is
+  # already 1 (an OpenTelemetry counter with these attributes is exported
+  # only once something is counted). It is a warning, not a page, and it
+  # stays visible for the hour rather than resolving in five minutes.
+  - interval: 1m
+    input_series:
+      - series: 'a2a_server_persistence_errors_total{job="a",operation="status_update",error="internal_error"}'
+        values: '_x3 1x90'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: A2APersistenceErrors
+        exp_alerts: &one-write
+          - exp_labels: {severity: warning, job: a, operation: status_update}
+            exp_annotations:
+              summary: "a: task writes failed in the last hour (status_update)"
+              description: "The background processor could not persist a task write in the last hour. A streaming client already received those events, so the stored task and what clients saw have diverged; a later GetTask returns the wrong answer. It stays firing for an hour after the last failure. Sustained failures page as A2APersistenceFailing."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2apersistenceerrors"
+      - eval_time: 50m
+        alertname: A2APersistenceErrors
+        exp_alerts: *one-write
+      - eval_time: 70m
+        alertname: A2APersistenceErrors
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: A2APersistenceFailing
+        exp_alerts: []
+
+  # A write fails on a counter that has existed (at 0) for over an hour: only
+  # increase() sees it, and only for the hour after.
+  - interval: 1m
+    input_series:
+      - series: 'a2a_server_persistence_errors_total{job="old",operation="status_update",error="internal_error"}'
+        values: '0x70 1x70'
+    alert_rule_test:
+      - eval_time: 69m
+        alertname: A2APersistenceErrors
+        exp_alerts: []
+      - eval_time: 100m
+        alertname: A2APersistenceErrors
+        exp_alerts:
+          - exp_labels: {severity: warning, job: old, operation: status_update}
+            exp_annotations:
+              summary: "old: task writes failed in the last hour (status_update)"
+              description: "The background processor could not persist a task write in the last hour. A streaming client already received those events, so the stored task and what clients saw have diverged; a later GetTask returns the wrong answer. It stays firing for an hour after the last failure. Sustained failures page as A2APersistenceFailing."
+              runbook_url: "https://a2a-rust.com/deployment/observability/alerts.html#a2apersistenceerrors"
+      - eval_time: 135m
+        alertname: A2APersistenceErrors
+        exp_alerts: []

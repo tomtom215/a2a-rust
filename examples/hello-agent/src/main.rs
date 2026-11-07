@@ -27,21 +27,16 @@ use a2a_protocol_sdk::prelude::*;
 struct HelloAgent;
 
 agent_executor!(HelloAgent, |ctx, queue| async {
-    let emit = EventEmitter::new(ctx, queue);
-    emit.status(TaskState::Working).await?;
-
     // `Message::text()` is the first text part, or `None` if the caller sent
     // only files — no `PartContent` match needed for the common case.
     let who = ctx.message.text().unwrap_or("world");
-    let greeting = Part::text(format!("Hello, {who}!"));
 
-    // `last_chunk: Some(true)` marks the artifact complete; a streaming agent
-    // would emit several chunks and set it only on the last.
-    emit.artifact("greeting", vec![greeting], None, Some(true))
-        .await?;
-
-    emit.status(TaskState::Completed).await?;
-    Ok(())
+    // The greeting as the task's artifact, then the terminal `Completed`
+    // status, in that order. A streaming agent would send its artifact in
+    // chunks with `artifact_chunk` and end with `status(TaskState::Completed)`.
+    EventEmitter::new(ctx, queue)
+        .complete_with_text(format!("Hello, {who}!"))
+        .await
 });
 
 /// The card a client discovers at `/.well-known/agent-card.json`: the three

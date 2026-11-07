@@ -47,6 +47,7 @@ are rustdoc's job.
 | `idempotency` | Client-supplied idempotency keys for `message/send`, as a declared extension |
 | `jsonrpc` | JSON-RPC 2.0 envelope types |
 | `lease` | The lease extension: `Lease`, a delegated task's time to live, granted on the message that starts it and renewed by a `GetTask` that activates the extension |
+| `lineage` | The lineage extension: `Lineage` (its root, depth and parent task id), the job a task belongs to; `Lineage::child` for a delegated task; `tree` arranges tasks into a job's tree (ADR 0034) |
 | `message` | Message types for the A2A protocol |
 | `method` | The A2A v1.0 service methods, mirrored from the ratified specification |
 | `params` | JSON-RPC method parameter types |
@@ -225,20 +226,23 @@ are rustdoc's job.
 | Module | Contents |
 |--------|----------|
 | `auth` | Authentication interceptor and credential storage |
+| `balance` | Calls spread over the endpoints of one agent (`EndpointSource`, `StaticEndpoints`, `DnsEndpoints`), with ejection and opt-in hedging (`BalancePolicy`, `Ejection`, `Hedge`; `ClientBuilder::with_balancing`, ADR 0050) |
 | `builder` | Fluent builder for `A2aClient` |
 | `client` | The `A2aClient` itself |
 | `config` | Client configuration types |
-| `delegation` | `Delegation`: a task sent to another agent and cancelled with its parent — on the parent's cancel, a lost stream, or a dropped handle |
+| `delegation` | `Delegation`: a task sent to another agent and cancelled with its parent — on the parent's cancel, a lost stream, or a dropped handle; `DelegationOptions::with_lineage` gives the child its job's lineage |
+| `delegation` | `Delegation`: a task sent to another agent and cancelled with its parent — on the parent's cancel, a lost stream, or a dropped handle; `HandOffPolicy` bounds how often it continues a child whose server handed its turn back (ADR 0054) |
 | `discovery` | Agent card discovery with HTTP caching |
 | `error` | Client error types |
 | `interceptor` | Request/response interceptor infrastructure |
-| `jwks` | `fetch_jwks`: a JWK Set from a trusted HTTPS URL, bounded in size and time, for verifying card signatures (`signing` feature) |
+| `jwks` | `fetch_jwks`: a JWK Set from a trusted HTTPS URL, bounded in size and time, for verifying card signatures; it sends only the headers set with `CardFetchOptions::with_jwks_header` (`signing` feature) |
 | `methods` | Per-method client helpers |
 | `retry` | Configurable retry policy for transient client errors |
 | `streaming` | SSE client-side streaming support |
 | `testing` | `ScriptedPeer`: a misbehaving agent on any binding (stall, cut-off, mis-frame, 401), for testing a client's failure handling (`testing` feature) |
 | `tls` | TLS connector via rustls (`tls-rustls` feature) |
 | `token_provider` | Token acquisition: `TokenProvider`, OAuth 2.0 client-credentials, and OIDC discovery |
+| `otel_baggage` | W3C baggage on outbound calls, opt-in by key, and which propagators the environment turns on |
 | `trace_propagation` | Carrying W3C trace context on outbound calls |
 | `transport` | Transport abstraction for A2A client requests |
 | `version_query` | Sending `A2A-Version` as a request parameter (§3.6.1) |
@@ -254,11 +258,14 @@ are rustdoc's job.
 | `EventStream` | Async SSE event stream |
 | `RetryPolicy` | Configurable retry with exponential backoff |
 | `RetryBudget` | Retries as a bounded fraction of calls, so retries cannot multiply an overload (`RetryPolicy::with_budget`) |
-| `HttpPool` | One set of HTTP connections many clients share, with an optional maximum connection lifetime, HTTP/2 PING and idle limits (`ClientBuilder::with_pool`, `HttpPool::shared()`); needs `tls-rustls` |
+| `HttpPool` | One set of HTTP connections many clients share, with an optional maximum connection lifetime, HTTP/2 PING and idle limits (`ClientBuilder::with_pool`, `HttpPool::shared()`), and per-origin state: a circuit breaker, an in-flight cap and a retry budget shared by its clients (`HttpPool::origins()`); needs `tls-rustls` |
 | `HttpPoolBuilder` | Builds an `HttpPool`: TLS configuration, connect and idle timeouts, idle connections per host, connection lifetime, HTTP/2 keep-alive (`HttpPool::builder()`) |
+| `OriginSnapshot` | One origin's state from `HttpPool::origins()`: calls in flight, how much longer it is ejected, failures and ejections in a row |
 | `CredentialPreflight` | What a client built from a card does with a call whose credential matches none of the card's security requirements (§3.1.11): off, warn (default) or refuse |
 | `CurrentTrace` | The trace the current task runs under, and how to start one |
 | `TracePropagationInterceptor` | Writes `traceparent` onto every outbound request |
+| `BaggagePolicy` | Which W3C baggage entries cross the wire: `Off` (default), `Keys([...])`, `All` |
+| `Propagators` | Which propagators the environment's propagator list turns on: tracecontext, baggage |
 | `VersionQueryInterceptor` | Adds `A2A-Version` to every request's query parameters, beside the header |
 | `ClientError` | Errors that can occur during A2A client operations |
 | `ClientResult<T>` | Alias for `Result<T, ClientError>` |
@@ -270,6 +277,8 @@ are rustdoc's job.
 | `new_message_id()` | A fresh UUID v4 `MessageId` for a message about to be sent (in the SDK prelude too) |
 | `resolve_agent_card(base_url)` | `async` — fetches the `AgentCard` from the standard well-known path; no headers, 30 s budget |
 | `resolve_agent_card_with_options(base_url, &options)` | `async` — the same with the headers and budget in a `CardFetchOptions` (`discovery` module; `fetch_card_from_url_with_options` for an absolute URL) |
+| `CachingCardResolver` | A private RFC 9111 cache of one card: one HTTP client (or an `HttpPool`'s, `with_pool`), one fetch at a time across clones, stale-if-error (`with_stale_if_error`, and the card's own directive), opt-in refresh jitter (`discovery` module) |
+| `CardCache` | One shared `CachingCardResolver` per card URL with one set of options, bounded (`with_max_entries`, default 1024), 10% refresh jitter (`discovery` module) |
 
 ### Client Methods
 
@@ -337,6 +346,7 @@ are rustdoc's job.
 
 | Module | Contents |
 |--------|----------|
+| `admission` | `Admission`, the opt-in gate in front of the send path set with `RequestHandlerBuilder::with_admission`: a capacity, `TenantShare` reservations, a bounded wait inside the send's budget, priority classes and weighted rounds; `AdmissionLoad` is what `RequestHandler::admission_load` reports (ADR 0045) |
 | `agent_card` | Agent card HTTP handlers (static, dynamic, and caching utilities) |
 | `approval` | `ApprovalGate`: admits an approval decision only from an allowed, authenticated approver, for the pending request and its digest, and with `with_quorum(n)` only once `n` distinct approvers have approved (recorded under `QUORUM_METADATA_KEY`); `VerifiedApproval` is what the executor sees |
 | `audit` | `AuditLog`, its stores, retention and legal holds; records every call, run, task event and cancel request (`audit` feature); `AuditPrivacy`, `AuditLog::with_privacy`, `reveal`, `digest_matches` and `erase_subject` protect who and what records name and erase a person (`audit` and `encryption`) |
@@ -356,7 +366,7 @@ are rustdoc's job.
 | `push` | Push notification configuration storage and delivery |
 | `rate_limit` | Fixed-window rate limiter as a `ServerInterceptor` |
 | `request_context` | Request context passed to the `AgentExecutor` |
-| `serve` | `serve()`, `serve_with_addr`, `Dispatcher` |
+| `serve` | `Server`, `ServeConfig`, `ServeReport`, `Dispatcher`, `shutdown_signal` (and the deprecated `serve()`, `serve_with_addr`) |
 | `store` | Task storage backend |
 | `streaming` | Streaming infrastructure for SSE responses and event queues |
 | `tenant_config` | Per-tenant resource limits for multi-tenant A2A servers |
@@ -388,7 +398,13 @@ are rustdoc's job.
 | `SendMessageResult` | Result of `RequestHandler::on_send_message`: a synchronous response or a streaming reader |
 | `ShutdownReport` | What a shutdown actually managed to do (live queues it had to destroy, whether executor cleanup completed) |
 | `InFlightReport` | What `RequestHandler::finish_in_flight` / `cancel_in_flight` did: tasks that completed on their own, tasks cancelled, still running at the end of the grace period, whether everything finished |
+| `HaltScope` | What `RequestHandler::halt` applies to: one job (`HaltScope::root(tenant, root)`, ADR 0034), one tenant, or all |
+| `RequestHandler::running_in_root` / `halt_reason_for_root` | The turns of one job running in this process, with their lineage; why a job's sends are refused |
+| `RequestContext::lineage` / `child_lineage` | The turn's job, and the lineage to give a task it delegates |
+| `HALTED_REASON`, `A2A_RUST_ERROR_DOMAIN` | The `ErrorInfo` reason (HALTED) and domain (a2a-rust.com) a halt refusal carries on every binding (ADR 0049) |
 | `HaltScope` | What `RequestHandler::halt` applies to: one tenant, or all |
+| `LoadReport` | What `RequestHandler::load` reports: turns running, sends queued at the admission gate, the capacity, `draining`, `halted`; `utilization_permille`, `to_json` (the `/load` body) and `header_value` (ADR 0046) |
+| `LOAD_HEADER` | `endpoint-load-metrics`, the response header carrying the load in ORCA's text form when the handler is built `with_load_reporting()` |
 | `HaltReport` | What a halt did: `stopped`, the ids of the tasks whose token it fired, and `persisted`, whether the halt store took it (`None` without a store) |
 | `ConnectionPoolStats` | Statistics about the HTTP connection pool |
 | `RpcCall` | One finished inbound call as `Metrics::on_rpc_call` reports it: binding, method, duration, status (`rpc.server.call.duration`) |
@@ -423,22 +439,24 @@ are rustdoc's job.
 |------|-------------|
 | `JsonRpcDispatcher` | JSON-RPC 2.0 HTTP dispatcher (implements `Dispatcher`) |
 | `RestDispatcher` | RESTful HTTP dispatcher (implements `Dispatcher`) |
-| `CombinedDispatcher` | JSON-RPC and REST on one listener: a `POST` to the JSON-RPC path is JSON-RPC, the rest is REST (implements `Dispatcher`) |
-| `WebSocketDispatcher` | WebSocket dispatcher (`websocket` feature) |
-| `GrpcDispatcher` | gRPC dispatcher (`grpc` feature) |
-| `A2aRouter` | Axum framework adapter (`axum` feature) |
+| `CombinedDispatcher` | JSON-RPC and REST on one listener: a `POST` to the JSON-RPC path is JSON-RPC, the rest is REST (implements `Dispatcher`); `with_websocket` adds the WebSocket binding on the same port, upgraded at the JSON-RPC path (`websocket` feature, ADR 0055) |
+| `WebSocketUpgrades` | The connections an HTTP dispatcher upgraded to WebSockets: `open()`, and `close(within)`, which `Server::serve_with_shutdown` calls in its drain and an axum application calls itself (`RestRouter::websocket_upgrades`) |
+| `WebSocketDispatcher` | WebSocket dispatcher (`websocket` feature); `with_serve_config(ServeConfig)` takes the listener settings `Server` takes, and `serve_with_shutdown(listener, signal)` on an `Arc` of it serves (ADR 0052) |
+| `GrpcDispatcher` | gRPC dispatcher (`grpc` feature); `with_serve_config(ServeConfig)` takes the listener settings `Server` takes, and `serve_with_shutdown(listener, signal)` serves (ADR 0052); `with_rustls(rustls::ServerConfig)` serves TLS through this crate's handshake, so a `ReloadingCertResolver` rotates it (`grpc-tls` and `tls-rustls`) |
+| `RestRouter` | Axum framework adapter (`axum` feature): an axum `Router` for the HTTP+JSON binding (`into_router`), and a `Dispatcher` that `Server` serves; `A2aRouter` is the same type under its original name (ADR 0053) |
+| `A2aRouter` | The type `RestRouter` names (`axum` feature), under its original name; not deprecated (ADR 0053) |
 
 ### Server Startup
 
 | Name | Description |
 |------|-------------|
-| `serve(addr, dispatcher) -> io::Result<()>` | `async` — binds and drives the accept loop until the future is dropped |
-| `serve_with_addr(addr, dispatcher) -> io::Result<SocketAddr>` | `async` — binds, spawns the accept loop, returns the bound `SocketAddr` (useful for port-0 in tests) |
-| `Server` | A bound listener that has not started accepting yet; binding is separated from serving so the caller can learn the address |
+| `Server` | A bound listener that has not started accepting yet; binding is separated from serving so the caller can learn the address. `serve_with_shutdown(dispatcher, signal)` serves any `Dispatcher`, the axum `RestRouter` included (ADR 0052) |
+| `serve(addr, dispatcher) -> io::Result<()>` | Deprecated since 0.16.0 (removed no earlier than 0.17.0): binds and drives the accept loop until the future is dropped; use `Server` |
+| `serve_with_addr(addr, dispatcher) -> io::Result<SocketAddr>` | Deprecated since 0.16.0 (removed no earlier than 0.17.0): binds, spawns the accept loop with no way to stop it, returns the bound `SocketAddr`; use `Server` |
 | `ServeConfig` | Limits applied to a `Server`; `ServeConfig::production()` makes it refuse plaintext beyond loopback and a binding the agent card does not declare (ADR 0025) |
 | `ServeReport` | What a shutdown did — `Server::serve_with_shutdown`, or the gRPC and WebSocket dispatchers' `serve_with_shutdown`: connections accepted, drained or abandoned, and (with a handler-backed dispatcher) the `InFlightReport` for its tasks; `refused` says why a `ServeConfig::production()` server declined to start |
 | `shutdown_signal() -> impl Future<Output = ()>` | Resolves on SIGTERM or SIGINT (Ctrl-C on non-Unix); pass it to `Server::serve_with_shutdown` so a pod stop drains in-flight work, returns from `main`, and lets a live `Telemetry` guard flush |
-| `DispatchConfig` | Configuration for dispatch-layer limits shared by both JSON-RPC and REST dispatchers |
+| `DispatchConfig` | Configuration for dispatch-layer limits shared by both JSON-RPC and REST dispatchers; `with_base_path` names a reverse proxy's path prefix |
 | `GrpcConfig` | Configuration for the gRPC dispatcher (`grpc` feature) |
 | `validate_version_metadata(metadata, required)` | Validates the A2A version carried in a binding's request metadata |
 
@@ -456,11 +474,14 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 
 | Type | Description |
 |------|-------------|
-| `ToolLoop` | Runs model turns until the model answers without a call, bounded by `with_max_turns` (default 8); tool errors go back to the model, and a call written as text is run as one; `with_agent_name` and `with_meter` for its `gen_ai.*` metrics |
+| `ToolLoop` | Runs model turns until the model answers without a call, bounded by `with_max_turns` (default 8); tool errors go back to the model, and a call written as text is run as one; `with_agent_name` and `with_meter` for its `gen_ai.*` metrics; `with_model_retry` sends a rate-limited turn again (off by default) |
 | `ToolLoopExecutor` | A `ToolLoop` as an `AgentExecutor`: `Working`, the `answer` and `tool-trace` artifacts, `Completed`; `Failed` as `internal` or `budget-exhausted`; `with_drafts` streams each turn's text to a `draft-N` artifact first |
 | `ToolSet` | The tools a loop offers; refuses two of one name |
 | `OpenAiChatModel` | A `ToolModel` for `POST {base}/chat/completions` (OpenAI, llama-server, vLLM, Ollama) on the crate's hyper client; HTTPS with `tls-rustls`; streams for `complete_streaming` |
 | `TextSink` | Where `ToolModel::complete_streaming` hands each piece of a turn's text |
+| `InferenceLimit` | At most `max` model turns in flight at one provider, shared by every loop holding a clone; `max()` and `available()` (ADR 0048) |
+| `LimitedModel` | A `ToolModel` that holds a slot of an `InferenceLimit` for each turn, streamed or not, and gives it back however the turn ends |
+| `ModelRetry` | `ToolLoop::with_model_retry`'s policy for a rate-limited turn (`ModelError::RateLimited`): 3 retries, 0.5 s doubling to 30 s with half jitter, or the provider's `Retry-After` spread by up to a quarter; never past `max_delay` or the budget's remaining time (ADR 0048) |
 
 ### Built-in Implementations
 
@@ -472,7 +493,11 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `EncryptedTaskStore` | Wraps any `TaskStore` and seals every part at rest, bound to where it sits (`store::encrypted`; `encryption` feature) |
 | `Aes256GcmCipher` | AES-256-GCM over a key ring for `EncryptedTaskStore`, and a `PushConfigCipher` (`encryption` feature) |
 | `InMemoryPushConfigStore` | In-memory push config store |
-| `HttpPushSender` | HTTP webhook delivery with SSRF protection |
+| `PushOutbox` | Where webhook deliveries wait until delivered (`push::outbox`, ADR 0037); `RequestHandlerBuilder::with_push_outbox` |
+| `InMemoryPushOutbox` | In-memory `PushOutbox`: retries outlast a delivery, not a restart |
+| `SqlitePushOutbox` | SQLite `PushOutbox`, table `a2a_push_outbox` (`sqlite` feature); `with_cipher` seals event bodies |
+| `PostgresPushOutbox` | PostgreSQL `PushOutbox` shared by every replica, claims with `FOR UPDATE SKIP LOCKED` (`postgres` feature); `with_cipher` |
+| `HttpPushSender` | HTTP webhook delivery with SSRF protection; follows the proxy variables in every build, and `with_proxy_resolved_names()` lets a proxy resolve names this process cannot (ADR 0043) |
 | `SqliteTaskStore` | SQLite task store (`sqlite` feature) |
 | `SqlitePushConfigStore` | SQLite push config store (`sqlite` feature) |
 | `TenantAwareInMemoryTaskStore` | Multi-tenant in-memory task store |
@@ -484,6 +509,8 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `TenantAwarePostgresTaskStore` | Multi-tenant PostgreSQL task store (`postgres` feature) |
 | `TenantAwarePostgresPushConfigStore` | Multi-tenant PostgreSQL push config store (`postgres` feature) |
 | `PgMigrationRunner` | PostgreSQL migration runner (`postgres` feature) |
+| `PostgresDelegationJournal` | A supervisor's `DelegationJournal` in PostgreSQL, shared by its replicas (`postgres` feature; ADR 0030) |
+| `SqliteDelegationJournal` | A supervisor's `DelegationJournal` in a SQLite file, kept across a restart on one host (`sqlite` feature; ADR 0030) |
 | `StaticAgentCardHandler` | Static agent card with HTTP caching |
 | `DynamicAgentCardHandler` | Dynamic agent card with producer |
 | `HotReloadAgentCardHandler` | Agent card with live reloading |
@@ -495,6 +522,9 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `ApiKeyAuthInterceptor` | Rejects requests whose API-key header is absent or not in the allowed set |
 | `BearerTokenAuthInterceptor` | Rejects requests whose bearer token is absent or not in the allowed set |
 | `AuthFailureThrottle` | Refuses a peer whose credentials were refused too often, until its window ends |
+| `auth::MutualTlsAuthInterceptor::with_forwarded` | Also names a caller from the client certificate a trusted TLS-terminating proxy forwarded (`tls-rustls` or `grpc-tls`) |
+| `auth::ForwardedClientCert` | Where a proxy forwards the client certificate and which peers may: `envoy` (`x-forwarded-client-cert`), `url_encoded_pem(header, ..)` (nginx), `aws_alb` (`x-amzn-mtls-clientcert`) |
+| `ReloadingCertResolver` | A `rustls` certificate resolver that serves two PEM files and replaces the certificate on `reload()` or `watch(interval)`; `server_config()` builds a configuration around it (`tls-rustls`) |
 | `PeerAddr` | Request extension carrying the connection's address, which the dispatchers copy to `CallContext::peer_addr` |
 | `PeerCertificate` | Request extension carrying the client's mutual-TLS certificate (DER), which the dispatchers pass to `CallContext::peer_certificate` |
 | `ServerInterceptorChain` | An ordered chain of `ServerInterceptor` instances |
@@ -509,10 +539,11 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 
 | Name | Kind | Description |
 |------|------|-------------|
-| `EventEmitter` | struct | Ergonomic event emission helper (wraps an `EventQueueWriter`) |
+| `EventEmitter` | struct | Ergonomic event emission helper (wraps an `EventQueueWriter`): `status`, `text_artifact`, `artifact_chunk`, `complete_with` and `complete_with_text` (the result artifact then `Completed`), `fail`, `auth_required`, `request_approval` |
+| `ArtifactChunk` | struct | Where an artifact update sits in its artifact (`append`, `last`), for `EventEmitter::artifact_chunk`: `whole()`, `first()`, `append()`, `last()` |
 | `EventQueueWriter` | trait | Write events to a task's event stream |
 | `EventQueueReader` | trait | Read events from a task's event stream |
-| `EventQueueManager` | struct | Per-task queue lifecycle manager (create / lookup / destroy) |
+| `EventQueueManager` | struct | Per-task queue lifecycle manager (create / lookup / destroy); `with_max_buffered_bytes` bounds the bytes all its queues hold at once and `buffered_bytes` reports them (ADR 0047) |
 | `InMemoryQueueWriter` | struct | Bounded-channel `EventQueueWriter` implementation |
 | `InMemoryQueueReader` | struct | Bounded-channel `EventQueueReader` implementation |
 | `StreamEvent` | struct | One queued event and its position in the task's event log (the SSE `id:`) |
@@ -528,7 +559,8 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `PerTenantConfig` | Per-tenant configuration for timeouts, capacity limits, and executor selection |
 | `TenantLimits` | Resource limits declared for a single tenant |
 | `RateLimitConfig` | Configuration for `RateLimitInterceptor` |
-| `TrustedProxy` | An address range (`10.0.0.0/8`) of reverse proxies whose `X-Forwarded-For` is believed; set on `RateLimitConfig` and `AuthFailureThrottleConfig` |
+| `TrustedProxy` | An address range (`10.0.0.0/8`) of reverse proxies whose forwarded header is believed; set on `RateLimitConfig` and `AuthFailureThrottleConfig`, and on `ForwardedClientCert` |
+| `ForwardedHeader` | The header the trusted proxies write the client address into: `XForwardedFor` (default) or RFC 7239 `Forwarded`; `with_forwarded_header` on `RateLimitConfig` and `AuthFailureThrottleConfig` |
 | `InvalidTrustedProxy` | Why a string is not a `TrustedProxy` |
 | `AuthFailureThrottleConfig` | Configuration for `AuthFailureThrottle` |
 | `PushRetryPolicy` | Retry policy for push notification delivery |

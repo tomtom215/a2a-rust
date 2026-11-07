@@ -9,8 +9,8 @@
 choices below that the maintainer did not make (where the SQL lives, the
 defaults) are this ADR's and are open to change while 0.16.0 is unreleased.
 Built: points 1 to 3 (resume, reattach, the trait and the in-memory
-journal) and, of point 4, the PostgreSQL journal. Not built: a SQLite journal
-(the lease store, the precedent, has none either).
+journal) and, of point 4, the PostgreSQL journal and, since 2026-11-04, the
+SQLite journal (audit NEW-h-s0-4).
 **Author:** Tom F.
 
 ---
@@ -63,8 +63,8 @@ Two further gaps follow from the same design:
    delegation calls it when one is attached with `with_journal`; without one
    nothing changes. An in-memory implementation ships beside the trait.
 4. **SQL journals live in the server crate**, behind its existing `postgres`
-   feature (and `sqlite`, if one is wanted), and are re-exported by the SDK
-   crate. The PostgreSQL one is `PostgresDelegationJournal`.
+   feature and its `sqlite` feature, and are re-exported by the SDK
+   crate: `PostgresDelegationJournal` and `SqliteDelegationJournal`.
 
 ### Why the SQL lives in the server crate
 

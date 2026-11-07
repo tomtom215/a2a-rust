@@ -100,8 +100,9 @@ impl JsonRpcDispatcher {
     /// a2a-go's divergence, pinned by `scripts/go_sdk_interop.sh`.
     pub async fn dispatch(
         &self,
-        req: hyper::Request<Incoming>,
+        mut req: hyper::Request<Incoming>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        super::strip_base_path(&mut req, self.config.base_path.as_deref());
         // Handle CORS preflight requests.
         if req.method() == "OPTIONS" {
             if let Some(ref cors) = self.cors {
@@ -342,7 +343,9 @@ impl JsonRpcDispatcher {
             "SubscribeToTask" => {
                 let call = async {
                     let params = self.params(rpc_req, Some(headers)).await?;
-                    self.handler.on_resubscribe(params, Some(headers)).await
+                    self.handler
+                        .on_subscribe_to_task(params, Some(headers))
+                        .await
                 };
                 self.rpc_span(rpc_req, headers)
                     .run_with(call, |out| match out {
@@ -434,7 +437,7 @@ impl JsonRpcDispatcher {
             }
             "CreateTaskPushNotificationConfig" => {
                 let params = self.params(rpc_req, headers).await?;
-                let config = self.handler.on_set_push_config(params, headers).await?;
+                let config = self.handler.on_create_push_config(params, headers).await?;
                 Ok(success_response_bytes(id, &config))
             }
             "GetTaskPushNotificationConfig" => {

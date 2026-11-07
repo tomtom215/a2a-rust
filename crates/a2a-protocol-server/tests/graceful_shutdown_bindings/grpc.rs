@@ -25,13 +25,8 @@ async fn serve(
     let addr = listener.local_addr().expect("addr");
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
     let (grace, drain) = graces(setup);
-    let mut dispatcher = GrpcDispatcher::new(handler(flag, setup.stubborn), GrpcConfig::default())
-        .with_completion_grace(WINDOW)
-        .with_task_grace(grace)
-        .with_drain_timeout(drain);
-    if let Some(max) = setup.max_connections {
-        dispatcher = dispatcher.with_max_connections(max);
-    }
+    let dispatcher = GrpcDispatcher::new(handler(flag, setup.stubborn), GrpcConfig::default())
+        .with_serve_config(serve_config(setup, grace, drain));
     let serving = tokio::spawn(dispatcher.serve_with_shutdown(listener, async {
         let _ = stopped.await;
     }));
@@ -201,4 +196,18 @@ async fn grpc_shutdown_closes_the_port_before_the_drain() {
         .expect("no panic")
         .expect("clean");
     assert!(report.drained, "{report:?}");
+}
+
+/// The completion window comes before the task grace: with none, the task
+/// is cancelled at once and the server returns well inside the guard,
+/// though its task grace is a minute.
+#[tokio::test]
+async fn grpc_shutdown_cancels_at_once_without_a_completion_window() {
+    assert_delegation_ended(
+        &run(Setup {
+            cancel_at_once: true,
+            ..Setup::default()
+        })
+        .await,
+    );
 }

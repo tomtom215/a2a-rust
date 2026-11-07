@@ -69,9 +69,10 @@ pub(super) fn layer<S>(
     filter: Targets,
     logs_on_console: bool,
     app: Option<String>,
+    format: super::ConsoleFormat,
 ) -> impl Layer<S> + Send + Sync + 'static
 where
-    S: tracing::Subscriber + for<'a> LookupSpan<'a>,
+    S: tracing::Subscriber + for<'a> LookupSpan<'a> + Send + Sync,
 {
     use tracing_subscriber::filter::LevelFilter;
     let app = app_name(app);
@@ -86,13 +87,22 @@ where
     let shown = filter_fn(move |meta| {
         !is_sdk_export_error(meta.name()) && (!logs_on_console || is_self_target(meta.target()))
     });
-    tracing_subscriber::fmt::layer()
-        .with_writer(std::io::stderr)
-        .with_ansi(colour(
-            std::io::IsTerminal::is_terminal(&std::io::stderr()),
-            std::env::var_os("NO_COLOR").as_deref(),
-        ))
-        .with_filter(filter.or(app_info).and(shown))
+    let printed: Box<dyn Layer<S> + Send + Sync> = match format {
+        super::ConsoleFormat::Json => Box::new(
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .event_format(super::console_format::JsonLines),
+        ),
+        _ => Box::new(
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_ansi(colour(
+                    std::io::IsTerminal::is_terminal(&std::io::stderr()),
+                    std::env::var_os("NO_COLOR").as_deref(),
+                )),
+        ),
+    };
+    printed.with_filter(filter.or(app_info).and(shown))
 }
 
 /// Whether `target` is crate `app` or one of its modules.

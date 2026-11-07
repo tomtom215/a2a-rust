@@ -24,6 +24,7 @@ mod capability;
 pub(crate) mod claims;
 mod concurrency;
 mod event_processing;
+mod turn_slots;
 pub(crate) use event_processing::{PushLanes, ends_turn};
 pub(crate) mod halt;
 pub(crate) mod helpers;
@@ -33,6 +34,8 @@ mod introspection;
 pub(crate) mod lease;
 mod lifecycle;
 mod limits;
+pub(crate) mod lineage;
+mod load;
 /// Per-key locks shared by the messaging and push-config paths.
 mod locks;
 mod messaging;
@@ -40,10 +43,14 @@ mod push_config;
 mod push_config_page;
 #[cfg(test)]
 mod push_config_race_tests;
+mod renamed;
 mod shutdown;
+pub(crate) mod subscribers;
 mod tenant_resolution;
 mod undeclared_binding;
 mod unreadable;
+#[cfg(feature = "websocket")]
+pub(crate) mod upgrade;
 
 pub use claims::{DEFAULT_TURN_CLAIM_RENEWAL, DEFAULT_TURN_CLAIM_TTL, MIN_TURN_CLAIM_TTL};
 pub use halt::{DEFAULT_HALT_POLL_INTERVAL, HaltReport, HaltScope};
@@ -85,6 +92,8 @@ use crate::tenant_config::PerTenantConfig;
 use crate::tenant_resolver::TenantResolver;
 
 pub use limits::{HandlerLimits, MIN_MESSAGE_ID_LENGTH};
+pub(crate) use load::LoadReporting;
+pub use load::{LOAD_HEADER, LoadReport};
 pub use tenant_resolution::MAX_TENANT_LEN;
 
 // Re-export the response type alongside the handler.
@@ -125,6 +134,8 @@ pub struct RequestHandler {
     pub(crate) executor_timeout: Option<Duration>,
     pub(crate) metrics: Arc<dyn Metrics>,
     pub(crate) limits: HandlerLimits,
+    /// The open `SubscribeToTask` streams, against `limits`' two bounds.
+    pub(crate) subscribers: Arc<subscribers::Subscribers>,
     /// Whether a message's file references must point outside private
     /// networks; see
     /// [`refuse_private_file_urls`](crate::builder::RequestHandlerBuilder::refuse_private_file_urls).
@@ -155,6 +166,10 @@ pub struct RequestHandler {
     /// front gate and an internal endpoint can hold a different policy on
     /// each. See [`InboundTracePolicy`].
     pub(crate) inbound_trace_policy: InboundTracePolicy,
+    /// The caller's baggage entries the call's context takes (audit C-10).
+    /// Read only where the call's span has an OpenTelemetry parent to set.
+    #[cfg(feature = "otel")]
+    pub(crate) baggage: a2a_protocol_types::trace_context::baggage::BaggagePolicy,
     /// What the executor's span records: the `GenAI` `invoke_agent`
     /// conventions, and whether messages are captured.
     pub(crate) span_settings: crate::rpc_span::SpanSettings,
@@ -212,6 +227,12 @@ pub struct RequestHandler {
     /// Set by [`begin_draining`](RequestHandler::begin_draining): readiness
     /// answers "not ready" from then on.
     pub(crate) draining: std::sync::atomic::AtomicBool,
+    /// The admission gate (ADR 0045), when the handler was built with one.
+    pub(crate) admission: Option<crate::admission::gate::AdmissionGate>,
+    /// Whether `/load` is served and responses carry the load (ADR 0046).
+    pub(crate) load_reporting: load::LoadReporting,
+    /// The saturation readiness's state between probes (ADR 0046).
+    pub(crate) saturated: std::sync::atomic::AtomicBool,
 }
 
 /// Entry in the cancellation token map, tracking creation time for eviction.
@@ -229,6 +250,8 @@ pub(crate) struct CancellationEntry {
     /// The tenant the task belongs to (`""` without one), so a
     /// [`halt`](RequestHandler::halt) of one tenant finds its tasks.
     pub(crate) tenant: String,
+    /// The turn's lineage (ADR 0034), so a halt of one job finds its tasks.
+    pub(crate) lineage: a2a_protocol_types::lineage::Lineage,
 }
 
 /// The state of one executor turn, shared by the executor's writer, its
@@ -447,13 +470,19 @@ pub enum SendMessageResult {
 }
 
 #[cfg(test)]
+mod admission_tests;
+#[cfg(test)]
 mod context_lookup_cost;
 #[cfg(test)]
 mod context_lookup_tests;
 #[cfg(test)]
+mod control_metrics_tests;
+#[cfg(test)]
 mod default_store_metrics_tests;
 #[cfg(test)]
 mod executor_metrics_tests;
+#[cfg(test)]
+mod subscribers_tests;
 #[cfg(test)]
 mod tenant_isolation_tests;
 #[cfg(test)]

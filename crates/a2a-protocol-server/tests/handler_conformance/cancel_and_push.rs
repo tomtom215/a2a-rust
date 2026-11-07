@@ -84,7 +84,7 @@ async fn no_notification_reaches_a_webhook_after_its_config_is_deleted() {
     let mut config_ids = Vec::new();
     for url in [deleted, kept] {
         let made = handler
-            .on_set_push_config(TaskPushNotificationConfig::new(id.as_str(), url), None)
+            .on_create_push_config(TaskPushNotificationConfig::new(id.as_str(), url), None)
             .await
             .expect("create");
         config_ids.push(made.id.expect("id"));

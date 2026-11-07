@@ -223,3 +223,49 @@ fn what_cannot_be_done_without_still_fails_the_build() {
         .unwrap_err();
     assert!(err.to_string().contains("needs its key"), "{err}");
 }
+
+/// What the upstream crates read and ignore is noted for each signal that
+/// builds the thing reading it, and only then (audit NEW-c-3): until
+/// 2026-11-04 the SDK's own warning went to a subscriber that did not exist
+/// yet, and the setting was replaced by the default in silence.
+#[test]
+fn values_the_upstream_crates_ignore_are_noted_only_for_signals_that_read_them() {
+    const TEMPORALITY: &str = "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE";
+    let bad = [
+        ("OTEL_TRACES_SAMPLER", "traceidratio-typo"),
+        (TEMPORALITY, "Delta-typo"),
+        ("OTEL_METRIC_EXPORT_INTERVAL", "10s"),
+    ];
+    let says = |t: &Telemetry, var: &str| t.notices().iter().any(|n| n.starts_with(var));
+    let all = with_env(&bad).with_logs(false).build().unwrap();
+    for (var, _) in bad {
+        assert!(says(&all, var), "{var}: {:?}", all.notices());
+    }
+    let no_traces = with_env(&bad).with_traces(false).build().unwrap();
+    assert!(
+        !says(&no_traces, "OTEL_TRACES_SAMPLER"),
+        "{:?}",
+        no_traces.notices()
+    );
+    assert!(says(&no_traces, TEMPORALITY));
+    let no_metrics = with_env(&bad).with_metrics(false).build().unwrap();
+    assert!(says(&no_metrics, "OTEL_TRACES_SAMPLER"));
+    assert!(
+        !says(&no_metrics, TEMPORALITY),
+        "{:?}",
+        no_metrics.notices()
+    );
+    assert!(!says(&no_metrics, "OTEL_METRIC_EXPORT_INTERVAL"));
+    // Console metrics have a periodic reader, which reads the interval, and
+    // no OTLP exporter, which is what reads the temporality.
+    let console = with_env(&[bad[1], bad[2], ("OTEL_METRICS_EXPORTER", "console")])
+        .with_traces(false)
+        .build()
+        .unwrap();
+    assert!(
+        says(&console, "OTEL_METRIC_EXPORT_INTERVAL"),
+        "{:?}",
+        console.notices()
+    );
+    assert!(!says(&console, TEMPORALITY), "{:?}", console.notices());
+}

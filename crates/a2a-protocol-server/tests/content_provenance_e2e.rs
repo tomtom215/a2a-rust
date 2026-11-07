@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{EventEmitter, RequestHandlerBuilder, agent_executor};
 use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent};
@@ -66,9 +66,14 @@ async fn bytes_pass_through_untouched_and_a_signed_artifact_still_verifies() {
             .build()
             .unwrap(),
     );
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
 
     let body = serde_json::json!({
         "jsonrpc": "2.0", "id": 1, "method": "SendMessage",

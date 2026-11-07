@@ -131,3 +131,43 @@ fn a_client_that_does_not_propagate_writes_no_traceparent() {
     });
     assert!(headers.is_empty(), "{headers:?}");
 }
+
+/// What a call under `propagators` and every-entry baggage writes, with
+/// baggage `k=v` in the context it runs in.
+#[cfg(feature = "otel")]
+fn written_under(propagators: &str) -> std::collections::HashMap<String, String> {
+    use opentelemetry::baggage::BaggageExt as _;
+    let client = ClientBuilder::new("http://agent.example:9000")
+        .with_baggage_propagation(crate::BaggagePolicy::All)
+        .with_propagators(crate::Propagators::from_env_value(Some(propagators)))
+        .build()
+        .expect("client");
+    crate::call_span::tests::with_otel(|| {
+        let context =
+            opentelemetry::Context::new().with_baggage([opentelemetry::KeyValue::new("k", "v")]);
+        let _attached = context.attach();
+        let call = InFlight::open(&client, "SendMessage", &serde_json::json!({}));
+        let mut headers = std::collections::HashMap::new();
+        call.propagate(&mut headers);
+        headers
+    })
+}
+
+/// `OTEL_PROPAGATORS` decides what a call writes (audit C-10): both by
+/// default, one each when named alone, nothing under `none`.
+#[cfg(feature = "otel")]
+#[test]
+fn the_propagators_decide_what_a_call_writes() {
+    let keys = |h: std::collections::HashMap<String, String>| {
+        let mut k: Vec<String> = h.into_keys().collect();
+        k.sort();
+        k
+    };
+    assert_eq!(
+        keys(written_under("tracecontext,baggage")),
+        ["baggage", "traceparent"]
+    );
+    assert_eq!(keys(written_under("tracecontext")), ["traceparent"]);
+    assert_eq!(keys(written_under("baggage")), ["baggage"]);
+    assert_eq!(keys(written_under("none")), Vec::<String>::new());
+}

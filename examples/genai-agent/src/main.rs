@@ -44,6 +44,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
 mod auth_card;
+mod card_url;
 mod local_model;
 mod surface;
 mod telemetry;
@@ -271,7 +272,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(bind_addr) = std::env::var("A2A_BIND_ADDR") {
         let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
         let addr: SocketAddr = listener.local_addr()?;
-        let url = format!("http://{addr}");
+        let url = card_url::card_url(addr);
 
         // SSRF posture. Server-only mode models a real deployment, so the
         // webhook SSRF guard is ON by default: a push-notification URL that
@@ -324,7 +325,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             use a2a_protocol_server::tenant_config::{PerTenantConfig, TenantLimits};
             builder = builder.with_tenant_config(
                 PerTenantConfig::builder()
-                    .default_limits(TenantLimits::builder().max_concurrent_tasks(n).build())
+                    .default_limits(TenantLimits::builder().with_max_concurrent_tasks(n).build())
                     .build(),
             );
             println!("max concurrent tasks per tenant: {n}");
@@ -346,11 +347,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 builder.with_interceptor(a2a_protocol_server::ApiKeyAuthInterceptor::new([key]));
             println!("auth: API key required (x-api-key: <key>)");
         }
-        if let Ok(secret) = std::env::var("A2A_JWT_HS256_SECRET") {
+        if let Ok(value) = std::env::var("A2A_JWT_HS256_SECRET") {
             use a2a_protocol_server::auth::{Jwks, JwtAuthInterceptor, JwtValidator};
-            // `try_`: refuses a secret under 32 bytes (RFC 7518 §3.2) at
+            // A random key in base64, not a typed password (RFC 8725 §3.5).
+            // `try_`: refuses a key under 32 bytes (RFC 7518 §3.2) at
             // startup, rather than starting a server no HS256 token can reach.
-            let mut validator = JwtValidator::new().try_with_hs256_secret(secret.into_bytes())?;
+            let key = auth_card::hs256_key(&value)?;
+            let mut validator = JwtValidator::new().try_with_hs256_secret(key)?;
             // Unset, the SDK would refuse every token; this secret's holder
             // mints them all, so an unset variable opts out, said aloud.
             let (iss, aud) = (std::env::var("A2A_JWT_ISS"), std::env::var("A2A_JWT_AUD"));
@@ -391,14 +394,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(grpc_addr) = std::env::var("A2A_GRPC_ADDR") {
             use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
             let grpc_listener = tokio::net::TcpListener::bind(&grpc_addr).await?;
-            let addr = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
-                .serve_with_listener(grpc_listener)?;
+            let addr = {
+                let listener = grpc_listener;
+                let addr = listener.local_addr()?;
+                tokio::spawn(
+                    GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
+                        .serve_with_shutdown(listener, std::future::pending()),
+                );
+                addr
+            };
             println!("gRPC also listening on {addr}");
         }
         if let Ok(ws_addr) = std::env::var("A2A_WS_ADDR") {
             use a2a_protocol_server::dispatch::websocket::WebSocketDispatcher;
             let ws = Arc::new(WebSocketDispatcher::new(Arc::clone(&handler)));
-            let addr = ws.serve_with_addr(ws_addr.as_str()).await?;
+            let addr = {
+                let listener = tokio::net::TcpListener::bind(ws_addr.as_str()).await?;
+                let addr = listener.local_addr()?;
+                tokio::spawn(ws.serve_with_shutdown(listener, std::future::pending()));
+                addr
+            };
             println!("WebSocket also listening on ws://{addr}");
         }
 

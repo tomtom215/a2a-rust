@@ -50,7 +50,7 @@ tracing = ["dep:tracing"]
 ## (`Server::with_tls`, `Server::with_tls_pem`; spec §14), and
 ## `auth::MutualTlsAuthInterceptor`, which names a caller from its client
 ## certificate (`ring`, already in the graph through rustls).
-tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots", "dep:ring", "dep:http", "dep:tower-service", "hyper-util/client-proxy"]
+tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots", "dep:ring"]
 ## Enable SQLite-backed task and push config stores via `sqlx`.
 sqlite = ["dep:sqlx", "sqlx/sqlite"]
 ## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.
@@ -93,10 +93,8 @@ otlp = [
     "otel",
     "dep:opentelemetry_sdk", "dep:opentelemetry-otlp",
     "dep:opentelemetry-http", "dep:opentelemetry-appender-tracing", "dep:tracing-subscriber", "dep:async-trait",
-    "dep:http", "dep:tonic", "dep:tower-service",
+    "dep:tonic",
     "dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots",
-    # `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` for export (`telemetry/proxy.rs`).
-    "hyper-util/client-proxy",
 ]
 ## `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` in the
 ## Prometheus text format, for a Prometheus that scrapes and no collector in
@@ -124,8 +122,9 @@ conformance = []
 ## for the chat-completions API (OpenAI, llama-server, vLLM, Ollama). On the
 ## hyper client push delivery uses; `ring`, already in the graph with the
 ## default `tls-rustls`, derives each tool call's idempotency key (ADR 0026).
-## HTTPS to the model needs `tls-rustls`.
-tool-loop = ["dep:ring"]
+## HTTPS to the model needs `tls-rustls`. `httpdate`, already in the graph
+## through the client crate, reads a rate-limited turn's `Retry-After` date.
+tool-loop = ["dep:ring", "dep:httpdate"]
 ## Enable Axum framework integration (Router, extractors, IntoResponse).
 axum = ["dep:axum"]
 ## Enable JWT bearer-token authentication (HS256/RS256/ES256, static or remote
@@ -160,7 +159,12 @@ serde_json     = { workspace = true }
 serde_path_to_error = { version = ">=0.1.20, <0.2" }
 hyper          = { workspace = true }
 http-body-util = { workspace = true }
-hyper-util     = { workspace = true, features = ["server", "server-auto", "server-graceful"] }
+# `client-proxy`: the `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` rules every
+# outbound client follows (`net::proxy`), in every build since 0.16.0: the
+# plaintext build's push sender ignored them (audit NEW-b-3). It adds
+# `ipnet` and `percent-encoding`, already in the graph, and `base64`, a
+# dependency of this crate's own.
+hyper-util     = { workspace = true, features = ["server", "server-auto", "server-graceful", "client-proxy"] }
 tokio          = { workspace = true, features = ["signal"] }
 uuid           = { workspace = true }
 bytes          = "1.11.1"
@@ -179,6 +183,9 @@ webpki-roots   = { version = ">=1.0.10, <2", optional = true }
 # JWT verification (auth-jwt feature). `ring` is the same crypto backend the
 # types crate's `signing` feature already uses.
 ring           = { version = "0.17.12", optional = true }
+# A rate-limited model turn's `Retry-After` HTTP date (tool-loop feature).
+# Already in the graph through the client crate.
+httpdate       = { version = ">=1.0.3, <2", optional = true }
 # Always: a message's `raw` parts are checked and kept in standard base64 at
 # ingress, so every binding can carry what one accepts. Tiny, with no
 # transitive deps; the JWT, SQL and OTLP code use it too.
@@ -199,9 +206,9 @@ sqlx           = { workspace = true, optional = true }
 tokio-tungstenite = { version = ">=0.30, <0.31", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", default-features = false, features = ["sink", "alloc"] }
 tonic             = { workspace = true, optional = true }
-# `otlp`: the connector that dials OTLP/gRPC's TLS itself. Already in the
-# graph through hyper and tonic.
-tower-service     = { version = "0.3", optional = true }
+# The resolver and connectors of `net` (every build since 0.16.0, audit
+# NEW-b-3). Already in the graph through hyper-util.
+tower-service     = { version = "0.3" }
 tonic-prost       = { workspace = true, optional = true }
 tonic-types       = { workspace = true, optional = true }
 prost             = { workspace = true, optional = true }
@@ -243,7 +250,8 @@ opentelemetry-appender-tracing = { version = "0.33", optional = true, default-fe
 # feature it writes no colour codes and pulls no crate the registry did not.
 tracing-subscriber = { version = ">=0.3.20, <0.4", optional = true, default-features = false, features = ["registry", "std", "fmt"] }
 async-trait = { version = ">=0.1.80, <0.2", optional = true }
-http = { version = ">=1.1, <2", optional = true }
+# `net::proxy` (every build); the crate hyper re-exports its types from.
+http = { version = ">=1.1, <2" }
 axum = { version = "0.8", optional = true, default-features = false, features = ["json", "query", "tokio"] }
 
 [build-dependencies]

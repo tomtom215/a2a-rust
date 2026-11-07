@@ -292,6 +292,9 @@ pub mod page_reference_pitfalls {}
 #[doc = include_str!("../../book/src/reference/regression-gate.md")]
 pub mod page_reference_regression_gate {}
 
+#[doc = include_str!("../../book/src/reference/swarm-extensions.md")]
+pub mod page_reference_swarm_extensions {}
+
 #[doc = include_str!("../../book/src/reference/upgrading.md")]
 pub mod page_reference_upgrading {}
 
@@ -412,6 +415,7 @@ pub mod pages_deployment_testing {}
 #[doc = include_str!("../../book/src/deployment/production/limits.md")]
 #[doc = include_str!("../../book/src/deployment/production/graceful-shutdown.md")]
 #[doc = include_str!("../../book/src/deployment/production/browsers-and-webhooks.md")]
+#[doc = include_str!("../../book/src/deployment/production/proxies-and-tls.md")]
 #[doc = include_str!("../../book/src/deployment/production/performance.md")]
 pub mod pages_deployment_production {}
 
@@ -489,5 +493,7 @@ pub mod page_reference_conformance_testing {}
 #[doc = include_str!("../../book/src/deployment/observability/trace-context.md")]
 #[doc = include_str!("../../book/src/deployment/observability/logs.md")]
 #[doc = include_str!("../../book/src/deployment/observability/dashboards.md")]
+#[doc = include_str!("../../book/src/deployment/observability/alerts.md")]
+#[doc = include_str!("../../book/src/deployment/observability/kubernetes.md")]
 #[doc = include_str!("../../book/src/deployment/observability/debugging.md")]
 pub mod pages_deployment_observability {}

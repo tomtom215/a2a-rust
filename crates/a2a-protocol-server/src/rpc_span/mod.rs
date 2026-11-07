@@ -52,6 +52,8 @@ mod agent;
 mod binding;
 mod call;
 mod card;
+#[cfg(feature = "tracing")]
+mod content;
 mod link;
 mod names;
 #[cfg(feature = "otel")]
@@ -84,8 +86,6 @@ use names::OTHER;
 pub use names::{RpcSystem, WireStatus, a2a_method};
 #[cfg(feature = "otel")]
 pub use otel::current_recorded_span;
-#[cfg(feature = "otel")]
-use otel::remote_parent;
 #[cfg(feature = "grpc")]
 pub use refusal::record_refused;
 pub use refusal::{record_if_refused, record_unrouted, refused};
@@ -104,7 +104,8 @@ const METHOD_ORIGINAL_MAX: usize = 128;
 
 /// The `error.type` of a call whose future was dropped before it finished —
 /// the peer went away, or gave up waiting. A component-specific value, as
-/// the conventions allow where no status code was sent.
+/// the conventions allow where no status code was sent. On gRPC the call
+/// records the status `CANCELLED` instead (`outcome.rs`).
 const CANCELLED: &str = "cancelled";
 
 /// One inbound call: its span, its clock, and where its duration goes.
@@ -112,6 +113,7 @@ pub struct ServerSpan {
     system: RpcSystem,
     method: &'static str,
     metrics: Arc<dyn Metrics>,
+    tenant: call_tenant::Cell,
     #[cfg(feature = "tracing")]
     span: tracing::Span,
     /// The handler's policy is [`InboundTracePolicy::Drop`]: this call, and
@@ -192,7 +194,8 @@ impl ServerSpan {
                 }
                 #[cfg(feature = "otel")]
                 if policy == InboundTracePolicy::Continue
-                    && let Some(parent) = headers.and_then(remote_parent)
+                    && let Some(parent) =
+                        headers.and_then(|h| otel::inbound_parent(h, &handler.baggage))
                 {
                     use tracing_opentelemetry::OpenTelemetrySpanExt as _;
                     // Refused only when the span is already entered or has no
@@ -206,6 +209,7 @@ impl ServerSpan {
             system,
             method: qualified,
             metrics: Arc::clone(&handler.metrics),
+            tenant: call_tenant::Cell::default(),
             #[cfg(feature = "tracing")]
             untraced: handler.inbound_trace_policy == InboundTracePolicy::Drop,
             #[cfg(feature = "tracing")]
@@ -345,7 +349,10 @@ impl ServerSpan {
         T: FnOnce(F::Output) -> R,
     {
         let slot = streams.then(stream::Slot::new);
-        let fut = stream::scope_future(slot.as_ref(), fut);
+        let fut = call_tenant::scope(
+            Arc::clone(&self.tenant),
+            stream::scope_future(slot.as_ref(), fut),
+        );
         #[cfg(feature = "tracing")]
         let inner =
             tracing::Instrument::instrument(UNTRACED.scope(self.untraced, fut), self.span.clone());
@@ -379,33 +386,29 @@ impl ServerSpan {
     /// Records a finished call on the span and in the metrics: `status` is
     /// the wire status of a call that did not succeed, `None` for one that
     /// did. Whether it is an error is the binding's conventions' call
-    /// ([`RpcSystem::is_server_error`]); a call that never finished is one
-    /// on every binding.
+    /// ([`RpcSystem::is_server_error`]); a call the peer abandoned is
+    /// classified in [`outcome::classify`] (audit C-09).
     fn finish(&self, duration: Duration, status: Option<&str>) {
-        // gRPC always has a status; the other bindings have one only on error.
-        let status_code = match (status, self.system) {
-            (Some(code), _) => Some(code),
-            (None, RpcSystem::Grpc) => Some("OK"),
-            (None, RpcSystem::Custom(binding)) => binding.ok_status,
-            (None, _) => None,
-        };
-        let failed_with = status.filter(|s| *s == CANCELLED || self.system.is_server_error(s));
+        let done = outcome::classify(self.system, status);
         #[cfg(feature = "tracing")]
         {
-            if let Some(code) = status_code {
+            if let Some(code) = done.status_code {
                 self.span.record("rpc.status_code", code);
             }
-            if let Some(code) = failed_with {
+            if let Some(code) = done.failed_with {
                 self.span.record("error.type", code);
-                self.span.record("otel.status_code", "ERROR");
+                if done.marks_span_error() {
+                    self.span.record("otel.status_code", "ERROR");
+                }
             }
         }
         self.metrics.on_rpc_call(&RpcCall {
             system: self.system.name(),
             method: Some(self.method),
             duration,
-            status_code,
-            error_type: failed_with,
+            status_code: done.status_code,
+            error_type: done.failed_with,
+            tenant: self.tenant.get().map(String::as_str),
         });
     }
 }
@@ -477,7 +480,14 @@ fn truncated(s: &str, max: usize) -> &str {
 }
 
 #[cfg(test)]
+mod abandoned_tests;
+mod call_tenant;
+pub use call_tenant::note as note_tenant;
+#[cfg(test)]
+mod baggage_tests;
+#[cfg(test)]
 mod jsonrpc_tests;
+mod outcome;
 #[cfg(test)]
 mod span_tests;
 #[cfg(test)]

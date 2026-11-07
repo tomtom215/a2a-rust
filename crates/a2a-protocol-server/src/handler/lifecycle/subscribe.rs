@@ -564,7 +564,7 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns [`ServerError::TaskNotFound`] if the task does not exist.
-    pub async fn on_resubscribe(
+    pub async fn on_subscribe_to_task(
         &self,
         params: TaskIdParams,
         headers: Option<&HashMap<String, String>>,
@@ -617,12 +617,17 @@ impl RequestHandler {
                         )));
                     }
 
+                    // Bounded, per task and in all (audit H5): refused, retryably,
+                    // before the stream is built.
+                    let slot = self.subscriber_slot(&task_id)?;
+
                     // SPEC: The first event in a SubscribeToTask stream MUST be a Task
                     // snapshot representing the current state (Go #231, JS #323).
                     // A client that was disconnected sends back the `id:` of the
                     // last frame it saw, and resumes from exactly there.
                     self.subscription(&task_id, task, |_| {}, last_event_id(headers))
                         .await
+                        .map(|reader| reader.with_subscriber(slot))
                 }
                 .await;
                 call.finish(result).await
@@ -848,7 +853,7 @@ mod tests {
             .build()
             .unwrap();
         let params = TaskIdParams::new("nonexistent-task".to_owned());
-        let result = handler.on_resubscribe(params, None).await;
+        let result = handler.on_subscribe_to_task(params, None).await;
         assert!(
             matches!(result, Err(ServerError::TaskNotFound(_))),
             "expected TaskNotFound for missing task, got: {result:?}"
@@ -872,7 +877,7 @@ mod tests {
         handler.task_store.save(&task).await.unwrap();
 
         let params = TaskIdParams::new("t-resub-1".to_owned());
-        let result = handler.on_resubscribe(params, None).await;
+        let result = handler.on_subscribe_to_task(params, None).await;
         assert!(
             matches!(result, Err(ServerError::UnsupportedOperation(ref msg)) if msg.contains("terminal")),
             "expected UnsupportedOperation for terminal task, got: {result:?}"
@@ -915,7 +920,7 @@ mod tests {
 
         let params = TaskIdParams::new("t-resub-nonterminal".to_owned());
         let mut reader = handler
-            .on_resubscribe(params, None)
+            .on_subscribe_to_task(params, None)
             .await
             .expect("resubscribe to a queueless non-terminal task must serve a snapshot stream");
 
@@ -1002,7 +1007,7 @@ mod tests {
 
         let params =
             TaskIdParams::new("t-tenant-reattach".to_owned()).with_tenant("acme".to_owned());
-        let mut reader = handler.on_resubscribe(params, None).await.unwrap();
+        let mut reader = handler.on_subscribe_to_task(params, None).await.unwrap();
         let first = reader.read().await.unwrap().unwrap();
         assert!(matches!(
             first.event,
@@ -1055,7 +1060,7 @@ mod tests {
         handler.task_store.save(&task).await.unwrap();
 
         let mut reader = handler
-            .on_resubscribe(TaskIdParams::new("t-parked".to_owned()), None)
+            .on_subscribe_to_task(TaskIdParams::new("t-parked".to_owned()), None)
             .await
             .expect("resubscribe must succeed");
         let _snapshot = reader.read().await.expect("snapshot");
@@ -1099,7 +1104,7 @@ mod tests {
             .await
             .unwrap();
         let mut reader = handler
-            .on_resubscribe(TaskIdParams::new("t-parked".to_owned()), None)
+            .on_subscribe_to_task(TaskIdParams::new("t-parked".to_owned()), None)
             .await
             .expect("resubscribe must succeed");
         let _snapshot = reader.read().await.expect("snapshot");
@@ -1167,7 +1172,7 @@ mod tests {
         }
 
         let mut reader = handler
-            .on_resubscribe(TaskIdParams::new(id.0.clone()), None)
+            .on_subscribe_to_task(TaskIdParams::new(id.0.clone()), None)
             .await
             .expect("subscribed");
         let mut positions = Vec::new();
@@ -1210,7 +1215,7 @@ mod tests {
         writer.applied_mark().seed(3);
 
         let mut reader = handler
-            .on_resubscribe(TaskIdParams::new(id.0.clone()), None)
+            .on_subscribe_to_task(TaskIdParams::new(id.0.clone()), None)
             .await
             .expect("subscribed");
         for _ in 0..4 {
@@ -1273,7 +1278,7 @@ mod tests {
 
         // Now try to resubscribe to this task.
         let sub_params = TaskIdParams::new(task_id);
-        let sub_result = handler.on_resubscribe(sub_params, None).await;
+        let sub_result = handler.on_subscribe_to_task(sub_params, None).await;
         // The result may succeed (if queue still active) or fail with Internal
         // (if executor already completed and queue was destroyed). Both are valid.
         // What matters is that we exercised the code path.
@@ -1292,7 +1297,7 @@ mod tests {
             .unwrap();
         let params =
             TaskIdParams::new("nonexistent-task".to_owned()).with_tenant("test-tenant".to_string());
-        let result = handler.on_resubscribe(params, None).await;
+        let result = handler.on_subscribe_to_task(params, None).await;
         assert!(result.is_err(), "resubscribe for missing task should fail");
     }
 
@@ -1306,7 +1311,7 @@ mod tests {
         let params = TaskIdParams::new("nonexistent-task".to_owned());
         let mut headers = std::collections::HashMap::new();
         headers.insert("authorization".to_string(), "Bearer tok".to_string());
-        let result = handler.on_resubscribe(params, Some(&headers)).await;
+        let result = handler.on_subscribe_to_task(params, Some(&headers)).await;
         assert!(result.is_err());
     }
 
@@ -1346,7 +1351,7 @@ mod tests {
             .unwrap();
 
         let params = TaskIdParams::new("t-resub-fail".to_owned());
-        let result = handler.on_resubscribe(params, None).await;
+        let result = handler.on_subscribe_to_task(params, None).await;
         assert!(
             result.is_err(),
             "resubscribe should fail when interceptor rejects"

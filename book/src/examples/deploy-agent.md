@@ -15,12 +15,12 @@ telemetry from the `OTEL_*` environment, and nothing else.
 
 | Concern | Here | Why examples never show it |
 |---|---|---|
-| Configuration | `PORT`, `AGENT_URL`, `DATABASE_URL`, `DRAIN_DELAY_SECONDS` from the environment, checked before anything binds | Examples hardcode a port; a scheduler assigns one |
+| Configuration | `PORT`, `AGENT_URL`, `A2A_DATABASE_URL`, `DRAIN_DELAY_SECONDS` from the environment, checked before anything binds | Examples hardcode a port; a scheduler assigns one |
 | Health checks | `GET /health` (liveness, a constant) and `GET /ready` (readiness: the task store answers and the process is not draining) | Nothing probes an example, so nobody notices there is no probe endpoint |
 | Graceful shutdown | `SIGTERM`: not ready at once, still serving for `DRAIN_DELAY_SECONDS`, then in-flight tasks end, then connections drain, each step bounded | Examples die to Ctrl-C and nobody minds the truncated stream |
 | Bind address | every address: `[::]` (IPv6 and IPv4), or `0.0.0.0` where the host has no IPv6 | A loopback bind works locally and is unreachable in a container |
 | Timeouts | the SDK's `Server`: a header-read and an idle timeout on every connection | `axum::serve` has neither, so a client sending a byte a minute holds a connection forever |
-| Replicas | `DATABASE_URL` puts tasks and push configs in PostgreSQL | Behind a load balancer, a task created on one replica's memory is not found on the next |
+| Replicas | `A2A_DATABASE_URL` puts tasks and push configs in PostgreSQL | Behind a load balancer, a task created on one replica's memory is not found on the next |
 
 The agent logic is deliberately trivial. Everything worth reading is the
 wrapper, because the wrapper is what is missing when someone takes an example
@@ -51,8 +51,10 @@ both.
 |---|---|---|
 | `PORT` | `8080` | Rejected at startup unless a port from 1 to 65535 |
 | `AGENT_URL` | `http://localhost:$PORT` | The **externally reachable** `http://` or `https://` URL; goes on the agent card |
-| `DATABASE_URL` | unset: tasks in memory | A PostgreSQL URL. Tasks and push configs go there, which is what lets several replicas serve the agent; unset, run one replica. Add `?sslmode=verify-full&sslrootcert=/path/ca.pem` (or `require`) for TLS to the database |
-| `TASK_RETENTION_HOURS` | `168` | With `DATABASE_URL`: finished tasks older than this are deleted hourly by every replica, in bounded batches; `0` keeps everything (then schedule your own `purge_expired`). Until 2026-11-01 nothing deleted and a database-backed deployment grew without bound |
+| `A2A_DATABASE_URL` | unset: tasks in memory | A PostgreSQL URL. Tasks and push configs go there, which is what lets several replicas serve the agent; unset, run one replica. Add `?sslmode=verify-full&sslrootcert=/path/ca.pem` (or `require`) for TLS to the database, and `options=-c%20search_path%3Da2a` for a schema of its own ([Running More Than One Replica](../deployment/horizontal-scaling.md)) |
+| `DATABASE_URL` | unset | Read only when `A2A_DATABASE_URL` is unset (platforms inject it), with a warning: other tools read the same name ([ADR 0040](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0040-first-run-configuration-and-scope.md)) |
+| `DATABASE_POOL_SIZE`, `DATABASE_PUSH_POOL_SIZE` | `10`, `2` | The task store's and the push-config store's pools; a replica opens both |
+| `TASK_RETENTION_HOURS` | `168` | With a database: finished tasks older than this are deleted hourly by every replica, in bounded batches; `0` keeps everything (then schedule your own `purge_expired`). Until 2026-11-01 nothing deleted and a database-backed deployment grew without bound |
 | `AGENT_VERSION` | the crate's version | The `version` on the agent card; the published image sets it to the release |
 | `DRAIN_DELAY_SECONDS` | `0` | After `SIGTERM`, how long `/ready` answers 503 while the server goes on serving, so load balancers stop routing to it before it stops accepting. The manifest sets 5 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset: nothing exported | A collector's OTLP/HTTP URL, such as `http://localhost:4318`; traces, metrics and logs all go there |
@@ -67,11 +69,11 @@ With the defaults, the log reads (the first line is the telemetry setup's):
 
 ```text
 INFO a2a_protocol_server::otel::telemetry: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=console to print spans
-WARN deploy_agent: DATABASE_URL is unset: tasks are kept in this process's memory, so run one replica, or set DATABASE_URL to a PostgreSQL database every replica shares
+WARN deploy_agent: A2A_DATABASE_URL is unset: tasks are kept in this process's memory, so run one replica, or set A2A_DATABASE_URL to a PostgreSQL database every replica shares
 INFO deploy_agent: deploy-agent serving JSON-RPC and HTTP+JSON listening=[::]:8080 advertising=http://localhost:8080
 ```
 
-With `DATABASE_URL` set it says which database it connects to, without the
+With `A2A_DATABASE_URL` set it says which database it connects to, without the
 password, and a store it cannot open stops it with one line naming the store
 and the reason. `/health` answers `200`, and `/ready` answers
 `{"status":"ready"}`, or `503` with `{"status":"not_ready","reason":…}` when
@@ -186,7 +188,7 @@ missing, then the image cannot be pulled):
   and set `imagePullPolicy: IfNotPresent`.
 - **`AGENT_URL`.** The manifest sets the in-cluster Service URL in the pod's
   own namespace. Set it to the URL callers will use.
-- **The database.** The manifest runs two replicas and takes `DATABASE_URL`
+- **The database.** The manifest runs two replicas and takes `A2A_DATABASE_URL`
   from the Secret `deploy-agent-db`, which you create:
   `kubectl create secret generic deploy-agent-db --from-literal=url='postgres://USER:PASSWORD@HOST:5432/DB?sslmode=verify-full&sslrootcert=/path/ca.pem'`.
   A pod without it does not start (`CreateContainerConfigError`), on purpose:
@@ -278,7 +280,7 @@ endorsement:
 - **Authentication.** No interceptor is installed, so every request is
   anonymous. See [Authentication](../building-agents/authentication.md) and
   the hardening act of the [Incident-Response Team](./incident-response.md).
-- **The database itself.** `DATABASE_URL` names a PostgreSQL you run; its
+- **The database itself.** `A2A_DATABASE_URL` names a PostgreSQL you run; its
   backups, upgrades and connection limits are yours. Without it the store is
   in memory: tasks do not survive a restart, and the agent must run as one
   replica.

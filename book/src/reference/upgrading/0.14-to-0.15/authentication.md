@@ -214,11 +214,13 @@ let validator = JwtValidator::new().with_hs256_secret(b"hunter2".to_vec());
 ```rust
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 use a2a_protocol_server::auth::jwt::JwtValidator;
+# let key_from_your_secret_store: Vec<u8> = vec![0x5a; 32];
 
 assert!(JwtValidator::new().try_with_hs256_secret(b"hunter2".to_vec()).is_err());
 
-// Load yours from a secret store; it must be at least 32 bytes.
-let secret = b"0123456789abcdef0123456789abcdef".to_vec();
+// Random bytes from a secret store (`openssl rand -base64 32`, decoded), at
+// least 32 of them: a key, not a password.
+let secret = key_from_your_secret_store;
 let validator = JwtValidator::new().try_with_hs256_secret(secret)?;
 # let _ = validator;
 # Ok(())

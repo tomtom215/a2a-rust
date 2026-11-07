@@ -123,12 +123,17 @@ async fn client_running(
         .without_agent_card()
         .build()
         .expect("handler");
-    let addr = a2a_protocol_server::serve_with_addr(
-        "127.0.0.1:0",
-        JsonRpcDispatcher::new(Arc::new(handler)),
-    )
-    .await
-    .expect("serve");
+    let addr = {
+        let bound = a2a_protocol_server::Server::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     client_of(addr)
 }
 
@@ -355,12 +360,17 @@ async fn a_response_an_interceptor_refuses_is_recorded_as_failed() {
         .without_agent_card()
         .build()
         .expect("handler");
-    let addr = a2a_protocol_server::serve_with_addr(
-        "127.0.0.1:0",
-        JsonRpcDispatcher::new(Arc::new(handler)),
-    )
-    .await
-    .expect("serve");
+    let addr = {
+        let bound = a2a_protocol_server::Server::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let (client, reader, _provider) =
         instrumented(ClientBuilder::new(format!("http://{addr}")).with_interceptor(RefuseAfter));
     client.send_message(send()).await.expect_err("refused");
@@ -422,12 +432,17 @@ async fn a_stream_an_interceptor_refuses_is_recorded_as_failed() {
         .without_agent_card()
         .build()
         .expect("handler");
-    let addr = a2a_protocol_server::serve_with_addr(
-        "127.0.0.1:0",
-        JsonRpcDispatcher::new(Arc::new(handler)),
-    )
-    .await
-    .expect("serve");
+    let addr = {
+        let bound = a2a_protocol_server::Server::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::new(handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let (client, reader, _provider) =
         instrumented(ClientBuilder::new(format!("http://{addr}")).with_interceptor(RefuseAfter));
     client.stream_message(send()).await.expect_err("refused");

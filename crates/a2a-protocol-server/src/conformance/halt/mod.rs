@@ -33,8 +33,9 @@
 //!
 //! - [`check_store`] grades the [`HaltStore`] contract: a write replaces the
 //!   halt of its scope, a removal removes exactly its scope, scopes do not
-//!   collide, another handle (a replica, a restarted process) reads what
-//!   was written, and a store that pushes delivers each write and each
+//!   collide (two job halts, [`HaltScope::Root`], whose tenant and root read
+//!   alike joined by a `:` included), another handle (a replica, a restarted
+//!   process) reads what was written, and a store that pushes delivers each write and each
 //!   cancel to the other handle.
 //! - [`check_handlers`] builds handlers on the store, as replicas, and grades
 //!   the kill switch end to end: a halt stops the tasks running on this
@@ -137,6 +138,7 @@ where
     let reopened = open().await;
     results.push(reads_elsewhere(&*reopened, &expected).await);
     results.extend(removals(&*store, &*reopened, &halts).await);
+    results.push(jobs(&*store, &*reopened).await);
     results.extend(pushes(&*store, &*reopened).await);
     Report {
         subject: "halt store",
@@ -279,6 +281,42 @@ async fn removals(store: &dyn HaltStore, reopened: &dyn HaltStore, h: &Halts) ->
         Err(e) => CheckResult::fail(SEEN, e),
     };
     vec![exact, seen]
+}
+
+/// Two job halts ([`HaltScope::Root`], ADR 0034) whose tenant and root read
+/// alike joined by a `:` are two halts, and removing one leaves the other.
+async fn jobs(store: &dyn HaltStore, reopened: &dyn HaltStore) -> CheckResult {
+    const NAME: &str = "job_halts_are_kept_apart";
+    let a = StoredHalt::new(HaltScope::root("a:b", "c"), "job a", "dave");
+    let b = StoredHalt::new(HaltScope::root("a", "b:c"), "job b", "erin");
+    let run = async {
+        for halt in [&a, &b] {
+            store
+                .put(halt)
+                .await
+                .map_err(|e| format!("put failed: {e}"))?;
+        }
+        let both = loaded(reopened).await?;
+        let removed = store.remove(&a.scope).await.map_err(|e| e.to_string())?;
+        let left = loaded(reopened).await?;
+        store.remove(&b.scope).await.map_err(|e| e.to_string())?;
+        Ok::<_, String>((both, removed, left))
+    }
+    .await;
+    let want_both = sorted(vec![a, b.clone()]);
+    match run {
+        Ok((both, true, left)) if both == want_both && left == [b.clone()] => CheckResult::pass(
+            NAME,
+            "the jobs (\"a:b\", \"c\") and (\"a\", \"b:c\") are two halts, removed one at a time",
+        ),
+        Ok((both, removed, left)) => CheckResult::fail(
+            NAME,
+            format!(
+                "loaded {both:?} (want {want_both:?}); remove answered {removed}; then left {left:?} (want only {b:?})"
+            ),
+        ),
+        Err(e) => CheckResult::fail(NAME, e),
+    }
 }
 
 /// The push checks: what `writer` writes, `reader`'s subscription is told.

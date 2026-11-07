@@ -324,12 +324,13 @@ const STRUCT_DETAIL_TYPE: &str = "type.googleapis.com/google.protobuf.Struct";
 /// `streamLagged` marker lives — becomes a `google.protobuf.Struct` detail
 /// (see [`error_details`]).
 fn rest_stream_error(err: &a2a_protocol_types::error::A2aError) -> serde_json::Value {
-    let details = error_details(err);
+    let details = crate::dispatch::rest::rest_error_details(err);
     let mut status = serde_json::json!({
         "code": err.code.http_status(),
         "status": err.code.grpc_status(),
         "message": err.message,
     });
+    // Empty only for a credential refusal with nothing to say.
     if !details.is_empty() {
         status["details"] = serde_json::Value::Array(details);
     }
@@ -1043,12 +1044,17 @@ mod tests {
     }
 
     #[test]
-    fn rest_stream_error_without_details_omits_the_member() {
+    fn rest_stream_error_of_an_internal_error_names_its_reason() {
         use a2a_protocol_types::error::A2aError;
         let v = rest_stream_error(&A2aError::internal("boom"));
         assert_eq!(
             v,
-            serde_json::json!({"error": {"code": 500, "status": "INTERNAL", "message": "boom"}})
+            serde_json::json!({"error": {"code": 500, "status": "INTERNAL", "message": "boom",
+            "details": [{
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                "reason": "INTERNAL_ERROR",
+                "domain": "a2a-protocol.org"
+            }]}})
         );
     }
 
@@ -1063,6 +1069,10 @@ mod tests {
         assert_eq!(
             v["error"]["details"],
             serde_json::json!([{
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                "reason": "INTERNAL_ERROR",
+                "domain": "a2a-protocol.org"
+            }, {
                 "@type": "type.googleapis.com/google.protobuf.Struct",
                 "value": {"value": [1, 2]}
             }])

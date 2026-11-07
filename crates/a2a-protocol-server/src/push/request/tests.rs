@@ -165,3 +165,27 @@ fn an_error_and_a_timeout_are_retried_with_their_reasons() {
         Attempt::Retry("push notification timed out after 10s".to_owned())
     );
 }
+
+/// Inside `with_delivery_id` the request carries that id, the outbox row's,
+/// and `current_delivery_id` reads it; outside, a fresh one and `None`.
+#[tokio::test]
+async fn a_scoped_delivery_id_is_the_one_sent() {
+    let sent = with_delivery_id("row-7".to_owned(), async {
+        assert_eq!(current_delivery_id().as_deref(), Some("row-7"));
+        let prepared = Prepared::new(&config(None), &event()).unwrap();
+        let req = prepared
+            .request("https://hooks.example/x", None, None)
+            .unwrap();
+        req.headers()
+            .get(DELIVERY_ID_HEADER)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned()
+    })
+    .await;
+    assert_eq!(sent, "row-7");
+    assert_eq!(current_delivery_id(), None);
+    let fresh = Prepared::new(&config(None), &event()).unwrap();
+    assert_ne!(fresh.delivery_id(), "row-7");
+}

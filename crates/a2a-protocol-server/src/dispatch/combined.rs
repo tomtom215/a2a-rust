@@ -60,6 +60,14 @@ pub struct CombinedDispatcher {
     jsonrpc: JsonRpcDispatcher,
     rest: RestDispatcher,
     jsonrpc_path: String,
+    /// [`DispatchConfig::base_path`], stripped here once; the two inner
+    /// dispatchers are given none, so a path that repeats the prefix is not
+    /// stripped twice.
+    base_path: Option<String>,
+    /// The WebSocket binding on this port, when [`with_websocket`](Self::with_websocket)
+    /// set one.
+    #[cfg(feature = "websocket")]
+    websocket: Option<super::websocket::WebSocketUpgrades>,
 }
 
 impl CombinedDispatcher {
@@ -73,17 +81,42 @@ impl CombinedDispatcher {
     /// Both bindings for `handler`, each with `config`, and JSON-RPC at
     /// [`DEFAULT_JSONRPC_PATH`].
     #[must_use]
-    pub fn with_config(handler: Arc<RequestHandler>, config: DispatchConfig) -> Self {
+    pub fn with_config(handler: Arc<RequestHandler>, mut config: DispatchConfig) -> Self {
         handler.warn_if_undeclared("JSONRPC");
         handler.warn_if_undeclared("HTTP+JSON");
+        let base_path = config.base_path.take();
         Self {
             jsonrpc: JsonRpcDispatcher::with_config(Arc::clone(&handler), config.clone()),
             rest: RestDispatcher::with_config(handler, config),
             jsonrpc_path: DEFAULT_JSONRPC_PATH.to_owned(),
+            base_path,
+            #[cfg(feature = "websocket")]
+            websocket: None,
         }
     }
 
-    /// Serves JSON-RPC at `path` instead of [`DEFAULT_JSONRPC_PATH`].
+    /// Serves the WebSocket binding on this port too (audit B-25, ADR 0055):
+    /// an HTTP/1.1 `GET` with `Upgrade: websocket` at the JSON-RPC path is
+    /// upgraded, and the connection served as `websocket`'s own listener
+    /// serves one, with its settings: origins (a page of this host's own
+    /// origin is accepted besides the listed ones), the `A2A-Version` check,
+    /// the connection cap, the idle bound and the write timeout. The
+    /// interceptor chain admits the upgrade request's headers before the
+    /// `101`. Declare the binding in the card at this listener's URL, `ws://`
+    /// or `wss://` as its TLS is. `websocket`'s TLS and listener settings do
+    /// not apply: the connection is this server's.
+    #[cfg(feature = "websocket")]
+    #[must_use]
+    pub fn with_websocket(mut self, websocket: super::WebSocketDispatcher) -> Self {
+        if let Some(handler) = Dispatcher::request_handler(&self.rest) {
+            handler.warn_if_undeclared(a2a_protocol_types::WEBSOCKET_BINDING_URI);
+        }
+        self.websocket = Some(super::websocket::WebSocketUpgrades::new(websocket));
+        self
+    }
+
+    /// Serves JSON-RPC at `path` instead of [`DEFAULT_JSONRPC_PATH`]. With a
+    /// [`base_path`](DispatchConfig::base_path), `path` is below it.
     ///
     /// # Errors
     ///
@@ -125,8 +158,16 @@ impl CombinedDispatcher {
     /// Dispatches `req` to the binding it is for.
     pub async fn dispatch(
         &self,
-        req: hyper::Request<Incoming>,
+        mut req: hyper::Request<Incoming>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        super::strip_base_path(&mut req, self.base_path.as_deref());
+        #[cfg(feature = "websocket")]
+        if let Some(websocket) = &self.websocket
+            && req.uri().path() == self.jsonrpc_path
+            && super::websocket::WebSocketUpgrades::is_upgrade(&req)
+        {
+            return websocket.upgrade(req).await;
+        }
         if self.is_jsonrpc(&req) {
             self.jsonrpc.dispatch(req).await
         } else {
@@ -139,6 +180,7 @@ impl std::fmt::Debug for CombinedDispatcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CombinedDispatcher")
             .field("jsonrpc_path", &self.jsonrpc_path)
+            .field("base_path", &self.base_path)
             .finish_non_exhaustive()
     }
 }
@@ -153,6 +195,17 @@ impl Dispatcher for CombinedDispatcher {
 
     fn request_handler(&self) -> Option<&Arc<RequestHandler>> {
         Dispatcher::request_handler(&self.rest)
+    }
+
+    #[cfg(feature = "websocket")]
+    fn close_upgraded(
+        &self,
+        within: std::time::Duration,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
+        match &self.websocket {
+            Some(websocket) => Box::pin(websocket.close(within)),
+            None => Box::pin(std::future::ready(true)),
+        }
     }
 }
 
@@ -180,6 +233,16 @@ mod tests {
             .uri(path)
             .body(())
             .unwrap()
+    }
+
+    #[test]
+    fn debug_names_the_dispatcher_and_its_paths() {
+        let text = format!("{:?}", combined());
+        assert!(text.starts_with("CombinedDispatcher {"), "{text}");
+        assert!(
+            text.contains("jsonrpc_path") && text.contains("base_path"),
+            "{text}"
+        );
     }
 
     #[test]

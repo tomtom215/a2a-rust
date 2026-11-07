@@ -143,6 +143,35 @@ pub trait LeaseStore: Send + Sync + 'static {
         })
     }
 
+    /// Whether each of `leases` (tenant, task) has lapsed, in one call: the
+    /// map holds an entry for each that has a lease, and none for one that
+    /// has none (released).
+    ///
+    /// A handler's watcher asks this once per check interval for every lease
+    /// it watches, so N leased turns cost the store one round trip per
+    /// interval instead of N (audit H5, ADR 0044). The default asks
+    /// [`lapsed`](Self::lapsed) for each, which is right for a store in
+    /// memory; a store behind a network overrides it with one statement, as
+    /// `PostgresLeaseStore` does.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be read.
+    fn lapsed_many<'a>(
+        &'a self,
+        leases: &'a [(String, String)],
+    ) -> Pin<Box<dyn Future<Output = A2aResult<LapsedLeases>> + Send + 'a>> {
+        Box::pin(async move {
+            let mut out = HashMap::with_capacity(leases.len());
+            for (tenant, task) in leases {
+                if let Some(lapsed) = self.lapsed(tenant, task).await? {
+                    out.insert((tenant.clone(), task.clone()), lapsed);
+                }
+            }
+            Ok(out)
+        })
+    }
+
     /// Deletes `task`'s lease.
     ///
     /// # Errors
@@ -153,7 +182,37 @@ pub trait LeaseStore: Send + Sync + 'static {
         tenant: &'a str,
         task: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
+
+    /// Deletes every lease, in every tenant, whose deadline passed more than
+    /// `lapsed_for_ms` before `now_ms`; how many it deleted.
+    ///
+    /// A lease is released by the watcher of the replica that ran its turn,
+    /// or by the reaper for a task it ends. A replica that died after its
+    /// terminal write and before its watcher released, or a child parked at
+    /// `input-required` that its parent never continued, kept its row for
+    /// good (audit NEW-h-s0-6). The reaper calls this on every look, with a
+    /// margin far longer than a watcher takes to see a lapse, so a watcher
+    /// still reads every lapsed lease it acts on.
+    ///
+    /// The default deletes nothing: a store that does not sweep keeps every
+    /// row, as before. A store that keeps its own clock ignores `now_ms`, as
+    /// it does in the other methods.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be written.
+    fn sweep(
+        &self,
+        _now_ms: i64,
+        _lapsed_for_ms: i64,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + '_>> {
+        Box::pin(async { Ok(0) })
+    }
 }
+
+/// What [`LeaseStore::lapsed_many`] answers: whether each lease that exists
+/// has lapsed, by `(tenant, task)`.
+pub type LapsedLeases = HashMap<(String, String), bool>;
 
 /// `(ttl_ms, deadline_ms)` by `(tenant, task)`.
 type Leases = HashMap<(String, String), (i64, i64)>;
@@ -226,5 +285,19 @@ impl LeaseStore for InMemoryLeaseStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         self.map().remove(&(tenant.to_owned(), task.to_owned()));
         Box::pin(async { Ok(()) })
+    }
+
+    fn sweep(
+        &self,
+        now_ms: i64,
+        lapsed_for_ms: i64,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + '_>> {
+        let cutoff = now_ms.saturating_sub(lapsed_for_ms);
+        let mut leases = self.map();
+        let before = leases.len();
+        leases.retain(|_, (_, deadline)| *deadline >= cutoff);
+        let swept = u64::try_from(before - leases.len()).unwrap_or(u64::MAX);
+        drop(leases);
+        Box::pin(async move { Ok(swept) })
     }
 }

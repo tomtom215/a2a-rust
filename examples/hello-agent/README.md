@@ -24,7 +24,7 @@ curl -X POST localhost:3000/ \
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{"task":{
-  "artifacts":[{"artifactId":"greeting","parts":[{"text":"Hello, Ada!"}]}],
+  "artifacts":[{"artifactId":"9b1f2c4e-...","parts":[{"text":"Hello, Ada!"}]}],
   "status":{"state":"TASK_STATE_COMPLETED"}}}}
 ```
 
@@ -43,13 +43,10 @@ wrong from memory:
 
 ```rust
 agent_executor!(HelloAgent, |ctx, queue| async {
-    let emit = EventEmitter::new(ctx, queue);
-    emit.status(TaskState::Working).await?;
     let who = ctx.message.text().unwrap_or("world");
-    let greeting = Part::text(format!("Hello, {who}!"));
-    emit.artifact("greeting", vec![greeting], None, Some(true)).await?;
-    emit.status(TaskState::Completed).await?;
-    Ok(())
+    EventEmitter::new(ctx, queue)
+        .complete_with_text(format!("Hello, {who}!"))
+        .await
 });
 ```
 

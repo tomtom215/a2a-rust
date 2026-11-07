@@ -179,8 +179,10 @@ fn only_server_failures_are_errors() {
 }
 
 /// A call answered with a status that is no server failure records the
-/// status and no `error.type`; one that is, both — and a call that never
-/// finished is a failure on every binding, `cancelled` included in gRPC's.
+/// status and no `error.type`; one that is, both. A gRPC call that never
+/// finished records the status `CANCELLED`, which gRPC's conventions do not
+/// count as a server error (`abandoned_tests.rs`; until 2026-11-04 it was
+/// `error.type=cancelled`, audit C-09).
 #[tokio::test]
 async fn a_client_class_status_is_recorded_without_an_error_type() {
     let seen = Seen::default();
@@ -222,7 +224,7 @@ async fn a_client_class_status_is_recorded_without_an_error_type() {
             .await
             .is_err()
     );
-    want.push((get_task(), Some("cancelled".to_owned())));
+    want.push((get_task(), None));
     assert_eq!(*seen.lock().unwrap(), want);
 }
 

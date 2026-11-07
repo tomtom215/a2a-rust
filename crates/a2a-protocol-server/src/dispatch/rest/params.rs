@@ -46,12 +46,13 @@ pub struct Unreadable {
 }
 
 impl Unreadable {
-    /// A body that is not JSON: a plain `400`, as it always was.
+    /// A body that is not JSON: a `400`, invalid params, with its
+    /// `INVALID_PARAMS` `ErrorInfo` (ADR 0049).
     pub fn not_json(err: &serde_json::Error) -> Self {
-        let message = err.to_string();
+        let error = ServerError::InvalidParams(err.to_string());
         Self {
-            response: error_json_response(400, &message),
-            error: ServerError::InvalidParams(message),
+            response: server_error_to_response(&error),
+            error,
         }
     }
 

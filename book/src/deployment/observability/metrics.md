@@ -69,7 +69,7 @@ reads as 100 s.
 | `error` on `a2a.server.errors` | `ServerError::metric_label`: `task_not_found`, `task_not_cancelable`, `invalid_params`, `serialization`, `http`, `http_client`, `transport`, `push_not_supported`, `internal`, `method_not_found`, `payload_too_large`, `unsupported_operation`, `invalid_state_transition`, `overloaded`, `halted`; for an A2A error the binding answers as it is, `unauthenticated` or `permission_denied` for a refused credential, else its code's label (below); `executor_drain_timeout` on `SendMessage` when `HandlerLimits::executor_drain_timeout` elapses; and `push_throttled` on `PushDelivery`, once for each webhook delivery that waited for a permit under `HandlerLimits::push_max_in_flight` or `push_max_in_flight_per_host` |
 | A2A code labels | `parse_error`, `invalid_request`, `method_not_found`, `invalid_params`, `internal_error`, `task_not_found`, `task_not_cancelable`, `push_notification_not_supported`, `unsupported_operation`, `content_type_not_supported`, `invalid_agent_response`, `extended_agent_card_not_configured`, `extension_support_required`, `version_not_supported` |
 | `outcome` on `a2a.server.executor.duration` | `completed`, `error`, `budget_exhausted`, `canceled`, `aborted` (`executor_outcome`) |
-| `outcome` on `a2a.server.push_deliveries` | `delivered`, `failed` (also once for an event whose task's webhook list could not be read), `timeout`, `timeout_truncated`, `dropped`, `suspended`, `gone` (`push_outcome`) |
+| `outcome` on `a2a.server.push_deliveries` | `delivered`, `failed` (also once for an event whose task's webhook list could not be read), `timeout`, `timeout_truncated`, `dropped`, `suspended`, `gone`, `throttled`, `expired` (`push_outcome`) |
 | `operation` on `persistence_errors` and `store_retries` | `status_update`, `artifact_append`, `artifact_push`, `event_append`, `task_snapshot`, `failed_state`, `history_append`, `event_log_catchup`, `queue_handoff`, `statement`, `audit_append`, `push_config_list` (`persistence_operation`) |
 | `error` on `persistence_errors` | The A2A code label of the store's error, or one of the sub-kinds below |
 | `cause` on `store_retries` | `unavailable` (the store said not now; a turn's write, retried for up to `HandlerLimits::store_write_retry`), `connection_lost` (with `operation` `statement`: a PostgreSQL statement ran once more on a new connection), `read_only` (with `operation` `statement`: a write a read-only server refused, after a failover, ran once more on a connection opened since) |
@@ -116,7 +116,10 @@ leave a server span's status unset for a 4xx); on gRPC only `UNKNOWN`,
 `DATA_LOSS`. A `GetTask` for an unknown task is `rpc.status_code` `NOT_FOUND`
 (or `404`) with no `error.type`; a dashboard that wants the 4xx class reads
 `rpc.status_code`. A binding outside this crate opts into gRPC's rule with
-`CustomBinding::with_grpc_server_errors`.
+`CustomBinding::with_grpc_server_errors`. The shipped recording rules and alerts go one
+step further and leave out a JSON-RPC code that A2A maps to a 4xx
+(`-32001` and the rest), so a ratio does not depend on the binding the client
+chose ([what counts as a failure](./alerts.md#what-counts-as-a-failure)).
 
 It records calls the handler never sees, with the status they were answered:
 on JSON-RPC, a body that is not a request (no `rpc.method`), an unknown
@@ -175,6 +178,8 @@ timeout_truncated  a configuration result: push_delivery_timeout cut the schedul
 dropped            never started: the task's push lane was full behind a slow webhook
 suspended          not attempted: the webhook failed push_suspend_after deliveries in a row
 gone               the webhook answered 410 Gone and its config was removed
+throttled          not attempted: it waited push_delivery_timeout for a slot in the push gate
+expired            the push outbox gave up: older than push_outbox_max_age, not delivered
 ```
 
 `timeout_truncated` is not a network failure. It means `push_delivery_timeout`
@@ -185,8 +190,9 @@ event (spec §4.3.3); `push_delivery_budget` only sets how many deliveries run
 at once, so there is no `skipped` outcome (the `push_outcome::SKIPPED` constant
 remains for code that matches on it, and is never reported).
 
-The `pool` instruments are reported by the servers this crate runs — `serve`,
-`serve_with_addr` and `Server::serve_with_shutdown`. A connection is *active*
+The `pool` instruments are reported by the servers this crate runs —
+`Server::serve_with_shutdown` (and the deprecated `serve` and `serve_with_addr`,
+which run on it). A connection is *active*
 while a request on it is in flight, including a response still streaming,
 and *idle* while it is open with none; `closed` counts connections that ended
 in an error or timeout. The gRPC and WebSocket dispatchers' own listeners,
@@ -320,6 +326,37 @@ The metrics go to the global meter provider as it is when each is recorded,
 so `Telemetry` installed after the loop is built still receives them;
 `ToolLoop::with_meter` sends them elsewhere.
 
+## Process and runtime
+
+When metrics are exported, `Telemetry` also reports the process itself, under
+the semantic conventions' process metrics (audit C-13):
+
+| Instrument | Kind, unit | What |
+|---|---|---|
+| `process.cpu.time` | counter, `s`, `cpu.mode` = `user` \| `system` | CPU time used, from `/proc/self/stat` (`USER_HZ` = 100) |
+| `process.memory.usage` | up-down counter, `By` | Resident memory (`VmRSS`) |
+| `process.memory.virtual` | up-down counter, `By` | Virtual memory (`VmSize`) |
+| `process.thread.count` | up-down counter, `{thread}` | Threads (`Threads`) |
+| `process.unix.file_descriptor.count` | up-down counter, `{file_descriptor}` | Entries in `/proc/self/fd` |
+
+They are read on Linux only; on macOS and Windows they are not reported (no
+series rather than a wrong one), so nothing needs a new dependency or
+`unsafe`. The Tokio runtime `Telemetry::builder().build()` runs in (or the
+one given to `with_tokio_runtime`) reports three of Tokio's stable
+`RuntimeMetrics`, no `tokio_unstable` needed:
+
+| Instrument | Unit | What |
+|---|---|---|
+| `tokio.runtime.worker.count` | `{thread}` | Worker threads |
+| `tokio.runtime.task.count` | `{task}` | Tasks alive |
+| `tokio.runtime.global_queue.depth` | `{task}` | Tasks waiting in the global queue |
+
+The conventions name no Tokio metric; these names are this crate's. A
+`Telemetry` built before the runtime starts reports none unless given its
+handle. `without_process_metrics()` turns both tables off. In Prometheus they
+are `process_cpu_time_seconds_total`, `process_memory_usage_bytes`,
+`process_thread_count`, `tokio_runtime_task_count` and so on.
+
 ## Prometheus names
 
 Prometheus, fed over OTLP with `UnderscoreEscapingWithSuffixes` (the shipped
@@ -394,12 +431,49 @@ implements it; so can you, to count something of your own
 | `on_persistence_error(operation, error_kind)` | A task write could not be persisted | `a2a.server.persistence_errors` |
 | `on_store_retry(operation, cause)` | A store operation is run again after a failure that passed | `a2a.server.store_retries` |
 | `on_push_delivery(outcome)` | A push delivery ends | `a2a.server.push_deliveries` |
+| `on_refusal(cause)` | A request is refused before any work: `stream_cap`, `tenant_cap`, `push_config_cap`, `idempotency_store`, `event_log`, `halt_store` | `a2a.server.refusals` |
+| `on_lease(event)` | A task lease event: `lapsed` | `a2a.server.lease.events` |
+| `on_halt(scope, action, stopped)` | A halt or resume is applied: scope `all` \| `tenant` \| `root` (a job), action `halt` \| `resume`, and the running tasks it stopped | `a2a.server.halts`, `a2a.server.halt.stopped_tasks` |
+| `on_claim(event)` | A turn-claim event: `reaped` (the reaper ended a task its replica left) | `a2a.server.claim.events` |
 
 `RpcCall` carries `system`, `method` (`Option`), `duration`, `status_code`
-(`Option`) and `error_type` (`Option`), the values above. The label constants
-are public modules: `executor_outcome`, `persistence_operation`,
-`push_outcome`, `event_append_error`, `event_log_catchup_error` and
-`queue_handoff_error`. `ConnectionPoolStats` carries
+(`Option`), `error_type` (`Option`) and `tenant` (`Option`, the tenant the
+handler resolved), the values above. The label constants are public modules:
+`executor_outcome`, `persistence_operation`, `push_outcome`,
+`event_append_error`, `event_log_catchup_error`, `queue_handoff_error` and
+`control` (`refusal`, `lease`, `halt_scope`, `halt_action`, `claim`). The
+four control-plane hooks are new in 0.16.0 with empty default bodies, so an
+existing `Metrics` implementation compiles unchanged (audit H11).
+
+### Tenant and agent dimensions
+
+Off by default, so no series an existing dashboard reads changes. On
+`OtelMetrics` (from `OtelMetricsBuilder::build()` or `Telemetry::otel_metrics()`):
+
+```rust,no_run
+# use a2a_protocol_sdk::server::otel::Telemetry;
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let telemetry = Telemetry::builder().build()?;
+let metrics = telemetry
+    .otel_metrics()
+    .with_tenant_dimension(["acme", "globex"]) // others are `_OTHER`
+    .with_agent_name("billing"); // one per handler
+# drop(metrics);
+# Ok(())
+# }
+```
+
+`with_tenant_dimension(allowed)` adds `a2a.tenant` to
+`rpc.server.call.duration`, `a2a.server.executor.duration` and
+`a2a.server.refusals`: the tenant's name when it is in `allowed`, `_OTHER` for
+any other tenant, and no label for a request with none, so each series splits
+into at most `allowed.len() + 1`, the bound the operator writes.
+`with_agent_name(name)` adds `gen_ai.agent.name` (the span's attribute name) to
+those and to the control-plane counters, for a process serving several agents
+with one `OtelMetrics` each. There is no job or task dimension, by rule
+(ADR 0034 §4): a job, root or task id is unbounded, and a per-job view is a
+trace query (`a2a.task.id`, the lineage root) or a collector's span metrics,
+not a series. `ConnectionPoolStats` carries
 `active_connections`, `idle_connections`, `total_connections_created` and
 `connections_closed`, the last two cumulative since start (`OtelMetrics` adds
 only the increase to its counters). `NoopMetrics` discards everything, and

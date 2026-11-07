@@ -82,11 +82,31 @@ fn cache_is_fresh(elapsed: Duration, ttl: Duration) -> bool {
 
 // ── Verification keys ─────────────────────────────────────────────────────────
 
-/// A single verification key with its optional key id.
+/// A single verification key with its optional key id and the algorithm its
+/// JWK declared, if it declared one.
 #[derive(Clone)]
 struct VerifyKey {
     kid: Option<String>,
+    /// The JWK's own `alg` (RFC 7517 4.4). `None` for a key added with
+    /// [`Jwks::with_rsa`] or [`Jwks::with_ec_p256`] and for a JWK that names none.
+    alg: Option<String>,
     material: KeyMaterial,
+}
+
+impl VerifyKey {
+    /// Whether this key may verify a token whose header names `alg`: a key
+    /// that declares an algorithm is used with that one and no other
+    /// (RFC 8725 3.1, "each key MUST be used with exactly one algorithm").
+    fn declared_for(&self, alg: &str) -> bool {
+        self.alg.as_deref().is_none_or(|declared| declared == alg)
+    }
+
+    /// Whether `sig` is a signature over `msg` that this key may verify as
+    /// `alg`: the key's own algorithm, if it names one, must be `alg`, and the
+    /// signature must then verify.
+    fn verifies(&self, alg: &str, msg: &[u8], sig: &[u8]) -> bool {
+        self.declared_for(alg) && verify_asymmetric(alg, &self.material, msg, sig)
+    }
 }
 
 #[derive(Clone)]
@@ -127,14 +147,20 @@ impl Jwks {
     /// (`{"keys":[{"kty":"RSA",...},{"kty":"EC",...}]}`).
     ///
     /// `RSA` keys (fields `n`, `e`) and `EC`/`P-256` keys (fields `x`, `y`) are
-    /// loaded; entries of any other `kty`/`crv`, or entries explicitly marked
-    /// `"use":"enc"`, are skipped so an encryption key is never used to verify
-    /// a signature.
+    /// loaded; entries of any other `kty`/`crv` are skipped. So is any entry
+    /// that is not for verifying signatures (RFC 7517 4.2 and 4.3): one whose
+    /// `use` is present and is not `sig`, or whose `key_ops` is present and
+    /// does not list `verify`. A key whose `alg` is present verifies only
+    /// tokens whose header names that algorithm (RFC 8725 3.1); `RS256` for an
+    /// RSA key and `ES256` for a P-256 key are the only ones this validator
+    /// accepts, so a key declaring any other (`RS512`, `PS256`, `RSA-OAEP`)
+    /// verifies nothing.
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`] when the document is not valid JSON or a loaded
-    /// key's parameters are malformed.
+    /// Returns an [`A2aError`] when the document is not valid JSON, a member
+    /// has the wrong type (`key_ops` that is not an array of strings), or a
+    /// loaded key's parameters are malformed.
     pub fn from_json(json: &[u8]) -> A2aResult<Self> {
         #[derive(serde::Deserialize)]
         struct JwkSet {
@@ -151,6 +177,10 @@ impl Jwks {
             #[serde(rename = "use", default)]
             use_: Option<String>,
             #[serde(default)]
+            key_ops: Option<Vec<String>>,
+            #[serde(default)]
+            alg: Option<String>,
+            #[serde(default)]
             n: Option<String>,
             #[serde(default)]
             e: Option<String>,
@@ -165,8 +195,15 @@ impl Jwks {
 
         let mut jwks = Self::new();
         for k in set.keys {
-            // Never verify signatures with an encryption-only key.
-            if k.use_.as_deref() == Some("enc") {
+            // Never verify signatures with a key that is not for them: `use`
+            // names another purpose, or `key_ops` leaves out `verify`. Both
+            // members present must agree (RFC 7517 4.3), so either one
+            // forbidding verification is enough.
+            if k.use_.as_deref().is_some_and(|u| u != "sig")
+                || k.key_ops
+                    .as_ref()
+                    .is_some_and(|ops| !ops.iter().any(|o| o == "verify"))
+            {
                 continue;
             }
             match k.kty.as_str() {
@@ -174,13 +211,13 @@ impl Jwks {
                     let (Some(n), Some(e)) = (k.n.as_deref(), k.e.as_deref()) else {
                         return Err(A2aError::invalid_params("RSA JWK missing n/e"));
                     };
-                    jwks = jwks.with_rsa_opt_kid(k.kid, n, e)?;
+                    jwks = jwks.with_rsa_declared(k.kid, k.alg, n, e)?;
                 }
                 "EC" if k.crv.as_deref() == Some("P-256") => {
                     let (Some(x), Some(y)) = (k.x.as_deref(), k.y.as_deref()) else {
                         return Err(A2aError::invalid_params("EC JWK missing x/y"));
                     };
-                    jwks = jwks.with_ec_p256_opt_kid(k.kid, x, y)?;
+                    jwks = jwks.with_ec_p256_declared(k.kid, k.alg, x, y)?;
                 }
                 // Unknown key type / unsupported curve — skip, don't fail the
                 // whole set (a JWKS may legitimately mix in keys we can't use).
@@ -196,14 +233,21 @@ impl Jwks {
     ///
     /// Returns an [`A2aError`] when `n`/`e` are not valid base64url.
     pub fn with_rsa(self, kid: impl Into<String>, n: &str, e: &str) -> A2aResult<Self> {
-        self.with_rsa_opt_kid(Some(kid.into()), n, e)
+        self.with_rsa_declared(Some(kid.into()), None, n, e)
     }
 
-    fn with_rsa_opt_kid(mut self, kid: Option<String>, n: &str, e: &str) -> A2aResult<Self> {
+    fn with_rsa_declared(
+        mut self,
+        kid: Option<String>,
+        alg: Option<String>,
+        n: &str,
+        e: &str,
+    ) -> A2aResult<Self> {
         let n = b64url(n, "RSA modulus")?;
         let e = b64url(e, "RSA exponent")?;
         self.keys.push(VerifyKey {
             kid,
+            alg,
             material: KeyMaterial::Rsa(rsa_pkcs1_der(&n, &e)),
         });
         Ok(self)
@@ -216,10 +260,16 @@ impl Jwks {
     /// Returns an [`A2aError`] when `x`/`y` are not valid base64url or not
     /// 32 bytes each.
     pub fn with_ec_p256(self, kid: impl Into<String>, x: &str, y: &str) -> A2aResult<Self> {
-        self.with_ec_p256_opt_kid(Some(kid.into()), x, y)
+        self.with_ec_p256_declared(Some(kid.into()), None, x, y)
     }
 
-    fn with_ec_p256_opt_kid(mut self, kid: Option<String>, x: &str, y: &str) -> A2aResult<Self> {
+    fn with_ec_p256_declared(
+        mut self,
+        kid: Option<String>,
+        alg: Option<String>,
+        x: &str,
+        y: &str,
+    ) -> A2aResult<Self> {
         let x = b64url(x, "EC x")?;
         let y = b64url(y, "EC y")?;
         if x.len() != 32 || y.len() != 32 {
@@ -233,6 +283,7 @@ impl Jwks {
         point.extend_from_slice(&y);
         self.keys.push(VerifyKey {
             kid,
+            alg,
             material: KeyMaterial::EcP256(point),
         });
         Ok(self)
@@ -490,6 +541,12 @@ impl JwtValidator {
     /// anyone who guesses it mint tokens this validator accepts. Use
     /// [`try_with_hs256_secret`](Self::try_with_hs256_secret) to refuse such a
     /// secret at startup instead.
+    ///
+    /// The secret is a key, not a password (RFC 8725 §3.5): at least 32
+    /// random bytes from a secret store, for instance what
+    /// `openssl rand -base64 32` writes, decoded. Only the length is checked:
+    /// a passphrase of 32 or more characters is accepted as it stands, and
+    /// anyone who guesses it can mint tokens this validator accepts.
     #[must_use]
     pub fn with_hs256_secret(mut self, secret: impl Into<Vec<u8>>) -> Self {
         // Wrapped before anything else, so a refused secret is wiped too.
@@ -551,7 +608,7 @@ impl JwtValidator {
         // does not know it must not accept the token (RFC 7515 4.1.11).
         // Ignoring the member, as this did until 2026-10-31, accepts tokens
         // the issuer meant to be refused (audit SEC-18 b).
-        if header.crit.is_some() || !self.typ_accepted(&header) {
+        if header.crit || !self.typ_accepted(&header) {
             return Err(ValidateOutcome::Rejected);
         }
         let signature = URL_SAFE_NO_PAD
@@ -577,9 +634,9 @@ impl JwtValidator {
                     // No keys at all → signal a possible rotation to the caller.
                     return Err(ValidateOutcome::KeyMiss);
                 }
-                let verified = candidates.iter().any(|key| {
-                    verify_asymmetric(alg, &key.material, signing_input.as_bytes(), &signature)
-                });
+                let verified = candidates
+                    .iter()
+                    .any(|key| key.verifies(alg, signing_input.as_bytes(), &signature));
                 if !verified {
                     // A present-kid miss is the strongest rotation signal.
                     return Err(if header.kid.is_some() && !kid_matched {
@@ -713,8 +770,8 @@ struct JwtHeader {
     kid: Option<String>,
     /// RFC 7515 section 4.1.11: extensions the verifier MUST understand. This
     /// validator understands none, so a token that lists any is refused.
-    #[serde(default)]
-    crit: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "present")]
+    crit: bool,
     /// RFC 7515 section 4.1.9. Kept as a raw value: a `typ` that is not a
     /// string must not start refusing tokens for a validator that never asked
     /// for the check.
@@ -730,6 +787,18 @@ fn normalise_typ(typ: &str) -> String {
         .strip_prefix("application/")
         .unwrap_or(&lower)
         .to_owned()
+}
+
+/// Whether the member is there, whatever it holds, `null` and `false`
+/// included. `Option<T>`'s own reading turns `null` into no member, which for
+/// `crit` let a header with `"crit": null` through until 2026-11-06 (RFC 7515
+/// 4.1.11: any `crit` member that is not a non-empty list makes the JWS
+/// invalid), and the value itself is never read, so none is kept.
+fn present<'de, D>(de: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    <serde::de::IgnoredAny as serde::Deserialize>::deserialize(de).map(|_| true)
 }
 
 #[derive(serde::Deserialize)]
@@ -877,8 +946,10 @@ impl JwtAuthInterceptor {
     /// The keys are not fetched here — the first request triggers the fetch.
     ///
     /// `jwks_url` must be `https://`; `http://` is refused (every token is,
-    /// with the reason logged) except to a loopback host, since whoever can
-    /// change the keys in transit can sign any identity (audit SEC-06).
+    /// with the reason logged) except to a loopback host (`localhost` or a
+    /// loopback address; not a name under `.localhost`, which can reach DNS),
+    /// since whoever can change the keys in transit can sign any identity
+    /// (audit SEC-06, NEW-b-5).
     #[must_use]
     pub fn from_jwks_url(validator: JwtValidator, jwks_url: impl Into<String>) -> Self {
         let url = jwks_url.into();
@@ -1341,7 +1412,13 @@ fn bind_discovered(
 }
 
 /// Whether keys may be fetched from `url`: `https://`, or `http://` to a
-/// loopback host (an identity provider in the same pod or test).
+/// loopback host (an identity provider in the same pod or test): the name
+/// `localhost` or a loopback address.
+///
+/// A name under `.localhost` is not one: glibc and musl send it to DNS unless
+/// nss-myhostname or systemd-resolved answers it, so an on-path answer could
+/// point a plaintext key fetch at another host (NEW-b-5). The client's
+/// `fetch_jwks` refuses it too.
 fn trustworthy_url(url: &str) -> bool {
     let Ok(uri) = url.parse::<hyper::Uri>() else {
         return false;
@@ -1351,7 +1428,6 @@ fn trustworthy_url(url: &str) -> bool {
         Some("http") => uri.host().is_some_and(|host| {
             let host = host.trim_start_matches('[').trim_end_matches(']');
             host.eq_ignore_ascii_case("localhost")
-                || host.to_ascii_lowercase().ends_with(".localhost")
                 || host
                     .parse::<std::net::IpAddr>()
                     .is_ok_and(|ip| ip.to_canonical().is_loopback())
@@ -1472,6 +1548,10 @@ fn decode_json<T: serde::de::DeserializeOwned>(b64: &str) -> Result<T, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod algorithms;
+    mod keys;
+    mod members;
 
     /// A refetch inside the interval is too soon; at the interval, and
     /// after it, it is allowed.
@@ -1635,13 +1715,23 @@ mod tests {
 
     #[tokio::test]
     async fn algorithm_confusion_rejected() {
-        // An RS256 validator (public key only) must NOT accept an HS256 token
-        // that was signed using the RSA public key bytes as an HMAC secret —
-        // the classic confusion attack. Here we simply prove an HS256 token is
-        // rejected when only a JWKS (no HS secret) is configured, and that the
-        // RSA path never treats the token's HS256 header as verifiable.
+        // The classic confusion attack: a token that names HS256 and is MACed
+        // with the RSA public key's bytes as the secret. A validator that let
+        // a key of the key set double as an HS256 secret would accept it.
+        // Neither a validator with a secret of its own nor one with none does,
+        // while the same key set verifies a genuine RS256 token.
+        // `algorithms::an_hs256_token_signed_with_a_public_key_is_refused` runs
+        // the attack over every encoding of the key a forger might use.
+        let n = URL_SAFE_NO_PAD.decode(RS256_N).unwrap();
+        let e = URL_SAFE_NO_PAD.decode(RS256_E).unwrap();
+        let forged = hs256_token(&rsa_pkcs1_der(&n, &e));
+        let with_secret = base_validator().with_hs256_secret([0x5a; MIN_HS256_SECRET_LEN]);
+        for validator in [with_secret, base_validator()] {
+            let i = JwtAuthInterceptor::new(validator, rsa_jwks());
+            assert!(i.before(&ctx_bearer(&forged)).await.is_err());
+        }
         let i = JwtAuthInterceptor::new(base_validator(), rsa_jwks());
-        assert!(i.before(&ctx_bearer(HS256_VALID)).await.is_err());
+        assert!(i.before(&ctx_bearer(RS256_VALID)).await.is_ok());
     }
 
     #[test]
@@ -1719,7 +1809,7 @@ mod tests {
             "http://[::1]/jwks",
             "http://[::ffff:127.0.0.1]/jwks",
             "http://localhost/jwks",
-            "http://idp.localhost/jwks",
+            "http://LocalHost:8080/jwks",
         ] {
             assert!(trustworthy_url(ok), "{ok}");
         }
@@ -1728,6 +1818,11 @@ mod tests {
             "http://[::ffff:10.0.0.1]/jwks",
             "http://idp.example.com/jwks",
             "http://localhost.evil.example/jwks",
+            // A name under `.localhost` reaches DNS on glibc and musl unless
+            // nss-myhostname or systemd-resolved answers it (NEW-b-5).
+            "http://idp.localhost/jwks",
+            "http://idp.localhost./jwks",
+            "http://localhost./jwks",
             "ftp://idp.example.com/jwks",
             "not a url",
         ] {

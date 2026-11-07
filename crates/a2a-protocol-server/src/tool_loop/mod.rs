@@ -29,6 +29,10 @@
 //!   [`with_max_turns`](ToolLoop::with_max_turns), with a tool's error sent
 //!   back to the model as that call's result, and a call written as text
 //!   recovered as a call.
+//! - [`InferenceLimit`] and [`LimitedModel`]: at most so many turns in
+//!   flight at one provider, shared by every loop that uses it; and
+//!   [`ModelRetry`], a rate-limited turn sent again after the provider's
+//!   `Retry-After`, inside the caller's budget (ADR 0048).
 //! - [`ToolLoopExecutor`]: the loop as an [`AgentExecutor`](crate::AgentExecutor),
 //!   with the answer and a `tool-trace` artifact.
 //!
@@ -74,21 +78,25 @@
 mod drafts;
 mod executor;
 mod idempotency;
+mod limit;
 mod loop_error;
 mod model;
 mod openai;
 mod openai_parse;
 mod openai_stream;
 mod recover;
+mod retry;
 mod run;
 mod tool;
 
 pub use drafts::{FLUSH_AFTER, FLUSH_BYTES, draft_artifact_id};
 pub use executor::{ANSWER_ARTIFACT_ID, TRACE_ARTIFACT_ID, ToolLoopExecutor};
+pub use limit::{InferenceLimit, LimitedModel};
 pub use model::{
     ChatMessage, ChatRequest, ModelError, ModelTurn, TextSink, TokenUsage, ToolCall, ToolModel,
     ToolSpec,
 };
 pub use openai::{DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_TIMEOUT, ERROR_BODY_LIMIT, OpenAiChatModel};
+pub use retry::ModelRetry;
 pub use run::{Answer, DEFAULT_MAX_TURNS, LoopError, ToolLoop};
 pub use tool::{DuplicateTool, Tool, ToolError, ToolInvocation, ToolSet};

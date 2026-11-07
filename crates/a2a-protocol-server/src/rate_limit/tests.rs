@@ -915,7 +915,7 @@ mod tenant {
     /// rejection can only have come from the tenant bucket.
     fn limiter_with(rps: Option<u32>, window_secs: u64) -> RateLimitInterceptor {
         let limits = rps.map_or_else(TenantLimits::default, |r| {
-            TenantLimits::builder().rate_limit_rps(r).build()
+            TenantLimits::builder().with_rate_limit_rps(r).build()
         });
         RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 1_000_000,
@@ -1020,7 +1020,10 @@ mod tenant {
         .expect("valid config")
         .with_tenant_config(
             PerTenantConfig::builder()
-                .with_override("acme", TenantLimits::builder().rate_limit_rps(1000).build())
+                .with_override(
+                    "acme",
+                    TenantLimits::builder().with_rate_limit_rps(1000).build(),
+                )
                 .build(),
         );
 

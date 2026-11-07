@@ -276,9 +276,16 @@ fn build_refuses_a_provider_without_an_extended_card() {
 async fn over_rest_each_caller_gets_its_own_body_and_etag() {
     use http_body_util::{BodyExt, Full};
     use hyper::body::Bytes;
-    let addr = a2a_protocol_server::serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler()))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = a2a_protocol_server::Server::bind("127.0.0.1:0")
+            .await
+            .unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
         .build_http::<Full<Bytes>>();
     let get = |token: &str, if_none_match: Option<&str>| {

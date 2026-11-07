@@ -100,7 +100,11 @@ impl StoredHalt {
 /// - [`put`](Self::put) stores `halt`, replacing any halt of the same scope.
 /// - [`remove`](Self::remove) deletes the halt of exactly that scope and
 ///   says whether there was one; removing [`HaltScope::Tenant`] leaves
-///   [`HaltScope::All`] in place.
+///   [`HaltScope::All`] in place, and removing [`HaltScope::Root`] leaves
+///   its tenant's halt in place.
+/// - Every scope is kept, [`HaltScope::Root`] included: a store that keys
+///   scopes by a string uses one key per scope, as the SQL stores'
+///   (`all`, `tenant:<t>`, `root:<n>:<tenant><root>`) do.
 /// - [`load`](Self::load) returns every halt stored, at most one per scope.
 /// - An error is an error: a store that cannot be read must not answer with
 ///   no halts, since an empty list resumes every replica that polls it.
@@ -265,13 +269,19 @@ impl HaltStore for InMemoryHaltStore {
     }
 }
 
-/// A scope as the SQL stores key it: `all`, or `tenant:` and the tenant.
-/// The prefixes differ, so no tenant's key is `all`.
+/// A scope as the SQL stores key it: `all`; `tenant:` and the tenant; or
+/// `root:`, the tenant's length in bytes in decimal, `:`, the tenant and the
+/// root (ADR 0034, amendment 7).
+///
+/// The three prefixes differ, so no key of one kind is a key of another, and
+/// the length says where the tenant ends, so two `(tenant, root)` pairs never
+/// share a key whatever `:` either holds.
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 fn scope_key(scope: &HaltScope) -> String {
     match scope {
         HaltScope::All => "all".to_owned(),
         HaltScope::Tenant(t) => format!("tenant:{t}"),
+        HaltScope::Root { tenant, root } => format!("root:{}:{tenant}{root}", tenant.len()),
     }
 }
 
@@ -281,8 +291,18 @@ fn scope_from_key(key: &str) -> Option<HaltScope> {
     if key == "all" {
         return Some(HaltScope::All);
     }
-    key.strip_prefix("tenant:")
-        .map(|t| HaltScope::Tenant(t.to_owned()))
+    if let Some(t) = key.strip_prefix("tenant:") {
+        return Some(HaltScope::Tenant(t.to_owned()));
+    }
+    let (digits, rest) = key.strip_prefix("root:")?.split_once(':')?;
+    let len: usize = digits.parse().ok()?;
+    // Only the digits `scope_key` writes: `usize::from_str` also takes a
+    // leading `+` or `0`, and one scope has one key.
+    if digits != len.to_string() {
+        return None;
+    }
+    let (tenant, root) = (rest.get(..len)?, rest.get(len..)?);
+    Some(HaltScope::root(tenant, root))
 }
 
 /// The halt a SQL store's row holds.

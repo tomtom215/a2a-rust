@@ -5,6 +5,8 @@
 //! trusted, the proxy's login sent) is tested end to end in
 //! `tests/outbound_proxy_and_roots.rs`; this is what a unit test can see.
 
+#![cfg(feature = "tls-rustls")]
+
 use super::*;
 
 /// `HttpsClient` sits inside `HttpPushSender`, which derives `Debug` and is
@@ -14,6 +16,39 @@ use super::*;
 fn debug_names_the_type_and_nothing_else() {
     let client = HttpsClient::new(&crate::net::roots::default_tls_config());
     assert_eq!(format!("{client:?}"), "HttpsClient { .. }");
+}
+
+/// The proxy rules `env` and `setting` give.
+fn rules(
+    env: &(dyn Fn(&str) -> Option<String> + Send + Sync + 'static),
+    setting: &ProxySetting,
+) -> Arc<Matcher> {
+    Arc::new(proxy::matcher(env, setting))
+}
+
+/// Whether a request is proxied is what the client's rules say of its
+/// destination: a proxy named for `https://` destinations is none for an
+/// `http://` one, and a client given no proxy has none for either.
+#[test]
+fn a_request_is_proxied_when_the_rules_name_a_proxy_for_it() {
+    let tls = crate::net::roots::default_tls_config();
+    let http: hyper::Uri = "http://a.example/".parse().unwrap();
+    let https: hyper::Uri = "https://a.example/".parse().unwrap();
+    let via_https_proxy = HttpsClient::with_rules(
+        &tls,
+        rules(
+            &|k| (k == "HTTPS_PROXY").then(|| "http://proxy.example:3128".to_owned()),
+            &ProxySetting::Environment,
+        ),
+    );
+    assert!(via_https_proxy.proxied(&https));
+    assert!(
+        !via_https_proxy.proxied(&http),
+        "no proxy is named for http"
+    );
+    let direct = HttpsClient::with_rules(&tls, rules(&|_| None, &ProxySetting::Off));
+    assert!(!direct.proxied(&http));
+    assert!(!direct.proxied(&https));
 }
 
 /// The client's connections get the TCP settings every outbound client has

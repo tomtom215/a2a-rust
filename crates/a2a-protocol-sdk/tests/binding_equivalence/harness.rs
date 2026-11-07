@@ -16,7 +16,7 @@ use a2a_protocol_client::transport::grpc::GrpcTransport;
 use a2a_protocol_client::transport::websocket::{WebSocketTransport, WebSocketTransportConfig};
 use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     BearerTokenAuthInterceptor, CallContext, EventEmitter, GrpcConfig, GrpcDispatcher,
     HttpPushSender, InMemoryPushConfigStore, RequestHandler, RequestHandlerBuilder,
@@ -176,20 +176,46 @@ pub struct Agent {
 pub async fn serve(secured: bool, extended: bool) -> Agent {
     let seen = Seen::default();
     let handler = handler(secured, extended, &seen);
-    let jsonrpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("JSON-RPC");
-    let http_json = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::clone(&handler)))
-        .await
-        .expect("HTTP+JSON");
-    let grpc = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("gRPC");
-    let websocket = Arc::new(WebSocketDispatcher::new(Arc::clone(&handler)))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("WebSocket");
+    let jsonrpc = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("JSON-RPC");
+        let addr = bound.local_addr().expect("JSON-RPC");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
+    let http_json = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("HTTP+JSON");
+        let addr = bound.local_addr().expect("HTTP+JSON");
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(Arc::clone(&handler)),
+            std::future::pending(),
+        ));
+        addr
+    };
+    let grpc = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("gRPC");
+        let addr = listener.local_addr().expect("gRPC");
+        tokio::spawn(
+            GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
+    let websocket = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("WebSocket");
+        let addr = listener.local_addr().expect("WebSocket");
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(Arc::clone(&handler)))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     Agent {
         seen,
         jsonrpc,

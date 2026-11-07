@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The a2a-rust alerts, recording rules and dashboards for a cluster running
+# the Prometheus Operator and Grafana's dashboard sidecar (kube-prometheus-
+# stack, for one). `kubectl apply -k deploy/kubernetes/observability -n
+# monitoring`. The two resources are generated from deploy/observability
+# (check_stack.py --write-kubernetes); this file is not. The book's
+# Kubernetes page says which labels your Prometheus selects rules by and
+# what Prometheus and Grafana settings the rules and dashboards assume.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - prometheusrule.yaml
+  - grafana-dashboards.yaml

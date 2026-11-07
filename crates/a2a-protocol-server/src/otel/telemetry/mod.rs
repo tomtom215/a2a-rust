@@ -38,6 +38,7 @@ mod builder;
 mod compression;
 mod config;
 mod console;
+mod console_format;
 mod counting;
 mod detect;
 mod diagnostics;
@@ -46,29 +47,33 @@ mod exporters;
 mod hints;
 mod http;
 mod langfuse;
+mod process;
 #[cfg(feature = "otel-prometheus")]
 mod prometheus;
 mod propagators;
 mod resource_env;
 mod runtime;
 mod selection;
+mod self_metrics;
+mod subscriber;
+mod upstream;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
-use tracing_subscriber::Layer;
-use tracing_subscriber::registry::LookupSpan;
 
 pub use builder::TelemetryBuilder;
 pub use compression::OtlpCompression;
 pub use config::OtlpProtocol;
+pub use console_format::ConsoleFormat;
 pub use error::TelemetryError;
 pub use langfuse::{LANGFUSE_SELF_HOSTED, Langfuse};
+#[cfg(feature = "otel-prometheus")]
+pub use prometheus::PrometheusScrape;
 
 use crate::net::proxy::{self, ProxySetting};
 use config::{Env, Signal};
@@ -119,7 +124,12 @@ fn is_self_target(target: &str) -> bool {
 /// (debug build, one run each): 0.1 s to a collector that answers, 1.8 s to a
 /// port that refuses, 15.0 s to one that accepts the connection and never
 /// answers, 4.1 s to that one with `OTEL_EXPORTER_OTLP_TIMEOUT=2000`.
+///
+/// `#[must_use]`: `Telemetry::init()?;` alone on a line drops the guard at
+/// once, which shuts every exporter down before anything is recorded (audit
+/// G-14). Keep it for as long as the process should export.
 #[derive(Debug)]
+#[must_use = "dropping `Telemetry` shuts every exporter down; keep it until the process exits"]
 pub struct Telemetry {
     tracer: Option<SdkTracerProvider>,
     meter: Option<SdkMeterProvider>,
@@ -134,11 +144,15 @@ pub struct Telemetry {
     /// Each signal's count of lost exports since the last report
     /// (`counting.rs`).
     failures: Vec<(Signal, Arc<AtomicU64>)>,
+    /// The same, never reset, for `a2a.telemetry.export.failed` (audit C-13).
+    failed_totals: Vec<(Signal, Arc<AtomicU64>)>,
     /// `OTEL_SDK_DISABLED` was set: nothing is built or exported. The printing
     /// layer is still installed (audit C-07).
     disabled: bool,
     /// Whether `install_subscriber` logs [`describe`](Self::describe).
     startup_summary: bool,
+    /// What `install_subscriber` prints to standard error.
+    console_format: ConsoleFormat,
     /// Log records go to standard output (`OTEL_LOGS_EXPORTER=console`), so
     /// `install_subscriber` need not print them again on standard error.
     logs_on_console: bool,
@@ -150,6 +164,9 @@ pub struct Telemetry {
     /// Where the Prometheus endpoint listens ([`prometheus_addr`](Self::prometheus_addr)).
     #[cfg(feature = "otel-prometheus")]
     prometheus: Option<std::net::SocketAddr>,
+    /// The same text, for the application to serve ([`prometheus`](Self::prometheus)).
+    #[cfg(feature = "otel-prometheus")]
+    prometheus_scrape: Option<prometheus::PrometheusScrape>,
 }
 
 impl Telemetry {
@@ -165,113 +182,28 @@ impl Telemetry {
     /// # Errors
     ///
     /// As [`TelemetryBuilder::build`].
+    ///
+    /// Without an endpoint in the environment, every signal is exported to
+    /// `localhost` (4318, or 4317 over gRPC), as the OpenTelemetry environment
+    /// specification has it — what a deployment with a collector beside it
+    /// (a sidecar) and no `OTEL_*` variable relies on. A binary that must run
+    /// as well without a collector wants
+    /// [`init_where_configured`](Self::init_where_configured).
     pub fn init() -> Result<Self, TelemetryError> {
         Self::builder().build()
     }
 
-    /// The `tracing` layer: spans become OpenTelemetry spans, and events at
-    /// or above the log level become log records. Add it to the
-    /// application's subscriber, next to any other layers. A signal that is
-    /// off contributes nothing.
-    #[must_use]
-    pub fn layer<S>(&self) -> impl Layer<S> + Send + Sync + 'static
-    where
-        S: tracing::Subscriber + for<'a> LookupSpan<'a> + Send + Sync,
-    {
-        use tracing_subscriber::filter::filter_fn;
-        use tracing_subscriber::layer::Identity;
-        // A signal that is off contributes `Identity`, never `None`:
-        // `Option<Layer>::max_level_hint` is `OFF` for `None`
-        // (tracing-subscriber 0.3.23, `layer/mod.rs`), and combined with the
-        // other half that switched every span off process-wide — traces with
-        // logs off (the Langfuse preset) recorded nothing.
-        use tracing_subscriber::filter::LevelFilter;
-        // Each filter states its most verbose level (`with_max_level_hint`),
-        // so `tracing` disables the callsites below every layer's level at
-        // once instead of asking these closures for each event.
-        let span_level = self.span_level;
-        let spans: Box<dyn Layer<S> + Send + Sync> = match &self.tracer {
-            Some(provider) => Box::new(
-                tracing_opentelemetry::layer()
-                    .with_tracer(provider.tracer(SCOPE))
-                    .with_filter(
-                        filter_fn(move |meta| {
-                            *meta.level() <= span_level && !is_self_target(meta.target())
-                        })
-                        .with_max_level_hint(LevelFilter::from_level(span_level)),
-                    ),
-            ),
-            None => Box::new(Identity::new()),
-        };
-        let level = self.log_level;
-        let logs: Box<dyn Layer<S> + Send + Sync> = match &self.logger {
-            Some(provider) => Box::new(
-                opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(provider)
-                    .with_filter(
-                        filter_fn(move |meta| {
-                            meta.is_event()
-                                && *meta.level() <= level
-                                && !is_self_target(meta.target())
-                        })
-                        .with_max_level_hint(LevelFilter::from_level(level)),
-                    ),
-            ),
-            None => Box::new(Identity::new()),
-        };
-        spans.and_then(logs)
-    }
-
-    /// Installs [`layer`](Self::layer) as the process's global `tracing`
-    /// subscriber, with a layer that prints warnings and errors to standard
-    /// error and logs [`describe`](Self::describe) once — what a binary with
-    /// no subscriber of its own needs. Without the printing layer a process
-    /// whose export is failing, or that was never given a collector, shows
-    /// nothing at all.
+    /// Like [`init`](Self::init), but a signal is built only where an endpoint
+    /// is configured for it: the same as [`Telemetry::builder`] followed by
+    /// [`TelemetryBuilder::with_export_where_configured`] and
+    /// [`TelemetryBuilder::build`]. With no `OTEL_EXPORTER_OTLP_*ENDPOINT` set,
+    /// nothing is exported and no export thread is started.
     ///
-    /// `RUST_LOG` sets what is printed, in `target=level` form (default: `warn`
-    /// everywhere, `info` for this module's own startup line and for the
-    /// application's own crate, named after the default service name with `-`
-    /// as `_`: `with_default_service_name("deploy-agent")` prints
-    /// `deploy_agent`'s INFO lines). Until 2026-10-29 an application's INFO
-    /// lines (where it listens, which database it opened) were hidden unless
-    /// `RUST_LOG` named its crate.
+    /// # Errors
     ///
-    /// Under `OTEL_SDK_DISABLED=true` nothing is exported (`layer()` adds
-    /// nothing), but the printing layer is still installed: the variable
-    /// turns off the OpenTelemetry SDK, and says nothing about a process's own
-    /// warnings and errors. Until 2026-10-31 it installed nothing, so a process
-    /// told to export nothing also lost every warning, its own and the SDK's
-    /// (audit C-07). Returns whether it installed a
-    /// subscriber: `false` when a global subscriber was already set,
-    /// which this never replaces. A process with its own subscriber adds
-    /// `layer()` to it instead.
-    // Called for its effect; the result is for a caller that cares.
-    #[allow(clippy::must_use_candidate)]
-    pub fn install_subscriber(&self) -> bool {
-        use tracing_subscriber::layer::SubscriberExt as _;
-        use tracing_subscriber::util::SubscriberInitExt as _;
-        let rust_log = std::env::var("RUST_LOG").ok();
-        let (filter, not_understood) = diagnostics::filter(rust_log.as_deref());
-        // `RUST_LOG`, when set, says everything printed.
-        let app = rust_log
-            .as_deref()
-            .is_none_or(|v| v.trim().is_empty())
-            .then(|| self.app_target.clone())
-            .flatten();
-        let installed = tracing_subscriber::registry()
-            .with(self.layer())
-            .with(diagnostics::layer(filter, self.logs_on_console, app))
-            .try_init()
-            .is_ok();
-        if installed {
-            if self.startup_summary {
-                tracing::info!("{}", self.describe());
-            }
-            for notice in not_understood.iter().chain(&self.notices) {
-                tracing::warn!("{notice}");
-            }
-        }
-        installed
+    /// As [`TelemetryBuilder::build`].
+    pub fn init_where_configured() -> Result<Self, TelemetryError> {
+        Self::builder().with_export_where_configured().build()
     }
 
     /// An [`OtelMetrics`](super::OtelMetrics) recording through this
@@ -311,13 +243,17 @@ impl Telemetry {
     fn counting<E>(&mut self, signal: Signal, exporter: E, target: &Target) -> Counting<E> {
         let counter = Arc::new(AtomicU64::new(0));
         self.failures.push((signal, Arc::clone(&counter)));
-        Counting::new(exporter, counter).reporting(
-            signal,
-            &target.destination,
-            hints::Route::of(target.protocol, &target.destination),
-            target.proxy_display(),
-            Arc::clone(&target.cause),
-        )
+        let total = Arc::new(AtomicU64::new(0));
+        self.failed_totals.push((signal, Arc::clone(&total)));
+        Counting::new(exporter, counter)
+            .with_total(total)
+            .reporting(
+                signal,
+                &target.destination,
+                hints::Route::of(target.protocol, &target.destination),
+                target.proxy_display(),
+                Arc::clone(&target.cause),
+            )
     }
 
     /// The address `/metrics` is served on under
@@ -327,6 +263,17 @@ impl Telemetry {
     #[must_use]
     pub const fn prometheus_addr(&self) -> Option<std::net::SocketAddr> {
         self.prometheus
+    }
+
+    /// Under `OTEL_METRICS_EXPORTER=prometheus`, a handle that renders the
+    /// metrics in the Prometheus text format, for the application to serve at
+    /// `/metrics` on its own port, behind its own authentication; with
+    /// [`TelemetryBuilder::without_prometheus_listener`] it is the only way
+    /// out (audit C-16, ADR 0038 §3). `None` when that exporter is not chosen.
+    #[cfg(feature = "otel-prometheus")]
+    #[must_use]
+    pub fn prometheus(&self) -> Option<prometheus::PrometheusScrape> {
+        self.prometheus_scrape.clone()
     }
 
     /// What the environment or the code asked for that this SDK does not do,

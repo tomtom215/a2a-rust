@@ -5,9 +5,14 @@
 //! environment and overridden in code.
 
 use super::selection::{self, Selection};
-use super::*;
+use super::{
+    Arc, ClientIdentity, Env, ExportRuntime, Langfuse, OtlpCompression, OtlpProtocol, ProxySetting,
+    Resource, SdkLoggerProvider, SdkMeterProvider, SdkTracerProvider, Signal, Target, Telemetry,
+    TelemetryError, compression, config, detect, exporters, proxy, resource_env,
+};
 
 mod assemble;
+mod options;
 mod resource;
 
 /// Configures and builds a [`Telemetry`]; see [`Telemetry::builder`].
@@ -26,11 +31,21 @@ pub struct TelemetryBuilder {
     proxy: ProxySetting,
     detect_resource: bool,
     startup_summary: bool,
+    /// Set in code; `A2A_LOG_FORMAT` otherwise.
+    console_format: Option<super::ConsoleFormat>,
     ca_pem: Vec<u8>,
     client_identity: Option<ClientIdentity>,
     langfuse: Option<Langfuse>,
     install_globally: bool,
     where_configured: bool,
+    /// Whether `OTEL_METRICS_EXPORTER=prometheus` binds a listener of its own.
+    #[cfg(feature = "otel-prometheus")]
+    prometheus_listener: bool,
+    /// Whether process and runtime metrics are reported (audit C-13).
+    process_metrics: bool,
+    /// The runtime whose metrics are reported; the one `build` runs in when
+    /// `None`.
+    runtime: Option<tokio::runtime::Handle>,
     env: Arc<Env>,
     /// What the environment said that was not acted on; see [`config::Notes`].
     notes: config::Notes,
@@ -69,11 +84,16 @@ impl TelemetryBuilder {
             proxy: ProxySetting::default(),
             detect_resource: true,
             startup_summary: true,
+            console_format: None,
             ca_pem: Vec::new(),
             client_identity: None,
             langfuse: None,
             install_globally: true,
             where_configured: false,
+            #[cfg(feature = "otel-prometheus")]
+            prometheus_listener: true,
+            process_metrics: true,
+            runtime: None,
             env,
             notes: config::Notes::default(),
         }

@@ -40,19 +40,22 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # The harness revision every run clones. This is deliberately a *floating*
-  # `main`, and the trade-off is real: upstream drift is surfaced the moment it
-  # lands, but it can also turn a contributor's green PR red for a reason that
-  # has nothing to do with their change.
+  # The harness revision a run grades against. Pull requests, pushes to `main`
+  # and manual runs use this commit, so a contributor's change is judged by a
+  # suite that cannot move under it. The nightly `schedule` run floats on
+  # upstream `main` instead (the Clone step chooses): it is the drift alarm, it
+  # goes red the day upstream changes something this SDK has to answer, and
+  # because it is not a pull-request check it blocks nobody. Decided by the
+  # maintainer on 2026-11-06 (option D); until then every trigger floated on
+  # `main`, and a contributor's green pull request went red when upstream moved
+  # (docs/official-tck-findings.md section 26).
   #
-  # An earlier version of this comment claimed the opposite — that the value
-  # was pinned and only the nightly run floated. It never was: there is one
-  # value here and every trigger uses it. Corrected 2026-08-09 rather than
-  # quietly making the config match the story, because which behaviour is
-  # wanted is a maintainer's call, not a cleanup. To actually pin, set a commit
-  # SHA here and give the `schedule` trigger an override — note `git clone
-  # --branch` below does not accept a SHA, so that also needs a clone + checkout.
-  A2A_TCK_REVISION: main
+  # To move the pin: take the commit the nightly run was red or green on (its
+  # Summarize step prints it), run the suite against it, re-baseline with
+  # `tck/scripts/check_conformance.py --update` if the verdicts changed, record
+  # why in docs/official-tck-findings.md, and change the SHA here in the same
+  # pull request. The `--min-graded` floors below are measured at this pin.
+  A2A_TCK_PIN: 70f6f73c30208e80c889141907e094899e6e9f05
 
 jobs:
   official-tck:
@@ -78,10 +81,23 @@ jobs:
         id: build_sut
         run: cargo build --release -p a2a-tck-sut
 
+      # `git clone --branch` takes a branch or tag, not a commit, so the
+      # revision is fetched: that takes `main` (the nightly) and a commit SHA
+      # (every other trigger) the same way, and `rev-parse` records which one
+      # this run actually graded against. `GITHUB_EVENT_NAME` is the runner's
+      # own variable, so the choice needs no `${{ }}` expression.
       - name: Clone the official TCK
         run: |
-          git clone --depth 1 --branch "$A2A_TCK_REVISION" \
-            https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          A2A_TCK_REVISION="$A2A_TCK_PIN"
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            A2A_TCK_REVISION=main
+          fi
+          echo "A2A_TCK_REVISION=$A2A_TCK_REVISION" >> "$GITHUB_ENV"
+          git init --quiet /tmp/a2a-tck
+          git -C /tmp/a2a-tck remote add origin https://github.com/a2aproject/a2a-tck
+          git -C /tmp/a2a-tck fetch --quiet --depth 1 origin "$A2A_TCK_REVISION"
+          git -C /tmp/a2a-tck checkout --quiet FETCH_HEAD
+          echo "a2a-tck revision graded: $(git -C /tmp/a2a-tck rev-parse HEAD) (requested: $A2A_TCK_REVISION)"
 
       - name: Install the TCK
         id: install_tck
@@ -215,11 +231,14 @@ jobs:
       # running the gate against a synthetic all-SKIPPED report and against an
       # empty one: both exited 0 before this flag existed.
       #
-      # 88 is measured, not chosen: the full profile grades 88 of the suite's
-      # 114 MUST requirements (the other 26 are 5 SKIPPED + 21 NOT TESTED —
-      # see docs/official-tck-findings.md §1). It is a floor, not an equality,
-      # so upstream adding MUST tests does not turn this red. A *drop* is the
-      # signal — diagnose it, do not lower the floor to go green.
+      # 87 is measured, not chosen: at the pinned a2a-tck the full profile
+      # grades 87 of the suite's 115 MUST requirements (85 PASS + 2 FAIL; the
+      # other 28 are 5 SKIPPED + 7 MANUAL + 16 NOT TESTED — run 42243749206,
+      # docs/official-tck-findings.md §26). It was 88 of 114 at the previous
+      # revision; the pin's one upstream commit (a2aproject/a2a-tck#258) reports
+      # manual obligations separately from "not tested". It is a floor, not an
+      # equality, so upstream adding MUST tests does not turn this red. A *drop*
+      # is the signal — diagnose it, do not lower the floor to go green.
       #
       # `set -o pipefail` is the load-bearing line, not boilerplate. Without
       # it this entire gate was decorative, from the day the `| tee` was added
@@ -247,13 +266,15 @@ jobs:
           python3 tck/scripts/check_conformance.py \
             --report /tmp/full-compatibility.json \
             --baseline tck/conformance-baseline.json \
-            --min-graded 88 2>&1 | tee /tmp/tck-gate.log
+            --min-graded 87 2>&1 | tee /tmp/tck-gate.log
 
       - name: Summarize
         if: always()
         run: |
           {
             echo '## Official a2a-tck conformance'
+            echo
+            echo "a2a-tck revision graded: \`$(git -C /tmp/a2a-tck rev-parse HEAD 2>/dev/null || echo 'none cloned')\` (requested \`$A2A_TCK_REVISION\`)"
             echo
             echo '### Gate'
             echo '```'
@@ -362,16 +383,17 @@ jobs:
       # gets a requirement-level diagnosis rather than just a red X — but not
       # when that step was skipped, because then there is no report to read and
       # the only thing this can produce is `error: TCK report not found`.
-      # Floor of 66 measured the same way as the full profile's 88: the
+      # Floor of 65 measured the same way as the full profile's 87: the
       # less-capable card means the suite legitimately skips more, so this
-      # profile grades 66 of 114 MUSTs.
+      # profile grades 65 of 115 MUSTs (63 PASS + 2 FAIL; 26 SKIPPED, 7 MANUAL,
+      # 17 NOT TESTED).
       - name: Gate the minimal-profile run
         if: ${{ !cancelled() && steps.minimal_run.outcome != 'skipped' }}
         run: |
           python3 tck/scripts/check_conformance.py \
             --report /tmp/minimal-compatibility.json \
             --baseline tck/conformance-baseline.json \
-            --min-graded 66
+            --min-graded 65
 
       # A third profile, for exactly one requirement. CORE-CAP-004 asserts that
       # a server advertising an extension with `required: true` rejects a

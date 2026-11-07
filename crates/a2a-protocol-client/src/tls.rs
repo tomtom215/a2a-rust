@@ -43,7 +43,7 @@ use std::sync::Arc;
 pub use crate::https_client::{
     HttpsClient, build_https_client_with_config, build_https_client_with_connect_timeout,
 };
-pub(crate) use crate::https_client::{Inner, build_inner};
+pub(crate) use crate::https_client::{Inner, Pin, build_inner, build_pinned_https_client};
 // Used by the transports' own constructors and card discovery.
 pub(crate) use crate::https_client::build_https_client;
 

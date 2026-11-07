@@ -27,3 +27,5 @@ tikv-jemallocator = "0.7"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }
+# One test reads the SDK's own log lines, to see the pool sizes its stores open.
+tracing-subscriber = { workspace = true }

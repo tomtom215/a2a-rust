@@ -24,7 +24,7 @@ PostgreSQL instance:
 # struct MyExecutor;
 # agent_executor!(MyExecutor, |_ctx, _q| async { Ok(()) });
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-let url = std::env::var("DATABASE_URL")?;
+let url = std::env::var("A2A_DATABASE_URL")?;
 let handler = RequestHandlerBuilder::new(MyExecutor)
     .with_agent_card(card())
     .with_task_store(PostgresTaskStore::new(&url).await?)
@@ -50,6 +50,35 @@ advisory lock, so they serialize. So do the audit, halt and lease stores,
 which have taken it since they were added. The key is the bytes of `"a2a_schm"` read as
 a big-endian `i64`; an application taking advisory locks of its own on the
 same database should avoid it.
+
+## A schema of its own
+
+The stores create unprefixed tables (`tasks`, `task_events`,
+`idempotency_keys`, `push_configs`, `schema_versions`) beside prefixed ones
+(`a2a_task_claims`, `a2a_delegations`, ...), in the first schema of the
+connection's `search_path` that exists. In a database another application
+uses too, give the agent a schema of its own and name it in the URL; nothing
+else changes:
+
+```sql
+CREATE SCHEMA a2a AUTHORIZATION agent;
+```
+
+```text
+postgres://agent:PASSWORD@db:5432/app?options=-c%20search_path%3Da2a
+```
+
+`search_path=a2a,public` (`options=-c%20search_path%3Da2a%2Cpublic`) works
+too, beside another application's `public.tasks`: since 0.16.0 every check the
+start makes before it creates a table, an index, a column or a function looks
+in `current_schema()`, the schema it would create the object in. Until then
+the table and index checks searched the whole path, found the other
+application's `tasks`, skipped creating the store's own, and the start failed
+on the foreign key from `task_events` (audit NEW-a-l-2; both forms are pinned
+by `store::pg_schema::search_path_tests` against a live PostgreSQL). A schema
+per deployment is also how two A2A deployments share one database. There is no
+`with_schema` option and no table prefix: the URL is the one place this is set
+([ADR 0040](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0040-first-run-configuration-and-scope.md)).
 
 ## How many connections
 

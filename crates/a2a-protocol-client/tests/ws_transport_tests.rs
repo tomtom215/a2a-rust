@@ -114,10 +114,14 @@ async fn start_ws_server() -> std::net::SocketAddr {
             .expect("build handler"),
     );
     let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
-    dispatcher
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("start WS server")
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("start WS server");
+        let addr = listener.local_addr().expect("start WS server");
+        tokio::spawn(dispatcher.serve_with_shutdown(listener, std::future::pending()));
+        addr
+    }
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -264,10 +268,17 @@ async fn an_unread_stream_does_not_stall_a_unary_call_on_the_same_socket() {
             .build()
             .expect("build handler"),
     );
-    let addr = Arc::new(WebSocketDispatcher::new(handler))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("start WS server");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("start WS server");
+        let addr = listener.local_addr().expect("start WS server");
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let transport = WebSocketTransport::connect(format!("ws://{addr}"))
         .await
         .expect("connect");
@@ -346,8 +357,10 @@ fn serve_until(
             .expect("build handler"),
     );
     let dispatcher = Arc::new(
-        WebSocketDispatcher::new(Arc::clone(&handler))
-            .with_drain_timeout(std::time::Duration::from_secs(1)),
+        WebSocketDispatcher::new(Arc::clone(&handler)).with_serve_config(
+            a2a_protocol_server::serve::ServeConfig::new()
+                .with_drain_timeout(std::time::Duration::from_secs(1)),
+        ),
     );
     tokio::spawn(async move {
         let _ = dispatcher

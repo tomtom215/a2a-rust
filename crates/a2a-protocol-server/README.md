@@ -33,18 +33,16 @@ two that open a listener are compiled but not run.
 use std::sync::Arc;
 
 use a2a_protocol_server::{
-    EventEmitter, JsonRpcDispatcher, RequestHandlerBuilder, agent_executor, serve,
+    EventEmitter, JsonRpcDispatcher, RequestHandlerBuilder, Server, agent_executor,
+    shutdown_signal,
 };
-use a2a_protocol_types::{AgentCard, AgentInterface, AgentSkill, Part, TaskState};
+use a2a_protocol_types::{AgentCard, AgentInterface, AgentSkill};
 
 struct MyAgent;
 
+// The answer as the task's artifact, then the terminal `Completed` status.
 agent_executor!(MyAgent, |ctx, queue| async {
-    let emit = EventEmitter::new(ctx, queue);
-    emit.status(TaskState::Working).await?;
-    emit.artifact("result", vec![Part::text("Hello!")], None, Some(true)).await?;
-    emit.status(TaskState::Completed).await?;
-    Ok(())
+    EventEmitter::new(ctx, queue).complete_with_text("Hello!").await
 });
 
 # #[tokio::main]
@@ -53,19 +51,26 @@ let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://l
     .with_description("An example agent")
     .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
 let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card).build()?);
-serve("0.0.0.0:3000", JsonRpcDispatcher::new(handler)).await?;
+let report = Server::bind("0.0.0.0:3000")
+    .await?
+    .serve_with_shutdown(JsonRpcDispatcher::new(handler), shutdown_signal())
+    .await;
+if let Some(why) = report.refused {
+    return Err(why.into());
+}
 # Ok(())
 # }
 ```
 
-`serve` is the shortest path, not the production one: it runs a `Server`
-under `ServeConfig::default()` (a 30 s header-read timeout, a 75 s idle
-timeout and the loopback `Host` check, with no connection cap) and has no way
-to stop short of dropping its future. For a deployment, bind a
-`Server`, give it a `ServeConfig`, and hand it the signal that ends it;
-in-flight work finishes (or is cancelled after `completion_grace`) before the
-connections drain. `ServeConfig::default()` adds header-read and idle
-timeouts but no connection cap; set one with `with_max_connections`:
+This runs under `ServeConfig::default()` (a 30 s header-read timeout, a 75 s
+idle timeout and the loopback `Host` check, with no connection cap) until
+SIGTERM or Ctrl-C; in-flight work finishes (or is cancelled after
+`completion_grace`) before the connections drain. For a deployment, give the
+`Server` a `ServeConfig` with a connection cap (`with_max_connections`). The
+gRPC and WebSocket dispatchers take the same `ServeConfig` through
+`with_serve_config`, and the axum `RestRouter` runs on `Server` itself. The
+free `serve` and `serve_with_addr` are deprecated since 0.16.0: neither can be
+stopped.
 
 ```rust,no_run
 # use std::sync::Arc;
@@ -96,7 +101,7 @@ println!("{report:?}");
 ```text
 ┌───────────────────────────────────────────────────┐
 │                  Dispatchers                      │
-│  JsonRpcDispatcher · RestDispatcher · A2aRouter   │
+│  JsonRpcDispatcher · RestDispatcher · RestRouter   │
 │  WebSocketDispatcher · GrpcDispatcher             │
 ├───────────────────────────────────────────────────┤
 │               RequestHandler                      │
@@ -121,7 +126,7 @@ println!("{report:?}");
 | `EventEmitter` | Helper for emitting status/artifact events |
 | `JsonRpcDispatcher` | JSON-RPC 2.0 transport |
 | `RestDispatcher` | REST transport |
-| `A2aRouter` | Axum framework integration (feature-gated) |
+| `RestRouter` | Axum framework integration (feature-gated) |
 | `TaskStore` | Trait -- pluggable task persistence |
 | `InMemoryTaskStore` | Default in-memory store |
 | `ServerInterceptor` | Trait -- `before` / `after` / `on_complete` (runs on every outcome) |
@@ -148,7 +153,7 @@ println!("{report:?}");
 | `otlp-json` | No | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`); off by default because `opentelemetry-otlp`'s `http-json` also makes JSON the default of any exporter built without a protocol (implies `otlp`) |
 | `otel-prometheus` | No | `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` for a Prometheus that scrapes, with no collector in between (`OTEL_EXPORTER_PROMETHEUS_HOST`, default `localhost`, and `_PORT`, default 9464); off by default because it adds `opentelemetry-prometheus` and a listener (implies `otlp`) |
 | `conformance` | No | A harness that grades an `AgentExecutor` against the protocol's invariants |
-| `axum` | No | Axum integration (`A2aRouter`) |
+| `axum` | No | Axum integration (`RestRouter`) |
 | `tool-loop` | No | Tool calling inside a task (ADR 0022): `tool_loop::ToolLoop`, `ToolLoopExecutor`, and `OpenAiChatModel` for the chat-completions API; each tool call carries an idempotency key and a repeated call runs once (ADR 0026); HTTPS to the model needs `tls-rustls` |
 | `auth-jwt` | No | JWT bearer-token authentication (HS256/RS256/ES256, static or remote JWKS) |
 | `encryption` | No | Encryption at rest for task content: `store::encrypted::EncryptedTaskStore`, AES-256-GCM over a key ring, or a cipher of your own |

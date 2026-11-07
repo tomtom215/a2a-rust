@@ -122,6 +122,22 @@ impl Metrics for GlobalOtelMetrics {
     fn on_executor_run(&self, outcome: &str, duration: Duration) {
         self.current().on_executor_run(outcome, duration);
     }
+
+    fn on_refusal(&self, cause: &str) {
+        self.current().on_refusal(cause);
+    }
+
+    fn on_lease(&self, event: &str) {
+        self.current().on_lease(event);
+    }
+
+    fn on_halt(&self, scope: &str, action: &str, stopped: usize) {
+        self.current().on_halt(scope, action, stopped);
+    }
+
+    fn on_claim(&self, event: &str) {
+        self.current().on_claim(event);
+    }
 }
 
 #[cfg(test)]
@@ -179,6 +195,10 @@ mod tests {
         metrics.on_store_retry("statement", "connection_lost");
         metrics.on_push_delivery("delivered");
         metrics.on_connection_pool_stats(&ConnectionPoolStats::default());
+        metrics.on_refusal("stream_cap");
+        metrics.on_lease("lapsed");
+        metrics.on_halt("all", "halt", 1);
+        metrics.on_claim("reaped");
         let mut collected = ResourceMetrics::default();
         READER.collect(&mut collected).expect("collect");
         let mut names: Vec<String> = collected
@@ -197,6 +217,11 @@ mod tests {
             "a2a.server.store_retries",
             "a2a.server.push_deliveries",
             "a2a.server.pool.active",
+            "a2a.server.refusals",
+            "a2a.server.lease.events",
+            "a2a.server.halts",
+            "a2a.server.halt.stopped_tasks",
+            "a2a.server.claim.events",
         ] {
             assert!(names.iter().any(|n| n == name), "{name} in {names:?}");
         }

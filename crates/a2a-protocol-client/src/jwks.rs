@@ -42,8 +42,13 @@ use crate::error::{ClientError, ClientResult};
 /// The largest JWK Set accepted: generous for any set of public keys.
 pub const MAX_JWKS_BODY_SIZE: usize = 256 * 1024;
 
-/// Fetches the JWK Set at `url`, within `options`' time budget and with its
-/// headers.
+/// Fetches the JWK Set at `url`, within `options`' time budget and with the
+/// headers set for it with
+/// [`CardFetchOptions::with_jwks_header`](crate::discovery::CardFetchOptions::with_jwks_header).
+///
+/// The headers set for the card (`with_header`) are not sent: the key server
+/// is another trust domain, and an `Authorization` or a `Cookie` for the agent
+/// does not belong there. Until 2026-11-06 they were sent.
 ///
 /// `url` must be `https://`, or `http://` to a loopback host (`localhost`,
 /// `127.0.0.1`, `[::1]`) for local development: a key set fetched in the
@@ -64,8 +69,9 @@ pub async fn fetch_jwks(url: &str, options: &CardFetchOptions) -> ClientResult<J
 
     #[cfg(not(feature = "tls-rustls"))]
     let client = {
-        let mut connector = hyper_util::client::legacy::connect::HttpConnector::new();
-        connector.set_connect_timeout(Some(std::time::Duration::from_secs(10)));
+        // The lookup, not only the connect, bounded by the timeout (B-28).
+        let connector =
+            crate::transport::connector::http_connector(std::time::Duration::from_secs(10));
         hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
             .build::<_, Full<Bytes>>(connector)
     };
@@ -76,7 +82,7 @@ pub async fn fetch_jwks(url: &str, options: &CardFetchOptions) -> ClientResult<J
         .method(hyper::Method::GET)
         .uri(crate::redact::without_userinfo(url))
         .header(header::ACCEPT, "application/jwk-set+json, application/json");
-    for (name, value) in options.headers() {
+    for (name, value) in options.jwks_headers() {
         builder = builder.header(name.as_str(), value.as_str());
     }
     let req = builder

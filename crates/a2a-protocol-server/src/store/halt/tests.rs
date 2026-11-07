@@ -14,9 +14,12 @@ async fn contract(store: &dyn HaltStore) {
     let acme = StoredHalt::new(HaltScope::Tenant("acme".into()), "spend", "alice");
     // A tenant whose name looks like the other scope's key.
     let named_all = StoredHalt::new(HaltScope::Tenant("all".into()), "odd name", "bob");
+    // Two jobs whose tenant and root would read alike joined by a `:`.
+    let job_a = StoredHalt::new(HaltScope::root("a:b", "c"), "job a", "dave");
+    let job_b = StoredHalt::new(HaltScope::root("a", "b:c"), "job b", "erin");
     assert_eq!(store.load().await.unwrap(), Vec::new());
 
-    for h in [&all, &acme, &named_all] {
+    for h in [&all, &acme, &named_all, &job_a, &job_b] {
         store.put(h).await.unwrap();
     }
     let replaced = StoredHalt::new(HaltScope::Tenant("acme".into()), "spend, again", "carol");
@@ -24,7 +27,13 @@ async fn contract(store: &dyn HaltStore) {
 
     let mut loaded = store.load().await.unwrap();
     loaded.sort_by_key(|h| format!("{:?}", h.scope));
-    let mut expected = vec![all.clone(), replaced, named_all.clone()];
+    let mut expected = vec![
+        all.clone(),
+        replaced,
+        named_all.clone(),
+        job_a.clone(),
+        job_b.clone(),
+    ];
     expected.sort_by_key(|h| format!("{:?}", h.scope));
     assert_eq!(loaded, expected);
 
@@ -42,9 +51,15 @@ async fn contract(store: &dyn HaltStore) {
     );
     let mut loaded = store.load().await.unwrap();
     loaded.sort_by_key(|h| format!("{:?}", h.scope));
-    let mut expected = vec![all, named_all];
+    let mut expected = vec![all, named_all, job_a, job_b.clone()];
     expected.sort_by_key(|h| format!("{:?}", h.scope));
     assert_eq!(loaded, expected, "removing a tenant leaves the rest");
+
+    assert!(store.remove(&HaltScope::root("a:b", "c")).await.unwrap());
+    let mut loaded = store.load().await.unwrap();
+    loaded.retain(|h| matches!(h.scope, HaltScope::Root { .. }));
+    assert_eq!(loaded, vec![job_b], "removing one job leaves the other");
+    assert!(store.remove(&HaltScope::root("a", "b:c")).await.unwrap());
 
     assert!(store.remove(&HaltScope::All).await.unwrap());
     assert!(
@@ -331,6 +346,13 @@ fn scope_keys_round_trip_and_do_not_collide() {
         HaltScope::Tenant(String::new()),
         HaltScope::Tenant("all".into()),
         HaltScope::Tenant("tenant:x".into()),
+        HaltScope::Tenant("root:1:ab".into()),
+        HaltScope::root("", "job"),
+        HaltScope::root("acme", "job"),
+        HaltScope::root("a:b", "c"),
+        HaltScope::root("a", "b:c"),
+        HaltScope::root("t\u{fc}", "ctx:42 \u{fc}"),
+        HaltScope::root("acme", ""),
     ] {
         assert_eq!(scope_from_key(&scope_key(&scope)), Some(scope));
     }
@@ -338,5 +360,22 @@ fn scope_keys_round_trip_and_do_not_collide() {
         scope_key(&HaltScope::All),
         scope_key(&HaltScope::Tenant("all".into()))
     );
+    assert_eq!(scope_key(&HaltScope::root("a:b", "c")), "root:3:a:bc");
+    assert_eq!(scope_key(&HaltScope::root("a", "b:c")), "root:1:ab:c");
+    assert_eq!(scope_key(&HaltScope::root("", "job")), "root:0:job");
     assert_eq!(scope_from_key("nonsense"), None);
+    // A key `scope_key` never writes names no scope, and so is read as a halt
+    // of everything (`from_row`).
+    for key in [
+        "root:",
+        "root:3",
+        "root:x:abc",
+        "root:+1:ab",
+        "root:01:ab",
+        "root:-1:ab",
+        "root:9:short",
+        "root:1:\u{fc}x",
+    ] {
+        assert_eq!(scope_from_key(key), None, "{key}");
+    }
 }

@@ -116,18 +116,28 @@ fn a_card_request_is_an_http_server_span_and_a_duration() {
                     .without_agent_card()
                     .build()
                     .unwrap();
-                let served = a2a_protocol_server::serve_with_addr(
-                    "127.0.0.1:0",
-                    JsonRpcDispatcher::new(Arc::new(with_card)),
-                )
-                .await
-                .unwrap();
-                let bare = a2a_protocol_server::serve_with_addr(
-                    "127.0.0.1:0",
-                    JsonRpcDispatcher::new(Arc::new(without)),
-                )
-                .await
-                .unwrap();
+                let served = {
+                    let bound = a2a_protocol_server::Server::bind("127.0.0.1:0")
+                        .await
+                        .unwrap();
+                    let addr = bound.local_addr().unwrap();
+                    tokio::spawn(bound.serve_with_shutdown(
+                        JsonRpcDispatcher::new(Arc::new(with_card)),
+                        std::future::pending(),
+                    ));
+                    addr
+                };
+                let bare = {
+                    let bound = a2a_protocol_server::Server::bind("127.0.0.1:0")
+                        .await
+                        .unwrap();
+                    let addr = bound.local_addr().unwrap();
+                    tokio::spawn(bound.serve_with_shutdown(
+                        JsonRpcDispatcher::new(Arc::new(without)),
+                        std::future::pending(),
+                    ));
+                    addr
+                };
                 vec![
                     send(
                         served,
@@ -311,12 +321,17 @@ fn every_listener_records_its_card_requests() {
             .build()
             .unwrap();
         runtime.block_on(async {
-            let rest = a2a_protocol_server::serve_with_addr(
-                "127.0.0.1:0",
-                a2a_protocol_server::RestDispatcher::new(handler()),
-            )
-            .await
-            .unwrap();
+            let rest = {
+                let bound = a2a_protocol_server::Server::bind("127.0.0.1:0")
+                    .await
+                    .unwrap();
+                let addr = bound.local_addr().unwrap();
+                tokio::spawn(bound.serve_with_shutdown(
+                    a2a_protocol_server::RestDispatcher::new(handler()),
+                    std::future::pending(),
+                ));
+                addr
+            };
             assert_eq!(send(rest, get).await, 200);
             expected.push("rest");
             #[cfg(feature = "axum")]
@@ -331,24 +346,34 @@ fn every_listener_records_its_card_requests() {
             }
             #[cfg(feature = "websocket")]
             {
-                let addr = Arc::new(a2a_protocol_server::dispatch::WebSocketDispatcher::new(
-                    handler(),
-                ))
-                .serve_with_addr("127.0.0.1:0")
-                .await
-                .unwrap();
+                let addr = {
+                    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                    let addr = listener.local_addr().unwrap();
+                    tokio::spawn(
+                        Arc::new(a2a_protocol_server::dispatch::WebSocketDispatcher::new(
+                            handler(),
+                        ))
+                        .serve_with_shutdown(listener, std::future::pending()),
+                    );
+                    addr
+                };
                 assert_eq!(send(addr, get).await, 200);
                 expected.push("websocket");
             }
             #[cfg(feature = "grpc")]
             {
-                let addr = a2a_protocol_server::GrpcDispatcher::new(
-                    handler(),
-                    a2a_protocol_server::GrpcConfig::default(),
-                )
-                .serve_with_addr("127.0.0.1:0")
-                .await
-                .unwrap();
+                let addr = {
+                    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                    let addr = listener.local_addr().unwrap();
+                    tokio::spawn(
+                        a2a_protocol_server::GrpcDispatcher::new(
+                            handler(),
+                            a2a_protocol_server::GrpcConfig::default(),
+                        )
+                        .serve_with_shutdown(listener, std::future::pending()),
+                    );
+                    addr
+                };
                 assert_eq!(send(addr, get).await, 200);
                 expected.push("grpc");
             }

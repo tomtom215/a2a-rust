@@ -1,0 +1,30 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://a2a-rust.com/extensions/provenance/v1/schema.json",
+ "title": "Content provenance (provenance/v1)",
+ "description": "On a message or an artifact: whether an AI system generated it, what did, and optionally a detached-payload JWS over the content. An empty object reads as not AI-generated. Unknown members are ignored.",
+ "type": "object",
+ "properties": {
+  "aiGenerated": {
+   "type": "boolean"
+  },
+  "generator": {
+   "type": "string"
+  },
+  "signature": {
+   "type": "object",
+   "required": [
+    "protected",
+    "signature"
+   ],
+   "properties": {
+    "protected": {
+     "type": "string"
+    },
+    "signature": {
+     "type": "string"
+    }
+   }
+  }
+ }
+}

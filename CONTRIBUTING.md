@@ -281,6 +281,36 @@ So every new defaulted method needs all three of:
 a major version — or, pre-1.0, a minor with a CHANGELOG entry that says so
 plainly.
 
+## Naming a new public item
+
+The public names grew one change at a time, and some of them disagree with
+each other and with the specification (audit G-15). Renaming all of them would
+cost every adopter a migration for little gain, so the existing names stay
+(five were renamed through deprecation in 0.16.0, [ADR 0053](docs/adr/0053-naming-rule-and-renames.md)).
+A name added from now on follows these rules:
+
+- **Builder and configuration setters are `with_<field>`**, consuming `self`
+  and returning `Self`. The setter that turns a behaviour that is on by default
+  off is `without_<field>`. A bare `<field>(value)` is not a setter name; it
+  reads as a getter.
+- **A `RequestHandler` entry point is `on_` plus the wire method's name in
+  `snake_case`**: `SubscribeToTask` is `on_subscribe_to_task`,
+  `CreateTaskPushNotificationConfig` is `on_create_push_config` (the
+  `TaskPushNotification` part is dropped consistently across the four
+  push-config methods). A client method is the same name without `on_`. A name
+  from an older revision of the specification (`resubscribe`, `set`) is not
+  used for a new item.
+- **A duration is a `std::time::Duration`**, never an integer count of seconds
+  or milliseconds, in a parameter, a field or a return value.
+- **A rename goes through deprecation**, never in place (`STABILITY.md` §3):
+  add the new name; put `#[deprecated(since = "X.Y.0", note = "use `new_name`;
+  removed no earlier than X.(Y+1).0")]` on the old one and make it call the
+  new one; move every caller in the workspace (examples, book, READMEs,
+  benches, tests) to the new name; keep one test of the old name, under
+  `#[allow(deprecated)]` with the removal version in its comment, as the only
+  caller left. A type that is renamed for documentation only can get a type
+  alias instead (`RestRouter` for `A2aRouter`), which needs no deprecation.
+
 ## Working on the SLIMRPC binding
 
 `bindings/a2a-protocol-slimrpc` is **not a workspace member**, so

@@ -144,6 +144,27 @@ pub trait AgentExecutor: Send + Sync + 'static {
         })
     }
 
+    /// Whether a turn this executor did not finish may be run again from its
+    /// input, so that a graceful shutdown hands it back instead of failing it
+    /// (ADR 0054, audit D-21).
+    ///
+    /// The default is `false`: shutdown ends a turn still running after the
+    /// completion window `Failed`, failure class `transient`. Answer `true`
+    /// only when running a turn twice is safe: its tool calls carry
+    /// idempotency keys (ADR 0026), its other side effects are checked before
+    /// they are made. Then, on a handler with turn claims (a shared task
+    /// store), a turn that returns after shutdown fired its token, without a
+    /// terminal or interrupted state, is left `working`, with a status
+    /// message whose metadata carries [`HAND_OFF_METADATA_KEY`], and its claim
+    /// is released; the cancel hook is not run. Its caller sends the turn's
+    /// message again to the same task id, which another replica admits and
+    /// runs with the caller's own credentials. Nothing re-runs it otherwise:
+    /// the reaper leaves a handed-off task alone for [`HAND_OFF_WINDOW`] and
+    /// then ends it `Failed`/`transient`, as it ends any task nobody runs.
+    fn resumes_after_hand_off(&self) -> bool {
+        false
+    }
+
     /// Called during handler shutdown to allow cleanup of external resources
     /// (database connections, file handles, etc.).
     ///
@@ -152,6 +173,18 @@ pub trait AgentExecutor: Send + Sync + 'static {
         Box::pin(async {})
     }
 }
+
+/// The status-message metadata key that marks a turn a shutdown handed back
+/// to its caller ([`AgentExecutor::resumes_after_hand_off`], ADR 0054). Its
+/// value is `true`.
+pub const HAND_OFF_METADATA_KEY: &str = "a2a-rust.com/hand-off";
+
+/// How long a handed-off task waits for its caller (ADR 0054).
+///
+/// The default of `HandlerLimits::hand_off_window`, which the reaper uses:
+/// counted from the hand-off's status timestamp, after it the reaper ends a
+/// task nobody continued `Failed`/`transient`.
+pub const HAND_OFF_WINDOW: std::time::Duration = std::time::Duration::from_secs(600);
 
 /// Writes the terminal `Canceled` status for `ctx`'s task: what the default
 /// [`AgentExecutor::cancel`] does, and what the handler does after a hook

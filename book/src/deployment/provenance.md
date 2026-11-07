@@ -77,7 +77,11 @@ let card = resolve_agent_card_with_options("https://agent.example.com", &options
   `openssl pkey -pubout -outform DER` writes it.
 - **Fetching:** `fetch_jwks` needs `https://`, or plain `http://` to a
   loopback host (`localhost`, `127.0.0.1`, `[::1]`) for development. It caps
-  the set at 256 KiB, and the same time budget covers the whole fetch.
+  the set at 256 KiB, and the same time budget covers the whole fetch. It
+  sends only the headers set with `CardFetchOptions::with_jwks_header`, never
+  those set for the card with `with_header`: a key server is another trust
+  domain, and an `Authorization` or `Cookie` for the agent does not belong
+  there. (Before 0.16.0 it sent them.)
 
 To sign a card: `sign_card_es256` or `sign_card_ed25519`, with a PKCS#8
 key and the key id a verifier will look the key up by. The protected header

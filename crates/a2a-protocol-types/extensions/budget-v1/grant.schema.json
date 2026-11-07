@@ -1,0 +1,41 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://a2a-rust.com/extensions/budget/v1/grant.schema.json",
+ "title": "Budget grant (budget/v1)",
+ "description": "The time and the amount of each named meter the receiver may spend on one turn. At least one of remainingMs and a meter. A receiver refuses remainingMs 0 at admission (the deadline has passed).",
+ "type": "object",
+ "properties": {
+  "remainingMs": {
+   "type": "integer",
+   "minimum": 0
+  },
+  "meters": {
+   "type": "object",
+   "maxProperties": 16,
+   "propertyNames": {
+    "pattern": "^[a-z0-9._-]{1,64}$"
+   },
+   "additionalProperties": {
+    "type": "integer",
+    "minimum": 0
+   }
+  }
+ },
+ "anyOf": [
+  {
+   "required": [
+    "remainingMs"
+   ]
+  },
+  {
+   "required": [
+    "meters"
+   ],
+   "properties": {
+    "meters": {
+     "minProperties": 1
+    }
+   }
+  }
+ ]
+}

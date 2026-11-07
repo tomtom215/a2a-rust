@@ -21,7 +21,7 @@ use a2a_protocol_server::RequestHandler;
 use a2a_protocol_server::agent_executor;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use serde_json::{Value, json};
@@ -43,9 +43,14 @@ fn handler() -> Arc<RequestHandler> {
 }
 
 async fn jsonrpc_server() -> SocketAddr {
-    serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .expect("serve")
+    {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    }
 }
 
 async fn post(addr: SocketAddr, body: &Value) -> Value {
@@ -159,10 +164,17 @@ mod websocket {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 
     async fn call(body: &Value) -> Value {
-        let addr = Arc::new(WebSocketDispatcher::new(handler()))
-            .serve_with_addr("127.0.0.1:0")
-            .await
-            .expect("serve");
+        let addr = {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("serve");
+            let addr = listener.local_addr().expect("serve");
+            tokio::spawn(
+                Arc::new(WebSocketDispatcher::new(handler()))
+                    .serve_with_shutdown(listener, std::future::pending()),
+            );
+            addr
+        };
         let mut req = format!("ws://{addr}").into_client_request().expect("url");
         req.headers_mut()
             .insert("a2a-version", "1.0".parse().expect("value"));

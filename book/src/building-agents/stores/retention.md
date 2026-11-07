@@ -12,6 +12,15 @@ own scheduler; it deletes only `Completed`, `Failed`, `Canceled` and `Rejected`
 tasks, in batches, and is safe to run from several replicas
 ([Running More Than One Replica](../../deployment/horizontal-scaling.md)).
 
+A task that runs for a long time also grows its event log for as long as it
+runs: those rows go only when the finished task is purged. With
+`.with_max_events_per_live_task(Some(n))` the same sweep compacts each live
+task's log to its newest `n` events, dropping only events the stored task
+already reflects (ADR 0047). A subscriber that asks to resume from a dropped
+position receives the task's snapshot instead, as a subscriber that fell
+behind does, never a replay with a silent gap. The in-memory store bounds its
+logs itself (`TaskStoreConfig::max_events_per_task`).
+
 The tenant-aware stores also have `erase_caller(identity)`, which removes a
 caller's partitions with their tasks, logged events and idempotency keys (the
 push-config stores, its webhooks); the SQL stores do it in one transaction.

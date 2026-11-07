@@ -329,7 +329,7 @@ impl SqliteTaskStore {
         &self,
         policy: &super::retention::RetentionPolicy,
     ) -> A2aResult<super::retention::PurgeReport> {
-        super::retention::sqlite::purge(
+        let mut report = super::retention::sqlite::purge(
             &self.pool,
             "tasks",
             &[journal::DELETE_ORPHANS_SQL, event_log::DELETE_ORPHANS_SQL],
@@ -337,7 +337,20 @@ impl SqliteTaskStore {
             policy,
         )
         .await
-        .map_err(to_a2a_error)
+        .map_err(to_a2a_error)?;
+        if let Some(keep) = super::retention::compact::live_log_bound(policy) {
+            let over: Vec<(String,)> = sqlx::query_as(event_log::OVER_SQL)
+                .bind(super::retention::compact::over(keep))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            for (task_id,) in over {
+                report.events_compacted +=
+                    super::retention::compact::compact_task(self, &TaskId::new(task_id), keep)
+                        .await?;
+            }
+        }
+        Ok(report)
     }
 }
 
@@ -1322,6 +1335,22 @@ impl TaskStore for SqliteTaskStore {
                 .await
                 .map_err(to_a2a_error)?;
             min.map(seq_from_i64).transpose()
+        })
+    }
+
+    fn trim_event_log<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        below: u64,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            let done = sqlx::query(event_log::TRIM_BELOW_SQL)
+                .bind(task_id.0.as_str())
+                .bind(seq_to_i64(below)?)
+                .execute(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            Ok(done.rows_affected())
         })
     }
 

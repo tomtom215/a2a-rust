@@ -237,3 +237,96 @@ fn a_schemeless_http_endpoint_is_refused_with_what_to_write() {
     .build();
     assert!(grpc.is_ok(), "{:?}", grpc.err());
 }
+
+/// `init` keeps the specification's default — every signal, to `localhost`
+/// when nothing names an endpoint — and `init_where_configured` builds only
+/// what the environment points somewhere (audit G-14). Both read the process
+/// environment, so the check runs in a child with every `OTEL_*` variable
+/// removed: writing the environment is `unsafe` in edition 2024.
+#[test]
+fn init_exports_by_default_and_init_where_configured_only_where_pointed() {
+    if std::env::var_os("A2A_TELEMETRY_INIT_CHILD").is_some() {
+        let pointed = std::env::var_os("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT").is_some();
+        let t = Telemetry::init_where_configured().expect("builds");
+        assert_eq!(t.tracer_provider().is_some(), pointed, "{}", t.describe());
+        assert!(t.meter_provider().is_none(), "{}", t.describe());
+        assert!(t.logger_provider().is_none(), "{}", t.describe());
+        drop(t);
+        let t = Telemetry::init().expect("builds");
+        assert!(
+            t.tracer_provider().is_some() && t.meter_provider().is_some(),
+            "{}",
+            t.describe()
+        );
+        return;
+    }
+    for pointed in [false, true] {
+        let mut child = std::process::Command::new(std::env::current_exe().expect("exe"));
+        child
+            .args([
+                "otel::telemetry::report_tests::init_exports_by_default_and_init_where_configured_only_where_pointed",
+                "--exact",
+                "--nocapture",
+            ])
+            .env("A2A_TELEMETRY_INIT_CHILD", "1");
+        for (k, _) in std::env::vars_os() {
+            if k.to_string_lossy().starts_with("OTEL_") {
+                child.env_remove(k);
+            }
+        }
+        if pointed {
+            // A port nothing listens on; nothing is sent before the drop.
+            child.env(
+                "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+                "http://127.0.0.1:9/v1/traces",
+            );
+        }
+        let out = child.output().expect("child runs");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success() && stdout.contains("1 passed"),
+            "child (pointed: {pointed}) failed: {stdout}{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+/// `A2A_LOG_FORMAT` chooses the console format unless the code does, and a
+/// value it does not know is a notice, not an error (audit C-06, F3).
+#[test]
+fn the_console_format_comes_from_the_code_then_the_variable() {
+    let off = [
+        ("OTEL_TRACES_EXPORTER", "none"),
+        ("OTEL_METRICS_EXPORTER", "none"),
+        ("OTEL_LOGS_EXPORTER", "none"),
+    ];
+    let build = |extra: &[(&str, &str)], code: Option<ConsoleFormat>| {
+        let mut pairs = off.to_vec();
+        pairs.extend_from_slice(extra);
+        let builder = with_env(&pairs);
+        match code {
+            Some(format) => builder.with_console_format(format),
+            None => builder,
+        }
+        .build()
+        .unwrap()
+    };
+    assert_eq!(build(&[], None).console_format, ConsoleFormat::Text);
+    assert_eq!(
+        build(&[("A2A_LOG_FORMAT", "json")], None).console_format,
+        ConsoleFormat::Json
+    );
+    assert_eq!(
+        build(&[("A2A_LOG_FORMAT", "json")], Some(ConsoleFormat::Text)).console_format,
+        ConsoleFormat::Text
+    );
+    let t = build(&[("A2A_LOG_FORMAT", "yaml")], None);
+    assert_eq!(t.console_format, ConsoleFormat::Text);
+    assert!(
+        t.notices()
+            .iter()
+            .any(|n| n.starts_with("A2A_LOG_FORMAT=\"yaml\"")),
+        "{:?}",
+        t.notices()
+    );
+}

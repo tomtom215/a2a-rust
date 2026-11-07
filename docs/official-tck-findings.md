@@ -2248,3 +2248,98 @@ specification" (§20, and the baseline's `_comment`) is true only if the six
 `ErrorBinding` constants and the literals in the tests change with it, which
 #232 and #258 do and a bare `make spec` does not; and §23's account of what the
 suite sends (corrected in place above).
+
+
+## 26. The suite is pinned for pull requests; the nightly run floats (decided 2026-11-06)
+
+**What changed.** `.github/workflows/official-tck.yml` used to clone upstream's
+`main` on every trigger (§19 records the first time that turned a green run red
+on an unchanged commit). The maintainer chose option D on 2026-11-06: pull
+requests, pushes to `main` and manual runs grade against one commit,
+`70f6f73c30208e80c889141907e094899e6e9f05` (`A2A_TCK_PIN` in the workflow's
+`env`), and the nightly `schedule` run still fetches `main` and is the drift
+alarm. A nightly failure is a message that upstream moved; it is not a pull
+request check, so it blocks nobody. The Clone step fetches the revision rather
+than cloning a branch (`git clone --branch` takes no commit), prints the
+commit it graded, and the Summarize step repeats it, so any row of
+[Official TCK runs](../book/src/reference/conformance-history/official-tck.md)
+can name its a2a-tck column.
+
+**The pin.** `70f6f73` is upstream `main` as read on 2026-11-05, *"fix: align A2A
+1.0.1 conformance checks and reporting (#258)"* (committed 2026-11-05 16:10
++0100), the one commit after `d4d6fae` (`git log d4d6fae..70f6f73` lists only
+it). #258 is the change §25 lists as the unmerged upstream fix for six of the
+seven baselined requirements. Its message says it refreshes the vendored
+specification to v1.0.1, aligns the nine error mappings, validates native HTTP
+and gRPC errors, and reports manual obligations separately from "not tested".
+
+**Measured at the pin: run 42243749206, job 127980450303, on `ffd72299`,
+2026-11-06** (the job printed `a2a-tck revision graded: 70f6f73…` equal to the
+request). Read from the job's log; the report artifact was not downloaded.
+
+| Profile | MUST passed | failed | skipped | manual | not tested | total | graded | floor |
+|---|---|---|---|---|---|---|---|---|
+| full | 85 | 2 | 5 | 7 | 16 | 115 | 87 | 87 (was 88) |
+| minimal | 63 | 2 | 26 | 7 | 17 | 115 | 65 | 65 (was 66) |
+| required-extension | 1 graded, `CORE-CAP-004` PASS (`--require-pass`) | | | | | | | |
+
+The previous measurement (`d4d6fae`, §25) was 88 of 114 graded on the full
+profile and 66 on the minimal. The suite's MUST total is one higher (115), the
+graded count one lower, and a "manual" column (7 MUST: `CARD-CLIENT-001`,
+`CARD-SIGN-001` to `-004`, `AUTH-TLS-001`, `BIND-CUSTOM-002`) is new; which one
+requirement left the graded set was not attributed, because the previous
+report is not at hand to compare. The floors were set to the measured counts,
+as before, not lowered to go green: the gate's own advice is to diagnose, and
+the diagnosis is a one-commit upstream restructure of the reporting.
+
+**Which baselined failures cleared, and which did not** (the gate's STALE
+BASELINE and REGRESSION lists on that run, with the cause read in the pinned
+suite's source):
+
+| Requirement | At `d4d6fae` | At the pin | Why |
+|---|---|---|---|
+| `CORE-CANCEL-002` (`http_json`) | fails | **passes** | #258 refreshes the specification and the nine mappings (§20, §21, §25) |
+| `GRPC-ERR-002` (`grpc`) | fails | **passes** | the same |
+| `HTTP_JSON-STATUS-001` | fails | **passes** | the same |
+| `STREAM-SUB-003` (`grpc`) | fails | **passes** (not graded by the minimal profile) | the same |
+| `HTTP_JSON-SVC-001` | fails (MUST) | **not gated** | its level is SHOULD at the pin (`tck/requirements/binding_http_json.py`, and `tests/unit/requirements/test_released_spec_bindings.py` asserts it) |
+| `HTTP_JSON-ERR-001` | fails on every transport entry (`*`) | **fails on `http_json` only** | see below |
+| `CORE-SEND-003` | fails on `grpc`, `jsonrpc`, `http_json` | **unchanged** | see §22 |
+
+`HTTP_JSON-ERR-001` still fails, with `Error Content-Type must be
+application/json, got: 'application/a2a+json'`. The requirement's own text
+(`tck/requirements/binding_http_json.py`) asks for the google.rpc.Status JSON
+representation and names no media type; the test
+(`tests/compatibility/core_operations/test_error_handling.py`, from line 760)
+adds a check that the error response's Content-Type contains `application/json`,
+which `application/a2a+json` does not. The suite's own vendored A2A v1.0.1
+section 11.6 shows an error response with `Content-Type: application/a2a+json`,
+the type this SDK sends. This is the reading of the pinned source; it is not
+confirmed upstream, and #258's message lists "error Content-Type" among the
+failures of the reference Python SDK's generated server. `CORE-SEND-003` still
+declares no `expected_error` at the pin (`tck/requirements/core_operations.py`
+lines 99 to 124), so a correct `ContentTypeNotSupportedError` is scored as a
+failure (§22).
+
+**The baseline is now two entries** (four failing pairs: `CORE-SEND-003` on
+three transports, `HTTP_JSON-ERR-001` on `http_json`), both defects of the
+suite, and `tck/conformance-baseline.json` says so. It was checked against
+reports synthesized to reproduce the run's gate output (the old baseline gives
+the run's exact verdicts: 87 against 88, one regression, five stale, one not
+graded; and 65 against 66 on the minimal profile); with the new baseline and
+floors the same reports pass, and a new failing MUST, a baselined requirement
+that passes and a one-requirement drop each fail the gate. That is a check of
+the gate's logic on a model of the report, not of the report: the next run at
+the pin is the check.
+
+**Reconciled against the pin's report.** The first CI run with the re-baselined gates (run 42277491237, job `a2a-tck conformance`, head `a672ff8e`) graded 87 MUST requirements on the full run and 65 on
+the minimal profile, each equal to its floor, with the four failing pairs of the baseline and no others. Its report artifact (`official-tck-reports`, `full-compatibility.json`) was read
+mechanically against `tck/untested-musts.toml`: the full run's MUST rows are 85 passed, 2 failed, 5 skipped, 7 manual and 16 not tested. All 22 requirements of the map are ungraded in that
+report (the 16 not tested: `AUTH-INTASK-001` to `-004`, `AUTH-SCOPE-001` to `-003`, `AUTH-SERVER-002`, `BIND-EQUIV-001` to `-004`, `GRPC-SVC-003`, `VER-CLIENT-001`, `VER-CLIENT-002`,
+`VER-SERVER-001`; five of the seven manual, `CARD-SIGN-001` to `-004` and `AUTH-TLS-001`; and the skipped `CARD-EXT-002`), none is graded pass or fail there, and none is missing from
+it. The ungraded MUSTs the map does not carry are the other two manual ones (`CARD-CLIENT-001`, a client obligation, and `BIND-CUSTOM-002`, a comparison across versions) and
+`CORE-CAP-001` to `-004`, skipped in the full run and graded by the profile runs (`-001` to `-003` pass on the minimal profile, `-004` on the required-extension one). The map needs no change.
+
+**Moving the pin.** Take the commit the nightly run reported, run the suite
+against it, re-baseline if any verdict changed, record why here, and change
+`A2A_TCK_PIN` in the same pull request.

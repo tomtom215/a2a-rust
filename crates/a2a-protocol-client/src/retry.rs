@@ -51,7 +51,7 @@ use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 use crate::transport::Transport;
 
-mod budget;
+pub(crate) mod budget;
 pub use budget::RetryBudget;
 
 // ── RetryPolicy ──────────────────────────────────────────────────────────────
@@ -195,6 +195,7 @@ impl ClientError {
     /// - Server errors (HTTP 502, 503, 504, 429)
     /// - The client's own in-flight cap (`TooManyPendingRequests`), which
     ///   clears as responses arrive
+    /// - An open circuit (`CircuitOpen`), which closes when its probe succeeds
     /// - A stream that ended before its final event (`IncompleteStream`),
     ///   which a resubscribe resumes
     /// - A protocol error that asks to be retried later: a rate limit refused
@@ -207,7 +208,8 @@ impl ClientError {
             | Self::HttpClient(_)
             | Self::Timeout(_)
             | Self::IncompleteStream { .. }
-            | Self::TooManyPendingRequests { .. } => true,
+            | Self::TooManyPendingRequests { .. }
+            | Self::CircuitOpen { .. } => true,
             Self::UnexpectedStatus { status, .. } => {
                 matches!(status, 429 | 502 | 503 | 504)
             }
@@ -245,7 +247,7 @@ impl ClientError {
 /// This is a property of the *method* alone. A send can still be idempotent
 /// for a reason this cannot see — see [`carries_idempotency_key`], which is
 /// what makes a keyed `SendMessage` retryable.
-fn is_idempotent_method(method: &str) -> bool {
+pub(crate) fn is_idempotent_method(method: &str) -> bool {
     matches!(
         method,
         "GetTask"
@@ -291,7 +293,7 @@ fn is_idempotent_method(method: &str) -> bool {
 ///
 /// The key is validated rather than merely found, so this answers "this send
 /// will be deduplicated" and not "something is present under that name".
-fn carries_idempotency_key(
+pub(crate) fn carries_idempotency_key(
     method: &str,
     params: &serde_json::Value,
     peer_honours_idempotency: bool,
@@ -325,9 +327,11 @@ fn carries_idempotency_key(
 /// methods.
 const fn safe_to_retry_non_idempotent(error: &ClientError) -> bool {
     match error {
+        // An open circuit refuses before anything is sent.
         ClientError::UnexpectedStatus {
             status: 429 | 503, ..
-        } => true,
+        }
+        | ClientError::CircuitOpen { .. } => true,
         // A rate-limit refusal names a delay because the request was not
         // processed: the JSON-RPC and WebSocket form of a 429.
         ClientError::Protocol(e) => e.retry_after().is_some(),
@@ -384,6 +388,9 @@ pub(crate) struct RetryTransport {
     peer_honours_idempotency: bool,
     /// The policy's budget with its balance.
     ledger: Option<budget::Ledger>,
+    /// The pool's budget for this client's origin, shared by every client of
+    /// the pool (ADR 0050 decision 6); a retry needs both.
+    shared: Option<std::sync::Arc<crate::origin::OriginState>>,
 }
 
 impl RetryTransport {
@@ -395,12 +402,34 @@ impl RetryTransport {
             policy,
             peer_honours_idempotency: false,
             ledger,
+            shared: None,
         }
+    }
+
+    /// Also pays for each retry from `origin`'s retry ledger, which every
+    /// client of a pool shares.
+    #[must_use]
+    pub(crate) fn with_shared_budget(
+        mut self,
+        origin: std::sync::Arc<crate::origin::OriginState>,
+    ) -> Self {
+        self.shared = Some(origin);
+        self
+    }
+
+    /// The pool's ledger, when there is one.
+    fn shared_ledger(&self) -> Option<&budget::Ledger> {
+        self.shared
+            .as_deref()
+            .and_then(crate::origin::OriginState::budget)
     }
 
     /// A call was made: it earns its fraction of a retry.
     fn call_made(&self) {
         if let Some(ledger) = &self.ledger {
+            ledger.deposit();
+        }
+        if let Some(ledger) = self.shared_ledger() {
             ledger.deposit();
         }
     }
@@ -438,6 +467,14 @@ impl RetryTransport {
         }
         if self.ledger.as_ref().is_some_and(|l| !l.withdraw()) {
             trace_warn!("not retrying: the retry budget is spent");
+            return None;
+        }
+        if self.shared_ledger().is_some_and(|l| !l.withdraw()) {
+            // The client's own retry was paid for and is not made.
+            if let Some(own) = &self.ledger {
+                own.refund();
+            }
+            trace_warn!("not retrying: the pool's retry budget for this origin is spent");
             return None;
         }
         Some(delay)
@@ -665,6 +702,9 @@ pub(crate) fn jittered(backoff: Duration) -> Duration {
 
 #[cfg(test)]
 mod limits_tests;
+
+#[cfg(test)]
+mod shared_budget_tests;
 
 #[cfg(test)]
 mod tests {

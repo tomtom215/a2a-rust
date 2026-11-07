@@ -298,7 +298,8 @@ pub(super) async fn otel_export() -> Check {
 
 const OTLP_LABEL: &str = "OTLP pipeline (bytes reach the configured collector)";
 
-/// Points `init_otlp_pipeline` at a socket this example owns and requires the
+/// Points `Telemetry`'s OTLP/gRPC metrics exporter at a socket this example
+/// owns and requires the
 /// exporter to actually connect and transmit.
 ///
 /// [`otel_export`] checks the *instrumentation* — that requests reach the
@@ -364,22 +365,30 @@ pub(super) async fn otlp_pipeline() -> Check {
         });
     }
 
-    let _restore = meter::RestoreGlobalMeterProvider::capture();
     // The endpoint is passed explicitly rather than through
     // `OTEL_EXPORTER_OTLP_ENDPOINT`: writing the environment is `unsafe` in
     // edition 2024 because other threads of this process may be reading it.
-    let provider = match a2a_protocol_server::otel::init_otlp_pipeline_with_endpoint(
-        Some("incident-response"),
-        &endpoint,
-    ) {
-        Ok(provider) => provider,
-        Err(e) => return Check::fail(OTLP_LABEL, format!("building the pipeline: {e}")),
+    // Metrics only, over gRPC, as the deprecated `init_otlp_pipeline` exported
+    // them; kept off the global provider, and recorded to through
+    // `otel_metrics()`, so nothing else in the process is changed.
+    let telemetry = match a2a_protocol_server::otel::Telemetry::builder()
+        .with_default_service_name("incident-response")
+        .with_traces(false)
+        .with_logs(false)
+        .with_otlp_protocol(a2a_protocol_server::otel::OtlpProtocol::Grpc)
+        .with_otlp_endpoint(&endpoint)
+        .install_globally(false)
+        .without_startup_summary()
+        .build()
+    {
+        Ok(telemetry) => telemetry,
+        Err(e) => return Check::fail(OTLP_LABEL, format!("building the exporter: {e}")),
     };
 
     let (listener, url) = bind().await;
     let handler = match RequestHandlerBuilder::new(LogSearchExecutor)
         .with_agent_card(plain_card(&url, "Exported Agent"))
-        .with_metrics(a2a_protocol_server::otel::OtelMetricsBuilder::new().build())
+        .with_metrics(telemetry.otel_metrics())
         .build()
     {
         Ok(handler) => Arc::new(handler),
@@ -403,11 +412,11 @@ pub(super) async fn otlp_pipeline() -> Check {
     // The periodic reader would otherwise wait out its interval. The flush is
     // expected to *fail* — nothing here speaks OTLP back — and that is fine:
     // the bytes have already left, which is the whole assertion.
-    let _ = tokio::time::timeout(Duration::from_secs(10), async { provider.force_flush() }).await;
+    let _ = tokio::time::timeout(Duration::from_secs(10), async { telemetry.force_flush() }).await;
     // The write is asynchronous on the collector side; give the reader a moment
     // to drain what the exporter already put on the wire.
     tokio::time::sleep(Duration::from_millis(500)).await;
-    let _ = provider.shutdown();
+    let _ = telemetry.shutdown();
 
     let bytes = received.load(Ordering::SeqCst);
     if bytes == 0 {

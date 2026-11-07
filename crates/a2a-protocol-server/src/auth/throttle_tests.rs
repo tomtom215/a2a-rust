@@ -197,6 +197,35 @@ fn trusted_hops_count_the_forwarded_client() {
     );
 }
 
+/// Audit B-09: behind proxies that write RFC 7239 `forwarded`, the throttle
+/// counts the client that header names, and ignores an `x-forwarded-for` the
+/// client sent itself.
+#[test]
+fn the_configured_forwarded_header_names_the_peer() {
+    set_now(6_000);
+    let throttle = AuthFailureThrottle::new(
+        AuthFailureThrottleConfig::default()
+            .with_max_failures(1)
+            .with_window_secs(WINDOW)
+            .with_trusted_proxy_hops(1)
+            .with_forwarded_header(crate::ForwardedHeader::Forwarded),
+    )
+    .expect("throttle")
+    .with_clock(now);
+    let via = |client: &str, forged: &str| {
+        from("10.0.0.1:5000")
+            .with_http_header("forwarded", format!("for={client};proto=https"))
+            .with_http_header("x-forwarded-for", forged.to_owned())
+    };
+
+    fail(&throttle, &via("203.0.113.50", "198.51.100.1"));
+    assert!(
+        refused(&throttle, &via("203.0.113.50", "198.51.100.2")),
+        "a fresh x-forwarded-for does not make a fresh peer"
+    );
+    assert!(!refused(&throttle, &via("203.0.113.51", "198.51.100.1")));
+}
+
 #[test]
 fn too_few_forwarded_entries_count_the_connection() {
     set_now(6_000);

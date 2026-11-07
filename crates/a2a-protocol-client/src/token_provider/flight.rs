@@ -252,7 +252,7 @@ impl Drop for Leader<'_> {
 /// `Serialization` is not and neither is `Transport`. Every other variant
 /// is copied as is. The match is exhaustive, so a new variant has to be
 /// placed here deliberately.
-pub(super) fn replicate(e: &ClientError) -> ClientError {
+pub fn replicate(e: &ClientError) -> ClientError {
     match e {
         ClientError::Http(inner) => ClientError::HttpClient(inner.to_string()),
         ClientError::HttpClient(s) => ClientError::HttpClient(s.clone()),
@@ -295,6 +295,13 @@ pub(super) fn replicate(e: &ClientError) -> ClientError {
         } => ClientError::IncompleteStream {
             last_event_id: last_event_id.clone(),
             detail: detail.clone(),
+        },
+        ClientError::CircuitOpen {
+            origin,
+            retry_after,
+        } => ClientError::CircuitOpen {
+            origin: origin.clone(),
+            retry_after: *retry_after,
         },
     }
 }

@@ -190,9 +190,13 @@ pub async fn start() -> SurfaceEndpoints {
     serve_rest(rest_l, Arc::clone(&handler));
     {
         use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
-        GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
-            .serve_with_listener(grpc_l)
-            .expect("start surface gRPC");
+        {
+            let listener = grpc_l;
+            tokio::spawn(
+                GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
+                    .serve_with_shutdown(listener, std::future::pending()),
+            );
+        }
     }
     {
         let ws = Arc::new(
@@ -200,9 +204,12 @@ pub async fn start() -> SurfaceEndpoints {
                 &handler,
             )),
         );
-        ws.serve_with_addr(ws_a.to_string().as_str())
-            .await
-            .expect("start surface WebSocket");
+        {
+            let listener = tokio::net::TcpListener::bind(ws_a.to_string().as_str())
+                .await
+                .expect("start surface WebSocket");
+            tokio::spawn(ws.serve_with_shutdown(listener, std::future::pending()));
+        }
     }
 
     ep

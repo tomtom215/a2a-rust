@@ -18,7 +18,7 @@ use std::sync::Arc;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::error::ServerError;
 use a2a_protocol_server::handler::SendMessageResult;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{HttpPushSender, RequestHandler, RequestHandlerBuilder};
 use a2a_protocol_types::error::ErrorCode;
 use a2a_protocol_types::message::{Message, Part};
@@ -86,9 +86,14 @@ async fn a_part_of_an_undeclared_media_type_is_refused_by_both_sends() {
 
 #[tokio::test]
 async fn a_part_of_an_undeclared_media_type_is_refused_over_json_rpc_on_both_sends() {
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler()))
-        .await
-        .expect("JSON-RPC");
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("JSON-RPC");
+        let addr = bound.local_addr().expect("JSON-RPC");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler()), std::future::pending()),
+        );
+        addr
+    };
     let params = json!({"message": {
         "messageId": "m-1", "role": "ROLE_USER",
         "parts": [{"text": "answer", "mediaType": UNDECLARED}]

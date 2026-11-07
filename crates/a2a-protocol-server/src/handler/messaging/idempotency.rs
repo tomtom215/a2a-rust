@@ -40,8 +40,9 @@ pub(super) enum SendKey {
 /// `Overloaded` says so on the wire (503, gRPC `RESOURCE_EXHAUSTED`) and is
 /// not rewritten to `INTERNAL` by `not_retry_safe`, which applies to failures
 /// after work began (release audit F8).
-fn unavailable_or(e: A2aError) -> ServerError {
+fn unavailable_or(metrics: &dyn crate::metrics::Metrics, e: A2aError) -> ServerError {
     if e.is_unavailable() {
+        metrics.on_refusal(crate::metrics::control::refusal::IDEMPOTENCY_STORE);
         ServerError::Overloaded(e.message)
     } else {
         e.into()
@@ -89,7 +90,7 @@ impl RequestHandler {
             .task_store
             .claim_idempotency_key(key, &message.id, task_id)
             .await
-            .map_err(unavailable_or)?;
+            .map_err(|e| unavailable_or(&*self.metrics, e))?;
         match claim {
             IdempotencyClaim::Claimed => Ok(SendKey::Claimed(key.to_owned())),
             IdempotencyClaim::Replay(existing) => {
@@ -150,7 +151,7 @@ impl RequestHandler {
             .task_store
             .idempotency_holder(key)
             .await
-            .map_err(unavailable_or)?;
+            .map_err(|e| unavailable_or(&*self.metrics, e))?;
         match holder {
             None => Ok(None),
             Some(holder) if holder.message_id == message.id => {

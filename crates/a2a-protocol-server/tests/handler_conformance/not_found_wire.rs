@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
 use a2a_protocol_server::handler::SendMessageResult;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     BearerTokenAuthInterceptor, HttpPushSender, RequestHandler, RequestHandlerBuilder,
 };
@@ -61,7 +61,7 @@ async fn alices_task(h: &RequestHandler) -> (String, String) {
         other => panic!("expected a task, got {other:?}"),
     };
     let config = h
-        .on_set_push_config(
+        .on_create_push_config(
             a2a_protocol_types::push::TaskPushNotificationConfig::new(id.as_str(), HOOK),
             Some(&alice),
         )
@@ -174,12 +174,23 @@ async fn another_callers_task_and_an_unknown_one_answer_identically_on_the_wire(
     let h = handler();
     let (id, config) = alices_task(&h).await;
     assert_eq!(id.len(), UNKNOWN.len(), "a minted id is a UUID");
-    let rpc = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(Arc::clone(&h)))
-        .await
-        .expect("JSON-RPC");
-    let rest = serve_with_addr("127.0.0.1:0", RestDispatcher::new(Arc::clone(&h)))
-        .await
-        .expect("HTTP+JSON");
+    let rpc = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("JSON-RPC");
+        let addr = bound.local_addr().expect("JSON-RPC");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(Arc::clone(&h)),
+            std::future::pending(),
+        ));
+        addr
+    };
+    let rest = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("HTTP+JSON");
+        let addr = bound.local_addr().expect("HTTP+JSON");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(Arc::clone(&h)), std::future::pending()),
+        );
+        addr
+    };
 
     let hidden = answers(rpc, rest, &id, &config).await;
     let unknown = answers(rpc, rest, UNKNOWN, &config).await;

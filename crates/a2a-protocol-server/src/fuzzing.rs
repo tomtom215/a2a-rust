@@ -97,7 +97,23 @@ pub fn extensions_header(value: &str) -> Vec<String> {
 pub fn caller_key_from_forwarded_for(xff: &str, trusted_proxy_hops: usize) -> String {
     let headers = HashMap::from([("x-forwarded-for".to_owned(), xff.to_owned())]);
     let ctx = crate::call_context::CallContext::new("fuzz").with_http_headers(headers);
-    crate::rate_limit::identity::caller_key(&ctx, trusted_proxy_hops, &[])
+    crate::rate_limit::identity::caller_key(
+        &ctx,
+        crate::rate_limit::identity::ProxyChain::new(trusted_proxy_hops, &[]),
+    )
+}
+
+/// The rate limiter's caller key, from an RFC 7239 `forwarded` value behind
+/// `trusted_proxy_hops` proxies.
+#[must_use]
+pub fn caller_key_from_rfc7239_forwarded(forwarded: &str, trusted_proxy_hops: usize) -> String {
+    let headers = HashMap::from([("forwarded".to_owned(), forwarded.to_owned())]);
+    let ctx = crate::call_context::CallContext::new("fuzz").with_http_headers(headers);
+    crate::rate_limit::identity::caller_key(
+        &ctx,
+        crate::rate_limit::identity::ProxyChain::new(trusted_proxy_hops, &[])
+            .with_header(crate::rate_limit::ForwardedHeader::Forwarded),
+    )
 }
 
 #[cfg(test)]
@@ -144,6 +160,18 @@ mod tests {
             "ip:203.0.113.7"
         );
         assert_eq!(caller_key_from_forwarded_for("198.51.100.1", 2), "anon");
+    }
+
+    #[test]
+    fn forwards_the_rfc7239_forwarded_header() {
+        assert_eq!(
+            caller_key_from_rfc7239_forwarded(r#"for="[::ffff:203.0.113.7]:80", for=10.0.0.1"#, 2),
+            "ip:203.0.113.7"
+        );
+        assert_eq!(
+            caller_key_from_rfc7239_forwarded("for=198.51.100.1", 2),
+            "anon"
+        );
     }
 
     #[cfg(feature = "auth-jwt")]

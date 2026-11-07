@@ -1,0 +1,77 @@
+{
+ "description": "Conformance vectors for https://a2a-rust.com/extensions/budget/v1. Each 'valid' status is read as 'reads'; each 'invalid' one is refused. Numbers are read from any whole JSON number, a float such as 30000.0 included (a protobuf Struct writes every number as a double), up to 2^53; a fraction, a negative or a value past the field's range is refused. Run by crates/a2a-protocol-types/tests/extension_vectors.rs, each value read through the SDK's own reader, and checked against the schema beside it.",
+ "uri": "https://a2a-rust.com/extensions/budget/v1",
+ "metadataKey": "a2a-rust.com/budget",
+ "carrier": "TaskStatusUpdateEvent.metadata",
+ "valid": [
+  {
+   "name": "left and spent",
+   "value": {
+    "remainingMs": 12000,
+    "meters": {
+     "tokens": 41000
+    },
+    "spent": {
+     "tokens": 9000
+    }
+   },
+   "reads": {
+    "remainingMs": 12000,
+    "meters": {
+     "tokens": 41000
+    },
+    "spent": {
+     "tokens": 9000
+    }
+   }
+  },
+  {
+   "name": "as a protobuf Struct writes it",
+   "value": {
+    "remainingMs": 12000.0,
+    "meters": {
+     "tokens": 41000.0
+    },
+    "spent": {
+     "tokens": 9000.0
+    }
+   },
+   "reads": {
+    "remainingMs": 12000,
+    "meters": {
+     "tokens": 41000
+    },
+    "spent": {
+     "tokens": 9000
+    }
+   }
+  },
+  {
+   "name": "nothing reported",
+   "value": {},
+   "reads": {}
+  }
+ ],
+ "invalid": [
+  {
+   "name": "an array in field order",
+   "value": [
+    1
+   ]
+  },
+  {
+   "name": "a fractional spend",
+   "value": {
+    "spent": {
+     "tokens": 1.5
+    }
+   }
+  },
+  {
+   "name": "a negative time",
+   "value": {
+    "remainingMs": -1.0
+   }
+  }
+ ]
+}

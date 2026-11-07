@@ -146,3 +146,49 @@ fn the_signer_hides_its_key() {
     let shown = format!("{:?}", signers()[1]);
     assert!(shown.contains("EdDSA") && shown.contains("ed-1") && shown.contains("<redacted>"));
 }
+
+/// Signs `m` as [`sign_content`] does, with `header` as the protected header.
+fn sign_with_header(m: &mut Message, signer: &ContentSigner, header: &serde_json::Value) {
+    let mut provenance = provenance_of(m).unwrap().unwrap_or_default();
+    provenance.signature = None;
+    crate::provenance::set(m, &provenance);
+    let protected = URL_SAFE_NO_PAD.encode(serde_json::to_vec(header).unwrap());
+    let sig = signer
+        .sign(signing_input(m, &protected).unwrap().as_bytes())
+        .unwrap();
+    provenance.signature = Some(ContentSignature {
+        protected,
+        signature: URL_SAFE_NO_PAD.encode(sig),
+    });
+    crate::provenance::set(m, &provenance);
+}
+
+/// RFC 7515 4.1.11: a signature whose protected header names a critical
+/// extension does not verify, because this verifier understands none, however
+/// good the signature is. The same signer's signature without the member does
+/// verify, so the refusal is the member's.
+#[test]
+fn a_signature_that_names_a_critical_extension_does_not_verify() {
+    for signer in signers() {
+        let base = serde_json::json!({ "alg": signer.alg(), "kid": signer.kid });
+        let mut plain = reply();
+        sign_with_header(&mut plain, &signer, &base);
+        verify_content(&plain, &set()).expect("control: the same signature without crit");
+
+        for crit in [
+            serde_json::json!(["exp"]),
+            serde_json::json!(["b64"]),
+            serde_json::json!([]),
+            serde_json::json!("exp"),
+            serde_json::json!(null),
+        ] {
+            let mut header = base.clone();
+            header["crit"] = crit.clone();
+            header["exp"] = serde_json::json!(1);
+            let mut m = reply();
+            sign_with_header(&mut m, &signer, &header);
+            let err = verify_content(&m, &set()).expect_err(&format!("crit {crit}"));
+            assert!(err.message.contains("crit"), "{crit}: {err}");
+        }
+    }
+}

@@ -12,6 +12,16 @@
 # (or send all three signals to an OpenTelemetry Collector and use
 # prometheus-collector.yml beside this file). README.md in the directory
 # above says how this file and the rules were tested.
+#
+# Flags worth passing with it (the compose stack does):
+#   --enable-feature=otlp-deltatocumulative  an agent exporting delta
+#     temporality is otherwise refused (HTTP 500, "invalid temporality and
+#     type combination") and its series never appear (audit C-21);
+#   --enable-feature=created-timestamp-zero-ingestion  a zero at each
+#     point's start time, so a process that exported once has a rate (L11);
+#   --enable-feature=exemplar-storage  keeps exemplars (C-05).
+# prometheus-compose.yml is this file plus the compose stack's Alertmanager
+# and scrape jobs; scripts/check_stack.py fails if the shared parts differ.
 
 global:
   scrape_interval: 15s
@@ -30,6 +40,11 @@ storage:
   tsdb:
     # OTLP pushes arrive out of order under retries; accept 30 minutes.
     out_of_order_time_window: 30m
+    # Whichever comes first: seven days, or 5 GB of blocks (audit C-19). The
+    # size bound keeps a burst of new series from filling the disk.
+    retention:
+      time: 7d
+      size: 5GB
 
 rule_files:
   - rules/*.yml

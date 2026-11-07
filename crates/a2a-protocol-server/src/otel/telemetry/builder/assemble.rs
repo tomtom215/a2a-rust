@@ -12,7 +12,11 @@ use opentelemetry_sdk::metrics::PeriodicReader;
 use super::super::console::Console;
 use super::super::propagators::Propagators;
 use super::super::selection::Selection;
-use super::*;
+use super::super::upstream;
+use super::{
+    Env, ExportRuntime, Resource, SdkLoggerProvider, SdkMeterProvider, SdkTracerProvider, Signal,
+    Target, Telemetry, TelemetryBuilder, TelemetryError, config, exporters,
+};
 
 /// The metric reader's export interval, as `PeriodicReader` reads it.
 fn metric_interval_ms(env: &Env) -> u64 {
@@ -69,28 +73,7 @@ impl TelemetryBuilder {
             self.selection(Signal::Metrics),
             self.selection(Signal::Logs),
         ];
-        let mut telemetry = Telemetry {
-            tracer: None,
-            meter: None,
-            logger: None,
-            log_level: self.log_level,
-            span_level: self.span_level,
-            // `deploy-agent` is crate `deploy_agent`: the application's own
-            // lines are printed at INFO by default (`install_subscriber`).
-            app_target: self
-                .default_service_name
-                .as_deref()
-                .map(|name| name.replace('-', "_")),
-            runtime: None,
-            failures: Vec::new(),
-            disabled: config::sdk_disabled(&*self.env),
-            startup_summary: self.startup_summary,
-            logs_on_console: chosen[2].console,
-            report: Vec::new(),
-            notices: Vec::new(),
-            #[cfg(feature = "otel-prometheus")]
-            prometheus: None,
-        };
+        let mut telemetry = self.empty(&chosen);
         // The export thread exists only when something is sent to a
         // collector or served for a scraper; a console-only process starts
         // none.
@@ -99,6 +82,7 @@ impl TelemetryBuilder {
         } else {
             None
         };
+        self.note_upstream(&chosen);
         let (resource, resource_notices) = self.resource_and_notices();
         telemetry.notices.extend(resource_notices);
         let [traces, metrics, logs] = chosen;
@@ -108,6 +92,20 @@ impl TelemetryBuilder {
             self.meter_provider(&mut telemetry, metrics, runtime.as_ref(), &resource)?;
         telemetry.logger =
             self.logger_provider(&mut telemetry, logs, runtime.as_ref(), &resource)?;
+        if let Some(meter) = &telemetry.meter {
+            super::super::self_metrics::observe_failed_exports(
+                meter,
+                telemetry.failed_totals.clone(),
+            );
+            if self.process_metrics {
+                super::super::process::observe(
+                    meter,
+                    self.runtime
+                        .clone()
+                        .or_else(|| tokio::runtime::Handle::try_current().ok()),
+                );
+            }
+        }
         telemetry.runtime = runtime;
         telemetry.notices.extend(self.base_endpoint_notice([
             chosen[0].otlp,
@@ -128,6 +126,59 @@ impl TelemetryBuilder {
             opentelemetry::global::set_text_map_propagator(propagators.composite());
         }
         Ok(telemetry)
+    }
+
+    /// A `Telemetry` with nothing built yet, for `chosen`.
+    fn empty(&self, chosen: &[Selection; 3]) -> Telemetry {
+        Telemetry {
+            tracer: None,
+            meter: None,
+            logger: None,
+            log_level: self.log_level,
+            span_level: self.span_level,
+            // `deploy-agent` is crate `deploy_agent`: the application's own
+            // lines are printed at INFO by default (`install_subscriber`).
+            app_target: self
+                .default_service_name
+                .as_deref()
+                .map(|name| name.replace('-', "_")),
+            runtime: None,
+            failures: Vec::new(),
+            failed_totals: Vec::new(),
+            disabled: config::sdk_disabled(&*self.env),
+            startup_summary: self.startup_summary,
+            console_format: self.console_format.unwrap_or_else(|| {
+                super::super::console_format::from_env(
+                    (self.env)(super::super::console_format::VARIABLE).as_deref(),
+                    &self.notes,
+                )
+            }),
+            logs_on_console: chosen[2].console,
+            report: Vec::new(),
+            notices: Vec::new(),
+            #[cfg(feature = "otel-prometheus")]
+            prometheus: None,
+            #[cfg(feature = "otel-prometheus")]
+            prometheus_scrape: None,
+        }
+    }
+
+    /// Notes on what the upstream crates read for themselves and would warn
+    /// about into no subscriber (audit NEW-c-3), for the signals that build
+    /// what reads each variable.
+    fn note_upstream(&self, chosen: &[Selection; 3]) {
+        if chosen[0].any() {
+            upstream::note_sampler(&*self.env, &self.notes);
+        }
+        if chosen[1].otlp {
+            upstream::note_temporality(&*self.env, &self.notes);
+        }
+        if chosen[1].otlp || chosen[1].console {
+            upstream::note_metric_interval(&*self.env, &self.notes);
+        }
+        if chosen[1].any() {
+            upstream::note_exemplar_filter(&*self.env, &self.notes);
+        }
     }
 
     fn tracer_provider(
@@ -180,10 +231,19 @@ impl TelemetryBuilder {
         if chosen.prometheus
             && let Some(runtime) = runtime
         {
-            let started = super::super::prometheus::start(&*self.env, runtime, &self.notes)?;
+            let started = super::super::prometheus::start(
+                &*self.env,
+                runtime,
+                &self.notes,
+                self.prometheus_listener,
+            )?;
             builder = builder.with_reader(started.reader);
-            parts.push(format!("prometheus http://{}/metrics", started.addr));
-            telemetry.prometheus = Some(started.addr);
+            parts.push(started.addr.map_or_else(
+                || "prometheus, served by the application (no listener)".to_owned(),
+                |addr| format!("prometheus http://{addr}/metrics"),
+            ));
+            telemetry.prometheus = started.addr;
+            telemetry.prometheus_scrape = Some(started.scrape);
         }
         if chosen.console {
             builder = builder.with_reader(PeriodicReader::builder(Console::stdout()).build());

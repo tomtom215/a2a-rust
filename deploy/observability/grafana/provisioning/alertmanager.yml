@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The Alertmanager data source of docker-compose.yml, so the alerts that
+# Prometheus fires show under Grafana's Alerting. Set ALERTMANAGER_URL. Kept
+# outside datasources/ for the reason traces-and-logs.yml is: a Grafana
+# provisioned from that directory alone gets no data source pointing nowhere.
+apiVersion: 1
+datasources:
+  - name: Alertmanager
+    uid: a2a-alertmanager
+    type: alertmanager
+    access: proxy
+    url: ${ALERTMANAGER_URL}
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false

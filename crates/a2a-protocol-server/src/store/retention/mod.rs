@@ -65,6 +65,13 @@
 //! a hard bound; disk is not, and an unbounded-age `InputRequired` task is a
 //! workflow waiting on someone, not a leak.
 
+// Gated as `effective_batch_size` is: its callers are the SQL sweeps, and
+// without a backend it is dead code under `-D warnings`.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+pub(crate) mod compact;
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+#[cfg(test)]
+mod compact_tests;
 #[cfg(feature = "postgres")]
 pub(crate) mod postgres;
 #[cfg(feature = "sqlite")]
@@ -179,6 +186,18 @@ pub struct RetentionPolicy {
     /// Set it to bound how long one sweep can run when the first sweep after
     /// switching retention on has years of backlog to work through.
     pub max_batches: Option<u32>,
+
+    /// The most events a live (non-terminal) task's log keeps, or `None`, the
+    /// default: a live task's log then grows for as long as the task runs.
+    ///
+    /// With it, `purge_expired` also compacts the log of each live task
+    /// holding more than this many events to the newest this many, dropping
+    /// only events the stored task already reflects (audit H13, ADR 0047). A
+    /// subscriber that asks to resume from a dropped position is answered
+    /// with the task's snapshot, as a lagged one is, never with a replay
+    /// that silently skips. `0` is taken as `1`: the last event is kept, as
+    /// a continued task numbers its events on from it.
+    pub max_events_per_live_task: Option<u64>,
 }
 
 impl RetentionPolicy {
@@ -191,7 +210,17 @@ impl RetentionPolicy {
             batch_size: 1_000,
             idempotency_key_max_age: Some(DEFAULT_IDEMPOTENCY_KEY_MAX_AGE),
             max_batches: None,
+            max_events_per_live_task: None,
         }
+    }
+
+    /// Compacts each live task's log to its newest `max` events; see
+    /// [`max_events_per_live_task`](Self::max_events_per_live_task). `None`
+    /// turns it off.
+    #[must_use]
+    pub const fn with_max_events_per_live_task(mut self, max: Option<u64>) -> Self {
+        self.max_events_per_live_task = max;
+        self
     }
 
     /// Sets the rows-per-`DELETE` batch size. Zero is treated as one.
@@ -302,6 +331,9 @@ pub struct PurgeReport {
     /// count here is the healthy reading, not a warning: it is the sweep doing
     /// the job it was given.
     pub idempotency_keys_deleted: u64,
+    /// Events dropped from live tasks' logs by
+    /// [`RetentionPolicy::max_events_per_live_task`]; zero without it.
+    pub events_compacted: u64,
 
     /// Batches executed.
     pub batches: u32,

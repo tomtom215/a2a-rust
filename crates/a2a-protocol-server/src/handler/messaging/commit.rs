@@ -5,17 +5,16 @@
 //! queue, token, row and executor, under the per-context lock; and undoing
 //! all of it when a step fails, so nothing outlives a refused send.
 
-use a2a_protocol_types::params::MessageSendParams;
-use tokio::sync::OwnedSemaphorePermit;
-
 use super::super::RequestHandler;
 use super::super::locks::ContextLock;
+use super::super::turn_slots::TurnSlots;
 use super::claimed::{Claimed, Regated};
 use super::mode::SendMode;
 use super::start::{Committed, ExecutorStart, Started, runtime_has_one_worker};
 use super::{basis, commit_guard, create, quorum};
 use crate::call_context::CallContext;
 use crate::error::ServerResult;
+use a2a_protocol_types::params::MessageSendParams;
 
 impl RequestHandler {
     /// Takes the tenant's concurrency slot, validates the request, and
@@ -27,16 +26,21 @@ impl RequestHandler {
     /// begin, and it releases what it admitted on every failure.
     ///
     /// The slot is taken first: a refused request must not cost the tenant
-    /// the very resources the limit protects. The permit is moved into the
-    /// spawned executor and released when that task ends, however it ends —
-    /// which is why the commit is this method's tail expression.
+    /// the very resources the limit protects. The admission gate's slot, when
+    /// there is a gate (ADR 0045), is taken once the request is valid, and
+    /// before any side effect. Both permits are moved into the spawned
+    /// executor and released when that task ends, however it ends — which is
+    /// why the commit is this method's tail expression.
     pub(super) async fn validate_and_commit(
         &self,
         mut params: MessageSendParams,
         streaming: bool,
         call_ctx: &CallContext,
     ) -> ServerResult<(SendMode, Committed)> {
-        let tenant_slot = self.acquire_tenant_slot().await?;
+        let mut slots = TurnSlots {
+            tenant: self.acquire_tenant_slot().await?,
+            admission: None,
+        };
 
         // SPEC §3.3.4: a streaming send is only permitted when the configured
         // agent card advertises `capabilities.streaming == true`. Reject with
@@ -47,17 +51,12 @@ impl RequestHandler {
 
         // Before an approval is counted or a send key's replay answered.
         let content_check = self.validate_send_params(&mut params)?;
+        slots.admission = self.take_admission_slot(&params.message, call_ctx).await?;
 
         let mode = SendMode::of(&params, streaming);
-        self.commit_task(
-            params,
-            mode.use_background,
-            tenant_slot,
-            call_ctx,
-            content_check,
-        )
-        .await
-        .map(|started| (mode, started))
+        self.commit_task(params, mode.use_background, slots, call_ctx, content_check)
+            .await
+            .map(|started| (mode, started))
     }
 
     /// Resolves the task the message belongs to and commits it: the queue
@@ -79,7 +78,7 @@ impl RequestHandler {
         &self,
         params: MessageSendParams,
         use_background: bool,
-        tenant_slot: Option<OwnedSemaphorePermit>,
+        slots: TurnSlots,
         call_ctx: &CallContext,
         content_check: crate::request_context::ContentCheck,
     ) -> ServerResult<Committed> {
@@ -161,9 +160,15 @@ impl RequestHandler {
         // clippy's `large_futures` threshold — the same reason the inline
         // push-config branch inside it is boxed.
         let started = Box::pin(async move {
-            // A halted tenant takes no new work (`halt`); a halt that lands
-            // after this check is caught once the token is registered.
-            self.refuse_if_halted().await?;
+            // The job this turn belongs to (`lineage`), fixed for its task.
+            let prior = stored_task
+                .as_ref()
+                .filter(|stored| create::continues(&task_id, Some(stored)));
+            let (lineage, record_lineage) =
+                super::super::lineage::of_turn(&params.message, prior, &context_id)?;
+            // A halted tenant or job takes no new work (`halt`); a halt that
+            // lands after this check is caught once the token is registered.
+            self.refuse_if_halted(&lineage.root).await?;
             // A lease and a budget are checked before any work; the lease is
             // stored once the turn has its token (`lease`, `budget`).
             let lease = self.requested_lease(&params.message)?;
@@ -177,12 +182,16 @@ impl RequestHandler {
                 context_id = %context_id,
                 "creating task"
             );
-            let task = create::build_initial_task(
+            let mut task = create::build_initial_task(
                 &task_id,
                 &context_id,
                 stored_task.as_ref(),
                 &params.message,
             );
+            // Only on a new task, which `based_on` below keeps as it is.
+            if record_lineage {
+                lineage.record_on(&mut task);
+            }
             // The same decision `build_initial_task` makes.
             let continues = create::continues(&task_id, stored_task.as_ref());
             let known =
@@ -200,6 +209,7 @@ impl RequestHandler {
             ctx.cancellation_token = self.in_flight.task_token();
             ctx.approval = approval;
             ctx.budget = budget;
+            ctx.lineage = lineage;
             ctx.content_check = content_check;
             if let Some(config) = params.configuration.as_ref() {
                 ctx = ctx.with_accepted_output_modes(config.accepted_output_modes.clone());
@@ -215,7 +225,11 @@ impl RequestHandler {
             writer.bind_identity(task_id.clone(), ctx.context_id.clone());
             guard_ref.leased();
             let turn = self
-                .register_cancellation_token(&task_id, ctx.cancellation_token.clone())
+                .register_cancellation_token(
+                    &task_id,
+                    ctx.cancellation_token.clone(),
+                    ctx.lineage.clone(),
+                )
                 .await;
             let claim = claim.map(std::sync::Arc::new);
             if let Some(claim) = &claim {
@@ -225,7 +239,7 @@ impl RequestHandler {
             // A halt that landed after the check above may have walked the
             // tokens before this one was inserted; it has set its flag by
             // now, so stop this turn the way the walk would have (`halt`).
-            self.stop_if_halted(&turn, &ctx.cancellation_token);
+            self.stop_if_halted(&turn, &ctx.cancellation_token, &ctx.lineage.root);
             if let Some(lease) = lease {
                 self.start_lease(&task_id.0, lease, &turn, &ctx.cancellation_token)
                     .await?;
@@ -279,18 +293,12 @@ impl RequestHandler {
             // benchmark, unary sends: one worker, 14.4k -> 19.6k rps for the
             // shared task; two workers, 11.9k (own task) vs 11.4k (shared).
             let executor = if use_background || !runtime_has_one_worker() {
-                ExecutorStart::Spawned(self.spawn_executor(
-                    ctx,
-                    writer,
-                    tenant_slot,
-                    turn,
-                    claim.clone(),
-                ))
+                ExecutorStart::Spawned(self.spawn_executor(ctx, writer, slots, turn, claim.clone()))
             } else {
                 ExecutorStart::Deferred(self.defer_executor(
                     ctx,
                     writer,
-                    tenant_slot,
+                    slots,
                     turn,
                     claim.clone(),
                 ))

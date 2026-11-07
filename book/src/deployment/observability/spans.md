@@ -106,6 +106,7 @@ The executor's span follows the OpenTelemetry GenAI agent conventions
 | `gen_ai.conversation.id` | The A2A `contextId` |
 | `a2a.task.id`, `a2a.context.id` | The task and context |
 | `a2a.task.state` | The task's final state |
+| `a2a.lineage.root`, `a2a.lineage.depth` | The job the task belongs to and its depth in the job's tree (ADR 0034); a task sent without a lineage is the root of its own job, named by its `contextId`, at depth 0. Never a metric label |
 | `error.type` | For a run that ends `Failed`: `internal`, `invalid-request`, `transient`, `policy-refusal`, or `budget-exhausted` (which a timeout is); the span's status is then error |
 | `gen_ai.response.finish_reasons` | `["stop"]` for a completed turn, `["error"]` for a failed one (string array) |
 | `gen_ai.input.messages`, `gen_ai.output.messages` | Only with content capture ([below](#message-content)) |

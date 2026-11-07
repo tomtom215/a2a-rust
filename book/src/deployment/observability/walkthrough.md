@@ -17,19 +17,25 @@ repository.
 docker compose -f deploy/observability/docker-compose.yml up -d
 ```
 
-This starts five containers on the network `a2a-observability_default`:
+This starts six services on the network `a2a-observability_default`, after a
+one-shot `volume-init` that gives the Collector's and Tempo's volumes to the
+user they run as. Every port is published on `127.0.0.1` only, and every
+image is pinned by digest as well as tag:
 
 | Service | Image | Published port | Role |
 |---|---|---|---|
-| `otel-collector` | `otel/opentelemetry-collector-contrib:0.163.2` | 4317 (gRPC), 4318 (HTTP) | Receives OTLP; metrics to Prometheus, traces to Tempo, logs to Loki |
-| `prometheus` | `prom/prometheus:v3.15.1` | 9090 | OTLP receiver on, the rules loaded, 7 days' retention |
-| `tempo` | `grafana/tempo:2.9.0` | 3200 | Traces |
-| `loki` | `grafana/loki:3.7.9` | 3100 | Logs |
-| `grafana` | `grafana/grafana:13.2.4` | 3001 (host), 3000 (container) | Dashboards in folder "A2A"; Tempo and Loki under Explore |
+| `otel-collector` | `otel/opentelemetry-collector-contrib:0.163.2` | 4317 (gRPC), 4318 (HTTP) | Receives OTLP; metrics to Prometheus, traces to Tempo, logs to Loki; 1 GiB memory limit; queues on disk; its own metrics on 8888 |
+| `prometheus` | `prom/prometheus:v3.15.1` | 9090 | OTLP and remote-write receivers on, the rules loaded, 7 days' or 5 GB retention, delta conversion, start-time zeros and exemplars |
+| `alertmanager` | `prom/alertmanager:v0.34.2` | 9093 | Receives the alerts; notifies nobody until you add a receiver ([Alerts](./alerts.md#where-alerts-go)) |
+| `tempo` | `grafana/tempo:2.9.0` | 3200 | Traces, kept 24 hours; span metrics and the service graph to Prometheus |
+| `loki` | `grafana/loki:3.7.9` | 3100 | Logs, kept 7 days |
+| `grafana` | `grafana/grafana:13.2.4` | 3001 (host), 3000 (container) | Dashboards in folder "A2A"; Tempo and Loki under Explore; alerts under Alerting |
 
 Grafana has no login: the anonymous user is an admin, so keep it off any
 network you do not control (see [On a shared host](#on-a-shared-host)).
-Everything is kept in local volumes.
+Everything is kept in local volumes, Grafana's own state included; the
+provisioned dashboards cannot be saved over from the UI ("Save as" makes a
+copy).
 
 ## 2. Run an agent pointed at it
 
@@ -79,18 +85,24 @@ webhook URLs, which the push deliveries to `127.0.0.1` need.
 
 The CLI builds `Telemetry` too, so exporting `OTEL_EXPORTER_OTLP_ENDPOINT` in
 the shell that runs `drive.sh` feeds the **A2A client** dashboard from its
-calls. Each CLI run is a short-lived process, so its series are thin (see the
-[caveat](./dashboards.md#a2a-agents-genai)), and each run without a
-`service.instance.id` is a new instance, a series of its own.
+calls. Each CLI run is a short-lived process that exports once, at exit, and
+each run without a `service.instance.id` is a new instance, a series of its
+own. The compose Prometheus writes a zero at each series' start time, so these
+runs do show on the rate panels; on a Prometheus without that flag they show
+only on *Calls in the range by processes that started in it* ([A2A
+client](./dashboards.md#a2a-client)).
 
 ## 4. Read a dashboard
 
 Open `http://localhost:3001`, then **Dashboards → A2A → A2A server**. Within a
 few minutes the *Calls* row shows calls per second on all four bindings, and
-*Failed calls* a steady share: the deliberate task-not-found over JSON-RPC,
-where every error code counts as a failure. Over HTTP+JSON and gRPC the same
-not-found is a `404` or `NOT_FOUND` and, by those bindings' conventions, not a
-server failure, so it shows in `rpc.status_code` but not in the ratio. *Push deliveries, by
+*Caller errors* a steady rate on every binding: the deliberate task-not-found,
+`-32001` over JSON-RPC, `404` over HTTP+JSON, `NOT_FOUND` over gRPC. It is the
+caller's mistake, answered correctly, so *Failed calls* stays empty: until
+0.16.0 the JSON-RPC half of it counted as a failure there, and paged
+([what counts as a failure](./alerts.md#what-counts-as-a-failure)).
+*Server span duration* has points with diamonds on them: exemplars, each one
+span; click one to open its trace. *Push deliveries, by
 outcome* shows `delivered` and failed outcomes side by side. *Persistence
 errors* stays empty, because no store fails, and *HTTP connections* stays empty
 for this agent, which serves HTTP with its own loop rather than the SDK's
@@ -99,9 +111,10 @@ every panel.
 
 To see the recording rules behind the panels, open Prometheus on
 `http://localhost:9090` and query `a2a:rpc_server_calls:rate5m`; **Alerts**
-lists the nine alerts. `A2AServerErrorRatioHigh` fired on this traffic when
-the stack was checked: 11% of calls were the deliberate task-not-found, over
-its 5% threshold for ten minutes.
+lists the twenty alerts, and Alertmanager on `http://localhost:9093` (or
+Grafana's **Alerting**) shows any that fire. Before 0.16.0
+`A2AServerErrorRatioHigh` fired on this traffic: 11% of calls were the
+deliberate task-not-found. It no longer does.
 
 ## 5. Find a trace
 
@@ -113,8 +126,12 @@ exported CLI has the CLI's `CLIENT` span above it, in the same trace.
 
 ## 6. Follow a trace to its logs
 
-On a span in Tempo, the logs link opens Loki filtered by the span's trace id,
-five minutes either side: the log lines the SDK wrote inside that call. From
+On a span in Tempo, **Links → Logs for this trace** opens Loki filtered by the
+span's trace id, five minutes either side: the log lines the SDK wrote inside
+that call (checked on 2026-11-04 with Grafana 13.2.4: the query filters on
+Loki's structured metadata, where the trace id is). The same menu has the
+span's rate, error rate and p95 from Tempo's span metrics, and the **Service
+Graph** tab draws the calls between agents. From
 the other side, **Explore → Loki**, select the agent's lines by its
 `service_name` label; a line with a `trace_id` links back to its trace in
 Tempo. [Logs](./logs.md#logs-in-loki-linked-to-traces) explains the
@@ -140,9 +157,9 @@ GRAFANA_ADMIN_PASSWORD=... docker compose \
 
 adds a Grafana login (no anonymous user, no sign-up; Compose refuses to start
 without the password), publishes only Grafana and the Collector's OTLP ports,
-so Prometheus, Tempo and Loki are reachable on the Compose network only, and
-gives the Collector a 1 GiB memory limit, from which its `memory_limiter`
-takes its limits. TLS on the OTLP receivers and on Grafana, authentication on
+on every interface, so Prometheus, Alertmanager, Tempo and Loki are reachable
+on the Compose network only. The Collector's 1 GiB memory limit, from which
+its `memory_limiter` takes its limits, is in the base file. TLS on the OTLP receivers and on Grafana, authentication on
 the receivers for agents outside your network, and backups are still yours to
 add. Both Collector configurations answer health checks on 13133 (`GET /` is
 200 once the pipelines run), for a liveness or readiness probe.
@@ -151,4 +168,5 @@ That override was run on 2026-10-28: Prometheus, Tempo and Loki refused
 connections from the host, Grafana answered 401 without a login and with a
 wrong password and served the dashboards to `admin`, and an agent's metrics
 were read back through Grafana's data source proxy. Not run: the production
-override behind TLS, and either stack in Kubernetes.
+override behind TLS, and either stack in Kubernetes ([The stack on
+Kubernetes](./kubernetes.md) has the generated manifests).

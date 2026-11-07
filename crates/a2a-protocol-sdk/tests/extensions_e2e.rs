@@ -25,7 +25,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
@@ -101,9 +101,15 @@ fn asked_for_both() -> Vec<String> {
 #[tokio::test]
 async fn json_rpc_sends_the_extensions_asked_for() {
     let recorder = Recorder::default();
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler(&recorder)))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(handler(&recorder)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let client = ClientBuilder::new(format!("http://{addr}"))
         .with_extensions([GEO, CITE])
         .build()
@@ -115,9 +121,15 @@ async fn json_rpc_sends_the_extensions_asked_for() {
 #[tokio::test]
 async fn http_json_sends_the_extensions_asked_for() {
     let recorder = Recorder::default();
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler(&recorder)))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(handler(&recorder)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let client = ClientBuilder::new(format!("http://{addr}"))
         .with_protocol_binding("HTTP+JSON")
         .with_extensions([GEO, CITE])
@@ -133,10 +145,15 @@ async fn grpc_sends_the_extensions_asked_for() {
     use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
 
     let recorder = Recorder::default();
-    let addr = GrpcDispatcher::new(handler(&recorder), GrpcConfig::default())
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .unwrap();
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            GrpcDispatcher::new(handler(&recorder), GrpcConfig::default())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let url = format!("http://{addr}");
     let client = ClientBuilder::new(&url)
         .with_protocol_binding("GRPC")
@@ -164,10 +181,17 @@ async fn websocket_sends_the_extensions_asked_for_on_the_upgrade() {
     use a2a_protocol_server::dispatch::websocket::WebSocketDispatcher;
 
     let recorder = Recorder::default();
-    let addr = Arc::new(WebSocketDispatcher::new(handler(&recorder)))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("bind");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("bind");
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler(&recorder)))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let url = format!("ws://{addr}");
     let transport = WebSocketTransport::connect_with_config(
         &url,
@@ -210,9 +234,15 @@ impl CallInterceptor for AsksForCitations {
 #[tokio::test]
 async fn an_interceptor_s_own_header_wins_and_none_is_sent_by_default() {
     let recorder = Recorder::default();
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler(&recorder)))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(handler(&recorder)),
+            std::future::pending(),
+        ));
+        addr
+    };
     let url = format!("http://{addr}");
 
     let client = ClientBuilder::new(&url)

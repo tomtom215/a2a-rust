@@ -31,7 +31,7 @@ fn installs_once_whatever_was_built_and_never_replaces_one() {
     assert!(off.describe().starts_with("telemetry: nothing is exported"));
     assert!(!tracing::dispatcher::has_been_set());
     assert!(
-        off.install_subscriber(),
+        off.try_install_subscriber(),
         "a process with nothing exported still gets its warnings printed"
     );
     assert!(tracing::dispatcher::has_been_set());
@@ -46,7 +46,7 @@ fn installs_once_whatever_was_built_and_never_replaces_one() {
         .build()
         .expect("builds");
     assert!(
-        !traces.install_subscriber(),
+        !traces.try_install_subscriber(),
         "a global subscriber is never replaced"
     );
 }

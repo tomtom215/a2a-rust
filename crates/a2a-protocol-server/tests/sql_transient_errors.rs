@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_server::dispatch::RestDispatcher;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::store::{SqliteTaskStore, TaskStore};
 use a2a_protocol_server::{RequestHandlerBuilder, agent_executor};
 use a2a_protocol_types::task::TaskId;
@@ -26,12 +26,21 @@ use sqlx::sqlite::SqlitePoolOptions;
 struct Idle;
 agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
 
+/// How long the starved pool waits for a connection before it gives up, and
+/// so how long a test below waits for the failure it is about. The same bound
+/// covers opening the pool's first connection and every statement of the
+/// store's setup, so it is set well above what those take on a loaded machine:
+/// at 100 ms the pool timed out while being built (`expect("pool")` below, on
+/// the macOS runner of CI run 1810), a failure of the setup and not of the
+/// starvation under test. No test asserts how long the wait lasts.
+const STARVED_FOR: Duration = Duration::from_secs(2);
+
 /// A store over a one-connection pool, and that pool: holding its
 /// connection leaves the store nothing to acquire.
 async fn starved_store() -> (SqliteTaskStore, sqlx::SqlitePool) {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
-        .acquire_timeout(Duration::from_millis(100))
+        .acquire_timeout(STARVED_FOR)
         .connect("sqlite::memory:")
         .await
         .expect("pool");
@@ -62,9 +71,14 @@ async fn http_json_answers_a_starved_store_503_unavailable() {
             .build()
             .expect("handler"),
     );
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     let _held = pool.acquire().await.expect("the one connection");
 
     let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
@@ -117,9 +131,14 @@ async fn a_call_a_client_may_not_repeat_is_not_called_temporary() {
             .build()
             .expect("handler"),
     );
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler))
-        .await
-        .unwrap();
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.unwrap();
+        let addr = bound.local_addr().unwrap();
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     let _held = pool.acquire().await.expect("the one connection");
 
     let (status, body) = post(

@@ -41,10 +41,17 @@ fn frames() -> Vec<Value> {
 #[tokio::test]
 async fn websocket_malformed_frame_is_refused_without_credential() {
     let (handler, checked) = gated();
-    let addr = Arc::new(WebSocketDispatcher::new(handler))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("serve");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("serve");
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
     let mut misses = Misses::default();
     for token in TOKENS {
         let mut req = format!("ws://{addr}").into_client_request().expect("url");

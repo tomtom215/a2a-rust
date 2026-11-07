@@ -16,6 +16,13 @@
 //!
 //! `LEASE=1` makes the worker grant leases (an `InMemoryLeaseStore`).
 //!
+//! `RESUMABLE=1` makes the executor say its turns may be run again
+//! (`resumes_after_hand_off`, ADR 0054): a graceful shutdown then hands a
+//! `hold` still running back to its caller instead of failing it, and the
+//! turn, sent again, holds again from the start on whichever worker receives
+//! it (`handoff_live.py`). Its start line says `rerun=true` when the stored
+//! task carries the hand-off mark.
+//!
 //! Every start, completion and cancellation is one log line with a Unix
 //! millisecond timestamp, so a run can count the cancels it saw: `cancel-hook`
 //! is the server asking the executor to cancel (`CancelTask`), `token-fired`
@@ -39,6 +46,7 @@ type Fut<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send +
 struct Exec {
     name: &'static str,
     hold: Duration,
+    resumable: bool,
 }
 
 fn now_ms() -> u128 {
@@ -53,7 +61,12 @@ impl AgentExecutor for Exec {
             let emit = EventEmitter::new(ctx, queue);
             let text = ctx.message.text().unwrap_or_default().to_owned();
             let (name, id) = (self.name, &ctx.task_id);
-            eprintln!("[{name}] t={} start task={id} text={text}", now_ms());
+            let rerun = ctx.stored_task.as_ref().is_some_and(|t| {
+                t.status.message.as_ref().and_then(|m| m.metadata.as_ref()).and_then(|m| m.get("a2a-rust.com/hand-off"))
+                    .and_then(|v| v.as_bool())
+                    == Some(true)
+            });
+            eprintln!("[{name}] t={} start task={id} text={text} rerun={rerun}", now_ms());
             if text != "hold" {
                 return emit.status(TaskState::Completed).await;
             }
@@ -69,6 +82,10 @@ impl AgentExecutor for Exec {
             eprintln!("[{name}] t={} completed task={id}", now_ms());
             Ok(())
         })
+    }
+
+    fn resumes_after_hand_off(&self) -> bool {
+        self.resumable
     }
 
     // Logs, and writes nothing: the handler ends the task `canceled` after a
@@ -87,7 +104,8 @@ async fn main() {
     let hold = std::env::var("HOLD_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(60);
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
     let store = PostgresTaskStore::new(&url).await.expect("store");
-    let mut builder = RequestHandlerBuilder::new(Exec { name, hold: Duration::from_secs(hold) })
+    let resumable = std::env::var("RESUMABLE").is_ok_and(|v| v == "1");
+    let mut builder = RequestHandlerBuilder::new(Exec { name, hold: Duration::from_secs(hold), resumable })
         .without_agent_card()
         .with_task_store(store);
     // LEASE=1: the worker grants leases (ADR 0020) and stops a child whose lease lapses.
@@ -97,7 +115,7 @@ async fn main() {
     let handler = Arc::new(builder.build().expect("handler"));
     let port = std::env::var("PORT").expect("PORT");
     let server = Server::bind(&format!("127.0.0.1:{port}")).await.expect("bind");
-    eprintln!("[{name}] t={} serving hold_secs={hold}", now_ms());
+    eprintln!("[{name}] t={} serving hold_secs={hold} resumable={resumable}", now_ms());
     let h = Arc::clone(&handler);
     let _report = server
         .serve_with_shutdown(JsonRpcDispatcher::new(handler), async {

@@ -27,7 +27,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_server::{
     PathSegmentTenantResolver, RequestHandler, TenantAwareInMemoryTaskStore,
@@ -108,9 +108,15 @@ fn assert_never_victim(recorder: &Recorder, binding: &str) {
 #[tokio::test]
 async fn jsonrpc_tenant_comes_from_the_url_not_a_path_header() {
     let recorder = Recorder::default();
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler(&recorder)))
-        .await
-        .expect("bind");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("bind");
+        let addr = bound.local_addr().expect("bind");
+        tokio::spawn(bound.serve_with_shutdown(
+            JsonRpcDispatcher::new(handler(&recorder)),
+            std::future::pending(),
+        ));
+        addr
+    };
 
     // A forged `path` header does not select a tenant.
     let forged = ClientBuilder::new(format!("http://{addr}"))
@@ -171,9 +177,15 @@ async fn jsonrpc_tenant_comes_from_the_url_not_a_path_header() {
 #[tokio::test]
 async fn rest_tenant_comes_from_the_url_not_a_path_header() {
     let recorder = Recorder::default();
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler(&recorder)))
-        .await
-        .expect("bind");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("bind");
+        let addr = bound.local_addr().expect("bind");
+        tokio::spawn(bound.serve_with_shutdown(
+            RestDispatcher::new(handler(&recorder)),
+            std::future::pending(),
+        ));
+        addr
+    };
 
     // A forged `path` header does not select a tenant.
     let forged = ClientBuilder::new(format!("http://{addr}"))
@@ -242,9 +254,15 @@ async fn grpc_path_metadata_does_not_select_a_tenant() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
-    let addr = GrpcDispatcher::new(handler(&recorder), GrpcConfig::default())
-        .serve_with_listener(listener)
-        .expect("serve");
+    let addr = {
+        let listener = listener;
+        let addr = listener.local_addr().expect("serve");
+        tokio::spawn(
+            GrpcDispatcher::new(handler(&recorder), GrpcConfig::default())
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
 
     let forged = ClientBuilder::new(format!("http://{addr}"))
         .with_protocol_binding("GRPC")
@@ -266,10 +284,17 @@ async fn websocket_tenant_comes_from_the_url_not_a_path_header() {
     use a2a_protocol_server::dispatch::websocket::WebSocketDispatcher;
 
     let recorder = Recorder::default();
-    let addr = Arc::new(WebSocketDispatcher::new(handler(&recorder)))
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("bind");
+    let addr = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("bind");
+        tokio::spawn(
+            Arc::new(WebSocketDispatcher::new(handler(&recorder)))
+                .serve_with_shutdown(listener, std::future::pending()),
+        );
+        addr
+    };
 
     let mut config = WebSocketTransportConfig::default();
     config

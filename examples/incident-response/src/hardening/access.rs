@@ -194,7 +194,7 @@ pub(super) async fn rate_limiting() -> Check {
     let limiter = match RateLimitInterceptor::new(
         RateLimitConfig::default()
             .with_requests_per_window(LIMIT)
-            .with_window_secs(60),
+            .with_window(std::time::Duration::from_secs(60)),
     ) {
         Ok(limiter) => limiter,
         Err(e) => return Check::fail(LABEL, format!("building the limiter: {e}")),

@@ -28,7 +28,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use a2a_protocol_server::call_context::CallContext;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::serve::serve_with_addr;
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_server::{
     RequestHandler, RequestHandlerBuilder, ServerInterceptor, agent_executor,
 };
@@ -195,9 +195,14 @@ fn handler_refused_calls() -> Vec<(Value, &'static str)> {
 #[tokio::test]
 async fn jsonrpc_handler_checks_run_after_admission() {
     let (handler, checked) = gated();
-    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(JsonRpcDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     let calls = handler_refused_calls();
     let mut misses = Misses::default();
     for (call, field) in &calls {
@@ -226,9 +231,14 @@ async fn jsonrpc_handler_checks_run_after_admission() {
 #[tokio::test]
 async fn rest_handler_checks_run_after_admission() {
     let (handler, checked) = gated();
-    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler))
-        .await
-        .expect("serve");
+    let addr = {
+        let bound = Server::bind("127.0.0.1:0").await.expect("serve");
+        let addr = bound.local_addr().expect("serve");
+        tokio::spawn(
+            bound.serve_with_shutdown(RestDispatcher::new(handler), std::future::pending()),
+        );
+        addr
+    };
     let requests = [
         ("GET", "/tasks?pageSize=0", None, "pageSize"),
         ("GET", "/tasks?pageSize=150", None, "pageSize"),

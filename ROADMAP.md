@@ -62,6 +62,7 @@ as the comment. ADR 0006 records the review.
 | `interceptor/mod.rs` — the default `ServerInterceptor::on_complete` → `Box::pin(async move { () })` (2026-09-26) | The body is an empty future, and so is the mutant. |
 | `dispatch/grpc/well_known.rs` — `WellKnownCard::poll_ready` → `Poll::from(Ok(()))` (2026-10-14) | The body is `Poll::Ready(Ok(()))`, and `Poll::from(t)` is `Poll::Ready(t)`; `Result<(), Infallible>` has no other value to return. |
 | `otel/telemetry/proxy.rs` — `ProxyConnector::poll_ready` → `Poll::from(Ok(()))` (2026-10-26) | The body is `Poll::Ready(Ok(()))`, and `Poll::from(t)` is `Poll::Ready(t)`: the mutant is the same value. Found by the first incremental run with the `mutation-test` label on the 0.15.1 pull request. |
+| `net/plain.rs` — `PlainConnector::poll_ready` → `Poll::from(Ok(()))` (2026-11-05) | The body is `Poll::Ready(Ok(()))`, and `Poll::from(t)` is `Poll::Ready(t)`: the mutant is the same value. The plaintext build's push connector (audit NEW-b-3, ADR 0043). |
 | `otel/telemetry/console.rs` — `Console::force_flush` and `Console::shutdown_with_timeout` (`PushMetricExporter`) → `Ok(Default::default())`, and `Console::temporality` → `Default::default()` (2026-10-26) | The first two bodies are `Ok(())`; `OTelSdkResult` is `Result<(), OTelSdkError>`, and `Default::default()` for `()` is `()`. The third is `Temporality::Cumulative`, which is `Temporality`'s `#[default]` in opentelemetry_sdk 0.33; a test asserts that default, so an SDK that changes it fails there. Found by the second incremental run with the `mutation-test` label on the 0.15.1 pull request. |
 | `provenance.rs` — `Inbound::check` without `signing` → `Ok(Default::default())` (2026-10-22) | The body is `Ok(ContentCheck::NotChecked)`, and `NotChecked` is `ContentCheck`'s `#[default]`. The gate also builds with every feature, where this function is compiled out. |
 | `store/halt/mod.rs` — the default `HaltStore::publish_cancel` → `Box::pin(async move { Ok(()) })` (2026-10-23) | The default body is an empty future answering `Ok(())`, and so is the mutant. |
@@ -1019,32 +1020,28 @@ This is the category most worth clearing before any external review.
 
 ## Conformance
 
-Measured against the official `a2a-tck` suite on 2026-10-16 (CI and locally
-at `d05a7fc`, against `a2a-tck@263b9cf`): **81 of 114 MUST requirements
-passing, 7 failing, 5 skipped, 21 with no upstream test**; 88 graded. The two
-failures added since 2026-10-10, `HTTP_JSON-SVC-001` and `HTTP_JSON-ERR-001`,
-grade §11.1's media type against the suite's stale v1.0.0 copy
-(`docs/official-tck-findings.md` §23). (This line said 87 passing
-and 5 failing as of 2026-09-26, which does not add up to 114 with the skipped
-and untested counts; `docs/official-tck-findings.md` §1 has both.) One
-failure, `CORE-SEND-003`, is a defect in the suite: it
-declares no expected error, so it demands that a send with an unsupported
-media type succeed, and it began failing when 0.14.0 started answering the
-`ContentTypeNotSupportedError` that §3.1.1 requires
-(`docs/official-tck-findings.md` §22). The other four
-failures are the suite grading §5.4 against the specification copy it vendors,
-which its own `specification/version.json` records as A2A v1.0.0 (taken
-2026-03-13, and byte-identical to that tag); A2A released v1.0.1 on 2026-05-28
-rewriting six of that table's nine rows. Each fails on exactly the one binding
-whose cell the two releases disagree about, and passes on the bindings where
-they agree. They are baselined in `tck/conformance-baseline.json` with the
-evidence in `docs/official-tck-findings.md` §20 and §21, and they clear when the
-suite refreshes its copy. (Before 2026-08-30 this line read 92 passing, 0
-failing; the four moved out of the passing column as upstream tightened its
-assertions onto the stale rows, not as anything here changed.) Of the rest, 21
-have no test function upstream, and the 5 skipped need a differently
-configured SUT (`docs/official-tck-findings.md` §1, §12, §15, §18). Full analysis and reproduction
-steps in [`docs/official-tck-findings.md`](docs/official-tck-findings.md).
+Measured against the official `a2a-tck` suite on 2026-11-06 (CI at `ffd72299`,
+against `a2a-tck@70f6f73`, the commit CI pins for pull requests): **85 of 115
+MUST requirements passing, 2 failing, 5 skipped, 7 manual, 16 not tested**; 87
+graded (`docs/official-tck-findings.md` §26; §1 has the earlier measurements).
+Both failures are defects in the suite, as read from its source. `CORE-SEND-003`
+declares no expected error, so it demands that a send with an unsupported media
+type succeed, and it began failing when 0.14.0 started answering the
+`ContentTypeNotSupportedError` that §3.1.1 requires (§22). `HTTP_JSON-ERR-001`
+fails an error response whose Content-Type is `application/a2a+json`, which the
+suite's own vendored v1.0.1 section 11.6 example shows, because its test accepts
+only a type containing `application/json` (§26). Four requirements that failed
+against the previous revision (`CORE-CANCEL-002`, `GRPC-ERR-002`,
+`HTTP_JSON-STATUS-001`, `STREAM-SUB-003`) pass at this one: that revision graded
+§5.4 against the A2A v1.0.0 copy it vendored, v1.0.1 rewrote six of that table's
+nine rows, and upstream refreshed the copy in a2aproject/a2a-tck#258 (§20, §21,
+§25). `HTTP_JSON-SVC-001` is a SHOULD at the pin and no longer gated. (Before
+2026-08-30 this section read 92 passing, 0 failing; the four moved out of the
+passing column as upstream tightened its assertions onto the stale rows, not as
+anything here changed.) Of the rest, the 5 skipped need a differently configured
+SUT, 7 are reported as manual, and 16 have no automated test upstream
+(`docs/official-tck-findings.md` §1, §12, §15, §18, §26). Full analysis and
+reproduction steps in [`docs/official-tck-findings.md`](docs/official-tck-findings.md).
 
 * **`SSE-001` is closed.** Reported upstream as
   [a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225)
@@ -1054,13 +1051,12 @@ steps in [`docs/official-tck-findings.md`](docs/official-tck-findings.md).
   2026-09-01 — measured at `a2a-tck@de6af18`, the minimal profile grades the
   same 66 MUST requirements with and without it. See
   `docs/official-tck-findings.md` §21.
-* **The stale specification pin is reported upstream** as
+* **The stale specification pin was reported upstream** as
   [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231)
-  (filed 2026-09-01, open). It asks for `make spec` plus the six `ErrorBinding`
-  constants in `tck/requirements/base.py`. Nothing to do here until upstream
-  responds; when it lands, all four baseline entries become unexpected passes
-  and must be removed in the same commit that observes them passing. The
-  submitted body and its duplicate-check limitations are in
+  (filed 2026-09-01); upstream's #258, merged 2026-11-05, says it fixes #231 and
+  refreshes the vendored specification and the error mappings, and the four
+  baseline entries it covered passed at the pin and were removed from
+  `tck/conformance-baseline.json` (§26). The submitted body is in
   [`docs/upstream/a2a-tck-231-spec-pin-report.md`](docs/upstream/a2a-tck-231-spec-pin-report.md).
 * **The root cause is reported to the specification** as
   [a2aproject/A2A#2200](https://github.com/a2aproject/A2A/issues/2200) (filed
@@ -1122,6 +1118,12 @@ Work committed to and not yet built:
   Kani harness that only Kani compiles. `docs/handoff-history.md` has the counts.
 * **Listing on the ITK dashboard.** This waits on upstream changes, drafted
   in `docs/upstream/a2a-itk-dashboard-enrolment-draft.md`.
+
+## Waiting on upstream
+
+| Item | Blocked on | What happens until then |
+|---|---|---|
+| SDK exemplars on this crate's metrics (audit C-05, SDK half; ADR 0038) | `opentelemetry_sdk` recording exemplars: 0.33.1, the version in `Cargo.lock`, builds every data point with `exemplars: vec![]`, has no exemplar filter or reservoir, and keeps the field `pub(crate)` | `OTEL_METRICS_EXEMPLAR_FILTER` asking for exemplars is noted at `WARN` (ad037faa); metrics-to-traces correlation comes from the stack half (Tempo span-metrics exemplars, `deploy/observability`). Pick it up on the first `opentelemetry_sdk` release that ships a reservoir: honour the variable and drop the notice |
 
 ## Open questions
 
