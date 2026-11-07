@@ -372,8 +372,15 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             let key = log_notify::announcement(self.log.as_ref(), &tenant, &task_id.0);
             let changed_nothing = crate::store::pg_retry::retry(&*self.metrics, || {
                 let task = task_id.0.as_str();
-                evlog::pg_append_query(&tenant, task, position, &payload, &fence, key.as_deref())
-                    .execute(&self.pool)
+                evlog::pg_append_query(
+                    &tenant,
+                    task,
+                    position,
+                    &payload,
+                    fence.as_deref(),
+                    key.as_deref(),
+                )
+                .execute(&self.pool)
             })
             .await
             .map_err(|e| to_a2a_error(&e))?

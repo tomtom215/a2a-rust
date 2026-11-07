@@ -105,7 +105,7 @@ pub(super) fn pg_append_query<'q>(
     task: &'q str,
     position: i64,
     payload: &'q serde_json::Value,
-    fence: &'q Option<String>,
+    fence: Option<&'q str>,
     key: Option<&'q str>,
 ) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
     let sql = super::log_notify::append_sql(key, PG_APPEND, PG_APPEND_NOTIFY);

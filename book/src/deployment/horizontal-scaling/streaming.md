@@ -62,17 +62,24 @@ async fn store(url: &str) -> Result<PostgresTaskStore, Box<dyn std::error::Error
 
 What it changes: an event another replica appends reaches a waiting stream in
 about a notification's round trip instead of at the end of its wait, which can
-be 4 s into an idle task. What it does not: a stream still reads the store on
-its timer as the fallback, so a notification that never arrives costs one wait;
-and it never reads faster than once per `subscribe_reattach_interval`, so a task
-that streams quickly costs a subscriber what polling did, not more (two events
-a few milliseconds apart reach it up to one interval apart). What it does not
-wake: a task made terminal, or cancelled, with **no event in the log**, such as
-a `CancelTask` of a parked task on another replica, or one the claim reaper
-ends. Those reach a waiting stream at its next poll, up to the ceiling later,
-as they did before. Measured on a local database (ADR 0057): an event written
-on one replica ended a stream's 8 s wait on the other in 260 ms; a cancel of a
-parked task took the whole 2 s of a 2 s ceiling.
+be 4 s into an idle task.
+
+What it does not change: the load of an idle stream. The timer stays as the
+fallback, so a notification that never arrives costs one wait, and an idle
+stream still reads the store every `subscribe_reattach_max_interval` (measured:
+200 idle subscribers cost 93 statements a second, with the option or without
+it). On a fleet where every replica has the option, raise that ceiling to cut
+the load in proportion. A stream also never reads faster than once per
+`subscribe_reattach_interval`, so a task that streams quickly costs a subscriber
+what polling did, not more (two events a few milliseconds apart reach it up to
+one interval apart).
+
+What it does not wake: a task made terminal, or cancelled, with **no event in
+the log**, such as a `CancelTask` of a parked task on another replica, or one
+the claim reaper ends. Those reach a waiting stream at its next poll, up to the
+ceiling later, as they did before. Measured on a local database (ADR 0057): an
+event written on one replica ended a stream's 8 s wait on the other in 260 ms; a
+cancel of a parked task took the whole 2 s of a 2 s ceiling.
 
 The channel is `a2a_task_log`, and its payload names a task and its tenant
 partition, so it is worth keeping out of the way of other consumers of the

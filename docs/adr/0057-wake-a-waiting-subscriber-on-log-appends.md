@@ -139,7 +139,82 @@ already carries one for the executor), not a change to `save`.
 
 ## Decision: (c), a separate read pool, not built
 
-MEASUREMENTS_C
+(b) cuts the latency of a waiting stream and, as built, **not** the load of an
+idle one: the timer stays as the fallback at the same ceiling, so an idle
+cross-replica subscriber still reads the store every `subscribe_reattach_max_interval`.
+The measurement below shows both, and is what decides (c).
+
+**What was measured.** `scripts/live/subscribe_idle_live.py`: two replica
+processes (`scripts/live/replica`, release build, A on core 0 and B on core 1, the
+driver on core 2) on one PostgreSQL 16.15 (`max_connections = 100`, `ssl = off`, no
+`pg_stat_statements`), a 4-vCPU shared container whose load average was 5 to 15
+throughout (other builds were running: the figures are noisy and are not a
+benchmark). Replica A parks N tasks; replica B holds an SSE `SubscribeToTask`
+stream on each, so each polls the store for a task B does not run. After 20 s,
+long enough for the back-off to reach its 4 s ceiling, it counts the statements
+the database commits over 30 s (`pg_stat_database`, `xact_commit + xact_rollback`;
+each statement of a pool connection is its own transaction), then times 300
+sequential `SendMessage` calls to B ("finish": a task created and completed, each
+a handful of statements) with the streams still open. Three configurations, run
+interleaved three times each at N = 200: `control` (no subscribers: what a
+perfectly isolated read path would give), `poll` (E-F25 (a) only) and `notify`
+(both replicas built with `with_log_notifications(LogListen::Pool)`). Pools of 10
+connections, the default.
+
+N = 200, three rounds (milliseconds per send; statements per second while idle):
+
+| | control | poll | notify |
+|---|---|---|---|
+| statements/s, idle | 0.2, 0.2, 0.2 | 93.3, 93.3, 93.3 | 93.3, 93.3, 93.4 |
+| send median, per round | 28.0, 28.0, 28.0 | 24.0, 27.7, 29.1 | 24.1, 24.9, 28.1 |
+| send p99, per round | 54.2, 36.2, 68.6 | 58.2, 40.1, 88.0 | 43.0, 40.1, 87.2 |
+
+N = 600, one round (a second run at that size, to see the margin):
+
+| | control | poll | notify |
+|---|---|---|---|
+| statements/s, idle | 0.2 | 279.9 | 252.5 |
+| send median / p99 | 24.4 / 97.7 | 27.6 / 55.7 | 28.2 / 93.5 |
+
+
+Reading it:
+
+* **The idle load is what the code says and (b) does not change it.** 93 statements
+  a second is 200 subscribers x 2 statements / 4 s, less the first seconds of a
+  window; the same with notifications on, because the fallback timer is the
+  same. To cut it, raise `subscribe_reattach_max_interval` on a fleet whose every
+  replica has the opt-in: the idle load falls in proportion (by the same
+  arithmetic, 30 s would be about 13 a second at N = 200; not measured), and an
+  event still reaches a stream at once.
+* **No foreground effect is visible at 200.** The send medians of the three
+  configurations overlap (24 to 29 ms against 28.0 for the control), and so do the
+  p99s (36 to 88 ms), whose spread across rounds, set by what else the machine was
+  doing, is larger than any difference between configurations. Ninety-odd
+  statements a second of a few tenths of a millisecond each keep well under one
+  connection of ten busy.
+* **At 600 the medians read 3 to 4 ms higher than the control** (27.6 and 28.2
+  against 24.4; the p99s do not follow: 55.7 and 93.5 against 97.7). One round, at
+  a load average of 14 to 17, is not a distribution, and the machine's CPU is the
+  first suspect: replica B's core carries 600 SSE streams and their polls, which a
+  pool of connections does not touch. A pool removes contention for connections,
+  and 280 statements a second of a fraction of a millisecond is under a third of
+  one connection of ten.
+
+**Decision.** Not built. The control is the best a separate pool could do for the
+foreground, and the foreground with 200 idle subscribers is not
+distinguishable from it. (With 600, in one round, it is a few milliseconds slower,
+not attributed: CPU on replica B is conjectured, and a pool would not touch it.)
+There is no measured effect for a pool to remove, and a pool is a cost: another `max_connections` term for every replica (audit E-F6), a setting,
+and a second place a statement can wait. The configuration the audit asked about,
+(b) plus a pool bound, was therefore not built and not measured: the control
+column bounds what it could achieve. What was not measured: more than 600
+subscribers, a pool smaller than the default, the 250 ms constant polling before
+E-F25 (a) (16 times the statements), a real network between the replicas and the
+database, and renewal latency (claim renewals have had a pool of their own since
+E-F7). If a deployment shows the foreground slowing under idle subscribers, the
+shape to build is a pool of two connections, as the renewer's, opened lazily from
+the store's own connect options and used by the reattach hook's two reads only.
+
 
 ## Consequences
 
