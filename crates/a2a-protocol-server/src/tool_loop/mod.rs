@@ -87,6 +87,7 @@ mod openai_stream;
 mod recover;
 mod retry;
 mod run;
+mod steering;
 mod tool;
 
 pub use drafts::{FLUSH_AFTER, FLUSH_BYTES, draft_artifact_id};

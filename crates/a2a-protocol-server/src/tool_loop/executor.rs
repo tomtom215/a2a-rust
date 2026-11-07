@@ -13,6 +13,7 @@ use a2a_protocol_types::task::TaskState;
 
 use super::idempotency;
 use super::run::{LoopError, ToolLoop};
+use super::steering::Side;
 use crate::executor::AgentExecutor;
 use crate::executor_helpers::EventEmitter;
 use crate::request_context::RequestContext;
@@ -57,6 +58,7 @@ pub const TRACE_ARTIFACT_ID: &str = "tool-trace";
 pub struct ToolLoopExecutor {
     tool_loop: ToolLoop,
     drafts: bool,
+    steering: bool,
 }
 
 impl ToolLoopExecutor {
@@ -66,7 +68,27 @@ impl ToolLoopExecutor {
         Self {
             tool_loop,
             drafts: false,
+            steering: false,
         }
+    }
+
+    /// Reads the turn's steering inbox
+    /// ([`RequestContext::inbox`](crate::RequestContext::inbox)) before each
+    /// model turn, and adds each message's text to the conversation as a
+    /// user turn, so a caller can correct course while the run works (ADR
+    /// 0036). Off by default. Needs a handler built with
+    /// [`with_steering`](crate::RequestHandlerBuilder::with_steering); without
+    /// one there is no inbox and this does nothing.
+    ///
+    /// The text is the sender's: it is user text like the prompt, with the
+    /// sender's authority over the task and no more. It cannot cancel the run
+    /// (`CancelTask` does), approve an action, or lift a budget. A message
+    /// that arrives during the turn that answers is not read: the run is
+    /// over, and the message is counted as unread.
+    #[must_use]
+    pub const fn with_steering(mut self) -> Self {
+        self.steering = true;
+        self
     }
 
     /// Streams each turn's text, as the model sends it, to a draft artifact
@@ -95,16 +117,25 @@ impl ToolLoopExecutor {
     ) -> A2aResult<Result<super::Answer, LoopError>> {
         let scope = idempotency::task_scope(&ctx.task_id.0, &ctx.message.id.0);
         let cancel = &ctx.cancellation_token;
+        let inbox = if self.steering { ctx.inbox() } else { None };
         if !self.drafts {
+            let side = Side {
+                drafts: None,
+                inbox,
+            };
             return Ok(self
                 .tool_loop
-                .run_scoped(&scope, prompt, cancel, ctx.budget())
+                .run_drafting(&scope, prompt, cancel, ctx.budget(), side)
                 .await);
         }
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let side = Side {
+            drafts: Some(&tx),
+            inbox,
+        };
         let run = self
             .tool_loop
-            .run_drafting(&scope, prompt, cancel, ctx.budget(), Some(&tx));
+            .run_drafting(&scope, prompt, cancel, ctx.budget(), side);
         tokio::pin!(run);
         let mut drafts = super::drafts::Drafts::default();
         let result = loop {
