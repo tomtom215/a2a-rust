@@ -22,6 +22,8 @@ mod raw_http;
 
 mod executor;
 mod openai;
+#[cfg(feature = "skills")]
+mod skills;
 mod streaming;
 
 /// Answers each turn with the next scripted reply; past the end, repeats

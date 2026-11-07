@@ -74,6 +74,7 @@
 //! | [`tenant_config`] | [`PerTenantConfig`], [`TenantLimits`] |
 //! | `otel` | `OtelMetrics`, `OtelMetricsBuilder` (`otel` feature); `Telemetry`, `init_otlp_pipeline` (`otlp` feature) |
 //! | `tool_loop` | `ToolLoop`, `ToolLoopExecutor`, `ToolModel`, `Tool`, `ToolSet`, `OpenAiChatModel`: tool calling inside a task (`tool-loop` feature, ADR 0022) |
+//! | `skills` | `SkillCatalog`, `SkillsConfig`: Agent Skills in the tool loop, scripts never run (`skills` feature, ADR 0035) |
 //!
 //! # Axum integration
 //!
@@ -156,6 +157,8 @@ pub use tls::ReloadingCertResolver;
 // Outbound HTTP shared by push delivery, JWKS and OIDC discovery, the tool
 // loop's model client and OTLP export: proxies, trusted roots, pool tuning.
 mod net;
+#[cfg(feature = "skills")]
+pub mod skills;
 #[cfg(feature = "tool-loop")]
 pub mod tool_loop;
 pub mod url_guard;

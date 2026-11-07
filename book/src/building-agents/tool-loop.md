@@ -121,6 +121,7 @@ with two tools, run end to end against a live model.
 | Point the loop at OpenAI, llama-server, vLLM or Ollama, or at a provider of your own | [Model clients](./tool-loop/models.md) |
 | Bound the turns, honour the caller's budget, read the artifacts, and know how a run fails | [Running the loop](./tool-loop/running.md) |
 | See each model turn and tool call in your traces and metrics | [Spans and metrics](./tool-loop/telemetry.md) |
+| Give the model reusable procedures from a directory of `SKILL.md` files, without running their scripts | [Agent Skills](./tool-loop/skills.md) |
 
 ## Next steps
 

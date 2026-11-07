@@ -53,8 +53,8 @@ pub struct Answer {
 /// its tool is [`read_only`](super::Tool::read_only).
 pub struct ToolLoop {
     model: Box<dyn ToolModel>,
-    tools: ToolSet,
-    preamble: String,
+    pub(super) tools: ToolSet,
+    pub(super) preamble: String,
     max_turns: usize,
     recover_text_calls: bool,
     secret: Secret,

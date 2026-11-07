@@ -368,6 +368,7 @@ are rustdoc's job.
 | `request_context` | Request context passed to the `AgentExecutor` |
 | `serve` | `Server`, `ServeConfig`, `ServeReport`, `Dispatcher`, `shutdown_signal` (and the deprecated `serve()`, `serve_with_addr`) |
 | `store` | Task storage backend |
+| `skills` | Agent Skills in the tool loop: `SkillCatalog`, `SkillsConfig`, `SkillSource` and the two tools; scripts are never run (`skills` feature, ADR 0035) |
 | `streaming` | Streaming infrastructure for SSE responses and event queues |
 | `tenant_config` | Per-tenant resource limits for multi-tenant A2A servers |
 | `tenant_resolver` | Tenant resolution for multi-tenant A2A servers |
@@ -482,6 +483,22 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `InferenceLimit` | At most `max` model turns in flight at one provider, shared by every loop holding a clone; `max()` and `available()` (ADR 0048) |
 | `LimitedModel` | A `ToolModel` that holds a slot of an `InferenceLimit` for each turn, streamed or not, and gives it back however the turn ends |
 | `ModelRetry` | `ToolLoop::with_model_retry`'s policy for a rate-limited turn (`ModelError::RateLimited`): 3 retries, 0.5 s doubling to 30 s with half jitter, or the provider's `Retry-After` spread by up to a quarter; never past `max_delay` or the budget's remaining time (ADR 0048) |
+
+### Agent Skills
+
+All behind the `skills` feature (it implies `tool-loop`), at `skills::`.
+
+| Type | Description |
+|------|-------------|
+| `SkillCatalog` | The skills `discover` found in the configured directories and a list of `SkillDiagnostic`s; never fails. `prompt()` is the catalog for the system prompt, `tools()` the tools that serve it, `agent_skills()` the entries for an agent card (off unless called) |
+| `SkillsConfig` | What to scan and the bounds: 32 skills, a 400-character description in the prompt, a 64 KiB body, a 64 KiB file read, each set with a `with_max_*` |
+| `SkillSource` | One directory of skills: `operator(path)` is trusted, `project(path)` is not read until `with_trusted(true)`; `with_follow_symlinks(true)` follows a link to a skill directory |
+| `Skill` | One skill: `name`, `description`, `body`, `location`, `scope`, and the optional fields the file had, with `allowed_tools` recorded and never used |
+| `SkillDiagnostic` | What discovery noticed: a `Severity`, a `DiagnosticKind` to match on, a path and a message |
+| `ActivateSkillTool` | `activate_skill`: its `name` is an enum of the catalog's names; returns the instructions, the files the skill bundles and the scripts that are not run |
+| `ReadSkillFileTool` | `read_skill_file`: the text of a file under a skill's `references/` or `assets/`, through the confined reader |
+
+`ToolLoopExecutor::with_skills` puts the catalog's prompt after the loop's preamble and adds the tools.
 
 ### Built-in Implementations
 

@@ -55,7 +55,7 @@ pub const TRACE_ARTIFACT_ID: &str = "tool-trace";
 /// [`ToolError::Fatal`]: super::ToolError::Fatal
 #[derive(Debug)]
 pub struct ToolLoopExecutor {
-    tool_loop: ToolLoop,
+    pub(super) tool_loop: ToolLoop,
     drafts: bool,
 }
 
