@@ -46,7 +46,7 @@ services:
     restart: "no"
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.163.2@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
+    image: otel/opentelemetry-collector-contrib:0.164.0-386@sha256:40392928d2b988b77e7525dbac33e5e3d9bedb40b9ff8c1f9119d92ca3a8a1c3
     command: ["--config=/etc/otelcol/config.yaml"]
     # memory_limiter takes its limits as a share of this (audit C-15).
     # Without a limit it reads the host's memory and refuses nothing until
@@ -129,7 +129,7 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
+    image: grafana/grafana:13.3.0@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205
     environment:
       PROMETHEUS_URL: http://prometheus:9090
       TEMPO_URL: http://tempo:3200
