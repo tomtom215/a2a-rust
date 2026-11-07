@@ -439,6 +439,10 @@ impl Metrics for OtelMetrics {
     fn on_claim(&self, event: &str) {
         self.control.claim(&self.dims, event);
     }
+
+    fn on_subscribe_wake(&self, cause: &str) {
+        self.control.subscribe_wake(&self.dims, cause);
+    }
 }
 
 /// The RPC call-duration buckets the semantic conventions advise, in seconds.

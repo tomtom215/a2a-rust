@@ -30,6 +30,7 @@ use a2a_protocol_types::message::MessageId;
 use sqlx::Row as _;
 
 use super::{event_log, idempotency};
+use crate::store::log_notify;
 use crate::store::terminal::{refusal, sql_write_allowed};
 
 #[allow(clippy::manual_async_fn)]
@@ -624,13 +625,20 @@ impl TaskStore for PostgresTaskStore {
             let position = seq_to_i64(seq)?;
             let payload = encode_json(event)?;
             let fence = crate::store::claim::current_fence();
+            // Announced only by a store opted in, and a task whose key fits a
+            // notification: the others run the plain insert.
+            let key = log_notify::announcement(self.log.as_ref(), "", &task_id.0);
             let changed_nothing = crate::store::pg_retry::retry(&*self.metrics, || {
-                sqlx::query(event_log::APPEND_SQL)
-                    .bind(task_id.0.as_str())
-                    .bind(position)
-                    .bind(&payload)
-                    .bind(&fence)
-                    .execute(&self.pool)
+                let append = sqlx::query(log_notify::append_sql(
+                    key.as_deref(),
+                    event_log::APPEND_SQL,
+                    event_log::APPEND_NOTIFY_SQL,
+                ))
+                .bind(task_id.0.as_str())
+                .bind(position)
+                .bind(&payload)
+                .bind(&fence);
+                log_notify::announce(append, key.as_deref()).execute(&self.pool)
             })
             .await
             .map_err(to_a2a_error)?
@@ -661,6 +669,10 @@ impl TaskStore for PostgresTaskStore {
             }
             Ok(())
         })
+    }
+
+    fn watch_event_log(&self, task_id: &TaskId) -> Option<crate::store::LogWatch> {
+        log_notify::watch(self.log.as_ref(), "", &task_id.0)
     }
 
     fn last_event_seq<'a>(

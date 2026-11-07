@@ -6,6 +6,7 @@
 //! `SubscribeToTask` handler — resubscribe to a task's event stream.
 
 use std::collections::HashMap;
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use a2a_protocol_types::params::TaskIdParams;
@@ -14,6 +15,8 @@ use a2a_protocol_types::task::TaskId;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 
 use crate::error::{ServerError, ServerResult};
+use crate::metrics::Metrics;
+use crate::store::LogWake;
 use crate::streaming::event_queue::CatchUpFn;
 use crate::streaming::{InMemoryQueueReader, Reattached};
 
@@ -52,6 +55,84 @@ fn next_wait(wait: Duration, longest: Duration) -> Duration {
     wait.saturating_mul(2).min(longest)
 }
 
+/// One read of the task for the reattach hook: the answer when the task has
+/// finished or is gone, `None` to go on waiting. `failing` is whether the last
+/// read failed, so a run of failures warns once.
+async fn read_task(
+    store: &dyn crate::store::TaskStore,
+    task_id: &TaskId,
+    failing: &mut bool,
+    after: u64,
+    catchup: Duration,
+) -> Option<Reattached> {
+    match store.get_with_position(task_id).await {
+        // The task finished between queues, so the client never saw the
+        // terminal frame on the wire. The processor logs an event before it
+        // stores the state the event leads to, so the log holds the terminal
+        // status the reader replays; the one built here from the stored status
+        // stands in when it does not, and the stream does not close having
+        // reported no terminal state.
+        Ok(Some((t, position))) if t.status.state.is_terminal() => {
+            Some(finished(store, t, position, after, catchup).await)
+        }
+        // Deleted out from under us: nothing left to stream.
+        Ok(None) => Some(Reattached::End),
+        Ok(Some(_)) => {
+            *failing = false;
+            None
+        }
+        // A store read failure is not evidence the task finished, so the
+        // stream keeps waiting: the store may recover, and the client can leave
+        // at any time. An idle bound, when one is set, still ends it.
+        Err(_e) => {
+            if !*failing {
+                trace_warn!(task_id = %task_id, "subscribe reattach: task store read failed");
+            }
+            *failing = true;
+            None
+        }
+    }
+}
+
+/// Waits for `watch` to wake the stream, or `nap` to pass, and reports which
+/// (`on_subscribe_wake`). Without a watch (a store that cannot wake a stream)
+/// it is a plain sleep and reports nothing, as before the watch existed.
+async fn wait_for_change(
+    watch: Option<crate::store::LogWatch>,
+    nap: Duration,
+    metrics: &dyn Metrics,
+) {
+    let Some(watch) = watch else {
+        tokio::time::sleep(nap).await;
+        return;
+    };
+    let cause = tokio::time::timeout(nap, watch)
+        .await
+        .map_or(crate::metrics::subscribe_wake::TIMEOUT, LogWake::cause);
+    metrics.on_subscribe_wake(cause);
+}
+
+/// Holds a poll back until `gap` has passed since the last one, when the stream
+/// has a watch: a wake must never make a stream read the store faster than its
+/// timer would have, or an active task would cost a stream more than polling
+/// did (one read per event rather than one per interval). The first poll of a
+/// stream, and any after a quiet `gap`, are not held. Cut at the operator's idle
+/// `deadline`, as the waits are.
+async fn pace(
+    last: &Mutex<Option<tokio::time::Instant>>,
+    gap: Duration,
+    deadline: Option<tokio::time::Instant>,
+) {
+    let held_back = (*last.lock().unwrap_or_else(PoisonError::into_inner))
+        .map_or(Duration::ZERO, |previous| {
+            gap.saturating_sub(previous.elapsed())
+        });
+    if !held_back.is_zero() {
+        tokio::time::sleep(nap_before(deadline, held_back)).await;
+    }
+    *last.lock().unwrap_or_else(PoisonError::into_inner) = Some(tokio::time::Instant::now());
+}
+
 impl RequestHandler {
     /// Builds the hook that keeps a `SubscribeToTask` stream alive across turns.
     ///
@@ -80,12 +161,19 @@ impl RequestHandler {
     /// `snapshot_and_live` attaches it, so the replay and the live stream
     /// meet without a gap or an overlap.
     ///
-    /// Polling rather than a notification: the alternative is to keep queues
-    /// alive past their executor, which deadlocks the background processor —
-    /// its persistence channel only closes when the manager drops the writer,
-    /// so a retained queue means a drain loop that never ends. Waiting here
-    /// costs one store read per interval on an idle stream, two when the
-    /// store keeps a log, and leaves the send path untouched.
+    /// Polling rather than keeping the queue: the alternative is to keep
+    /// queues alive past their executor, which deadlocks the background
+    /// processor — its persistence channel only closes when the manager drops
+    /// the writer, so a retained queue means a drain loop that never ends.
+    /// Waiting here costs one store read per interval on an idle stream, two
+    /// when the store keeps a log, and leaves the send path untouched.
+    ///
+    /// The wait is cut short when the store can say its log changed
+    /// ([`TaskStore::watch_event_log`](crate::store::TaskStore::watch_event_log), audit E-F25 (b), ADR 0057: the
+    /// `PostgreSQL` stores with `with_log_notifications`), and the timer
+    /// stays as the fallback, so a lost notification costs one wait and a
+    /// store that cannot push behaves as it always did. A wake never makes the
+    /// stream read faster than once an interval ([`pace`]).
     ///
     /// The hook runs while the stream is read, outside the request that built
     /// it, so it re-enters that request's tenant and caller, captured here. A
@@ -102,9 +190,15 @@ impl RequestHandler {
         let max_idle = self.limits.subscribe_max_idle;
         let catchup = self.limits.subscribe_replay_catchup;
         let partition = crate::store::tenant::TenantContext::capture();
+        let metrics = std::sync::Arc::clone(&self.metrics);
+        // When this stream last read the store, across the calls of this hook
+        // (see `pace`).
+        let last_poll: std::sync::Arc<Mutex<Option<tokio::time::Instant>>> =
+            std::sync::Arc::default();
 
         std::sync::Arc::new(move |after| {
             let (queues, store, task_id) = (queues.clone(), store.clone(), task_id.clone());
+            let (metrics, last_poll) = (metrics.clone(), last_poll.clone());
             Box::pin(partition.clone().scope(async move {
                 let logged = store.supports_event_log();
                 // No bound by default (§3.1.6). A bound too large to add to
@@ -118,35 +212,19 @@ impl RequestHandler {
                 // Doubles while nothing changes (audit E-F25); a change returns
                 // from this loop, and the next call starts at `interval` again.
                 let mut wait = interval;
+                // A watch of the task's log, made before each read and waited
+                // on after it, so an append between the two wakes the wait
+                // (audit E-F25 (b)). `None` for a store that cannot push.
+                let mut watch = store.watch_event_log(&task_id);
                 loop {
-                    match store.get_with_position(&task_id).await {
-                        // The task finished between queues, so the client
-                        // never saw the terminal frame on the wire. The
-                        // processor logs an event before it stores the state
-                        // the event leads to, so the log holds the terminal
-                        // status the reader replays; the one built here from
-                        // the stored status stands in when it does not, and
-                        // the stream does not close having reported no
-                        // terminal state.
-                        Ok(Some((t, position))) if t.status.state.is_terminal() => {
-                            return finished(store.as_ref(), t, position, after, catchup).await;
-                        }
-                        // Deleted out from under us: nothing left to stream.
-                        Ok(None) => return Reattached::End,
-                        Ok(Some(_)) => store_failing = false,
-                        // A store read failure is not evidence the task
-                        // finished, so the stream keeps waiting: the store may
-                        // recover, and the client can leave at any time. An
-                        // idle bound, when one is set, still ends it.
-                        Err(_e) => {
-                            if !store_failing {
-                                trace_warn!(
-                                    task_id = %task_id,
-                                    "subscribe reattach: task store read failed"
-                                );
-                            }
-                            store_failing = true;
-                        }
+                    if watch.is_some() {
+                        pace(&last_poll, interval, deadline).await;
+                    }
+                    if let Some(done) =
+                        read_task(store.as_ref(), &task_id, &mut store_failing, after, catchup)
+                            .await
+                    {
+                        return done;
                     }
 
                     if let Some((attached, rx, _)) = queues.attach(&task_id).await {
@@ -178,8 +256,9 @@ impl RequestHandler {
                     }
                     // Not past the operator's bound: a wait that has grown must
                     // not carry the stream beyond the deadline it was set to end at.
-                    tokio::time::sleep(nap_before(deadline, wait)).await;
+                    wait_for_change(watch.take(), nap_before(deadline, wait), &*metrics).await;
                     wait = next_wait(wait, longest);
+                    watch = store.watch_event_log(&task_id);
                 }
             })) as std::pin::Pin<Box<dyn std::future::Future<Output = _> + Send>>
         })
@@ -834,6 +913,8 @@ mod hold;
 mod idle_backoff_tests;
 #[cfg(test)]
 mod log_replay_tests;
+#[cfg(test)]
+mod wake_tests;
 
 #[cfg(test)]
 mod tests {

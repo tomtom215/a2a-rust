@@ -332,6 +332,7 @@ impl SqliteTaskStore {
         let mut report = super::retention::sqlite::purge(
             &self.pool,
             "tasks",
+            "''",
             &[journal::DELETE_ORPHANS_SQL, event_log::DELETE_ORPHANS_SQL],
             idempotency::EXPIRE_SQL,
             policy,

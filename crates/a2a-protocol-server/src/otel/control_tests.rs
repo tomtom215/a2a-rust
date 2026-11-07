@@ -192,6 +192,25 @@ fn lease_halt_and_claim_events_are_counted() {
     );
 }
 
+/// A subscribe stream's wakes are counted by cause, and the tenant and agent
+/// dimensions (off here) are not on it.
+#[test]
+fn subscribe_wakes_are_counted_by_cause() {
+    let (m, reader, _p) = metrics();
+    m.on_subscribe_wake(crate::metrics::subscribe_wake::NOTIFICATION);
+    m.on_subscribe_wake(crate::metrics::subscribe_wake::NOTIFICATION);
+    m.on_subscribe_wake(crate::metrics::subscribe_wake::RESYNC);
+    m.on_subscribe_wake(crate::metrics::subscribe_wake::TIMEOUT);
+    assert_eq!(
+        points(&reader, "a2a.server.subscribe.wakes"),
+        [
+            kv("cause=notification", 2.0),
+            kv("cause=resync", 1.0),
+            kv("cause=timeout", 1.0),
+        ]
+    );
+}
+
 /// `Arc`, `Tee` and the global forwarder pass every new hook on: until 0.12
 /// a missing forward in the `Arc` impl dropped hooks silently.
 #[test]
@@ -211,23 +230,27 @@ fn the_wrappers_forward_the_control_hooks() {
         fn on_claim(&self, _: &str) {
             self.0.fetch_add(1000, std::sync::atomic::Ordering::SeqCst);
         }
+        fn on_subscribe_wake(&self, _: &str) {
+            self.0.fetch_add(10000, std::sync::atomic::Ordering::SeqCst);
+        }
     }
     let fire = |m: &dyn Metrics| {
         m.on_refusal("x");
         m.on_lease("x");
         m.on_halt("x", "y", 0);
         m.on_claim("x");
+        m.on_subscribe_wake("x");
     };
     let a = Arc::new(Count::default());
     fire(&Arc::clone(&a));
-    assert_eq!(a.0.load(std::sync::atomic::Ordering::SeqCst), 1111);
+    assert_eq!(a.0.load(std::sync::atomic::Ordering::SeqCst), 11111);
     let (first, second) = (Arc::new(Count::default()), Arc::new(Count::default()));
     fire(&crate::metrics::Tee {
         first: Arc::clone(&first),
         second: Arc::clone(&second),
     });
-    assert_eq!(first.0.load(std::sync::atomic::Ordering::SeqCst), 1111);
-    assert_eq!(second.0.load(std::sync::atomic::Ordering::SeqCst), 1111);
+    assert_eq!(first.0.load(std::sync::atomic::Ordering::SeqCst), 11111);
+    assert_eq!(second.0.load(std::sync::atomic::Ordering::SeqCst), 11111);
 }
 
 /// The executor's run is labelled with the tenant it ran for.

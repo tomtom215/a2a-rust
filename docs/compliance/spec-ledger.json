@@ -669,13 +669,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1267 InMemoryTaskStore::list",
-    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1066 SqliteTaskStore::list"
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1293 InMemoryTaskStore::list",
+    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1067 SqliteTaskStore::list"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1804 list_empty_store_returns_empty (asserts next_page_token == \"\")",
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1875 list_pagination_is_stable_across_pages",
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:2171 list_pagination_page_size",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1833 list_empty_store_returns_empty (asserts next_page_token == \"\")",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1904 list_pagination_is_stable_across_pages",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:2200 list_pagination_page_size",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:505 list_pagination"
    ],
    "notes": "",
@@ -712,13 +712,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1267 InMemoryTaskStore::list",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1293 InMemoryTaskStore::list",
     "crates/a2a-protocol-server/src/store/cursor.rs:23 encode",
-    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1066 SqliteTaskStore::list",
-    "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:433 PostgresTaskStore::list"
+    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1067 SqliteTaskStore::list",
+    "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:434 PostgresTaskStore::list"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1875 list_pagination_is_stable_across_pages",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1904 list_pagination_is_stable_across_pages",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:699 list_pagination_visits_every_task_once"
    ],
    "notes": "",
@@ -734,13 +734,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1267 InMemoryTaskStore::list",
-    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1066 SqliteTaskStore::list",
-    "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:433 PostgresTaskStore::list",
-    "crates/a2a-protocol-server/src/store/tenant_sqlite_store.rs:502 TenantAwareSqliteTaskStore::list"
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1293 InMemoryTaskStore::list",
+    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1067 SqliteTaskStore::list",
+    "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:434 PostgresTaskStore::list",
+    "crates/a2a-protocol-server/src/store/tenant_sqlite_store.rs:503 TenantAwareSqliteTaskStore::list"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1813 list_returns_all_tasks_most_recently_updated_first",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1842 list_returns_all_tasks_most_recently_updated_first",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:552 list_orders_most_recently_updated_first",
     "crates/a2a-protocol-server/tests/postgres_store_tests.rs:444 task_list_orders_most_recently_updated_first (ignored without PG)"
    ],
@@ -777,12 +777,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:263 StoreData::insert",
-    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:730 SqliteTaskStore::save",
-    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1066 SqliteTaskStore::list"
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:287 StoreData::insert",
+    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:731 SqliteTaskStore::save",
+    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1067 SqliteTaskStore::list"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1965 list_orders_by_status_timestamp_not_write_order",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1994 list_orders_by_status_timestamp_not_write_order",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:583 list_orders_by_status_timestamp_not_write_order",
     "crates/a2a-protocol-server/tests/postgres_store_tests.rs:510 task_list_status_timestamp_ordering_and_filter (ignored without PG)"
    ],
@@ -836,7 +836,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:567 RequestHandler::on_subscribe_to_task",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:646 RequestHandler::on_subscribe_to_task",
     "crates/a2a-protocol-server/src/handler/capability.rs:39 RequestHandler::ensure_streaming_supported"
    ],
    "test_evidence": [
@@ -857,10 +857,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:567 RequestHandler::on_subscribe_to_task"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:646 RequestHandler::on_subscribe_to_task"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:850 resubscribe_task_not_found_returns_error"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:931 resubscribe_task_not_found_returns_error"
    ],
    "notes": "",
    "auditor": "A",
@@ -875,10 +875,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:567 RequestHandler::on_subscribe_to_task"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:646 RequestHandler::on_subscribe_to_task"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:864 resubscribe_terminal_task_returns_unsupported_operation"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:945 resubscribe_terminal_task_returns_unsupported_operation"
    ],
    "notes": "",
    "auditor": "A",
@@ -892,13 +892,13 @@
    "requirement": "The stream MUST terminate when the task reaches a terminal state",
    "status": "TESTED",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:96 RequestHandler::subscribe_reattach_hook",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:184 RequestHandler::subscribe_reattach_hook",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:14 HandlerLimits::default",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1411 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:204 TerminalTracking::cancel_with"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:899 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:980 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
     "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:92 by_default_a_parked_subscription_waits_for_the_terminal_state",
     "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:100 a_bound_too_large_for_the_clock_is_no_bound",
     "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:110 an_operator_s_bound_still_ends_a_parked_subscription",
@@ -920,17 +920,17 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:202 RequestHandler::subscription",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:251 RequestHandler::snapshot_and_live",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:281 RequestHandler::subscription",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:330 RequestHandler::snapshot_and_live",
     "crates/a2a-protocol-server/src/streaming/event_queue/applied.rs:111 AppliedMark::read_through",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:329 InMemoryQueueWriter::attach"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:899 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:980 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:217 a_first_subscribe_misses_nothing_between_snapshot_and_stream",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:223 a_first_subscribe_beside_a_blocking_send_misses_nothing",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1134 a_snapshot_the_store_cannot_reach_is_followed_by_the_log",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1193 the_stream_skips_what_its_snapshot_already_holds",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1215 a_snapshot_the_store_cannot_reach_is_followed_by_the_log",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1274 the_stream_skips_what_its_snapshot_already_holds",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:262 a_first_subscribe_waits_for_the_store_rather_than_the_log"
    ],
    "notes": "The Task is read at a known position (2026-10-13): the stream attaches to the queue first, at an exact position, and the task row is read once every event up to there is stored and none is being stored (streaming/event_queue/applied.rs), so the Task and the live events neither overlap nor leave a gap. Read before the attach, as until then, it trailed the broadcast and an event broadcast before the attach and stored after the read was in neither. The wait is bounded by subscribe_replay_catchup (2 s); past it the event log fills the gap after the Task. Outside the mark: a row CancelTask or another replica writes.",
@@ -2205,7 +2205,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:39 RequestHandler::ensure_streaming_supported",
     "crates/a2a-protocol-server/src/handler/messaging/commit.rs:34 RequestHandler::validate_and_commit",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:567 RequestHandler::on_subscribe_to_task"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:646 RequestHandler::on_subscribe_to_task"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:234 card_without_streaming_rejects_streaming",
@@ -2453,7 +2453,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/retention/mod.rs:135 RetentionPolicy"
+    "crates/a2a-protocol-server/src/store/retention/mod.rs:155 RetentionPolicy"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:595 task_store_config_both_ttl_and_capacity",
@@ -2473,7 +2473,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/retention/mod.rs:135 RetentionPolicy"
+    "crates/a2a-protocol-server/src/store/retention/mod.rs:155 RetentionPolicy"
    ],
    "test_evidence": [],
    "notes": "Deployment-specific; SDK documents its own TTL/capacity knobs in rustdoc. Re-examined 2026-10-18, kept: the SDK documents its own defaults (TaskStoreConfig: task_ttl, max_capacity; book deployment pages), but which policy a deployment runs, and where it tells its users, is the deployer's.",
@@ -2798,9 +2798,9 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1268 InMemoryQueueReader::queue_resume_replay",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1600 InMemoryQueueReader::close_through",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1629 InMemoryQueueReader::deliver_live_position",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:470 RequestHandler::lag_catch_up_hook",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:743 LogReplay::read",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:336 RequestHandler::replay_after",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:549 RequestHandler::lag_catch_up_hook",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:822 LogReplay::read",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:415 RequestHandler::replay_after",
     "crates/a2a-protocol-server/src/store/applied.rs:80 AppliedPosition",
     "crates/a2a-protocol-server/src/handler/messaging/admission.rs:249 RequestHandler::resume_after",
     "crates/a2a-protocol-server/src/store/holds/mod.rs:107 EventHolds::new",
@@ -2808,9 +2808,9 @@
     "crates/a2a-protocol-server/src/store/holds/mod.rs:189 EventHolds::lock",
     "crates/a2a-protocol-server/src/store/holds/mod.rs:213 EventHold::advance",
     "crates/a2a-protocol-server/src/store/task_store/in_memory/log_bound.rs:33 InMemoryTaskStore::bound_log",
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:881 InMemoryTaskStore::append_event",
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:941 InMemoryTaskStore::hold_events",
-    "crates/a2a-protocol-server/src/store/task_store/config.rs:362 TaskStoreConfig::with_max_held_events_factor",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:905 InMemoryTaskStore::append_event",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:965 InMemoryTaskStore::hold_events",
+    "crates/a2a-protocol-server/src/store/task_store/config.rs:426 TaskStoreConfig::with_max_held_events_factor",
     "crates/a2a-protocol-server/src/store/task_store/mod.rs:877 TaskStore::hold_events",
     "crates/a2a-protocol-server/src/store/tenant/store.rs:632 TenantAwareInMemoryTaskStore::hold_events",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1377 InMemoryQueueReader::read",
@@ -2821,7 +2821,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/basis.rs:96 based_on",
     "crates/a2a-protocol-server/src/handler/messaging/create.rs:204 RequestHandler::register_inline_push_config",
     "crates/a2a-protocol-server/src/handler/messaging/commit.rs:77 RequestHandler::commit_task",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:336 RequestHandler::replay_after",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:415 RequestHandler::replay_after",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1288 InMemoryQueueReader::report_unreplayed"
    ],
    "test_evidence": [
@@ -6358,12 +6358,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:567 RequestHandler::on_subscribe_to_task",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:646 RequestHandler::on_subscribe_to_task",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:308 JsonRpcDispatcher::dispatch_single_request_http",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:289 A2aServiceImpl::subscribe_to_task"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:864 resubscribe_terminal_task_returns_unsupported_operation",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:945 resubscribe_terminal_task_returns_unsupported_operation",
     "crates/a2a-protocol-types/src/task.rs:706 is_terminal_all_variants"
    ],
    "notes": "Shared handler path, so it holds for JSON-RPC, REST, gRPC, WebSocket and SLIMRPC; wire mapping is -32004 / 400 / FAILED_PRECONDITION (SLIMRPC: UNIMPLEMENTED, see 3017).",
@@ -7106,7 +7106,7 @@
    "status": "TESTED",
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/limits/fields.rs:33 HandlerLimits",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:517 RequestHandler::final_snapshot_hook",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:596 RequestHandler::final_snapshot_hook",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1141 InMemoryQueueReader::final_snapshot",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1411 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background"
@@ -8997,7 +8997,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/retention/mod.rs:135 RetentionPolicy"
+    "crates/a2a-protocol-server/src/store/retention/mod.rs:155 RetentionPolicy"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/postgres_store_tests.rs:1579 retention_does_not_cross_tenants"
@@ -11165,7 +11165,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:115 refuse_unlistable",
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1267 InMemoryTaskStore::list"
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1293 InMemoryTaskStore::list"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/http_query_validation.rs:82 a_malformed_query_value_is_refused_naming_its_parameter",
@@ -11474,7 +11474,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:53 parse_params",
     "crates/a2a-protocol-server/src/handler/ids.rs:84 task_id_param",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:567 RequestHandler::on_subscribe_to_task",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:646 RequestHandler::on_subscribe_to_task",
     "crates/a2a-protocol-types/src/generated/params.rs:183 TaskIdParams",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:137 TaskQueryParams::try_from",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:165 TaskIdParams::from"

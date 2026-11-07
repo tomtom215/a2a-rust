@@ -5,7 +5,7 @@
 
 use sqlx::SqlitePool;
 
-use super::{PurgeReport, RetentionPolicy, terminal_state_labels};
+use super::{PurgeReport, RetentionPolicy, parked_state_labels, terminal_state_labels};
 
 /// Deletes terminal tasks older than `policy` from `table`, in batches.
 ///
@@ -25,6 +25,10 @@ use super::{PurgeReport, RetentionPolicy, terminal_state_labels};
 /// `rowid` and not `id`: `tenant_tasks` is keyed on `(tenant_id, id)`, so a
 /// delete matching `id` alone would take that task id from every tenant.
 ///
+/// `claim_scope` is the SQL expression, over the alias `t`, for the scope a
+/// task's turn claim is filed under: `''` for `tasks`, `t.tenant_id` for
+/// `tenant_tasks`. Only the parked sweep reads it (see [`purge_parked`]).
+///
 /// `key_sweep` is the statement that deletes expired idempotency keys, taking
 /// the cutoff modifier and the batch size. It is separate from
 /// `orphan_sweeps` because it is not an anti-join and not a repair: an orphan
@@ -33,6 +37,7 @@ use super::{PurgeReport, RetentionPolicy, terminal_state_labels};
 pub async fn purge(
     pool: &SqlitePool,
     table: &'static str,
+    claim_scope: &'static str,
     orphan_sweeps: &[&'static str],
     key_sweep: &'static str,
     policy: &RetentionPolicy,
@@ -76,6 +81,13 @@ pub async fn purge(
         }
         report.tasks_deleted += deleted;
         report.batches += 1;
+    }
+
+    // Parked tasks, only when the policy opts in. Before the side-table
+    // sweeps: they reclaim what this deletion strands, as they do for the
+    // terminal tasks above.
+    if !purge_parked(pool, table, claim_scope, policy, &mut report).await? {
+        return Ok(report);
     }
 
     // Side-table rows are cleared by anti-join after the task rows are gone,
@@ -185,4 +197,78 @@ async fn expire_keys(
         report.idempotency_keys_deleted += deleted;
         report.batches += 1;
     }
+}
+
+/// Deletes parked tasks (`input-required`, `auth-required`) not updated for
+/// [`RetentionPolicy::parked_max_age`] from `table`, in batches, counting them
+/// in [`PurgeReport::parked_tasks_deleted`]; nothing when the policy has no
+/// such age. `false` when [`RetentionPolicy::max_batches`] stopped it with
+/// work left.
+///
+/// The terminal sweep's statement with one more condition, a task with no
+/// unexpired turn claim: a parked task is continued by the next message, which
+/// takes the claim before it writes, so a task whose claim is live is being
+/// continued now. The claim's clock is the one it was written by (the
+/// process's, in milliseconds), read here as the claim sweeps read it. The
+/// instant between a continuation reading the task and taking its claim is
+/// not closed; see the `PostgreSQL` sweep, whose text applies.
+async fn purge_parked(
+    pool: &SqlitePool,
+    table: &'static str,
+    claim_scope: &'static str,
+    policy: &RetentionPolicy,
+    report: &mut PurgeReport,
+) -> Result<bool, sqlx::Error> {
+    let Some(max_age) = policy.parked_max_age else {
+        return Ok(true);
+    };
+    let labels = parked_state_labels();
+    let cutoff = format!("-{} seconds", max_age.as_secs());
+    let batch = i64::from(policy.effective_batch_size());
+    let sql = parked_sql(table, claim_scope);
+    loop {
+        if policy.max_batches.is_some_and(|max| report.batches >= max) {
+            report.complete = false;
+            return Ok(false);
+        }
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
+        for label in &labels {
+            query = query.bind(label);
+        }
+        let deleted = query
+            .bind(&cutoff)
+            .bind(crate::store::claim::sqlite::now_ms())
+            .bind(batch)
+            .bind(NOW)
+            .execute(pool)
+            .await?
+            .rows_affected();
+        if deleted == 0 {
+            return Ok(true);
+        }
+        report.parked_tasks_deleted += deleted;
+        report.batches += 1;
+    }
+}
+
+/// The time value the parked sweep measures ages from: SQLite's own clock.
+/// Bound rather than written into the statement so a test can bind a fixed
+/// instant and make an age exactly the policy's, which a real clock never is.
+pub(super) const NOW: &str = "now";
+
+/// The parked sweep's statement: `?1` and `?2` the state labels, `?3` the
+/// cutoff modifier (`-N seconds`), `?4` the claim clock in milliseconds, `?5`
+/// the batch size and `?6` the instant ages are measured from ([`NOW`]).
+pub(super) fn parked_sql(table: &str, claim_scope: &str) -> String {
+    format!(
+        "DELETE FROM {table} WHERE rowid IN ( \
+             SELECT t.rowid FROM {table} t \
+              WHERE t.state IN (?1, ?2) \
+                AND t.updated_at < strftime('%Y-%m-%d %H:%M:%f', ?6, ?3) \
+                AND NOT EXISTS (SELECT 1 FROM a2a_task_claims c \
+                                 WHERE c.scope = {claim_scope} AND c.task_id = t.id \
+                                   AND c.expires_at_ms > ?4) \
+              LIMIT ?5 \
+         )"
+    )
 }

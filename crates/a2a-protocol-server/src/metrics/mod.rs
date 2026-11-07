@@ -173,6 +173,19 @@ pub trait Metrics: Send + Sync + 'static {
 
     /// Called on a turn-claim event: one of [`control::claim`].
     fn on_claim(&self, _event: &str) {}
+
+    /// Called when a `SubscribeToTask` stream that waits on a task's event
+    /// log (a stream on a replica that does not run the task) stops waiting
+    /// to read the store again: `cause` is one of [`subscribe_wake`].
+    ///
+    /// Reported only for a store that can wake a stream
+    /// ([`TaskStore::watch_event_log`](crate::store::TaskStore::watch_event_log)
+    /// returned a watch): its `notification` against its `timeout` is how
+    /// much of the waiting the store's notifications did, and a store that
+    /// cannot wake a stream reports nothing, as it wakes none. Not
+    /// overriding it loses that ratio, and with it the sign that the
+    /// notifications stopped arriving and every stream is back to polling.
+    fn on_subscribe_wake(&self, _cause: &str) {}
 }
 
 /// One finished inbound call, as [`Metrics::on_rpc_call`] reports it.
@@ -217,7 +230,7 @@ pub struct RpcCall<'a> {
 mod labels;
 pub use labels::{
     control, event_append_error, event_log_catchup_error, executor_outcome, persistence_operation,
-    queue_handoff_error,
+    queue_handoff_error, subscribe_wake,
 };
 pub mod push_outcome;
 
@@ -318,6 +331,10 @@ impl<T: Metrics + ?Sized> Metrics for Arc<T> {
 
     fn on_claim(&self, event: &str) {
         (**self).on_claim(event);
+    }
+
+    fn on_subscribe_wake(&self, cause: &str) {
+        (**self).on_subscribe_wake(cause);
     }
 }
 

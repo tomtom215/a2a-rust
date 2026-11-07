@@ -460,7 +460,7 @@ fn the_encrypted_task_store_overrides_every_task_store_method() {
     };
     let wanted = methods(&trait_src, "pub trait TaskStore");
     let have = methods(&wrapper_src, "impl TaskStore for EncryptedTaskStore");
-    assert!(wanted.len() >= 19, "parsed {wanted:?}");
+    assert!(wanted.len() >= 20, "parsed {wanted:?}");
     let missing: Vec<&String> = wanted.iter().filter(|m| !have.contains(m)).collect();
     assert!(
         missing.is_empty(),

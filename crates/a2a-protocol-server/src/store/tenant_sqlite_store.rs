@@ -236,6 +236,7 @@ impl TenantAwareSqliteTaskStore {
         let mut report = super::retention::sqlite::purge(
             &self.pool,
             "tenant_tasks",
+            "t.tenant_id",
             &[evlog::SQLITE_DELETE_ORPHANS],
             super::tenant_idempotency::SQLITE_EXPIRE,
             policy,

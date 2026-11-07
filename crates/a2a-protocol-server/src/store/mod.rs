@@ -15,10 +15,15 @@ pub mod encrypted;
 pub mod halt;
 pub mod holds;
 pub mod lease;
+#[cfg(feature = "postgres")]
+mod log_notify;
+pub(crate) mod log_wake;
 pub mod retention;
 pub mod task_store;
 pub mod tenant;
 pub mod terminal;
+#[cfg(test)]
+pub(crate) mod tests;
 #[cfg(feature = "tracing")]
 pub(crate) mod traced;
 
@@ -69,6 +74,9 @@ pub use database::StoreDatabase;
 pub use halt::{HaltSignal, HaltStore, InMemoryHaltStore, StoredHalt};
 pub use holds::{DEFAULT_MAX_HELD_EVENTS_FACTOR, EventHold, EventHolds};
 pub use lease::{InMemoryLeaseStore, LeaseStore};
+#[cfg(feature = "postgres")]
+pub use log_notify::{CHANNEL as LOG_NOTIFY_CHANNEL, LogListen};
+pub use log_wake::{LogWake, LogWatch};
 pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 // `IdempotencyClaim` is the return type of a `TaskStore` method, so an
 // out-of-tree store has to name it. It was reachable only at

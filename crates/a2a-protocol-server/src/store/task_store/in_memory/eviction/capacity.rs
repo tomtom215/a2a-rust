@@ -40,7 +40,11 @@ impl InMemoryTaskStore {
     /// sorted, then `take(0)` removed nothing, so no test could observe the
     /// difference. `!= 0` instead mutates only to `== 0`, which inverts the
     /// guard and is caught.
-    pub(super) fn evict_over_capacity(store: &mut StoreData, max: usize) {
+    pub(super) fn evict_over_capacity(
+        store: &mut StoreData,
+        max: usize,
+        parked_cutoff: Option<std::time::Instant>,
+    ) {
         let overflow = store.len().saturating_sub(max);
         if overflow != 0 {
             // There is deliberately no "how many did we remove?" counter here:
@@ -50,14 +54,22 @@ impl InMemoryTaskStore {
             // and the counter dead weight. The one count kept is of the victims
             // that were still working, which is a different quantity: it is the
             // number of tasks a caller lost, and it is reported.
-            let victims = Self::capacity_victims(store, overflow);
+            let victims = Self::capacity_victims(store, overflow, parked_cutoff);
+            let expired = victims
+                .iter()
+                .filter(|id| Self::is_expired_parked(store, id, parked_cutoff))
+                .count();
             let working = victims
                 .iter()
-                .filter(|id| !Self::is_terminal(store, id))
+                .filter(|id| {
+                    !Self::is_terminal(store, id)
+                        && !Self::is_expired_parked(store, id, parked_cutoff)
+                })
                 .count();
             for id in &victims {
                 store.remove(id);
             }
+            store.parked_evictions += expired as u64;
             if working != 0 {
                 store.live_evictions += working as u64;
                 trace_warn!(
@@ -72,7 +84,9 @@ impl InMemoryTaskStore {
     }
 
     /// Chooses up to `overflow` tasks to evict, oldest first, preferring
-    /// terminal ones over still-running ones, and **never a parked one**: a
+    /// terminal ones over still-running ones, and **never a parked one**
+    /// unless it has sat parked since `parked_cutoff`
+    /// ([`TaskStoreConfig::parked_task_ttl`]), when it counts as finished: a
     /// task in `input-required` or `auth-required` is a person's pending
     /// decision (audit D-18). When the store holds too few tasks of the other
     /// kinds, the result is shorter than `overflow` and the store stays over
@@ -106,7 +120,11 @@ impl InMemoryTaskStore {
     /// filled `terminal`. Here the same bound is the loop's own exit condition,
     /// checked identically in both passes; see
     /// `evict_tops_up_a_partial_supply_of_terminal_tasks`.
-    fn capacity_victims(store: &StoreData, overflow: usize) -> Vec<TaskId> {
+    fn capacity_victims(
+        store: &StoreData,
+        overflow: usize,
+        parked_cutoff: Option<std::time::Instant>,
+    ) -> Vec<TaskId> {
         let window = EVICTION_SCAN_WINDOW.max(overflow);
         let mut victims: Vec<TaskId> = Vec::with_capacity(overflow);
 
@@ -115,7 +133,7 @@ impl InMemoryTaskStore {
             if victims.len() == overflow {
                 return victims;
             }
-            if Self::is_terminal(store, id) {
+            if Self::is_terminal(store, id) || Self::is_expired_parked(store, id, parked_cutoff) {
                 victims.push(id.clone());
             }
         }
@@ -147,6 +165,20 @@ impl InMemoryTaskStore {
         store.entries.get(id).is_some_and(|e| {
             !e.task.status.state.is_terminal() && !e.task.status.state.is_interrupted()
         })
+    }
+
+    /// Whether `id` names a task parked since `cutoff` or earlier: one a
+    /// capacity sweep may take as it takes a finished one. An id with no entry
+    /// is not.
+    fn is_expired_parked(
+        store: &StoreData,
+        id: &TaskId,
+        cutoff: Option<std::time::Instant>,
+    ) -> bool {
+        store
+            .entries
+            .get(id)
+            .is_some_and(|e| e.expired_parked(cutoff))
     }
 
     /// Whether `id` names a task that has reached a terminal state.
