@@ -223,6 +223,7 @@ impl TenantAwarePostgresTaskStore {
         let mut report = super::retention::postgres::purge(
             &self.pool,
             "tenant_tasks",
+            "t.tenant_id",
             crate::store::tenant_idempotency::PG_EXPIRE,
             policy,
         )

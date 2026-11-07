@@ -93,10 +93,42 @@ Call it from whatever already schedules work — a cron entry, a Kubernetes
 to a timer inside the store: a sweep that fires on its own fires during your
 traffic peak, and the store does not know when that is.
 
-Only terminal tasks are eligible — `Completed`, `Failed`, `Canceled`,
-`Rejected`. A task still `Working`, or parked in `InputRequired` waiting on a
-human, is never deleted however old it is. Pick the interval from how long your
-clients may reasonably poll for a task after it finishes.
+Terminal tasks are eligible — `Completed`, `Failed`, `Canceled`, `Rejected`.
+A task still `Working` is never deleted however old it is, and neither, by
+default, is one parked in `InputRequired` or `AuthRequired` waiting on a human:
+that is a workflow, not a leak. Pick the interval from how long your clients
+may reasonably poll for a task after it finishes.
+
+If the people your parked tasks wait on do abandon them, opt in with
+`RetentionPolicy::with_parked_max_age(Duration)` (since 0.16.0). A parked task
+whose last update is older than that is then **deleted**, with its event log,
+and counted in `PurgeReport::parked_tasks_deleted`, apart from the terminal
+count. It is deleted and not cancelled because a store cannot write what a
+`CancelTask` writes (the event a stream replays, the push notification, the
+audit record): a client that answers the task afterwards is told it was not
+found, and a stream open on it ends without a terminal state. A task a turn
+is running on at that moment (an unexpired turn claim) is skipped however old
+it is, and the idempotency keys of the sweep are kept at least as long as the
+parked age, so a retry of the send that created the task still replays. The
+in-memory store has the same opt-in, `TaskStoreConfig::with_parked_task_ttl`;
+ADR 0056 records both.
+
+```rust
+use a2a_protocol_server::store::{PostgresTaskStore, RetentionPolicy};
+use std::time::Duration;
+
+async fn sweep(store: &PostgresTaskStore) -> a2a_protocol_types::error::A2aResult<()> {
+    // Finished work after 30 days; a wait nobody answered in 90.
+    let policy = RetentionPolicy::new(Duration::from_secs(30 * 24 * 3600))
+        .with_parked_max_age(Duration::from_secs(90 * 24 * 3600));
+    let report = store.purge_expired(&policy).await?;
+    println!(
+        "{} finished, {} parked",
+        report.tasks_deleted, report.parked_tasks_deleted
+    );
+    Ok(())
+}
+```
 
 Three details worth knowing rather than discovering:
 

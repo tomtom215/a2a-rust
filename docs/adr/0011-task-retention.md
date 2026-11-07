@@ -3,7 +3,8 @@
 
 # ADR 0011: Task retention is explicit, and the store does not schedule it
 
-**Status:** Accepted
+**Status:** Accepted; amended 2026-11-07 by [ADR 0056](0056-parked-tasks-may-expire.md)
+(parked tasks may be purged, by opt-in; every other statement below stands)
 
 **Date:** 2026-08
 
@@ -33,7 +34,8 @@ Add `purge_expired` to all four persistent stores, and make it **opt-in**:
 - `RetentionPolicy::new(terminal_max_age)` names the one thing a policy must
   say. `batch_size` defaults to 1,000; `max_batches` defaults to unbounded and
   can bound a single sweep.
-- `purge_expired(&policy)` deletes **terminal tasks only** — the states
+- `purge_expired(&policy)` deletes **terminal tasks only** (by default; see
+  the amendment below) — the states
   `terminal_states()` reports, which is asserted against
   `TaskState::is_terminal` for every protocol variant — older than
   `terminal_max_age`, in batches, and returns a `PurgeReport` (`tasks_deleted`,
@@ -69,7 +71,7 @@ number of rows; `batch_size` bounds each statement and `max_batches` lets an
 operator cap a sweep's total work and finish it on the next run — which is what
 `PurgeReport::complete` reports.
 
-**Terminal-only, because a running task is not garbage.** Age alone is not
+**Terminal-only by default, because a running task is not garbage.** Age alone is not
 evidence that a task is finished; a long-running or resumable task can be older
 than any sensible TTL and still be live.
 
@@ -106,3 +108,19 @@ than any sensible TTL and still be live.
 - A future protocol revision adds a terminal state: `terminal_states()` is
   asserted against `TaskState::is_terminal` across `TaskState::ALL`, so the test
   fails rather than the sweep silently skipping the new state.
+
+## Amendment (2026-11-07): an opt-in for parked tasks
+
+The sentence "a parked task is a workflow waiting on someone, not a leak" stays
+the default and is not contradicted. [ADR 0056](0056-parked-tasks-may-expire.md)
+adds a way for an operator whose parked tasks are abandoned to say so:
+`RetentionPolicy::with_parked_max_age(Duration)`, unset by default, which makes
+`purge_expired` also delete a task parked in `input-required` or
+`auth-required` whose last update is older than that, in the same batches,
+counted in `PurgeReport::parked_tasks_deleted` and not in `tasks_deleted`. It
+deletes, and does not cancel, because a store cannot write the event, the push
+notification and the audit record that a cancellation is; it skips a task with
+a live turn claim; and it raises the idempotency-key age to at least the parked
+age. The in-memory store gets the matching `TaskStoreConfig::with_parked_task_ttl`.
+With neither set, nothing in this ADR's Decision changes.
+

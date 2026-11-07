@@ -85,8 +85,9 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `max_capacity` | `Option<usize>` | 10,000 | Maximum stored tasks; oldest terminal tasks are evicted on overflow, then, as a last resort, the oldest *working* ones (counted: `InMemoryTaskStore::live_evictions`); a task waiting for input or authorization is never evicted, and a full store of them refuses a new task with `503` (size it above your concurrent in-flight and parked task count) |
+| `max_capacity` | `Option<usize>` | 10,000 | Maximum stored tasks; oldest terminal tasks are evicted on overflow, then, as a last resort, the oldest *working* ones (counted: `InMemoryTaskStore::live_evictions`); a task waiting for input or authorization is not evicted unless `parked_task_ttl` is set, and a full store of them refuses a new task with `503` (size it above your concurrent in-flight and parked task count) |
 | `task_ttl` | `Option<Duration>` | 1 hour | TTL for completed/failed tasks |
+| `parked_task_ttl` | `Option<Duration>` | `None` | How long a task may sit waiting for input or authorization before it is evicted like a finished one (`with_parked_task_ttl(Duration)`). Unset: nothing parked expires. A task that expires is gone, not cancelled (counted: `InMemoryTaskStore::parked_evictions`); see ADR 0056 |
 | `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps |
 | `max_page_size` | `u32` | 1,000 | Cap a store applies to the page size of a `list` call. The `ListTasks` method itself refuses a `pageSize` outside 1 to 100 (`InvalidParams`) and lists 50 when none is given, so this matters for direct `TaskStore::list` callers and when set below 100 |
 | `max_events_per_task` | `Option<usize>` | 512 | Events one task's log keeps for `Last-Event-ID` resumption; `None` removes the bound. An attached stream that still owes older events holds them past it (spec §3.5.2) |

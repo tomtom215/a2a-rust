@@ -84,34 +84,34 @@ fn a_new_task_is_refused_only_when_the_store_is_full_of_parked_tasks() {
     let all_parked = store_of(&[InputRequired, AuthRequired, InputRequired]);
     let new = TaskId::new("new");
     assert!(
-        all_parked.refuses_for_parked_tasks(&new, Some(3)),
+        all_parked.refuses_for_parked_tasks(&new, Some(3), None),
         "at the cap, all parked"
     );
     assert!(
-        all_parked.refuses_for_parked_tasks(&new, Some(2)),
+        all_parked.refuses_for_parked_tasks(&new, Some(2), None),
         "over the cap, all parked"
     );
     assert!(
-        !all_parked.refuses_for_parked_tasks(&new, Some(4)),
+        !all_parked.refuses_for_parked_tasks(&new, Some(4), None),
         "room left: the store is not full"
     );
     assert!(
-        !all_parked.refuses_for_parked_tasks(&new, None),
+        !all_parked.refuses_for_parked_tasks(&new, None, None),
         "no cap, nothing to refuse for"
     );
     assert!(
-        !all_parked.refuses_for_parked_tasks(&TaskId::new("t1"), Some(3)),
+        !all_parked.refuses_for_parked_tasks(&TaskId::new("t1"), Some(3), None),
         "a task the store holds is an update, not a new task"
     );
     for other in [Working, Completed] {
         let mixed = store_of(&[InputRequired, other, AuthRequired]);
         assert!(
-            !mixed.refuses_for_parked_tasks(&new, Some(3)),
+            !mixed.refuses_for_parked_tasks(&new, Some(3), None),
             "a {other:?} task can be evicted to make room"
         );
     }
     assert!(
-        !store_of(&[]).refuses_for_parked_tasks(&new, Some(0)),
+        !store_of(&[]).refuses_for_parked_tasks(&new, Some(0), None),
         "an empty store holds no parked task, so it is not 'full of' them"
     );
 }

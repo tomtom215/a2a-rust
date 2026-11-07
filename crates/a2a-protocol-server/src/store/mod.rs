@@ -48,6 +48,8 @@ pub mod pg_migration;
 pub(crate) mod pg_retry;
 #[cfg(feature = "postgres")]
 pub(crate) mod pg_schema;
+#[cfg(all(test, feature = "postgres"))]
+pub(crate) mod pg_scratch;
 #[cfg(feature = "postgres")]
 pub mod postgres_store;
 #[cfg(feature = "postgres")]

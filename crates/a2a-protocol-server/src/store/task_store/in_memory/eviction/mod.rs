@@ -37,6 +37,8 @@ mod key_cap_tests;
 mod key_expiry_tests;
 #[cfg(test)]
 mod parked_tests;
+#[cfg(test)]
+mod parked_ttl_tests;
 
 use std::time::{Duration, Instant};
 
@@ -141,6 +143,19 @@ impl InMemoryTaskStore {
         self.data.read().await.live_evictions
     }
 
+    /// How many parked tasks have been removed after sitting parked for
+    /// [`TaskStoreConfig::parked_task_ttl`], since this store was created.
+    ///
+    /// Each is a wait that nobody answered: the task is gone, so a client that
+    /// answers it later is told it was not found. Always zero while no
+    /// `parked_task_ttl` is set, because a parked task is then never removed.
+    /// A rising count means the TTL is shorter than the time people take to
+    /// answer; each sweep that removes some also logs a warning (with the
+    /// `tracing` feature).
+    pub async fn parked_evictions(&self) -> u64 {
+        self.data.read().await.parked_evictions
+    }
+
     /// Returns which eviction passes this write has earned.
     ///
     /// The TTL pass is gated on the write counter so its idempotency-key scan
@@ -205,8 +220,12 @@ impl InMemoryTaskStore {
             Self::evict_expired(store, ttl, Instant::now());
         }
 
+        if let Some(ttl) = config.parked_task_ttl.filter(|_| passes.ttl) {
+            Self::evict_expired_parked(store, ttl, Instant::now());
+        }
+
         if let Some(max) = config.max_capacity.filter(|_| passes.capacity) {
-            Self::evict_over_capacity(store, max);
+            Self::evict_over_capacity(store, max, config.parked_cutoff());
         }
 
         // On the TTL pass, because it is a TTL and its scan has the same
@@ -256,6 +275,47 @@ impl InMemoryTaskStore {
             .collect();
         for id in expired {
             store.remove(&id);
+        }
+    }
+
+    /// Removes every parked task whose last update is at least `ttl` old
+    /// ([`TaskStoreConfig::parked_task_ttl`]).
+    ///
+    /// The same walk as [`evict_expired`](Self::evict_expired), over the same
+    /// prefix of `expiry_index`, taking the entries that are parked where that
+    /// one takes the finished ones; a task still working is kept however old.
+    /// "At least `ttl`" is the same inclusive bound, so a parked task and a
+    /// finished one of the same age expire together. `now` is a parameter for
+    /// the reason `evict_expired`'s is: so the bound can be tested exactly.
+    ///
+    /// Each removal is a person's pending decision dropped, so the number is
+    /// kept ([`InMemoryTaskStore::parked_evictions`]) and logged.
+    fn evict_expired_parked(store: &mut StoreData, ttl: Duration, now: Instant) {
+        let Some(cutoff) = now.checked_sub(ttl) else {
+            return;
+        };
+        let expired: Vec<TaskId> = store
+            .expiry_index
+            .range(..=(cutoff, u64::MAX))
+            .filter(|(_, id)| {
+                store
+                    .entries
+                    .get(*id)
+                    .is_some_and(|entry| entry.task.status.state.is_interrupted())
+            })
+            .map(|(_, id)| id.clone())
+            .collect();
+        for id in &expired {
+            store.remove(id);
+        }
+        store.parked_evictions += expired.len() as u64;
+        if !expired.is_empty() {
+            trace_warn!(
+                expired = expired.len(),
+                parked_task_ttl_secs = ttl.as_secs(),
+                "parked tasks expired: nobody answered them within parked_task_ttl, and \
+                 they are gone (a client that answers now is told the task was not found)"
+            );
         }
     }
 

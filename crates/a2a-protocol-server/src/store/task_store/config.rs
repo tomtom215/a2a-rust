@@ -88,14 +88,15 @@ pub struct TaskStoreConfig {
     /// size, not an absolute invariant. Each such eviction is logged and
     /// counted ([`InMemoryTaskStore::live_evictions`](crate::store::InMemoryTaskStore::live_evictions)).
     ///
-    /// **A parked task is never evicted** (audit D-18): one in `input-required`
+    /// **A parked task is not evicted** (audit D-18): one in `input-required`
     /// or `auth-required` is a person's pending decision. When the store is at
     /// the cap and *every* task in it is parked, a new task is refused with a
     /// temporary error (HTTP `503`) instead. [`task_ttl`](Self::task_ttl)
     /// expires only terminal tasks, so a parked task whose client never comes
     /// back stays until it is answered, cancelled or deleted. Size
     /// `max_capacity` above the realistic number of tasks in flight *and*
-    /// parked at once.
+    /// parked at once. The one exception is opt-in:
+    /// [`parked_task_ttl`](Self::parked_task_ttl), which is unset by default.
     pub max_capacity: Option<usize>,
 
     /// Time-to-live for completed or failed tasks. Tasks in terminal states
@@ -103,6 +104,48 @@ pub struct TaskStoreConfig {
     /// `eviction_interval` writes, or when `run_eviction()` is called.
     /// `None` means no TTL-based eviction.
     pub task_ttl: Option<Duration>,
+
+    /// How long a task may sit parked (`input-required` or `auth-required`)
+    /// before it becomes evictable like a finished one. `None`, the default,
+    /// means a parked task is never evicted: nothing expires, as in every
+    /// release before this field existed.
+    ///
+    /// # Why it is opt-in
+    ///
+    /// A parked task is a workflow waiting on a person, and for as long as
+    /// that person may come back it is not garbage. Memory is a hard bound
+    /// here, though, and a store whose `max_capacity` is filled with parked
+    /// tasks nobody will answer refuses every new task
+    /// ([`max_capacity`](Self::max_capacity)); a deployment that would rather
+    /// lose an abandoned wait than refuse new work sets this to the longest
+    /// time it is willing to wait. It is the in-memory store's answer only:
+    /// the SQL stores keep a parked task until
+    /// [`RetentionPolicy::parked_max_age`](crate::store::RetentionPolicy::parked_max_age)
+    /// says otherwise (ADR 0056).
+    ///
+    /// # What it does
+    ///
+    /// A parked task whose last write is at least this old is removed by the
+    /// same sweeps that remove a finished task past
+    /// [`task_ttl`](Self::task_ttl) (every
+    /// [`eviction_interval`](Self::eviction_interval) writes, or
+    /// [`run_eviction`](crate::store::InMemoryTaskStore::run_eviction)),
+    /// whether or not `task_ttl` is set; and while it is unexpired it is
+    /// still never taken to make room, but once expired it is taken *with*
+    /// the finished tasks (and a new task is not refused for a store full of
+    /// expired ones).
+    ///
+    /// The age is measured from the task's last write, so an update that
+    /// leaves the task parked starts it again.
+    ///
+    /// # What it costs
+    ///
+    /// The task is gone, not cancelled: a client that answers it afterwards
+    /// is told the task was not found, and a stream open on it ends without
+    /// a terminal state. Each removal is counted
+    /// ([`parked_evictions`](crate::store::InMemoryTaskStore::parked_evictions))
+    /// and logged, so the loss is visible.
+    pub parked_task_ttl: Option<Duration>,
 
     /// Number of writes between automatic eviction sweeps. Default: 64.
     ///
@@ -272,6 +315,7 @@ impl Default for TaskStoreConfig {
         Self {
             max_capacity: Some(10_000),
             task_ttl: Some(Duration::from_secs(3600)), // 1 hour
+            parked_task_ttl: None,
             eviction_interval: 64,
             max_page_size: DEFAULT_MAX_PAGE_SIZE,
             max_events_per_task: Some(DEFAULT_MAX_EVENTS_PER_TASK),
@@ -317,6 +361,26 @@ impl TaskStoreConfig {
     pub const fn with_task_ttl(mut self, ttl: Option<Duration>) -> Self {
         self.task_ttl = ttl;
         self
+    }
+
+    /// Lets a task that has sat parked (`input-required` or `auth-required`)
+    /// for `ttl` be evicted like a finished one. Unset by default: nothing
+    /// parked expires. See [`parked_task_ttl`](Self::parked_task_ttl) for
+    /// what it does and what it costs.
+    #[must_use]
+    pub const fn with_parked_task_ttl(mut self, ttl: Duration) -> Self {
+        self.parked_task_ttl = Some(ttl);
+        self
+    }
+
+    /// The last write time at or before which a parked task is expired now:
+    /// `None` when nothing expires, which is no
+    /// [`parked_task_ttl`](Self::parked_task_ttl) (the clock is not read
+    /// then, on a path every write takes), or one longer than the monotonic
+    /// clock has run, so that no task can have been parked that long.
+    pub(crate) fn parked_cutoff(&self) -> Option<std::time::Instant> {
+        self.parked_task_ttl
+            .and_then(|ttl| std::time::Instant::now().checked_sub(ttl))
     }
 
     /// Sets the number of writes between eviction sweeps.

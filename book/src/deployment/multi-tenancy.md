@@ -240,7 +240,9 @@ sum. A write that would add a new task at the total first evicts the
 writer's own partition's oldest finished task; when that partition holds
 none, the write is refused as temporary (HTTP `503`, gRPC `UNAVAILABLE`). A
 write to a task already held is never refused, another tenant's tasks are
-never evicted to make room, and a running task never is.
+never evicted to make room, and a running task never is. (With
+`TaskStoreConfig::with_parked_task_ttl` set, a task parked longer than that
+counts as finished for this too.)
 `TenantAwareInMemoryTaskStore::total_tasks()` reports the count. The SQL
 tenant stores have no total; size their tables with the database.
 
