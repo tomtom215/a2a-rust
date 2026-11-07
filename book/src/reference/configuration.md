@@ -107,6 +107,7 @@ deletes nothing unless asked.
 | `terminal_max_age` | `Duration` | — | Terminal tasks whose last update is older than this are deleted; required by `new` |
 | `batch_size` | `u32` | 1,000 | Rows per `DELETE`; zero is taken as one |
 | `idempotency_key_max_age` | `Option<Duration>` | 24 hours | Idempotency keys older than this are deleted, never below `terminal_max_age`; `None` keeps them |
+| `parked_max_age` | `Option<Duration>` | `None` | Tasks parked in `input-required` or `auth-required` whose last update is older than this are deleted, not cancelled, and a task with a live turn claim is skipped; `None` never deletes one. The idempotency-key age is raised to at least this; see ADR 0056 |
 | `max_batches` | `Option<u32>` | `None` | Stop a sweep after this many batches; `None` runs until nothing is left |
 | `max_events_per_live_task` | `Option<u64>` | `None` | Compact each live task's event log to its newest this many events, dropping only events the stored task already reflects; a reader resuming from before the cut is answered with the snapshot. `0` is taken as `1`. `None` lets a live task's log grow for as long as it runs (ADR 0047) |
 
