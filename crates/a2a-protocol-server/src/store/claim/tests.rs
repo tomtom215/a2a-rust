@@ -3,6 +3,9 @@
 
 use super::*;
 
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+mod steering_sql;
+
 const TTL: Duration = Duration::from_secs(60);
 
 #[tokio::test]
@@ -397,4 +400,18 @@ fn a_claim_is_free_at_the_instant_it_expires() {
     assert!(super::live(t + Duration::from_millis(1), t));
     assert!(!super::live(t, t), "free to take at the instant it expires");
     assert!(!super::live(t, t + Duration::from_millis(1)));
+}
+
+/// A claim is swept at the instant its grace ends and not before, where a
+/// real clock can almost never land; constructed instants pin the boundary.
+#[test]
+fn a_claim_is_swept_at_the_instant_its_grace_ends() {
+    let t = std::time::Instant::now();
+    let grace = Duration::from_secs(10);
+    assert!(
+        !super::swept(t, grace, t + Duration::from_millis(9_999)),
+        "still inside its grace"
+    );
+    assert!(super::swept(t, grace, t + grace), "swept as the grace ends");
+    assert!(super::swept(t, grace, t + Duration::from_millis(10_001)));
 }

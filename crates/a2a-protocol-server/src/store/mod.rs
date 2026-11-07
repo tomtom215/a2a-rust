@@ -64,7 +64,9 @@ mod event_log_sql;
 mod tenant_event_log;
 
 pub use applied::AppliedPosition;
-pub use claim::{ClaimLost, HeldClaim, InMemoryTurnClaims, TurnClaimStore};
+pub use claim::{
+    ClaimLost, Handed, HeldClaim, InMemoryTurnClaims, PendingSteering, TurnClaimStore,
+};
 pub use database::StoreDatabase;
 pub use halt::{HaltSignal, HaltStore, InMemoryHaltStore, StoredHalt};
 pub use holds::{DEFAULT_MAX_HELD_EVENTS_FACTOR, EventHold, EventHolds};

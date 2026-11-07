@@ -11,7 +11,8 @@ use std::time::Duration;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use sqlx::postgres::PgPool;
 
-use super::{Fut, HeldClaim, TurnClaimStore};
+use super::postgres_steering as steering;
+use super::{Fut, Handed, HeldClaim, PendingSteering, TurnClaimStore};
 
 /// The table's DDL as a literal, so the migration can join it to the index.
 macro_rules! create_table {
@@ -113,6 +114,17 @@ pub struct PostgresTurnClaims {
     /// Where a statement run again after a lost connection is reported: the
     /// task store's, when the store made this.
     metrics: crate::metrics::MetricsHandle,
+    /// Set once the steering table exists (`postgres_steering`); a store
+    /// that never takes steering never creates it.
+    steering_ready: std::sync::Arc<tokio::sync::OnceCell<()>>,
+    /// The `LISTEN` task and its signals, started the first time they are
+    /// asked for.
+    steering_signals: std::sync::Arc<
+        std::sync::OnceLock<(
+            tokio::sync::broadcast::Sender<()>,
+            std::sync::Arc<steering::Listener>,
+        )>,
+    >,
 }
 
 impl PostgresTurnClaims {
@@ -142,6 +154,8 @@ impl PostgresTurnClaims {
             pool,
             tasks: None,
             metrics: crate::metrics::MetricsHandle::default(),
+            steering_ready: std::sync::Arc::default(),
+            steering_signals: std::sync::Arc::default(),
         })
     }
 
@@ -157,6 +171,8 @@ impl PostgresTurnClaims {
             pool,
             tasks: Some(tasks),
             metrics,
+            steering_ready: std::sync::Arc::default(),
+            steering_signals: std::sync::Arc::default(),
         }
     }
 
@@ -245,6 +261,11 @@ impl TurnClaimStore for PostgresTurnClaims {
             })
             .await
             .map_err(|e| failed("release", &e))?;
+            // What was handed to a claim that has ended goes with it, when
+            // this store takes steering at all (else there may be no table).
+            if self.steering_ready.initialized() {
+                steering::forget(&self.pool, &*self.metrics, token).await?;
+            }
             Ok(())
         })
     }
@@ -304,8 +325,53 @@ impl TurnClaimStore for PostgresTurnClaims {
             })
             .await
             .map_err(|e| failed("sweep", &e))?;
-            Ok(done.rows_affected())
+            let mut swept = done.rows_affected();
+            if self.steering_ready.initialized() {
+                swept += steering::sweep(self.renewal_pool(), &*self.metrics).await?;
+            }
+            Ok(swept)
         })
+    }
+
+    fn hand_steering<'a>(
+        &'a self,
+        scope: &'a str,
+        task_id: &'a str,
+        message: &'a str,
+        capacity: usize,
+    ) -> Fut<'a, Handed> {
+        Box::pin(async move {
+            steering::ensure(&self.pool, &self.steering_ready).await?;
+            steering::hand(
+                &self.pool,
+                &*self.metrics,
+                scope,
+                task_id,
+                message,
+                capacity,
+            )
+            .await
+        })
+    }
+
+    fn peek_steering<'a>(
+        &'a self,
+        owner: &'a str,
+        tokens: &'a [String],
+        limit: usize,
+    ) -> Fut<'a, Vec<PendingSteering>> {
+        Box::pin(async move {
+            steering::ensure(&self.pool, &self.steering_ready).await?;
+            steering::peek(self.renewal_pool(), &*self.metrics, owner, tokens, limit).await
+        })
+    }
+
+    fn ack_steering<'a>(&'a self, seqs: &'a [i64]) -> Fut<'a, ()> {
+        Box::pin(async move { steering::ack(self.renewal_pool(), &*self.metrics, seqs).await })
+    }
+
+    fn steering_signals(&self) -> Option<tokio::sync::broadcast::Receiver<()>> {
+        steering::signals(&self.pool, &self.steering_signals)
     }
 
     fn abandoned(&self, quiet: Duration, limit: usize) -> Fut<'_, Vec<(String, String)>> {
