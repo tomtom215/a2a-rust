@@ -44,6 +44,7 @@
     - [Model clients](./building-agents/tool-loop/models.md)
     - [Running the loop](./building-agents/tool-loop/running.md)
     - [Spans and metrics](./building-agents/tool-loop/telemetry.md)
+- [Steering a Running Task](./building-agents/steering.md)
 - [Request Handler & Builder](./building-agents/handler.md)
     - [Configuring the handler](./building-agents/handler/configuration.md)
     - [Calling the handler directly](./building-agents/handler/direct-calls.md)

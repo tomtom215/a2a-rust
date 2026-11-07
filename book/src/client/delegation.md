@@ -419,6 +419,20 @@ the last argument to grant a lease as well.
 The SDK's tool loop charges each model reply's reported token usage to the
 `tokens` meter and stops the run once it is spent.
 
+## Steering a child while it works
+
+A child that is running can be told something without being cancelled: the
+agent must take steering ([Steering a Running Task](../building-agents/steering.md),
+ADR 0036; its card declares `https://a2a-rust.com/extensions/steering/v1`).
+`Delegation::steer(message)` sends the message to the child's task, once an
+event has named it; `Delegation::steer_handle()` gives an owned handle for
+steering from another task while the delegation is awaited; and
+`steer_all(&children, || message)` sends one to each of several children at
+once and returns what became of each, in order, none stopping another. The
+reply is `Steering::Delivered` (and where: `Inbox`, `HandedOff` or
+`Replayed`), or `Steering::NotSteered` when the child was not running and the
+message was handled as any other. It never says the child acted on it.
+
 ## What it does not cover
 
 - **An agent that does not implement the budget.** It ignores the budget

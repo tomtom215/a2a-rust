@@ -446,6 +446,7 @@ pub mod page_building_agents_tool_loop {}
 #[doc = include_str!("../../book/src/building-agents/tool-loop/models.md")]
 #[doc = include_str!("../../book/src/building-agents/tool-loop/running.md")]
 #[doc = include_str!("../../book/src/building-agents/tool-loop/telemetry.md")]
+#[doc = include_str!("../../book/src/building-agents/steering.md")]
 pub mod pages_building_agents_tool_loop {}
 
 #[doc = include_str!("../../book/src/building-agents/handler/configuration.md")]

@@ -53,6 +53,7 @@
   <url><loc>https://a2a-rust.com/building-agents/tool-loop/models.html</loc><lastmod>2026-10-30</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://a2a-rust.com/building-agents/tool-loop/running.html</loc><lastmod>2026-10-30</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://a2a-rust.com/building-agents/tool-loop/telemetry.html</loc><lastmod>2026-10-30</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://a2a-rust.com/building-agents/steering.html</loc><lastmod>2026-10-30</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/building-agents/handler.html</loc><lastmod>2026-10-30</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/building-agents/handler/configuration.html</loc><lastmod>2026-10-30</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://a2a-rust.com/building-agents/handler/direct-calls.html</loc><lastmod>2026-10-30</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>

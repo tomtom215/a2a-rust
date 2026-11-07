@@ -59,6 +59,7 @@ are rustdoc's job.
 | `security` | Security scheme types for A2A agent authentication |
 | `serde_helpers` | Serialization helpers for reducing allocation overhead |
 | `signing` | Agent card signing and verification (spec §8.4) (`signing` feature) |
+| `steering` | The steering extension: `declare` marks a message as a message to a running task, `Receipt` and `Delivery` say where the server put it (ADR 0036) |
 | `task` | Task types for the A2A protocol |
 | `trace_context` | W3C `traceparent` / `tracestate`: parse, validate, derive a child |
 
@@ -367,6 +368,7 @@ are rustdoc's job.
 | `rate_limit` | Fixed-window rate limiter as a `ServerInterceptor` |
 | `request_context` | Request context passed to the `AgentExecutor` |
 | `serve` | `Server`, `ServeConfig`, `ServeReport`, `Dispatcher`, `shutdown_signal` (and the deprecated `serve()`, `serve_with_addr`) |
+| `steering` | Steering a running task (ADR 0036): `SteeringConfig`, set with `RequestHandlerBuilder::with_steering`, bounds the inbox and the message size; `Inbox` is what `RequestContext::inbox` gives an executor, and `Steered` a message in it |
 | `store` | Task storage backend |
 | `streaming` | Streaming infrastructure for SSE responses and event queues |
 | `tenant_config` | Per-tenant resource limits for multi-tenant A2A servers |
@@ -392,6 +394,9 @@ are rustdoc's job.
 | `RequestContext` | Per-execution context (task ID, message, etc.) |
 | `CancellationToken` | The type of `RequestContext::cancellation_token`, re-exported so an executor need not depend on `tokio-util` to name it |
 | `CallContext` | Per-request metadata (request ID, headers, tenant) |
+| `SteeringConfig` | Turns steering on and bounds it: the inbox's capacity (16), the message size (64 KiB), and whether a handed-off message is announced with PostgreSQL notifications |
+| `Inbox` | The messages sent to a running turn, oldest first, bounded: `try_recv`, `recv().await`, `len`, `close`; `RequestContext::inbox` is `None` unless steering is on |
+| `Steered` | A steering message as the executor receives it: the `message` and who sent it (`from`) |
 | `HandlerLimits` | Configurable validation limits |
 | `InboundTracePolicy` | What this handler does with a `traceparent` an as-yet unauthenticated peer sent (W3C Trace Context §7.2) |
 | `MIN_MESSAGE_ID_LENGTH` | The floor `message.id`'s length bound is never taken below: 36, a hyphenated UUID |

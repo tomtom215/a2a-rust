@@ -133,6 +133,7 @@ See [Observability](../../deployment/observability.md) for what these record.
 | `with_audit`, `with_profile` | A hash-chained audit log; a deployment profile and its requirements | [Audit Trail](../../deployment/audit.md), [Production Hardening](../../deployment/production.md) |
 | `with_content_signer`, `with_content_keys`, `require_signed_content` | Signing what the agent sends; verifying what it is sent | [Provenance and Signatures](../../deployment/provenance.md) |
 | `with_lease_store`, `with_max_lease_ttl` | Leases on delegated tasks | [Horizontal Scaling](../../deployment/horizontal-scaling.md) |
+| `with_steering` | Takes messages to a running task into its inbox ([`SteeringConfig`](../steering.md)) | [Steering a Running Task](../steering.md) |
 | `with_turn_claims`, `without_turn_claims`, `with_turn_claim_timing`, `with_replica_name` | One replica at a time runs a task | [Horizontal Scaling](../../deployment/horizontal-scaling.md) |
 
 ## HandlerLimits

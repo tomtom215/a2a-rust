@@ -199,6 +199,19 @@ code, not reproduced by a test. A client whose stream ends without a terminal
 event should read the task with `GetTask` before it trusts a resumed stream, and
 resubscribe from the state that returns.
 
+## Steering a task that runs elsewhere
+
+With steering on ([Steering a Running Task](../../building-agents/steering.md)),
+a message to a running task that reaches a replica other than the one holding
+its claim is stored for that claim (`TurnClaimStore::hand_steering`, in the same
+statement that checks the claim is live) and moved into the turn's inbox by the
+replica that holds it, at its next look at the store (every renewal interval) or
+when PostgreSQL announces it (`SteeringConfig::with_notifications`). A claim that
+is gone refuses the message with `503`; a full inbox delays it and a full store
+refuses it. The table, `a2a_task_steering`, is created the first time steering is
+used and costs a replica that holds a claim and takes steering one indexed read
+per renewal interval.
+
 ## Cancelling a task that runs elsewhere
 
 `CancelTask` can arrive at any replica. On replica B, for a task whose
