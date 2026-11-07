@@ -92,6 +92,11 @@ impl<A: Metrics, B: Metrics> Metrics for Tee<A, B> {
         self.second.on_halt(scope, action, stopped);
     }
 
+    fn on_steering(&self, outcome: &str) {
+        self.first.on_steering(outcome);
+        self.second.on_steering(outcome);
+    }
+
     fn on_claim(&self, event: &str) {
         self.first.on_claim(event);
         self.second.on_claim(event);

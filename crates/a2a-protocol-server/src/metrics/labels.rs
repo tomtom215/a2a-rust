@@ -200,6 +200,31 @@ pub mod control {
         pub const RESUME: &str = "resume";
     }
 
+    /// How a steering message ended, as
+    /// [`Metrics::on_steering`](crate::metrics::Metrics::on_steering) reports
+    /// it (ADR 0036). Every value is one message.
+    pub mod steering {
+        /// Put in the inbox of the turn running on this replica.
+        pub const DELIVERED: &str = "delivered";
+        /// Stored for the replica that holds the turn's claim.
+        pub const HANDED_OFF: &str = "handed_off";
+        /// Answered from the message's idempotency key: not delivered again.
+        pub const REPLAYED: &str = "replayed";
+        /// Refused: the turn's inbox holds its capacity.
+        pub const FULL: &str = "full";
+        /// Refused: the turn ended, or its claim lapsed, before delivery.
+        pub const ENDED: &str = "ended";
+        /// Refused: larger than the configured message size.
+        pub const TOO_LARGE: &str = "too_large";
+        /// Refused: the job (or tenant, or server) is halted.
+        pub const HALTED: &str = "halted";
+        /// Accepted, and still unread when the turn ended: dropped with it.
+        pub const UNREAD: &str = "unread";
+        /// Taken from the store into a turn's inbox on this replica, after
+        /// another replica handed it off.
+        pub const RECEIVED: &str = "received";
+    }
+
     /// Turn-claim events, as
     /// [`Metrics::on_claim`](crate::metrics::Metrics::on_claim) reports them.
     pub mod claim {
