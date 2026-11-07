@@ -25,4 +25,5 @@ mod approval;
 mod delegation;
 mod operator;
 mod peers;
+mod steering;
 mod tool_results;
