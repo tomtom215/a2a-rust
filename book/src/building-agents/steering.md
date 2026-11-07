@@ -80,6 +80,8 @@ returns `None` once the turn has ended. Each `Steered` has the `message` and
 sender's, with the sender's authority over the task and no more (see
 *Security*).
 
+> **Cargo feature.** The tool loop on this page needs the `tool-loop` feature: `a2a-protocol-sdk = { version = "0.16", features = ["tool-loop"] }`, or `a2a-protocol-server = { version = "0.16", features = ["tool-loop"] }` on its own.
+
 The tool loop reads it for you when asked: `ToolLoopExecutor::with_steering()`
 adds each message's text to the model's conversation as a user turn before the
 next model turn, after the tool results the last turn produced. A message that
