@@ -37,6 +37,10 @@ fn default_http_config_field_values() {
     );
     assert!(cfg.history_length.is_none());
     assert!(!cfg.return_immediately);
+    assert!(
+        !cfg.blocking_over_stream,
+        "opt-in: a blocking send is not a stream by default"
+    );
     assert_eq!(cfg.request_timeout, Duration::from_secs(30));
     assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(30));
     assert_eq!(cfg.connection_timeout, Duration::from_secs(10));
@@ -52,6 +56,10 @@ fn default_config_field_values() {
     );
     assert!(cfg.history_length.is_none());
     assert!(!cfg.return_immediately);
+    assert!(
+        !cfg.blocking_over_stream,
+        "opt-in: a blocking send is not a stream by default"
+    );
     assert_eq!(cfg.request_timeout, Duration::from_secs(30));
     assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(30));
     assert_eq!(cfg.connection_timeout, Duration::from_secs(10));
@@ -97,6 +105,7 @@ fn every_setter_sets_its_field() {
         .with_accepted_output_modes(vec!["image/png".to_owned()])
         .with_history_length(Some(7))
         .with_return_immediately(true)
+        .with_blocking_over_stream(true)
         .with_request_timeout(Duration::from_secs(1))
         .with_stream_connect_timeout(Duration::from_secs(2))
         .with_stream_first_event_timeout(Duration::from_secs(6))
@@ -110,6 +119,7 @@ fn every_setter_sets_its_field() {
     assert_eq!(cfg.accepted_output_modes, vec!["image/png".to_owned()]);
     assert_eq!(cfg.history_length, Some(7));
     assert!(cfg.return_immediately);
+    assert!(cfg.blocking_over_stream);
     assert_eq!(cfg.request_timeout, Duration::from_secs(1));
     assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(2));
     assert_eq!(cfg.stream_first_event_timeout, Duration::from_secs(6));
