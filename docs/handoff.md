@@ -24,61 +24,67 @@ session re-runs it instead of copying the number. What was not run is under *Not
 (pull request #197's CI history, its survivors and its gate figures) is kept verbatim in
 [`handoff-history.md`](handoff-history.md), last section.
 
-- **Where the code is.** Pull request #197 merged: `main` is `27889e09` (`git rev-parse origin/main`), the workspace reads 0.16.0
-  (`grep -m1 '^version' crates/a2a-protocol-types/Cargo.toml`), and **nothing is tagged**: the newest tag is `v0.15.0`
-  (`git tag --sort=-creatordate | head -1`). The maintainer tags; nothing here does.
-- **This session's branch** is `claude/affectionate-gauss-5yn4f5` off `main`, pushed as a checkpoint with no pull request
-  (`git log --oneline origin/main..origin/claude/affectionate-gauss-5yn4f5`). It was started on the maintainer's instruction of
-  2026-11-07: finish the work left over (ADR 0035 agent skills and ADR 0036 steering **before the tag**, which moves the decision
-  of 2026-11-03 that put them after it; the adversarial campaign; the deferred items E-F15, F14, E-F25 (b) and (c),
-  `parked_task_ttl`, B-11's option 2), with CI at 60 to 90 minutes a run so few runs, and surviving mutants prevented by writing
-  the tests with the code and running cargo-mutants on the diff locally before any push.
-- **Built and tested on that branch** (each by a test seen to fail first, then pass):
-  E-F15 (`AuthFailureThrottle::with_shared_counter`; and the Postgres rate-limit counter's sweep, which deleted another
-  window width's live rows, measured in plain SQL, now width-scoped: six hand mutants of the SQL each killed);
-  F14 (a streaming send whose executor panics ends with the `failed` frame: the two new streaming tests failed on the unchanged
-  code with the frames `[Task(submitted), StatusUpdate(working)]`); B-11 option 2 (`ClientBuilder::with_blocking_over_stream`,
-  against a real server behind a TCP proxy that closes a connection after 600 ms of silence, JSON-RPC and HTTP+JSON). The
-  commits say what each measured.
-- **Merged here from worktree agents** (their reports are data; each merge was followed by this tree's own gates): the adopter
-  walk-through (`docs/audits/2026-11-07-adopter-walkthrough/`: licence files were missing from all four tarballs, `cargo package
-  --list` now shows two per crate; nine pages named no Cargo feature; ten open lows in its README) and Agent Skills (ADR 0035, the
-  `skills` feature: `cargo nextest run -p a2a-protocol-server --features skills --lib --test tool_loop -E 'test(/skills/) |
-  binary(tool_loop)'` 212 passed on the merged tree). **Skills' YAML reader is in-tree, not a crate**, which reads CONTRIBUTING's
-  dependency rule ("a standards-defined parser uses the audited crate") against its letter; ADR 0035 decision 9 gives the reasons and
-  the way back (`saphyr-parser` behind the same interface). Its mutation figures (409 caught, 43 unviable, 0 missed, no
-  `RUSTFLAGS`) come from an extraction crate holding the module's sources and stubs, not from the server crate: the CI form on the
-  merged tree has not been run, and `skills/reader.rs` and `tools.rs` are the files to run it on first.
-- **Still delegated** (worktrees under `.claude/worktrees/`, **lost with the container**): steering (ADR 0036) and E-F25 (b) and (c)
-  with `parked_task_ttl`.
-- **Mutation, local, on the first three commits' diff** (`cargo mutants --in-diff` as `mutants.yml` runs it, restricted to the
-  library tests and the relevant integration binaries because the machine was oversubscribed): see the result in the commit
-  that follows this one; not yet read when this was written.
-
-- **Not verified** (as of this checkpoint): CI on any of this session's commits (none has run); the official TCK, ACTS, ITK and
-  the Windows and macOS legs on them; the full mutation set CI runs (the local run used a narrower test set; anything it left
-  alive is re-run with CI's filter before a push); `scripts/prove_gates_fail.sh` over the gates this session adds nothing to;
-  Kubernetes, IPv6 on the wire (this kernel has none), and everything delegated until its report is read and re-run.
+- **Where the code is.** Pull request #197 merged: `main` is `27889e09` (`git rev-parse origin/main`), the workspace reads 0.16.0, and
+  **nothing is tagged**: the newest tag is `v0.15.0` (`git tag --sort=-creatordate | head -1`). The maintainer tags; nothing here does.
+- **This session's branch** is `claude/affectionate-gauss-5yn4f5` off `main`, pushed with no pull request and **no CI run on any of it**
+  (`git log --oneline origin/main..origin/claude/affectionate-gauss-5yn4f5`). Started on the maintainer's instruction of 2026-11-07:
+  ADR 0035 (agent skills) and ADR 0036 (steering) **before the tag** (moving the decision of 2026-11-03), the adversarial campaign, and
+  the deferred items, with CI at 60 to 90 minutes a run so few runs, and surviving mutants prevented by writing the tests with the code
+  and running cargo-mutants on the diff locally before any push.
+- **Built on that branch** (each by a test seen to fail first, or a hand mutant seen to be killed, as each commit says):
+  E-F15 (`AuthFailureThrottle::with_shared_counter`, and the PostgreSQL rate-limit counter's sweep, which deleted another window
+  width's live rows, measured in plain SQL); F14 (a streaming send whose executor panics ends with the `failed` frame); B-11 option 2
+  (`ClientBuilder::with_blocking_over_stream`); E-F25 (b) (`LISTEN`/`NOTIFY` wake on appends, opt-in; **latency, not idle load**: 93
+  statements a second for 200 idle subscribers with and without it) and (c) (a read pool **measured and not built**, ADR 0057);
+  `parked_task_ttl` (ADR 0056, delete not cancel, ADR 0011 amended); Agent Skills (ADR 0035, the `skills` feature); steering (ADR 0036,
+  `with_steering`); and the adopter walk-through's fixes (LICENSE and NOTICE in every tarball: `cargo package --list` showed none in
+  all four crates before and two in each after). Four worktree agents built the last four and the walk-through; their reports are
+  data and each merge was followed by this tree's own gates.
+- **Verified on the merged tree** (CI's flags, the numbers are the nextest totals): server lib, all features, live PostgreSQL included,
+  3380 passed; default features 2165; `--no-default-features --features skills` 2243; server integration binaries 100 and 140 passed;
+  SDK 117; types 891; client 1528; clippy `-D warnings` clean for the four crates with all features and with defaults; the static
+  gates in `scripts/preflight.sh --list` that I ran (spec, RFC and compliance ledgers, sitemap, otel, pg-retry, panic paths, feature
+  tables, API reference, doc versions, inert bounds, package excludes, fuzz matrix, gate inventory, file lengths). Two failures the merge
+  caused were found by these runs and fixed: the SDK's `book_defaults` (a field without a documented row) and the adopter's
+  `check_feature_tables.py` on two new pages.
+- **Mutation, local** (see *Lessons*, 2026-11-07, for why every number needs `RUSTFLAGS` unset): the first run on the B-11, E-F15 and F14
+  diff read 8 caught, 31 unviable, 0 missed (server) and 12, 25, 0 (client) **with `-D warnings`, which CI does not use**; the re-run of
+  the unviable ones without it died of a full disk after 18 of 39 server mutants (12 caught, 6 unviable, 0 missed), and was resumed.
+  One mutant it found missed is outside this branch's diff (`handler/shutdown/in_flight.rs:236`, a field of `InFlightReport`; the
+  weekly sweep would show it). The agents' own passes, all unflagged: skills 409 caught, 43 unviable, 0 missed **on an extraction crate,
+  not the server crate**; E-F25 and parked tasks 122 caught, 35 unviable, 0 missed under CI's test set; steering 0 missed over 330 server
+  mutants and its types and client changes.
+- **Decisions made for the maintainer, open to a veto** are listed in *Waiting on the maintainer*, under "Added to 0.16.0 on 2026-11-07".
 
 ### First, next
 
-1. Read the delegated reports, merge each into this branch one at a time, and after each merge run the gates for the crates it
-   touched (static gates, clippy for CI's feature sets, nextest per package, `cargo doc`, the book build and its link check),
-   then cargo-mutants on the whole diff, before the next merge. A package's own green says nothing about the merge.
-2. Run the adversarial campaign's second wave on the merged tree: real models (llama.cpp's newest release, a current Qwen and
-   Gemma) for the tool loop, injection containment, skills and steering; hostile peers and chaos on replicas with PostgreSQL.
-   One brief per area, scripts with recorded output (`docs/audits/2026-11-01-triage/BRIEF.md` is the style).
-3. Update the register (`docs/audits/2026-10-29/README.md`), `CHANGELOG.md` (the highlights block says "Not in this release:
-   agent skills and steering"; fix it only when they are in), the ADR statuses, and this file; then one push, one run of CI.
-4. The maintainer's open items stay as *Waiting on the maintainer* below: the two redundant remote branches, RustSec, the
-   `v*` tag ruleset, ADR 0028.
-5. Unrelated, found earlier and not re-checked: `scripts/live/replica` failed `-D warnings` on `main` (`unused ServeReport`,
-   `src/main.rs:128`) and `scripts/live/replica/v015` could not load its dependency manifest; `cargo test --doc -p
-   a2a-protocol-server` on its own fails the `EventEmitter::request_approval` doctest (it needs `a2a-protocol-types`'
-   `signing` feature, which a workspace build unifies; CI runs `--workspace`, where it passes).
-6. `cargo semver-checks` passes in CI only because the version already reads 0.16.0; the list against v0.15.0 was reconciled with
-   `### Breaking Changes` on 2026-11-06. Re-run `cargo semver-checks --release-type patch --baseline-rev v0.15.0 --all-features`
-   if the public API changes before the tag (steering and skills add public API).
+1. Finish the mutation evidence: the resumed unflagged run (server, then the client's 25), and the real server crate on
+   `skills/reader.rs` and `skills/tools.rs` (the skills figure above is an extraction crate). Close any survivor with a test seen to fail
+   with the mutant applied by hand, the baseline first.
+2. Run the workspace-wide CI parity that no one has run on this tree: `cargo clippy --workspace --all-targets --all-features`,
+   `cargo hack clippy ... --each-feature`, `cargo test --doc --workspace` (three feature sets), `cargo doc` (both forms),
+   `cargo package`, `cargo deny`, `cargo semver-checks --release-type patch --baseline-rev v0.15.0 --all-features` (the public API
+   grew: skills, steering, the wake, parked-task options, the client option), `mdbook build` and the link check, the Windows
+   cross-clippy, SLIMRPC and the out-of-workspace crates (`scripts/preflight_all.py` lists them). Examples and benches were compiled
+   by none of the agents.
+3. Two findings from the adopter walk-through still need work: M-1 (a model reply cut at the token limit completes the task with the
+   cut text, and an empty answer from a thinking model completes it empty: `tool_loop/run.rs`; the decision is to fail an empty answer
+   with a failure class and to complete a truncated one with `finish_reason` in the metadata), and `ListTasks` with a malformed page
+   token answering an empty success (the decision is `InvalidParams`, in five stores).
+4. The adversarial campaign's second wave on this tree: real models (llama.cpp's newest release, built by the adopter agent at
+   `/opt/llama/latest`, models in `/opt/models`, `/opt/llama/README.md`) for the tool loop, skills and steering; hostile peers and
+   chaos on replicas with PostgreSQL. Scripts with recorded output, one brief per area.
+5. Then the register is already updated for E-F15, D-03 (d), B-11, E-F25 and D-18 (`scripts/audit/plan_status.py`: 191 of 191);
+   re-point the spec ledger after the last CHANGELOG edit (`python3 scripts/check_spec_ledger.py --fix-lines`: it cites a CHANGELOG
+   line), update the handoff, then one push and one CI run. The adopter's open lows (D-6, D-9 to D-13, D-16 to D-18) are in
+   `docs/audits/2026-11-07-adopter-walkthrough/README.md`; `STABILITY.md` section 1 says 0.15.0 is the newest release and is false
+   at the tag.
+6. The maintainer's open items stay as *Waiting on the maintainer*: the two redundant remote branches, RustSec, the `v*` tag ruleset,
+   ADR 0028.
+
+- **Not verified** (as of this checkpoint): CI on any commit of this session; the official TCK, ACTS, ITK and the Windows and macOS
+  legs; everything under *First, next* 1 and 2; a live model run of skills or steering; steering over gRPC or WebSocket (carried as any
+  `SendMessage`, not tested); anything through PgBouncer; Kubernetes; IPv6 on the wire (this kernel has none).
 
 ### Facts this session established
 
@@ -280,6 +286,21 @@ session start.
    (*Open engineering* below).
 
 ## Waiting on the maintainer
+
+- **Added to 0.16.0 on 2026-11-07, the choices made for you (each open to a veto; reasons in the ADR or the commit):**
+  - *Skills' YAML is read in-tree, not by a crate* (ADR 0035 decision 9): reads CONTRIBUTING's dependency rule ("a standards-defined parser
+    uses the audited crate") against its letter; the way back is `saphyr-parser` behind the same interface.
+  - *Steering* (ADR 0036): off by default; an inbox of 16 messages of at most 64 KiB; the response is the task and a receipt, never an
+    executor acknowledgement; `NOTIFY` opt-in; a steering message is **not** written to `Task.history` (the running turn saves the task
+    whole and would overwrite it; the audit record says who steered what), which departs from the first draft of the ADR; a message
+    handed to a replica that has just died is accepted and never read until its claim's time to live runs out.
+  - *Parked tasks may expire only by opt-in and are deleted, not cancelled* (ADR 0056, ADR 0011 amended): a store-level purge cannot
+    write the event, the push, the audit record or the executor's cancel hook.
+  - *The event-log wake is opt-in and changes latency, not idle load*; the separate read pool was measured and not built (ADR 0057).
+  - *`with_blocking_over_stream` answers with `GetTask`'s stored task, not a fold of the events*, and is off by default.
+  - *A rate-limit counter row now records its window width* (a table from 0.15 gains a column at start-up; rows with no width are removed
+    by the first sweep, which forgets a window or two of counts once).
+  - *Decided, not yet built*: M-1 (above) and `ListTasks` with a malformed page token (`InvalidParams`, as Google AIP-158 says).
 
 - **The two follow-up branches on the remote are redundant and safe to delete; this session could not delete them.** Your instruction was to delete them only if safe. Checked on 2026-11-06 against
   `origin/claude/inspiring-mccarthy-rgpntj-rest` at `a672ff8e`: no pull request, in any state, has either as its head; no scheduled task is enabled; no workflow, script or config names them (only this file);
