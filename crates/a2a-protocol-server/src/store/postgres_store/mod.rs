@@ -103,11 +103,11 @@ impl PostgresTaskStore {
     /// and its partition), in the same statement, and a listener on every
     /// replica turns what it hears into wakes of the streams waiting here. The
     /// listener starts with the first stream that waits and holds one
-    /// connection: one of this store's own pool ([`LogListen::Pool`]; size the
-    /// pool one larger), or one of its own ([`LogListen::Direct`]). **Behind a
+    /// connection: one of this store's own pool ([`LogListen::Pool`](crate::store::LogListen::Pool); size the
+    /// pool one larger), or one of its own ([`LogListen::Direct`](crate::store::LogListen::Direct)). **Behind a
     /// connection pooler in transaction mode use `Direct`**, with the URL of
     /// `PostgreSQL` itself: `LISTEN` through such a pooler corrupts other
-    /// clients' statements (see [`LogListen`]).
+    /// clients' statements (see [`LogListen`](crate::store::LogListen)).
     ///
     /// Set it on every replica. A replica without it neither announces its
     /// appends nor hears others': its events reach another replica's streams at
@@ -119,8 +119,8 @@ impl PostgresTaskStore {
     /// What it does not wake: a task made terminal, or cancelled, without an
     /// event in the log (a `CancelTask` of a parked task on another replica, a
     /// task the claim reaper ends). Those reach a waiting stream at its next
-    /// poll. Must be called inside a Tokio runtime's reach only in that the
-    /// listener starts later, from the stream; the call itself needs none.
+    /// poll. The call itself needs no runtime: the listener starts later, from
+    /// the first stream that waits.
     #[must_use]
     pub fn with_log_notifications(mut self, listen: super::LogListen) -> Self {
         self.log = Some(super::log_notify::LogNotify::new(self.pool.clone(), listen));

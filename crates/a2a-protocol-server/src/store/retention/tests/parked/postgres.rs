@@ -314,7 +314,7 @@ async fn keys_after_the_parked_sweep(
         ("c", "3 days"),
         ("young", "1 minute"),
     ] {
-        sqlx::query(sqlx::AssertSqlSafe(insert.replace("{age}", age)))
+        sqlx::query(sqlx::AssertSqlSafe(insert.replace("@AGE@", age)))
             .bind(key)
             .execute(pool)
             .await
@@ -342,7 +342,7 @@ async fn the_key_sweep_follows_the_parked_sweep_on_the_plain_store() {
         &p.pool,
         async |policy| p.store.purge_expired(policy).await.unwrap(),
         "INSERT INTO idempotency_keys (key, message_id, task_id, created_at) \
-         VALUES ($1, 'm', 't', now() - interval '{age}')",
+         VALUES ($1, 'm', 't', now() - interval '@AGE@')",
     )
     .await;
     p.pool.close().await;
@@ -357,7 +357,7 @@ async fn the_key_sweep_follows_the_parked_sweep_on_the_tenant_store() {
         &t.pool,
         async |policy| t.store.purge_expired(policy).await.unwrap(),
         "INSERT INTO tenant_idempotency_keys (tenant_id, key, message_id, task_id, created_at) \
-         VALUES ('acme', $1, 'm', 't', now() - interval '{age}')",
+         VALUES ('acme', $1, 'm', 't', now() - interval '@AGE@')",
     )
     .await;
     t.pool.close().await;

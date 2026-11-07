@@ -54,6 +54,8 @@ NAMED_ELSEWHERE = {
 
 # Suites with PostgreSQL cases that no CI job runs, and why.
 NOT_IN_CI = {
+    "lib:store::tests::pg_scratch": "a helper that opens a database for the "
+    "PostgreSQL tests of other modules, which this gate runs; it holds no test",
     "test:swarm_scale": "load experiments that print tables for a person to "
     "read; each arm takes minutes and none asserts a bound a shared runner "
     "could hold",

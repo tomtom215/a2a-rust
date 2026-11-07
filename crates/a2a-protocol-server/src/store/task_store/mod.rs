@@ -887,8 +887,8 @@ pub trait TaskStore: Send + Sync + 'static {
     /// by reading the log, and waits between reads. With a watch it waits on
     /// the watch as well as on its timer, and a store that learns of every
     /// append (the `PostgreSQL` stores, through `LISTEN`/`NOTIFY`, when
-    /// [`with_log_notifications`](crate::store::PostgresTaskStore::with_log_notifications)
-    /// is set) wakes it at once instead of at the timer's end.
+    /// `PostgresTaskStore::with_log_notifications` (feature `postgres`) is set)
+    /// wakes it at once instead of at the timer's end.
     ///
     /// The watch is **registered when this method returns**, not when the
     /// returned future is first polled: the stream creates it, reads the
