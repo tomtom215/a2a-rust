@@ -69,10 +69,22 @@ that names one of them in backticks, with parentheses, must say "deprecated";
 the migration guides, the ADR summaries and the pitfalls pages describe what was
 true and are not read.
 
+The crates a page's program uses
+--------------------------------
+A page that shows a `[dependencies]` block naming an a2a crate and, beside it, a
+complete program (one with a `fn main`, as rustdoc compiles it, hidden lines
+included) gives a reader everything to type. The tool-loop page's minimal agent
+used `tokio` and `serde_json` and its block named neither: a reader with that
+page's dependency line alone got four compile errors (found 2026-11-07,
+docs/audits/2026-11-07-adopter-walkthrough). For such a page, every one of
+{tokio, serde_json, serde, uuid, futures_util, tracing_subscriber, hyper,
+axum, tonic} that the program uses is named in a `toml` block of that page.
+
 Exit codes: 0 every snippet names the current line or is allowlisted with a
 reason, every entry matches a snippet, the manifest names this release's image,
-the README's two TCK figures agree and no current prose offers a deprecated
-entry point; 1 a snippet is stale, an entry is stale,
+the README's two TCK figures agree, no current prose offers a deprecated
+entry point and every page's dependency block names the crates its program
+uses; 1 a snippet is stale, an entry is stale,
 the manifest's image is not this release's or the figures differ; 2 not run from
 the repository root, or the allowlist is malformed.
 """
@@ -201,6 +213,37 @@ def deprecated_entry_problems(files: dict[str, str]) -> list[str]:
     return problems
 
 
+THIRD_PARTY = ("tokio", "serde_json", "serde", "uuid", "futures_util", "tracing_subscriber", "hyper", "axum", "tonic")
+FENCE = re.compile(r"^(?P<indent>[ \t]*)(?P<fence>`{3,})(?P<info>[^\n`]*)\n(?P<body>.*?)^(?P=indent)(?P=fence)[ \t]*$", re.M | re.S)
+
+
+def dependency_block_problems(files: dict[str, str]) -> list[str]:
+    """`path`: crates a page's complete program uses and no `toml` block of the page names."""
+    problems = []
+    for path, text in sorted(files.items()):
+        if not path.endswith(".md") or path.startswith(HISTORICAL):
+            continue
+        toml = [m.group("body") for m in FENCE.finditer(text) if m.group("info").strip().startswith("toml")]
+        shown = [t for t in toml if "[dependencies]" in t and re.search(rf"^{CRATES}\s*=", t, re.M)]
+        if not shown:
+            continue
+        declared = {n.replace("-", "_") for t in toml for n in re.findall(r"^([A-Za-z0-9_-]+)\s*=", t, re.M)}
+        for m in FENCE.finditer(text):
+            tags = [x for x in re.split(r"[,\s]+", m.group("info").strip()) if x]
+            if (tags and tags[0] != "rust") or any(x.startswith("ignore") for x in tags):
+                continue
+            # What rustdoc compiles: the hidden `# ` lines are code too.
+            body = "\n".join(re.sub(r"^(\s*)# ?", r"\1", l) if re.match(r"^\s*# ", l) else l for l in m.group("body").splitlines())
+            if not re.search(r"\bfn main\b", body):
+                continue
+            code = re.sub(r"//[^\n]*", "", body)
+            for crate in THIRD_PARTY:
+                if re.search(rf"\b{crate}::", code) and crate not in declared:
+                    line = text.count("\n", 0, m.start()) + 2
+                    problems.append(f"{path}:{line}: the program uses `{crate}` and no `toml` block on the page names it")
+    return problems
+
+
 def tracked() -> list[str]:
     out = subprocess.run(
         ["git", "ls-files", "*.md", "*.rs"],
@@ -312,9 +355,16 @@ def main() -> int:
         print(f"check_doc_versions: {problem}")
         return 1
 
-    offered = deprecated_entry_problems(
-        {p: (ROOT / p).read_text(encoding="utf-8") for p in tracked() if p.endswith(".md")}
-    )
+    pages = {p: (ROOT / p).read_text(encoding="utf-8") for p in tracked() if p.endswith(".md")}
+    missing = dependency_block_problems(pages)
+    if missing:
+        print("check_doc_versions: a page's dependency block is missing crates its program uses\n")
+        for m in missing:
+            print(f"  {m}")
+        print("\nA reader who types the page's [dependencies] and its program gets `unresolved import`.")
+        return 1
+
+    offered = deprecated_entry_problems(pages)
     if offered:
         print("check_doc_versions: current prose offers a deprecated entry point\n")
         for o in offered:
@@ -326,7 +376,7 @@ def main() -> int:
         f"check_doc_versions: {len(found)} dependency snippet(s) across "
         f"{len({s[0] for s in found})} file(s) name the current {line} line; "
         f"{len(entries)} allowlisted as historical; the deploy-agent manifest "
-        f"names image {full_version()}; the README's two TCK figures agree; no current prose offers a deprecated entry point"
+        f"names image {full_version()}; the README's two TCK figures agree; no current prose offers a deprecated entry point; every page's dependency block names the crates its program uses"
     )
     return 0
 

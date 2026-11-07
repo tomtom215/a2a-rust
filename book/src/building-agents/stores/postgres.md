@@ -13,6 +13,7 @@ in CI (`postgres_store_tests.rs`):
 ```toml
 [dependencies]
 a2a-protocol-server = { version = "0.16", features = ["postgres"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
 ```rust,no_run
