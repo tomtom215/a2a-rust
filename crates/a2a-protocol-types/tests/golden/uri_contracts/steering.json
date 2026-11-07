@@ -1,0 +1,65 @@
+{
+  "contract": {
+    "authority": "the sender's over the task and no more: it does not cancel, approve or lift a budget",
+    "fields": {
+      "Delivery": [
+        "handed-off",
+        "inbox",
+        "other",
+        "replayed"
+      ],
+      "Receipt": [
+        "delivery"
+      ]
+    },
+    "metadataKey": "a2a-rust.com/steering",
+    "receipt": {
+      "absent": "the response was not a steering delivery: the task was not running, and the message was handled as any other message to it",
+      "carrier": "Task.metadata of the response, which is the task as it stands",
+      "handedOff": {
+        "a2a-rust.com/steering": {
+          "delivery": "handed-off"
+        }
+      },
+      "inbox": {
+        "a2a-rust.com/steering": {
+          "delivery": "inbox"
+        }
+      },
+      "replayed": {
+        "a2a-rust.com/steering": {
+          "delivery": "replayed"
+        }
+      },
+      "says": "where the message went; never that the executor read or acted on it"
+    },
+    "refusals": {
+      "inboxFull": "503 with Retry-After (JSON-RPC: -32603 with RetryInfo); nothing delivered",
+      "notSteering": "a message to a task that is not running is handled as before: continued if parked, refused if finished",
+      "peerWithoutTheExtension": "the refusal a message to a working task always got",
+      "tooLarge": "413; nothing delivered",
+      "turnEnded": "503 with Retry-After; nothing delivered"
+    },
+    "steeringMessage": {
+      "carrier": "the message of a SendMessage that names a running task in taskId",
+      "message": {
+        "extensions": [
+          "https://a2a-rust.com/extensions/steering/v1"
+        ],
+        "metadata": null
+      },
+      "retryNeeds": "the idempotency extension's key; without one a retry can deliver twice",
+      "retryable": {
+        "extensions": [
+          "https://a2a-rust.com/extensions/steering/v1",
+          "https://a2a-rust.com/extensions/idempotency/v1"
+        ],
+        "metadata": {
+          "a2a-rust.com/idempotency-key": "8f14e45fceea167a5a36dedd4bea2543"
+        }
+      }
+    },
+    "unrecognisedDeliveryReadsAs": "other"
+  },
+  "uri": "https://a2a-rust.com/extensions/steering/v1"
+}
