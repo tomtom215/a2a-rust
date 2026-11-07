@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:12624 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:12719 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -248,7 +248,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:197 RequestHandler::respond_blocking"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:201 RequestHandler::respond_blocking"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/send_sync_tests.rs:156 message_only_executor_returns_a_message",
@@ -268,7 +268,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:140 RequestHandler::send_message_inner",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:141 RequestHandler::send_message_inner",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background"
    ],
    "test_evidence": [
@@ -309,7 +309,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1645 InMemoryQueueReader::next_live"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1753 InMemoryQueueReader::next_live"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader",
@@ -434,8 +434,8 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1239 InMemoryQueueReader::set_provisional_task",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1411 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1297 InMemoryQueueReader::set_provisional_task",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1475 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/streaming/event_queue/message_fold.rs:85 Turn::fold",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:680 InMemoryQueueWriter::write_in_order",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:589 process_folded_message",
@@ -469,11 +469,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1411 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1475 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs:264 a_message_only_stream_is_exactly_one_message",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1794 a_dropped_first_read_still_ends_a_message_only_stream"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1908 a_dropped_first_read_still_ends_a_message_only_stream"
    ],
    "notes": "Exactly one Message, then the reader returns None; a read dropped while waiting for the first event keeps the decision (cancel-safety test).",
    "auditor": "A",
@@ -517,8 +517,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1411 InMemoryQueueReader::next_frame",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1645 InMemoryQueueReader::next_live",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1475 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1753 InMemoryQueueReader::next_live",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:204 TerminalTracking::cancel_with",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:28 RequestHandler::on_cancel_task",
     "crates/a2a-protocol-server/src/handler/messaging/execute.rs:275 RequestHandler::executor_future"
@@ -545,7 +545,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1411 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1475 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader",
@@ -565,7 +565,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1411 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1475 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/delegation_tests.rs:204 a_direct_reply_is_a_message_outcome",
@@ -588,7 +588,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:74 RequestHandler::respond_replay",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:625 InMemoryQueueWriter::broadcast",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1645 InMemoryQueueReader::next_live"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1753 InMemoryQueueReader::next_live"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/background_processor.rs:151 streaming_mode_push_delivery_with_cooperative_executor",
@@ -894,7 +894,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:184 RequestHandler::subscribe_reattach_hook",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:14 HandlerLimits::default",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1411 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1475 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:204 TerminalTracking::cancel_with"
    ],
    "test_evidence": [
@@ -1438,7 +1438,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:378 SyncCollector::answer",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:413 SyncCollector::fold",
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:197 RequestHandler::respond_blocking"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:201 RequestHandler::respond_blocking"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/sync_mode.rs:32 sync_mode_artifact_updates_appended",
@@ -1528,7 +1528,7 @@
     "crates/a2a-protocol-server/src/handler/helpers.rs:241 parse_extensions_header",
     "crates/a2a-protocol-server/src/handler/helpers.rs:74 build_call_context",
     "crates/a2a-protocol-server/src/handler/capability.rs:121 RequestHandler::activated_extensions",
-    "crates/a2a-protocol-client/src/builder/mod.rs:869 ClientBuilder::with_extensions",
+    "crates/a2a-protocol-client/src/builder/mod.rs:908 ClientBuilder::with_extensions",
     "crates/a2a-protocol-client/src/builder/transport_factory.rs:206 ClientBuilder::send_extensions",
     "crates/a2a-protocol-client/src/extensions.rs:35 header_value",
     "crates/a2a-protocol-client/src/extensions.rs:50 ExtensionsHeader",
@@ -2247,7 +2247,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:88 RequestHandler::ensure_required_extensions",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:140 RequestHandler::send_message_inner",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:141 RequestHandler::send_message_inner",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:30 RequestHandler::on_get_extended_agent_card"
    ],
@@ -2271,16 +2271,16 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/declared.rs:66 DeclaredCapabilities::require",
+    "crates/a2a-protocol-client/src/declared.rs:82 DeclaredCapabilities::require",
     "crates/a2a-protocol-client/src/client.rs:167 A2aClient::with_declared",
     "crates/a2a-protocol-client/src/methods/send_message.rs:67 A2aClient::require_inline_push_declared",
-    "crates/a2a-protocol-client/src/builder/mod.rs:744 ClientBuilder::without_capability_checks"
+    "crates/a2a-protocol-client/src/builder/mod.rs:783 ClientBuilder::without_capability_checks"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:177 a_card_declaring_nothing_refuses_every_dependent_call_before_sending",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:230 each_capability_gates_only_its_own_calls",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:290 without_capability_checks_sends_what_the_card_does_not_declare",
-    "crates/a2a-protocol-client/src/declared.rs:109 only_true_declares_a_capability"
+    "crates/a2a-protocol-client/src/declared.rs:121 only_true_declares_a_capability"
    ],
    "notes": "A client built from a card refuses, before sending, every call that needs an optional capability the card does not set to true: streaming and resubscription (streaming), the four push-config methods and a send carrying an inline push config (pushNotifications), GetExtendedAgentCard (extendedAgentCard). The refusal is ClientError::CapabilityNotDeclared; nothing reaches the transport (tested against a recording transport for all ten call shapes). ClientBuilder::without_capability_checks and the CLI's --no-capability-check opt out; a client built from a bare URL has no card and checks nothing. Required extensions are not checked client-side: the client cannot know which it supports.",
    "auditor": "B",
@@ -2316,8 +2316,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:197 RequestHandler::respond_blocking",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1411 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:201 RequestHandler::respond_blocking",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1475 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/context_id_in_reply.rs:47 a_blocking_direct_reply_carries_the_generated_context",
@@ -2377,7 +2377,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/send_message.rs:116 A2aClient::send_message"
+    "crates/a2a-protocol-client/src/methods/send_message.rs:122 A2aClient::send_message"
    ],
    "test_evidence": [],
    "notes": "The client SDK never fills context_id itself; the caller builds the Message. Re-examined 2026-10-18, kept: whether to send a contextId of its own is a decision about the client's conversation, which only the caller can make; the SDK never generates one. Re-verified against the code 2026-10-20 (ledger audit): the citation named a blank line; it now names where the caller's params are serialized unchanged.",
@@ -2526,7 +2526,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/send_message.rs:116 A2aClient::send_message"
+    "crates/a2a-protocol-client/src/methods/send_message.rs:122 A2aClient::send_message"
    ],
    "test_evidence": [],
    "notes": "Client-side obligation; the server enforces it (line 614). Re-examined 2026-10-18, kept: which task a client means is the caller's knowledge; the server side of the same rule (TaskNotFound for an unknown taskId, §3.4.2 line 614) is TESTED. Re-verified against the code 2026-10-20 (ledger audit): the citation named a blank line; it now names where the caller's params are serialized unchanged.",
@@ -2733,7 +2733,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:49 write_multiple_events_read_in_order",
     "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2919 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:3033 concurrent_clones_deliver_every_position_in_order",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:292 a_held_terminal_event_is_not_overtaken",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:325 a_terminal_event_that_waited_for_room_is_not_overtaken",
     "crates/a2a-protocol-sdk/tests/binding_equivalence/results.rs:130 bind_equiv_002_every_binding_delivers_events_in_generation_order"
@@ -2790,14 +2790,14 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1490 InMemoryQueueReader::settle",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1519 InMemoryQueueReader::settle_lag",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1549 InMemoryQueueReader::settle_from",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1579 InMemoryQueueReader::settle_through",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1046 CatchUpPage::goes_on",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1268 InMemoryQueueReader::queue_resume_replay",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1600 InMemoryQueueReader::close_through",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1629 InMemoryQueueReader::deliver_live_position",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1598 InMemoryQueueReader::settle",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1627 InMemoryQueueReader::settle_lag",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1657 InMemoryQueueReader::settle_from",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1687 InMemoryQueueReader::settle_through",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1059 CatchUpPage::goes_on",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1326 InMemoryQueueReader::queue_resume_replay",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1708 InMemoryQueueReader::close_through",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1737 InMemoryQueueReader::deliver_live_position",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:549 RequestHandler::lag_catch_up_hook",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:822 LogReplay::read",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:415 RequestHandler::replay_after",
@@ -2813,8 +2813,8 @@
     "crates/a2a-protocol-server/src/store/task_store/config.rs:426 TaskStoreConfig::with_max_held_events_factor",
     "crates/a2a-protocol-server/src/store/task_store/mod.rs:877 TaskStore::hold_events",
     "crates/a2a-protocol-server/src/store/tenant/store.rs:632 TenantAwareInMemoryTaskStore::hold_events",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1377 InMemoryQueueReader::read",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1189 InMemoryQueueReader::owed_after",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1441 InMemoryQueueReader::read",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1244 InMemoryQueueReader::owed_after",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/hold.rs:31 RequestHandler::held_snapshot_and_live",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/hold.rs:59 RequestHandler::holding_log",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
@@ -2822,7 +2822,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/create.rs:204 RequestHandler::register_inline_push_config",
     "crates/a2a-protocol-server/src/handler/messaging/commit.rs:77 RequestHandler::commit_task",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:415 RequestHandler::replay_after",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1288 InMemoryQueueReader::report_unreplayed"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1346 InMemoryQueueReader::report_unreplayed"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:108 a_lagged_send_stream_catches_up_from_the_event_log",
@@ -2831,10 +2831,10 @@
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:259 a_lagged_stream_catches_up_in_its_tenant",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:141 a_replay_over_the_limit_is_read_in_pages",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:412 a_lag_the_log_cannot_cover_still_ends_with_stream_lagged",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2919 concurrent_clones_deliver_every_position_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2739 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:3033 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2853 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:170 slow_reader_gets_explicit_lag_error",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2204 subscribe_creates_independent_reader",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2318 subscribe_creates_independent_reader",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:306 a_lag_while_the_log_trails_waits_for_the_log",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:194 a_turn_that_ends_between_polls_reaches_the_subscriber",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:202 a_turn_longer_than_a_poll_keeps_its_first_events",
@@ -3590,7 +3590,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:88 RequestHandler::ensure_required_extensions",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:140 RequestHandler::send_message_inner",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:141 RequestHandler::send_message_inner",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/push_config.rs:205 RequestHandler::on_create_push_config",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:17 extract_metadata"
@@ -3778,8 +3778,8 @@
     "crates/a2a-protocol-client/src/builder/mod.rs:473 ClientBuilder::chosen_interface"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:960 from_card_prefers_the_callers_binding_order_over_the_cards",
-    "crates/a2a-protocol-client/src/builder/mod.rs:974 a_later_preference_wins_when_the_earlier_one_is_not_offered"
+    "crates/a2a-protocol-client/src/builder/mod.rs:999 from_card_prefers_the_callers_binding_order_over_the_cards",
+    "crates/a2a-protocol-client/src/builder/mod.rs:1013 a_later_preference_wins_when_the_earlier_one_is_not_offered"
    ],
    "notes": "from_card_preferring / with_protocol_binding. The tests assert from_card_preferring connects to the binding the caller ranks, not the card's first interface; shown able to fail by removing the preference sort in builder/selection.rs (both fail) (2026-10-20).",
    "auditor": "C",
@@ -5113,7 +5113,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1411 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1475 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:189 TerminalTracking::terminal_written"
    ],
    "test_evidence": [
@@ -5389,8 +5389,8 @@
     "crates/a2a-protocol-client/src/builder/selection.rs:78 candidates"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:1056 from_card_follows_the_cards_order",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1001 an_empty_preference_list_takes_the_cards_first_interface",
+    "crates/a2a-protocol-client/src/builder/mod.rs:1095 from_card_follows_the_cards_order",
+    "crates/a2a-protocol-client/src/builder/mod.rs:1040 an_empty_preference_list_takes_the_cards_first_interface",
     "crates/a2a-protocol-client/src/builder/selection_tests.rs:51 a_v03_interface_listed_first_is_passed_over_for_v10",
     "crates/a2a-protocol-client/src/builder/selection_tests.rs:157 an_unbuildable_first_choice_falls_back_to_the_next_interface"
    ],
@@ -5412,8 +5412,8 @@
     "crates/a2a-protocol-client/src/builder/selection.rs:78 candidates"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:1056 from_card_follows_the_cards_order",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1001 an_empty_preference_list_takes_the_cards_first_interface"
+    "crates/a2a-protocol-client/src/builder/mod.rs:1095 from_card_follows_the_cards_order",
+    "crates/a2a-protocol-client/src/builder/mod.rs:1040 an_empty_preference_list_takes_the_cards_first_interface"
    ],
    "notes": "from_card keeps the card's order, earlier entries first, with the rest as build() fallbacks in that order. from_card_preferring lets a caller who explicitly ranks bindings override the agent's order (a2a-go parity); card order then breaks ties within a rank.",
    "auditor": "D",
@@ -5434,8 +5434,8 @@
     "crates/a2a-protocol-client/src/builder/mod.rs:498 ClientBuilder::with_protocol_binding"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:960 from_card_prefers_the_callers_binding_order_over_the_cards",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1014 chosen_interface_is_the_one_from_card_picked"
+    "crates/a2a-protocol-client/src/builder/mod.rs:999 from_card_prefers_the_callers_binding_order_over_the_cards",
+    "crates/a2a-protocol-client/src/builder/mod.rs:1053 chosen_interface_is_the_one_from_card_picked"
    ],
    "notes": "Endpoint taken from the selected AgentInterface; fallback moves endpoint and binding together.",
    "auditor": "D",
@@ -5451,16 +5451,16 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring",
-    "crates/a2a-protocol-client/src/methods/mod.rs:33 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/methods/send_message.rs:21 apply_client_config",
     "crates/a2a-protocol-client/src/methods/extended_card.rs:35 A2aClient::get_extended_agent_card"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:304 rest_client_from_card_carries_tenant_on_every_request",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1132 switching_binding_carries_that_interfaces_tenant",
-    "crates/a2a-protocol-client/src/methods/mod.rs:145 card_tenant_is_sent_on_every_request",
-    "crates/a2a-protocol-client/src/methods/mod.rs:216 no_tenant_anywhere_leaves_the_field_absent"
+    "crates/a2a-protocol-client/src/builder/mod.rs:1171 switching_binding_carries_that_interfaces_tenant",
+    "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:217 no_tenant_anywhere_leaves_the_field_absent"
    ],
    "notes": "Per-request params.tenant overrides the card value (user choice). gRPC/WS round-trip not covered by the e2e test.",
    "auditor": "D",
@@ -7085,7 +7085,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:680 InMemoryQueueWriter::write_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1645 InMemoryQueueReader::next_live",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1753 InMemoryQueueReader::next_live",
     "crates/a2a-protocol-server/src/streaming/sse.rs:389 build_sse_response"
    ],
    "test_evidence": [
@@ -7107,8 +7107,8 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/limits/fields.rs:33 HandlerLimits",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:596 RequestHandler::final_snapshot_hook",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1141 InMemoryQueueReader::final_snapshot",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1411 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1196 InMemoryQueueReader::final_snapshot",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1475 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background"
    ],
    "test_evidence": [
@@ -7609,7 +7609,7 @@
     "crates/a2a-protocol-server/src/handler/mod.rs:402 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/push_config.rs:73 RequestHandler::validate_and_store_push_config",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:140 RequestHandler::send_message_inner"
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:141 RequestHandler::send_message_inner"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/authorization_per_task.rs:153 an_authorizer_sees_the_task_every_method_names_and_can_refuse_it",
@@ -8084,7 +8084,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/push_config.rs:42 A2aClient::check_webhook_url",
-    "crates/a2a-protocol-client/src/builder/mod.rs:707 ClientBuilder::require_https_webhooks"
+    "crates/a2a-protocol-client/src/builder/mod.rs:746 ClientBuilder::require_https_webhooks"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/webhook_https_tests.rs:151 require_https_refuses_plaintext_to_a_remote_host_before_sending",
@@ -8712,7 +8712,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/plaintext.rs:94 Guard::check",
-    "crates/a2a-protocol-client/src/builder/mod.rs:724 ClientBuilder::require_https_credentials",
+    "crates/a2a-protocol-client/src/builder/mod.rs:763 ClientBuilder::require_https_credentials",
     "crates/a2a-protocol-server/src/handler/push_config.rs:531 refuse_an_unservable_config",
     "crates/a2a-protocol-server/src/push/sender.rs:416 HttpPushSender::https_only"
    ],
@@ -8777,8 +8777,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/auth/throttle.rs:262 AuthFailureThrottle::refuse_if_throttled",
-    "crates/a2a-protocol-server/src/auth/throttle.rs:285 AuthFailureThrottle::count_if_unauthenticated",
+    "crates/a2a-protocol-server/src/auth/throttle.rs:315 AuthFailureThrottle::refuse_if_throttled",
+    "crates/a2a-protocol-server/src/auth/throttle.rs:341 AuthFailureThrottle::record_failure",
     "crates/a2a-protocol-server/src/call_context.rs:341 CallContext::peer_addr",
     "crates/a2a-protocol-server/src/rate_limit/mod.rs:378 RateLimitInterceptor::before"
    ],
@@ -8829,7 +8829,7 @@
     "crates/a2a-protocol-server/src/metrics/mod.rs:52 Metrics",
     "crates/a2a-protocol-server/src/interceptor/mod.rs:131 ServerInterceptor::on_complete",
     "crates/a2a-protocol-server/src/rate_limit/mod.rs:185 RateLimitInterceptor",
-    "crates/a2a-protocol-server/src/auth/throttle.rs:169 AuthFailureThrottle"
+    "crates/a2a-protocol-server/src/auth/throttle.rs:182 AuthFailureThrottle"
    ],
    "test_evidence": [],
    "notes": "SDK exposes Metrics (on_request/on_error/on_latency per method) and OTel; anomaly detection is the operator's. Re-examined 2026-10-18, kept: what counts as unusual is deployment policy. The SDK emits the signals: per-method Metrics, ServerInterceptor::on_complete with the caller, OTel spans and metrics, RateLimitInterceptor, AuthFailureThrottle. Re-verified against the code 2026-10-20 (ledger audit): the citation named a ListTasks log line; it now names the signals the note lists. Re-audited 2026-10-24: RateLimitInterceptor and AuthFailureThrottle refuse requests and neither logs nor calls Metrics itself, so their refusals show through the generic on_error and the audit log; Metrics::on_request is per method, per-caller counts need on_complete or the audit log.",
@@ -9163,7 +9163,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/decisions.rs:49 shape_response_history",
     "crates/a2a-protocol-server/src/handler/helpers.rs:274 truncate_history",
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:197 RequestHandler::respond_blocking"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:201 RequestHandler::respond_blocking"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:464 shape_response_history_covers_every_branch",
@@ -9387,8 +9387,8 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:93 stamp_ids",
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:197 RequestHandler::respond_blocking",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1411 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:201 RequestHandler::respond_blocking",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1475 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:214 agent_messages_on_a_status_or_in_history_get_the_tasks_ids",
@@ -9858,7 +9858,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring",
-    "crates/a2a-protocol-client/src/methods/mod.rs:33 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/methods/send_message.rs:21 apply_client_config",
     "crates/a2a-protocol-client/src/methods/get_task.rs:57 A2aClient::read_task",
     "crates/a2a-protocol-client/src/methods/tasks.rs:49 A2aClient::list_tasks",
@@ -9866,11 +9866,11 @@
     "crates/a2a-protocol-client/src/methods/extended_card.rs:35 A2aClient::get_extended_agent_card"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:145 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:304 rest_client_from_card_carries_tenant_on_every_request",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1384 builder_from_card_preserves_tenant",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1132 switching_binding_carries_that_interfaces_tenant"
+    "crates/a2a-protocol-client/src/builder/mod.rs:1423 builder_from_card_preserves_tenant",
+    "crates/a2a-protocol-client/src/builder/mod.rs:1171 switching_binding_carries_that_interfaces_tenant"
    ],
    "notes": "from_card copies the selected interface's tenant into ClientConfig.tenant; every method fills params.tenant via tenant_or_default. A per-request tenant (or with_tenant after selection) deliberately overrides the card value (test explicit_request_tenant_wins_over_client_default).",
    "auditor": "G",
@@ -9983,7 +9983,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:352 builder_rejects_empty_interfaces_in_card",
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1296 builder_from_card_empty_interfaces_returns_error"
+    "crates/a2a-protocol-client/src/builder/mod.rs:1335 builder_from_card_empty_interfaces_returns_error"
    ],
    "notes": "Builder refuses a card with no interfaces; always serialized; client tolerates absence at parse (default []) then refuses to select (InvalidEndpoint 'agent card has no supported interfaces').",
    "auditor": "G",
@@ -10182,7 +10182,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/transport_factory.rs:206 ClientBuilder::send_extensions",
-    "crates/a2a-protocol-client/src/builder/mod.rs:889 ClientBuilder::skip_required_extension_check"
+    "crates/a2a-protocol-client/src/builder/mod.rs:928 ClientBuilder::skip_required_extension_check"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/builder/required_extensions_tests.rs:36 a_required_extension_the_client_does_not_ask_for_refuses_the_build",
@@ -10371,11 +10371,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:33 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:145 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11010,11 +11010,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/send_message.rs:21 apply_client_config",
-    "crates/a2a-protocol-client/src/methods/mod.rs:33 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:145 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11056,11 +11056,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:33 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:145 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11144,11 +11144,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:33 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:145 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11270,11 +11270,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:33 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:145 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11319,11 +11319,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:33 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:145 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11388,11 +11388,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:33 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:145 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11452,11 +11452,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:33 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:145 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11501,11 +11501,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:33 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:145 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11543,11 +11543,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:33 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:145 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",

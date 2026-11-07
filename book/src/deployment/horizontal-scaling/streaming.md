@@ -49,6 +49,8 @@ the ending and not the middle.
 
 ## Waking a waiting stream
 
+> **Cargo feature.** `PostgresTaskStore` and `LogListen` need the `postgres` feature: `a2a-protocol-sdk = { version = "0.16", features = ["postgres"] }`, or `a2a-protocol-server = { version = "0.16", features = ["postgres"] }` on its own.
+
 ```rust,no_run
 use a2a_protocol_server::store::{LogListen, PostgresTaskStore};
 
