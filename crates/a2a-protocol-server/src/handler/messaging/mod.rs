@@ -41,6 +41,7 @@ const SHUTDOWN_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs
 mod admission;
 mod basis;
 mod claimed;
+mod closed_early;
 mod commit;
 mod commit_guard;
 mod continuation;

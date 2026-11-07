@@ -33,6 +33,8 @@ const MAX_CHANNEL_CAPACITY: usize = 1 << 24;
 #[cfg(test)]
 mod byte_budget_queue_tests;
 #[cfg(test)]
+mod closed_early_tests;
+#[cfg(test)]
 mod final_snapshot_tests;
 #[cfg(test)]
 mod hold_tests;
@@ -49,8 +51,8 @@ mod status_stamp;
 pub(crate) mod terminal_gate;
 
 pub(crate) use in_memory::{
-    CatchUpFn, CatchUpPage, FinalSnapshotFn, FinalSnapshotFuture, ReattachFn, Reattached,
-    carries_terminal_state,
+    CatchUpFn, CatchUpPage, ClosedEarlyFn, ClosedEarlyFuture, FinalSnapshotFn, FinalSnapshotFuture,
+    ReattachFn, Reattached, carries_terminal_state,
 };
 pub use in_memory::{InMemoryQueueReader, InMemoryQueueWriter};
 pub use manager::EventQueueManager;

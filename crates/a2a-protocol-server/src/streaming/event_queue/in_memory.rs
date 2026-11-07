@@ -37,7 +37,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::StreamResponse;
-use a2a_protocol_types::task::{ContextId, TaskId};
+use a2a_protocol_types::task::{ContextId, TaskId, TaskState};
 use tokio::sync::{broadcast, mpsc};
 
 use super::{EventQueueReader, EventQueueWriter, StreamEvent};
@@ -857,6 +857,18 @@ pub struct InMemoryQueueReader {
     /// The final-snapshot hook's answer while it is awaited, kept here for
     /// the same cancel-safety reason as `reattaching`.
     snapshotting: std::sync::Mutex<Option<FinalSnapshotFuture>>,
+    /// Consulted once, when the queue closes with no terminal state delivered
+    /// and the task not parked; see [`Self::with_closed_early`].
+    closed_early: Option<ClosedEarlyFn>,
+    /// The closed-early hook's answer while it is awaited, kept here for the
+    /// same cancel-safety reason as `reattaching`.
+    closing: std::sync::Mutex<Option<ClosedEarlyFuture>>,
+    /// The last task state a frame of this stream reported. A stream
+    /// legitimately ends at an interrupted one (`input-required`,
+    /// `auth-required`), when the executor returns and the queue closes;
+    /// ending anywhere else, with no terminal state, is what
+    /// [`Self::with_closed_early`] answers.
+    last_state: Option<TaskState>,
     /// The hook's answer while it is still being awaited, kept here for the
     /// same cancel-safety reason as `reattaching`.
     catching_up: std::sync::Mutex<Option<CatchUpFuture>>,
@@ -928,6 +940,7 @@ impl std::fmt::Debug for InMemoryQueueReader {
             .field("reattach", &self.reattach.is_some())
             .field("catch_up", &self.catch_up.is_some())
             .field("final_snapshot", &self.final_snapshot.is_some())
+            .field("closed_early", &self.closed_early.is_some())
             .field("saw_terminal", &self.saw_terminal)
             .field("provisional", &self.provisional.is_some())
             .field("finished", &self.finished)
@@ -1077,6 +1090,23 @@ pub type FinalSnapshotFuture = Pin<Box<dyn Future<Output = Option<StreamResponse
 /// position it delivered. See [`InMemoryQueueReader::with_final_snapshot`].
 pub type FinalSnapshotFn = Arc<dyn Fn(u64) -> FinalSnapshotFuture + Send + Sync>;
 
+/// What a closed-early hook answers: the task's terminal state, as stored, to
+/// send as the stream's last frame, or `None` to send nothing.
+pub type ClosedEarlyFuture = Pin<Box<dyn Future<Output = Option<StreamResponse>> + Send>>;
+
+/// Called once when a stream's queue closes with no terminal state delivered
+/// and the task not parked. See [`InMemoryQueueReader::with_closed_early`].
+pub type ClosedEarlyFn = Arc<dyn Fn() -> ClosedEarlyFuture + Send + Sync>;
+
+/// The task state a stream frame reports, if it reports one.
+const fn carried_state(event: &StreamResponse) -> Option<TaskState> {
+    match event {
+        StreamResponse::Task(t) => Some(t.status.state),
+        StreamResponse::StatusUpdate(u) => Some(u.status.state),
+        _ => None,
+    }
+}
+
 /// Whether a stream frame reports a terminal task state.
 pub const fn carries_terminal_state(event: &StreamResponse) -> bool {
     match event {
@@ -1132,6 +1162,31 @@ impl InMemoryQueueReader {
     /// stream closes right after the terminal state.
     pub(crate) fn with_final_snapshot(mut self, hook: Option<FinalSnapshotFn>) -> Self {
         self.final_snapshot = hook;
+        self
+    }
+
+    /// Attaches a hook for a stream whose queue closes without the stream
+    /// having delivered a terminal state, and not at an interrupted one (audit
+    /// D-03 d, F14).
+    ///
+    /// A task's queue closes when its executor ends, and an executor that
+    /// panics ends without writing a terminal status: the processor that
+    /// stores the turn's events learns of it from the executor's handle and
+    /// stores `failed`, but the queue the stream reads has closed with the
+    /// last state it carried still `working`, and the stream used to end
+    /// there. A client reading to the end of a stream is entitled to its
+    /// terminal state (spec §3.1.6), and an end of stream is also how a
+    /// dropped connection looks, so it had to guess and call `GetTask`.
+    ///
+    /// The hook is asked once, at that close, and answers the task's terminal
+    /// state as stored (waiting for the store, bounded) or `None` when there
+    /// is none; the stream sends the answer as its last frame and ends. A
+    /// stream that has delivered a terminal state, or whose last state is
+    /// `input-required` or `auth-required` (where an executor returns and the
+    /// stream ends as it should), never asks. Without a hook, the default,
+    /// the stream ends at the close as before.
+    pub(crate) fn with_closed_early(mut self, hook: Option<ClosedEarlyFn>) -> Self {
+        self.closed_early = hook;
         self
     }
 
@@ -1204,6 +1259,9 @@ impl InMemoryQueueReader {
             catching_up: std::sync::Mutex::new(None),
             final_snapshot: None,
             snapshotting: std::sync::Mutex::new(None),
+            closed_early: None,
+            closing: std::sync::Mutex::new(None),
+            last_state: None,
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
@@ -1311,6 +1369,9 @@ impl InMemoryQueueReader {
             catching_up: std::sync::Mutex::new(None),
             final_snapshot: None,
             snapshotting: std::sync::Mutex::new(None),
+            closed_early: None,
+            closing: std::sync::Mutex::new(None),
+            last_state: None,
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
@@ -1343,6 +1404,9 @@ impl InMemoryQueueReader {
             catching_up: std::sync::Mutex::new(None),
             final_snapshot: None,
             snapshotting: std::sync::Mutex::new(None),
+            closed_early: None,
+            closing: std::sync::Mutex::new(None),
+            last_state: None,
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
@@ -1417,7 +1481,7 @@ impl InMemoryQueueReader {
         // log for a client resuming at a `Last-Event-ID`.
         if let Some(first) = self.pending.pop_front() {
             if let Ok(ref ev) = first {
-                self.saw_terminal |= carries_terminal_state(&ev.event);
+                self.observe(&ev.event);
             }
             return Some(first);
         }
@@ -1451,10 +1515,54 @@ impl InMemoryQueueReader {
                 // of the replay behind it already.
                 self.pending.push_front(event);
             }
-            self.saw_terminal |= carries_terminal_state(&snapshot);
+            self.observe(&snapshot);
             return Some(Ok(StreamEvent::unpositioned(snapshot)));
         }
         self.next_live().await
+    }
+
+    /// Records what a frame handed to the consumer says about the task: that
+    /// a terminal state was delivered, and which state was reported last.
+    const fn observe(&mut self, event: &StreamResponse) {
+        self.saw_terminal |= carries_terminal_state(event);
+        if let Some(state) = carried_state(event) {
+            self.last_state = Some(state);
+        }
+    }
+
+    /// The last frame of a stream whose queue has closed with no terminal
+    /// state delivered, when the task is not parked: what the closed-early
+    /// hook answers, or `None` for no frame.
+    ///
+    /// Asked once, ever: the hook is dropped once it has answered, so a stream
+    /// read again after its end does not wait again. The frame is observed
+    /// like any other, so a terminal answer ends the stream (and may be
+    /// followed by the final snapshot) on the next read, after whatever the
+    /// stream still has queued.
+    ///
+    /// Cancel-safe as [`Self::final_snapshot`] is: a `read` dropped while the
+    /// hook waits leaves its answer for the next `read` and does not ask
+    /// again.
+    async fn close_early(&mut self) -> Option<A2aResult<StreamEvent>> {
+        if self.last_state.is_some_and(TaskState::is_interrupted) {
+            return None;
+        }
+        let hook = self.closed_early.clone()?;
+        let answer = {
+            let slot = self
+                .closing
+                .get_mut()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            slot.get_or_insert_with(|| hook()).await
+        };
+        *self
+            .closing
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        self.closed_early = None;
+        let last = answer?;
+        self.observe(&last);
+        Some(Ok(StreamEvent::unpositioned(last)))
     }
 
     /// What the catch-up hook answers for the events after the last position
@@ -1507,7 +1615,7 @@ impl InMemoryQueueReader {
         self.just_caught_up = true;
         let next = self.pending.pop_front()?;
         if let Ok(ref ev) = next {
-            self.saw_terminal |= carries_terminal_state(&ev.event);
+            self.observe(&ev.event);
         }
         Some(next)
     }
@@ -1672,7 +1780,7 @@ impl InMemoryQueueReader {
                             {
                                 return Some(Err(gap));
                             }
-                            self.saw_terminal |= carries_terminal_state(&ev.event);
+                            self.observe(&ev.event);
                         }
                         return Some(event);
                     }
@@ -1683,9 +1791,15 @@ impl InMemoryQueueReader {
                         // The queue for this turn is gone. If a terminal state
                         // has already been delivered the stream is genuinely
                         // over; otherwise ask the hook whether the task is
-                        // finished or merely between turns.
-                        if self.saw_terminal || !self.reattach().await {
+                        // finished or merely between turns. A stream with no
+                        // such hook that was not parked ends without having
+                        // reported how the task did: say how, if the store
+                        // knows (F14).
+                        if self.saw_terminal {
                             return None;
+                        }
+                        if !self.reattach().await {
+                            return self.close_early().await;
                         }
                     }
                 }
