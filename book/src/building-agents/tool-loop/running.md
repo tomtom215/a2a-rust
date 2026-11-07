@@ -8,6 +8,8 @@ runs it as an A2A task. This page covers the builder, what the executor sends
 the client, running the loop outside an executor, the bounds a run is held
 to, and how a run that produces no answer fails.
 
+> **Cargo feature.** Every block on this page needs the `tool-loop` feature: `a2a-protocol-sdk = { version = "0.16", features = ["tool-loop"] }`, or `a2a-protocol-server = { version = "0.16", features = ["tool-loop"] }` on its own.
+
 ## The builder
 
 ```rust,no_run

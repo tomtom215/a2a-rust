@@ -36,6 +36,16 @@ and the SDK's alone; found 2026-11-07, docs/audits/2026-11-07-adopter-walkthroug
   * `book/diagrams/gs-crate-map.mmd` lists each crate's `default:` features as
     its manifest does.
 
+And one assertion about where a feature is *needed*: a book page whose Rust
+blocks use an item that exists only under a Cargo feature (`PostgresTaskStore`,
+`WebSocketDispatcher`, `tool_loop`, `auth::jwt`...) names that feature, in
+backticks or in quotes, on that page. The book's own doctests turn every feature
+on, so a page can compile there and fail for a reader who copied its dependency
+line (`a2a-protocol-server = "0.16"`) and was never told the feature: nine pages
+did, found 2026-11-07 by compiling every block against the default features
+(docs/audits/2026-11-07-adopter-walkthrough, 03-book-sweep.sh). The migration
+guides, ADR summaries and pitfalls pages describe what was true and are not read.
+
 Usage:
     python3 scripts/check_feature_tables.py
     python3 scripts/check_feature_tables.py --self-test
@@ -205,6 +215,57 @@ def check_diagram(problems: list[str]) -> None:
         problems.append(f"{DIAGRAM.relative_to(ROOT)}: no `default:` line for {crate}")
 
 
+# An item that exists only under a feature, as it appears in a Rust block.
+FEATURE_ITEMS = [
+    (r"\bauth::jwt\b|\bJwt(?:AuthInterceptor|Validator)\b", "auth-jwt"),
+    (r"\bWebSocket(?:Dispatcher|Transport)\b|\bdispatch::websocket\b", "websocket"),
+    (r"\bPostgres[A-Z]\w*", "postgres"),
+    (r"\b(?:TenantAware)?Sqlite[A-Z]\w*", "sqlite"),
+    (r"\btool_loop\b", "tool-loop"),
+    (r"\bGrpc(?:Dispatcher|Transport)\b|\bdispatch::grpc\b|\btransport::grpc\b|\bbuild_grpc\b", "grpc"),
+    (r"\bRestRouter\b|\bA2aRouter\b", "axum"),
+    (r"\ba2a_protocol_server::conformance\b|\bserver::conformance\b", "conformance"),
+    (r"\bEncrypted[A-Z]\w*", "encryption"),
+]
+BOOK_SUMMARY = ROOT / "book/src/SUMMARY.md"
+HISTORICAL_PAGES = (
+    "reference/upgrading/", "reference/changelog", "reference/adrs.md", "reference/pitfalls",
+    "deployment/dogfooding", "reference/mutation-history", "reference/conformance-history",
+)
+RUST_BLOCK = re.compile(r"^(?P<indent>[ \t]*)(?P<fence>`{3,})(?P<info>[^\n`]*)\n(?P<body>.*?)^(?P=indent)(?P=fence)[ \t]*$", re.M | re.S)
+
+
+def page_text_blocks(text: str) -> list[str]:
+    """The Rust blocks of a page that rustdoc compiles (not `ignore`, not `text`)."""
+    out = []
+    for m in RUST_BLOCK.finditer(text):
+        info = m.group("info").strip()
+        tags = [t for t in re.split(r"[,\s]+", info) if t]
+        if (not tags or tags[0] == "rust") and not any(t.startswith("ignore") for t in tags):
+            out.append(m.group("body"))
+    return out
+
+
+def check_pages_name_their_features(problems: list[str]) -> None:
+    """Each page that uses a feature-gated item names the feature."""
+    base = ROOT / "book/src"
+    pages = re.findall(r"\]\(\./([^)#]+\.md)\)", BOOK_SUMMARY.read_text())
+    for rel in dict.fromkeys(pages):
+        if rel.startswith(HISTORICAL_PAGES):
+            continue
+        text = (base / rel).read_text()
+        # Comments name things (`// or: RestRouter (Axum)`) without using them.
+        code = re.sub(r"//[^\n]*", "", "\n".join(page_text_blocks(text)))
+        for pattern, feature in FEATURE_ITEMS:
+            hit = re.search(pattern, code)
+            if hit and f"`{feature}`" not in text and f'"{feature}"' not in text:
+                problems.append(
+                    f"book/src/{rel}: a Rust block uses `{hit.group(0)}`, which needs the `{feature}` "
+                    f"feature, and the page never names it (a reader with the default features gets "
+                    f"`unresolved import`)"
+                )
+
+
 def run() -> list[str]:
     problems: list[str] = []
     for crate in CRATES:
@@ -227,6 +288,7 @@ def run() -> list[str]:
     check_overview(problems)
     check_prose(problems)
     check_diagram(problems)
+    check_pages_name_their_features(problems)
     return problems
 
 
@@ -242,7 +304,11 @@ def self_test() -> None:
     assert re.findall(r"`(a2a-protocol-[a-z]+)`", m.group(2)) == ["a2a-protocol-client", "a2a-protocol-server", "a2a-protocol-sdk"]
     n = NODE.match('    server["a2a-protocol-server<br/>builds agents<br/>default: tracing, otel,<br/>tls-rustls"]')
     assert n and n.group(1) == "a2a-protocol-server" and "tls-rustls" in n.group(2)
-    print("check_feature_tables --self-test: table parsing, crate attribution, prose and diagram patterns pass")
+    blocks = page_text_blocks("```rust\nlet a = PostgresTaskStore;\n```\n```text\nB\n```\n```rust,ignore\nC\n```\n```toml\nD\n```\n")
+    assert blocks == ["let a = PostgresTaskStore;\n"], blocks
+    assert re.search(FEATURE_ITEMS[2][0], "use a2a_protocol_server::store::PostgresTaskStore;")
+    assert not re.search(FEATURE_ITEMS[2][0], "postgres is a database")
+    print("check_feature_tables --self-test: table parsing, crate attribution, prose, diagram and page patterns pass")
 
 
 def main() -> int:

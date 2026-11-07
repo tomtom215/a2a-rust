@@ -8,6 +8,8 @@ turn, provider-neutral. This page covers `OpenAiChatModel`, the bundled client
 for the chat-completions API, and writing a `ToolModel` for any other
 provider.
 
+> **Cargo feature.** Every block on this page needs the `tool-loop` feature: `a2a-protocol-sdk = { version = "0.16", features = ["tool-loop"] }`, or `a2a-protocol-server = { version = "0.16", features = ["tool-loop"] }` on its own.
+
 ## `OpenAiChatModel`
 
 `OpenAiChatModel` sends each turn as `POST {base}/chat/completions`, the API

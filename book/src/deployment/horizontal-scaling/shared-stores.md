@@ -7,6 +7,8 @@ The one change that makes several replicas possible: every replica uses the
 same PostgreSQL database. This page covers setting it up, what the stores do
 when a connection to the database drops, and running through PgBouncer.
 
+> **Cargo feature.** The PostgreSQL stores on this page need the `postgres` feature: `a2a-protocol-sdk = { version = "0.16", features = ["postgres"] }`, or `a2a-protocol-server = { version = "0.16", features = ["postgres"] }` on its own.
+
 Nothing works across replicas without this. Point every replica at the same
 PostgreSQL instance:
 
