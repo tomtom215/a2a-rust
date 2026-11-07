@@ -85,6 +85,14 @@ impl TurnClaims {
             Arc::downgrade(self),
             (self.ttl / 10).max(Duration::from_millis(50)),
         ));
+        // Apart from the renewer too: a look at the store that hangs must not
+        // hold up a renewal.
+        if self.steering.is_some() {
+            tokio::spawn(super::steering::steering_loop(
+                Arc::downgrade(self),
+                self.renew_every,
+            ));
+        }
     }
 }
 

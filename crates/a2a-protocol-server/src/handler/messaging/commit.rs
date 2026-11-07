@@ -14,6 +14,7 @@ use super::start::{Committed, ExecutorStart, Started, runtime_has_one_worker};
 use super::{basis, commit_guard, create, quorum};
 use crate::call_context::CallContext;
 use crate::error::ServerResult;
+use crate::steering::Inbox;
 use a2a_protocol_types::params::MessageSendParams;
 
 impl RequestHandler {
@@ -37,8 +38,15 @@ impl RequestHandler {
         streaming: bool,
         call_ctx: &CallContext,
     ) -> ServerResult<(SendMode, Committed)> {
+        // A message that asks to steer a running task starts no turn, so it
+        // takes no slot until it is known not to be one (ADR 0036).
+        let asks_to_steer = self.asks_to_steer(&params.message);
         let mut slots = TurnSlots {
-            tenant: self.acquire_tenant_slot().await?,
+            tenant: if asks_to_steer {
+                None
+            } else {
+                self.acquire_tenant_slot().await?
+            },
             admission: None,
         };
 
@@ -51,6 +59,15 @@ impl RequestHandler {
 
         // Before an approval is counted or a send key's replay answered.
         let content_check = self.validate_send_params(&mut params)?;
+        if asks_to_steer {
+            if let Some(task) = self.steer_if_running(&params, call_ctx).await? {
+                return Ok((
+                    SendMode::of(&params, streaming),
+                    Committed::Steered(Box::new(task)),
+                ));
+            }
+            slots.tenant = self.acquire_tenant_slot().await?;
+        }
         slots.admission = self.take_admission_slot(&params.message, call_ctx).await?;
 
         let mode = SendMode::of(&params, streaming);
@@ -211,6 +228,13 @@ impl RequestHandler {
             ctx.budget = budget;
             ctx.lineage = lineage;
             ctx.content_check = content_check;
+            // Where steering messages wait for this turn, when steering is on
+            // (ADR 0036): shared by the context the executor reads and the
+            // turn admission delivers to.
+            let inbox = self
+                .steering
+                .map(|config| std::sync::Arc::new(Inbox::new(config.inbox_capacity())));
+            ctx.inbox.clone_from(&inbox);
             if let Some(config) = params.configuration.as_ref() {
                 ctx = ctx.with_accepted_output_modes(config.accepted_output_modes.clone());
             }
@@ -229,6 +253,7 @@ impl RequestHandler {
                     &task_id,
                     ctx.cancellation_token.clone(),
                     ctx.lineage.clone(),
+                    inbox,
                 )
                 .await;
             let claim = claim.map(std::sync::Arc::new);

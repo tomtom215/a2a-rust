@@ -47,6 +47,7 @@ mod renamed;
 mod shutdown;
 pub(crate) mod subscribers;
 mod tenant_resolution;
+mod turn;
 mod undeclared_binding;
 mod unreadable;
 #[cfg(feature = "websocket")]
@@ -73,6 +74,7 @@ pub(crate) use shutdown::InFlight;
 #[cfg(all(test, feature = "tracing"))]
 pub(crate) use shutdown::tests::warning::{warning_lines_during, warnings_during};
 pub use shutdown::{InFlightReport, ShutdownReport};
+pub(crate) use turn::ExecutorTurn;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -221,6 +223,9 @@ pub struct RequestHandler {
     /// The turn claims of a store several replicas share, if any; see
     /// [`claims`].
     pub(crate) turn_claims: Option<Arc<claims::TurnClaims>>,
+    /// Whether this handler takes steering messages, and its bounds
+    /// (ADR 0036); see [`crate::steering`].
+    pub(crate) steering: Option<crate::steering::SteeringConfig>,
     /// The audit log, when the handler was built with one.
     #[cfg(feature = "audit")]
     pub(crate) audit: Option<Arc<crate::audit::AuditLog>>,
@@ -252,58 +257,6 @@ pub(crate) struct CancellationEntry {
     pub(crate) tenant: String,
     /// The turn's lineage (ADR 0034), so a halt of one job finds its tasks.
     pub(crate) lineage: a2a_protocol_types::lineage::Lineage,
-}
-
-/// The state of one executor turn, shared by the executor's writer, its
-/// cleanup, and admission.
-#[derive(Debug, Default)]
-pub(crate) struct ExecutorTurn {
-    /// The last state the executor wrote was `input-required` or
-    /// `auth-required`. Set *before* the event reaches the queue, so no
-    /// reader can see the interrupted state while this still says otherwise.
-    pub(crate) parked: std::sync::atomic::AtomicBool,
-    /// Cancelled once the executor's queue and token have been released —
-    /// the moment a continuation can be admitted.
-    pub(crate) finished: tokio_util::sync::CancellationToken,
-    /// A [`halt`](RequestHandler::halt) stopped this turn. Set before the
-    /// task's token is cancelled, so an executor that returns on the token
-    /// sees it, and its task is ended `Canceled` as on shutdown.
-    pub(crate) halted: std::sync::atomic::AtomicBool,
-    /// This replica could not keep the turn's claim (`handler::claims`): its
-    /// renewals went unanswered for most of the claim's time to live, so
-    /// another replica may take the task over. Set before the task's token is
-    /// cancelled, so an executor that returns on the token sees it, and its
-    /// task is ended `Failed`, failure class `transient`, never `Canceled`.
-    pub(crate) lapsed: std::sync::atomic::AtomicBool,
-}
-
-impl ExecutorTurn {
-    /// Whether the executor's latest state asks the client for input.
-    pub(crate) fn is_parked(&self) -> bool {
-        self.parked.load(std::sync::atomic::Ordering::Acquire)
-    }
-
-    /// Marks the turn halted; the caller cancels its token next.
-    pub(crate) fn halt(&self) {
-        self.halted
-            .store(true, std::sync::atomic::Ordering::Release);
-    }
-
-    /// Whether a halt stopped this turn.
-    pub(crate) fn is_halted(&self) -> bool {
-        self.halted.load(std::sync::atomic::Ordering::Acquire)
-    }
-
-    /// Marks the turn's claim lapsed; the caller cancels its token next.
-    pub(crate) fn lapse(&self) {
-        self.lapsed
-            .store(true, std::sync::atomic::Ordering::Release);
-    }
-
-    /// Whether this replica gave up the turn's claim.
-    pub(crate) fn is_lapsed(&self) -> bool {
-        self.lapsed.load(std::sync::atomic::Ordering::Acquire)
-    }
 }
 
 impl RequestHandler {

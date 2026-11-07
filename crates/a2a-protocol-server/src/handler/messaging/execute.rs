@@ -73,6 +73,10 @@ impl Drop for CleanupGuard {
             let tokens = Arc::clone(&self.tokens);
             let turn = Arc::clone(&self.turn);
             let finished = Arc::clone(&turn);
+            // No reader is left, so no more messages are taken.
+            if let Some(inbox) = turn.inbox() {
+                inbox.close();
+            }
             // Without a runtime nothing can run the release; the turn is
             // still marked finished, which needs no await (audit D-23).
             if !super::drop_spawn::spawn(async move {
@@ -282,6 +286,7 @@ impl RequestHandler {
     ) -> impl std::future::Future<Output = ()> + Send + 'static {
         let executor = Arc::clone(&self.executor);
         let metrics = Arc::clone(&self.metrics);
+        let steering_metrics = Arc::clone(&self.metrics);
         let task_id = ctx.task_id.clone();
         let event_queue_mgr = self.event_queue_manager.clone();
         let cancel_tokens = Arc::clone(&self.cancellation_tokens);
@@ -342,6 +347,7 @@ impl RequestHandler {
                 run_executor(executor.as_ref(), &ctx, &writer, timeout, expose_internal)
             })
             .await;
+            turn.close_inbox(&*steering_metrics, &task_id);
             let stop = Stop::after_run(&turn, shutdown.is_cancelled(), claim.is_some(), &*executor);
             run.finish(run_outcome(
                 &result,

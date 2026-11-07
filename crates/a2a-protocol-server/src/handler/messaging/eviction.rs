@@ -34,6 +34,7 @@ impl RequestHandler {
         task_id: &TaskId,
         token: CancellationToken,
         lineage: a2a_protocol_types::lineage::Lineage,
+        inbox: Option<Arc<crate::steering::Inbox>>,
     ) -> Arc<ExecutorTurn> {
         // Phase 1.
         let (cancelled_ids, aged_candidates) = self.collect_stale_candidates().await;
@@ -46,7 +47,7 @@ impl RequestHandler {
         }
 
         // Phase 3: Insert the new token under WRITE lock.
-        let turn = Arc::new(ExecutorTurn::default());
+        let turn = Arc::new(ExecutorTurn::with_inbox(inbox));
         let mut tokens = self.cancellation_tokens.write().await;
         tokens.insert(
             task_id.clone(),
