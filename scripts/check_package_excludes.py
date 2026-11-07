@@ -38,6 +38,17 @@ repository keeps rediscovering.
 Exit 0 if every invocation's list covers exactly the publishable/non-publishable
 split, non-zero with the missing names and the invocation they are missing from
 otherwise.
+
+The licence files
+-----------------
+The same exit code also requires that every publishable crate's directory holds
+a `LICENSE` and a `NOTICE` that are byte-for-byte the repository's. Cargo
+packages the crate's own directory, so a file that sits only at the repository
+root is in no `.crate`: for 0.16.0's preparation the four tarballs carried the
+manifest's `license = "Apache-2.0"` and no licence text (Apache-2.0 §4(a) and
+§4(d)). Found on 2026-11-07 by unpacking them (docs/audits/2026-11-07-adopter-walkthrough).
+Copy, do not symlink: a copy is what the tarball holds, and this check says when
+one has drifted.
 """
 
 from __future__ import annotations
@@ -58,8 +69,8 @@ SITES = [
 ]
 
 
-def workspace_members() -> list[tuple[str, bool]]:
-    """Return (name, publishable) for every workspace member.
+def workspace_members() -> list[tuple[str, bool, Path]]:
+    """Return (name, publishable, directory) for every workspace member.
 
     Uses `cargo metadata` so the answer follows the real member list rather than
     a glob that could drift from `[workspace] members`.
@@ -80,7 +91,7 @@ def workspace_members() -> list[tuple[str, bool]]:
         data = tomllib.loads(manifest.read_text())
         # cargo metadata reports `publish: null` for unrestricted, [] for false.
         publishable = data.get("package", {}).get("publish", True) is not False
-        members.append((pkg["name"], publishable))
+        members.append((pkg["name"], publishable, manifest.parent))
     return sorted(members)
 
 
@@ -124,10 +135,42 @@ def invocations(text: str) -> list[tuple[int, str]]:
     return found
 
 
+# What the Apache-2.0 licence asks a redistributor to pass on: its text (§4(a))
+# and the project's NOTICE (§4(d)). Cargo packages a crate's own directory, and
+# the repository's copies sit above every crate, so a crate that does not carry
+# its own is published without either: the manifest says `Apache-2.0` and the
+# `.crate` holds no licence text. Found on 2026-11-07 by unpacking the four
+# tarballs of 0.16.0 (docs/audits/2026-11-07-adopter-walkthrough).
+LICENCE_FILES = ("LICENSE", "NOTICE")
+
+
+def licence_failures(members: list[tuple[str, bool, Path]]) -> list[str]:
+    """One line per publishable crate whose LICENSE or NOTICE is absent or differs."""
+    failures = []
+    for name, publishable, directory in members:
+        if not publishable:
+            continue
+        for fname in LICENCE_FILES:
+            root_copy = ROOT / fname
+            crate_copy = directory / fname
+            where = crate_copy.relative_to(ROOT)
+            if not crate_copy.is_file():
+                failures.append(
+                    f"{where}: missing, so the `{name}` tarball carries no {fname}; "
+                    f"copy the repository's {fname}"
+                )
+            elif crate_copy.read_bytes() != root_copy.read_bytes():
+                failures.append(
+                    f"{where}: differs from the repository's {fname}; "
+                    f"copy it again (cp {fname} {where})"
+                )
+    return failures
+
+
 def main() -> int:
     members = workspace_members()
-    must_exclude = {name for name, publishable in members if not publishable}
-    publishable = {name for name, publishable in members if publishable}
+    must_exclude = {name for name, publishable, _ in members if not publishable}
+    publishable = {name for name, publishable, _ in members if publishable}
 
     failures: list[str] = []
     checked = 0
@@ -173,24 +216,34 @@ def main() -> int:
                     f"{where}: --exclude names non-member(s): " + ", ".join(unknown)
                 )
 
-    if failures:
-        print("check_package_excludes: packaging exclude lists are out of sync\n")
-        for f in failures:
+    licence = licence_failures(members)
+
+    if failures or licence:
+        print("check_package_excludes: packaging is out of sync\n")
+        for f in failures + licence:
             print(f"  {f}")
-        print(
-            "\n`cargo package --workspace` rejects any crate depending on a sibling\n"
-            "by bare `path` with no `version`, which every `publish = false` member\n"
-            "here does. Add the missing name(s) to the --exclude list of each\n"
-            "invocation named above — each one is a command that runs on its own,\n"
-            "so fixing one of release.yml's three does not fix the other two — or\n"
-            "the release workflow fails at packaging time, after the tag is pushed."
-        )
+        if failures:
+            print(
+                "\n`cargo package --workspace` rejects any crate depending on a sibling\n"
+                "by bare `path` with no `version`, which every `publish = false` member\n"
+                "here does. Add the missing name(s) to the --exclude list of each\n"
+                "invocation named above — each one is a command that runs on its own,\n"
+                "so fixing one of release.yml's three does not fix the other two — or\n"
+                "the release workflow fails at packaging time, after the tag is pushed."
+            )
+        if licence:
+            print(
+                "\nCargo packages a crate's own directory: a LICENSE or NOTICE that is\n"
+                "only at the repository root is in no published tarball. Copy them into\n"
+                "each crate named above (Apache-2.0 §4(a), §4(d))."
+            )
         return 1
 
     print(
         f"check_package_excludes: {len(publishable)} publishable, "
         f"{len(must_exclude)} excluded, {checked} invocation(s) across "
-        f"{len(SITES)} file(s) agree"
+        f"{len(SITES)} file(s) agree; each publishable crate carries "
+        f"{' and '.join(LICENCE_FILES)}"
     )
     return 0
 
