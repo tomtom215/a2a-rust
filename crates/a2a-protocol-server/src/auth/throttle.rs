@@ -54,11 +54,22 @@
 //! window has passed are dropped, and a new peer that still does not fit is
 //! not counted (fail-open), so the map cannot grow without bound under an
 //! address-rotating attack.
+//!
+//! # Replicas
+//!
+//! Counts are per process unless
+//! [`with_shared_counter`](AuthFailureThrottle::with_shared_counter) gives the
+//! throttle a [`RateLimitCounter`] every replica reaches. Without one, a fleet
+//! of N replicas gives a peer up to N × `max_failures` guesses a window: a
+//! balancer that spreads one peer's failures leaves each replica seeing about
+//! 1/N of them. With one, each failure is also counted there, and the throttle
+//! keeps the larger of its own count and the total the counter reports; see
+//! the method for what that costs and what it leaves open.
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use a2a_protocol_types::auth_rejection::{AuthRejection, AuthRejectionKind};
@@ -67,7 +78,7 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use crate::call_context::CallContext;
 use crate::error::{ServerError, ServerResult};
 use crate::interceptor::{CallOutcome, ServerInterceptor};
-use crate::rate_limit::{ForwardedHeader, TrustedProxy};
+use crate::rate_limit::{ForwardedHeader, RateLimitCounter, TrustedProxy};
 
 /// Configuration for an [`AuthFailureThrottle`].
 #[derive(Debug, Clone)]
@@ -162,14 +173,17 @@ struct Failures {
 /// Refuses a peer that has failed authentication too often; see the
 /// [module docs](self).
 ///
-/// The counts are per process. Behind a balancer, N replicas give a peer up to
-/// N × [`max_failures`](AuthFailureThrottleConfig::max_failures) guesses a
-/// window, since each sees about 1/N of its failures: size `max_failures` for
+/// The counts are per process unless a shared counter is set. Behind a
+/// balancer, N replicas give a peer up to N ×
+/// [`max_failures`](AuthFailureThrottleConfig::max_failures) guesses a window,
+/// since each sees about 1/N of its failures: set
+/// [`with_shared_counter`](Self::with_shared_counter), size `max_failures` for
 /// the fleet, or throttle in the proxy in front.
 pub struct AuthFailureThrottle {
     config: AuthFailureThrottleConfig,
     peers: Mutex<HashMap<String, Failures>>,
     now_secs: fn() -> u64,
+    shared: Option<Arc<dyn RateLimitCounter>>,
 }
 
 impl std::fmt::Debug for AuthFailureThrottle {
@@ -220,7 +234,46 @@ impl AuthFailureThrottle {
             config,
             peers: Mutex::new(HashMap::new()),
             now_secs: unix_now_secs,
+            shared: None,
         })
+    }
+
+    /// Counts each failure in `counter` too, so the limit is the fleet's and
+    /// not each replica's.
+    ///
+    /// The counter is told of a failure when its call ends, under the key
+    /// `authfail:` and the peer (so a counter the rate limiter also uses holds
+    /// both without a clash, see [`RateLimitInterceptor`](crate::RateLimitInterceptor)),
+    /// and the throttle then keeps the larger of its own count and the total
+    /// the counter reports. A call is refused from this process's own count
+    /// alone: **the counter is not read on a call's way in**, so a call whose
+    /// credential is valid costs no round trip, and only a refused credential
+    /// does (at most `max_failures` of them, and then those the other replicas
+    /// had not yet learned the peer is over the limit for, per peer and
+    /// window).
+    ///
+    /// What it leaves open. A replica learns that the fleet's count has reached
+    /// the limit when one of *its own* calls fails, so after the limit is
+    /// reached a peer gets at most one more failed call per replica it has not
+    /// yet failed at, plus the calls in flight (the bound without a shared
+    /// counter is `max_failures` for each replica). A peer beyond `max_peers`
+    /// on this replica is not counted anywhere. The counter's window is the one
+    /// of [`window_secs`](AuthFailureThrottleConfig::window_secs): give the
+    /// throttle and the limiter one counter and they cannot sweep each other's
+    /// rows (`PostgresRateLimitCounter` records each row's width).
+    ///
+    /// When the counter fails, the failure is counted in this process only and
+    /// a warning is logged, the same degradation as
+    /// [`RateLimitInterceptor::with_shared_counter`](crate::RateLimitInterceptor::with_shared_counter):
+    /// per-process throttling, neither an outage nor an open door.
+    ///
+    /// An address that rotates draws one counter write per failed credential,
+    /// where without a counter it draws none; a call a replica refuses as
+    /// throttled draws none.
+    #[must_use]
+    pub fn with_shared_counter(mut self, counter: Arc<dyn RateLimitCounter>) -> Self {
+        self.shared = Some(counter);
+        self
     }
 
     /// The same throttle reading the time from `now_secs`.
@@ -282,32 +335,67 @@ impl AuthFailureThrottle {
         Ok(())
     }
 
-    fn count_if_unauthenticated(&self, ctx: &CallContext, outcome: CallOutcome<'_>) {
+    /// Counts the failure in this process, if `outcome` is a refused
+    /// credential from a peer that can be told apart and tracked, and says
+    /// which peer and window it was counted in.
+    fn record_failure(&self, ctx: &CallContext, outcome: CallOutcome<'_>) -> Option<(String, u64)> {
         let CallOutcome::Failed(ServerError::Protocol(error)) = outcome else {
-            return;
+            return None;
         };
         if error.auth_rejection().map(AuthRejection::kind)
             != Some(AuthRejectionKind::Unauthenticated)
         {
-            return;
+            return None;
         }
-        let Some(key) = self.peer_key(ctx) else {
-            return;
-        };
+        let key = self.peer_key(ctx)?;
         let window = self.window_of((self.now_secs)());
         let mut peers = self.lock();
         if !peers.contains_key(&key) && peers.len() >= self.config.max_peers {
             peers.retain(|_, f| f.window == window);
             if peers.len() >= self.config.max_peers {
-                return;
+                return None;
             }
         }
-        let failures = peers.entry(key).or_insert(Failures { window, count: 0 });
+        let failures = peers
+            .entry(key.clone())
+            .or_insert(Failures { window, count: 0 });
         if failures.window != window {
             *failures = Failures { window, count: 0 };
         }
         failures.count = failures.count.saturating_add(1);
         drop(peers);
+        Some((key, window))
+    }
+
+    /// Tells the shared counter, if there is one, of a failure counted in
+    /// `window`, and raises this process's count to the total it reports.
+    async fn merge_shared(&self, key: &str, window: u64) {
+        let Some(counter) = &self.shared else {
+            return;
+        };
+        match counter
+            .count(&format!("authfail:{key}"), window, self.config.window_secs)
+            .await
+        {
+            Ok(total) => self.raise_to(key, window, total),
+            Err(_e) => {
+                trace_warn!(
+                    error = %_e,
+                    "shared authentication-failure counter unavailable; counting in this process only"
+                );
+            }
+        }
+    }
+
+    /// Raises a peer's count in `window` to `total`, never lowers it, and
+    /// leaves a peer whose window has moved on alone.
+    fn raise_to(&self, key: &str, window: u64, total: u64) {
+        let total = u32::try_from(total).unwrap_or(u32::MAX);
+        if let Some(failures) = self.lock().get_mut(key)
+            && failures.window == window
+        {
+            failures.count = failures.count.max(total);
+        }
     }
 }
 
@@ -331,10 +419,17 @@ impl ServerInterceptor for AuthFailureThrottle {
         ctx: &'a CallContext,
         outcome: CallOutcome<'a>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
-        Box::pin(async move { self.count_if_unauthenticated(ctx, outcome) })
+        Box::pin(async move {
+            if let Some((key, window)) = self.record_failure(ctx, outcome) {
+                self.merge_shared(&key, window).await;
+            }
+        })
     }
 }
 
+#[cfg(test)]
+#[path = "throttle_shared_tests.rs"]
+mod shared_tests;
 #[cfg(test)]
 #[path = "throttle_tests.rs"]
 mod tests;
