@@ -191,5 +191,5 @@ async fn read_until_settled(stream: &mut EventStream) -> ClientResult<Reached> {
 }
 
 #[cfg(test)]
-#[path = "send_over_stream_tests.rs"]
+#[path = "send_over_stream_tests/mod.rs"]
 mod tests;
