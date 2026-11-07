@@ -36,4 +36,16 @@ disk allowance is the limit, not the CPU.
 | `model_probe.py` | one timed chat completion against a local llama-server, thinking on or off | a llama-server on 11434 |
 | `05-tool-loop-page.sh` | the tool-loop page's minimal agent, built from the page and run against the model | `01-package.sh`, `03-build-examples.sh`, a llama-server on 11434 |
 
+| `02b-readme-no-defaults.sh` | the README Quick Start with the SDK at `default-features = false`, and a types-only project | `01-package.sh` done |
+| `02c-msrv.sh` | the README Quick Start on rustc 1.94.0 with no lockfile, then a larger feature set | `rustup toolchain install 1.94.0 --profile minimal`, `01-package.sh` done |
+| `hand_mutants_doc_versions.py` | one-edit mutants of the new assertions in `scripts/check_doc_versions.py`, each run against its `--self-test` | python3 |
+| `03-card-http-claims.sh` | the agent card endpoint's conditional GETs, HEAD, OPTIONS, wrong method against a running deploy-agent | `03-build-examples.sh` done, port 8080 |
+| `04a-cli-install.sh` | the book's `cargo install --path tools/a2a-cli`, as written (no `--locked`) | crates.io, ~2 GB |
+| `05b-disconnect.sh` | a streaming client killed mid-stream, and 50 at once, against echo-agent | `03-build-examples.sh` done, port 3111 |
+| `05c-model-stub-runs.sh`, `model_stub.py` | `tool-loop-agent` against twelve scripted model failures (malformed call, unknown tool, truncated, 500, 429, endless loop...) | `03-build-examples.sh` done, ports 3501-3512 |
+| `06-image-digests.sh` | every image the Dockerfile and compose file pin by digest still exists in its registry | a running Docker daemon |
+| `06-manifest-lint.py` | YAML parse and cross-checks of the Kubernetes manifests (no schema validation: no kubectl or kubeconform) | python3 with PyYAML |
+| `06-observability.sh`, `06b-observability-more.sh`, `06-screenshots.sh` | traffic into the compose stack from two agents, the CLI, a PostgreSQL-backed agent and a scripted model; each backend asked; the repository's panel checker; headless-Chrome screenshots | the stack up (`docker compose ... up -d`), built binaries in a directory, PostgreSQL, Chrome |
+| `07-links.py` | relative links and anchors of the repository's Markdown outside the book | python3, git |
+
 Do not edit a script while it runs: bash reads it as it goes.

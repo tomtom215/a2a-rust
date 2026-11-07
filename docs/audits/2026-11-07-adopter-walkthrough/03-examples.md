@@ -35,9 +35,9 @@ tarballs; only the README and book programs were built that way (`02-readme-and-
 ## Not run
 
 `incident-response`, `agent-team`, `resilient-agent`, `swarm`, `mcp-agent`, `mcp-bridge`,
-`multi-lang-team` and `langfuse-agent` were neither built nor run: the shared disk allowance (about 3 GB free
-at that point, with each of these adding hundreds of megabytes to the target directory) and a CPU at load
-average 13 to 22 from other builds made the cost of each one higher than the information it would add beyond
-the CI jobs that run seven of them (`example-surface`, `dogfood`, per `examples/README.md`). `langfuse-agent` needs
-a Langfuse instance, `multi-lang-team` its Python/JS/Go/Java workers, `incident-response`'s hardening needs PostgreSQL.
-No claim is made about them here beyond "CI says".
+`multi-lang-team` and `langfuse-agent` were neither built nor run here: the shared disk allowance (about 3 GB free
+when this was decided, each adding hundreds of megabytes to the target directory) and a CPU at load average 13 to 23
+from other builds made each one cost more than it would add beyond CI. Per `examples/README.md`, CI runs five of them
+(`incident-response`, `agent-team`, `resilient-agent`, `swarm`, `multi-lang-team`) and `cargo test` covers `mcp-agent`,
+`mcp-bridge` and `langfuse-agent`. `langfuse-agent` needs a Langfuse instance, `multi-lang-team` its Python, JavaScript,
+Go and Java workers, `incident-response`'s hardening PostgreSQL. No claim is made about any of them here beyond "CI says".

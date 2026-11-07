@@ -30,7 +30,7 @@ The server build, the two models and the exact command line are recorded in `/op
 | a request a model should refuse (a bomb) | **completed** with a refusal as the answer (42 s) | **completed** with a refusal as the answer (86 s) |
 | answer capped at 48 tokens (`TOOL_LOOP_EXTRA_BODY='{"max_tokens":48}'`) | **completed, answer cut mid-sentence** ("...millions of transactions per day"), no marker (41 s) | not run |
 | thinking on (`TOOL_LOOP_THINKING=1`), output capped at 40 tokens | not run | **completed, empty answer** (42 s) |
-| `genai-a2a-agent` default demo | not run | **partial**: see "What did not finish" |
+| `genai-a2a-agent`, a plain `cargo run` (its README's default model name `qwen3.5:0.8b`, which llama-server ignores) | not run | **exit 0 in 2,275 s**: `LLM leg: EXERCISED`, then the four binding sweeps; exit 0 is the README's verdict "all 44 cells ran". The script kept only the first 3.5 KB of stdout, so the final matrix was not saved (38 `[ok]` lines are in it); the answers were not read |
 | `rig-a2a-agent` default demo | not run | not run |
 | `live-model` (ten checks) | not run | not run |
 
@@ -87,9 +87,9 @@ does the edit; the rerun was not done).
 
 ## What did not finish
 
-* `genai-a2a-agent` (the README's default model name; Gemma 4 E2B loaded): see `evidence/05-gemma-genai-partial-stdout.txt` and
-  the end of this file. It drives 44 cells and asks the model in each; at 0.3 to 1 token/s it needs about an hour. Its
-  own stderr at startup carries three `WARN`s about its own card (D-18).
-* `rig-a2a-agent`, `live-model` (ten checks) and every step for Qwen3.5-2B other than the three above: not run.
+* `genai-a2a-agent` with Qwen3.5-2B, and the matrix of the Gemma run (see the row above): not saved or not run.
+  Its own stderr at startup carries three `WARN`s about its own card (D-18). At 0.3 to 1 token/s it took 38 minutes.
+* `rig-a2a-agent` (the binary had been deleted to make room for the observability images when the script reached it:
+  exit 127), `live-model` (ten checks), and every step for Qwen3.5-2B other than the three above: not run.
   `examples/live-model/README.md` records those runs on an idle box (10 of 10 checks passing for both models on
   2026-10-23); nothing here confirms or contradicts them.

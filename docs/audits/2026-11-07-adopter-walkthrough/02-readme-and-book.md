@@ -25,6 +25,14 @@ Rust (336 compiled by rustdoc, 4 `ignore`), 107 `bash`, 94 `text`, 32 `json`, 27
 | Quick Start, "Running the Echo Agent" (`cargo run -p echo-agent`) | **pass**: endpoints, "Discovered 'Echo Agent' v1.0.0 — 4 interface(s)", one sweep per binding, five counter-tests refused, 44 of 44 cells, exit 0, in 2 s | Matches the page's five-part description line by line. `--features echo-agent/tracing` was not run (the name is a real package feature: `02-commands-static.py`) |
 | Your First Agent, Steps 1 to 4 (`cargo new`, `[dependencies]` verbatim, Steps 1 to 3 as `src/main.rs`, Step 4 as `src/bin/client.rs`) | **pass with a defect**: `Result: Completed` / `Answer: 100`, as the page prints. Typed as written it prints two `unused import` warnings (finding D-4) | Fixed in this branch: `evidence/02-book-getting-started-after-fix.log` |
 
+Three more builds of the README program, for the claims the README makes about features and the toolchain:
+
+| Variant | Result |
+|---|---|
+| `a2a-protocol-sdk = { version = "0.16", default-features = false }` (the README says that opts the SDK out of rustls, logging, OpenTelemetry and the webhook receiver), `02b-readme-no-defaults.sh` | **pass**: builds in 1 m 21 s (81 packages locked, against 168 with the defaults), prints `Hello, Tom!` and `status: Completed` |
+| `a2a-protocol-types` and `serde_json` only (the README sells the types crate as "no I/O"), a message round trip | **pass**: 12 packages locked, prints `{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"hello"}]}` and the assertion holds |
+| rustc 1.94.0 (the MSRV), no lockfile, `02c-msrv.sh` | **pass**: `Locking 168 packages to latest Rust 1.94.0 compatible versions`, builds in 3 m 15 s, runs; and a `cargo check` with seven more SDK features (`grpc`, `websocket`, `sqlite`, `tool-loop`, `axum`, `signing`, `auth-jwt`) passes too |
+
 ## Compiled, not run: every other Rust block
 
 `03-book-sweep.sh default` puts the README and every page into a library crate's doc

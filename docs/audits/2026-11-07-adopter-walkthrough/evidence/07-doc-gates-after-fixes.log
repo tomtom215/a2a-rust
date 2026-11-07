@@ -49,9 +49,9 @@ check_panic_paths: runtime library code has 0 unwrap, 13 expect, 0 panic!, 0 tod
 exit: 0
 
 ##### mdbook build book -d /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/book-out
-2026-11-07 13:11:19 [INFO] (mdbook::book): Book building has started
-2026-11-07 13:11:19 [INFO] (mdbook::book): Running the html backend
-2026-11-07 13:11:22 [WARN] (mdbook::renderer::html_handlebars::search): searchindex.json is very large (11162690 bytes)
+2026-11-07 13:44:54 [INFO] (mdbook::book): Book building has started
+2026-11-07 13:44:54 [INFO] (mdbook::book): Running the html backend
+2026-11-07 13:44:56 [WARN] (mdbook::renderer::html_handlebars::search): searchindex.json is very large (11162690 bytes)
 exit: 0
 ##### python3 scripts/check_book_links.py /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/book-out
 check_book_links: 223 pages, 0 broken links

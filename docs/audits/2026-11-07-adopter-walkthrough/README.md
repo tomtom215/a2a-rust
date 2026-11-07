@@ -88,8 +88,8 @@ evidence for each fix is in `evidence/fix-*.log`.
 
 * The `docker build` of the deploy-agent image, running it and its HEALTHCHECK, the Kubernetes manifests
   against any schema (`kubectl`, `kubeconform`, `kind` and `promtool` are not installed), a pod running at all.
-* `genai-agent` and `rig-agent` end to end with both models, `live-model` with either: the box ran at 0.3 to 1
-  tokens/s; see `05-live-model.md` for what finished.
+* `genai-agent` with Qwen3.5-2B (it ran once, with Gemma 4 E2B: exit 0 in 38 minutes, final matrix not saved),
+  `rig-agent` with either model and `live-model` with either: the box ran at 0.3 to 1 token/s; see `05-live-model.md`.
 * `incident-response`, `agent-team`, `resilient-agent`, `swarm`, `mcp-agent`, `mcp-bridge`, `multi-lang-team`
   and `langfuse-agent`: neither built nor run (disk and CPU; CI runs seven of them).
 * The sweep of every book block with every feature on (the disk could not hold it; `book-tests/` does it in

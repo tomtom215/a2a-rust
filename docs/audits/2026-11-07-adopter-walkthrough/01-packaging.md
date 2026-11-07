@@ -33,11 +33,14 @@ Scripts: `scripts/live/adopter/01-package.sh`, `tarball_audit.py`,
    own `version = "0.16.0"` dependencies on its siblings resolve to the unpacked
    tarballs and not to crates.io (where 0.16.0 does not exist), no `RUSTFLAGS`, no
    lockfile from the repository. That is the README quick start, in `02-readme-and-book.md`.
-3. `03-book-sweep.sh all`: a library crate outside the repository, depending on the four
-   unpacked tarballs with **every feature on** (`grpc`, `grpc-tls`, `websocket`, `sqlite`,
-   `postgres`, `axum`, `signing`, `audit`, `tool-loop`, `auth-jwt`, `encryption`,
-   `otlp-json`, `otel-prometheus`, `conformance`, `testing`, `proto`), whose doc comments
-   are the README and every book page. See `02-readme-and-book.md` for the result.
+3. `01b-all-features-check.sh`: a library crate outside the repository depending on the four unpacked tarballs with
+   **every feature on** (`grpc`, `grpc-tls`, `websocket`, `sqlite`, `postgres`, `axum`, `signing`, `audit`,
+   `tool-loop`, `auth-jwt`, `encryption`, `otlp-json`, `otel-prometheus`, `conformance`, `testing`, `proto`), and `cargo check`:
+   **exit 0 in 5 m 35 s** (`evidence/01b-all-features-check.log`; 317 packages locked, 74 build-script directories, so the
+   protobuf build scripts ran against the vendored `protoc` from the tarballs' own `build.rs` and `proto/`). A second, smaller
+   all-feature set (`grpc`, `websocket`, `sqlite`, `tool-loop`, `axum`, `signing`, `auth-jwt`) also passed on rustc 1.94.0
+   (`02c-msrv.sh`). `cargo tree -e normal,build -i openssl-sys` and `-i openssl`, `-i native-tls`, `-i reqwest` on that
+   all-features project: none present, which is the README's "no OpenSSL" claim, checked against the tarballs.
 4. `tarball_audit.py` and `tarball_scan.py` read the `.crate` files.
 
 ## What is in the tarballs that need not be
