@@ -24,6 +24,18 @@ Which crate a table describes comes from where it sits: a crate's own README,
 or the nearest preceding heading naming a crate in backticks. A table this
 cannot attribute is an error, not a skip.
 
+Three more assertions cover where the defaults are *said* rather than tabulated
+(0.16.0 turned `tls-rustls` on by default in the server, and the Installation
+page, the README and the crate-map diagram went on saying it was the client's
+and the SDK's alone; found 2026-11-07, docs/audits/2026-11-07-adopter-walkthrough):
+
+  * a table with no Default column marks a default feature "on by default" in its
+    Description, and marks nothing else so;
+  * the Installation page's sentences `**`x` is on by default** for `crate`...`
+    name, per feature, exactly the crates whose manifest default holds it;
+  * `book/diagrams/gs-crate-map.mmd` lists each crate's `default:` features as
+    its manifest does.
+
 Usage:
     python3 scripts/check_feature_tables.py
     python3 scripts/check_feature_tables.py --self-test
@@ -98,6 +110,15 @@ def check_table(where: str, crate: str, header: list[str], rows: list[list[str]]
         problems.append(f"{where}: `{f}` is a feature of {crate} and is missing from the table")
     for f in sorted(named - features):
         problems.append(f"{where}: `{f}` is in the table but {crate} has no such feature")
+    if "default" not in header and "description" in header:
+        col = header.index("description")
+        for r in rows:
+            f = plain(r[0])
+            said = col < len(r) and "on by default" in r[col].lower()
+            if said and f not in default:
+                problems.append(f"{where}: `{f}` is described as on by default, and {crate}'s default is {sorted(default)}")
+            elif not said and f in default:
+                problems.append(f"{where}: `{f}` is on by default in {crate} and its row does not say so")
     if "default" in header:
         col = header.index("default")
         for r in rows:
@@ -135,6 +156,55 @@ def check_overview(problems: list[str]) -> None:
         problems.append(f"{OVERVIEW}:{line}: `{f}` is a feature of a published crate and is missing")
 
 
+PROSE = ROOT / "book/src/getting-started/installation.md"
+# `**`a` and `b` are on by default** for `a2a-protocol-x`, `a2a-protocol-y` and `a2a-protocol-z``
+SAID = re.compile(
+    r"\*\*((?:`[a-z-]+`(?:,?\s+and\s+|,\s+)?)+)\s+(?:is|are)\s+on\s+by\s+default\*\*\s+for\s+"
+    r"((?:`a2a-protocol-[a-z]+`(?:,?\s+and\s+|,\s+)?)+)"
+)
+DIAGRAM = ROOT / "book/diagrams/gs-crate-map.mmd"
+NODE = re.compile(r'^\s*[a-z]+\["(a2a-protocol-[a-z]+)<br/>(.*?)"\]\s*$')
+
+
+def check_prose(problems: list[str]) -> None:
+    """The Installation page's "on by default for ..." sentences, per feature."""
+    text = PROSE.read_text()
+    said: dict[str, set[str]] = {}
+    for m in SAID.finditer(text):
+        feats = re.findall(r"`([a-z-]+)`", m.group(1))
+        crates = set(re.findall(r"`(a2a-protocol-[a-z]+)`", m.group(2)))
+        for f in feats:
+            said.setdefault(f, set()).update(crates)
+    if not said:
+        raise Unreadable(f"{PROSE.relative_to(ROOT)}: no \"on by default\" sentence found; the pattern in check_feature_tables.py needs to follow the prose")
+    for f, crates in sorted(said.items()):
+        actual = {c for c in CRATES if f in manifest(c)[1]}
+        if crates != actual:
+            problems.append(
+                f"{PROSE.relative_to(ROOT)}: says `{f}` is on by default for {sorted(crates)}, "
+                f"but the manifests turn it on in {sorted(actual)}"
+            )
+
+
+def check_diagram(problems: list[str]) -> None:
+    """The crate-map diagram's `default:` lists against the manifests."""
+    seen = set()
+    for line in DIAGRAM.read_text().splitlines():
+        m = NODE.match(line)
+        if not m or "default:" not in m.group(2):
+            continue
+        crate = m.group(1)
+        listed = m.group(2).split("default:", 1)[1].replace("<br/>", " ")
+        names = {x.strip() for x in listed.split(",") if x.strip()}
+        names = set() if names == {"none"} else names
+        seen.add(crate)
+        actual = manifest(crate)[1] if crate in CRATES else None
+        if actual is not None and names != actual:
+            problems.append(f"{DIAGRAM.relative_to(ROOT)}: {crate} lists default {sorted(names)}, its manifest has {sorted(actual)}")
+    for crate in sorted(set(CRATES) - seen):
+        problems.append(f"{DIAGRAM.relative_to(ROOT)}: no `default:` line for {crate}")
+
+
 def run() -> list[str]:
     problems: list[str] = []
     for crate in CRATES:
@@ -155,6 +225,8 @@ def run() -> list[str]:
         for crate in sorted(set(CRATES) - seen):
             problems.append(f"{rel}: no feature table for {crate}")
     check_overview(problems)
+    check_prose(problems)
+    check_diagram(problems)
     return problems
 
 
@@ -165,7 +237,12 @@ def self_test() -> None:
     assert [plain(r[0]) for r in rows] == ["a", "b"]
     text = "### `a2a-protocol-client`\n\n| Feature | Description |\n|--|--|\n| `x` | y |\n\n## Other\n"
     assert feature_tables(text)[0][1] == "a2a-protocol-client"
-    print("check_feature_tables --self-test: table parsing and crate attribution pass")
+    m = SAID.search("x **`a` and `b` are on by default** for `a2a-protocol-client`, `a2a-protocol-server` and `a2a-protocol-sdk`, y")
+    assert m and re.findall(r"`([a-z-]+)`", m.group(1)) == ["a", "b"]
+    assert re.findall(r"`(a2a-protocol-[a-z]+)`", m.group(2)) == ["a2a-protocol-client", "a2a-protocol-server", "a2a-protocol-sdk"]
+    n = NODE.match('    server["a2a-protocol-server<br/>builds agents<br/>default: tracing, otel,<br/>tls-rustls"]')
+    assert n and n.group(1) == "a2a-protocol-server" and "tls-rustls" in n.group(2)
+    print("check_feature_tables --self-test: table parsing, crate attribution, prose and diagram patterns pass")
 
 
 def main() -> int:
