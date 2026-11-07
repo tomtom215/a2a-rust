@@ -96,4 +96,9 @@ impl<A: Metrics, B: Metrics> Metrics for Tee<A, B> {
         self.first.on_claim(event);
         self.second.on_claim(event);
     }
+
+    fn on_subscribe_wake(&self, cause: &str) {
+        self.first.on_subscribe_wake(cause);
+        self.second.on_subscribe_wake(cause);
+    }
 }

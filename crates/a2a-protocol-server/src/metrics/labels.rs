@@ -152,6 +152,26 @@ pub mod queue_handoff_error {
     pub const CHANNEL_CLOSED: &str = "channel_closed";
 }
 
+/// Why a `SubscribeToTask` stream stopped waiting on a task's event log, as
+/// [`Metrics::on_subscribe_wake`](crate::metrics::Metrics::on_subscribe_wake)
+/// reports it (audit E-F25 (b), ADR 0057).
+pub mod subscribe_wake {
+    /// The store said an event was appended to the task's log
+    /// ([`LogWake::Notified`](crate::store::LogWake::Notified)).
+    pub const NOTIFICATION: &str = "notification";
+    /// The store lost the source of its notifications and has it again, so it
+    /// woke every stream to look
+    /// ([`LogWake::Resynced`](crate::store::LogWake::Resynced)). A rising
+    /// count is a database connection that keeps dropping.
+    pub const RESYNC: &str = "resync";
+    /// Nothing woke the stream before its timer ran out.
+    ///
+    /// On a store with notifications, a wait nothing was appended in, or a
+    /// notification that never arrived. (A store without them reports no wake
+    /// at all.)
+    pub const TIMEOUT: &str = "timeout";
+}
+
 /// The control plane's label values (audit H11; ADR 0038 section 4).
 ///
 /// Each set is bounded, so a dashboard can list every value; no task, root,

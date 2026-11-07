@@ -218,12 +218,12 @@ async fn counted(
     counter.statements.load(Ordering::SeqCst)
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "needs a live PostgreSQL (see the module docs)"]
-async fn a_send_and_a_read_make_the_statements_they_made() {
+/// The round trips of five (new task, continuation) pairs, in a database called
+/// `name`; the store announces its event-log appends when `announce` (audit
+/// E-F25 (b)).
+async fn measure(name: &str, announce: bool) -> Vec<(usize, usize)> {
     let admin_url = std::env::var(URL_ENV).unwrap_or_else(|_| panic!("{URL_ENV} must be set"));
     let admin = sqlx::PgPool::connect(&admin_url).await.expect("connect");
-    let name = "a2a_statement_count";
     let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
         "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
     )))
@@ -241,7 +241,13 @@ async fn a_send_and_a_read_make_the_statements_they_made() {
     let port = proxy(upstream, Arc::clone(&counter)).await;
     let url = format!("{scheme_auth}@127.0.0.1:{port}/{name}");
 
-    let store = PostgresTaskStore::new(&url).await.expect("store");
+    let mut store = PostgresTaskStore::new(&url).await.expect("store");
+    if announce {
+        // The append becomes a data-modifying CTE with a `pg_notify`: still one
+        // statement, which is what this counts. No stream waits here, so the
+        // listener never starts.
+        store = store.with_log_notifications(a2a_protocol_server::store::LogListen::Pool);
+    }
     let direct_url = format!("{}/{name}", admin_url.rsplit_once('/').expect("path").0);
     let direct = sqlx::PgPool::connect(&direct_url).await.expect("direct");
     // The renewer renews held claims every second by default, and a window
@@ -280,10 +286,34 @@ async fn a_send_and_a_read_make_the_statements_they_made() {
     .execute(&admin)
     .await;
 
+    seen
+}
+
+fn assert_counts(seen: &[(usize, usize)], what: &str) {
     assert!(
         seen.iter().all(|&s| s == (NEW_TASK, CONTINUATION)),
-        "statements per (new task, continuation) send and read, five times: {seen:?}; \
+        "{what}: statements per (new task, continuation) send and read, five times: {seen:?}; \
          expected ({NEW_TASK}, {CONTINUATION}). More is a statement added to every send; \
          fewer, update the constants with the change that cut it"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs a live PostgreSQL (see the module docs)"]
+async fn a_send_and_a_read_make_the_statements_they_made() {
+    assert_counts(
+        &measure("a2a_statement_count", false).await,
+        "default store",
+    );
+}
+
+/// A store that announces its appends makes the same round trips: the notify
+/// is in the append's own statement.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs a live PostgreSQL (see the module docs)"]
+async fn an_announcing_store_makes_the_same_statements() {
+    assert_counts(
+        &measure("a2a_statement_count_notify", true).await,
+        "announcing store",
     );
 }

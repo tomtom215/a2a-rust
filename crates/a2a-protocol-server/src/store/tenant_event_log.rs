@@ -69,11 +69,28 @@ pub(super) const SQLITE_APPEND: &str = concat!(
 );
 
 #[cfg(feature = "postgres")]
+macro_rules! pg_append {
+    () => {
+        concat!(
+            "INSERT INTO tenant_task_events (tenant_id, task_id, seq, payload) SELECT $1, $2, $3, $4 WHERE ",
+            crate::store::claim::fence_sql!(postgres "$5::text", "$2"),
+            " ON CONFLICT (tenant_id, task_id, seq) DO NOTHING"
+        )
+    };
+}
+
+#[cfg(feature = "postgres")]
 /// Fenced by the turn's claim token, `$5` (`crate::store::claim`).
-pub(super) const PG_APPEND: &str = concat!(
-    "INSERT INTO tenant_task_events (tenant_id, task_id, seq, payload) SELECT $1, $2, $3, $4 WHERE ",
-    crate::store::claim::fence_sql!(postgres "$5::text", "$2"),
-    " ON CONFLICT (tenant_id, task_id, seq) DO NOTHING"
+pub(super) const PG_APPEND: &str = pg_append!();
+
+#[cfg(feature = "postgres")]
+/// [`PG_APPEND`] that also announces the append, as
+/// `postgres_store::event_log::APPEND_NOTIFY_SQL` does: channel `$6`, payload
+/// `$7`.
+pub(super) const PG_APPEND_NOTIFY: &str = concat!(
+    "WITH ins AS (",
+    pg_append!(),
+    " RETURNING 1) SELECT pg_notify($6, $7) FROM ins"
 );
 
 #[cfg(feature = "sqlite")]

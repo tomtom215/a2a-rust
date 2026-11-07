@@ -624,13 +624,26 @@ impl TaskStore for PostgresTaskStore {
             let position = seq_to_i64(seq)?;
             let payload = encode_json(event)?;
             let fence = crate::store::claim::current_fence();
+            // Announced only by a store opted in, and only for a task whose key
+            // fits a notification: the others run the plain insert.
+            let announce = self
+                .log
+                .as_ref()
+                .and_then(|_| crate::store::log_wake::key("", task_id.0.as_str()));
             let changed_nothing = crate::store::pg_retry::retry(&*self.metrics, || {
-                sqlx::query(event_log::APPEND_SQL)
-                    .bind(task_id.0.as_str())
-                    .bind(position)
-                    .bind(&payload)
-                    .bind(&fence)
-                    .execute(&self.pool)
+                let append = sqlx::query(match announce {
+                    Some(_) => event_log::APPEND_NOTIFY_SQL,
+                    None => event_log::APPEND_SQL,
+                })
+                .bind(task_id.0.as_str())
+                .bind(position)
+                .bind(&payload)
+                .bind(&fence);
+                match &announce {
+                    Some(key) => append.bind(crate::store::log_notify::CHANNEL).bind(key),
+                    None => append,
+                }
+                .execute(&self.pool)
             })
             .await
             .map_err(to_a2a_error)?
@@ -661,6 +674,10 @@ impl TaskStore for PostgresTaskStore {
             }
             Ok(())
         })
+    }
+
+    fn watch_event_log(&self, task_id: &TaskId) -> Option<crate::store::LogWatch> {
+        self.log.as_ref()?.watch("", task_id.0.as_str())
     }
 
     fn last_event_seq<'a>(

@@ -367,14 +367,27 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             // `rows_affected()` was discarded here until 0.13; see
             // `event_log_sql::report_no_op_append` for what it hid.
             let fence = crate::store::claim::current_fence();
+            // Announced only by a store opted in, and only for a task whose key
+            // fits a notification: the others run the plain insert.
+            let announce = self
+                .log
+                .as_ref()
+                .and_then(|_| crate::store::log_wake::key(&tenant, task_id.0.as_str()));
             let changed_nothing = crate::store::pg_retry::retry(&*self.metrics, || {
-                sqlx::query(evlog::PG_APPEND)
-                    .bind(&tenant)
-                    .bind(task_id.0.as_str())
-                    .bind(position)
-                    .bind(&payload)
-                    .bind(&fence)
-                    .execute(&self.pool)
+                let append = sqlx::query(match announce {
+                    Some(_) => evlog::PG_APPEND_NOTIFY,
+                    None => evlog::PG_APPEND,
+                })
+                .bind(&tenant)
+                .bind(task_id.0.as_str())
+                .bind(position)
+                .bind(&payload)
+                .bind(&fence);
+                match &announce {
+                    Some(key) => append.bind(crate::store::log_notify::CHANNEL).bind(key),
+                    None => append,
+                }
+                .execute(&self.pool)
             })
             .await
             .map_err(|e| to_a2a_error(&e))?
@@ -404,6 +417,12 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             }
             Ok(())
         })
+    }
+
+    fn watch_event_log(&self, task_id: &TaskId) -> Option<crate::store::LogWatch> {
+        self.log
+            .as_ref()?
+            .watch(&TenantContext::partition(), task_id.0.as_str())
     }
 
     fn last_event_seq<'a>(

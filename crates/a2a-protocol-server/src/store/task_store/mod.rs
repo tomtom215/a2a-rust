@@ -878,6 +878,43 @@ pub trait TaskStore: Send + Sync + 'static {
         None
     }
 
+    /// A registered wait for this task's event log to change, for a
+    /// `SubscribeToTask` stream that would otherwise read the store on a timer
+    /// (audit E-F25 (b), ADR 0057). `None`, the default, is a store that
+    /// cannot say.
+    ///
+    /// A stream on a replica that does not run the task learns of its events
+    /// by reading the log, and waits between reads. With a watch it waits on
+    /// the watch as well as on its timer, and a store that learns of every
+    /// append (the `PostgreSQL` stores, through `LISTEN`/`NOTIFY`, when
+    /// [`with_log_notifications`](crate::store::PostgresTaskStore::with_log_notifications)
+    /// is set) wakes it at once instead of at the timer's end.
+    ///
+    /// The watch is **registered when this method returns**, not when the
+    /// returned future is first polled: the stream creates it, reads the
+    /// store, and then waits, and an append made in between must wake it. It
+    /// resolves at most once, and its being dropped ends the interest. A wake
+    /// is a hint to read the store, never an answer: the stream reads again
+    /// and goes back to waiting if nothing it cares about changed. Called from
+    /// within the request's tenant scope, as the store's other methods are, so
+    /// a tenant-aware store watches the partition the stream reads.
+    ///
+    /// Synchronous, as [`hold_events`](Self::hold_events) is, and for the same
+    /// reason: it takes no I/O. A wrapper must forward it.
+    ///
+    /// # What the default costs
+    ///
+    /// Nothing is lost, and nothing is gained: a stream on a store that returns
+    /// `None` waits on its timer alone, as every release before this method
+    /// did, so an event written by another replica reaches it at the next
+    /// poll (`subscribe_reattach_interval`, backing off while the task is idle
+    /// to `subscribe_reattach_max_interval`) rather than at once. A wrapper
+    /// that does not forward the method is such a store, whatever it wraps.
+    #[allow(unused_variables)]
+    fn watch_event_log(&self, task_id: &TaskId) -> Option<crate::store::LogWatch> {
+        None
+    }
+
     /// Whether a replay starting after `after_seq` can be served in full.
     ///
     /// `false` means the log no longer holds `after_seq + 1`: the caller asked

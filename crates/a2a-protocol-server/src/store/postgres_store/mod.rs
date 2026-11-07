@@ -61,6 +61,9 @@ pub struct PostgresTaskStore {
     /// Where an append that recorded nothing is reported. See
     /// [`with_metrics`](PostgresTaskStore::with_metrics).
     metrics: crate::metrics::MetricsHandle,
+    /// Announcing and listening for event-log appends, when opted into. See
+    /// [`with_log_notifications`](PostgresTaskStore::with_log_notifications).
+    log: Option<std::sync::Arc<super::log_notify::LogNotify>>,
 }
 
 impl PostgresTaskStore {
@@ -87,6 +90,40 @@ impl PostgresTaskStore {
     #[must_use]
     pub fn with_metrics(mut self, metrics: crate::metrics::MetricsHandle) -> Self {
         self.metrics = metrics;
+        self
+    }
+
+    /// Wakes a `SubscribeToTask` stream when an event is appended to its task's
+    /// log, instead of when its timer next ends (audit E-F25 (b), ADR 0057).
+    /// Off by default: a store without it behaves exactly as it did, and its
+    /// streams poll.
+    ///
+    /// With it, each `append_event` also runs `pg_notify` (channel
+    /// [`LOG_NOTIFY_CHANNEL`](crate::store::LOG_NOTIFY_CHANNEL), payload the task
+    /// and its partition), in the same statement, and a listener on every
+    /// replica turns what it hears into wakes of the streams waiting here. The
+    /// listener starts with the first stream that waits and holds one
+    /// connection: one of this store's own pool ([`LogListen::Pool`]; size the
+    /// pool one larger), or one of its own ([`LogListen::Direct`]). **Behind a
+    /// connection pooler in transaction mode use `Direct`**, with the URL of
+    /// `PostgreSQL` itself: `LISTEN` through such a pooler corrupts other
+    /// clients' statements (see [`LogListen`]).
+    ///
+    /// Set it on every replica. A replica without it neither announces its
+    /// appends nor hears others': its events reach another replica's streams at
+    /// their next poll, and its own streams poll, which is the behaviour before
+    /// this existed. A wake is a hint to read, so a lost notification (a
+    /// listener reconnecting wakes every stream to look) costs one wait, and
+    /// the poll stays as the fallback at `subscribe_reattach_max_interval`.
+    ///
+    /// What it does not wake: a task made terminal, or cancelled, without an
+    /// event in the log (a `CancelTask` of a parked task on another replica, a
+    /// task the claim reaper ends). Those reach a waiting stream at its next
+    /// poll. Must be called inside a Tokio runtime's reach only in that the
+    /// listener starts later, from the stream; the call itself needs none.
+    #[must_use]
+    pub fn with_log_notifications(mut self, listen: super::LogListen) -> Self {
+        self.log = Some(super::log_notify::LogNotify::new(self.pool.clone(), listen));
         self
     }
 
@@ -140,6 +177,7 @@ impl PostgresTaskStore {
             pool,
             max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
             metrics: crate::metrics::MetricsHandle::default(),
+            log: None,
         })
     }
 
@@ -235,6 +273,7 @@ impl PostgresTaskStore {
             pool,
             max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
             metrics: crate::metrics::MetricsHandle::default(),
+            log: None,
         })
     }
 
@@ -345,6 +384,7 @@ mod tests {
             pool: PgPool::connect_lazy("postgres://u:p@db.internal:6543/a2a").unwrap(),
             max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
             metrics: crate::metrics::MetricsHandle::default(),
+            log: None,
         };
         assert_eq!(
             store.database(),

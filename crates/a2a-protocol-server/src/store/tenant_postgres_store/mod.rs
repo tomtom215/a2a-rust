@@ -53,6 +53,9 @@ pub struct TenantAwarePostgresTaskStore {
     /// Where an append that recorded nothing is reported. See
     /// [`with_metrics`](TenantAwarePostgresTaskStore::with_metrics).
     metrics: crate::metrics::MetricsHandle,
+    /// Announcing and listening for event-log appends, when opted into. See
+    /// [`with_log_notifications`](TenantAwarePostgresTaskStore::with_log_notifications).
+    log: Option<std::sync::Arc<super::log_notify::LogNotify>>,
 }
 
 impl TenantAwarePostgresTaskStore {
@@ -79,6 +82,20 @@ impl TenantAwarePostgresTaskStore {
     #[must_use]
     pub fn with_metrics(mut self, metrics: crate::metrics::MetricsHandle) -> Self {
         self.metrics = metrics;
+        self
+    }
+
+    /// Wakes a `SubscribeToTask` stream when an event is appended to its task's
+    /// log, instead of when its timer next ends, as
+    /// [`PostgresTaskStore::with_log_notifications`](crate::store::PostgresTaskStore::with_log_notifications)
+    /// does, whose text applies, including the advice to listen on a direct
+    /// connection ([`LogListen::Direct`](crate::store::LogListen::Direct)) behind
+    /// a connection pooler. A notification names the task and the tenant (and
+    /// caller) partition it is stored under, so a stream wakes only for its own
+    /// partition's task.
+    #[must_use]
+    pub fn with_log_notifications(mut self, listen: super::LogListen) -> Self {
+        self.log = Some(super::log_notify::LogNotify::new(self.pool.clone(), listen));
         self
     }
 
@@ -187,6 +204,7 @@ impl TenantAwarePostgresTaskStore {
             pool,
             max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
             metrics: crate::metrics::MetricsHandle::default(),
+            log: None,
         })
     }
 
@@ -294,6 +312,7 @@ mod tests {
             pool: PgPool::connect_lazy("postgres://u:p@db.internal:6543/a2a").unwrap(),
             max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
             metrics: crate::metrics::MetricsHandle::default(),
+            log: None,
         };
         assert_eq!(
             store.database(),
