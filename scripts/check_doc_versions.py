@@ -50,11 +50,31 @@ there is no `latest`). A manifest that names another version is a first run
 that cannot pull its image (audit A13), so this gate requires the tag in the
 manifest to be the workspace version, and requires exactly one such image.
 
+The README's conformance figure
+-------------------------------
+The README says how the official TCK graded this SDK twice: in the badge at the
+top and in the Project Status paragraph. The badge is a URL, nobody reads it
+while editing the prose, and on 2026-11-07 it still said 83/114 with 5 failing
+while the paragraph, updated on 2026-11-06, said 85 of 115 with 2 failing. This
+gate requires the badge's passed, total and failing counts to equal the
+paragraph's.
+
+Deprecated entry points
+-----------------------
+`serve()` and `serve_with_addr()` have been deprecated since 0.16.0 (neither can
+be stopped). Until 2026-11-07 the introduction's feature list, the README's
+feature table and the server crate's key-types table still offered them as the
+way to start a listener. A paragraph, list item or table row of current prose
+that names one of them in backticks, with parentheses, must say "deprecated";
+the migration guides, the ADR summaries and the pitfalls pages describe what was
+true and are not read.
+
 Exit codes: 0 every snippet names the current line or is allowlisted with a
-reason, every entry matches a snippet, and the manifest names this release's
-image; 1 a snippet is stale, an entry is stale or the manifest's image is not
-this release's; 2 not run from the repository root, or the allowlist is
-malformed.
+reason, every entry matches a snippet, the manifest names this release's image,
+the README's two TCK figures agree and no current prose offers a deprecated
+entry point; 1 a snippet is stale, an entry is stale,
+the manifest's image is not this release's or the figures differ; 2 not run from
+the repository root, or the allowlist is malformed.
 """
 
 from __future__ import annotations
@@ -115,6 +135,70 @@ def manifest_problem() -> str | None:
             "image the release workflow publishes for this version"
         )
     return None
+
+
+README = ROOT / "README.md"
+# `official%20TCK-83%2F114%20MUST%2C%205%20failing` (a shields.io path, URL-encoded)
+BADGE = re.compile(r"official%20TCK-(\d+)%2F(\d+)%20MUST%2C%20(\d+)%20failing")
+# `**85 of 115 MUST requirements pass and 2 fail**`
+PROSE = re.compile(r"\*\*(\d+) of (\d+) MUST requirements pass and (\d+) fail\*\*")
+
+
+def readme_figure_problem(text: str | None = None) -> str | None:
+    """Why the README's badge and Project Status paragraph disagree, if they do."""
+    text = README.read_text(encoding="utf-8") if text is None else text
+    badge, prose = BADGE.findall(text), PROSE.findall(text)
+    if len(badge) != 1 or len(prose) != 1:
+        return (
+            f"README.md: expected one TCK badge and one 'N of M MUST requirements pass and F "
+            f"fail' sentence, found {len(badge)} and {len(prose)}; this gate's patterns "
+            "(BADGE, PROSE) must follow the wording"
+        )
+    if badge[0] != prose[0]:
+        b, p = badge[0], prose[0]
+        return (
+            f"README.md: the badge says {b[0]}/{b[1]} MUST, {b[2]} failing; the Project Status "
+            f"paragraph says {p[0]} of {p[1]} pass and {p[2]} fail"
+        )
+    return None
+
+
+DEPRECATED_ENTRY = re.compile(r"`(?:serve|serve_with_addr)\(\)`")
+HISTORICAL = (
+    "book/src/reference/upgrading/",
+    "book/src/reference/adrs.md",
+    "book/src/reference/pitfalls",
+)
+
+
+def deprecated_entry_problems(files: dict[str, str]) -> list[str]:
+    """`path:line` of each block of prose that names a deprecated entry point without saying so.
+
+    A block is a table row, a list item or a paragraph (a run of non-blank lines);
+    a block that says "deprecated" anywhere is fine.
+    """
+    problems = []
+    for path, text in sorted(files.items()):
+        if not path.endswith(".md") or path.startswith(HISTORICAL):
+            continue
+        block, start = [], 0
+
+        def flush() -> None:
+            joined = "\n".join(block)
+            hit = DEPRECATED_ENTRY.search(joined)
+            if hit and "deprecated" not in joined.lower():
+                problems.append(f"{path}:{start}: names {hit.group(0)} and does not say it is deprecated")
+
+        for n, line in enumerate(text.splitlines() + [""], 1):
+            # A table row and a list item each start a block of their own.
+            if block and (not line.strip() or line.startswith("|") or re.match(r"\s*(?:[-*]|\d+\.)\s", line)):
+                flush()
+                block = []
+            if line.strip():
+                if not block:
+                    start = n
+                block.append(line)
+    return problems
 
 
 def tracked() -> list[str]:
@@ -223,16 +307,26 @@ def main() -> int:
             )
         return 1
 
-    problem = manifest_problem()
+    problem = manifest_problem() or readme_figure_problem()
     if problem:
         print(f"check_doc_versions: {problem}")
+        return 1
+
+    offered = deprecated_entry_problems(
+        {p: (ROOT / p).read_text(encoding="utf-8") for p in tracked() if p.endswith(".md")}
+    )
+    if offered:
+        print("check_doc_versions: current prose offers a deprecated entry point\n")
+        for o in offered:
+            print(f"  {o}")
+        print("\nSay it is deprecated since 0.16.0 and point at Server::bind and serve_with_shutdown.")
         return 1
 
     print(
         f"check_doc_versions: {len(found)} dependency snippet(s) across "
         f"{len({s[0] for s in found})} file(s) name the current {line} line; "
         f"{len(entries)} allowlisted as historical; the deploy-agent manifest "
-        f"names image {full_version()}"
+        f"names image {full_version()}; the README's two TCK figures agree; no current prose offers a deprecated entry point"
     )
     return 0
 

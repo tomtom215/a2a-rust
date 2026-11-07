@@ -20,7 +20,7 @@
 [![Guide](https://img.shields.io/badge/guide-a2a--rust.com-blue)](https://a2a-rust.com)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/rust-1.94%2B-orange.svg)](https://www.rust-lang.org)
-[![A2A Conformance](https://img.shields.io/badge/official%20TCK-83%2F114%20MUST%2C%205%20failing-blue)](docs/official-tck-findings.md)
+[![A2A Conformance](https://img.shields.io/badge/official%20TCK-85%2F115%20MUST%2C%202%20failing-blue)](docs/official-tck-findings.md)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tomtom215/a2a-rust/badge)](https://scorecard.dev/viewer/?uri=github.com/tomtom215/a2a-rust)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15899/badge)](https://www.bestpractices.dev/projects/15899)
 
@@ -60,7 +60,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | **State validation** | `TaskState::can_transition_to()` enforces valid state machine transitions |
 | **Rate limiting** | Built-in `RateLimitInterceptor` with fixed-window per-caller limiting |
 | **Graceful shutdown** | Ends work instead of orphaning it, and reports what it could not end. `Server::serve_with_shutdown()` stops accepting, lets in-flight tasks finish for up to `completion_grace`, cancels the rest and gives their executors `task_grace` to write a terminal event, then drains connections; its `ServeReport` counts the tasks that ignored cancellation and the connections abandoned at the deadline. The gRPC and WebSocket dispatchers' `serve_with_shutdown()` do the same, and behind Axum `RequestHandler::finish_in_flight()` runs the task phases on its own. `RequestHandler::shutdown()` then runs the executor's cleanup hook; its `ShutdownReport` counts any live stream it cut |
-| **Server startup** | `serve()` / `serve_with_addr()` start a listener in one call under `ServeConfig::default()` (header-read and idle timeouts on, no connection cap) and with no shutdown. `Server::bind()` adds what a deployment needs on top: a shutdown signal, header-read and idle timeouts, an optional `max_connections` ceiling (`ServeConfig::with_max_connections`; unbounded by default), TLS on its own listener (`with_tls`, `tls-rustls`), and traced connection errors |
+| **Server startup** | `Server::bind()` binds the listener and returns; `serve_with_shutdown()` serves until a shutdown signal, with header-read and idle timeouts on, an optional `max_connections` ceiling (`ServeConfig::with_max_connections`; unbounded by default), TLS on its own listener (`with_tls`, `tls-rustls`) and traced connection errors. The free `serve()` / `serve_with_addr()` are deprecated since 0.16.0: neither can be stopped |
 
 ### Client
 

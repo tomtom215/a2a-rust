@@ -84,7 +84,7 @@ The SDK and the SLIMRPC binding also depend on the types crate directly. The SDK
 - **Interceptor chains** — Client and server middleware for auth, logging, metrics, rate limiting
 - **Rate limiting** — Built-in `RateLimitInterceptor` with per-caller fixed-window limiting
 - **Client retry** — Configurable `RetryPolicy` with exponential backoff for transient failures
-- **Server startup helper** — `serve()` reduces ~25 lines of hyper boilerplate to one call
+- **Server startup** — `Server::bind` and `serve_with_shutdown` replace ~25 lines of hyper boilerplate and stop on a signal, draining what is in flight (the free `serve()` is deprecated since 0.16.0: it cannot be stopped)
 - **Request ID propagation** — `CallContext::request_id` auto-extracted from `X-Request-ID` header
 - **Task store metrics** — `TaskStore::count()` for monitoring and capacity management
 - **Task state machine** — `TaskState::can_transition_to` enforces the two rules the specification implies: terminal states are final, and nothing re-enters `Submitted` (or the proto default, `Unspecified`). The specification itself defines no transition matrix
