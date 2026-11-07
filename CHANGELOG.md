@@ -39,6 +39,43 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **A subscriber on another replica is woken by an append** (server; audit
+  E-F25 (b), ADR 0057; 2026-11-07). `TaskStore::watch_event_log(&TaskId) ->
+  Option<LogWatch>` is a new defaulted method (`None`: the stream polls on its
+  timer alone, as before; `AuditedTaskStore`, `TracedTaskStore` and
+  `EncryptedTaskStore` forward it). `PostgresTaskStore::with_log_notifications(LogListen)`
+  and the tenant-aware store's make each `append_event` run `pg_notify` in the
+  append's own statement (one statement: `statement_count` is still 8 and 11)
+  and start one listener, lazily, that wakes the streams waiting on the task;
+  `LogListen::Direct(url)` is the answer behind a pooler in transaction mode, as
+  for the halt store (not tested through PgBouncer). Off by default. The wait
+  stays as the fallback at `subscribe_reattach_max_interval`, and a wake never
+  makes a stream read faster than once per `subscribe_reattach_interval`. New
+  `Metrics::on_subscribe_wake(cause)` (`notification`, `resync`, `timeout`;
+  counter `a2a.server.subscribe.wakes`). **It shortens the time a stream on
+  another replica learns of an event, and does not reduce idle load:** measured
+  on two release-profile replicas and one PostgreSQL 16, 200 idle subscribers
+  cost 93 statements a second with and without it, because the timer stays as
+  the fallback; raising `subscribe_reattach_max_interval` on a fleet where every
+  replica opts in is the lever for that, and was not measured. An event written
+  on one replica ended another replica's stream during an 8 s wait in 260 ms.
+  The separate read pool the audit also proposed (E-F25 (c)) was measured and
+  not built: at 200 idle subscribers the foreground send latency was not
+  distinguishable from a run with none (ADR 0057 has the numbers and what was not
+  measured).
+
+- **Parked tasks may expire, by opt-in** (server; audit D-18, ADR 0056, amends
+  ADR 0011; 2026-11-07). `TaskStoreConfig::with_parked_task_ttl(Duration)` makes a
+  task parked in `input-required` or `auth-required` for that long evictable like
+  a finished one in the in-memory store (counted by
+  `InMemoryTaskStore::parked_evictions`). `RetentionPolicy::with_parked_max_age(Duration)`
+  makes `purge_expired` of all four SQL stores delete such a task, counted in the
+  new `PurgeReport::parked_tasks_deleted`: it deletes, it does not cancel (a
+  store-level purge cannot write the status event a stream replays, the push, the
+  audit record or the executor's cancel hook); a task with a live turn claim is
+  skipped; the idempotency-key age is raised to at least the parked age. Nothing
+  changes unless one is set.
+
 - **Agent Skills in the tool loop, without running their scripts** (ADR 0035;
   the `skills` feature of the server and the SDK, off by default, implies
   `tool-loop`, adds no dependency; 2026-11-07): `skills::SkillCatalog::discover`
@@ -2666,6 +2703,10 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **Names that disagreed with the wire methods and the crate's conventions** (audit G-15, ADR 0053), same `since` and removal: `RequestHandler::on_resubscribe` for `on_subscribe_to_task`; `RequestHandler::on_set_push_config` for `on_create_push_config`; `A2aClient::set_push_config` for `create_push_config`; `RateLimitConfig::with_window_secs(u64)` for `with_window(Duration)`; `TenantLimitsBuilder::{max_concurrent_tasks, executor_timeout, event_queue_capacity, rate_limit_rps}` for the `with_` forms. Each old name calls the new one. The table is in `book/src/reference/upgrading/0.15-to-0.16.md`.
 
 ### Known Limitations
+
+- **A status written with no event** (audit E-F25): a `CancelTask` of a parked task on one replica, and a task the claim reaper ends, write a status with no event in the log, so a subscriber on another replica learns of it at its next poll (up to `subscribe_reattach_max_interval`), also with `with_log_notifications`; measured: 2.0 s for a cancel at a 2 s ceiling.
+
+- **Parked-task expiry** (audit D-18): a parked task deleted by `parked_max_age` answers `TaskNotFound` afterwards, and a stream open on it ends without a terminal state; a continuation that read the task a moment before the sweep and takes its claim after it writes the task again, without its event log.
 
 - **Agent Skills** (ADR 0035): the catalog is a snapshot taken at start-up (no hot reload; build a new executor to pick up a change); scripts are never run; on a platform without Unix file identities (Windows) the reader's check after the open compares paths only, a hard link names any file its maker can read, and a file replaced by a FIFO between the check and the open holds one blocking-pool thread; not yet run against a live model, on Windows or on macOS.
 
