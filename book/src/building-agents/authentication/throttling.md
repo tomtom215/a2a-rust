@@ -58,14 +58,45 @@ carries a `RetryInfo` detail giving the seconds until the window ends.
 
 ## Several replicas
 
-The counts live in the memory of the replica that saw the failures. Behind a
-balancer that spreads one peer's requests over N replicas, each replica sees
-about 1/N of that peer's failures, so the peer gets up to N × `max_failures`
-guesses per window before every replica refuses it. Size `max_failures` for
-the fleet (divide the number you want by N), or throttle in the proxy in front,
-which sees every request. A counter shared through the database, as
-`RateLimitInterceptor` has with `with_shared_counter`, is not available for this
-interceptor yet (audit E-F15).
+By default the counts live in the memory of the replica that saw the failures.
+Behind a balancer that spreads one peer's requests over N replicas, each replica
+sees about 1/N of that peer's failures, so the peer gets up to N × `max_failures`
+guesses per window before every replica refuses it. Two ways to close that:
+
+- **Share the count.** `with_shared_counter` takes the same `RateLimitCounter`
+  the rate limiter takes (`PostgresRateLimitCounter` ships; see
+  [Rate limiting across replicas](../../deployment/horizontal-scaling/rate-limiting.md)):
+
+  ```rust,no_run
+  use std::sync::Arc;
+  use a2a_protocol_server::{AuthFailureThrottle, AuthFailureThrottleConfig, RateLimitCounter};
+
+  # fn build(counter: Arc<dyn RateLimitCounter>) -> Result<(), Box<dyn std::error::Error>> {
+  let throttle = AuthFailureThrottle::new(AuthFailureThrottleConfig::default())?
+      .with_shared_counter(counter);
+  # drop(throttle);
+  # Ok(())
+  # }
+  ```
+
+  Each refused credential is also counted in the counter, under the key
+  `authfail:` and the peer, and the throttle keeps the larger of its own count
+  and the total the counter reports. The counter is **not** read on a call's way
+  in, so a call with a valid credential costs no round trip; only a refused
+  credential does, and a call a replica refuses as throttled does not. The price
+  is that a replica learns the fleet has reached the limit when one of its own
+  calls fails: after the limit is reached, a peer gets at most one more refused
+  credential for each replica it has not yet failed at, plus the calls already
+  in flight, where without the counter it gets `max_failures` from each. If the
+  counter cannot be reached the failure is counted on this replica only and a
+  warning is logged, which is the per-process behaviour above. A peer beyond
+  `max_peers` on a replica is not counted anywhere. The throttle and the rate
+  limiter can share one `PostgresRateLimitCounter` and its table even though
+  their windows differ (300 s and 60 s by default): each row records the width
+  it was counted in, and a sweep removes only its own width's rows.
+- **Size it for the fleet.** Divide the number of guesses you want by N and set
+  `max_failures` to that, or throttle in the proxy in front, which sees every
+  request.
 
 ## Who counts as a peer
 

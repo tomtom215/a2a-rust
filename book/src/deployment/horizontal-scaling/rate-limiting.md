@@ -125,6 +125,16 @@ older ones, cannot delete a window another replica is still counting in. A
 shares, can do the same; one with no clock of its own should count under the
 `window` it is given.
 
+Window numbers of different widths are not comparable, and the limiter (60 s by
+default) and `AuthFailureThrottle` (300 s) can share one counter and its table.
+So each row records the width it was numbered under (`window_secs`), and a sweep
+removes its own width's stale rows and leaves the others. Before 0.16.0 a sweep
+numbered the cut-off by its own width and deleted every other width's live rows:
+measured, a 60 s sweep removed a 300 s row whose count was 3. A table made by an
+earlier release gains the column when the counter starts, and the rows that
+record no width are removed by the first sweep, which forgets a window or two of
+counts once.
+
 The `Retry-After` on a refusal is still computed from the replica's own clock,
 so with a skewed replica it can be off by the skew.
 

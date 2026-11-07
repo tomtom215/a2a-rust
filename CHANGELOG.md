@@ -38,6 +38,43 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`ClientBuilder::with_blocking_over_stream`: a long blocking send behind a
+  load balancer** (client; audit B-11, option 2; 2026-11-07). Off by default.
+  With it on, `send_message` to an agent whose card declares streaming is sent
+  as `SendStreamingMessage`, read until the task is terminal or interrupted (or
+  the agent answers with one `Message`), and answered with the task as the agent
+  stores it: a `GetTask` with the send's `history_length`, repeated for about
+  three seconds while the store is one event behind the stream, and
+  `ClientError::InvalidAgentResponse` if it never reaches the state the stream
+  ended on. The stream's keep-alive comments (every 30 s by default) cross a
+  balancer that cuts a connection silent for 60 s; a blocking send's silence
+  does not. The answer is read back and not folded from the events because the
+  agent's own blocking answer applies rules (artifact chunks, history, a task
+  finished by another writer) that a second implementation in the client would
+  disagree with somewhere. A client with no card, a send with
+  `return_immediately`, and an agent whose card does not declare streaming are
+  sent as before; `with_send_timeout` bounds the whole send; interceptors,
+  spans and metrics see `SendStreamingMessage` and `GetTask`, not
+  `SendMessage`. Tested against this repository's server behind a proxy that
+  closes a connection after 600 ms of silence: the plain blocking send is cut on
+  JSON-RPC and HTTP+JSON and the carried one is not, and for a task that
+  completes, fails and is interrupted its answer equals a plain blocking send's
+  (`tests/blocking_over_stream_e2e.rs`). The book's "Behind a load balancer"
+  page has it as remedy 3.
+
+- **`AuthFailureThrottle::with_shared_counter`: the failed-authentication limit
+  across replicas** (server; audit E-F15; 2026-11-07). It takes the
+  `RateLimitCounter` the rate limiter takes (`PostgresRateLimitCounter` ships).
+  A failed credential is counted there under `authfail:<peer>` when its call
+  ends, and the throttle keeps the larger of its own count and the total the
+  counter reports. The counter is not read on a call's way in, so a call with a
+  valid credential costs no round trip; the price is that a replica learns the
+  fleet has reached the limit only when one of its own calls fails, so after
+  the limit is reached a peer gets at most one more failed call per replica that
+  has not yet failed, plus the calls in flight (a test pins the bound with two
+  replicas). A counter that fails leaves per-process throttling and logs a
+  warning. A peer beyond `max_peers` on a replica is not counted anywhere.
+
 - **An RFC requirements ledger and a CI gate for it** (`docs/compliance/rfc-ledger.json`,
   `scripts/check_rfc_ledger.py`; 2026-11-06). One row for each MUST, SHOULD and
   MAY of RFC 7515 (JWS), RFC 7519 (JWT) and RFC 8725 (JWT best practice), 152 in
@@ -76,8 +113,9 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `send_message` that outlasts a balancer's idle timeout (60 s on an AWS ALB
   and in nginx by default; the client waits up to ten minutes) is answered
   `504` while the task runs on, and the client never learns its id. The page
-  gives the three remedies (send with `return_immediately` and poll, stream,
-  raise the balancer's timeout), says why a long-lived HTTP/2 connection is
+  gives the four remedies (send with `return_immediately` and poll, stream,
+  let the client stream for you with `with_blocking_over_stream`, raise the
+  balancer's timeout), says why a long-lived HTTP/2 connection is
   pinned to one replica behind a layer-4 balancer, and what an HTTP/2 PING
   does and does not cross. Linked from the client builder and CLI pages.
 
@@ -1509,6 +1547,38 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **The shared PostgreSQL rate-limit counter's sweep deleted another
+  component's live rows** (server, `postgres`; found while building E-F15,
+  2026-11-07). The sweep removed rows older than the previous window **as the
+  calling component numbered windows**, across the whole `a2a_rate_limit`
+  table, and the rate limiter (60 s by default) and `AuthFailureThrottle`
+  (300 s) share it. Measured in plain SQL with the module's own statements: a
+  60 s sweep deleted a 300 s row whose count was 3. Rows now record
+  `window_secs` (added to an existing table by a guarded statement at start-up;
+  a row from an earlier release records none and any sweep removes it, which
+  forgets a window or two of counts once), and a sweep removes its own width's
+  stale rows and leaves the others. Two replicas with different window widths
+  on one counter were affected in 0.15.0 as well. Six hand mutants of the SQL
+  (baseline first) are each killed by one of the new live-database tests.
+
+- **The stream of a streaming send whose executor panics ends with the `failed`
+  state** (server; audit D-03 d, F14). The panic already stored `failed`,
+  pushed it and logged it, but the stream a `SendStreamingMessage` client reads
+  is fed by the executor's queue, which the unwind closes with the task's last
+  state still `working`, and the stream just ended: also how a dropped
+  connection looks, so a client had to guess and call `GetTask`. Reproduced
+  first, on a current-thread and a multi-thread runtime, as the frames
+  `Task(submitted)`, `StatusUpdate(working)` and then nothing. When the queue
+  closes with no terminal state delivered and the last state not
+  `input-required` or `auth-required` (an executor that returns there ends its
+  stream rightly), the reader now asks the handler for the task's stored
+  terminal state, polling the store every 20 ms for `executor_drain_timeout`
+  plus `subscribe_replay_catchup` (7 s by default), and sends it as the last
+  frame; a task that is still not terminal then ends the stream as before.
+  Every binding hands the reader `on_send_message` returns to its own framing
+  (read from the code; the test drives the handler, not each binding).
+  `SubscribeToTask` is unchanged (it already reattaches).
+
 - **A `304` no longer makes a cached agent card forget its lifetime** (RFC 9111
   §4.3.4, §3.2). `CachingCardResolver` read a revalidated card's freshness from
   the `304`'s own headers alone, so an origin or proxy that left `Cache-Control`
@@ -1614,13 +1684,11 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   delegation share one deadline of that bound, so a journal that has stopped
   answering holds the delegation up for 5 s there and no longer. The tests run
   in paused time and pin each bound to the millisecond.
-- **`AuthFailureThrottle`'s per-replica budget is documented** (audit E-F15,
-  interim): the counts are per process, so N replicas behind a balancer give a
-  peer up to N times `max_failures` guesses a window. The throttling page and
-  the type's rustdoc say so and say to size `max_failures` for the fleet or
-  throttle in the proxy in front. A counter shared through the database, as
-  `RateLimitInterceptor` has, is not built: the `RateLimitCounter` trait has no
-  read without counting, which the throttle's check before the call needs.
+- **`AuthFailureThrottle`'s per-replica budget is documented, and can be
+  shared** (audit E-F15): without a shared counter the counts are per process,
+  so N replicas behind a balancer give a peer up to N times `max_failures`
+  guesses a window. The throttling page and the type's rustdoc say so; see
+  `AuthFailureThrottle::with_shared_counter` under Added for the fix.
 
 - **The audit log's per-chain locks no longer pile up** (server; audit
   D-19). The map of append locks gained an entry per distinct chain name and
@@ -2064,9 +2132,10 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `Failed` a panic stores is also recorded in the event log, which only the
   push had. `tests/executor_panic_terminal.rs` failed 31 of 40 runs before and
   0 of 40 after; the ordering is fixed deterministically in
-  `queue_close_tests` (four hand edits of the wait each fail a test). Open:
-  a `SendStreamingMessage` stream whose executor panics still closes without a
-  terminal frame (D-03 d).
+  `queue_close_tests` (four hand edits of the wait each fail a test). The
+  `SendStreamingMessage` stream of a task whose executor panics ended without
+  a terminal frame (D-03 d); it now ends with the `failed` state, see the entry
+  below.
 - **A cancel taken by another replica was never pushed or logged, and a
   blocking send could answer `working` for a task stored `canceled`** (server;
   audit E-F9, NEW-e-2). `CancelTask` on a replica that does not run the task
