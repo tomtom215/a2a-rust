@@ -14,6 +14,13 @@ Built from this checkout (`cargo build -p a2a-cli`, `RUSTFLAGS=-D warnings`, deb
 server-only mode (`A2A_BIND_ADDR=127.0.0.1:3111`, JSON-RPC and HTTP+JSON on one
 port, as `tools/a2a-cli/README.md` says).
 
+## Install
+
+The book's command, as written, `cargo install --path tools/a2a-cli` (no `--locked`, so Cargo resolves
+the tree afresh instead of reading `Cargo.lock`; `--debug` only to save disk, `04a-cli-install.sh`):
+**built in 3 m 51 s, installed, and `a2a --version` printed `a2a 0.16.0`.** Cargo said `Locking 230
+packages to highest Rust 1.94 compatible versions`: the workspace's `rust-version` steers the resolver.
+
 ## Subcommands run
 
 `card`, `card sign`, `card verify`, `audit verify`, `send` (default, `--binding rest`,
@@ -67,10 +74,16 @@ See `README.md` in this directory for the ranked list. In order of what a strang
   kernel's 128 KiB single-argument limit: 100,000 bytes worked, 200,000 bytes fails with the
   shell's `Argument list too long` before `a2a` starts. `a2a send URL -` sends the text
   `-`, not stdin. Nothing says so.
-* **D-12 (low).** `--timeout` does not bound a stream that has started: a server that sent
-  one event and went silent held `a2a stream ... --timeout 3` until the library's idle
-  timeout (5 minutes by default, `with_stream_idle_timeout`; see `04b` for the measured time).
-  The CLI exposes no flag for it and the README does not mention it.
+* **D-12 (low).** `--timeout` does not bound a stream that has started. A server that sent one event
+  and went silent held `a2a stream ... --timeout 3` for exactly 300 s (`evidence/04c-cli-followup-rerun.log`),
+  the library's idle timeout (`with_stream_idle_timeout`), and then it exited 1 with a good message
+  (`stream idle timeout: no data, not even a keep-alive comment, for 300s since the last data received; the
+  task on the server is not cancelled, so resubscribe to continue`). The CLI exposes no flag for it and neither
+  README mentions it. SIGINT during that stream, and during a blocking send to a half-open peer, ends the
+  process at once (killed by the signal, no output after it).
+* **D-13 (polish).** That idle-timeout error was followed by the "agent card named another URL, pass
+  `--binding`" hint (`connect/route.rs`: any `Timeout` on a card-routed call to an endpoint other than the typed URL),
+  which is wrong for a stream that was connected and had delivered an event.
 * `task list --page-token '!!!'` answers `{"tasks":[],"nextPageToken":"","pageSize":0,"totalSize":0}`
   and exit 0, although the task list holds six: a bad or expired cursor reads as "no more
   tasks". Deliberate in the in-memory store (a comment says so); listed under "needs a decision".

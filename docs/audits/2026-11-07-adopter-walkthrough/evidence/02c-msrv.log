@@ -1,0 +1,29 @@
+rustc 1.94.0 (4a4ef493e 2026-03-02)
+cargo 1.94.0 (85eff7c80 2026-01-15)
+project: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/msrv-readme
+target:  /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/msrv-readme/target
+    Updating crates.io index
+     Locking 168 packages to latest Rust 1.94.0 compatible versions
+      Adding matchit v0.8.4 (available: v0.8.6)
+    Finished `dev` profile [unoptimized] target(s) in 3m 15s
+build exit: 0
+Hello, Tom!
+artifact: 76df8aec-fbec-4774-96bc-89d25898d1c8
+status: Completed
+--- the same project with every default feature of the SDK and the tool-loop, grpc, websocket, sqlite features (what a larger adopter enables)
+      Adding url v2.5.8
+      Adding utf8_iter v1.1.0
+      Adding utf_types v1.0.0
+      Adding vcpkg v0.2.15
+      Adding version_check v0.9.5
+      Adding writeable v0.6.4
+      Adding x509-parser v0.18.1
+      Adding yoke v0.8.4
+      Adding yoke-derive v0.8.4
+      Adding zerofrom v0.1.8
+      Adding zerofrom-derive v0.1.8
+      Adding zerotrie v0.2.5
+      Adding zerovec v0.11.9
+      Adding zerovec-derive v0.11.7
+    Finished `dev` profile [unoptimized] target(s) in 3m 45s
+check exit: 0
