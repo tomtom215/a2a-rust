@@ -40,14 +40,23 @@ pub const TRACE_ARTIFACT_ID: &str = "tool-trace";
 /// refused as an invalid request.
 ///
 /// A run that ends without an answer fails the task with the failure-class
-/// extension (`a2a_protocol_types::failure`): `internal` when the model
-/// provider failed or a tool returned [`ToolError::Fatal`], and
-/// `budget-exhausted` when the model was still calling tools at the turn
-/// bound or the caller's budget (`RequestContext::budget`, ADR 0023) ran
-/// out, its token usage charged to the `tokens` meter. The status message
-/// says which, in words. Cancellation ends the run
-/// at the next turn or call, with nothing written: the cancel path writes
-/// `Canceled`.
+/// extension (`a2a_protocol_types::failure`): `transient` when the model
+/// provider may come back (HTTP 429, 502, 503 or 504, a timeout, no
+/// connection), `internal` for any other provider failure or a tool that
+/// returned [`ToolError::Fatal`], `budget-exhausted` when the model was
+/// still calling tools at the turn bound, the caller's budget
+/// (`RequestContext::budget`, ADR 0023) ran out (its token usage charged to
+/// the `tokens` meter), or the model hit its output limit before writing
+/// any text, and `policy-refusal` when the provider's content filter
+/// withheld the answer. A final reply with no text is such a run
+/// ([`LoopError::EmptyAnswer`]). The status message says which, in words.
+/// Cancellation ends the run at the next turn or call, with nothing
+/// written: the cancel path writes `Canceled`.
+///
+/// A reply that has text but stopped at the output limit completes the task:
+/// the answer artifact's metadata and the `Completed` status message both
+/// carry [`FINISH_REASON_METADATA_KEY`], so a caller can tell a cut-off
+/// answer from one that ended by itself.
 ///
 /// Each run's call keys are scoped to the task and the message it answers
 /// (ADR 0026): another message to the same task is new work, with new keys.

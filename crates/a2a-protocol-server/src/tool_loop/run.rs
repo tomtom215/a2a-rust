@@ -152,7 +152,10 @@ impl ToolLoop {
 
     /// Sends `user_text` and runs turns until the model answers without a
     /// call. `cancel` is checked before each turn and each call, and a turn
-    /// or call in progress is abandoned when it fires.
+    /// or call in progress is abandoned when it fires. An answer is a final
+    /// reply with text: an empty or blank one is
+    /// [`LoopError::EmptyAnswer`], and one cut off at the model's output
+    /// limit is an [`Answer`] whose [`truncated`](Answer::truncated) is true.
     ///
     /// # Errors
     ///
