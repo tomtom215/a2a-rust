@@ -35,9 +35,40 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **Shipping:** a signed `deploy-agent` image on GHCR with build provenance, a card that reports its version, and retention of finished tasks; OpenTelemetry export through proxies with gzip, console and Prometheus exporters, resource detection and lost-export warnings; WebSocket connections that detect a dead peer.
 - **Serving and API shape:** every listener has one graceful `serve_with_shutdown` and takes `ServeConfig` (the axum router now runs on `Server`), `EventStream` is a `futures_core::Stream`, a one-shot agent answers with `complete_with_text`, and 23 names are deprecated (26 in the release, counting the ones under `### Deprecated` that this package did not add), to be removed no earlier than 0.17.0.
 - **Agent Skills in the tool loop** (`skills` feature, ADR 0035): a directory of `SKILL.md` becomes a catalog in the system prompt, `activate_skill` and a confined `read_skill_file`, and no script is ever run.
-- **Not in this release:** steering (ADR 0036), the parts listed under Known Limitations, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
+- **Steering a running task** (ADR 0036, opt-in): a message to a `working` task goes into a bounded inbox the executor reads, across replicas through the claim store, with `Delegation::steer` and `steer_all` on the client.
+- **Not in this release:** the parts listed under Known Limitations, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
 
 ### Added
+
+- **Steering a running task, opt-in** (ADR 0036; 2026-11-07).
+  `RequestHandlerBuilder::with_steering(SteeringConfig)` lets a client send a message to a
+  task that is `working`: a `SendMessage` that names the task and lists
+  `https://a2a-rust.com/extensions/steering/v1` is put in the running turn's bounded inbox
+  (default 16 messages of at most 64 KiB), which the executor reads with
+  `RequestContext::inbox()`. It passes the same interceptors, authorization, rate limit,
+  validation and halt checks as any send. A full inbox is `503` with `Retry-After` (never a
+  silent drop, never a wait), an oversize message is `413`, and an idempotency key makes a
+  retry answer `replayed`. On several replicas the message is stored through the turn-claim
+  store for the replica that holds the claim, which moves it into the inbox
+  (`SteeringConfig::with_notifications` adds `LISTEN`/`NOTIFY` on PostgreSQL). Peers that do
+  not declare the extension get exactly the refusal they always did, and an executor that
+  never reads its inbox is unaffected. The card declares the extension only when steering is
+  on. `ToolLoopExecutor::with_steering` reads the inbox between model steps;
+  `Delegation::steer`, `SteerHandle` and `steer_all` steer one or many delegated tasks (an
+  outcome per child, waits for all). Observability: counter `a2a.server.steering` by outcome,
+  a span event, and the audit record `task.steered`. Measured on two server processes and one
+  PostgreSQL 16 (`scripts/live/steering/`, one run each on a loaded machine): a message
+  handed to the other replica was read by the executor 0.85 to 1.04 s after it was sent (the
+  one-second look), 157 ms with notifications against 2.9 s without. The message is not
+  written to `Task.history`: the running turn saves the task whole and would overwrite it,
+  so the audit record is the record of who steered what, which departs from the ADR's first
+  draft. Book: "Steering a running task".
+  **For implementors of `TurnClaimStore` and `Metrics`:** `TurnClaimStore` gains four
+  defaulted methods (`hand_steering`, `peek_steering`, `ack_steering`, `steering_signals`; a
+  store overriding one of the first three should override all of them, and
+  `scripts/check_store_delta_forwarding.py` now checks it) and `Metrics` gains the defaulted
+  `on_steering`. A claim store that does not override them answers steering sent to another
+  replica's turn with a refusal that says why.
 
 - **A subscriber on another replica is woken by an append** (server; audit
   E-F25 (b), ADR 0057; 2026-11-07). `TaskStore::watch_event_log(&TaskId) ->
@@ -2703,6 +2734,8 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **Names that disagreed with the wire methods and the crate's conventions** (audit G-15, ADR 0053), same `since` and removal: `RequestHandler::on_resubscribe` for `on_subscribe_to_task`; `RequestHandler::on_set_push_config` for `on_create_push_config`; `A2aClient::set_push_config` for `create_push_config`; `RateLimitConfig::with_window_secs(u64)` for `with_window(Duration)`; `TenantLimitsBuilder::{max_concurrent_tasks, executor_timeout, event_queue_capacity, rate_limit_rps}` for the `with_` forms. Each old name calls the new one. The table is in `book/src/reference/upgrading/0.15-to-0.16.md`.
 
 ### Known Limitations
+
+- **Steering** (ADR 0036): a replica that has just died keeps its claim until the claim's time to live, and a steering message handed off in that window is accepted (`handed-off` means stored for the holder, not read) and never read; steering messages are not written to `Task.history`; the tests drive JSON-RPC and HTTP+JSON, and gRPC and WebSocket carry a steering message as any `SendMessage` without a test of their own; the two-process proof is Linux-only and not in CI.
 
 - **A status written with no event** (audit E-F25): a `CancelTask` of a parked task on one replica, and a task the claim reaper ends, write a status with no event in the log, so a subscriber on another replica learns of it at its next poll (up to `subscribe_reattach_max_interval`), also with `with_log_notifications`; measured: 2.0 s for a cancel at a 2 s ceiling.
 
