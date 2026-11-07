@@ -238,7 +238,8 @@ fn the_wrappers_forward_the_control_hooks() {
             self.0.fetch_add(1000, std::sync::atomic::Ordering::SeqCst);
         }
         fn on_subscribe_wake(&self, _: &str) {
-            self.0.fetch_add(10_000, std::sync::atomic::Ordering::SeqCst);
+            self.0
+                .fetch_add(10_000, std::sync::atomic::Ordering::SeqCst);
         }
         fn on_steering(&self, _: &str) {
             self.0
