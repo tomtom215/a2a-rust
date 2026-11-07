@@ -342,7 +342,7 @@ How a client spreads calls over the endpoints of an `EndpointSource`
 | `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Off | Axum framework integration (`RestRouter`) |
 | `tool-loop` | Off | Tool calling inside a task: `tool_loop::ToolLoop`, `ToolLoopExecutor`, `OpenAiChatModel` |
-| `skills` | Off | Agent Skills in the tool loop, scripts never run: `skills::SkillCatalog`, `ToolLoop::with_skills` (ADR 0035; implies `tool-loop`) |
+| `skills` | Off | Agent Skills in the tool loop, scripts never run: `skills::SkillCatalog`, `ToolLoopExecutor::with_skills` (ADR 0035; implies `tool-loop`) |
 | `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
 | `encryption` | Off | Encryption at rest for task content (`EncryptedTaskStore`) |
 | `audit` | Off | Tamper-evident audit trail (`RequestHandlerBuilder::with_audit`, ADR 0015): calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, signed checkpoints, legal holds, a six-month retention floor; SQLite/PostgreSQL audit stores with those features |

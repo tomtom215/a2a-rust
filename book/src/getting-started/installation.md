@@ -106,7 +106,7 @@ feature, and are left out. `skills` turns on `tool-loop` and is not drawn:
 | `conformance` | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Axum framework integration (`RestRouter`) |
 | `tool-loop` | Tool calling inside a task: `tool_loop::ToolLoop`, `ToolLoopExecutor` and the chat-completions client `OpenAiChatModel` |
-| `skills` | Agent Skills in the tool loop, scripts never run: `skills::SkillCatalog` and `ToolLoop::with_skills` (ADR 0035; implies `tool-loop`) |
+| `skills` | Agent Skills in the tool loop, scripts never run: `skills::SkillCatalog` and `ToolLoopExecutor::with_skills` (ADR 0035; implies `tool-loop`) |
 | `auth-jwt` | JWT bearer-token authentication (`JwtAuthInterceptor`) |
 | `encryption` | Encryption at rest for task content (`EncryptedTaskStore`) |
 | `audit` | Tamper-evident audit trail (`RequestHandlerBuilder::with_audit`, ADR 0015): calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, signed checkpoints, legal holds, a six-month retention floor; SQLite/PostgreSQL audit stores with those features |
