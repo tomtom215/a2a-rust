@@ -41,9 +41,10 @@ This is useful when:
 ## Feature Flags
 
 Features are off by default to minimize compile times and dependency trees, with
-these exceptions. **`tls-rustls` is on by default** for `a2a-protocol-client`
-and `a2a-protocol-sdk`, because the A2A spec serves agents over HTTPS and the
-client (and the bundled push sender) must reach them out of the box.
+these exceptions. **`tls-rustls` is on by default** for `a2a-protocol-client`,
+`a2a-protocol-server` and `a2a-protocol-sdk`, because the A2A spec serves agents
+over HTTPS and the client, the bundled push sender and the server's JWKS, OIDC
+and model-endpoint fetches must reach them out of the box.
 **`tracing` and `otel` are on by default** for `a2a-protocol-client`,
 `a2a-protocol-server` and `a2a-protocol-sdk`, so a default build logs through,
 and records OpenTelemetry spans and metrics with, whatever `tracing` subscriber
@@ -93,7 +94,7 @@ feature, and are left out:
 |---------|-------------|
 | `signing` | Forwards `a2a-protocol-types/signing`; adds `RequestHandlerBuilder::with_content_signer`, which signs every artifact, status message and direct reply the server sends, not a task's history (ADR 0027). The server never signs or verifies the card it serves: sign it with `sign_card_es256` before handing it to the builder |
 | `tracing` | Structured logging via the `tracing` crate (on by default) |
-| `tls-rustls` | HTTPS delivery for the bundled push-notification sender; HTTPS on the server's own listener (`Server::with_tls`, `Server::with_tls_pem`); `MutualTlsAuthInterceptor`, which names a caller from its client certificate (also available with `grpc-tls`) |
+| `tls-rustls` | HTTPS delivery for the bundled push-notification sender; HTTPS on the server's own listener (`Server::with_tls`, `Server::with_tls_pem`); `MutualTlsAuthInterceptor`, which names a caller from its client certificate (also available with `grpc-tls`); on by default since 0.16.0 |
 | `sqlite` | SQLite-backed task and push config stores via `sqlx` |
 | `postgres` | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | WebSocket transport via `tokio-tungstenite` |

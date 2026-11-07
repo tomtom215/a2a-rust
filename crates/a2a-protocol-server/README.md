@@ -131,7 +131,7 @@ println!("{report:?}");
 | `InMemoryTaskStore` | Default in-memory store |
 | `ServerInterceptor` | Trait -- `before` / `after` / `on_complete` (runs on every outcome) |
 | `RateLimitInterceptor` | Fixed-window per-caller rate limiting |
-| `serve()` | Shortest path: default timeouts, no connection cap, no shutdown |
+| `serve()` | Deprecated since 0.16.0: default timeouts, no connection cap, and nothing can stop it. Use `Server` |
 | `Server` + `ServeConfig` | Production listener: timeouts, optional connection cap, TLS (`tls-rustls`), graceful shutdown, `ServeReport` |
 
 ## Features

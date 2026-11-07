@@ -1,0 +1,56 @@
+##### installation-verify
+project: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/installation-verify
+target:  /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/installation-verify/target
+    Updating crates.io index
+     Locking 174 packages to highest Rust 1.99.1 compatible versions
+      Adding matchit v0.8.4 (available: v0.8.6)
+    Finished `dev` profile [unoptimized] target(s) in 2m 18s
+     Running `/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/_gs-target/debug/installation-verify`
+Task state: Submitted
+Part: Part { content: Text("Hello, A2A!"), metadata: None, filename: None, media_type: None }
+Capabilities: AgentCapabilities { streaming: Some(true), push_notifications: Some(false), extensions: None, extended_agent_card: None }
+exit: 0
+##### quickstart-hello
+project: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/quickstart-hello
+target:  /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/quickstart-hello/target
+    Updating crates.io index
+     Locking 174 packages to highest Rust 1.99.1 compatible versions
+      Adding matchit v0.8.4 (available: v0.8.6)
+    Finished `dev` profile [unoptimized] target(s) in 3.63s
+--- curl from the page
+{"jsonrpc":"2.0","id":1,"result":{"task":{"artifacts":[{"artifactId":"a607dfa7-4063-4b33-af30-0ff94c531bea","parts":[{"text":"Hello, Tom!"}]}],"contextId":"506f7ef3-2205-4e9c-90d8-7dfc183d6a88","id":"f5ffa6df-e086-458d-af72-bda2aede6f6a","status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-11-07T12:07:55.898Z"}}}}
+--- without the A2A-Version header (the page says VERSION_NOT_SUPPORTED)
+{"jsonrpc":"2.0","id":1,"error":{"code":-32009,"message":"A2A version '0.3' is not supported by this server; expected '1.0' (send the A2A-Version header)","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"VERSION_NOT_SUPPORTED"}]}}
+--- SIGTERM
+exit after SIGTERM: 0
+##### my-agent
+project: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/my-agent
+target:  /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/my-agent/target
+    Updating crates.io index
+     Locking 174 packages to highest Rust 1.99.1 compatible versions
+      Adding matchit v0.8.4 (available: v0.8.6)
+warning: unused import: `a2a_protocol_sdk::prelude::*`
+  --> src/main.rs:46:5
+   |
+46 | use a2a_protocol_sdk::prelude::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `a2a_protocol_sdk::prelude::*`
+  --> src/main.rs:59:5
+   |
+59 | use a2a_protocol_sdk::prelude::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `my-agent` (bin "my-agent") generated 2 warnings (run `cargo fix --bin "my-agent" -p my-agent` to apply 2 suggestions)
+    Finished `dev` profile [unoptimized] target(s) in 4.69s
+--- cargo run --bin client
+    Finished `dev` profile [unoptimized] target(s) in 0.25s
+     Running `/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/_gs-target/debug/client`
+Result: Completed
+Answer: 100
+exit: 0
+agent exit: 0
+--- agent stdout/stderr
+Calculator agent listening on http://127.0.0.1:3000

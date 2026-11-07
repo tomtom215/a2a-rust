@@ -10,6 +10,7 @@ Enable the `sqlite` feature for a production-ready persistent store:
 ```toml
 [dependencies]
 a2a-protocol-server = { version = "0.16", features = ["sqlite"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
 ```rust,no_run

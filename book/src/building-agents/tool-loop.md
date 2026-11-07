@@ -22,6 +22,8 @@ The feature is off by default:
 ```toml
 [dependencies]
 a2a-protocol-sdk = { version = "0.16", features = ["tool-loop"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde_json = "1"
 ```
 
 It adds nothing to a default build's dependency graph: the model client runs

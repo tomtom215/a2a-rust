@@ -1,0 +1,30 @@
+--- deploy-agent over PostgreSQL: /ready -> 200
+2026-11-07T13:23:35.968179Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: traces → otlp http/protobuf http://localhost:4318/v1/traces; metrics → otlp http/protobuf http://localhost:4318/v1/metrics; logs → otlp http/protobuf
+2026-11-07T13:23:35.968339Z  INFO deploy_agent: connecting to PostgreSQL database=postgres://postgres:***@localhost:5432/postgres from="A2A_DATABASE_URL"
+2026-11-07T13:23:35.968356Z  INFO deploy_agent: PostgreSQL pools: 12 connections per replica; PostgreSQL's max_connections must exceed that times the replicas, a surge pod included task_pool=10 push_pool=2
+2026-11-07T13:23:36.368544Z  INFO deploy_agent: tasks and push configs in PostgreSQL; replicas may share it
+2026-11-07T13:23:36.368600Z  INFO deploy_agent: finished tasks are deleted this long after their last update; TASK_RETENTION_HOURS changes it, 0 keeps everything hours=168
+2026-11-07T13:23:36.369333Z  INFO deploy_agent: deploy-agent serving JSON-RPC and HTTP+JSON listening=0.0.0.0:8081 advertising=http://127.0.0.1:8081
+--- GenAI: tool-loop-agent x15 (tool call then answer) and x3 (a 500 from the provider), exporting OTLP
+--- store operations: 40 rounds of send / get / list over PostgreSQL
+--- the panel checker again
+prometheus: 42 rules checked
+a2a-client.json: 5 queries
+a2a-genai.json: 21 queries
+a2a-server.json: 22 queries
+FAIL recording rule a2a:rpc_client_error_ratio:rate5m: no series
+FAIL recording rule a2a:rpc_server_errors:rate5m: no series
+FAIL recording rule a2a:rpc_server_cancelled:rate5m: no series
+FAIL recording rule a2a:rpc_server_error_ratio:rate5m: no series
+FAIL recording rule a2a:push_deliveries:rate5m: no series
+FAIL recording rule a2a:push_delivery_failure_ratio:rate5m: no series
+FAIL recording rule a2a:store_retries:rate5m: no series
+FAIL recording rule a2a:executor_failure_ratio:rate5m: no series
+FAIL a2a-client.json / Failed calls (ratio), by agent: no data
+FAIL a2a-server.json / Failed calls (ratio): no data
+FAIL a2a-server.json / Failed calls per second, by method and binding: no data
+FAIL a2a-server.json / Persistence errors: no data
+FAIL a2a-server.json / Push deliveries, by outcome: no data
+FAIL a2a-server.json / Store operations per second, by operation and outcome: no data
+FAIL a2a-server.json / Store operation duration (p95), by operation: no data
+check_dashboards: FAILED

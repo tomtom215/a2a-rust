@@ -8,6 +8,8 @@ process and wrong for two: each replica admits the full configured rate, so
 **N replicas admit N times the limit**. Two limiters configured for 5 requests
 per window admit 10 — measured, not inferred.
 
+> **Cargo feature.** `PostgresRateLimitCounter` needs the `postgres` feature: `a2a-protocol-sdk = { version = "0.16", features = ["postgres"] }`, or `a2a-protocol-server = { version = "0.16", features = ["postgres"] }` on its own.
+
 If the limiter exists to protect an upstream with a real quota, that is the
 whole point of it defeated, and it fails in the direction that matters least
 when you have one replica and most when you have twenty.

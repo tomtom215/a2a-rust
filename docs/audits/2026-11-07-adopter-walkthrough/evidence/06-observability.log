@@ -1,0 +1,83 @@
+--- stack health
+http://localhost:9090/-/ready -> 200
+http://localhost:3200/ready -> 503
+http://localhost:3100/ready -> 503
+http://localhost:3001/api/health -> 200
+http://localhost:9093/-/ready -> 200
+--- start the agents
+2026-11-07T13:20:00.703789Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: traces → otlp http/protobuf http://localhost:4318/v1/traces; metrics → otlp http/protobuf http://localhost:4318/v1/metrics; logs → otlp http/protobuf http://lo
+2026-11-07T13:20:00.704350Z  WARN deploy_agent: A2A_DATABASE_URL is unset: tasks are kept in this process's memory, so run one replica, or set A2A_DATABASE_URL to a PostgreSQL database every replica shares
+2026-11-07T13:20:00.686451Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: traces → otlp http/protobuf http://localhost:4318/v1/traces; metrics → otlp http/protobuf http://localhost:4318/v1/metrics; logs → otlp http/protobuf http://lo
+hello-agent listening on http://127.0.0.1:3000
+--- drive traffic for 150 s (a2a CLI over jsonrpc and rest; a GetTask that fails; ListTasks)
+479 rounds
+--- Prometheus: which jobs and instances exported (count by (job, instance))
+  alertmanager alertmanager:9093 565
+  loki loki:3100 1466
+  otelcol otel-collector:8888 71
+  tempo tempo:3200 847
+  prometheus localhost:9090 961
+  a2a-cli cli-1 4317
+  a2a-cli None 11
+  None None 355
+  hello-agent local-1 86
+  deploy-agent local-1 235
+  deploy-agent None 27
+  hello-agent None 7
+--- a recording rule and an alert listing
+  a2a:rpc_server_calls:rate5m series: 9
+  rule groups: 6 rules: 42 alerts firing: 0
+--- Tempo: traces by service
+  deploy-agent: 5 trace(s) returned (limit 5)
+  hello-agent: 5 trace(s) returned (limit 5)
+  a2a-cli: 5 trace(s) returned (limit 5)
+--- Loki: log streams by service
+  ['a2a-cli', 'deploy-agent', 'hello-agent']
+--- the repository's own panel checker, through Grafana
+prometheus: 42 rules checked
+  a2a-client.json / Calls per second, by agent and binding: data
+  a2a-client.json / Failures by kind: data
+  a2a-client.json / p95 duration, non-streaming: data
+  a2a-client.json / Calls in the range by processes that started in it: data
+a2a-client.json: 5 queries
+a2a-genai.json: 21 queries
+  a2a-server.json / Calls per second, by binding: data
+  a2a-server.json / Calls per second, by method: data
+  a2a-server.json / Caller errors per second, by method and binding: data
+  a2a-server.json / Server span duration (p95), from traces: data
+  a2a-server.json / p50 / p95 / p99: data
+  a2a-server.json / Errors by method and kind: data
+  a2a-server.json / Requests without a response: data
+  a2a-server.json / Active event queues: data
+  a2a-server.json / HTTP connections: data
+  a2a-server.json / Executor run duration (p50 / p95), by outcome: data
+  a2a-server.json / Executor runs per second, by outcome: data
+a2a-server.json: 22 queries
+FAIL recording rule a2a:gen_ai_inference_calls:rate5m: no series
+FAIL recording rule a2a:gen_ai_inference_error_ratio:rate5m: no series
+FAIL recording rule a2a:rpc_client_error_ratio:rate5m: no series
+FAIL recording rule a2a:rpc_server_errors:rate5m: no series
+FAIL recording rule a2a:rpc_server_cancelled:rate5m: no series
+FAIL recording rule a2a:rpc_server_error_ratio:rate5m: no series
+FAIL recording rule a2a:push_deliveries:rate5m: no series
+FAIL recording rule a2a:push_delivery_failure_ratio:rate5m: no series
+FAIL recording rule a2a:store_retries:rate5m: no series
+FAIL recording rule a2a:executor_failure_ratio:rate5m: no series
+FAIL a2a-client.json / Failed calls (ratio), by agent: no data
+FAIL a2a-genai.json / Model calls per second, by model and outcome: no data
+FAIL a2a-genai.json / Failed model calls (ratio): no data
+FAIL a2a-genai.json / Model call duration, successful calls: no data
+FAIL a2a-genai.json / Tokens per second, input and output: no data
+FAIL a2a-genai.json / Tokens per model call: no data
+FAIL a2a-genai.json / Tool calls per second, by tool and outcome: no data
+FAIL a2a-genai.json / Tool call duration: no data
+FAIL a2a-genai.json / Agent runs per second, by outcome: no data
+FAIL a2a-genai.json / Agent run duration: no data
+FAIL a2a-genai.json / Model calls and tool calls per run: no data
+FAIL a2a-server.json / Failed calls (ratio): no data
+FAIL a2a-server.json / Failed calls per second, by method and binding: no data
+FAIL a2a-server.json / Persistence errors: no data
+FAIL a2a-server.json / Push deliveries, by outcome: no data
+FAIL a2a-server.json / Store operations per second, by operation and outcome: no data
+FAIL a2a-server.json / Store operation duration (p95), by operation: no data
+check_dashboards: FAILED

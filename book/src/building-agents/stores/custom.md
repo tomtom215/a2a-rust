@@ -5,6 +5,8 @@
 
 Implement `TaskStore` (and `PushConfigStore`) for a database the SDK does not ship a store for. This page covers the trait, what an error from it answers, a worked example, and the contract the handler relies on. A store that several replicas share has more to provide; see [Stores shared by replicas](./replicas.md).
 
+> **Cargo feature.** `PostgresPushConfigStore`, used below, needs the `postgres` feature: `a2a-protocol-sdk = { version = "0.16", features = ["postgres"] }`, or `a2a-protocol-server = { version = "0.16", features = ["postgres"] }` on its own.
+
 ## The `TaskStore` trait
 
 The `TaskStore` trait defines how tasks are persisted:

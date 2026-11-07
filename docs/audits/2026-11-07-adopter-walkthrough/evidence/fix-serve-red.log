@@ -1,0 +1,12 @@
+deprecated-entry findings on the HEAD (unfixed) pages:
+  README.md:63: names `serve()` and does not say it is deprecated
+  book/src/introduction.md:87: names `serve()` and does not say it is deprecated
+  book/src/reference/api-reference.md:429: names `serve()` and does not say it is deprecated
+  crates/a2a-protocol-server/README.md:134: names `serve()` and does not say it is deprecated
+badge/prose on HEAD README: README.md: the badge says 83/114 MUST, 5 failing; the Project Status paragraph says 85 of 115 pass and 2 fail
+check_doc_versions: current prose offers a deprecated entry point
+
+  book/src/reference/api-reference.md:429: names `serve()` and does not say it is deprecated
+  crates/a2a-protocol-server/README.md:134: names `serve()` and does not say it is deprecated
+
+Say it is deprecated since 0.16.0 and point at Server::bind and serve_with_shutdown.

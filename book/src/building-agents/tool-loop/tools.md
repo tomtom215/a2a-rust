@@ -9,6 +9,8 @@ collected into a `ToolSet`, and how the idempotency key each call carries
 keeps a side effect from happening twice
 ([ADR 0026](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0026-tool-call-idempotency.md)).
 
+> **Cargo feature.** Every block on this page needs the `tool-loop` feature: `a2a-protocol-sdk = { version = "0.16", features = ["tool-loop"] }`, or `a2a-protocol-server = { version = "0.16", features = ["tool-loop"] }` on its own.
+
 ## The `Tool` trait
 
 | Method | What it is for |

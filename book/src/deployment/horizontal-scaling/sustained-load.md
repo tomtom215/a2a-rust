@@ -3,6 +3,8 @@
 
 # Sustained Load and Table Growth
 
+> **Cargo feature.** `PostgresTaskStore` and the other PostgreSQL types on this page need the `postgres` feature: `a2a-protocol-sdk = { version = "0.16", features = ["postgres"] }`, or `a2a-protocol-server = { version = "0.16", features = ["postgres"] }` on its own.
+
 `tests/soak_multi_replica.rs` runs both replicas against one database for as
 long as you ask. A 60-second run on a 4-core machine:
 

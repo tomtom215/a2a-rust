@@ -90,7 +90,7 @@ standard error, but no startup line.
 | Code | Meaning |
 |---|---|
 | `0` | Success. |
-| `1` | Protocol or transport error. One `error: …` line on stderr; when the agent answered with a structured error, a second stderr line carries it as JSON, `{"error":{"code":…,"message":…}}`, so a script can read the code. A network command prints nothing on stdout; an offline command still prints its report there. |
+| `1` | Protocol or transport error. An `error: …` line on stderr; when the agent answered with a structured error, the next line carries it as JSON, `{"error":{"code":…,"message":…}}`, so a script can read the code. The SDK's own log line for the same failure (`WARN a2a_protocol_client::transport::jsonrpc: JSON-RPC error response method="GetTask" code=-32001`) may come before them, because the CLI installs the SDK's subscriber (see *Telemetry*): read the last line, or the last two, and not the first. A network command prints nothing on stdout; an offline command still prints its report there. |
 | `2` | Usage error: unknown flag or command, missing argument, a value that does not parse (`--timeout 0`, `--header` without `=`), reported by `clap`; or an `OTEL_*` setting the telemetry cannot use, reported in one `error:` line. No network is touched. |
 
 ## Transcript

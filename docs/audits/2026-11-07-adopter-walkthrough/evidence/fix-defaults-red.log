@@ -1,0 +1,5 @@
+book/src/getting-started/installation.md:92: `tls-rustls` is on by default in a2a-protocol-server and its row does not say so
+book/src/getting-started/installation.md: says `tls-rustls` is on by default for ['a2a-protocol-client', 'a2a-protocol-sdk'], but the manifests turn it on in ['a2a-protocol-client', 'a2a-protocol-sdk', 'a2a-protocol-server']
+book/diagrams/gs-crate-map.mmd: a2a-protocol-server lists default ['otel', 'tracing'], its manifest has ['otel', 'tls-rustls', 'tracing']
+check_feature_tables: 3 disagreement(s) with the manifests
+RED exit: 1

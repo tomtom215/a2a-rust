@@ -1,0 +1,22 @@
+--- round 1: stream a slow task, kill the client after the first event
+first event: {"task":{"id":"193874e8-dc20-4f15-9201-e1a8fad15f9d","contextId":"40dbb33b-bdab-4ea3-a8f5-c9b078fea46e","status":{"state":"TASK_STATE_SUBMIT
+killed the client; task id 193874e8-dc20-4f15-9201-e1a8fad15f9d
+  +0.2s task state: TASK_STATE_WORKING
+  +0.4s task state: TASK_STATE_COMPLETED
+artifacts after the disconnect: ['Echo: slow:disconnect me']
+--- round 2: stream a slow task, kill the client after the first event
+first event: {"task":{"id":"3d07cdbc-5565-4a15-8741-6bc50f282ade","contextId":"877e8a46-d4d5-45b9-9268-4da07c2085cd","status":{"state":"TASK_STATE_SUBMIT
+killed the client; task id 3d07cdbc-5565-4a15-8741-6bc50f282ade
+  +0.2s task state: TASK_STATE_WORKING
+  +0.4s task state: TASK_STATE_COMPLETED
+artifacts after the disconnect: ['Echo: slow:disconnect me']
+--- round 3: stream a slow task, kill the client after the first event
+first event: {"task":{"id":"7ee3802a-dfa4-4977-8eab-5eb16e0981ea","contextId":"9ec6ab26-03f0-4c9f-a69d-a3343dd04d9b","status":{"state":"TASK_STATE_SUBMIT
+killed the client; task id 7ee3802a-dfa4-4977-8eab-5eb16e0981ea
+  +0.2s task state: TASK_STATE_WORKING
+  +0.4s task state: TASK_STATE_COMPLETED
+artifacts after the disconnect: ['Echo: slow:disconnect me']
+--- many abrupt disconnects at once (50 streams killed after the first byte), then does the agent still answer?
+send after the burst: exit 0 | True
+--- the agent's own log (errors from the disconnects?)
+0

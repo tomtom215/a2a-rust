@@ -1,0 +1,80 @@
+=== [gemma-4-e2b] genai-agent: the self-driving demo, the README's default model name
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/genai-a2a-agent
+--- stdout
+Genai + A2A Agent Example
+=========================
+
+Model: qwen3.5:0.8b
+Set GENAI_MODEL to change it. Unknown model names route to the
+OpenAI-compatible endpoint on http://localhost:11434/v1/ — run
+llama.cpp's llama-server, vLLM or Ollama there for a local agent.
+
+JSON-RPC  http://127.0.0.1:40877
+HTTP+JSON http://127.0.0.1:40877
+gRPC      127.0.0.1:45535
+WebSocket ws://127.0.0.1:33965
+
+LLM leg: EXERCISED — 'qwen3.5:0.8b' answered a real request.
+
+=== Coverage: every A2A method over every binding ===
+
+  --- JSONRPC ---
+    [ok]   SendMessage                        task e7d982e3-feef-4f0a-b38a-f1d576fafedf
+    [ok]   SendStreamingMessage               2 event(s), 0 lag signal(s) (still open)
+    [ok]   GetTask                            state Completed
+    [ok]   ListTasks                          3 task(s)
+    [ok]   CancelTask                         refused as expected: protocol error: [-32002] Task cannot be canceled: 94b74d5c-88ff-431b-b86d-9bbe8e4e255c
+    [ok]   SubscribeToTask                    1 event(s)
+    [ok]   CreateTaskPushNotificationConfig   config Some("7f9db107-7dcb-4d80-a55f-435318a20821")
+    [ok]   ListTaskPushNotificationConfigs    1 config(s)
+    [ok]   GetTaskPushNotificationConfig      url http://127.0.0.1:42747/webhook
+    [ok]   DeleteTaskPushNotificationConfig   deleted
+    [ok]   GetExtendedAgentCard               card 'Genai LLM Agent'
+  --- HTTP+JSON ---
+    [ok]   SendMessage                        task 077eda37-24fa-4a63-8ba2-b0d795838f0d
+    [ok]   SendStreamingMessage               2 event(s), 0 lag signal(s) (still open)
+    [ok]   GetTask                            state Completed
+    [ok]   ListTasks                          7 task(s)
+    [ok]   CancelTask                         refused as expected: protocol error: [-32002] Task cannot be canceled: f50291d6-c46c-472b-bc99-6cce095f9695
+    [ok]   SubscribeToTask                    1 event(s)
+    [ok]   CreateTaskPushNotificationConfig   config Some("8a6e0e46-0adf-4364-9d7c-59407b987b86")
+    [ok]   ListTaskPushNotificationConfigs    1 config(s)
+    [ok]   GetTaskPushNotificationConfig      url http://127.0.0.1:42747/webhook
+    [ok]   DeleteTaskPushNotificationConfig   deleted
+    [ok]   GetExtendedAgentCard               card 'Genai LLM Agent'
+  --- GRPC ---
+    [ok]   SendMessage                        task 0eb91a6a-fc84-4126-85e4-1e53d61793a9
+    [ok]   SendStreamingMessage               2 event(s), 0 lag signal(s) (still open)
+    [ok]   GetTask                            state Completed
+    [ok]   ListTasks                          11 task(s)
+    [ok]   CancelTask                         refused as expected: protocol error: [-32001] Task not found: no-such-task-for-cancel
+    [ok]   SubscribeToTask                    1 event(s)
+    [ok]   CreateTaskPushNotificationConfig   config Some("7ba51550-781f-475a-8947-dfb9f3dba2e1")
+    [ok]   ListTaskPushNotificationConfigs    1 config(s)
+    [ok]   GetTaskPushNotificationConfig      url http://127.0.0.1:42747/webhook
+    [ok]   DeleteTaskPushNotificationConfig   deleted
+    [ok]   GetExtendedAgentCard               card 'Genai LLM Agent'
+  --- WEBSOCKET ---
+    [ok]   SendMessage                        task 67033964-5467-4aa6-908f-431848a9f88c
+    [ok]   SendStreamingMessage               2 event(s), 0 lag signal(s) (still open)
+    [ok]   GetTask                            state Completed
+    [ok]   ListTasks                          15 task(s)
+    [ok]   CancelTask                         refus
+--- stderr
+2026-11-07T13:04:54.135443Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=console to print spans
+2026-11-07T13:04:54.311325Z  WARN a2a_protocol_server::builder: agent card warning=supportedInterfaces: GRPC at "127.0.0.1:45535" is not an absolute URL; a client cannot reach it from the card (a2a.proto AgentInterface.url)
+2026-11-07T13:04:54.311367Z  WARN a2a_protocol_server::builder: agent card warning=supportedInterfaces: the custom binding "WEBSOCKET" is not a URI (spec §5.8: it SHOULD be a URI)
+2026-11-07T13:04:54.311443Z  WARN a2a_protocol_server::builder: agent card warning=supportedInterfaces: GRPC at "127.0.0.1:45535" is not an absolute URL; a client cannot reach it from the card (a2a.proto AgentInterface.url)
+2026-11-07T13:04:54.311449Z  WARN a2a_protocol_server::builder: agent card warning=supportedInterfaces: the custom binding "WEBSOCKET" is not a URI (spec §5.8: it SHOULD be a URI)
+2026-11-07T13:04:54.325100Z  WARN a2a_protocol_server::handler::undeclared_binding: undeclared binding binding="https://a2a-rust.com/bindings/websocket/v1" reason=this 
+--- exit 0 in 2275 s
+
+=== [gemma-4-e2b] rig-agent: the self-driving demo
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/rig-a2a-agent
+--- stdout
+
+--- stderr
+timeout: failed to run command '/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/rig-a2a-agent': No such file or directory
+
+--- exit 127 in 0 s
+

@@ -1,0 +1,2 @@
+check_feature_tables: every feature table agrees with 4 manifests
+GREEN exit: 0

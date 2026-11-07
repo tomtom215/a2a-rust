@@ -1,0 +1,28 @@
+--- README request, README header
+{"jsonrpc":"2.0","id":1,"result":{"task":{"artifacts":[{"artifactId":"b65e3d79-2d9f-4bb6-98dc-85b57f50c937","parts":[{"text":"Hello, Ada!"}]}],"contextId":"aafc5290-8bfe-4916-8c19-3286f299c087","id":"2b91ec8d-9904-4ce4-854f-51e24820b9fd","status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-11-07T12:46:09.025Z"}}}}
+[HTTP 200]
+--- no A2A-Version header
+{"jsonrpc":"2.0","id":1,"error":{"code":-32009,"message":"A2A version '0.3' is not supported by this server; expected '1.0' (send the A2A-Version header)","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"VERSION_NOT_SUPPORTED"}]}}
+[HTTP 200]
+--- 'content' where the wire says 'parts'
+{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"message must contain at least one part","data":[{"@type":"type.googleapis.com/google.rpc.BadRequest","fieldViolations":[{"description":"message must contain at least one part","field":"message.parts"}]}]}}
+[HTTP 200]
+--- the REST path against a JSON-RPC-only agent
+{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"Invalid Request: missing field `jsonrpc`"}}
+[HTTP 200]
+--- GET / (a browser tab)
+HTTP/1.1 200 OK
+content-type: application/json
+a2a-version: 1.0
+content-length: 282
+date: Sat, 07 Nov 2026 12:46:09 GMT
+
+{"jsonrpc":"2.0","id":null,"error":{"code":-32009,"message":"A2A version '0.3' is not supported by this server; expected '1.0' (send the A2A-Version header)","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"VERSION_NOT_SUPPORTED"}]}}--- a method that does not exist
+{"jsonrpc":"2.0","id":7,"error":{"code":-32601,"message":"Method not found: message/send"}}
+[HTTP 200]
+--- not JSON
+{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: expected value at line 1 column 1"}}
+[HTTP 200]
+--- wrong content type
+{"jsonrpc":"2.0","id":null,"error":{"code":-32005,"message":"unsupported Content-Type: text/plain; expected application/json or application/a2a+json","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"CONTENT_TYPE_NOT_SUPPORTED"}]}}
+[HTTP 200]

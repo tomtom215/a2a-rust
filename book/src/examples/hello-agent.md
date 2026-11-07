@@ -56,8 +56,8 @@ structured error rather than misbehaving quietly:
   `DispatchConfig::accept_missing_version_header()` lifts the requirement for
   trusted callers.
 - **`parts`, not `content`.** That is the field name on the wire. The wrong
-  one parses as a message with no parts and is rejected with
-  `invalid params: message must contain at least one part`.
+  one parses as a message with no parts and is rejected with `-32602` and
+  `message must contain at least one part` (naming the field `message.parts`).
 
 ## Key code
 

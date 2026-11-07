@@ -426,7 +426,7 @@ are rustdoc's job.
 | `ServerInterceptor` | Server-side middleware |
 | `AgentCardProducer` | Dynamic agent card generation |
 | `ExtendedCardProvider` | Chooses each caller's extended agent card (§13.3; `with_extended_card_provider`) |
-| `Dispatcher` | HTTP dispatch trait (for `serve()`) |
+| `Dispatcher` | HTTP dispatch trait (what `Server::serve_with_shutdown` serves) |
 | `Metrics` | Pluggable metrics observer (requests, latency, errors) |
 | `TenantResolver` | Extracts tenant from request context |
 | `RateLimitCounter` | A request counter every replica shares |
