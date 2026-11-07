@@ -908,6 +908,17 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **CI's mutation job builds without `-D warnings`, and a local run with it miscounts "unviable" (2026-11-07).** The handoff's advice to
+  build with CI's flags is right for clippy and tests and wrong for `cargo mutants`: `mutants.yml` sets no `RUSTFLAGS`. Under
+  `-D warnings` a mutant that leaves a parameter or variable unused (`fn -> ()`, `-> None`, a replaced body) fails to build and is
+  reported unviable; in CI it builds and has to be killed. A first local run on this session's diff read "8 caught, 31 unviable, 0 missed"
+  for the server and "12 caught, 25 unviable, 0 missed" for the client; only a re-run of the unviable ones without `RUSTFLAGS` says
+  whether those 56 were killable. Run cargo-mutants with `RUSTFLAGS` unset and its own `CARGO_TARGET_DIR` (the dependencies rebuild,
+  about 4 GB), restrict the tests after `--` only to the relevant library tests and binaries, and list the unviable set with
+  `cargo mutants --list --in-diff ...` first: a `const fn` or a type with no `Default` is unviable either way, anything else is not.
+  Also: `--in-place` cannot be combined with `--jobs`; a script that prints `$?` after a `$(date)` in the same `echo` prints 0 (it
+  reported a failed cargo-mutants run as `EXIT 0`; read the log, not the status line).
+
 - **A deserializer that returns data nobody reads has mutants no test can see, and a refusal by parse error looks the same as a refusal by rule.** `JwtHeader.crit` was an `Option<serde_json::Value>` whose only use was `.is_some()`;
   mutation run 470 replaced the deserializing function by `Ok(None)` and by `Ok(Some(Default::default()))` and both survived, because a `deserialize_with` function that does not read its value makes serde_json fail the header,
   and a header that does not parse is refused, which is what every validator-level test asserted. The cure was to keep only what is used (a `bool`) and to test the header's own deserialization, not only the verdict on a token.
