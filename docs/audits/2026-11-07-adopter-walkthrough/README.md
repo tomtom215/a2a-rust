@@ -76,13 +76,24 @@ branch, each with a check that fails without the fix; the rest are open, listed 
 
 ### What this branch changes
 
-Eight commits on top of `main` (`git log 27889e09..HEAD`): the licence files and the check that holds
-them (`check_package_excludes.py`); the TCK-badge, deprecated-entry and dependency-block checks and their
-`--self-test` and 14 hand mutants (`check_doc_versions.py`); the default-feature statements and the
-page-names-its-feature check (`check_feature_tables.py`); the nine pages, the three dependency blocks and four
-first-hour rough edges; this directory and `scripts/live/adopter/`. No Rust source changed, so there is
-nothing for `cargo mutants --in-diff` to mutate: `git diff 27889e09 -- '*.rs'` is empty. Red-then-green
-evidence for each fix is in `evidence/fix-*.log`.
+Ten commits on top of `main` (`git log 27889e09..HEAD`; hashes as the branch stood when this was written):
+
+| Commit | Theme | Check that fails without it |
+|---|---|---|
+| `8b5f1c63` | `LICENSE` and `NOTICE` in each published crate (P-1) | `check_package_excludes.py`: 8 findings without the copies, 1 with a byte changed |
+| `025cbd0b` | the server's `tls-rustls` default on the Installation page, README, crate map (D-3) | `check_feature_tables.py`: 3 findings |
+| `63ea45ae` | the README badge, and `serve()` no longer offered (D-1, D-2) | `check_doc_versions.py`: the badge and 4 `serve()` offers |
+| `5fbb3df5` | nine pages name the Cargo feature they need (D-5) | `check_feature_tables.py`: exactly the nine pages |
+| `4fabb287` | first-agent warnings, README port, CLI stderr, hello-agent error text (D-4, D-7, D-8, D-14) | `02-book-getting-started.sh` fails on a warning (red `02-book-getting-started.log`, green `...-after-fix.log`); not a CI gate |
+| `fa50a3c5` | tokio and serde_json in three dependency blocks (D-15) | `check_doc_versions.py`: 4 findings on 3 pages |
+| `99648b54` | `check_doc_versions.py --self-test`, run in CI before the gate | 14 of 14 hand mutants killed (`hand_mutants_doc_versions.py`) |
+| `0d8d67e6`, `4d803828`, `8d7a8889` | this directory and `scripts/live/adopter/` | not applicable |
+
+No Rust source changed, so there is nothing for `cargo mutants --in-diff` to mutate: `git diff 27889e09 -- '*.rs'` is
+empty. The check scripts are Python; their new branches are pinned by the `--self-test` and hand mutants above and by
+the red and green runs in `evidence/fix-*.log`. `check_package_excludes.py` and `check_feature_tables.py`'s new
+assertions have no hand mutants: the first was run on the real tree in its three outcomes (missing, equal, differing),
+the second red and green on it, and its `--self-test` covers the parsers only.
 
 ## Not verified
 
@@ -91,9 +102,10 @@ evidence for each fix is in `evidence/fix-*.log`.
 * `genai-agent` with Qwen3.5-2B (it ran once, with Gemma 4 E2B: exit 0 in 38 minutes, final matrix not saved),
   `rig-agent` with either model and `live-model` with either: the box ran at 0.3 to 1 token/s; see `05-live-model.md`.
 * `incident-response`, `agent-team`, `resilient-agent`, `swarm`, `mcp-agent`, `mcp-bridge`, `multi-lang-team`
-  and `langfuse-agent`: neither built nor run (disk and CPU; CI runs seven of them).
-* The sweep of every book block with every feature on (the disk could not hold it; `book-tests/` does it in
-  CI), and the dependency lines of pages that do name a feature.
+  and `langfuse-agent`: neither built nor run (disk and CPU; CI runs five and `cargo test` covers three).
+* The doctest sweep of every book block with every feature on (the disk could not hold it; `book-tests/` does it
+  in CI; the four tarballs were `cargo check`ed with every feature instead), and the dependency lines of pages that
+  do name a feature.
 * Client, server, binding, authentication and swarm pages beyond compiling their Rust blocks and
   statically checking their commands; PostgreSQL-backed behaviour; TLS (`--cacert`, mTLS); gRPC and WebSocket
   agents driven by the CLI.
