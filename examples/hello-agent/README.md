@@ -36,8 +36,8 @@ wrong from memory:
   (`VERSION_NOT_SUPPORTED`): an unversioned request is taken to be from a v0.3
   peer.
 - **`parts`, not `content`** — that is the field name on the wire. The wrong
-  one parses as a message with no parts and is rejected with
-  `invalid params: message must contain at least one part`.
+  one parses as a message with no parts and is rejected with `-32602` and
+  `message must contain at least one part` (naming the field `message.parts`).
 
 ## What it demonstrates
 

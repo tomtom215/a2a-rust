@@ -383,6 +383,9 @@ verify an exported audit chain (`audit verify`). It is **unpublished** — a `pu
 built from this repository, not on crates.io:
 
 ```bash
+# An agent to talk to: echo-agent in server-only mode, on the port the lines below use
+A2A_BIND_ADDR=127.0.0.1:3111 cargo run -p echo-agent &
+
 cargo run -p a2a-cli -- card http://127.0.0.1:3111
 cargo run -p a2a-cli -- send http://127.0.0.1:3111 "hello"
 cargo run -p a2a-cli -- stream http://127.0.0.1:3111 "hello"
