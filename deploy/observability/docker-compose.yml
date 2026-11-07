@@ -37,7 +37,7 @@ services:
   # owned by root. This one-shot chowns their data directories, so neither
   # has to run as root (audit C-19). Tempo's image carries busybox's chown.
   volume-init:
-    image: grafana/tempo:2.9.0@sha256:65a5789759435f1ef696f1953258b9bbdb18eb571d5ce711ff812d2e128288a4
+    image: grafana/tempo:3.1.1@sha256:64e2fbd56d9c2b3412a4b430a58ea59e91a670b1e75f920a0c702213ad145044
     user: "0"
     entrypoint: ["chown", "-R", "10001:10001", "/var/tempo", "/var/lib/otelcol"]
     volumes:
@@ -107,7 +107,7 @@ services:
     restart: unless-stopped
 
   tempo:
-    image: grafana/tempo:2.9.0@sha256:65a5789759435f1ef696f1953258b9bbdb18eb571d5ce711ff812d2e128288a4
+    image: grafana/tempo:3.1.1@sha256:64e2fbd56d9c2b3412a4b430a58ea59e91a670b1e75f920a0c702213ad145044
     command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ./tempo/tempo.yaml:/etc/tempo.yaml:ro
