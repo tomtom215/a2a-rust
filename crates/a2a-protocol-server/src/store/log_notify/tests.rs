@@ -432,6 +432,40 @@ async fn a_lost_listener_connection_wakes_every_waiter_and_recovers() {
     db.drop_database().await;
 }
 
+/// The listener ends with the last clone of the store: its session leaves the
+/// database, which a detached task would keep for the life of the process.
+#[tokio::test]
+#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
+async fn the_listener_ends_with_the_last_store_clone() {
+    let db = Scratch::new("logwake").await;
+    let store = announcing(&db, LogListen::Direct(db.url.clone())).await;
+    store.save(&task("t1")).await.unwrap();
+    drop(watch_when_listening(&store, "t1").await);
+    let admin = db.pool(2).await;
+    let listeners = || async {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM pg_stat_activity \
+             WHERE datname = current_database() AND query ILIKE 'LISTEN%'",
+        )
+        .fetch_one(&admin)
+        .await
+        .unwrap()
+    };
+    assert_eq!(listeners().await, 1, "the listener is up");
+    let clone = store.clone();
+    drop(store);
+    assert_eq!(listeners().await, 1, "a clone of the store is still alive");
+    drop(clone);
+    tokio::time::timeout(GUARD, async {
+        while listeners().await != 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the listener's session ended with the store");
+    db.drop_database().await;
+}
+
 /// A store's `Debug` form does not print the URL it listens on, and the
 /// listener's two forms are named.
 #[test]

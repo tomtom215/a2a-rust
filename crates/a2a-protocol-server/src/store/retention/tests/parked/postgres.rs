@@ -299,3 +299,67 @@ async fn a_row_another_transaction_holds_is_skipped_not_waited_for() {
     p.pool.close().await;
     p.db.drop_database().await;
 }
+
+/// The key sweep still runs after the parked sweep, in batches, counted apart,
+/// and a sweep out of batches says so: three old keys and one young one, a batch
+/// of one.
+async fn keys_after_the_parked_sweep(
+    pool: &PgPool,
+    purge: impl AsyncFn(&RetentionPolicy) -> PurgeReport,
+    insert: &str,
+) {
+    for (key, age) in [
+        ("a", "3 days"),
+        ("b", "3 days"),
+        ("c", "3 days"),
+        ("young", "1 minute"),
+    ] {
+        sqlx::query(sqlx::AssertSqlSafe(insert.replace("{age}", age)))
+            .bind(key)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+    let policy = policy()
+        .with_parked_max_age(Duration::from_hours(1))
+        .with_idempotency_key_max_age(Some(Duration::from_hours(24)))
+        .with_batch_size(1);
+    let bounded = purge(&policy.clone().with_max_batches(2)).await;
+    assert_eq!(bounded.idempotency_keys_deleted, 2);
+    assert_eq!(bounded.batches, 2);
+    assert!(!bounded.complete, "out of batches with a key left");
+    let rest = purge(&policy).await;
+    assert_eq!(rest.idempotency_keys_deleted, 1);
+    assert_eq!(rest.batches, 1);
+    assert!(rest.complete);
+}
+
+#[tokio::test]
+#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
+async fn the_key_sweep_follows_the_parked_sweep_on_the_plain_store() {
+    let p = plain().await;
+    keys_after_the_parked_sweep(
+        &p.pool,
+        async |policy| p.store.purge_expired(policy).await.unwrap(),
+        "INSERT INTO idempotency_keys (key, message_id, task_id, created_at) \
+         VALUES ($1, 'm', 't', now() - interval '{age}')",
+    )
+    .await;
+    p.pool.close().await;
+    p.db.drop_database().await;
+}
+
+#[tokio::test]
+#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
+async fn the_key_sweep_follows_the_parked_sweep_on_the_tenant_store() {
+    let t = tenant().await;
+    keys_after_the_parked_sweep(
+        &t.pool,
+        async |policy| t.store.purge_expired(policy).await.unwrap(),
+        "INSERT INTO tenant_idempotency_keys (tenant_id, key, message_id, task_id, created_at) \
+         VALUES ('acme', $1, 'm', 't', now() - interval '{age}')",
+    )
+    .await;
+    t.pool.close().await;
+    t.db.drop_database().await;
+}
