@@ -40,11 +40,17 @@ session re-runs it instead of copying the number. What was not run is under *Not
   code with the frames `[Task(submitted), StatusUpdate(working)]`); B-11 option 2 (`ClientBuilder::with_blocking_over_stream`,
   against a real server behind a TCP proxy that closes a connection after 600 ms of silence, JSON-RPC and HTTP+JSON). The
   commits say what each measured.
-- **Delegated and not yet merged here** (worktrees under `.claude/worktrees/` in the container that wrote this; **lost with the
-  container**, the branches are local): steering (ADR 0036), agent skills (ADR 0035), E-F25 (b) and (c) with `parked_task_ttl`,
-  and an adopter walk-through (the stranger's view: packaged crates, the README and book verbatim, every example and the CLI, a
-  real small model, the container image and the observability stack). Their reports are data: re-run their gates on the merged
-  tree before believing them (*Lessons*, 2026-11-05).
+- **Merged here from worktree agents** (their reports are data; each merge was followed by this tree's own gates): the adopter
+  walk-through (`docs/audits/2026-11-07-adopter-walkthrough/`: licence files were missing from all four tarballs, `cargo package
+  --list` now shows two per crate; nine pages named no Cargo feature; ten open lows in its README) and Agent Skills (ADR 0035, the
+  `skills` feature: `cargo nextest run -p a2a-protocol-server --features skills --lib --test tool_loop -E 'test(/skills/) |
+  binary(tool_loop)'` 212 passed on the merged tree). **Skills' YAML reader is in-tree, not a crate**, which reads CONTRIBUTING's
+  dependency rule ("a standards-defined parser uses the audited crate") against its letter; ADR 0035 decision 9 gives the reasons and
+  the way back (`saphyr-parser` behind the same interface). Its mutation figures (409 caught, 43 unviable, 0 missed, no
+  `RUSTFLAGS`) come from an extraction crate holding the module's sources and stubs, not from the server crate: the CI form on the
+  merged tree has not been run, and `skills/reader.rs` and `tools.rs` are the files to run it on first.
+- **Still delegated** (worktrees under `.claude/worktrees/`, **lost with the container**): steering (ADR 0036) and E-F25 (b) and (c)
+  with `parked_task_ttl`.
 - **Mutation, local, on the first three commits' diff** (`cargo mutants --in-diff` as `mutants.yml` runs it, restricted to the
   library tests and the relevant integration binaries because the machine was oversubscribed): see the result in the commit
   that follows this one; not yet read when this was written.
@@ -916,7 +922,8 @@ into this file: the commit that records it changes it.
   whether those 56 were killable. Run cargo-mutants with `RUSTFLAGS` unset and its own `CARGO_TARGET_DIR` (the dependencies rebuild,
   about 4 GB), restrict the tests after `--` only to the relevant library tests and binaries, and list the unviable set with
   `cargo mutants --list --in-diff ...` first: a `const fn` or a type with no `Default` is unviable either way, anything else is not.
-  Also: `--in-place` cannot be combined with `--jobs`; a script that prints `$?` after a `$(date)` in the same `echo` prints 0 (it
+  `--profile=mutants` builds into `target/mutants`, which held 9.3 GB here after three runs: delete it when the runs are done (a disk
+  at 3 GB free with every agent building was that directory). Also: `--in-place` cannot be combined with `--jobs`; a script that prints `$?` after a `$(date)` in the same `echo` prints 0 (it
   reported a failed cargo-mutants run as `EXIT 0`; read the log, not the status line).
 
 - **A deserializer that returns data nobody reads has mutants no test can see, and a refusal by parse error looks the same as a refusal by rule.** `JwtHeader.crit` was an `Option<serde_json::Value>` whose only use was `.is_some()`;

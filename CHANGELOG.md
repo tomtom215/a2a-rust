@@ -34,9 +34,33 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **A task's ending always reaches its webhooks, its log and its caller;** an executor that panics leaves the task `failed`; a blocking send over gRPC is no longer cut at the request timeout; credentials go only to the host the caller named; a private CA and mutual TLS reach every binding, the token provider included.
 - **Shipping:** a signed `deploy-agent` image on GHCR with build provenance, a card that reports its version, and retention of finished tasks; OpenTelemetry export through proxies with gzip, console and Prometheus exporters, resource detection and lost-export warnings; WebSocket connections that detect a dead peer.
 - **Serving and API shape:** every listener has one graceful `serve_with_shutdown` and takes `ServeConfig` (the axum router now runs on `Server`), `EventStream` is a `futures_core::Stream`, a one-shot agent answers with `complete_with_text`, and 23 names are deprecated (26 in the release, counting the ones under `### Deprecated` that this package did not add), to be removed no earlier than 0.17.0.
-- **Not in this release:** agent skills (ADR 0035) and steering (ADR 0036), the parts listed under Known Limitations, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
+- **Agent Skills in the tool loop** (`skills` feature, ADR 0035): a directory of `SKILL.md` becomes a catalog in the system prompt, `activate_skill` and a confined `read_skill_file`, and no script is ever run.
+- **Not in this release:** steering (ADR 0036), the parts listed under Known Limitations, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
 
 ### Added
+
+- **Agent Skills in the tool loop, without running their scripts** (ADR 0035;
+  the `skills` feature of the server and the SDK, off by default, implies
+  `tool-loop`, adds no dependency; 2026-11-07): `skills::SkillCatalog::discover`
+  reads directories of `SKILL.md` into a catalog and a list of
+  `SkillDiagnostic`s, leniently, and never panics or refuses to start; the
+  frontmatter is size-checked before an in-tree reader of the YAML subset the
+  specification's reference parser accepts reads it. `ToolLoopExecutor::with_skills`
+  puts the catalog at the end of the system prompt (descriptions on one line, at
+  most 400 characters, escaped) and gives the model `activate_skill` (its `name` a
+  JSON Schema enum of the valid names) and, when a skill bundles files,
+  `read_skill_file`, confined to `references/` and `assets/` (no `..`, absolute
+  path, NUL, backslash or link out; at most 64 KiB; UTF-8 only; checked again
+  after the open). `scripts/` are listed as present and never run;
+  `allowed-tools` is recorded and never acted on. A project directory is not
+  read until `SkillSource::project(..).with_trusted(true)` and never replaces an
+  operator's skill of the same name; `SkillCatalog::agent_skills()` gives opt-in
+  `AgentSkill` card entries. Bounds: 32 skills, a 400-character description in
+  the prompt, a 64 KiB body, a 64 KiB file, an 8 KiB frontmatter. Follows the
+  specification as read on 2026-11-07. The YAML reader is in-tree and not a
+  crate, which reads CONTRIBUTING's dependency rule against its letter (the
+  reasons and the way back to `saphyr-parser` are in the ADR): a decision the
+  maintainer may overrule. Book: "Agent Skills" under The Tool Loop.
 
 - **`ClientBuilder::with_blocking_over_stream`: a long blocking send behind a
   load balancer** (client; audit B-11, option 2; 2026-11-07). Off by default.
@@ -2642,6 +2666,8 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **Names that disagreed with the wire methods and the crate's conventions** (audit G-15, ADR 0053), same `since` and removal: `RequestHandler::on_resubscribe` for `on_subscribe_to_task`; `RequestHandler::on_set_push_config` for `on_create_push_config`; `A2aClient::set_push_config` for `create_push_config`; `RateLimitConfig::with_window_secs(u64)` for `with_window(Duration)`; `TenantLimitsBuilder::{max_concurrent_tasks, executor_timeout, event_queue_capacity, rate_limit_rps}` for the `with_` forms. Each old name calls the new one. The table is in `book/src/reference/upgrading/0.15-to-0.16.md`.
 
 ### Known Limitations
+
+- **Agent Skills** (ADR 0035): the catalog is a snapshot taken at start-up (no hot reload; build a new executor to pick up a change); scripts are never run; on a platform without Unix file identities (Windows) the reader's check after the open compares paths only, a hard link names any file its maker can read, and a file replaced by a FIFO between the check and the open holds one blocking-pool thread; not yet run against a live model, on Windows or on macOS.
 
 - **Exemplars** (audit C-05): the stack stores and links them, but the SDK records none until the pinned `opentelemetry_sdk` does; ROADMAP has a *Waiting on upstream* row.
 
