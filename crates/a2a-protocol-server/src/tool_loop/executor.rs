@@ -6,11 +6,13 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
-use a2a_protocol_types::failure::FailureClass;
-use a2a_protocol_types::message::Part;
-use a2a_protocol_types::task::TaskState;
+use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
+use a2a_protocol_types::message::{Message, Part};
+use a2a_protocol_types::task::{TaskState, TaskStatus};
 
+use super::answer::{Answer, FINISH_REASON_LENGTH, FINISH_REASON_METADATA_KEY};
 use super::idempotency;
 use super::run::{LoopError, ToolLoop};
 use super::steering::Side;
@@ -178,42 +180,75 @@ impl AgentExecutor for ToolLoopExecutor {
             emit.status(TaskState::Working).await?;
 
             match self.run(ctx, &emit, &prompt).await? {
-                Ok(answer) => {
-                    emit.artifact(
-                        ANSWER_ARTIFACT_ID,
-                        vec![Part::text(answer.text)],
-                        None,
-                        Some(true),
-                    )
-                    .await?;
-                    if !answer.trace.is_empty() {
-                        emit.artifact(
-                            TRACE_ARTIFACT_ID,
-                            vec![Part::text(answer.trace.join("\n"))],
-                            None,
-                            Some(true),
-                        )
-                        .await?;
-                    }
-                    emit.status(TaskState::Completed).await
-                }
+                Ok(answer) => complete(ctx, queue, &emit, answer).await,
                 Err(LoopError::Cancelled) => Ok(()),
                 Err(e @ (LoopError::TurnLimit(_) | LoopError::Budget(_))) => {
-                    emit.fail(FailureClass::BudgetExhausted, e.to_string())
-                        .await
+                    emit.fail(e.failure_class(), e.to_string()).await
                 }
                 Err(e) => {
                     // The whole error is the operator's; the caller gets
                     // `caller_message`, without the provider's body or URL.
                     trace_warn!(error = %e, "the run failed");
-                    let class = if e.is_transient() {
-                        FailureClass::Transient
-                    } else {
-                        FailureClass::Internal
-                    };
-                    emit.fail(class, e.caller_message()).await
+                    emit.fail(e.failure_class(), e.caller_message()).await
                 }
             }
         })
     }
+}
+
+/// What the status message of a task that completed with a cut-off answer
+/// says, for a person reading it; the machine-readable form is
+/// [`FINISH_REASON_METADATA_KEY`].
+const TRUNCATED_NOTE: &str =
+    "The answer was cut off at the model's output limit and may be incomplete.";
+
+/// Writes the answer artifact, the trace artifact when a tool ran, and
+/// `Completed`. A reply cut off at the output limit
+/// ([`Answer::truncated`]) is still a completed task, since the text is real
+/// and may be enough, but the answer artifact and the status message both
+/// carry [`FINISH_REASON_METADATA_KEY`], so that a caller can tell it from
+/// an answer that ended on its own (audit M-1).
+async fn complete(
+    ctx: &RequestContext,
+    queue: &dyn EventQueueWriter,
+    emit: &EventEmitter<'_>,
+    answer: Answer,
+) -> A2aResult<()> {
+    let marker = answer
+        .truncated()
+        .then(|| serde_json::json!({ FINISH_REASON_METADATA_KEY: FINISH_REASON_LENGTH }));
+    let mut artifact = Artifact::new(ANSWER_ARTIFACT_ID, vec![Part::text(answer.text)]);
+    artifact.metadata.clone_from(&marker);
+    let mut update =
+        TaskArtifactUpdateEvent::new(ctx.task_id.clone(), ctx.context_id.clone(), artifact);
+    update.last_chunk = Some(true);
+    queue.write(StreamResponse::ArtifactUpdate(update)).await?;
+    if !answer.trace.is_empty() {
+        emit.artifact(
+            TRACE_ARTIFACT_ID,
+            vec![Part::text(answer.trace.join("\n"))],
+            None,
+            Some(true),
+        )
+        .await?;
+    }
+    let Some(marker) = marker else {
+        return emit.status(TaskState::Completed).await;
+    };
+    let mut note = Message::agent(
+        uuid::Uuid::new_v4().to_string(),
+        vec![Part::text(TRUNCATED_NOTE)],
+    );
+    note.task_id = Some(ctx.task_id.clone());
+    note.context_id = Some(ctx.context_id.clone());
+    note.metadata = Some(marker);
+    let mut status = TaskStatus::new(TaskState::Completed);
+    status.message = Some(note);
+    queue
+        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            ctx.task_id.clone(),
+            ctx.context_id.clone(),
+            status,
+        )))
+        .await
 }

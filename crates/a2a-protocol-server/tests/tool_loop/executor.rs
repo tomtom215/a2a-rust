@@ -26,7 +26,7 @@ use a2a_protocol_types::task::{Task, TaskState};
 
 use super::{Scripted, Status, asks, says};
 
-fn handler(tool_loop: ToolLoop) -> Arc<RequestHandler> {
+pub(super) fn handler(tool_loop: ToolLoop) -> Arc<RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(ToolLoopExecutor::new(tool_loop))
             .without_agent_card()
@@ -35,7 +35,7 @@ fn handler(tool_loop: ToolLoop) -> Arc<RequestHandler> {
     )
 }
 
-fn scripted(replies: Vec<Result<ModelTurn, ModelError>>) -> ToolLoop {
+pub(super) fn scripted(replies: Vec<Result<ModelTurn, ModelError>>) -> ToolLoop {
     ToolLoop::new(Scripted::new(replies), ToolSet::new().with(Status).unwrap())
 }
 
@@ -44,7 +44,7 @@ fn params(text: &str) -> MessageSendParams {
 }
 
 /// Each event of a streamed run, as a short label.
-async fn streamed(handler: &RequestHandler) -> Vec<String> {
+pub(super) async fn streamed(handler: &RequestHandler) -> Vec<String> {
     let Ok(SendMessageResult::Stream(mut stream)) = handler
         .on_send_message(params("how is checkout?"), true, None)
         .await
@@ -71,7 +71,7 @@ async fn streamed(handler: &RequestHandler) -> Vec<String> {
     labels
 }
 
-async fn blocking(handler: &RequestHandler, text: &str) -> Task {
+pub(super) async fn blocking(handler: &RequestHandler, text: &str) -> Task {
     match handler.on_send_message(params(text), false, None).await {
         Ok(SendMessageResult::Response(SendMessageResponse::Task(task))) => task,
         other => panic!("expected a task, got {other:?}"),
@@ -79,7 +79,7 @@ async fn blocking(handler: &RequestHandler, text: &str) -> Task {
 }
 
 /// The text of a failed task's status message.
-fn reason(task: &Task) -> String {
+pub(super) fn reason(task: &Task) -> String {
     task.status
         .message
         .as_ref()

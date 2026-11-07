@@ -61,6 +61,17 @@ takes the message's text parts, joined by newlines, as the prompt, and emits:
 A message with no text is refused: the run returns `InvalidParams` ("the
 message has no text to answer") and the task fails.
 
+**A reply cut off at the model's output limit still completes the task, and
+says so.** When the provider reports `finish_reason: "length"` (a small
+`max_tokens`, a full context window), the text is a prefix of an answer and
+may end mid-sentence. The `answer` artifact's `metadata` and the `Completed`
+status message then both carry `{"a2a-rust.com/finish-reason": "length"}`
+(`FINISH_REASON_METADATA_KEY`), and the message reads "The answer was cut off
+at the model's output limit and may be incomplete." An answer that ended by
+itself has neither. Before 0.16.0 nothing marked the difference. **A final
+reply with no text fails the task** (below), because an empty answer is not
+one: a reasoning model whose output limit goes on thinking sends exactly that.
+
 The trace is what lets a caller tell an answer the tools backed from one the
 model made up. In the example's recorded runs, a fluent answer sometimes gave
 a number the tool had not returned, and the trace line beneath it showed the
@@ -113,12 +124,22 @@ let tool_loop = ToolLoop::new(model, ToolSet::new()).with_max_turns(4);
 
 let answer = tool_loop.run("Say hello.", &CancellationToken::new()).await?;
 println!("{}", answer.text);
+if answer.truncated() {
+    println!("(cut off at the output limit)");
+}
 for line in &answer.trace {
     println!("{line}");
 }
 # Ok(())
 # }
 ```
+
+`Answer::finish_reason` is the final reply's own, as the provider spelled it,
+when it said; `truncated()` is `finish_reason == Some("length")`
+(`FINISH_REASON_LENGTH`). A `ToolModel` of your own reports a cut-off reply by
+returning `ModelTurn::with_finish_reason("length")`. `Answer::text` is never
+blank: a final reply with no text is `Err(LoopError::EmptyAnswer)` here, as it
+fails the task under the executor.
 
 | Method | Budget | Idempotency scope |
 |---|---|---|
@@ -164,18 +185,23 @@ to the operator's log.
 
 | `LoopError` | Cause | Failure class | The caller is told |
 |---|---|---|---|
-| `Model(Status)` | The provider answered outside 2xx | `internal` | `the model provider answered HTTP <status>` |
-| `Model(Transport)` | The request could not be sent, or the connection failed | `internal` | `could not reach the model provider` |
+| `Model(Status)` | The provider answered outside 2xx | `transient` for 429, 502, 503 and 504; `internal` otherwise | `the model provider answered HTTP <status>` |
+| `Model(RateLimited)` | The provider answered 429 (sent again first when `with_model_retry` is set) | `transient` | `the model provider answered HTTP 429` |
+| `Model(Transport)` | The request could not be sent, or the connection failed | `transient` | `could not reach the model provider` |
 | `Model(InvalidResponse)` | The answer was not a chat completion | `internal` | `the model provider's answer could not be read` |
 | `Model(Config)` | The client cannot work as configured | `internal` | `the model client is misconfigured` |
-| `Model(Timeout)` | No complete answer within the client's timeout | `internal` | `the model provider did not answer within <timeout>` |
+| `Model(Timeout)` | No complete answer within the client's timeout | `transient` | `the model provider did not answer within <timeout>` |
 | `Model(ResponseTooLarge)` | The answer was over the size cap | `internal` | `the model provider's answer is larger than the <cap>-byte cap` |
 | `Model(Other)` | A `ToolModel` you wrote failed | `internal` | Its message, unchanged |
 | `Fatal` | A tool returned `ToolError::Fatal` | `internal` | `tool '<name>' failed: <message>` |
 | `TurnLimit` | The model asked for tools on every turn | `budget-exhausted` | `the model asked for tools on all <n> turns without answering` |
 | `Budget` | The caller's deadline passed or its `tokens` meter ran out | `budget-exhausted` | `the budget's deadline has passed`, or `the budget's meter "tokens" is spent` |
+| `EmptyAnswer` | The final reply had no text, with `finish_reason` `length` | `budget-exhausted` | `the model stopped at its output limit before it wrote any text` |
+| `EmptyAnswer` | The final reply had no text, with `finish_reason` `content_filter` | `policy-refusal` | `the model provider withheld the answer (content filter)` |
+| `EmptyAnswer` | The final reply had no text, any other reason or none | `internal` | `the model returned an empty answer` |
 | `Cancelled` | The cancellation token fired | — | Nothing: the cancel path writes `Canceled` |
 
-None of these is retried by the loop. A tool's ordinary failure
+None of these is retried by the loop, except a `Model(RateLimited)` turn when
+`with_model_retry` is set. A tool's ordinary failure
 (`ToolError::Failed`) is not on the list: it goes back to the model, and the
 run goes on.

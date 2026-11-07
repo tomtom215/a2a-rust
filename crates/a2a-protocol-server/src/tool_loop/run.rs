@@ -10,6 +10,7 @@ use a2a_protocol_types::budget::{BudgetHandle, Exhausted, TOKENS_METER};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
+use super::answer::Answer;
 use super::idempotency::{self, Secret};
 pub use super::loop_error::LoopError;
 use super::model::{ChatMessage, ChatRequest, ToolCall, ToolModel};
@@ -26,17 +27,6 @@ use crate::rpc_span::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 /// enough that a model which never stops calling tools fails in seconds
 /// rather than at the executor timeout.
 pub const DEFAULT_MAX_TURNS: usize = 8;
-
-/// What a run produced.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct Answer {
-    /// The model's final text.
-    pub text: String,
-    /// One line per tool call, in the order they ran: `name(arguments) ->
-    /// result`. Empty when the model answered without calling anything.
-    pub trace: Vec<String>,
-}
 
 /// A model, the tools it may call, and the bounded loop between them.
 ///
@@ -279,7 +269,7 @@ impl ToolLoop {
                     None
                 };
                 let Some((name, arguments)) = recovered else {
-                    return Ok(Answer { text, trace });
+                    return Answer::from_reply(text, trace, reply.finish_reason);
                 };
                 // The model wrote the call as text: run it as the call it
                 // is, and keep it in the conversation as one.

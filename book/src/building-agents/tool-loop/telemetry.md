@@ -68,7 +68,7 @@ counters add `gen_ai.token.modality` = `text`. A run's carry
 |---|---|
 | A model turn | The HTTP status, `timeout`, `transport`, `invalid_response`, `response_too_large`, `configuration`, or `_OTHER` for a `ToolModel` of your own (`ModelError::error_type`) |
 | A tool call | `unknown_tool`, `invalid_arguments`, `tool_error`, `tool_fatal` |
-| A run | The turn's value when the model failed, `tool_fatal`, `turn_limit`, `budget_exhausted` |
+| A run | The turn's value when the model failed, `tool_fatal`, `turn_limit`, `budget_exhausted`, `empty_answer` |
 | Any of them | `cancelled`, for work abandoned before it ended |
 
 The metrics go to the global meter provider as it is when each is recorded, so

@@ -40,6 +40,14 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **A cut-off answer carries its `finish_reason`** (audit M-1). `Answer` has `finish_reason`, the final
+  reply's own, and `truncated()`, true for `length` (`FINISH_REASON_LENGTH`; a `ToolModel` of your own
+  reports a cut-off reply with `ModelTurn::with_finish_reason("length")`). Under `ToolLoopExecutor`, a
+  reply that stopped at the limit still completes the task, with its text whole, and the `answer`
+  artifact's `metadata` and the `Completed` status message both carry
+  `{"a2a-rust.com/finish-reason": "length"}` (`FINISH_REASON_METADATA_KEY`); an answer that ended on its
+  own carries neither. `Answer` is `#[non_exhaustive]`, so the field is not a break.
+
 - **Steering a running task, opt-in** (ADR 0036; 2026-11-07).
   `RequestHandlerBuilder::with_steering(SteeringConfig)` lets a client send a message to a
   task that is `working`: a `SendMessage` that names the task and lists
@@ -994,6 +1002,20 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **`ModelError::RateLimited { retry_after, body }`** (audit H17): `OpenAiChatModel` answers a 429 with it instead of `ModelError::Status { status: 429, .. }`.
 
 ### Behaviour Changes
+
+- **A tool-loop task whose final model reply has no text now fails, and one cut off at the output
+  limit says so** (audit M-1, found by the adopter walk-through, 2026-11-07). A reply that was empty
+  or only whitespace, which a reasoning model whose output limit goes on thinking sends, ended
+  `COMPLETED` with an empty `answer` artifact, and a reply cut at the limit
+  (`finish_reason: "length"`) ended `COMPLETED` with half a sentence and nothing to say so, though
+  `running.md` says a run that ends without an answer fails the task. `ToolLoop::run` now returns
+  `LoopError::EmptyAnswer { finish_reason }` for a final reply with no text, and the executor ends the
+  task `FAILED` with the failure class `budget-exhausted` when the reason was `length`,
+  `policy-refusal` for `content_filter`, and `internal` otherwise, with a message that names the cause
+  and never the provider's own words. The run's `error.type` is `empty_answer`
+  (`gen_ai.invoke_agent.duration`), where it was recorded as a run that answered. A caller that read
+  an empty answer from `run` as `Ok` now has an `Err` to handle (`LoopError` is `#[non_exhaustive]`).
+  A reply with text that stopped at the limit is still `COMPLETED`: see Added.
 
 - **`follow_task` reopens a cut subscription and goes on to the task's end**
   (client; audit D-11). A subscription cut by a reset connection or a proxy

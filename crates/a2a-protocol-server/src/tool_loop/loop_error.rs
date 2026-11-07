@@ -8,7 +8,9 @@ use std::fmt;
 use std::time::Duration;
 
 use a2a_protocol_types::budget::Exhausted;
+use a2a_protocol_types::failure::FailureClass;
 
+use super::answer::FINISH_REASON_LENGTH;
 use super::model::ModelError;
 
 /// Why a run produced no answer.
@@ -31,7 +33,19 @@ pub enum LoopError {
     /// The caller's budget ran out: its deadline passed, or the model's
     /// reported usage spent the [`TOKENS_METER`](a2a_protocol_types::budget::TOKENS_METER) (ADR 0023).
     Budget(Exhausted),
+    /// The model's final reply had no text: it was empty, or only
+    /// whitespace. The usual cause is a reply cut at the output limit before
+    /// the model had written anything, as a reasoning model whose limit goes
+    /// on thinking does.
+    EmptyAnswer {
+        /// Why the reply stopped, as the provider spelled it, when it said.
+        finish_reason: Option<String>,
+    },
 }
+
+/// The `finish_reason` OpenAI-compatible providers send when a content filter
+/// withheld the reply.
+const FINISH_REASON_CONTENT_FILTER: &str = "content_filter";
 
 impl fmt::Display for LoopError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -44,6 +58,15 @@ impl fmt::Display for LoopError {
             ),
             Self::Cancelled => f.write_str("cancelled"),
             Self::Budget(e) => e.fmt(f),
+            Self::EmptyAnswer {
+                finish_reason: Some(reason),
+            } => write!(
+                f,
+                "the model returned an empty answer (finish_reason: {reason})"
+            ),
+            Self::EmptyAnswer {
+                finish_reason: None,
+            } => f.write_str("the model returned an empty answer"),
         }
     }
 }
@@ -98,6 +121,18 @@ impl LoopError {
                 "the model provider's answer could not be read".to_owned()
             }
             Self::Model(ModelError::Config(_)) => "the model client is misconfigured".to_owned(),
+            // The reason is the provider's own string: named when it is one
+            // of the two this crate knows, and left to the operator's log
+            // otherwise.
+            Self::EmptyAnswer { finish_reason } => match finish_reason.as_deref() {
+                Some(FINISH_REASON_LENGTH) => {
+                    "the model stopped at its output limit before it wrote any text".to_owned()
+                }
+                Some(FINISH_REASON_CONTENT_FILTER) => {
+                    "the model provider withheld the answer (content filter)".to_owned()
+                }
+                _ => "the model returned an empty answer".to_owned(),
+            },
             other => other.to_string(),
         }
     }
@@ -111,6 +146,31 @@ impl LoopError {
             Self::TurnLimit(_) => "turn_limit".to_owned(),
             Self::Cancelled => "cancelled".to_owned(),
             Self::Budget(_) => "budget_exhausted".to_owned(),
+            Self::EmptyAnswer { .. } => "empty_answer".to_owned(),
+        }
+    }
+
+    /// The failure class a task ends in for this error (the failure-class
+    /// extension; `FailureClass`'s own page says what each means to a
+    /// caller). A provider that may come back is `transient`. An empty
+    /// answer is a bound when the model hit its output limit (`length`:
+    /// retrying the same request hits it again), a refusal when the
+    /// provider's content filter withheld it, and `internal` when the model
+    /// just sent nothing. [`TurnLimit`](Self::TurnLimit) and
+    /// [`Budget`](Self::Budget) are bounds. [`Cancelled`](Self::Cancelled)
+    /// ends no task as failed, so what it returns is not sent.
+    pub(super) fn failure_class(&self) -> FailureClass {
+        if self.is_transient() {
+            return FailureClass::Transient;
+        }
+        match self {
+            Self::TurnLimit(_) | Self::Budget(_) => FailureClass::BudgetExhausted,
+            Self::EmptyAnswer { finish_reason } => match finish_reason.as_deref() {
+                Some(FINISH_REASON_LENGTH) => FailureClass::BudgetExhausted,
+                Some(FINISH_REASON_CONTENT_FILTER) => FailureClass::PolicyRefusal,
+                _ => FailureClass::Internal,
+            },
+            Self::Model(_) | Self::Fatal { .. } | Self::Cancelled => FailureClass::Internal,
         }
     }
 }
@@ -215,5 +275,96 @@ mod tests {
             body: "details".to_owned(),
         });
         assert!(full.to_string().contains("details"));
+    }
+
+    fn empty(reason: Option<&str>) -> LoopError {
+        LoopError::EmptyAnswer {
+            finish_reason: reason.map(str::to_owned),
+        }
+    }
+
+    /// An empty answer is not transient, is recorded as `empty_answer`, and
+    /// says the reason in the operator's text only when there is one.
+    #[test]
+    fn an_empty_answer_is_recorded_and_worded() {
+        assert!(!empty(Some("length")).is_transient());
+        assert_eq!(empty(None).error_type(), "empty_answer");
+        assert_eq!(empty(Some("stop")).error_type(), "empty_answer");
+        assert_eq!(
+            empty(Some("stop")).to_string(),
+            "the model returned an empty answer (finish_reason: stop)"
+        );
+        assert_eq!(
+            empty(None).to_string(),
+            "the model returned an empty answer"
+        );
+    }
+
+    /// The caller is told the cause when it is one of the two this crate
+    /// knows, and otherwise nothing of what the provider sent as a reason.
+    #[test]
+    fn the_caller_is_told_why_an_answer_is_empty_without_the_providers_words() {
+        assert_eq!(
+            empty(Some("length")).caller_message(),
+            "the model stopped at its output limit before it wrote any text"
+        );
+        assert_eq!(
+            empty(Some("content_filter")).caller_message(),
+            "the model provider withheld the answer (content filter)"
+        );
+        for other in [
+            Some("stop"),
+            Some("account acme is over quota"),
+            Some(""),
+            None,
+        ] {
+            assert_eq!(
+                empty(other).caller_message(),
+                "the model returned an empty answer",
+                "{other:?}"
+            );
+        }
+    }
+
+    /// The failure class of every way a run can end: transient for a provider
+    /// that may come back; a bound for the turn limit, the budget and a reply
+    /// cut at the output limit; a refusal for a content filter; internal for
+    /// the rest.
+    #[test]
+    fn each_error_maps_to_the_failure_class_a_caller_can_act_on() {
+        use FailureClass::{BudgetExhausted, Internal, PolicyRefusal, Transient};
+        let status = |status| {
+            LoopError::Model(ModelError::Status {
+                status,
+                body: String::new(),
+            })
+        };
+        let cases = [
+            (status(503), Transient),
+            (
+                LoopError::Model(ModelError::Timeout(Duration::from_secs(1))),
+                Transient,
+            ),
+            (status(500), Internal),
+            (LoopError::Model(ModelError::Config("x".into())), Internal),
+            (
+                LoopError::Fatal {
+                    tool: "t".into(),
+                    message: "m".into(),
+                },
+                Internal,
+            ),
+            (LoopError::TurnLimit(3), BudgetExhausted),
+            (LoopError::Budget(Exhausted::Time), BudgetExhausted),
+            (LoopError::Cancelled, Internal),
+            (empty(Some("length")), BudgetExhausted),
+            (empty(Some("content_filter")), PolicyRefusal),
+            (empty(Some("stop")), Internal),
+            (empty(Some("Length")), Internal),
+            (empty(None), Internal),
+        ];
+        for (error, class) in cases {
+            assert_eq!(error.failure_class(), class, "{error:?}");
+        }
     }
 }

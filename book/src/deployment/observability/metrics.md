@@ -316,11 +316,11 @@ Their attributes:
 the HTTP status, `timeout`, `transport`, `invalid_response`,
 `response_too_large`, `configuration`, `_OTHER`); for a call, `unknown_tool`,
 `invalid_arguments`, `tool_error` or `tool_fatal`; for a run, the turn's type
-when the model failed, `tool_fatal`, `turn_limit` or `budget_exhausted`; and
-`cancelled` for any of them abandoned before it ended — its cancellation
-token fired, or the future running it was dropped, as an executor timeout
-does. `gen_ai.client.operation.duration` is not recorded: the conventions say
-it "SHOULD NOT be reported for inference operations".
+when the model failed, `tool_fatal`, `turn_limit`, `budget_exhausted` or
+`empty_answer`; and `cancelled` for any of them abandoned before it ended —
+its cancellation token fired, or the future running it was dropped, as an
+executor timeout does. `gen_ai.client.operation.duration` is not recorded: the
+conventions say it "SHOULD NOT be reported for inference operations".
 
 The metrics go to the global meter provider as it is when each is recorded,
 so `Telemetry` installed after the loop is built still receives them;

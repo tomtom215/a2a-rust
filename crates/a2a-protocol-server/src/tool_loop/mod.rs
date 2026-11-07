@@ -75,6 +75,7 @@
 //! # drop(handler); Ok(()) }
 //! ```
 
+mod answer;
 mod drafts;
 mod executor;
 mod idempotency;
@@ -92,6 +93,7 @@ mod skills;
 mod steering;
 mod tool;
 
+pub use answer::{Answer, FINISH_REASON_LENGTH, FINISH_REASON_METADATA_KEY};
 pub use drafts::{FLUSH_AFTER, FLUSH_BYTES, draft_artifact_id};
 pub use executor::{ANSWER_ARTIFACT_ID, TRACE_ARTIFACT_ID, ToolLoopExecutor};
 pub use limit::{InferenceLimit, LimitedModel};
@@ -101,5 +103,5 @@ pub use model::{
 };
 pub use openai::{DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_TIMEOUT, ERROR_BODY_LIMIT, OpenAiChatModel};
 pub use retry::ModelRetry;
-pub use run::{Answer, DEFAULT_MAX_TURNS, LoopError, ToolLoop};
+pub use run::{DEFAULT_MAX_TURNS, LoopError, ToolLoop};
 pub use tool::{DuplicateTool, Tool, ToolError, ToolInvocation, ToolSet};
