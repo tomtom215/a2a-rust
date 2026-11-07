@@ -1,0 +1,15 @@
+KILLED   badge/prose compared with == instead of !=
+KILLED   badge/prose: 'one of each' becomes 'one of either'
+KILLED   a table row no longer starts a block
+KILLED   a list item no longer starts a block
+KILLED   'deprecated' excuses nothing
+KILLED   history is read (deprecated-entry check)
+KILLED   history is read (dependency-block check)
+KILLED   non-markdown is read (deprecated-entry check)
+KILLED   non-markdown is read (dependency-block check)
+KILLED   a declared crate is a finding
+KILLED   a fragment (no fn main) is held to the block
+KILLED   an ignored block is read
+KILLED   comments are read
+KILLED   a page with no dependency block is held to one
+14 of 14 mutants killed

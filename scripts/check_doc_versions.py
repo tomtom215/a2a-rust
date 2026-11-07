@@ -80,6 +80,11 @@ docs/audits/2026-11-07-adopter-walkthrough). For such a page, every one of
 {tokio, serde_json, serde, uuid, futures_util, tracing_subscriber, hyper,
 axum, tonic} that the program uses is named in a `toml` block of that page.
 
+`--self-test` runs the three assertions above on small inputs with the values on each side
+of every boundary (a count one off, a row that says "deprecated" next to one that does
+not, a crate declared and not declared), so the checks are themselves checked; CI runs it
+before the gate.
+
 Exit codes: 0 every snippet names the current line or is allowlisted with a
 reason, every entry matches a snippet, the manifest names this release's image,
 the README's two TCK figures agree, no current prose offers a deprecated
@@ -232,8 +237,9 @@ def dependency_block_problems(files: dict[str, str]) -> list[str]:
             tags = [x for x in re.split(r"[,\s]+", m.group("info").strip()) if x]
             if (tags and tags[0] != "rust") or any(x.startswith("ignore") for x in tags):
                 continue
-            # What rustdoc compiles: the hidden `# ` lines are code too.
-            body = "\n".join(re.sub(r"^(\s*)# ?", r"\1", l) if re.match(r"^\s*# ", l) else l for l in m.group("body").splitlines())
+            # What rustdoc compiles includes the hidden `# ` lines; matching on the raw text sees
+            # them (`# async fn main()` contains `fn main`), so nothing needs unhiding.
+            body = m.group("body")
             if not re.search(r"\bfn main\b", body):
                 continue
             code = re.sub(r"//[^\n]*", "", body)
@@ -311,7 +317,68 @@ def allowlist() -> list[tuple[str, str, str]]:
     return entries
 
 
+def self_test() -> None:
+    """The three prose assertions, on inputs with a value either side of each boundary."""
+    badge = "official%20TCK-{}%2F{}%20MUST%2C%20{}%20failing"
+
+    def readme(b, p):
+        return f"[x](https://img/{badge.format(*b)}) ... **{p[0]} of {p[1]} MUST requirements pass and {p[2]} fail**"
+
+    assert readme_figure_problem(readme((85, 115, 2), (85, 115, 2))) is None
+    for off in ((84, 115, 2), (85, 114, 2), (85, 115, 1), (85, 115, 3), (86, 115, 2)):
+        assert "badge says" in readme_figure_problem(readme(off, (85, 115, 2))), off
+    assert "expected one TCK badge" in readme_figure_problem("no figures here")
+    only_badge = readme((85, 115, 2), (85, 115, 2)).split(" ... ")[0]
+    only_prose = readme((85, 115, 2), (85, 115, 2)).split(" ... ")[1]
+    assert "found 1 and 0" in readme_figure_problem(only_badge)
+    assert "found 0 and 1" in readme_figure_problem(only_prose)
+    assert "found 2 and 1" in readme_figure_problem(only_badge * 2 + " " + only_prose)
+    assert "expected one TCK badge" in readme_figure_problem(readme((1, 2, 3), (1, 2, 3)) * 2)
+
+    md = lambda text: {"a.md": text}  # noqa: E731
+    assert deprecated_entry_problems(md("Use `serve()` to start.")) == [
+        "a.md:1: names `serve()` and does not say it is deprecated"
+    ]
+    assert deprecated_entry_problems(md("`serve_with_addr()` is deprecated since 0.16.0.")) == []
+    assert deprecated_entry_problems(md("| `serve()` | Deprecated: no shutdown |")) == []
+    # a table row and a list item are blocks of their own: one row saying so does not excuse another
+    two_rows = "| `serve()` | fine |\n| `serve_with_addr()` | Deprecated |"
+    assert deprecated_entry_problems(md(two_rows)) == ["a.md:1: names `serve()` and does not say it is deprecated"]
+    two_items = "- `serve()` starts it\n- the old `serve()` is deprecated"
+    assert deprecated_entry_problems(md(two_items)) == ["a.md:1: names `serve()` and does not say it is deprecated"]
+    assert deprecated_entry_problems(md("Use `serve` here.")) == []  # no parentheses: not the call
+    assert deprecated_entry_problems({"book/src/reference/upgrading/x.md": "`serve()`"}) == []  # history
+    assert deprecated_entry_problems({"x.rs": "`serve()`"}) == []
+
+    deps = '```toml\n[dependencies]\na2a-protocol-sdk = "0.16"\n{}\n```\n'
+    main = "```rust,no_run\n# #[tokio::main]\n# async fn main() {\nlet v = serde_json::json!(1);\n# }\n```\n"
+    # the line is the block's first code line: the fence is line 6, its body starts on 7
+    assert dependency_block_problems({"a.md": deps.format("") + main}) == [
+        "a.md:7: the program uses `tokio` and no `toml` block on the page names it",
+        "a.md:7: the program uses `serde_json` and no `toml` block on the page names it",
+    ]
+    assert dependency_block_problems({"a.md": deps.format('tokio = "1"\nserde_json = "1"') + main}) == []
+    one = dependency_block_problems({"a.md": deps.format('tokio = "1"') + main})
+    assert len(one) == 1 and "`serde_json`" in one[0], one
+    assert dependency_block_problems({"a.md": main}) == []  # no dependency block shown: nothing to hold it to
+    held = deps.format("") + main
+    assert dependency_block_problems({"book/src/reference/upgrading/x.md": held}) == []  # history
+    assert dependency_block_problems({"x.rs": held}) == []  # not Markdown
+    hidden_only = "```rust,no_run\n# fn main() {\n# let v = serde_json::json!(1);\n# }\n```\n"
+    assert len(dependency_block_problems({"a.md": deps.format("") + hidden_only})) == 1  # a hidden line is code too
+    fragment = "```rust,no_run\nlet v = serde_json::json!(1);\n```\n"
+    assert dependency_block_problems({"a.md": deps.format("") + fragment}) == []  # no fn main: a fragment
+    ignored = "```rust,ignore\n# fn main() {\nlet v = serde_json::json!(1);\n# }\n```\n"
+    assert dependency_block_problems({"a.md": deps.format("") + ignored}) == []
+    commented = "```rust,no_run\nfn main() {\n    // serde_json::json!(1)\n}\n```\n"
+    assert dependency_block_problems({"a.md": deps.format("") + commented}) == []
+    print("check_doc_versions --self-test: the README figure, deprecated-entry and dependency-block assertions pass")
+
+
 def main() -> int:
+    if "--self-test" in sys.argv[1:]:
+        self_test()
+        return 0
     if not SOURCE_OF_TRUTH.exists():
         print("check_doc_versions: run from the repository root", file=sys.stderr)
         return 2
