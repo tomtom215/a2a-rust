@@ -87,6 +87,8 @@ mod openai_stream;
 mod recover;
 mod retry;
 mod run;
+#[cfg(feature = "skills")]
+mod skills;
 mod tool;
 
 pub use drafts::{FLUSH_AFTER, FLUSH_BYTES, draft_artifact_id};

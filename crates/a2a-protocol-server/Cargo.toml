@@ -125,6 +125,13 @@ conformance = []
 ## HTTPS to the model needs `tls-rustls`. `httpdate`, already in the graph
 ## through the client crate, reads a rate-limited turn's `Retry-After` date.
 tool-loop = ["dep:ring", "dep:httpdate"]
+## Agent Skills in the tool loop, without running their scripts (ADR 0035):
+## `skills`, which finds `SKILL.md` directories, validates them leniently,
+## puts a catalog in the loop's system prompt, and gives the model an
+## `activate_skill` tool and a confined reader of a skill's `references/` and
+## `assets/`. Adds no dependency: the frontmatter is a small YAML subset read
+## in-tree (ADR 0035, decision 9). Implies `tool-loop`.
+skills = ["tool-loop"]
 ## Enable Axum framework integration (Router, extractors, IntoResponse).
 axum = ["dep:axum"]
 ## Enable JWT bearer-token authentication (HS256/RS256/ES256, static or remote

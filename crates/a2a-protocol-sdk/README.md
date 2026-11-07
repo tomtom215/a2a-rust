@@ -82,6 +82,7 @@ all five.
 | `postgres` | No | `a2a-protocol-server` |
 | `axum` | No | `a2a-protocol-server` |
 | `tool-loop` | No | `a2a-protocol-server` |
+| `skills` | No | `a2a-protocol-server` (implies `tool-loop`) |
 | `auth-jwt` | No | `a2a-protocol-server` |
 | `encryption` | No | `a2a-protocol-server` |
 | `audit` | No | `a2a-protocol-types`, `a2a-protocol-server` |

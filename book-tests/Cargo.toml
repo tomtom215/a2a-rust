@@ -65,6 +65,8 @@ a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = [
     # The tool-loop guide: `ToolLoop`, `Tool` and the model clients exist only
     # under this feature, and without it those blocks could only be `ignore`d.
     "tool-loop",
+    # The Agent Skills page: `skills` exists only under this feature.
+    "skills",
     "websocket",
 ] }
 a2a-protocol-types  = { path = "../crates/a2a-protocol-types" }
