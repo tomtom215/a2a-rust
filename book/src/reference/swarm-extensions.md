@@ -21,6 +21,7 @@ The words MUST, SHOULD and MAY are used as in RFC 2119.
 | [Halt](#halts) | Not on the wire; the refusal is | That hop keeps working for a halted job |
 | [Lease](#lease-v1) | `Message.metadata["a2a-rust.com/lease"]`, renewed by `GetTask` | A child keeps running after its parent dies |
 | [Budget](#budget-v1) | `Message.metadata["a2a-rust.com/budget"]` | The caller's deadline and meters are not enforced |
+| [Steering](#steering-v1) | `Message.extensions` on a `SendMessage` naming a running task; the receipt in the response task's `metadata["a2a-rust.com/steering"]` | A message to a working task is refused, as before |
 | [Idempotency key](#idempotency-v1) | `Message.metadata["a2a-rust.com/idempotency-key"]` | A retried send can start a second child |
 | [Failure class](#failure-v1) | The failed status message's `metadata["a2a-rust.com/failure"]` | A caller cannot tell a retryable failure from a final one |
 | [Approval](#approval-v1) | `metadata["a2a-rust.com/approval"]` on the asking status and the answering message | An action runs without the bound approval |
@@ -221,6 +222,40 @@ URI `https://a2a-rust.com/extensions/idempotency/v1`; metadata key
 * **Receiver.** A second send with the same key in the same tenant returns
   the task the first created, in whatever state it reached, and runs nothing.
   It honours a key whether or not the URI is listed in `Message.extensions`.
+
+## Steering v1
+
+URI `https://a2a-rust.com/extensions/steering/v1`; receipt metadata key
+`a2a-rust.com/steering` on the response's task; ADR 0036. A message to a task
+that is still `working`, which A2A does not define.
+
+```json
+{
+  "message": {
+    "messageId": "m-2", "role": "ROLE_USER", "taskId": "t-1",
+    "parts": [{ "text": "skip the retail segment" }],
+    "extensions": ["https://a2a-rust.com/extensions/steering/v1"]
+  }
+}
+```
+
+* **Sender.** MUST name the task in `taskId` and list the URI in
+  `Message.extensions`; nothing else makes the message steering. SHOULD give
+  it an idempotency key (a retry then delivers once).
+* **Receiver** (an agent that declares the URI). A message that names a
+  running task (`working`, or `submitted` with a turn running it) and lists the
+  URI MUST NOT start a turn: it is put in that turn's inbox, and the response is
+  the task as it stands with `{"delivery": "inbox" | "handed-off" | "replayed"}`
+  in its `metadata` under the key. The receipt says where the message went, not
+  that the executor read it. A message to a task that is not running is not
+  steering (parked: continued; finished: refused) and its response carries no
+  receipt. A full inbox is `503` with `Retry-After` (JSON-RPC: `-32603` with
+  `RetryInfo`); a turn that ended before delivery is `503`; a message over the
+  agent's size limit is `413`. An unrecognised `delivery` reads as accepted.
+* **Authority.** The sender's over the task and no more: it does not cancel,
+  approve or lift a budget.
+* **A peer that does not declare the URI** refuses the message as it refuses
+  any message to a working task.
 
 ## Failure v1
 

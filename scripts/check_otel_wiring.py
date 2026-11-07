@@ -110,6 +110,11 @@ MAIN_EXEMPT: dict[str, str] = {
         "time of one quiet stream; an exporter would add traffic to a "
         "stream the probe keeps quiet"
     ),
+    "scripts/live/steering/src/main.rs": (
+        "the agent of the steering live proof, whose evidence is the time "
+        "from a response to the executor's read of a message, logged per "
+        "line; an exporter would add to what that time is read against"
+    ),
 }
 
 # A manifest whose `default-features = false` dependency does not ask for

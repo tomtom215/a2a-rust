@@ -170,6 +170,13 @@ fn lease_halt_and_claim_events_are_counted() {
     m.on_halt(control::halt_scope::ALL, control::halt_action::RESUME, 0);
     m.on_halt(control::halt_scope::TENANT, control::halt_action::HALT, 0);
     m.on_claim(control::claim::REAPED);
+    m.on_steering(control::steering::DELIVERED);
+    m.on_steering(control::steering::DELIVERED);
+    m.on_steering(control::steering::FULL);
+    assert_eq!(
+        points(&reader, "a2a.server.steering"),
+        [kv("outcome=delivered", 2.0), kv("outcome=full", 1.0)]
+    );
     assert_eq!(
         points(&reader, "a2a.server.lease.events"),
         [kv("event=lapsed", 1.0)]
@@ -231,7 +238,11 @@ fn the_wrappers_forward_the_control_hooks() {
             self.0.fetch_add(1000, std::sync::atomic::Ordering::SeqCst);
         }
         fn on_subscribe_wake(&self, _: &str) {
-            self.0.fetch_add(10000, std::sync::atomic::Ordering::SeqCst);
+            self.0.fetch_add(10_000, std::sync::atomic::Ordering::SeqCst);
+        }
+        fn on_steering(&self, _: &str) {
+            self.0
+                .fetch_add(100_000, std::sync::atomic::Ordering::SeqCst);
         }
     }
     let fire = |m: &dyn Metrics| {
@@ -240,17 +251,18 @@ fn the_wrappers_forward_the_control_hooks() {
         m.on_halt("x", "y", 0);
         m.on_claim("x");
         m.on_subscribe_wake("x");
+        m.on_steering("x");
     };
     let a = Arc::new(Count::default());
     fire(&Arc::clone(&a));
-    assert_eq!(a.0.load(std::sync::atomic::Ordering::SeqCst), 11111);
+    assert_eq!(a.0.load(std::sync::atomic::Ordering::SeqCst), 111_111);
     let (first, second) = (Arc::new(Count::default()), Arc::new(Count::default()));
     fire(&crate::metrics::Tee {
         first: Arc::clone(&first),
         second: Arc::clone(&second),
     });
-    assert_eq!(first.0.load(std::sync::atomic::Ordering::SeqCst), 11111);
-    assert_eq!(second.0.load(std::sync::atomic::Ordering::SeqCst), 11111);
+    assert_eq!(first.0.load(std::sync::atomic::Ordering::SeqCst), 111_111);
+    assert_eq!(second.0.load(std::sync::atomic::Ordering::SeqCst), 111_111);
 }
 
 /// The executor's run is labelled with the tenant it ran for.

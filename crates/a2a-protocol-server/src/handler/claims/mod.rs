@@ -83,6 +83,11 @@ pub struct TurnClaims {
     held: Mutex<HashMap<String, Held>>,
     renewer_started: AtomicBool,
     reaper_started: AtomicBool,
+    /// What this handler does about steering messages other replicas hand it
+    /// (ADR 0036), when it takes steering.
+    steering: Option<SteeringSync>,
+    /// Holds one look at the store for steering messages at a time.
+    steering_look: tokio::sync::Mutex<()>,
 }
 
 /// One held claim, as the renewer acts on it.
@@ -124,7 +129,16 @@ impl TurnClaims {
             held: Mutex::new(HashMap::new()),
             renewer_started: AtomicBool::new(false),
             reaper_started: AtomicBool::new(false),
+            steering: None,
+            steering_look: tokio::sync::Mutex::new(()),
         }
+    }
+
+    /// These claims also move steering messages other replicas handed this
+    /// one into the inboxes of the turns it runs (ADR 0036).
+    pub(crate) fn with_steering(mut self, steering: SteeringSync) -> Self {
+        self.steering = Some(steering);
+        self
     }
 
     fn held(&self) -> std::sync::MutexGuard<'_, HashMap<String, Held>> {
@@ -414,7 +428,9 @@ impl RequestHandler {
 
 mod reaper;
 mod renewal;
+mod steering;
 #[cfg(test)]
 use renewal::{act_on, lapse_after};
+pub use steering::SteeringSync;
 #[cfg(test)]
 mod tests;

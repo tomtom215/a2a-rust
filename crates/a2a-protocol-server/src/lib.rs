@@ -135,6 +135,7 @@ pub mod push;
 pub mod rate_limit;
 pub mod request_context;
 pub mod serve;
+pub mod steering;
 
 // Private: the SQLite pragmas were written out four times before this.
 #[cfg(feature = "sqlite")]
@@ -242,6 +243,7 @@ pub use rpc_span::{BindingSpan, CustomBinding, StreamEnd, StreamOutcome};
 pub use serve::{Dispatcher, ServeConfig, ServeReport, Server, shutdown_signal};
 #[allow(deprecated)]
 pub use serve::{serve, serve_with_addr};
+pub use steering::{Inbox, Steered, SteeringConfig};
 pub use store::{
     InMemoryTaskStore, TaskStore, TaskStoreConfig, TenantAwareInMemoryTaskStore, TenantContext,
     TenantStoreConfig,

@@ -16,6 +16,7 @@
 //! | `admission` | in-flight rejection and the event-queue lease |
 //! | `eviction` | the stale-token sweep and the token insert |
 //! | `quorum` | the approval gate's check, and its count under a quorum |
+//! | `steer` | a message to a running task, put in its turn's inbox instead of refused (ADR 0036) |
 //! | `create` | the initial task, its request context, the store write, the inline push config |
 //! | `execute` | the spawned executor and the guard that releases its resources |
 //! | `decisions` | the pure predicates the phases above decide with |
@@ -57,6 +58,7 @@ mod quorum;
 mod respond;
 mod start;
 use start::{Committed, Started};
+mod steer;
 pub(super) mod terminal;
 mod validation;
 pub use validation::FileUrls;
@@ -175,7 +177,9 @@ impl RequestHandler {
                     Box::pin(self.respond_replay(*task, streaming, mode.response_history_length))
                         .await
                 }
-                Committed::Waiting(task) => Ok(Self::respond_waiting(*task, streaming, mode)),
+                Committed::Waiting(task) | Committed::Steered(task) => {
+                    Ok(Self::respond_waiting(*task, streaming, mode))
+                }
                 Committed::Started(started) => {
                     if mode.use_background {
                         Ok(self
@@ -204,5 +208,15 @@ mod hand_off_tests;
 mod idempotency_tests;
 #[cfg(test)]
 mod inline_executor_tests;
+#[cfg(test)]
+mod steer_bounds_tests;
+#[cfg(test)]
+mod steer_duplicate_tests;
+#[cfg(test)]
+mod steer_replica_tests;
+#[cfg(test)]
+mod steer_tenant_tests;
+#[cfg(test)]
+mod steer_tests;
 #[cfg(test)]
 mod tests;

@@ -68,6 +68,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 |---|---|
 | **Retry policy** | Configurable `RetryPolicy` with jittered exponential backoff (connection errors, timeouts, 429/502/503/504) |
 | **Idempotency keys** | A client-supplied key on `SendMessage` that the server deduplicates on, so a send that failed ambiguously can be retried without starting a second task. An extension (`https://a2a-rust.com/extensions/idempotency/v1`), **not** part of A2A v1.0, advertised on the agent card exactly when the configured `TaskStore` supports it |
+| **Steering a running task** | A message to a task that is still `working` is put in the inbox of the turn running it (`RequestContext::inbox`) instead of being refused: `Delegation::steer` and `steer_all` on the client, across replicas through the turn-claim store, bounded and counted. An extension (`https://a2a-rust.com/extensions/steering/v1`), **not** part of A2A v1.0, off by default (`RequestHandlerBuilder::with_steering`) and declared on the agent card exactly when it is on |
 | **TLS support** | HTTPS via `rustls`, no OpenSSL dependency — on by default in the client, the server and the SDK (`tls-rustls`; `default-features = false` opts any of them out), and on the server it gives the push sender HTTPS webhooks and `Server` TLS on its own listener (`Server::with_tls`, `with_tls_pem`) |
 | **Axum integration** | Feature-gated `RestRouter` for idiomatic Axum servers (`axum` feature) |
 | **Zero framework lock-in** | Core built on raw `hyper` 1.x; Axum optional, or bring your own |

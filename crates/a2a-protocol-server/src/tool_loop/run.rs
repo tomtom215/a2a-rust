@@ -15,6 +15,7 @@ pub use super::loop_error::LoopError;
 use super::model::{ChatMessage, ChatRequest, ToolCall, ToolModel};
 use super::recover;
 use super::retry::ModelRetry;
+use super::steering::{Side, before_turn};
 use super::tool::{ToolError, ToolInvocation, ToolSet};
 use crate::rpc_span::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 
@@ -212,19 +213,19 @@ impl ToolLoop {
         cancel: &CancellationToken,
         budget: Option<&BudgetHandle>,
     ) -> Result<Answer, LoopError> {
-        self.run_drafting(scope, user_text, cancel, budget, None)
+        self.run_drafting(scope, user_text, cancel, budget, Side::default())
             .await
     }
 
     /// [`run_scoped`](Self::run_scoped), each turn's text sent to `drafts`
     /// as it arrives, with the turn's number, when given (audit L5).
-    pub(crate) async fn run_drafting(
+    pub(super) async fn run_drafting(
         &self,
         scope: &str,
         user_text: &str,
         cancel: &CancellationToken,
         budget: Option<&BudgetHandle>,
-        drafts: Option<&tokio::sync::mpsc::UnboundedSender<(usize, String)>>,
+        side: Side<'_>,
     ) -> Result<Answer, LoopError> {
         let run = AgentRun::start(
             &self.meter,
@@ -232,7 +233,7 @@ impl ToolLoop {
             self.model.model_name(),
         );
         let result = self
-            .run_counted(&run, scope, user_text, cancel, budget, drafts)
+            .run_counted(&run, scope, user_text, cancel, budget, side)
             .await;
         run.ended(result.as_ref().err().map(LoopError::error_type).as_deref());
         result
@@ -246,7 +247,7 @@ impl ToolLoop {
         user_text: &str,
         cancel: &CancellationToken,
         budget: Option<&BudgetHandle>,
-        drafts: Option<&tokio::sync::mpsc::UnboundedSender<(usize, String)>>,
+        side: Side<'_>,
     ) -> Result<Answer, LoopError> {
         let specs = self.tools.specs();
         let names = self.tools.names();
@@ -260,9 +261,9 @@ impl ToolLoop {
             if cancel.is_cancelled() {
                 return Err(LoopError::Cancelled);
             }
-            out_of_time(budget)?;
+            before_turn(budget, side.inbox, &mut messages)?;
             run.inference_call();
-            let sink = drafts.map(|tx| super::model::TextSink::new(turn + 1, tx.clone()));
+            let sink = side.sink(turn + 1);
             let request = ChatRequest::new(&self.preamble, &messages, &specs);
             let reply = self
                 .retried_turn(request, cancel, sink.as_ref(), budget)
@@ -443,7 +444,7 @@ impl ToolLoop {
 
 /// [`LoopError::Budget`] once `budget`'s deadline has passed or its
 /// [`TOKENS_METER`] has nothing left: a turn would only overdraw it.
-fn out_of_time(budget: Option<&BudgetHandle>) -> Result<(), LoopError> {
+pub(super) fn out_of_time(budget: Option<&BudgetHandle>) -> Result<(), LoopError> {
     let Some(budget) = budget else { return Ok(()) };
     if budget.remaining_time() == Some(std::time::Duration::ZERO) {
         return Err(LoopError::Budget(Exhausted::Time));

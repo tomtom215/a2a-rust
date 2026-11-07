@@ -105,6 +105,7 @@ pub(crate) enum CallerIsolation {
 #[cfg(test)]
 mod dead_webhook_tests;
 mod shared_stores;
+mod steering;
 
 /// What the builder was told about the agent card.
 enum CardSetting {
@@ -207,6 +208,7 @@ pub struct RequestHandlerBuilder {
     turn_claim_ttl: std::time::Duration,
     turn_claim_renewal: std::time::Duration,
     replica_name: Option<String>,
+    steering: Option<crate::steering::SteeringConfig>,
     #[cfg(feature = "audit")]
     audit: Option<Arc<crate::audit::AuditLog>>,
     /// The profiles applied; `build()` checks what each needs.
@@ -288,6 +290,7 @@ impl RequestHandlerBuilder {
             turn_claim_ttl: crate::handler::DEFAULT_TURN_CLAIM_TTL,
             turn_claim_renewal: crate::handler::DEFAULT_TURN_CLAIM_RENEWAL,
             replica_name: None,
+            steering: None,
             #[cfg(feature = "audit")]
             audit: None,
             profiles: Vec::new(),
@@ -1202,6 +1205,7 @@ impl RequestHandlerBuilder {
     ///   met.
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ServerResult<RequestHandler> {
+        self.check_steering()?;
         if self.lease_store.is_some() && self.max_lease_ttl < crate::handler::MIN_LEASE_TTL {
             return Err(crate::error::ServerError::Config(format!(
                 "the longest lease must be at least {} ms",
@@ -1479,6 +1483,20 @@ impl RequestHandlerBuilder {
                     .with_required(false),
                 );
             }
+            if self.steering.is_some() {
+                wanted.push(
+                    AgentExtension::new(
+                        a2a_protocol_types::steering::STEERING_EXTENSION_URI.to_owned(),
+                    )
+                    .with_description(
+                        "A message to a running task, naming it and this extension, is \
+                         put in the inbox of the turn that runs it instead of being \
+                         refused; the response says where it went."
+                            .to_owned(),
+                    )
+                    .with_required(false),
+                );
+            }
             wanted.extend(crate::handler::budget::always_declared());
 
             if let Some(card) = agent_card.as_mut() {
@@ -1645,12 +1663,19 @@ impl RequestHandlerBuilder {
             TurnClaimsChoice::FromStore => task_store.turn_claims(),
         }
         .map(|store| {
-            Arc::new(crate::handler::claims::TurnClaims::new(
+            let claims = crate::handler::claims::TurnClaims::new(
                 store,
                 self.replica_name,
                 self.turn_claim_ttl,
                 self.turn_claim_renewal,
-            ))
+            );
+            Arc::new(match self.steering {
+                Some(config) => claims.with_steering(crate::handler::claims::SteeringSync {
+                    listen: config.notifications(),
+                    metrics: Arc::clone(&self.metrics),
+                }),
+                None => claims,
+            })
         });
 
         let push_sender = signing_push(self.push_sender, &self.outbound);
@@ -1784,6 +1809,7 @@ impl RequestHandlerBuilder {
             }),
             approval_gate: self.approval_gate,
             turn_claims,
+            steering: self.steering,
             #[cfg(feature = "audit")]
             audit: self.audit,
             draining: std::sync::atomic::AtomicBool::new(false),
@@ -1937,6 +1963,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("turn_claim_ttl", &self.turn_claim_ttl)
             .field("turn_claim_renewal", &self.turn_claim_renewal)
             .field("replica_name", &self.replica_name)
+            .field("steering", &self.steering)
             .field("propagation", &(&self.baggage, &self.propagators));
         let local = self.allow_process_local_stores;
         d.field("allow_process_local_stores", &local);

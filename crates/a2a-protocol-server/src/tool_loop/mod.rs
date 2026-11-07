@@ -89,6 +89,7 @@ mod retry;
 mod run;
 #[cfg(feature = "skills")]
 mod skills;
+mod steering;
 mod tool;
 
 pub use drafts::{FLUSH_AFTER, FLUSH_BYTES, draft_artifact_id};

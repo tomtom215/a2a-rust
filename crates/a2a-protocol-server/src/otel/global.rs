@@ -135,6 +135,10 @@ impl Metrics for GlobalOtelMetrics {
         self.current().on_halt(scope, action, stopped);
     }
 
+    fn on_steering(&self, outcome: &str) {
+        self.current().on_steering(outcome);
+    }
+
     fn on_claim(&self, event: &str) {
         self.current().on_claim(event);
     }
@@ -204,6 +208,7 @@ mod tests {
         metrics.on_halt("all", "halt", 1);
         metrics.on_claim("reaped");
         metrics.on_subscribe_wake("notification");
+        metrics.on_steering("delivered");
         let mut collected = ResourceMetrics::default();
         READER.collect(&mut collected).expect("collect");
         let mut names: Vec<String> = collected
@@ -228,6 +233,7 @@ mod tests {
             "a2a.server.halt.stopped_tasks",
             "a2a.server.claim.events",
             "a2a.server.subscribe.wakes",
+            "a2a.server.steering",
         ] {
             assert!(names.iter().any(|n| n == name), "{name} in {names:?}");
         }

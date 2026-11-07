@@ -45,6 +45,7 @@
     - [Running the loop](./building-agents/tool-loop/running.md)
     - [Spans and metrics](./building-agents/tool-loop/telemetry.md)
     - [Agent Skills](./building-agents/tool-loop/skills.md)
+- [Steering a Running Task](./building-agents/steering.md)
 - [Request Handler & Builder](./building-agents/handler.md)
     - [Configuring the handler](./building-agents/handler/configuration.md)
     - [Calling the handler directly](./building-agents/handler/direct-calls.md)

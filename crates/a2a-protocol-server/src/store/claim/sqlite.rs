@@ -14,7 +14,8 @@ use std::time::Duration;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use sqlx::sqlite::SqlitePool;
 
-use super::{Fut, HeldClaim, TurnClaimStore};
+use super::sqlite_steering as steering;
+use super::{Fut, Handed, HeldClaim, PendingSteering, TurnClaimStore};
 
 macro_rules! create_table {
     () => {
@@ -80,6 +81,9 @@ pub struct SqliteTurnClaims {
     pool: SqlitePool,
     /// The task table beside it, when a task store made it.
     tasks: Option<super::ClaimedTasks>,
+    /// Set once the steering table exists (`sqlite_steering`); a store that
+    /// never takes steering never creates it.
+    steering_ready: std::sync::Arc<tokio::sync::OnceCell<()>>,
 }
 
 impl SqliteTurnClaims {
@@ -96,14 +100,19 @@ impl SqliteTurnClaims {
                 .await
                 .map_err(|e| A2aError::internal(format!("turn claims migrate: {e}")))?;
         }
-        Ok(Self { pool, tasks: None })
+        Ok(Self {
+            pool,
+            tasks: None,
+            steering_ready: std::sync::Arc::default(),
+        })
     }
 
     /// Over a pool whose schema the caller has already applied.
-    pub(crate) const fn over(pool: SqlitePool, tasks: super::ClaimedTasks) -> Self {
+    pub(crate) fn over(pool: SqlitePool, tasks: super::ClaimedTasks) -> Self {
         Self {
             pool,
             tasks: Some(tasks),
+            steering_ready: std::sync::Arc::default(),
         }
     }
 }
@@ -190,6 +199,11 @@ impl TurnClaimStore for SqliteTurnClaims {
                 .execute(&self.pool)
                 .await
                 .map_err(|e| failed("release", &e))?;
+            // What was handed to a claim that has ended goes with it, when
+            // this store takes steering at all (else there may be no table).
+            if self.steering_ready.initialized() {
+                steering::forget(&self.pool, token).await?;
+            }
             Ok(())
         })
     }
@@ -249,8 +263,41 @@ impl TurnClaimStore for SqliteTurnClaims {
                 .execute(&self.pool)
                 .await
                 .map_err(|e| failed("sweep", &e))?;
-            Ok(done.rows_affected())
+            let mut swept = done.rows_affected();
+            if self.steering_ready.initialized() {
+                swept += steering::sweep(&self.pool).await?;
+            }
+            Ok(swept)
         })
+    }
+
+    fn hand_steering<'a>(
+        &'a self,
+        scope: &'a str,
+        task_id: &'a str,
+        message: &'a str,
+        capacity: usize,
+    ) -> Fut<'a, Handed> {
+        Box::pin(async move {
+            steering::ensure(&self.pool, &self.steering_ready).await?;
+            steering::hand(&self.pool, scope, task_id, message, capacity, now_ms()).await
+        })
+    }
+
+    fn peek_steering<'a>(
+        &'a self,
+        owner: &'a str,
+        tokens: &'a [String],
+        limit: usize,
+    ) -> Fut<'a, Vec<PendingSteering>> {
+        Box::pin(async move {
+            steering::ensure(&self.pool, &self.steering_ready).await?;
+            steering::peek(&self.pool, owner, tokens, limit, now_ms()).await
+        })
+    }
+
+    fn ack_steering<'a>(&'a self, seqs: &'a [i64]) -> Fut<'a, ()> {
+        Box::pin(async move { steering::ack(&self.pool, seqs).await })
     }
 
     fn abandoned(&self, quiet: Duration, limit: usize) -> Fut<'_, Vec<(String, String)>> {

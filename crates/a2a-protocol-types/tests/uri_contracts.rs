@@ -57,6 +57,10 @@ use a2a_protocol_types::provenance::{
     ContentSignature, PROVENANCE_EXTENSION_URI, PROVENANCE_METADATA_KEY, Provenance,
     mark_ai_generated, provenance_of,
 };
+use a2a_protocol_types::steering::{
+    self, Delivery, Receipt, STEERING_EXTENSION_URI, STEERING_METADATA_KEY,
+};
+use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
 use serde_json::{Value, json};
 
 use probe::wire_names;
@@ -275,6 +279,55 @@ fn lease_extension_contract() {
                 "effect": "the task's deadline moves to now + ttlMs",
             },
             "lapse": "the task is stopped and ends TASK_STATE_CANCELED",
+        }),
+    );
+}
+
+#[test]
+fn steering_extension_contract() {
+    let mut message = Message::user_text("m1", "use the cheaper index").with_task_id("t-1");
+    steering::declare(&mut message);
+    let mut keyed = Message::user_text("m2", "use the cheaper index").with_task_id("t-1");
+    steering::declare(&mut keyed);
+    set_key(&mut keyed, "8f14e45fceea167a5a36dedd4bea2543").expect("a valid key");
+    let receipt = |delivery| {
+        let mut task = Task::new("t-1", "c-1", TaskStatus::new(TaskState::Working));
+        Receipt::new(delivery).attach(&mut task);
+        task.metadata
+    };
+
+    golden::check(
+        "steering",
+        STEERING_EXTENSION_URI,
+        json!({
+            "metadataKey": STEERING_METADATA_KEY,
+            "fields": {
+                "Receipt": wire_names::<Receipt>(),
+                "Delivery": wire_names::<Delivery>(),
+            },
+            "steeringMessage": {
+                "carrier": "the message of a SendMessage that names a running task in taskId",
+                "message": carried(&message),
+                "retryable": carried(&keyed),
+                "retryNeeds": "the idempotency extension's key; without one a retry can deliver twice",
+            },
+            "receipt": {
+                "carrier": "Task.metadata of the response, which is the task as it stands",
+                "inbox": receipt(Delivery::Inbox),
+                "handedOff": receipt(Delivery::HandedOff),
+                "replayed": receipt(Delivery::Replayed),
+                "says": "where the message went; never that the executor read or acted on it",
+                "absent": "the response was not a steering delivery: the task was not running, and the message was handled as any other message to it",
+            },
+            "unrecognisedDeliveryReadsAs": Delivery::Other.as_str(),
+            "refusals": {
+                "inboxFull": "503 with Retry-After (JSON-RPC: -32603 with RetryInfo); nothing delivered",
+                "turnEnded": "503 with Retry-After; nothing delivered",
+                "tooLarge": "413; nothing delivered",
+                "notSteering": "a message to a task that is not running is handled as before: continued if parked, refused if finished",
+                "peerWithoutTheExtension": "the refusal a message to a working task always got",
+            },
+            "authority": "the sender's over the task and no more: it does not cancel, approve or lift a budget",
         }),
     );
 }

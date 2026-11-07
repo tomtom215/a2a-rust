@@ -40,6 +40,10 @@ pub mod kind {
     pub const TASK_EVENT: &str = "task.event";
     /// A caller asked for a task to be canceled.
     pub const CANCEL_REQUESTED: &str = "task.cancel_requested";
+    /// A message was delivered to a running task's inbox (ADR 0036): who sent
+    /// it, to which task, by digest. Written when the server accepts the
+    /// message, not when the executor reads it.
+    pub const STEERED: &str = "task.steered";
     /// A person approved or refused an action that waited for them.
     pub const APPROVAL: &str = "approval";
     /// Every task of a tenant, or of the server, was ordered to stop, or

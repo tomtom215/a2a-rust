@@ -66,22 +66,28 @@
 //! coordinate. [`InMemoryTurnClaims`] exists for tests that run several
 //! handlers over one in-memory store.
 
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use a2a_protocol_types::error::{A2aError, A2aResult, ErrorCode};
 use a2a_protocol_types::task::TaskId;
 
 #[cfg(feature = "postgres")]
 pub(crate) mod postgres;
+#[cfg(feature = "postgres")]
+mod postgres_steering;
 #[cfg(feature = "sqlite")]
 pub(crate) mod sqlite;
+#[cfg(feature = "sqlite")]
+mod sqlite_steering;
 #[cfg(feature = "postgres")]
 pub(crate) mod upgrade;
 
+mod memory;
+pub use memory::InMemoryTurnClaims;
+#[cfg(test)]
+use memory::{live, swept};
 #[cfg(feature = "postgres")]
 pub use postgres::PostgresTurnClaims;
 #[cfg(feature = "sqlite")]
@@ -96,6 +102,36 @@ pub struct HeldClaim {
     pub token: String,
     /// A replica not running the task asked for it to be cancelled.
     pub cancel_requested: bool,
+}
+
+/// What [`TurnClaimStore::hand_steering`] did with a message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Handed {
+    /// Stored for the replica that holds the claim, to move into the turn's
+    /// inbox.
+    Queued,
+    /// The claim's queue already holds as many messages as the capacity
+    /// allows; nothing was stored.
+    Full,
+    /// No live claim names the task: no replica runs it. Nothing was stored.
+    NoClaim,
+    /// This claim store cannot hand a message to another replica.
+    Unsupported,
+}
+
+/// A steering message stored for the turn that holds `token`, as
+/// [`TurnClaimStore::peek_steering`] reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PendingSteering {
+    /// Orders the messages of one claim, oldest first, and names this one to
+    /// [`TurnClaimStore::ack_steering`].
+    pub seq: i64,
+    /// The claim of the turn the message is for.
+    pub token: String,
+    /// The message, as the handler wrote it (JSON).
+    pub message: String,
 }
 
 /// Where turn claims are kept. See the [module documentation](self).
@@ -212,6 +248,84 @@ pub trait TurnClaimStore: Send + Sync + 'static {
         let _ = hand_off_window;
         self.abandoned(quiet, limit)
     }
+
+    /// Stores a steering message (ADR 0036) for the replica that holds the
+    /// live claim on the task, unless that claim's queue already holds
+    /// `capacity` messages. One atomic step: the claim is checked and the
+    /// message stored together, so a message is never stored for a claim that
+    /// was released first. `message` is the JSON the holder reads back from
+    /// [`peek_steering`](Self::peek_steering); the store does not read it.
+    ///
+    /// What not overriding it costs: the default answers
+    /// [`Handed::Unsupported`], so a steering message that reaches a replica
+    /// other than the one running the turn is refused instead of delivered.
+    /// A server whose turns are always routed to one replica, or that has one
+    /// replica, is unaffected. The bundled stores override it, and the
+    /// in-memory one is for tests that run several handlers in one process.
+    ///
+    /// # Errors
+    ///
+    /// The storage's.
+    fn hand_steering<'a>(
+        &'a self,
+        scope: &'a str,
+        task_id: &'a str,
+        message: &'a str,
+        capacity: usize,
+    ) -> Fut<'a, Handed> {
+        let _ = (scope, task_id, message, capacity);
+        Box::pin(async { Ok(Handed::Unsupported) })
+    }
+
+    /// The steering messages stored for the live claims among `tokens` that
+    /// `owner` holds, oldest first, at most `limit`. Reads only: a message
+    /// stays until [`ack_steering`](Self::ack_steering) names it, so one that
+    /// does not fit its turn's inbox now is offered again at the next look.
+    ///
+    /// What not overriding it costs: the default finds none, so a message
+    /// another replica stored for this one is never delivered (it waits until
+    /// its claim ends). Override it together with
+    /// [`hand_steering`](Self::hand_steering).
+    ///
+    /// # Errors
+    ///
+    /// The storage's.
+    fn peek_steering<'a>(
+        &'a self,
+        owner: &'a str,
+        tokens: &'a [String],
+        limit: usize,
+    ) -> Fut<'a, Vec<PendingSteering>> {
+        let _ = (owner, tokens, limit);
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    /// Deletes the steering messages `seqs` names, once they are in their
+    /// turns' inboxes. Names that are already gone are ignored.
+    ///
+    /// What not overriding it costs: nothing is ever deleted, so a store that
+    /// overrides [`peek_steering`](Self::peek_steering) alone delivers each
+    /// message again at every look. Override all three, or none.
+    ///
+    /// # Errors
+    ///
+    /// The storage's.
+    fn ack_steering<'a>(&'a self, seqs: &'a [i64]) -> Fut<'a, ()> {
+        let _ = seqs;
+        Box::pin(async { Ok(()) })
+    }
+
+    /// A signal that [`hand_steering`](Self::hand_steering) stored a message,
+    /// from whichever replica, for the handler to look at once rather than at
+    /// its next poll; `None` when the store sends none.
+    ///
+    /// What not overriding it costs: a handed-off message waits for the
+    /// handler's next poll, at the claim renewal interval (one second by
+    /// default) instead of arriving at once. Correctness does not depend on
+    /// it: a signal that is lost or never sent is made up by the poll.
+    fn steering_signals(&self) -> Option<tokio::sync::broadcast::Receiver<()>> {
+        None
+    }
 }
 
 /// Which task table a claim store's [`abandoned`](TurnClaimStore::abandoned)
@@ -281,132 +395,12 @@ pub fn current_fence() -> Option<String> {
     super::tenant::TenantContext::fence()
 }
 
-/// Claims in process memory, for tests that run several handlers over one
-/// in-memory store. Expiry is measured on this process's monotonic clock.
-#[derive(Debug, Default)]
-pub struct InMemoryTurnClaims {
-    claims: Mutex<HashMap<(String, String), Entry>>,
-}
-
-#[derive(Debug)]
-struct Entry {
-    owner: String,
-    token: String,
-    cancel_requested: bool,
-    expires: Instant,
-}
-
-impl InMemoryTurnClaims {
-    /// No claims.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Whether `token` still holds a claim.
-    #[must_use]
-    pub fn holds(&self, token: &str) -> bool {
-        self.lock().values().any(|e| e.token == token)
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<(String, String), Entry>> {
-        self.claims
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-}
-
-impl TurnClaimStore for InMemoryTurnClaims {
-    fn claim<'a>(
-        &'a self,
-        scope: &'a str,
-        task_id: &'a str,
-        owner: &'a str,
-        token: &'a str,
-        ttl: Duration,
-    ) -> Fut<'a, bool> {
-        Box::pin(async move {
-            let now = Instant::now();
-            let entry = Entry {
-                owner: owner.to_owned(),
-                token: token.to_owned(),
-                cancel_requested: false,
-                expires: now + ttl,
-            };
-            let key = (scope.to_owned(), task_id.to_owned());
-            let mut claims = self.lock();
-            if claims.get(&key).is_some_and(|e| live(e.expires, now)) {
-                return Ok(false);
-            }
-            claims.insert(key, entry);
-            drop(claims);
-            Ok(true)
-        })
-    }
-
-    fn release<'a>(&'a self, token: &'a str) -> Fut<'a, ()> {
-        Box::pin(async move {
-            self.lock().retain(|_, e| e.token != token);
-            Ok(())
-        })
-    }
-
-    fn renew<'a>(
-        &'a self,
-        owner: &'a str,
-        tokens: &'a [String],
-        ttl: Duration,
-    ) -> Fut<'a, Vec<HeldClaim>> {
-        Box::pin(async move {
-            let expires = Instant::now() + ttl;
-            Ok(self
-                .lock()
-                .values_mut()
-                .filter(|e| e.owner == owner && tokens.contains(&e.token))
-                .map(|e| {
-                    e.expires = expires;
-                    HeldClaim {
-                        token: e.token.clone(),
-                        cancel_requested: e.cancel_requested,
-                    }
-                })
-                .collect())
-        })
-    }
-
-    fn request_cancel<'a>(&'a self, scope: &'a str, task_id: &'a str) -> Fut<'a, bool> {
-        Box::pin(async move {
-            let now = Instant::now();
-            Ok(self
-                .lock()
-                .get_mut(&(scope.to_owned(), task_id.to_owned()))
-                .filter(|e| live(e.expires, now))
-                .map(|e| e.cancel_requested = true)
-                .is_some())
-        })
-    }
-
-    fn sweep(&self, older_than: Duration) -> Fut<'_, u64> {
-        Box::pin(async move {
-            let now = Instant::now();
-            let mut claims = self.lock();
-            let before = claims.len();
-            claims.retain(|_, e| e.expires + older_than > now);
-            Ok((before - claims.len()) as u64)
-        })
-    }
-}
-
-/// Whether a claim expiring at `expires` still holds at `now`: until the
-/// instant it expires, and not at it, which is when another turn may take it.
-fn live(expires: Instant, now: Instant) -> bool {
-    expires > now
-}
-
 #[cfg(test)]
 mod hand_off_tests;
 #[cfg(test)]
 mod postgres_plan_tests;
+#[cfg(test)]
+mod steering_tests;
 #[cfg(test)]
 mod tests;
 
