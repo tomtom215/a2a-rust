@@ -114,13 +114,23 @@ pub(crate) fn status_timestamp_sqlite(ts: Option<&str>) -> Option<String> {
 }
 
 /// Normalizes a status timestamp to canonical RFC 3339 UTC for binding into
-/// `Postgres` `::timestamptz` casts, or `None` when missing/unparseable (the
-/// SQL then falls back to the write wall-clock). Same ordering rationale as
-/// [`status_timestamp_sqlite`].
+/// `Postgres` `::timestamptz` casts, or `None` when missing, unparseable, or
+/// in year 0000 (the SQL then falls back to the write wall-clock, or, for a
+/// list filter, matches nothing — the same as any other unparseable value).
+/// Same ordering rationale as [`status_timestamp_sqlite`].
+///
+/// Year 0000 is the one instant this crate's own RFC 3339 parser accepts
+/// that `Postgres`'s `timestamptz` cannot hold (its range starts at year
+/// 0001): passing it through used to reach `(…)::timestamptz` and answer the
+/// caller a database error (`-32603`, carrying `Postgres`'s own message) —
+/// the same class the `ListTasks` page-token fix closed, reached here
+/// through `statusTimestampAfter` and a task's own status timestamp
+/// (hostile campaign, wave 2, `W2-hostile-1`).
 #[cfg(feature = "postgres")]
 pub(crate) fn status_timestamp_rfc3339(ts: Option<&str>) -> Option<String> {
     let millis = ts.and_then(a2a_protocol_types::parse_iso8601_to_unix_millis)?;
-    Some(a2a_protocol_types::unix_millis_to_iso8601(millis))
+    let iso = a2a_protocol_types::unix_millis_to_iso8601(millis);
+    (!iso.starts_with("0000")).then_some(iso)
 }
 
 #[cfg(feature = "sqlite")]
@@ -222,5 +232,41 @@ mod status_timestamp_tests {
         );
         assert_eq!(super::status_timestamp_rfc3339(None), None);
         assert_eq!(super::status_timestamp_rfc3339(Some("nope")), None);
+    }
+
+    /// Year 0000 is a real instant to this crate's own RFC 3339 parser (the
+    /// first year the proleptic Gregorian calendar can name), but `Postgres`'s
+    /// `timestamptz` has no year 0000 and answers `::timestamptz` with a
+    /// database error — the same class the `ListTasks` page-token fix closed,
+    /// reached here through `statusTimestampAfter` and a task's own status
+    /// timestamp (hostile campaign, wave 2). `None` here is what an
+    /// unparseable value already gets: `ListTasks` answers an empty page for
+    /// the filter, and a save falls back to the write wall-clock, never a
+    /// bound `::timestamptz` the database itself has to refuse.
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn rfc3339_refuses_a_year_postgres_timestamptz_cannot_hold() {
+        for (input, why) in [
+            ("0000-01-01T00:00:00Z", "the exact boundary"),
+            (
+                "0000-12-31T23:59:59.999999Z",
+                "the last instant of year 0000",
+            ),
+            (
+                "0001-01-01T00:00:00+01:00",
+                "a positive offset moves it into 0000",
+            ),
+        ] {
+            assert_eq!(
+                super::status_timestamp_rfc3339(Some(input)),
+                None,
+                "{input} ({why}) should be treated as unparseable for Postgres"
+            );
+        }
+        // A year Postgres can hold, even very close to the boundary, is kept.
+        assert_eq!(
+            super::status_timestamp_rfc3339(Some("0001-01-01T00:00:00Z")).as_deref(),
+            Some("0001-01-01T00:00:00.000Z"),
+        );
     }
 }

@@ -1,0 +1,2 @@
+[probe4] serving on 35001
+[target] serve ended: ServeReport { accepted: 6, drained: true, abandoned: 0, tasks: Some(InFlightReport { completed: 0, cancelled: 0, still_running: 0, finished: true }), refused: None }

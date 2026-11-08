@@ -1,0 +1,42 @@
+[h4_mem] serving on 25001
+[h4_mem] exec start e25a9c64-2b2c-419e-8028-cbd874152b9a
+[h4_mem] exec start 04b6bdea-50f2-431c-b044-df77ed6c0a78
+
+thread 'tokio-rt-worker' (6873) panicked at src/exec.rs:84:21:
+hostile executor panic
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[h4_mem] exec start 6a70eb99-8efb-404d-85b7-d54e83263277
+
+thread 'tokio-rt-worker' (6873) panicked at src/exec.rs:84:21:
+hostile executor panic
+[h4_mem] exec start b5e9ea72-81e6-44cf-8b20-b2b225e5b8fe
+
+thread 'tokio-rt-worker' (6873) panicked at src/exec.rs:84:21:
+hostile executor panic
+[h4_mem] exec start 8924ab7e-8705-4f18-ba91-3197efb39b63
+[h4_mem] exec start 70e79882-5a8f-4ce8-925a-fccfec8a7c4b
+[h4_mem] exec start 235c8950-f958-4d1f-bb57-518c23ab6a2e
+[h4_mem] exec start b9591fde-704c-415c-8a20-c9ed3cb1ec0c
+[h4_mem] exec start bd40bb6f-c439-4a52-8636-82134990f709
+[h4_mem] exec start 9abefc45-e73e-4e2a-9d00-bf289ec767b7
+[h4_mem] exec start 73d8af41-b725-4086-a956-66698af20b6d
+[h4_mem] exec start 7e211645-b5e7-440c-8de6-3df3a6c0d00d
+[h4_mem] exec start 8b2a977f-5c04-4bf9-9a5e-57efe1fbdae2
+[h4_mem] exec start 05ecf77f-9306-4fc1-9597-5f46c8e398f2
+
+thread 'tokio-rt-worker' (6872) panicked at src/exec.rs:84:21:
+hostile executor panic
+[h4_mem] exec start 52ecf76e-ed8d-4475-b8a0-9f0fb08a016a
+
+thread 'tokio-rt-worker' (6871) panicked at src/exec.rs:84:21:
+hostile executor panic
+[h4_mem] exec start a57deb01-38bf-407f-ab11-9c930b95deae
+
+thread 'tokio-rt-worker' (6873) panicked at src/exec.rs:84:21:
+hostile executor panic
+[h4_mem] exec start 95a9afcb-1891-4ca6-bf12-63799b964f15
+[h4_mem] exec start 2a5a2011-7a1c-47ba-b179-1c724cdcecaf
+[h4_mem] exec start acb6b989-ea41-49f3-a951-1530cede72ba
+[h4_mem] exec start 8d47361f-0e17-4fe5-97d1-46f73066c6fc
+[h4_mem] exec start 41c3c81f-b250-41d6-a284-691094ea54c3
+[target] serve ended: ServeReport { accepted: 947, drained: true, abandoned: 0, tasks: Some(InFlightReport { completed: 0, cancelled: 0, still_running: 0, finished: true }), refused: None }

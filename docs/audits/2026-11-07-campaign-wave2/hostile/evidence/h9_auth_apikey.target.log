@@ -1,0 +1,2 @@
+[h9_auth_apikey] serving on 36003
+[target] serve ended: ServeReport { accepted: 7, drained: true, abandoned: 0, tasks: Some(InFlightReport { completed: 0, cancelled: 0, still_running: 0, finished: true }), refused: None }

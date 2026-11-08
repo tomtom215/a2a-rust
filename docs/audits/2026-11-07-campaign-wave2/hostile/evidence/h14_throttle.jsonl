@@ -1,0 +1,4 @@
+{"attack": "10 failures, each with a different forged X-Forwarded-For, no trusted hop: counted as one peer, throttled after 3", "verdict": "held", "detail": {"codes": {"-32600": 3, "-32603": 7}, "outcomes": [-32600, -32600, -32600, -32603, -32603, -32603, -32603, -32603, -32603, -32603]}}
+{"attack": "10 failures, each with a different X-Forwarded-For, trusted hop=1: each address gets its own budget (documented, not a bypass of an untrusted header)", "verdict": "held", "detail": {"outcomes": [-32600, -32600, -32600, -32600, -32600, -32600, -32600, -32600, -32600, -32600]}}
+{"attack": "target processes alive", "verdict": "held", "detail": "see per-case detail"}
+{"tally": {"tried": 3, "held": 3, "deviation": 0}}

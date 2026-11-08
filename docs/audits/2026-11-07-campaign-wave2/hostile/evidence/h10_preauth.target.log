@@ -1,0 +1,2 @@
+[h10_preauth] serving on 36501
+[target] serve ended: ServeReport { accepted: 24, drained: true, abandoned: 0, tasks: Some(InFlightReport { completed: 0, cancelled: 0, still_running: 0, finished: true }), refused: None }
