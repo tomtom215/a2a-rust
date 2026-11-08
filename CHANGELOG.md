@@ -2854,6 +2854,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   data crosses the boundary. Authenticating before parsing would also make every malformed request cost an authentication attempt, so it is a
   design decision and is not changed.
 
+- **Tool-loop and model-provider edges found by running real models** (live-model campaign, wave 2, 2026-11-08; each reproduced by the agent, not all
+  re-run since): a provider's error body (at most 512 bytes, which can echo the prompt) reaches the `invoke_agent` span as span events and the
+  operator's log, where `book/src/deployment/observability/` says spans carry no content (W2-LIVE-8); `gen_ai.response.model`, a string the provider
+  chooses, labels five metrics, so 200 names made 1,000 series (W2-LIVE-9); a trusted project skill whose name is a Cyrillic look-alike of an
+  operator's skill is a second skill (W2-LIVE-11); `finish_reason: content_filter` with partial text completes the task unmarked, as only `length` is
+  marked (W2-LIVE-12); a tool call cut at `max_tokens` surfaces as the provider's HTTP 500 and fails the task `internal` (llama-server's own parse error,
+  W2-LIVE-13); a steering message sent during the answering turn is receipted `inbox` and never read (by design; the `unread` metric says so,
+  W2-LIVE-14).
+
 - **Parked-task expiry** (audit D-18): a parked task deleted by `parked_max_age` answers `TaskNotFound` afterwards, and a stream open on it ends without a terminal state; a continuation that read the task a moment before the sweep and takes its claim after it writes the task again, without its event log.
 
 - **Agent Skills** (ADR 0035): the catalog is a snapshot taken at start-up (no hot reload; build a new executor to pick up a change); scripts are never run; on a platform without Unix file identities (Windows) the reader's check after the open compares paths only, a hard link names any file its maker can read, and a file replaced by a FIFO between the check and the open holds one blocking-pool thread; not yet run against a live model, on Windows or on macOS.

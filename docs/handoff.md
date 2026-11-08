@@ -85,14 +85,26 @@ session re-runs it instead of copying the number. What was not run is under *Not
   death, medium, in the CHANGELOG's Known Limitations. **W2-hostile-4** (a NUL in any message field: `-32603` on PostgreSQL, accepted elsewhere) is
   fixed uniformly at ingress (`af07c2b5`), a behaviour change listed for you. **W2-hostile-5** (authentication after dispatch, low) is a Known
   Limitation, not changed. Not run by that agent: cargo-fuzz, h2spec, toxiproxy, `LISTEN`/`NOTIFY` abuse, the 0.15-table upgrade with live rows, mTLS
-  identity from a forwarded header, a timing measurement of credential comparison. **The live-model agent had not reported** when this was written; its worktree is
-  `.claude/worktrees/agent-a0d0167778a2b513b`.
+  identity from a forwarded header, a timing measurement of credential comparison. **The live-model agent** (Qwen3.5-2B and Gemma 4 E2B on llama.cpp b12189, 24 provider misbehaviours, 58 hostile skill reads, steering, budgets,
+  delegation, canaries through traces, metrics and logs; `docs/audits/2026-11-07-campaign-wave2/live/README.md`, scripts in
+  `scripts/live/campaign/live/`) reported 15 findings and is merged. It fixed four (**W2-LIVE-1, high**: a provider `usage` or a child's `spent`
+  of 2^64-1 left the task `working` for ever, because the status written on every update held a number the event queue refuses; the grant of an
+  unnamed meter at `u64::MAX`; a linked `references/` directory listed to the model; a provider's error body forging log lines). Re-checked here, not
+  taken on its word: its production diffs read, its tests re-run on the merged tree (394 passed), and four of its findings fixed on this branch
+  (`17e124fb`): **a failed run now sends its tool trace first** (W2-LIVE-3, partly this branch's own regression: M-1 turned "empty reply after tools"
+  from completed-with-trace into failed-with-nothing), **a trace line is bounded** to 16 KiB (W2-LIVE-4: a 16 MiB result failed a finished run), **a
+  reply's tool calls are bounded** to 64 (W2-LIVE-5: 90,000 calls reached 1.4 GB), and **a malformed usage count no longer refuses a completion**
+  (W2-LIVE-10). W2-LIVE-15 is not a defect: the README's "10 of 10" are recorded earlier runs. Left, in the CHANGELOG's Known Limitations: W2-LIVE-8
+  (provider error body in span events and logs), 9 (`gen_ai.response.model` as a label), 11, 12, 13, 14. Not run by that agent: Docker and the
+  observability stack, PostgreSQL steering and cross-replica runs, `rig-agent`, `mcp-agent`, `agent-team`, `swarm`, thinking-on skills and steering,
+  gRPC with a bearer token, steering over WebSocket.
 - **Decisions made for the maintainer, open to a veto** are listed in *Waiting on the maintainer*, under "Added to 0.16.0 on 2026-11-07".
 
 ### First, next
 
-1. Collect the two campaign reports. Treat each as data: re-run what it claims, read the source it cites, and only then fix; merge the
-   worktree branches; **then remove the worktrees** (`git worktree remove`), which otherwise break `check_gate_reachability.py`.
+1. Both campaign reports are in and merged. If a third wave runs, treat each report as data (re-run what it claims, read the source it cites,
+   only then fix: two of the hostile agent's findings and one of the live agent's were wrong or incomplete on re-checking), and **remove its
+   worktree** (`git worktree remove`) before running the gates: a leftover one breaks `check_gate_reachability.py`.
 2. The CI parity not yet run on this tree: `cargo semver-checks --package a2a-protocol-types --package a2a-protocol-client --package
    a2a-protocol-server --package a2a-protocol-sdk --all-features --baseline-rev v0.15.0 --release-type patch` (it enumerates every breaking
    change; reconcile the list with the CHANGELOG's *Breaking Changes*; it needs about 4 GB and was stopped once for lack of disk), the SLIMRPC
@@ -113,8 +125,8 @@ session re-runs it instead of copying the number. What was not run is under *Not
    ADR 0028.
 
 - **Not verified** (as of this checkpoint): CI on any commit of this session; the official TCK, ACTS, ITK and the Windows and macOS test legs
-  (Windows was only cross-clippy'd); everything under *First, next* 1 to 3; a live model run of skills or steering (agent running); steering
-  over gRPC or WebSocket (carried as any `SendMessage`, not tested); anything through PgBouncer; Kubernetes; IPv6 on the wire (this kernel has
+  (Windows was only cross-clippy'd); everything under *First, next* 1 to 3; a live model run of skills or steering beyond what the agent ran (it ran both, on Qwen3.5-2B and Gemma 4 E2B, over JSON-RPC, HTTP+JSON and
+  gRPC); steering over WebSocket (carried as any `SendMessage`, not tested); anything through PgBouncer; Kubernetes; IPv6 on the wire (this kernel has
   none).
 
 ### Facts this session established
@@ -331,6 +343,8 @@ session start.
   - *`with_blocking_over_stream` answers with `GetTask`'s stored task, not a fold of the events*, and is off by default.
   - *A rate-limit counter row now records its window width* (a table from 0.15 gains a column at start-up; rows with no width are removed
     by the first sweep, which forgets a window or two of counts once).
+  - *Three bounds in the tool loop, each with a default you may change or veto* (`17e124fb`): 64 tool calls per model reply (`with_max_calls_per_turn`), a
+    16 KiB trace line (`TRACE_LINE_LIMIT`, not configurable), and the trace of a failed run sent before the failure.
   - *A NUL character is refused in every field of a `SendMessage`, on every store* (`InvalidParams`), where the in-memory and SQLite stores accepted it and
     PostgreSQL failed `-32603`; the alternative was refusing it only in the PostgreSQL stores, which leaves the stores disagreeing about what a client may send.
   - *Built on 2026-11-08*: M-1 (an empty final reply fails the task; a cut-off one completes it, marked) and `ListTasks` with a page token no store
