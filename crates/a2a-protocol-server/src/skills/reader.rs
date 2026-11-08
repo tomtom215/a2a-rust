@@ -198,6 +198,13 @@ fn identity(metadata: &fs::Metadata) -> (u64, u64) {
 
 /// Elsewhere every file has the same, so [`verify`] has only the path
 /// comparison to go on.
+///
+/// Skipped by cargo-mutants (ADR 0006, "Equivalent mutants"): its only use is
+/// `identity(&opened) != identity(&named)` in [`verify`], and a constant is
+/// equal to itself, so `(0, 1)`, `(1, 0)` and `(1, 1)` behave exactly as
+/// `(0, 0)` does. It is also compiled only off Unix, where no Linux mutation run
+/// builds it: those three survived there for that reason too.
+#[mutants::skip]
 #[cfg(not(unix))]
 const fn identity(_: &fs::Metadata) -> (u64, u64) {
     (0, 0)
