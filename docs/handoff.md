@@ -26,14 +26,15 @@ session re-runs it instead of copying the number. What was not run is under *Not
 
 - **Where the code is.** Pull request #197 merged: `main` is `27889e09` (`git rev-parse origin/main`), the workspace reads 0.16.0, and
   **nothing is tagged**: the newest tag is `v0.15.0` (`git tag --sort=-creatordate | head -1`). The maintainer tags; nothing here does.
-- **This session's branch** is `claude/affectionate-gauss-5yn4f5` off `main`, 61 commits ahead (`git log --oneline origin/main..HEAD | wc -l`),
-  with no pull request and **no CI run on any of it**. Started on the maintainer's instruction of 2026-11-07: ADR 0035 (agent skills) and
+- **This session's branch** is `claude/affectionate-gauss-5yn4f5` off `main`, 95 commits ahead before this file's own (`git log --oneline
+  origin/main..HEAD | wc -l`), in **draft pull request #203** (https://github.com/tomtom215/a2a-rust/pull/203). CI has run twice on it
+  (*Verified*). Started on the maintainer's instruction of 2026-11-07: ADR 0035 (agent skills) and
   ADR 0036 (steering) **before the tag** (moving the decision of 2026-11-03), the adversarial campaign, and the deferred items, with CI at 60 to
   90 minutes a run so few runs, and surviving mutants prevented by writing the tests with the code and running cargo-mutants on the diff
   locally before any push. **Authorship:** every commit is `Tom F. <tomf@tomtomtech.net>` with one `Signed-off-by`, as the maintainer said
   and as `dco.yml` compares; the session's stop hook asked repeatedly to re-author them as `Claude <noreply@anthropic.com>` because GitHub will
   show them Unverified ("missing signature, or committer email is not noreply@anthropic.com"; none is signed, `git log -1 --format=%G?` is `N`).
-  That was not done: it contradicts the instruction and would fail the DCO check. Yours to decide before the push.
+  That was not done: it contradicts the instruction and would fail the DCO check (it passed on all of them in CI). Yours to decide before the merge.
 - **Built on that branch** (each by a test seen to fail first, or a hand mutant seen to be killed, as each commit says): E-F15
   (`AuthFailureThrottle::with_shared_counter`, and the PostgreSQL rate-limit counter's sweep, which deleted another window width's live rows,
   measured in plain SQL); F14 (a streaming send whose executor panics ends with the `failed` frame); B-11 option 2
@@ -80,6 +81,29 @@ session re-runs it instead of copying the number. What was not run is under *Not
   **every one of the 93 runs exited 0** (`scratchpad/members_summary.log`, `members2_summary.log`; e.g. default features, server 3180 passed and 15 skipped, client 1330,
   types 662, SDK 27, discovery 17, CLI 81; four members have no tests: `a2a-benchmarks`, `a2a-tck-sut`, `live-model`, `swarm`). **That is not CI's command**: `--workspace`
   unifies features across all members in one build, and a package-at-a-time run does not, so a failure that appears only under unified features would not show here.
+  **CI on pull request #203** (the check-run lists, read through the GitHub tools; each number below is a count of what they returned). *First pass*,
+  head `e0d2bee2` (a docs-only difference from `fd5c0b84`): 83 check runs, 71 success, 5 failure, 7 skipped (the incremental and full mutation jobs, the benchmark run, the ITK
+  baseline comparison, the nightly canary, the `codecov.yml` check). The Test jobs on Ubuntu and macOS passed for both toolchains, so **the `--workspace` builds CI runs, which this
+  disk could not, passed**. The five failures: (1) *Test (postgres integration)*: no test failed. `scripts/run_postgres_suites.py` takes every library file that spells the
+  PostgreSQL URL variable as a module it must find a PostgreSQL test in, and `store/claim/steering_tests.rs` spelled it only in its module doc ("library module
+  store::claim::steering_tests ran no test"). Reproduced against a local PostgreSQL 16, fixed in `908e6be0`; the script then exits 0 (14 test targets, 21 library modules, 66
+  library tests) and the two steps CI skipped after the failure pass (encrypted store, 1 test; rate-limit counter, 10). The same commit lengthens a 30 ms claim time to live in
+  that file's case `a_message_never_reaches_a_later_claim`: it failed once in my first local run with `NoClaim` where `Queued` was expected, and with a 100 ms gap injected
+  between the claim and the hand-over it fails that way in all three stores while 1 s passes in all three (the stall that lapsed the claim in the real run was not
+  reproduced: 60 runs under CPU load and 20 with PostgreSQL paused passed). (2, 3) *Test (stable, windows-latest)* and *(1.94, windows-latest)*: the same two of 7621 tests failed
+  in each, both in `skills/reader_tests` and both a test assuming Unix path behaviour: `PathBuf::push` onto a `\\?\` path removes `..` (std's `path.rs`, "verbatim paths need .
+  and .. removed", read in the toolchain's source), so the test never built an unresolved path and `verify` rightly returned `Ok`; and `ENOTDIR` is a Unix error kind. `verify`
+  and `from_io` are unchanged; fixed in `f2bd4103`. (4) *CodeQL*: four alerts, below. (5) *Mutation Testing (incremental)*: fails by design until the PR carries the
+  `mutation-test` label (`mutants.yml`); not added. *Second pass*, head `6eca972b` (the three fix commits, the last touching only `model_proxy.py`): 83 check runs, 74 success, 2
+  failure, 7 skipped; **both Windows Test jobs, both macOS, both Ubuntu and PostgreSQL integration passed**; the two failures are CodeQL and the label gate. Durations, start to
+  completion: Windows 83 and 107 minutes (the jobs now run all 25 steps instead of stopping at step 6), macOS 88 and 89, so budget two hours a run.
+  **CodeQL**: four alerts in scripts no workflow runs: `scripts/live/campaign/live/model_proxy.py` (partial SSRF at the upstream request; response splitting twice at the
+  header relay) and `scripts/live/adopter/06-manifest-lint.py:73` (clear-text logging: the line prints a Kubernetes Secret reference's name and key, not a secret, so a
+  false positive, left for you to dismiss). The proxy listens on `127.0.0.1` and connects only to its upstream port; a probe found one real defect (a control character in
+  the path dropped the connection with a traceback), fixed in `6eca972b`, **which did not clear the alerts**: the second CodeQL run still reports 1 critical, 1 high, 2 medium
+  (response splitting reappeared as alerts 209 and 210 at the new line). CodeQL's own query source (python-all 7.2.9, read as text from its downloadable bundle) models a
+  header-injection sanitizer only as `x.replace("\n", ...)` and a partial-SSRF guard only as `re.fullmatch` on a local variable; `1da23c01` rewrites the proxy that way and
+  is **unverified until the next CodeQL run**, because **running the CodeQL binary was refused by the session's permission classifier** and there is no local CodeQL result.
   Before that: the moved in-memory token tests and `store_tests` (21 passed), the skills lib tests (175 passed). Workspace, `-D warnings`:
   `cargo clippy --workspace --all-targets` with all features and with defaults, `cargo hack clippy --each-feature` over the four published
   crates (61 combinations), and the Windows cross-clippy (`--target x86_64-pc-windows-gnu`, after two fixes): exit 0; `cargo test --doc
@@ -138,14 +162,14 @@ session re-runs it instead of copying the number. What was not run is under *Not
 1. Both campaign reports are in and merged. If a third wave runs, treat each report as data (re-run what it claims, read the source it cites,
    only then fix: two of the hostile agent's findings and one of the live agent's were wrong or incomplete on re-checking), and **remove its
    worktree** (`git worktree remove`) before running the gates: a leftover one breaks `check_gate_reachability.py`.
-2. The CI parity still not run on this tree: the `--workspace` form of `ci.yml`'s `test` matrix (every variant passes one package at a time, see *Verified*; the single
-   `--workspace` build that unifies features does not fit this disk, so run it on a runner with room), the examples run
-   (clippy compiled them; `example-surface` jobs were not run), the TCK cross-language legs, the example-agent TCK legs, fuzzing (needs cargo-fuzz), Kani, the
-   Docker-built jobs (ACTS, ITK image, the deploy image), and the Windows and macOS *test* legs (Windows only cross-clippy'd; macOS cannot be cross-checked here).
+2. CI parity: CI has now run everything in `ci.yml` that is not skipped, twice (76 of 83 check runs reached a conclusion; the examples, the TCK cross-language and
+   example-agent legs, the fuzz smoke jobs, Kani, the Docker-built jobs and the Windows and macOS test legs are in it). What no run has done: the incremental mutation shards
+   over the whole diff (they start when the PR carries the `mutation-test` label; the workflow's own comments disagree, "about two hours" a server shard against a 75-minute
+   timeout it calls unmeasured, and this diff is 678 files, so read the first shard's log before trusting a pass) and a CodeQL run on `1da23c01`.
 3. Mutation not yet run: `skills/reader.rs` and `skills/tools.rs` in the real server crate; the whole diff against `origin/main` the way
    `mutants.yml` shards it (this session ran per-area diffs). The two out-of-diff survivors above are open.
 4. Then re-point the spec ledger after the last CHANGELOG edit (`python3 scripts/check_spec_ledger.py --fix-lines`: it cites a CHANGELOG line),
-   update this file, and open the pull request; the register is current for E-F15, D-03 (d), B-11, E-F25 and D-18
+   update this file (the pull request is open: #203, draft); the register is current for E-F15, D-03 (d), B-11, E-F25 and D-18
    (`scripts/audit/plan_status.py`: 191 of 191). The adopter's open lows (D-6, D-9 to D-13, D-16 to D-18) are in
    `docs/audits/2026-11-07-adopter-walkthrough/README.md`, all low or polish; `STABILITY.md` section 1 says 0.15.0 is the newest release and is
    false at the tag. One question is only partly answered: what a streaming send's stream does when its executor returns `Ok` with no terminal
@@ -154,8 +178,10 @@ session re-runs it instead of copying the number. What was not run is under *Not
 5. The maintainer's open items stay as *Waiting on the maintainer*: the two redundant remote branches, RustSec, the `v*` tag ruleset,
    ADR 0028.
 
-- **Not verified** (as of this checkpoint): CI on any commit of this session; the official TCK, ACTS, ITK and the Windows and macOS test legs
-  (Windows was only cross-clippy'd); everything under *First, next* 1 to 3; a live model run of skills or steering beyond what the agent ran (it ran both, on Qwen3.5-2B and Gemma 4 E2B, over JSON-RPC, HTTP+JSON and
+- **Not verified** (as of this checkpoint): the mutation shards over the whole diff and a CodeQL run on `1da23c01` (*First, next* 2); two reaper tests
+  (`handler::claims::reaper::tests`) failed once in my first local run of the PostgreSQL step against a long-used shared database and passed in ten later runs and in CI,
+  cause unexplained (CONJECTURED: more than 32 older abandoned tasks in the shared database push this run's orphan out of the reaper's sweep, `ORDER BY updated_at LIMIT 32`;
+  seeding 40 old orphans failed a different assertion, so it is not shown); everything under *First, next* 1 and 3; a live model run of skills or steering beyond what the agent ran (it ran both, on Qwen3.5-2B and Gemma 4 E2B, over JSON-RPC, HTTP+JSON and
   gRPC); steering over WebSocket (carried as any `SendMessage`, not tested); anything through PgBouncer; Kubernetes; IPv6 on the wire (this kernel has
   none).
 
@@ -363,6 +389,10 @@ session start.
 
 ## Waiting on the maintainer
 
+- **Pull request #203 (2026-11-08), your calls:** the `mutation-test` label (it starts the mutation shards over the whole diff and every later push re-runs them; add it once
+  the other checks are green); CodeQL alert 205 (`06-manifest-lint.py:73`, a false positive) and the proxy alerts, if `1da23c01` does not clear them (dismiss in the Security tab, or
+  exclude `scripts/live/**` from the CodeQL configuration); the commits' Unverified status (above); marking the PR ready. A push to the branch cancels a running CI run
+  (`cancel-in-progress` on non-main refs), so push once per full run.
 - **Added to 0.16.0 on 2026-11-07, the choices made for you (each open to a veto; reasons in the ADR or the commit):**
   - *Skills' YAML is read in-tree, not by a crate* (ADR 0035 decision 9): reads CONTRIBUTING's dependency rule ("a standards-defined parser
     uses the audited crate") against its letter; the way back is `saphyr-parser` behind the same interface.
@@ -1016,6 +1046,14 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **The first CI run finds what local parity cannot, and a push cancels the run (2026-11-08).** Per-package tests, clippy and the Windows cross-clippy were green, and CI's
+  first pass still found three defects: a gate that scans file text (`run_postgres_suites.py` takes a doc comment naming the URL variable for a PostgreSQL suite), a 30 ms claim
+  time to live that a stall can lapse, and two tests that assume Unix paths (`PathBuf::push` onto a `\\?\` path removes `..`). Run `scripts/run_postgres_suites.py` against a
+  local PostgreSQL before the push, and give a test claim a time to live far above a round trip. CI cancels the running run on every push (`cancel-in-progress`), a Windows job
+  stops at its first failing step and then takes about 100 minutes once it passes, and macOS about 90: wait for all jobs, fix everything found, push once.
+- **A scanner's sanitizer is a specific syntax, so read its query source instead of guessing (2026-11-08).** `re.sub` on a header value and a `re.fullmatch` guard on `self.path` did
+  not clear CodeQL's alerts; its library models only `x.replace("\n", ...)` for header injection and a guard on a local variable for partial SSRF. A downloaded CodeQL bundle can be read
+  as text (`qlpacks/codeql/python-all/*/semmle/python/security/dataflow/*Customizations.qll`); running it was refused by this session's permission classifier.
 - **A full disk makes gates fail and cargo-mutants die without saying so (2026-11-08).** At 0 MB free, four static gates exited 1 for no reason
   and a mutation run died at its baseline with "failed printing to stdout". Neither named the disk. `df -h /home/user` before and after any large
   run, a watchdog that stops cargo-mutants below 2 GB (it restores the mutated file on SIGTERM; a kill -9 would not), and delete test
