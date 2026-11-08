@@ -61,6 +61,16 @@ pub(super) fn record(trace: &mut Vec<String>, sink: Option<&Sink>, line: String)
 mod tests {
     use super::*;
 
+    /// The documented limit is 16 KiB, and a line well inside it, longer than
+    /// a thousand bytes, is kept whole (the mutation run found nothing that
+    /// pinned the value).
+    #[test]
+    fn the_limit_is_sixteen_kibibytes_and_a_line_inside_it_is_whole() {
+        assert_eq!(TRACE_LINE_LIMIT, 16_384);
+        let body = "r".repeat(5_000);
+        assert_eq!(line("t", "{}", &body), format!("t({{}}) -> {body}"));
+    }
+
     /// A line within the limit is as it always was.
     #[test]
     fn a_short_line_is_name_arguments_and_result() {
