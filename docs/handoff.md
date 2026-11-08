@@ -119,8 +119,9 @@ session re-runs it instead of copying the number. What was not run is under *Not
    update this file, and open the pull request; the register is current for E-F15, D-03 (d), B-11, E-F25 and D-18
    (`scripts/audit/plan_status.py`: 191 of 191). The adopter's open lows (D-6, D-9 to D-13, D-16 to D-18) are in
    `docs/audits/2026-11-07-adopter-walkthrough/README.md`, all low or polish; `STABILITY.md` section 1 says 0.15.0 is the newest release and is
-   false at the tag. One exploratory test is unfinished: what a streaming send's stream does when its executor returns `Ok` with no
-   terminal state (it was a scratch file, not committed).
+   false at the tag. One question is only partly answered: what a streaming send's stream does when its executor returns `Ok` with no terminal
+   state. The hostile agent's `h7_zombie.py` held 50 subscribers on such a task and cancelled it (8 of 8), but states no hold time; a measured number
+   belongs in the CHANGELOG if the answer is not "until the executor timeout".
 5. The maintainer's open items stay as *Waiting on the maintainer*: the two redundant remote branches, RustSec, the `v*` tag ruleset,
    ADR 0028.
 
