@@ -2,9 +2,14 @@
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Handing steering messages to the replica that holds a claim (ADR 0036),
-//! in each claim store: one set of cases, run against the in-memory store,
-//! SQLite (plain and tenant-aware) and PostgreSQL (`#[ignore]`d without
-//! `A2A_TEST_POSTGRES_URL`).
+//! in each claim store: one set of cases (`every_case`), run here against the
+//! in-memory store and from `tests/steering_sql.rs` against SQLite (plain and
+//! tenant-aware) and PostgreSQL (`#[ignore]`d without the database URL).
+//!
+//! This file holds no PostgreSQL test itself. Keep the name of the variable
+//! that holds that URL out of it: `scripts/run_postgres_suites.py` lists every
+//! library file that spells the name as a module it must find a PostgreSQL
+//! test in, and fails the CI step when a module has none.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -258,12 +263,16 @@ async fn a_message_never_reaches_a_later_claim(claims: &dyn TurnClaimStore) {
         "the next turn does not read the last one's mail"
     );
 
-    // Taken over after the claim expired.
+    // Taken over after the claim expired. The claim has to outlive the
+    // hand-over below by more than any stall of a busy machine or database
+    // (one of 30 ms lapsed it before the message was handed, and the case
+    // failed with `NoClaim`); the wait after it only makes the expiry surer.
     let ids = fresh();
     let old = token();
+    let ttl = Duration::from_secs(1);
     assert!(
         claims
-            .claim("", &ids.task, &ids.owner, &old, Duration::from_millis(30))
+            .claim("", &ids.task, &ids.owner, &old, ttl)
             .await
             .unwrap()
     );
@@ -274,7 +283,7 @@ async fn a_message_never_reaches_a_later_claim(claims: &dyn TurnClaimStore) {
             .unwrap(),
         Handed::Queued
     );
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::sleep(ttl + Duration::from_millis(300)).await;
     let new = claimed(claims, "", &ids).await;
     assert!(
         texts(claims, &ids, &[old, new], 10).await.is_empty(),
