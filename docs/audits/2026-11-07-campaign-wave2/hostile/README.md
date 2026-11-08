@@ -455,8 +455,11 @@ harness artifact, not a finding.
 
 ## Commits
 
-* `<fix commit hash, see handback>` — the two timestamp fixes above, with
-  their tests, in this worktree's branch.
+* `5667ac86` (`fix(stores): a page-token or statusTimestampAfter in year
+  0000 is InvalidParams, not a PostgreSQL error`) — the two timestamp fixes
+  above, with their tests; this directory, the evidence, and the campaign
+  scripts under `scripts/live/campaign/hostile/` are the same commit, on this
+  worktree's branch `worktree-agent-acea2d724feafed58`.
 
 ## Scripts and evidence
 
