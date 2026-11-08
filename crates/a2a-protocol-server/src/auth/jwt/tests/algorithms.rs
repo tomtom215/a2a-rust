@@ -122,7 +122,7 @@ fn an_hs256_token_signed_with_a_public_key_is_refused() -> Fallible {
     );
     for (name, bytes) in forms {
         let token = hs256_token(&bytes);
-        let own = base_validator().with_hs256_secret(bytes.clone());
+        let own = base_validator().with_hs256_secret(bytes);
         assert!(
             own.validate(&token, &Jwks::new()).is_ok(),
             "control: {name} signs a good token"

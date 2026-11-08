@@ -295,7 +295,7 @@ mod tests {
             json!(null),
         ] {
             let mut t = task();
-            t.metadata = Some(json!({ STEERING_METADATA_KEY: bad.clone() }));
+            t.metadata = Some(json!({ STEERING_METADATA_KEY: bad }));
             let err = Receipt::read(&t).expect_err(&format!("{bad} must not read"));
             assert!(
                 err.message.contains(STEERING_METADATA_KEY),
