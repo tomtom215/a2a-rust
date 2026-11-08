@@ -206,7 +206,9 @@ the process's other tenants.
 
 **Links.** A symbolic link in a skills directory that points at a skill directory is
 not followed unless the source says `with_follow_symlinks(true)`; a followed link
-still cannot take a read out of the skill's own directory.
+still cannot take a read out of the skill's own directory. A `references/`,
+`assets/` or `scripts/` that is itself a symbolic link is neither listed to the model nor
+readable, and discovery says so with a warning.
 
 ## Limits
 

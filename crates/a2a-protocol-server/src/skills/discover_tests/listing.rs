@@ -290,4 +290,73 @@ mod links {
         );
         assert_eq!(catalog.diagnostics(), []);
     }
+
+    /// The entries inside a resource directory that are links are not listed;
+    /// the directory itself being a link must not list what it points at
+    /// either, or `activate_skill` would tell the model the names of files in
+    /// a directory the skill's author chose (found by the live campaign,
+    /// 2026-11-08: `references` linked to `/etc` listed 100 of its files).
+    #[test]
+    fn a_resource_directory_that_is_itself_a_link_is_not_listed_and_is_said() {
+        let scratch = Scratch::new("linkeddir");
+        scratch.skill("skills/demo", "demo", "d");
+        scratch.write("elsewhere/name-of-a-file-outside.txt", "");
+        scratch.write("skills/demo/assets/logo.txt", "");
+        symlink(
+            &scratch.join("elsewhere"),
+            &scratch.join("skills/demo/references"),
+        );
+        symlink(
+            &scratch.join("elsewhere"),
+            &scratch.join("skills/demo/scripts"),
+        );
+        let catalog = scratch.catalog();
+        let skill = catalog.get("demo").unwrap();
+        assert_eq!(skill.resources(), ["assets/logo.txt"]);
+        assert_eq!(skill.scripts(), Vec::<String>::new());
+        let said: Vec<_> = catalog
+            .diagnostics()
+            .iter()
+            .map(|d| (d.severity(), d.kind(), d.message().to_owned()))
+            .collect();
+        let message = |dir: &str| {
+            format!(
+                "`{dir}/` is a symbolic link, so its files are neither listed nor readable (a \
+                 link is how a directory someone else controls gets into a skill)"
+            )
+        };
+        assert_eq!(
+            said,
+            [
+                (
+                    Severity::Warning,
+                    DiagnosticKind::SymlinkNotFollowed,
+                    message("references")
+                ),
+                (
+                    Severity::Warning,
+                    DiagnosticKind::SymlinkNotFollowed,
+                    message("scripts")
+                ),
+            ]
+        );
+    }
+
+    /// A link to a directory inside the skill is a link too: the reader would
+    /// refuse every read through it (the path leaves `references/`), so
+    /// listing it would offer files that cannot be read.
+    #[test]
+    fn a_resource_directory_linked_to_a_directory_inside_the_skill_is_not_listed() {
+        let scratch = Scratch::new("linkedinside");
+        scratch.skill("skills/demo", "demo", "d");
+        scratch.write("skills/demo/docs/guide.md", "");
+        symlink(Path::new("docs"), &scratch.join("skills/demo/references"));
+        let catalog = scratch.catalog();
+        let skill = catalog.get("demo").unwrap();
+        assert_eq!(skill.resources(), Vec::<String>::new());
+        assert_eq!(
+            kinds(&catalog),
+            [(Severity::Warning, DiagnosticKind::SymlinkNotFollowed)]
+        );
+    }
 }
