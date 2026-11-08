@@ -10,9 +10,15 @@ Needs python3. It forwards every request to http://127.0.0.1:UPSTREAM_PORT uncha
 LOGFILE: the request body (what the SDK really sent the model) and the response's status,
 size and, up to 20 kB, its text. It exists so a driver can say what the model was sent
 after a steering message, a tool result with control characters, a skill's text.
+
+A request path that is not printable ASCII starting with "/" is answered 400 (it would
+otherwise raise inside http.client and drop the connection), and a response header the
+upstream sends is relayed with any CR or LF in its value replaced by a space and is dropped
+if its name is not a token.
 """
 import http.client
 import json
+import re
 import sys
 import threading
 import time
@@ -37,6 +43,9 @@ class H(BaseHTTPRequestHandler):
         self.forward(self.rfile.read(n))
 
     def forward(self, body):
+        if not re.fullmatch(r"/[\x21-\x7e]*", self.path):
+            self.send_error(400, "the request path must be printable ASCII and start with /")
+            return
         with LOCK:
             N[0] += 1
             seq = N[0]
@@ -51,7 +60,9 @@ class H(BaseHTTPRequestHandler):
         for k, v in r.getheaders():
             if k.lower() in ("transfer-encoding", "connection", "content-length"):
                 continue
-            self.send_header(k, v)
+            if not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", k):
+                continue
+            self.send_header(k, re.sub(r"[\r\n]+", " ", v))
         self.send_header("Transfer-Encoding", "chunked")
         self.end_headers()
         total = 0
