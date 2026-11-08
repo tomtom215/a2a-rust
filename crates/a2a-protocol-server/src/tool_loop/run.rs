@@ -197,7 +197,7 @@ impl ToolLoop {
 
     /// [`run`](Self::run), held to `budget` when there is one: no turn
     /// starts once its deadline has passed, and each reply's reported token
-    /// usage (input plus output) is charged to its [`TOKENS_METER`], the run
+    /// usage (input plus output) is charged to its [`TOKENS_METER`](a2a_protocol_types::budget::TOKENS_METER), the run
     /// ending once that is spent. A provider that reports no usage charges
     /// nothing.
     ///
