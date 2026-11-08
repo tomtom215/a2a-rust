@@ -265,10 +265,8 @@ impl BudgetHandle {
             }
             // As the largest number the wire holds: the child's server refuses
             // a larger one in the message's `metadata`.
-            child
-                .meters
-                .entry(name.clone())
-                .or_insert(asked.min(MAX_WIRE_NUMBER));
+            let asked = asked.min(MAX_WIRE_NUMBER);
+            child.meters.entry(name.clone()).or_insert(asked);
         }
         Ok(ChildGrant {
             budget: child,
