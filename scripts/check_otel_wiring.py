@@ -91,6 +91,19 @@ MAIN_EXEMPT: dict[str, str] = {
         "a one-shot listing of what the link announces; it serves nothing and "
         "has nothing an exporter would be read for"
     ),
+    "scripts/live/campaign/hostile/client/src/main.rs": (
+        "the hostile campaign's client, a probe whose evidence is what the "
+        "server under attack answers; an exporter would add traffic to it"
+    ),
+    "scripts/live/campaign/hostile/target/src/main.rs": (
+        "the hostile campaign's target, a server built to misbehave on "
+        "request and read for its answers, memory and descriptors; an "
+        "exporter would add to what is measured, and it is not a product"
+    ),
+    "scripts/live/campaign/live/agent/src/client.rs": (
+        "the live-model campaign's client, a probe read for the answers and "
+        "timings it prints; an exporter would add to them"
+    ),
     "scripts/live/replica/src/main.rs": (
         "the live scripts' measured replica, built against v0.15.0 too, which "
         "predates this wiring; an exporter would add to the round trips and "
