@@ -52,7 +52,15 @@ session re-runs it instead of copying the number. What was not run is under *Not
   being `log_wake_e2e::an_event_on_one_replica_ends_a_long_wait_on_the_other`, **a race in the test** (it released the executor 0 to 7 ms after
   the fourth timeout, when the stream had not yet parked: 2 failures in 122 runs under busy loops and none in 15 quiet ones; the cause is in
   the message of `f5609abb`; 60 loaded runs after the fix passed, which on a 1.5% rate proves little, the mechanism is the argument).
-  Since then: the moved in-memory token tests and `store_tests` (21 passed), the skills lib tests (175 passed). Workspace, `-D warnings`:
+  **On the final tree (`cc4210d0`, the same commands, all features, `--run-ignored all`, live PostgreSQL): server lib 3417 passed; the 8 integration chunks
+  1621 passed; types 893; client 1528; SDK 117 (1 skipped); no failure**, the flaky test included. Workspace clippy `-D warnings` (all features, defaults, and
+  `--target x86_64-pc-windows-gnu`), `cargo doc` for the workspace, each published crate and all features, `cargo package`, `cargo deny check` and the
+  book build with its link check (225 pages): exit 0. `cargo semver-checks --baseline-rev v0.15.0 --release-type patch` over the four published crates, all
+  features, lists every difference from 0.15.0: types two lints (39 structs marked `#[non_exhaustive]`, `sign_agent_card` removed), client five,
+  server six, SDK none; each is in the CHANGELOG's Breaking Changes and the upgrade guide, two UnwindSafe losses (`CardFetchOptions`,
+  `AuthFailureThrottle`) added today (the commit message of `179e71fa` says "types 13 checks failing in two lints": the tool's line was 2 lints). Earlier today, before
+  the final changes, the doctests in three feature sets (533, 532, 532 passed) and `cargo hack clippy --each-feature` (61 combinations) passed.
+  Before that: the moved in-memory token tests and `store_tests` (21 passed), the skills lib tests (175 passed). Workspace, `-D warnings`:
   `cargo clippy --workspace --all-targets` with all features and with defaults, `cargo hack clippy --each-feature` over the four published
   crates (61 combinations), and the Windows cross-clippy (`--target x86_64-pc-windows-gnu`, after two fixes): exit 0; `cargo test --doc
   --workspace` with all features, with defaults and with none: 533, 532 and 532 passed, 0 failed (the book's code blocks included);
@@ -70,7 +78,12 @@ session re-runs it instead of copying the number. What was not run is under *Not
   22 caught, 7 unviable, 1 missed, 0 timeouts (`30 mutants tested in 19m`). **Both misses are outside this branch's diff** (`handler/shutdown/in_flight.rs:236`
   and `a2a-protocol-client/src/https_client.rs:116`, `connect_timeout` deleted from `Settings` in
   `build_https_client_with_connect_timeout`: no test sees a custom connect timeout ignored; `git diff origin/main HEAD` of that file is empty, as it is for `in_flight.rs`),
-  so the incremental gate will not show them and the weekly sweep may. M-1 and the page-token diff, server, 40 mutants, tests `--lib` plus the
+  so the incremental gate will not show them and the weekly sweep may.
+  The diff since `a746210f` (both campaigns' fixes, the NUL and year-zero changes, the tool-loop bounds), server crate, RUSTFLAGS unset, the narrowed test
+  set: **94 mutants, 85 caught, 4 unviable, 5 missed, 0 timeouts**; the five are closed: three equivalent mutants of the non-Unix `identity()` (skipped with a
+  written proof, `797002cb`), and two real ones (`<` to `<=` in the usage float bound, `*` to `+` in `TRACE_LINE_LIMIT`) killed by new tests, each seen failing
+  with the mutant applied by hand, the file restored byte for byte. Types: 3 mutants, 2 caught, 1 unviable. The re-run after the two fixes was not repeated in
+  full; each fix was checked by its hand mutant. M-1 and the page-token diff, server, 40 mutants, tests `--lib` plus the
   `tool_loop`, `handler_conformance`, `store_tests`, `in_memory_page_tokens`, `postgres_store_tests` binaries: 31 caught, 9 unviable (all
   E0277, no `Default`), 0 missed, 0 timeouts. The agents' own passes, all unflagged: skills 409 caught, 43 unviable, 0 missed **on an extraction
   crate, not the server crate**; E-F25 and parked tasks 122 caught, 35 unviable, 0 missed; steering 0 missed over 330 server mutants.
@@ -105,14 +118,11 @@ session re-runs it instead of copying the number. What was not run is under *Not
 1. Both campaign reports are in and merged. If a third wave runs, treat each report as data (re-run what it claims, read the source it cites,
    only then fix: two of the hostile agent's findings and one of the live agent's were wrong or incomplete on re-checking), and **remove its
    worktree** (`git worktree remove`) before running the gates: a leftover one breaks `check_gate_reachability.py`.
-2. The CI parity not yet run on this tree: `cargo semver-checks --package a2a-protocol-types --package a2a-protocol-client --package
-   a2a-protocol-server --package a2a-protocol-sdk --all-features --baseline-rev v0.15.0 --release-type patch` (it enumerates every breaking
-   change; reconcile the list with the CHANGELOG's *Breaking Changes*; it needs about 4 GB and was stopped once for lack of disk), the SLIMRPC
-   binding (`bindings/a2a-protocol-slimrpc`, its own lockfile and about 4.4 GB), the nightly clippy and the docs.rs build (`rustup toolchain
-   install nightly --profile minimal -c clippy -c rust-docs`), the dogfood run (`cargo run -p agent-team --release --all-features`), the
-   whole `cargo nextest run --profile ci` matrix of `ci.yml`'s `test` job on the final tree, the PostgreSQL suites
-   (`python3 scripts/run_postgres_suites.py`), `scripts/preflight_all.py` phases 2 and 3, and the examples run (clippy only compiled them).
-   macOS cannot be cross-checked here.
+2. The CI parity not yet run on this tree: the SLIMRPC binding (`bindings/a2a-protocol-slimrpc`, its own lockfile and about 4.4 GB), the nightly
+   clippy and the docs.rs build (`rustup toolchain install nightly --profile minimal -c clippy -c rust-docs`), the dogfood run (`cargo run -p
+   agent-team --release --all-features`), `cargo hack clippy --each-feature` on the final tree (it passed earlier today, before the last changes),
+   the PostgreSQL suites (`python3 scripts/run_postgres_suites.py`; the server suites above ran against PostgreSQL), `scripts/preflight_all.py`
+   phases 2 and 3 (TCK, ITK and the rest), and the examples run (clippy only compiled them). macOS cannot be cross-checked here.
 3. Mutation not yet run: `skills/reader.rs` and `skills/tools.rs` in the real server crate; the whole diff against `origin/main` the way
    `mutants.yml` shards it (this session ran per-area diffs). The two out-of-diff survivors above are open.
 4. Then re-point the spec ledger after the last CHANGELOG edit (`python3 scripts/check_spec_ledger.py --fix-lines`: it cites a CHANGELOG line),
