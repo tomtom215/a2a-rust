@@ -379,3 +379,24 @@ fn a_status_never_carries_a_number_the_wire_cannot_hold() {
     let text = metadata.unwrap().to_string();
     assert!(!text.contains("18446744073709551615"), "{text}");
 }
+
+/// A meter only the request names passes through to the child, since the
+/// parent's budget does not limit it. The child's message carries it in
+/// `metadata`, which the child's server refuses past 2^53, so a request for
+/// `u64::MAX` ("all there is", as `examples/live-model`'s coordinator asks of
+/// a budget that has the meter) used to fail the delegation with
+/// `InvalidParams` from the child when the parent's budget named only a
+/// deadline (found by the live campaign, 2026-11-08). It goes as the largest
+/// number the wire holds; a smaller request is untouched.
+#[test]
+fn a_meter_only_the_request_names_is_granted_at_most_what_the_wire_holds() {
+    const WIRE_MAX: u64 = 1 << 53;
+    let parent = BudgetHandle::start(&Budget::new().with_time(Duration::from_secs(10)));
+    let grant = parent.grant(&tokens(u64::MAX)).unwrap();
+    assert_eq!(grant.budget().meters["tokens"], WIRE_MAX);
+    assert!(grant.budget().validate().is_ok());
+    let grant = parent.grant(&tokens(12_345)).unwrap();
+    assert_eq!(grant.budget().meters["tokens"], 12_345);
+    let grant = parent.grant(&tokens(WIRE_MAX)).unwrap();
+    assert_eq!(grant.budget().meters["tokens"], WIRE_MAX);
+}

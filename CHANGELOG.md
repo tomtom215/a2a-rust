@@ -1683,6 +1683,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   the real spend. `a_status_never_carries_a_number_the_wire_cannot_hold` (types) and
   `a_provider_reporting_an_absurd_token_count_still_ends_the_task` (server) fail without the change.
 
+- **A delegation could not start when its grant asked for a meter the parent's budget did not name, at
+  `u64::MAX`** (types; found by the live-model campaign, 2026-11-08, with `examples/live-model`'s coordinator
+  and a budget that named only a deadline). `BudgetHandle::grant` passes such a meter through unlimited, and
+  `u64::MAX` is "all there is" in the example; the child's server refuses a number past 2^53 in a message's
+  `metadata`, so `Delegation::start_budgeted` failed with `[-32602] message.metadata holds the integer
+  18446744073709551615` and the parent task failed with an opaque internal error. The grant now carries at
+  most 2^53 of such a meter. `a_meter_only_the_request_names_is_granted_at_most_what_the_wire_holds` fails
+  without the change.
+
 - **`activate_skill` listed the files of a directory outside the skill when `references/`, `assets/` or
   `scripts/` was itself a symbolic link** (server, `skills`; found by the live-model campaign, 2026-11-08).
   The listing skipped links among a resource directory's entries but followed the resource directory:

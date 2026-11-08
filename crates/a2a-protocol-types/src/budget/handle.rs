@@ -25,9 +25,10 @@ pub const MIN_GRANT_RESERVE: Duration = Duration::from_millis(100);
 /// The most time a grant keeps back from a child.
 pub const MAX_GRANT_RESERVE: Duration = Duration::from_secs(5);
 
-/// The largest number [`BudgetHandle::status`] reports: 2^53, the largest a
-/// protobuf number holds exactly.
-const MAX_REPORTED: u64 = 1 << 53;
+/// The largest number a status reports or a grant carries: 2^53, the largest a
+/// protobuf number holds exactly, which is what `metadata` is over gRPC (see
+/// [`BudgetHandle::status`]).
+const MAX_WIRE_NUMBER: u64 = 1 << 53;
 
 /// A bound that was hit: the deadline, or a meter overdrawn.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -188,13 +189,18 @@ impl BudgetHandle {
             .account
             .meters
             .iter()
-            .map(|(n, m)| (n.clone(), m.remaining().min(MAX_REPORTED)))
+            .map(|(n, m)| (n.clone(), m.remaining().min(MAX_WIRE_NUMBER)))
             .collect();
         let spent = self
             .account
             .meters
             .iter()
-            .map(|(n, m)| (n.clone(), m.spent.load(Ordering::Acquire).min(MAX_REPORTED)))
+            .map(|(n, m)| {
+                (
+                    n.clone(),
+                    m.spent.load(Ordering::Acquire).min(MAX_WIRE_NUMBER),
+                )
+            })
             .collect();
         BudgetStatus::new(remaining_ms, meters, spent)
     }
@@ -209,7 +215,8 @@ impl BudgetHandle {
     ///   once, so many children cannot each be given the whole. One the
     ///   request does not name goes as 0: a child cannot spend outside this
     ///   budget by omission. One only the request names passes through, as
-    ///   this budget does not limit it, while the child has fewer than
+    ///   this budget does not limit it (at most 2^53, the largest number the
+    ///   child's server accepts in a message's metadata), while the child has fewer than
     ///   [`MAX_METERS`](super::MAX_METERS); beyond that it is left out,
     ///   since a child's server refuses more.
     ///
@@ -256,7 +263,12 @@ impl BudgetHandle {
             if child.meters.len() >= super::MAX_METERS {
                 break;
             }
-            child.meters.entry(name.clone()).or_insert(asked);
+            // As the largest number the wire holds: the child's server refuses
+            // a larger one in the message's `metadata`.
+            child
+                .meters
+                .entry(name.clone())
+                .or_insert(asked.min(MAX_WIRE_NUMBER));
         }
         Ok(ChildGrant {
             budget: child,
