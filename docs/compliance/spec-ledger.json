@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:12833 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:12839 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -784,7 +784,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1992 list_orders_by_status_timestamp_not_write_order",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:583 list_orders_by_status_timestamp_not_write_order",
-    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:565 task_list_status_timestamp_ordering_and_filter (ignored without PG)"
+    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:621 task_list_status_timestamp_ordering_and_filter (ignored without PG)"
    ],
    "notes": "Tasks without a parseable status timestamp fall back to write order.",
    "auditor": "A",
@@ -9000,7 +9000,7 @@
     "crates/a2a-protocol-server/src/store/retention/mod.rs:155 RetentionPolicy"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:1634 retention_does_not_cross_tenants"
+    "crates/a2a-protocol-server/tests/postgres_store_tests.rs:1690 retention_does_not_cross_tenants"
    ],
    "notes": "In-memory TTL default 1h; persistent stores keep everything unless purge_expired is configured (documented decision); audit has its own retention.",
    "auditor": "F",

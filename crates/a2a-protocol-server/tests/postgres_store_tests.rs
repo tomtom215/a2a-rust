@@ -549,6 +549,62 @@ async fn a_malformed_page_token_is_invalid_params_and_a_deleted_tasks_token_resu
     Ok(())
 }
 
+/// A status timestamp in year 0000, which this crate's own RFC 3339 parser
+/// reads and `PostgreSQL`'s `timestamp` cannot hold, lists, pages and filters
+/// like any other on both PostgreSQL stores, as on the others: the instant is
+/// held as 0001-01-01, `statusTimestampAfter` ("greater than or equal to")
+/// year 0000 matches every task, and the page token issued for such a task is
+/// one the store accepts. Before, the filter answered an empty page (and a
+/// raw `::timestamptz` before that answered a database error).
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn a_status_timestamp_in_year_zero_pages_and_filters_like_any_other() -> A2aResult<()> {
+    let db = TestDb::create("year_zero").await;
+    let plain = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+    let tenants = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant-aware postgres store");
+
+    async fn check(store: &impl TaskStore) -> A2aResult<()> {
+        for (id, ts) in [
+            ("elder", "0000-01-01T00:00:00Z"),
+            ("young", "0000-06-01T00:00:00Z"),
+            ("now", "2026-01-01T00:00:00Z"),
+        ] {
+            store.save(&make_task_with_ts(id, "ctx1", ts)).await?;
+        }
+        let mut seen = Vec::new();
+        let mut token: Option<String> = None;
+        loop {
+            let mut params = ListTasksParams::new().with_page_size(1);
+            params.page_token = token.take();
+            let page = store.list(&params).await?;
+            seen.extend(page.tasks.iter().map(|t| t.id.0.clone()));
+            if page.next_page_token.is_empty() {
+                break;
+            }
+            token = Some(page.next_page_token);
+        }
+        assert_eq!(seen, ["now", "young", "elder"]);
+        let all = store
+            .list(&ListTasksParams::new().with_status_timestamp_after("0000-01-01T00:00:00Z"))
+            .await?;
+        assert_eq!(all.tasks.len(), 3, "year 0000 is before every task");
+        let none = store
+            .list(&ListTasksParams::new().with_status_timestamp_after("2027-01-01T00:00:00Z"))
+            .await?;
+        assert!(none.tasks.is_empty());
+        Ok(())
+    }
+    check(&plain).await?;
+    TenantContext::scope("tenant-a", check(&tenants)).await?;
+
+    db.drop_db().await;
+    Ok(())
+}
+
 /// Helper: a task whose status carries an explicit ISO 8601 timestamp.
 fn make_task_with_ts(id: &str, context_id: &str, ts: &str) -> Task {
     let mut task = make_task(id, context_id);

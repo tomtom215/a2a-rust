@@ -1678,6 +1678,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   the new check turned off). The decoder now requires the shape and the calendar date and time the
   stores write (`YYYY-MM-DD HH:MM:SS`, up to six fractional digits), and a token that fails it is
   `InvalidParams` like any other.
+  A second pass (hostile campaign, wave 2, 2026-11-08) found two more spellings of the same class and the decoder now refuses both: a
+  timestamp in year 0000, which this crate's own RFC 3339 parser reads and PostgreSQL's `timestamp` has no year for, and a NUL in the
+  id, which cannot be bound as text. A **status timestamp** in year 0000 (an executor can write one) is held as 0001-01-01 by the SQLite and
+  PostgreSQL stores: PostgreSQL answered a database error for it, then (in the first version of the fix) listed such a task as the newest and
+  answered an empty page for `statusTimestampAfter` of year 0000, where the in-memory and SQLite stores answer every task; SQLite issued a
+  page token for such a task that its own decoder then refused.
 
 - **The shared PostgreSQL rate-limit counter's sweep deleted another
   component's live rows** (server, `postgres`; found while building E-F15,

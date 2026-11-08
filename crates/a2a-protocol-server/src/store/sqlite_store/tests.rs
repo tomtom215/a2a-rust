@@ -789,6 +789,50 @@ async fn a_token_for_a_deleted_task_still_resumes_the_listing() {
     assert_eq!(ids(&second), ["t2", "t1"]);
 }
 
+/// A task whose status timestamp is in year 0000 (an instant this crate's
+/// own RFC 3339 parser reads, and `PostgreSQL`'s `timestamp` cannot hold) is
+/// listed, filtered and paged like any other, and the token the store issues
+/// for it is one the store accepts: the stores must answer alike, and a
+/// token a store issued is never refused (hostile campaign, wave 2).
+#[tokio::test]
+async fn a_status_timestamp_in_year_zero_pages_and_filters_like_any_other() {
+    let store = make_store().await;
+    for (id, ts) in [
+        ("elder", "0000-01-01T00:00:00Z"),
+        ("young", "0000-06-01T00:00:00Z"),
+        ("now", "2026-01-01T00:00:00Z"),
+    ] {
+        store
+            .save(&make_task_with_ts(id, "ctx1", TaskState::Submitted, ts))
+            .await
+            .unwrap();
+    }
+    let page = |token: Option<String>| {
+        let mut built = ListTasksParams::new().with_page_size(1);
+        built.page_token = token;
+        built
+    };
+    let mut seen = Vec::new();
+    let mut token = None;
+    loop {
+        let response = store.list(&page(token)).await.unwrap();
+        seen.extend(response.tasks.iter().map(|t| t.id.0.clone()));
+        if response.next_page_token.is_empty() {
+            break;
+        }
+        token = Some(response.next_page_token);
+    }
+    assert_eq!(seen, ["now", "young", "elder"]);
+
+    // `statusTimestampAfter` is "greater than or equal to": year 0000 holds
+    // every task, as it does on the in-memory store.
+    let all = store
+        .list(&ListTasksParams::new().with_status_timestamp_after("0000-01-01T00:00:00Z"))
+        .await
+        .unwrap();
+    assert_eq!(all.tasks.len(), 3);
+}
+
 /// Covers lines 120-122 (`to_a2a_error` conversion).
 #[test]
 fn to_a2a_error_formats_message() {
