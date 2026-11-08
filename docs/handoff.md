@@ -65,7 +65,10 @@ session re-runs it instead of copying the number. What was not run is under *Not
   --release --all-features`, the dogfood suite: exit 0 ("Every claimed SDK feature was exercised"); nightly 1.102 clippy over the workspace with all features
   `-D warnings` (two redundant clones in tests, fixed) and the docs.rs doc build (`--cfg docsrs`): exit 0; `scripts/preflight_all.py --skip-ci-yml`, 13 rows, **12
   PASS**: `dco`, `coverage ignores`, the ITK traversal self-test, the official TCK, the TCK self-test, all bindings, the official client against this server, card
-  signature interop, gRPC wire compatibility, loom, `cargo deny` and `cargo semver-checks`; the 13th is the promtool gate, see *First, next* 2.
+  signature interop, gRPC wire compatibility, loom, `cargo deny` and `cargo semver-checks`; the 13th, the promtool gate, got HTTP 504 twice downloading Alertmanager in that run. Run again later the same day (the proxy
+  answered at once; `deploy/observability/scripts/install_tools.sh` checked both tarballs against its pinned SHA-256, promtool 3.15.1 and amtool 0.34.2), on `394130fd`
+  (docs-only difference from `fd5c0b84`), every step of `observability.yml:promtool` exits 0: `promtool check config` on the three Prometheus files, `check rules` on
+  the three rule files (14, 22 and 6 rules), `test rules` on the 4 test files (4 SUCCESS), `amtool check-config`, and `check_stack.py` ("check_stack: ok"). The 504 was transient.
   CI's `test` matrix on `bdf025af` (a docs-only difference from `fd5c0b84`: `git diff --stat fd5c0b84 bdf025af -- . ':!docs'` is empty), `nextest --profile ci`,
   `RUSTFLAGS=-D warnings`, live PostgreSQL: the nine single-package variants (client with `tls-rustls`; server with each of `tls-rustls`, `sqlite`, `postgres`, `axum`,
   `tool-loop`, `skills`, `auth-jwt`, `auth-jwt,tls-rustls`) passed, 0 failures (1330, 3180, 3557, 3248, 3274, 3349, 3528, 3256, 3256 tests). The seven `--workspace`
@@ -135,9 +138,7 @@ session re-runs it instead of copying the number. What was not run is under *Not
 1. Both campaign reports are in and merged. If a third wave runs, treat each report as data (re-run what it claims, read the source it cites,
    only then fix: two of the hostile agent's findings and one of the live agent's were wrong or incomplete on re-checking), and **remove its
    worktree** (`git worktree remove`) before running the gates: a leftover one breaks `check_gate_reachability.py`.
-2. The CI parity still not run on this tree: `observability.yml:promtool` (`promtool check config`, `check rules`, `test rules` and `amtool check-config`: its
-   step that downloads Alertmanager got HTTP 504 twice through this machine's proxy, the Prometheus tarball before it passed its SHA-256; `check_stack.py`,
-   which needs neither, passes), the `--workspace` form of `ci.yml`'s `test` matrix (every variant passes one package at a time, see *Verified*; the single
+2. The CI parity still not run on this tree: the `--workspace` form of `ci.yml`'s `test` matrix (every variant passes one package at a time, see *Verified*; the single
    `--workspace` build that unifies features does not fit this disk, so run it on a runner with room), the examples run
    (clippy compiled them; `example-surface` jobs were not run), the TCK cross-language legs, the example-agent TCK legs, fuzzing (needs cargo-fuzz), Kani, the
    Docker-built jobs (ACTS, ITK image, the deploy image), and the Windows and macOS *test* legs (Windows only cross-clippy'd; macOS cannot be cross-checked here).
@@ -210,9 +211,10 @@ session re-runs it instead of copying the number. What was not run is under *Not
   (`docs/official-tck-findings.md`); none is new. A second local run of this job fails at `git clone`
   into the first run's `/tmp/a2a-tck`, so `preflight_all.py` clears the scratch paths a job lists in
   `CLEAN` (`scripts/lib/workflow_inventory.py`) before it starts.
-- `promtool` 3.15.1 (from the Prometheus image, below) passes `check rules` on
+- `promtool` 3.15.1 (from the Prometheus image, below) passed `check rules` on
   `deploy/observability/prometheus/rules/` (9 alert rules, 14 recording rules) and `test rules` on
-  `tests/a2a-alerts.test.yml`. No workflow runs either: that is group J.
+  `tests/a2a-alerts.test.yml`. Superseded: `observability.yml:promtool` now runs all of it, and the
+  2026-11-08 run is under *Verified*.
 - `scripts/run_postgres_suites.py`'s `statement_count` counts PostgreSQL round trips through a proxy that
   forwards the TLS request. Against a server with `ssl = on` (the Debian default, as in this image) it
   reads ciphertext and counts `(0, 0)`, so the test fails on `main` too. CI's service container has TLS
@@ -240,7 +242,9 @@ session start.
 - SPIRE 1.11.2: the tarball CI downloads is reachable from here (`curl -fsSL -o /tmp/spire.tar.gz
   https://github.com/spiffe/spire/releases/download/v1.11.2/spire-1.11.2-linux-amd64-musl.tar.gz`, then
   `tar xzf /tmp/spire.tar.gz -C /tmp`, `SPIRE_BIN_DIR=/tmp/spire-1.11.2/bin`). Go 1.24.7 is installed.
-- `promtool` 3.15.1: `docker pull mirror.gcr.io/prom/prometheus:v3.15.1` (digest
+- `promtool` and `amtool`: `deploy/observability/scripts/install_tools.sh DIR promtool amtool` (curl through the
+  proxy, SHA-256 pinned; it worked in 4 seconds on 2026-11-08 after two HTTP 504s). The older route, with a Docker
+  daemon: `docker pull mirror.gcr.io/prom/prometheus:v3.15.1` (digest
   `sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2`), then `docker create` it and
   `docker cp <id>:/bin/promtool .`. The binary's SHA-256 is
   `d0d2e0b6de44079416d2e5ea3c3fa8c9eed83bed1ad2cdd549a1bb644d8b4456`.
