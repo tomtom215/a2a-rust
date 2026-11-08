@@ -963,6 +963,8 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   and `Server::with_config` are no longer `const fn`, and `TlsConfig` and
   `ClientConfig` are no longer `UnwindSafe` or `RefUnwindSafe` (the variant
   holds an `Arc<rustls::ClientConfig>`), as `cargo-semver-checks` reports.
+  `CardFetchOptions` (it keeps an `Arc<rustls::ClientConfig>` for the card fetch) and the server's `AuthFailureThrottle` (its optional shared counter is an
+  `Arc<dyn RateLimitCounter>`, audit E-F15) lose both auto traits for the same reason; only code that moves one across `catch_unwind` notices.
 - **`RequestContext.context_id` is a `ContextId`, not a `String`** (server;
   audit G-18; maintainer's decision of 2026-11-01). The task's id beside it
   was a `TaskId` and the types crate's policy is a newtype per identifier, so
