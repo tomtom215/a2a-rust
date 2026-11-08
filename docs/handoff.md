@@ -46,7 +46,8 @@ session re-runs it instead of copying the number. What was not run is under *Not
   message (seen with the new check turned off). Running the CI jobs nobody had run on the merged tree found six more, all fixed: three
   rustdoc errors (`cargo doc -D warnings`), two Windows-only clippy errors in `skills/`, and a test file pushed past 500 lines.
 - **Verified** (CI's flags; each figure is a command's output on this tree, at the commit named): server lib, all features, live PostgreSQL
-  included, `cargo nextest run --profile ci -p a2a-protocol-server --all-features --lib --run-ignored all`: 3397 passed (at `02ab23e4`);
+  included, `cargo nextest run --profile ci -p a2a-protocol-server --all-features --lib --run-ignored all`: 3397 passed (at `02ab23e4`), 3404 after the NUL
+  refusal and the year-zero change (the lib suite at `af07c2b5`'s tree; the integration binaries were not re-run in full since the chunks above);
   every `tests/` entry but `soak`, `soak_multi_replica` and `swarm_scale`, in 8 chunks, `--run-ignored all`: 1613 of 1614 passed, the one failure
   being `log_wake_e2e::an_event_on_one_replica_ends_a_long_wait_on_the_other`, **a race in the test** (it released the executor 0 to 7 ms after
   the fourth timeout, when the stream had not yet parked: 2 failures in 122 runs under busy loops and none in 15 quiet ones; the cause is in
@@ -73,9 +74,19 @@ session re-runs it instead of copying the number. What was not run is under *Not
   `tool_loop`, `handler_conformance`, `store_tests`, `in_memory_page_tokens`, `postgres_store_tests` binaries: 31 caught, 9 unviable (all
   E0277, no `Default`), 0 missed, 0 timeouts. The agents' own passes, all unflagged: skills 409 caught, 43 unviable, 0 missed **on an extraction
   crate, not the server crate**; E-F25 and parked tasks 122 caught, 35 unviable, 0 missed; steering 0 missed over 330 server mutants.
-- **The campaign's second wave** (two agents, one on real models, one on hostile peers and chaos; briefs in
-  `docs/audits/2026-11-07-campaign-wave2/briefs/`) was launched on 2026-11-08 from `a746210f` and had **not reported** when this was written.
-  Their worktrees are `.claude/worktrees/agent-*`.
+- **The campaign's second wave** (two agents, briefs in `docs/audits/2026-11-07-campaign-wave2/briefs/`, launched 2026-11-08 from `a746210f`).
+  **Hostile peers and chaos** reported and is merged (`docs/audits/2026-11-07-campaign-wave2/hostile/README.md`, scripts in
+  `scripts/live/campaign/hostile/`, about 35 attack classes held, one per line in `evidence/*.jsonl`). Each finding was re-checked before it was
+  relied on, and the re-check changed two: **W2-hostile-1/2** (a year-0000 timestamp or a NUL in a page-token id reached PostgreSQL as `-32603`) was fixed
+  by the agent, but its fix left PostgreSQL listing a year-0000 task as the newest and answering an empty page for `statusTimestampAfter` of year
+  0000, and left SQLite issuing a page token its own decoder refused (both seen failing; `2470ffc1`); **W2-hostile-3** (a cancel's terminal event and
+  claim lost "on graceful shutdown") was a harness fault: its binary handled `SIGINT` only and the script sent `SIGTERM`, so the replica was killed
+  at once; the graceful path is correct (tests on SQLite and PostgreSQL, `54774886`), and what remains is a cancel followed by the owner's *abrupt*
+  death, medium, in the CHANGELOG's Known Limitations. **W2-hostile-4** (a NUL in any message field: `-32603` on PostgreSQL, accepted elsewhere) is
+  fixed uniformly at ingress (`af07c2b5`), a behaviour change listed for you. **W2-hostile-5** (authentication after dispatch, low) is a Known
+  Limitation, not changed. Not run by that agent: cargo-fuzz, h2spec, toxiproxy, `LISTEN`/`NOTIFY` abuse, the 0.15-table upgrade with live rows, mTLS
+  identity from a forwarded header, a timing measurement of credential comparison. **The live-model agent had not reported** when this was written; its worktree is
+  `.claude/worktrees/agent-a0d0167778a2b513b`.
 - **Decisions made for the maintainer, open to a veto** are listed in *Waiting on the maintainer*, under "Added to 0.16.0 on 2026-11-07".
 
 ### First, next
@@ -320,6 +331,8 @@ session start.
   - *`with_blocking_over_stream` answers with `GetTask`'s stored task, not a fold of the events*, and is off by default.
   - *A rate-limit counter row now records its window width* (a table from 0.15 gains a column at start-up; rows with no width are removed
     by the first sweep, which forgets a window or two of counts once).
+  - *A NUL character is refused in every field of a `SendMessage`, on every store* (`InvalidParams`), where the in-memory and SQLite stores accepted it and
+    PostgreSQL failed `-32603`; the alternative was refusing it only in the PostgreSQL stores, which leaves the stores disagreeing about what a client may send.
   - *Built on 2026-11-08*: M-1 (an empty final reply fails the task; a cut-off one completes it, marked) and `ListTasks` with a page token no store
     issued is `InvalidParams` (Google AIP-158), where it was an empty page. Both change behaviour for a caller that relied on the old answer.
 

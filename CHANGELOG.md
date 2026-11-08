@@ -2799,6 +2799,13 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `SIGTERM`), logs the event and frees the claim (`tests/turn_claims`, SQLite and PostgreSQL). Closing the gap needs the canceller to append
   the ending itself and the processor to skip an ending already logged, so a decision on duplicate terminal events; not changed.
 
+- **Authentication runs after method dispatch, body parsing and version negotiation** (hostile campaign W2-hostile-5, 2026-11-08): with a bearer
+  interceptor and no credential, a call to a known method answers the reference `401`, but an unknown JSON-RPC method (`-32601`), invalid JSON
+  (`-32700`), an oversized body, an unsupported `A2A-Version`, and a REST route that does not exist or is called with the wrong verb answer their
+  own protocol errors, so an unauthenticated caller can tell which routes and methods exist without a credential (12 of 24 probes). No task
+  data crosses the boundary. Authenticating before parsing would also make every malformed request cost an authentication attempt, so it is a
+  design decision and is not changed.
+
 - **Parked-task expiry** (audit D-18): a parked task deleted by `parked_max_age` answers `TaskNotFound` afterwards, and a stream open on it ends without a terminal state; a continuation that read the task a moment before the sweep and takes its claim after it writes the task again, without its event log.
 
 - **Agent Skills** (ADR 0035): the catalog is a snapshot taken at start-up (no hot reload; build a new executor to pick up a change); scripts are never run; on a platform without Unix file identities (Windows) the reader's check after the open compares paths only, a hard link names any file its maker can read, and a file replaced by a FIFO between the check and the open holds one blocking-pool thread; not yet run against a live model, on Windows or on macOS.
