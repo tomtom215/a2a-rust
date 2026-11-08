@@ -26,8 +26,8 @@ session re-runs it instead of copying the number. What was not run is under *Not
 
 - **Where the code is.** Pull request #197 merged: `main` is `27889e09` (`git rev-parse origin/main`), the workspace reads 0.16.0, and
   **nothing is tagged**: the newest tag is `v0.15.0` (`git tag --sort=-creatordate | head -1`). The maintainer tags; nothing here does.
-- **This session's branch** is `claude/affectionate-gauss-5yn4f5` off `main`, 95 commits ahead before this file's own (`git log --oneline
-  origin/main..HEAD | wc -l`), in **draft pull request #203** (https://github.com/tomtom215/a2a-rust/pull/203). CI has run twice on it
+- **This session's branch** is `claude/affectionate-gauss-5yn4f5` off `main`, 96 commits ahead before the latest of this file's commits (`git log --oneline
+  origin/main..HEAD | wc -l`), in **draft pull request #203** (https://github.com/tomtom215/a2a-rust/pull/203). CI has run three times on it
   (*Verified*). Started on the maintainer's instruction of 2026-11-07: ADR 0035 (agent skills) and
   ADR 0036 (steering) **before the tag** (moving the decision of 2026-11-03), the adversarial campaign, and the deferred items, with CI at 60 to
   90 minutes a run so few runs, and surviving mutants prevented by writing the tests with the code and running cargo-mutants on the diff
@@ -96,14 +96,15 @@ session re-runs it instead of copying the number. What was not run is under *Not
   and `from_io` are unchanged; fixed in `f2bd4103`. (4) *CodeQL*: four alerts, below. (5) *Mutation Testing (incremental)*: fails by design until the PR carries the
   `mutation-test` label (`mutants.yml`); not added. *Second pass*, head `6eca972b` (the three fix commits, the last touching only `model_proxy.py`): 83 check runs, 74 success, 2
   failure, 7 skipped; **both Windows Test jobs, both macOS, both Ubuntu and PostgreSQL integration passed**; the two failures are CodeQL and the label gate. Durations, start to
-  completion: Windows 83 and 107 minutes (the jobs now run all 25 steps instead of stopping at step 6), macOS 88 and 89, so budget two hours a run.
+  completion: Windows 83 and 107 minutes (the jobs now run all 25 steps instead of stopping at step 6), macOS 88 and 89, so budget two hours a run. *Third pass*, head `a647094e` (`1da23c01` and the first handoff update): 83 check runs, 74 success, 2 failure, 7 skipped; **every Test job passed**
+  (macOS 1.94 last, 110 minutes after the push); the failures are the label gate and CodeQL's one remaining alert.
   **CodeQL**: four alerts in scripts no workflow runs: `scripts/live/campaign/live/model_proxy.py` (partial SSRF at the upstream request; response splitting twice at the
   header relay) and `scripts/live/adopter/06-manifest-lint.py:73` (clear-text logging: the line prints a Kubernetes Secret reference's name and key, not a secret, so a
   false positive, left for you to dismiss). The proxy listens on `127.0.0.1` and connects only to its upstream port; a probe found one real defect (a control character in
   the path dropped the connection with a traceback), fixed in `6eca972b`, **which did not clear the alerts**: the second CodeQL run still reports 1 critical, 1 high, 2 medium
   (response splitting reappeared as alerts 209 and 210 at the new line). CodeQL's own query source (python-all 7.2.9, read as text from its downloadable bundle) models a
-  header-injection sanitizer only as `x.replace("\n", ...)` and a partial-SSRF guard only as `re.fullmatch` on a local variable; `1da23c01` rewrites the proxy that way and
-  is **unverified until the next CodeQL run**, because **running the CodeQL binary was refused by the session's permission classifier** and there is no local CodeQL result.
+  header-injection sanitizer only as `x.replace("\n", ...)` and a partial-SSRF guard only as `re.fullmatch` on a local variable; `1da23c01` rewrites the proxy that way,
+  and **the third CodeQL run, on `a647094e`, cleared the proxy alerts**: one alert is left, a high, which is the `06-manifest-lint.py:73` one (threads 206 to 210 resolved and outdated, 205 open). **Running the CodeQL binary was refused by the session's permission classifier**, so there is no local CodeQL result; the clearing is CI's.
   Before that: the moved in-memory token tests and `store_tests` (21 passed), the skills lib tests (175 passed). Workspace, `-D warnings`:
   `cargo clippy --workspace --all-targets` with all features and with defaults, `cargo hack clippy --each-feature` over the four published
   crates (61 combinations), and the Windows cross-clippy (`--target x86_64-pc-windows-gnu`, after two fixes): exit 0; `cargo test --doc
@@ -164,8 +165,8 @@ session re-runs it instead of copying the number. What was not run is under *Not
    worktree** (`git worktree remove`) before running the gates: a leftover one breaks `check_gate_reachability.py`.
 2. CI parity: CI has now run everything in `ci.yml` that is not skipped, twice (76 of 83 check runs reached a conclusion; the examples, the TCK cross-language and
    example-agent legs, the fuzz smoke jobs, Kani, the Docker-built jobs and the Windows and macOS test legs are in it). What no run has done: the incremental mutation shards
-   over the whole diff (they start when the PR carries the `mutation-test` label; the workflow's own comments disagree, "about two hours" a server shard against a 75-minute
-   timeout it calls unmeasured, and this diff is 678 files, so read the first shard's log before trusting a pass) and a CodeQL run on `1da23c01`.
+   over the whole diff (they start when the PR carries the `mutation-test` label, which the maintainer asked to be added on 2026-11-08 after this file's commit, so read their result on the PR; the workflow's own comments disagree, "about two hours" a server shard against a 75-minute
+   timeout it calls unmeasured, and this diff is 678 files, so read the first shard's log before trusting a pass).
 3. Mutation not yet run: `skills/reader.rs` and `skills/tools.rs` in the real server crate; the whole diff against `origin/main` the way
    `mutants.yml` shards it (this session ran per-area diffs). The two out-of-diff survivors above are open.
 4. Then re-point the spec ledger after the last CHANGELOG edit (`python3 scripts/check_spec_ledger.py --fix-lines`: it cites a CHANGELOG line),
@@ -178,7 +179,7 @@ session re-runs it instead of copying the number. What was not run is under *Not
 5. The maintainer's open items stay as *Waiting on the maintainer*: the two redundant remote branches, RustSec, the `v*` tag ruleset,
    ADR 0028.
 
-- **Not verified** (as of this checkpoint): the mutation shards over the whole diff and a CodeQL run on `1da23c01` (*First, next* 2); two reaper tests
+- **Not verified** (as of this checkpoint): the mutation shards over the whole diff (*First, next* 2); two reaper tests
   (`handler::claims::reaper::tests`) failed once in my first local run of the PostgreSQL step against a long-used shared database and passed in ten later runs and in CI,
   cause unexplained (CONJECTURED: more than 32 older abandoned tasks in the shared database push this run's orphan out of the reaper's sweep, `ORDER BY updated_at LIMIT 32`;
   seeding 40 old orphans failed a different assertion, so it is not shown); everything under *First, next* 1 and 3; a live model run of skills or steering beyond what the agent ran (it ran both, on Qwen3.5-2B and Gemma 4 E2B, over JSON-RPC, HTTP+JSON and
@@ -389,10 +390,11 @@ session start.
 
 ## Waiting on the maintainer
 
-- **Pull request #203 (2026-11-08), your calls:** the `mutation-test` label (it starts the mutation shards over the whole diff and every later push re-runs them; add it once
-  the other checks are green); CodeQL alert 205 (`06-manifest-lint.py:73`, a false positive) and the proxy alerts, if `1da23c01` does not clear them (dismiss in the Security tab, or
-  exclude `scripts/live/**` from the CodeQL configuration); the commits' Unverified status (above); marking the PR ready. A push to the branch cancels a running CI run
-  (`cancel-in-progress` on non-main refs), so push once per full run.
+- **Pull request #203 (2026-11-08), your calls:** CodeQL alert 205 (`scripts/live/adopter/06-manifest-lint.py:73`, a false positive: it prints a Secret
+  reference's name and key), the only alert left: dismiss it from its own page, https://github.com/tomtom215/a2a-rust/security/code-scanning/205 (it did not appear in the
+  Security tab's list for the maintainer on 2026-11-08; the PR's filter is `pr:203`), or change the script, which costs a CI run; the commits' Unverified status (above); marking the PR
+  ready once the mutation shards, started by the `mutation-test` label added on 2026-11-08, have reported. A push to the branch cancels a running CI run (`cancel-in-progress` on
+  non-main refs) and restarts the shards, so push once per full run.
 - **Added to 0.16.0 on 2026-11-07, the choices made for you (each open to a veto; reasons in the ADR or the commit):**
   - *Skills' YAML is read in-tree, not by a crate* (ADR 0035 decision 9): reads CONTRIBUTING's dependency rule ("a standards-defined parser
     uses the audited crate") against its letter; the way back is `saphyr-parser` behind the same interface.
