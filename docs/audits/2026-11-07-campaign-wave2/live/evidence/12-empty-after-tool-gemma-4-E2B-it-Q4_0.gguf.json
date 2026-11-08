@@ -1,0 +1,163 @@
+{
+  "failed": 0,
+  "failed_after_tools_without_trace": 0,
+  "header": {
+    "load_at_start": "2.44",
+    "model_file": "gemma-4-E2B-it-Q4_0.gguf",
+    "time": "2026-11-08T01:33:25Z",
+    "title": "empty replies after tool calls: 15 runs of 'How is the billing service doing?'"
+  },
+  "prompt": "How is the billing service doing?",
+  "rows": [
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 0,
+      "seconds": 4.5,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 2
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 1,
+      "seconds": 3.5,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 2,
+      "seconds": 4.5,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 2
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 3,
+      "seconds": 5.0,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 2
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 4,
+      "seconds": 9.1,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 2
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 5,
+      "seconds": 6.3,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 2
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 6,
+      "seconds": 7.4,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 2
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 7,
+      "seconds": 6.3,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 2
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 8,
+      "seconds": 6.4,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 2
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 9,
+      "seconds": 6.0,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 2
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 10,
+      "seconds": 31.5,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 11,
+      "seconds": 5.4,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 12,
+      "seconds": 5.3,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 13,
+      "seconds": 7.0,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 2
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 0,
+      "run": 14,
+      "seconds": 9.3,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 2
+    }
+  ]
+}

@@ -1,0 +1,210 @@
+{
+  "after_deadline": {
+    "answer": "OK",
+    "budget": {
+      "meters": {
+        "tokens": 98841
+      },
+      "spent": {
+        "tokens": 1159
+      }
+    },
+    "failure": null,
+    "seconds": 1006.6,
+    "state": "TASK_STATE_COMPLETED",
+    "status_text": ""
+  },
+  "deadline_tool": {
+    "answer": null,
+    "budget": {
+      "remainingMs": 0
+    },
+    "failure": {
+      "a2a-rust.com/failure": "budget-exhausted"
+    },
+    "seconds": 4.0,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "[-32603] the caller's budget deadline passed"
+  },
+  "deadline_turn": {
+    "answer": null,
+    "budget": {
+      "remainingMs": 0
+    },
+    "failure": {
+      "a2a-rust.com/failure": "budget-exhausted"
+    },
+    "seconds": 4.0,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "[-32603] the caller's budget deadline passed"
+  },
+  "delegate_cancel": {
+    "answer": null,
+    "budget": {
+      "meters": {
+        "tokens": 100000
+      },
+      "spent": {
+        "tokens": 0
+      }
+    },
+    "coord_tools": [
+      "t=1794100512499 DELEGATION grant=Budget { remaining_ms: None, meters: {\"tokens\": 100000} }",
+      "t=1794100516509 DELEGATION ended after 4.0s task=Some(\"4d4e6340-006a-4b16-8c29-b8e45ba7a742\") outcome=Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some(\"2026-11-08T01:15:16.507Z\") })"
+    ],
+    "failure": null,
+    "seconds": 0.2,
+    "state": "TASK_STATE_CANCELED",
+    "status_text": "",
+    "worker_tool_dropped": true
+  },
+  "delegate_ok": {
+    "answer": "worker task d26b28ee-0d56-4fb6-b9a0-39da4a707e41: WORK-DONE",
+    "budget": {
+      "meters": {
+        "tokens": 98806
+      },
+      "spent": {
+        "tokens": 1194
+      }
+    },
+    "coord_tools": [
+      "t=1794100495436 DELEGATION grant=Budget { remaining_ms: None, meters: {\"tokens\": 100000} }",
+      "t=1794100503171 DELEGATION ended after 7.7s task=Some(\"d26b28ee-0d56-4fb6-b9a0-39da4a707e41\") outcome=Completed"
+    ],
+    "failure": null,
+    "seconds": 7.7,
+    "state": "TASK_STATE_COMPLETED",
+    "status_text": "",
+    "worker_tools": [
+      "t=1794100500000 START sleep_work seconds=2",
+      "t=1794100502002 END sleep_work seconds=2",
+      "t=1794100502002 DROP sleep_work seconds=2"
+    ]
+  },
+  "delegate_small": {
+    "answer": null,
+    "budget": {
+      "meters": {
+        "tokens": 0
+      },
+      "spent": {
+        "tokens": 549
+      }
+    },
+    "coord_tools": [
+      "t=1794100503389 DELEGATION grant=Budget { remaining_ms: None, meters: {\"tokens\": 300} }",
+      "t=1794100505639 DELEGATION ended after 2.3s task=Some(\"00114e55-c49b-47ed-8f61-e17467522a86\") outcome=Failed class=BudgetExhausted state=TASK_STATE_FAILED message=Some(\"the budget's meter \\\"tokens\\\" is spent (249 over)\")"
+    ],
+    "failure": {
+      "a2a-rust.com/failure": "internal"
+    },
+    "seconds": 2.3,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "[-32603] internal error (reference d3c24cb7d458)"
+  },
+  "delegate_time_only": {
+    "answer": null,
+    "budget": {
+      "remainingMs": 59994
+    },
+    "coord_tools": [
+      "t=1794100516921 DELEGATION grant=Budget { remaining_ms: Some(56998), meters: {\"tokens\": 18446744073709551615} }",
+      "t=1794100516925 DELEGATION start failed: protocol error: [-32602] message.metadata holds the integer 18446744073709551615, beyond the \u00b12^53 a protobuf number holds exactly"
+    ],
+    "failure": {
+      "a2a-rust.com/failure": "internal"
+    },
+    "seconds": 0.0,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "[-32603] internal error (reference d77ff35c1ba3)"
+  },
+  "delegate_worker_killed": {
+    "answer": null,
+    "budget": {
+      "meters": {
+        "tokens": 0
+      },
+      "spent": {
+        "tokens": 100000
+      }
+    },
+    "coord_tools": [
+      "t=1794100505855 DELEGATION grant=Budget { remaining_ms: None, meters: {\"tokens\": 100000} }",
+      "t=1794100512285 DELEGATION ended after 6.4s task=Some(\"bd2960bb-25a8-47da-8a29-c1105f8e6545\") outcome=Lost(Some(Http(hyper::Error(Body, Custom { kind: UnexpectedEof, error: \"unexpected EOF during chunk size line\" }))))"
+    ],
+    "failure": {
+      "a2a-rust.com/failure": "internal"
+    },
+    "seconds_after_kill": 1.8,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "[-32603] internal error (reference 05ef57c26947)"
+  },
+  "exhaust_150": {
+    "answer": null,
+    "budget": {
+      "meters": {
+        "tokens": 0
+      },
+      "spent": {
+        "tokens": 562
+      }
+    },
+    "budget_tokens": 150,
+    "failure": {
+      "a2a-rust.com/failure": "budget-exhausted"
+    },
+    "seconds": 3.9,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "the budget's meter \"tokens\" is spent (412 over)",
+    "tools": []
+  },
+  "exhaust_2000": {
+    "answer": "The inventory does not contain a service named \"billing\". The available services are payments-api, checkout, and search.",
+    "budget": {
+      "meters": {
+        "tokens": 175
+      },
+      "spent": {
+        "tokens": 1825
+      }
+    },
+    "budget_tokens": 2000,
+    "failure": null,
+    "seconds": 12.8,
+    "state": "TASK_STATE_COMPLETED",
+    "status_text": "",
+    "tools": [
+      "t=1794099459922 CALL service_status service=\"billing\"",
+      "t=1794099471841 CALL service_status service=\"billing\"",
+      "t=1794099474952 CALL list_services"
+    ]
+  },
+  "exhaust_700": {
+    "answer": null,
+    "budget": {
+      "meters": {
+        "tokens": 0
+      },
+      "spent": {
+        "tokens": 1169
+      }
+    },
+    "budget_tokens": 700,
+    "failure": {
+      "a2a-rust.com/failure": "budget-exhausted"
+    },
+    "seconds": 13.3,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "the budget's meter \"tokens\" is spent (469 over)",
+    "tools": [
+      "t=1794099459922 CALL service_status service=\"billing\""
+    ]
+  },
+  "header": {
+    "load_at_start": "2.30",
+    "model_file": "Qwen3.5-2B-Q4_K_M.gguf",
+    "time": "2026-11-08T00:57:28Z",
+    "title": "budgets and delegation with a real model"
+  }
+}

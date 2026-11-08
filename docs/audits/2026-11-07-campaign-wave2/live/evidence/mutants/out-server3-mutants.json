@@ -1,0 +1,354 @@
+[
+  {
+    "diff": "--- crates/a2a-protocol-server/src/skills/discover.rs\n+++ replace Scan<'_>::note_listing with ()\n@@ -327,50 +327,17 @@\n             directory: directory.to_path_buf(),\n             root,\n             resources: listing.resources,\n             scripts: listing.scripts,\n         }\n     }\n \n     fn note_listing(&mut self, file: &Path, listing: &Listing) {\n-        for dir in &listing.linked {\n-            self.note(\n-                Severity::Warning,\n-                DiagnosticKind::SymlinkNotFollowed,\n-                file,\n-                format!(\n-                    \"`{dir}/` is a symbolic link, so its files are neither listed nor readable \\\n-                     (a link is how a directory someone else controls gets into a skill)\"\n-                ),\n-            );\n-        }\n-        if !listing.scripts.is_empty() {\n-            self.note(\n-                Severity::Info,\n-                DiagnosticKind::ScriptsNotRun,\n-                file,\n-                format!(\n-                    \"scripts/ holds {} file(s), listed to the model as present; this module \\\n-                     never runs them (ADR 0035)\",\n-                    listing.scripts.len()\n-                ),\n-            );\n-        }\n-        if listing.truncated {\n-            self.note(\n-                Severity::Info,\n-                DiagnosticKind::ListingTruncated,\n-                file,\n-                format!(\n-                    \"a listing of the skill's files stopped at {MAX_LISTED_FILES} files in a \\\n-                     directory, or at {MAX_LISTING_DEPTH} levels\"\n-                ),\n-            );\n-        }\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// The entries of `path` that are worth looking at (not hidden), by name, and\n /// whether there were more than [`MAX_ENTRIES_PER_SOURCE`] to examine.\n fn list_children(path: &Path) -> io::Result<(Vec<(OsString, FileType)>, bool)> {\n     let mut entries = fs::read_dir(path)?;\n     let mut children = Vec::new();\n",
+    "file": "crates/a2a-protocol-server/src/skills/discover.rs",
+    "function": {
+      "function_name": "Scan<'_>::note_listing",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 369
+        },
+        "start": {
+          "column": 5,
+          "line": 334
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/a2a-protocol-server/src/skills/discover.rs:335:9: replace Scan<'_>::note_listing with ()",
+    "package": "a2a-protocol-server",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 368
+      },
+      "start": {
+        "column": 9,
+        "line": 335
+      }
+    }
+  },
+  {
+    "diff": "--- crates/a2a-protocol-server/src/skills/discover.rs\n+++ replace list_files -> Listing with Default::default()\n@@ -405,30 +405,17 @@\n \n /// Lists the regular files below `references/`, `assets/` and `scripts/` of\n /// the skill resolved to `root`. Links are not followed, so a link is not\n /// listed, and neither is a directory of the three that is itself a link:\n /// what it points at is somewhere else, and its entries' names are not the\n /// skill's to tell the model (`read_skill_file` refuses every path through\n /// it, since the path leaves the directory it may be read from).\n pub(super) fn list_files(root: &Path) -> Listing {\n-    let mut listing = Listing::default();\n-    for dir in READABLE_DIRS {\n-        if is_link(root, dir) {\n-            listing.linked.push(dir);\n-        } else {\n-            listing.truncated |= walk(root, dir, &mut listing.resources);\n-        }\n-    }\n-    if is_link(root, \"scripts\") {\n-        listing.linked.push(\"scripts\");\n-    } else {\n-        listing.truncated |= walk(root, \"scripts\", &mut listing.scripts);\n-    }\n-    listing\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n \n /// Whether `root/dir` is a symbolic link (to anything, or to nothing).\n fn is_link(root: &Path, dir: &str) -> bool {\n     fs::symlink_metadata(root.join(dir)).is_ok_and(|m| m.file_type().is_symlink())\n }\n \n /// Appends the files below `root/dir` to `out` as `dir/…`, in name order, and\n",
+    "file": "crates/a2a-protocol-server/src/skills/discover.rs",
+    "function": {
+      "function_name": "list_files",
+      "return_type": "-> Listing",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 427
+        },
+        "start": {
+          "column": 1,
+          "line": 406
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/a2a-protocol-server/src/skills/discover.rs:413:5: replace list_files -> Listing with Default::default()",
+    "package": "a2a-protocol-server",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 12,
+        "line": 426
+      },
+      "start": {
+        "column": 5,
+        "line": 413
+      }
+    }
+  },
+  {
+    "diff": "--- crates/a2a-protocol-server/src/skills/discover.rs\n+++ replace |= with &= in list_files\n@@ -410,17 +410,17 @@\n /// skill's to tell the model (`read_skill_file` refuses every path through\n /// it, since the path leaves the directory it may be read from).\n pub(super) fn list_files(root: &Path) -> Listing {\n     let mut listing = Listing::default();\n     for dir in READABLE_DIRS {\n         if is_link(root, dir) {\n             listing.linked.push(dir);\n         } else {\n-            listing.truncated |= walk(root, dir, &mut listing.resources);\n+            listing.truncated &= /* ~ changed by cargo-mutants ~ */ walk(root, dir, &mut listing.resources);\n         }\n     }\n     if is_link(root, \"scripts\") {\n         listing.linked.push(\"scripts\");\n     } else {\n         listing.truncated |= walk(root, \"scripts\", &mut listing.scripts);\n     }\n     listing\n",
+    "file": "crates/a2a-protocol-server/src/skills/discover.rs",
+    "function": {
+      "function_name": "list_files",
+      "return_type": "-> Listing",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 427
+        },
+        "start": {
+          "column": 1,
+          "line": 406
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/a2a-protocol-server/src/skills/discover.rs:418:31: replace |= with &= in list_files",
+    "package": "a2a-protocol-server",
+    "replacement": "&=",
+    "span": {
+      "end": {
+        "column": 33,
+        "line": 418
+      },
+      "start": {
+        "column": 31,
+        "line": 418
+      }
+    }
+  },
+  {
+    "diff": "--- crates/a2a-protocol-server/src/skills/discover.rs\n+++ replace |= with &= in list_files\n@@ -416,17 +416,17 @@\n             listing.linked.push(dir);\n         } else {\n             listing.truncated |= walk(root, dir, &mut listing.resources);\n         }\n     }\n     if is_link(root, \"scripts\") {\n         listing.linked.push(\"scripts\");\n     } else {\n-        listing.truncated |= walk(root, \"scripts\", &mut listing.scripts);\n+        listing.truncated &= /* ~ changed by cargo-mutants ~ */ walk(root, \"scripts\", &mut listing.scripts);\n     }\n     listing\n }\n \n /// Whether `root/dir` is a symbolic link (to anything, or to nothing).\n fn is_link(root: &Path, dir: &str) -> bool {\n     fs::symlink_metadata(root.join(dir)).is_ok_and(|m| m.file_type().is_symlink())\n }\n",
+    "file": "crates/a2a-protocol-server/src/skills/discover.rs",
+    "function": {
+      "function_name": "list_files",
+      "return_type": "-> Listing",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 427
+        },
+        "start": {
+          "column": 1,
+          "line": 406
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/a2a-protocol-server/src/skills/discover.rs:424:27: replace |= with &= in list_files",
+    "package": "a2a-protocol-server",
+    "replacement": "&=",
+    "span": {
+      "end": {
+        "column": 29,
+        "line": 424
+      },
+      "start": {
+        "column": 27,
+        "line": 424
+      }
+    }
+  },
+  {
+    "diff": "--- crates/a2a-protocol-server/src/skills/discover.rs\n+++ replace is_link -> bool with true\n@@ -423,17 +423,17 @@\n     } else {\n         listing.truncated |= walk(root, \"scripts\", &mut listing.scripts);\n     }\n     listing\n }\n \n /// Whether `root/dir` is a symbolic link (to anything, or to nothing).\n fn is_link(root: &Path, dir: &str) -> bool {\n-    fs::symlink_metadata(root.join(dir)).is_ok_and(|m| m.file_type().is_symlink())\n+    true /* ~ changed by cargo-mutants ~ */\n }\n \n /// Appends the files below `root/dir` to `out` as `dir/…`, in name order, and\n /// says whether a bound stopped it. The walk keeps its own stack, so a deep\n /// tree cannot overflow the call stack.\n fn walk(root: &Path, dir: &str, out: &mut Vec<String>) -> bool {\n     let mut found = Vec::new();\n     let mut truncated = false;\n",
+    "file": "crates/a2a-protocol-server/src/skills/discover.rs",
+    "function": {
+      "function_name": "is_link",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 432
+        },
+        "start": {
+          "column": 1,
+          "line": 429
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/a2a-protocol-server/src/skills/discover.rs:431:5: replace is_link -> bool with true",
+    "package": "a2a-protocol-server",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 83,
+        "line": 431
+      },
+      "start": {
+        "column": 5,
+        "line": 431
+      }
+    }
+  },
+  {
+    "diff": "--- crates/a2a-protocol-server/src/skills/discover.rs\n+++ replace is_link -> bool with false\n@@ -423,17 +423,17 @@\n     } else {\n         listing.truncated |= walk(root, \"scripts\", &mut listing.scripts);\n     }\n     listing\n }\n \n /// Whether `root/dir` is a symbolic link (to anything, or to nothing).\n fn is_link(root: &Path, dir: &str) -> bool {\n-    fs::symlink_metadata(root.join(dir)).is_ok_and(|m| m.file_type().is_symlink())\n+    false /* ~ changed by cargo-mutants ~ */\n }\n \n /// Appends the files below `root/dir` to `out` as `dir/…`, in name order, and\n /// says whether a bound stopped it. The walk keeps its own stack, so a deep\n /// tree cannot overflow the call stack.\n fn walk(root: &Path, dir: &str, out: &mut Vec<String>) -> bool {\n     let mut found = Vec::new();\n     let mut truncated = false;\n",
+    "file": "crates/a2a-protocol-server/src/skills/discover.rs",
+    "function": {
+      "function_name": "is_link",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 432
+        },
+        "start": {
+          "column": 1,
+          "line": 429
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/a2a-protocol-server/src/skills/discover.rs:431:5: replace is_link -> bool with false",
+    "package": "a2a-protocol-server",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 83,
+        "line": 431
+      },
+      "start": {
+        "column": 5,
+        "line": 431
+      }
+    }
+  },
+  {
+    "diff": "--- crates/a2a-protocol-server/src/tool_loop/openai.rs\n+++ replace truncated -> String with String::new()\n@@ -422,28 +422,14 @@\n ///\n /// The text is the provider's, and it reaches the operator's log through\n /// [`ModelError`]'s `Display`. A control character in it would be written\n /// raw: a newline starts a log line the provider wrote, an escape sequence\n /// reaches the operator's terminal. Each is written as the escape Rust gives\n /// it (`\\n`, `\\u{1b}`), and the bound is on what is shown, so an escape is\n /// kept whole or left out.\n fn truncated(bytes: &[u8], limit: usize) -> String {\n-    let text = String::from_utf8_lossy(bytes);\n-    let mut shown = String::with_capacity(text.len().min(limit));\n-    for c in text.chars() {\n-        let before = shown.len();\n-        if c.is_control() {\n-            shown.extend(c.escape_default());\n-        } else {\n-            shown.push(c);\n-        }\n-        if shown.len() > limit {\n-            shown.truncate(before);\n-            break;\n-        }\n-    }\n-    shown\n+    String::new() /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n #[path = \"openai_tests.rs\"]\n mod tests;\n",
+    "file": "crates/a2a-protocol-server/src/tool_loop/openai.rs",
+    "function": {
+      "function_name": "truncated",
+      "return_type": "-> String",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 445
+        },
+        "start": {
+          "column": 1,
+          "line": 420
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/a2a-protocol-server/src/tool_loop/openai.rs:430:5: replace truncated -> String with String::new()",
+    "package": "a2a-protocol-server",
+    "replacement": "String::new()",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 444
+      },
+      "start": {
+        "column": 5,
+        "line": 430
+      }
+    }
+  },
+  {
+    "diff": "--- crates/a2a-protocol-server/src/tool_loop/openai.rs\n+++ replace truncated -> String with \"xyzzy\".into()\n@@ -422,28 +422,14 @@\n ///\n /// The text is the provider's, and it reaches the operator's log through\n /// [`ModelError`]'s `Display`. A control character in it would be written\n /// raw: a newline starts a log line the provider wrote, an escape sequence\n /// reaches the operator's terminal. Each is written as the escape Rust gives\n /// it (`\\n`, `\\u{1b}`), and the bound is on what is shown, so an escape is\n /// kept whole or left out.\n fn truncated(bytes: &[u8], limit: usize) -> String {\n-    let text = String::from_utf8_lossy(bytes);\n-    let mut shown = String::with_capacity(text.len().min(limit));\n-    for c in text.chars() {\n-        let before = shown.len();\n-        if c.is_control() {\n-            shown.extend(c.escape_default());\n-        } else {\n-            shown.push(c);\n-        }\n-        if shown.len() > limit {\n-            shown.truncate(before);\n-            break;\n-        }\n-    }\n-    shown\n+    \"xyzzy\".into() /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n #[path = \"openai_tests.rs\"]\n mod tests;\n",
+    "file": "crates/a2a-protocol-server/src/tool_loop/openai.rs",
+    "function": {
+      "function_name": "truncated",
+      "return_type": "-> String",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 445
+        },
+        "start": {
+          "column": 1,
+          "line": 420
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/a2a-protocol-server/src/tool_loop/openai.rs:430:5: replace truncated -> String with \"xyzzy\".into()",
+    "package": "a2a-protocol-server",
+    "replacement": "\"xyzzy\".into()",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 444
+      },
+      "start": {
+        "column": 5,
+        "line": 430
+      }
+    }
+  },
+  {
+    "diff": "--- crates/a2a-protocol-server/src/tool_loop/openai.rs\n+++ replace > with == in truncated\n@@ -431,17 +431,17 @@\n     let mut shown = String::with_capacity(text.len().min(limit));\n     for c in text.chars() {\n         let before = shown.len();\n         if c.is_control() {\n             shown.extend(c.escape_default());\n         } else {\n             shown.push(c);\n         }\n-        if shown.len() > limit {\n+        if shown.len() == /* ~ changed by cargo-mutants ~ */ limit {\n             shown.truncate(before);\n             break;\n         }\n     }\n     shown\n }\n \n #[cfg(test)]\n",
+    "file": "crates/a2a-protocol-server/src/tool_loop/openai.rs",
+    "function": {
+      "function_name": "truncated",
+      "return_type": "-> String",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 445
+        },
+        "start": {
+          "column": 1,
+          "line": 420
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/a2a-protocol-server/src/tool_loop/openai.rs:439:24: replace > with == in truncated",
+    "package": "a2a-protocol-server",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 439
+      },
+      "start": {
+        "column": 24,
+        "line": 439
+      }
+    }
+  },
+  {
+    "diff": "--- crates/a2a-protocol-server/src/tool_loop/openai.rs\n+++ replace > with < in truncated\n@@ -431,17 +431,17 @@\n     let mut shown = String::with_capacity(text.len().min(limit));\n     for c in text.chars() {\n         let before = shown.len();\n         if c.is_control() {\n             shown.extend(c.escape_default());\n         } else {\n             shown.push(c);\n         }\n-        if shown.len() > limit {\n+        if shown.len() < /* ~ changed by cargo-mutants ~ */ limit {\n             shown.truncate(before);\n             break;\n         }\n     }\n     shown\n }\n \n #[cfg(test)]\n",
+    "file": "crates/a2a-protocol-server/src/tool_loop/openai.rs",
+    "function": {
+      "function_name": "truncated",
+      "return_type": "-> String",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 445
+        },
+        "start": {
+          "column": 1,
+          "line": 420
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/a2a-protocol-server/src/tool_loop/openai.rs:439:24: replace > with < in truncated",
+    "package": "a2a-protocol-server",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 439
+      },
+      "start": {
+        "column": 24,
+        "line": 439
+      }
+    }
+  },
+  {
+    "diff": "--- crates/a2a-protocol-server/src/tool_loop/openai.rs\n+++ replace > with >= in truncated\n@@ -431,17 +431,17 @@\n     let mut shown = String::with_capacity(text.len().min(limit));\n     for c in text.chars() {\n         let before = shown.len();\n         if c.is_control() {\n             shown.extend(c.escape_default());\n         } else {\n             shown.push(c);\n         }\n-        if shown.len() > limit {\n+        if shown.len() >= /* ~ changed by cargo-mutants ~ */ limit {\n             shown.truncate(before);\n             break;\n         }\n     }\n     shown\n }\n \n #[cfg(test)]\n",
+    "file": "crates/a2a-protocol-server/src/tool_loop/openai.rs",
+    "function": {
+      "function_name": "truncated",
+      "return_type": "-> String",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 445
+        },
+        "start": {
+          "column": 1,
+          "line": 420
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/a2a-protocol-server/src/tool_loop/openai.rs:439:24: replace > with >= in truncated",
+    "package": "a2a-protocol-server",
+    "replacement": ">=",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 439
+      },
+      "start": {
+        "column": 24,
+        "line": 439
+      }
+    }
+  }
+]

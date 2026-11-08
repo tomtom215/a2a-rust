@@ -1,0 +1,46 @@
+== ListTasks with a malformed page token (load 1.74)
+  note  a real next_page_token: '1794100378221:11'
+   garbage    jsonrpc {'http': 200, 'code': -32602, 'ok': False, 'tasks': None}  rest {'http': 400, 'ok': False}  grpc status {'grpc_status': '3', 'grpc_message': "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged"}
+  ok    garbage: JSON-RPC answers -32602 (got -32602, ok=False)
+  ok    garbage: HTTP+JSON answers 400 (got 400)
+  ok    garbage: gRPC answers INVALID_ARGUMENT, status 3 (got 3)
+   empty      jsonrpc {'http': 200, 'code': None, 'ok': True, 'tasks': 3}  rest {'http': 200, 'ok': True}  grpc status {'grpc_status': '0', 'grpc_message': None}
+   huge       jsonrpc {'http': 200, 'code': -32602, 'ok': False, 'tasks': None}  rest {'http': 400, 'ok': False}  grpc status {'grpc_status': '3', 'grpc_message': "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged"}
+  ok    huge: JSON-RPC answers -32602 (got -32602, ok=False)
+  ok    huge: HTTP+JSON answers 400 (got 400)
+  ok    huge: gRPC answers INVALID_ARGUMENT, status 3 (got 3)
+   nul        jsonrpc {'http': 200, 'code': -32602, 'ok': False, 'tasks': None}  rest {'http': 400, 'ok': False}  grpc status {'grpc_status': '3', 'grpc_message': "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged"}
+  ok    nul: JSON-RPC answers -32602 (got -32602, ok=False)
+  ok    nul: HTTP+JSON answers 400 (got 400)
+  ok    nul: gRPC answers INVALID_ARGUMENT, status 3 (got 3)
+   jsonish    jsonrpc {'http': 200, 'code': -32602, 'ok': False, 'tasks': None}  rest {'http': 400, 'ok': False}  grpc status {'grpc_status': '3', 'grpc_message': "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged"}
+  ok    jsonish: JSON-RPC answers -32602 (got -32602, ok=False)
+  ok    jsonish: HTTP+JSON answers 400 (got 400)
+  ok    jsonish: gRPC answers INVALID_ARGUMENT, status 3 (got 3)
+   negative   jsonrpc {'http': 200, 'code': -32602, 'ok': False, 'tasks': None}  rest {'http': 400, 'ok': False}  grpc status {'grpc_status': '3', 'grpc_message': "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged"}
+  ok    negative: JSON-RPC answers -32602 (got -32602, ok=False)
+  ok    negative: HTTP+JSON answers 400 (got 400)
+  ok    negative: gRPC answers INVALID_ARGUMENT, status 3 (got 3)
+   number     jsonrpc {'http': 200, 'code': -32602, 'ok': False, 'tasks': None}  rest {'http': 400, 'ok': False}  grpc status {'grpc_status': '3', 'grpc_message': "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged"}
+  ok    number: JSON-RPC answers -32602 (got -32602, ok=False)
+  ok    number: HTTP+JSON answers 400 (got 400)
+  ok    number: gRPC answers INVALID_ARGUMENT, status 3 (got 3)
+   unicode    jsonrpc {'http': 200, 'code': -32602, 'ok': False, 'tasks': None}  rest {'http': 400, 'ok': False}  grpc status {'grpc_status': '3', 'grpc_message': "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged"}
+  ok    unicode: JSON-RPC answers -32602 (got -32602, ok=False)
+  ok    unicode: HTTP+JSON answers 400 (got 400)
+  ok    unicode: gRPC answers INVALID_ARGUMENT, status 3 (got 3)
+   slash      jsonrpc {'http': 200, 'code': -32602, 'ok': False, 'tasks': None}  rest {'http': 400, 'ok': False}  grpc status {'grpc_status': '3', 'grpc_message': "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged"}
+  ok    slash: JSON-RPC answers -32602 (got -32602, ok=False)
+  ok    slash: HTTP+JSON answers 400 (got 400)
+  ok    slash: gRPC answers INVALID_ARGUMENT, status 3 (got 3)
+   flipped    jsonrpc {'http': 200, 'code': -32602, 'ok': False, 'tasks': None}  rest {'http': 400, 'ok': False}  grpc status {'grpc_status': '3', 'grpc_message': "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged"}
+  ok    flipped: JSON-RPC answers -32602 (got -32602, ok=False)
+  ok    flipped: HTTP+JSON answers 400 (got 400)
+  ok    flipped: gRPC answers INVALID_ARGUMENT, status 3 (got 3)
+   truncated  jsonrpc {'http': 200, 'code': -32602, 'ok': False, 'tasks': None}  rest {'http': 400, 'ok': False}  grpc status {'grpc_status': '3', 'grpc_message': "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged"}
+  ok    truncated: JSON-RPC answers -32602 (got -32602, ok=False)
+  ok    truncated: HTTP+JSON answers 400 (got 400)
+  ok    truncated: gRPC answers INVALID_ARGUMENT, status 3 (got 3)
+  ok    the agent is alive after every token
+
+31 of 31 expectations held

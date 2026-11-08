@@ -1,0 +1,39 @@
+== tool results, tool-call abuse, budgets: scripted (load 0.74)
+-- R1 repeat: TASK_STATE_COMPLETED in 2.06s, HTTP 200, body 1164 B, RSS 21564->28176 kB, alive True; status: ''; failure None
+  ok    R1: four identical restart_service calls (three in one turn, one in the next) ran 1 time(s)
+  ok    R1: three calls were answered 'not run again' (3)
+  ok    R1: the read-only sleep_work ran each time (2 starts)
+-- R1b variants: TASK_STATE_COMPLETED in 0.05s, HTTP 200, body 696 B, RSS 21268->27656 kB, alive True; status: ''; failure None
+  note  R1b: four spellings of one restart ran 4 times (keys differ by argument bytes; documented limit)
+-- R2 20 MiB tool result: TASK_STATE_FAILED in 1.09s, HTTP 200, body 640 B, RSS 21640->68764 kB, alive True; status: '[-32603] internal error (reference f05f0fe3b1ca)'; failure {'a2a-rust.com/failure': 'internal'}
+   trace artifact 0 chars; the model's second request 20972500 B
+  ok    R2: the agent is alive after a 20 MiB tool result
+-- R3 args_big: TASK_STATE_COMPLETED in 0.23s, HTTP 200, body 2097511 B, RSS 21556->45316 kB, alive True; status: ''; failure None
+   trace 2097173 chars: 'echo({"text":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+  ok    R3 args_big: terminal state and the agent alive
+-- R3 args_deep: TASK_STATE_COMPLETED in 0.07s, HTTP 200, body 200442 B, RSS 21716->29760 kB, alive True; status: ''; failure None
+   trace 200106 chars: 'echo({"text":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[['
+  ok    R3 args_deep: terminal state and the agent alive
+-- R3 args_notjson: TASK_STATE_COMPLETED in 0.05s, HTTP 200, body 438 B, RSS 21328->27180 kB, alive True; status: ''; failure None
+   trace 104 chars: 'echo(not json at all {{{) -> error: the arguments are not valid JSON (expected ident at line 1 column 2)'
+  ok    R3 args_notjson: terminal state and the agent alive
+-- R4 name_big: TASK_STATE_FAILED in 0.4s, HTTP 200, body 594 B, RSS 21524->61232 kB, alive True; status: 'the model asked for tools on all 4 turns without answering'; failure {'a2a-rust.com/failure': 'budget-exhausted'}
+   trace 0 chars; status 'the model asked for tools on all 4 turns without answering'
+  ok    R4 name_big: terminal state and the agent alive
+-- R4 name_path: TASK_STATE_COMPLETED in 0.05s, HTTP 200, body 460 B, RSS 21708->27792 kB, alive True; status: ''; failure None
+   trace 126 chars; status ''
+  ok    R4 name_path: terminal state and the agent alive
+-- R4 calls_many: TASK_STATE_FAILED in 1.41s, HTTP 200, body 594 B, RSS 21000->151412 kB, alive True; status: 'the model asked for tools on all 4 turns without answering'; failure {'a2a-rust.com/failure': 'budget-exhausted'}
+   trace 0 chars; status 'the model asked for tools on all 4 turns without answering'
+  ok    R4 calls_many: terminal state and the agent alive
+-- R4 calls_many 100000: TASK_STATE_FAILED in 0.12s, HTTP 200, body 591 B, RSS 21592->27620 kB, alive True; status: "the model provider's answer is larger than the 8388608-byte cap"; failure {'a2a-rust.com/failure': 'internal'}
+-- R6 hang under a 3 s deadline (executor timeout 40 s): TASK_STATE_FAILED in 3.01s, HTTP 200, body 580 B, RSS 21188->28044 kB, alive True; status: "[-32603] the caller's budget deadline passed"; failure {'a2a-rust.com/failure': 'budget-exhausted'}
+  ok    R6: the deadline budget (3 s) ended a run stuck in a tool within 20 s (it took 3.01s, state TASK_STATE_FAILED)
+-- R7 usage absent: TASK_STATE_COMPLETED in 0.05s, HTTP 200, body 397 B, RSS 20952->27872 kB, alive True; status: ''; failure None
+-- R7 usage zero: TASK_STATE_COMPLETED in 0.05s, HTTP 200, body 397 B, RSS 21700->27864 kB, alive True; status: ''; failure None
+-- R7 usage negative: TASK_STATE_FAILED in 0.01s, HTTP 200, body 573 B, RSS 21232->27768 kB, alive True; status: "the model provider's answer could not be read"; failure {'a2a-rust.com/failure': 'internal'}
+-- R7 usage huge: TASK_STATE_FAILED in 0.01s, HTTP 200, body 602 B, RSS 21916->27716 kB, alive True; status: 'the budget\'s meter "tokens" is spent (18446744073709550615 over)'; failure {'a2a-rust.com/failure': 'budget-exhausted'}
+-- R7 usage float: TASK_STATE_FAILED in 0.01s, HTTP 200, body 573 B, RSS 21464->27492 kB, alive True; status: "the model provider's answer could not be read"; failure {'a2a-rust.com/failure': 'internal'}
+-- R7 usage string: TASK_STATE_FAILED in 0.01s, HTTP 200, body 573 B, RSS 21560->27432 kB, alive True; status: "the model provider's answer could not be read"; failure {'a2a-rust.com/failure': 'internal'}
+
+11 of 11 expectations held

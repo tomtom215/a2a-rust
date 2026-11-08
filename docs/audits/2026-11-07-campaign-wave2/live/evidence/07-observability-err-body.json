@@ -1,0 +1,54 @@
+{
+  "header": {
+    "load_at_start": "3.02",
+    "time": "2026-11-08T00:50:35Z",
+    "title": "observability canaries: provider error body"
+  },
+  "log_hits": [
+    "{\"timeUnixNano\": \"0\", \"observedTimeUnixNano\": \"1794099036423870329\", \"severityNumber\": 13, \"severityText\": \"WARN\", \"body\": {\"stringValue\": \"tool loop: the model provider failed a turn\"}, \"attributes\": [{\"key\": \"error\", \"value\": {\"stringValue\": \"the model provider answered HTTP 502: CANARY_ERRBODY_b1\"}}], \"droppedAttributesCount\": 0, \"flags\": 1, \"traceId\": \"8e306b7b3fc52ac6eb23f9d674388e1a\", \"spanId\": \"bd9423ee31695bc1\", \"eventName\": \"event /home/user/a2a-rust/.claude/worktrees/agent-a0d0167778a2",
+    "{\"timeUnixNano\": \"0\", \"observedTimeUnixNano\": \"1794099036424111494\", \"severityNumber\": 13, \"severityText\": \"WARN\", \"body\": {\"stringValue\": \"the run failed\"}, \"attributes\": [{\"key\": \"error\", \"value\": {\"stringValue\": \"the model provider answered HTTP 502: CANARY_ERRBODY_b1\"}}], \"droppedAttributesCount\": 0, \"flags\": 1, \"traceId\": \"8e306b7b3fc52ac6eb23f9d674388e1a\", \"spanId\": \"bd9423ee31695bc1\", \"eventName\": \"event /home/user/a2a-rust/.claude/worktrees/agent-a0d0167778a2b513b/crates/a2a-protocol-ser"
+  ],
+  "rows": {
+    "bearer": {},
+    "errbody": {
+      "agent-stderr": 2,
+      "logs": 1,
+      "traces": 1
+    },
+    "exportkey": {},
+    "header": {},
+    "meta": {},
+    "prompt": {},
+    "reply": {},
+    "skillbody": {},
+    "skillref": {},
+    "steer": {},
+    "toolarg": {},
+    "toolresult": {}
+  },
+  "span_hits": [
+    {
+      "attributes": [],
+      "events": [
+        {
+          "attributes": [
+            "error"
+          ],
+          "name": "tool loop: the model provider failed a turn"
+        },
+        {
+          "attributes": [
+            "error"
+          ],
+          "name": "the run failed"
+        }
+      ],
+      "span": "invoke_agent",
+      "status": {
+        "code": 2,
+        "message": ""
+      }
+    }
+  ],
+  "status": "the model provider answered HTTP 502"
+}

@@ -1,0 +1,11 @@
+== steering a running task with a real model (load 4.10)
+-- [grpc] steering over gRPC, run started over JSON-RPC
+   receipt: [{"ok": {"task": {"contextId": "254c16e0-67a7-4a0d-8346-863bba522837", "id": "16c614a5-4991-4c0d-bd0e-cd95b9866708", "metadata": {"a2a-rust.com/steering": {"delivery": "inbox"}}, "status": {"state": "TASK_STATE_WORKING", "timestamp": "2026-11-08T01:25:28.699Z"}}}}]
+  FAIL  grpc: the steering message was accepted with delivery=inbox
+   five more messages into an inbox of 4 holding one: accepted [True, True, True, False, False, False]
+  ok    grpc: the inbox bound is the same over gRPC ([True, True, True, False, False, False])
+   the refusal: [{"debug": "UnexpectedStatus { status: 429, body: \"the steering inbox of task 16c614a5-4991-4c0d-bd0e-cd95b9866708 holds its 4 messages; retry later\", retry_after: None }", "error": "unexpected HTTP status 429: the steering inbox of task 16c614a5-4991-4c0d-bd0e-cd95b9866708 holds its 4 messages; retry later"}]
+   steer turns in the last request: ['GRPC-MARK reply with the single word PINEAPPLE', 'GRPC-FILL-0', 'GRPC-FILL-1', 'GRPC-FILL-2']
+  ok    grpc: four messages reach the model in order (['GRPC-MARK reply with the single word PINEAPPLE', 'GRPC-FILL-0', 'GRPC-FILL-1', 'GRPC-FILL-2'])
+
+2 of 3 expectations held

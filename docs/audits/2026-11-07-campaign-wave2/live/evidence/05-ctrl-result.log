@@ -1,0 +1,10 @@
+== a tool result with control characters (scripted) (load 13.19)
+   state TASK_STATE_COMPLETED; trace 'ctrl_result({}) -> ok\x1b[31mRED\x1b[0m\x00NUL\x07BEL\r\nFAKE-LINE: task COMPLETED\u202egnp.exe\u2028\ufeffdone'
+   what the model was sent as the tool message: 'ok\x1b[31mRED\x1b[0m\x00NUL\x07BEL\r\nFAKE-LINE: task COMPLETED\u202egnp.exe\u2028\ufeffdone'
+   raw ESC or NUL bytes in the agent's stderr: False
+  ok    a tool result with control characters does not break the run
+  ok    no raw ESC or NUL byte in the operator's log
+  ok    none in a status message
+  note  the trace artifact carries the result verbatim, control characters included (JSON-escaped on every wire): a client that prints it raw gets them
+
+3 of 3 expectations held

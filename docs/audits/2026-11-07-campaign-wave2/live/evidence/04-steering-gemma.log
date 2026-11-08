@@ -1,0 +1,47 @@
+== steering a running task with a real model (load 4.03)
+-- [jsonrpc] goal change while a tool sleeps
+  ok    jsonrpc: the stream named a task (None)
+  ok    jsonrpc: the model called sleep_work
+   receipt: True {'http': 200, 'metadata': {'a2a-rust.com/steering': {'delivery': 'inbox'}}}
+  ok    jsonrpc: the steering message to the working task was accepted
+  ok    jsonrpc: the receipt says delivery=inbox ({'a2a-rust.com/steering': {'delivery': 'inbox'}})
+   model requests: 2; those carrying the steer: [1]; final state TASK_STATE_COMPLETED
+   answer: 'PINEAPPLE'
+  ok    jsonrpc: the steer is in the model's request right after the tool turn (requests [1])
+  ok    jsonrpc: the steer appears exactly once in the last request (1)
+   last request roles: ['system', 'user', 'assistant', 'tool', 'user']
+-- [jsonrpc] seven messages, inbox of 4
+   steer 0: accepted=True {"http": 200, "metadata": {"a2a-rust.com/steering": {"delivery": "inbox"}}}
+   steer 1: accepted=True {"http": 200, "metadata": {"a2a-rust.com/steering": {"delivery": "inbox"}}}
+   steer 2: accepted=True {"http": 200, "metadata": {"a2a-rust.com/steering": {"delivery": "inbox"}}}
+   steer 3: accepted=True {"http": 200, "metadata": {"a2a-rust.com/steering": {"delivery": "inbox"}}}
+   steer 4: accepted=False {"http": 200, "error": {"code": -32603, "message": "the steering inbox of task ab3ae0e9-9334-4326-b458-c603cd6f0bee holds its 4 messages; retry later", "data": [{"@type": "type.googleapis.com/google.r
+   steer 5: accepted=False {"http": 200, "error": {"code": -32603, "message": "the steering inbox of task ab3ae0e9-9334-4326-b458-c603cd6f0bee holds its 4 messages; retry later", "data": [{"@type": "type.googleapis.com/google.r
+   steer 6: accepted=False {"http": 200, "error": {"code": -32603, "message": "the steering inbox of task ab3ae0e9-9334-4326-b458-c603cd6f0bee holds its 4 messages; retry later", "data": [{"@type": "type.googleapis.com/google.r
+  ok    jsonrpc: exactly the first four of seven were accepted ([0, 1, 2, 3])
+  ok    jsonrpc: the refusals are 503 (HTTP+JSON) or carry RetryInfo (JSON-RPC) (['{"http": 200, "error": {"code": -32603, "message": "the steering inbox of task ab3ae0e9-9334-4326-b4', '{"http": 200, "error": {"code": -32603, "message": "the steering inbox of task ab3ae0e9-9334-4326-b4'])
+   steer turns in the last request: ['STEER-0-MARK', 'STEER-1-MARK', 'STEER-2-MARK', 'STEER-3-MARK']
+  ok    jsonrpc: the four reach the model, in order, once each (['STEER-0-MARK', 'STEER-1-MARK', 'STEER-2-MARK', 'STEER-3-MARK'])
+-- [jsonrpc] a message that arrives in the answering turn
+   late steer accepted=True {"http": 200, "metadata": {"a2a-rust.com/steering": {"delivery": "inbox"}}}
+   requests that carried it: [] of 2
+  ok    jsonrpc: a message sent in the answering turn is not read (it was in requests [])
+-- [jsonrpc] another caller
+   bob steers alice's task: accepted=False {"http": 200, "error": {"code": -32001, "message": "Task not found: 7797b938-e44b-4dad-9fd8-9cf67bc4005d", "data": [{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "domain": "a2a-protocol.org", "reason": "TASK_NOT_FOUND"}]}}
+  ok    jsonrpc: a caller who does not own the task cannot steer it
+  ok    jsonrpc: and cannot read it ({})
+  ok    
+  ok    jsonrpc: Bob's text never reached the model
+-- [jsonrpc] oversize
+   70 kB steer: accepted=False {"http": 200, "error": {"code": -32600, "message": "a steering message is 70198 bytes, over this server's limit of 65536 bytes"}}
+  ok    jsonrpc: a 70 kB steering message is refused
+-- [jsonrpc] steering a completed task
+   to a completed task: accepted=False {"http": 200, "error": {"code": -32004, "message": "task 5e9c585d-cdb1-47bc-a107-e0e273b9327f is in terminal state 'TASK_STATE_COMPLETED' and cannot accept new messages", "data": [{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "domain": "a2a-protocol.org", "reason": "UNSUPPORTED_OPERATION"}]}
+-- [jsonrpc] cancel a sleeping run
+   cancel -> 200; state TASK_STATE_CANCELED after 0.0s; tool DROP logged: True
+  ok    jsonrpc: cancel ends CANCELED
+  ok    jsonrpc: the sleeping tool's future was dropped by the cancel
+  ok    jsonrpc: the agent is alive after all scenarios
+   a2a.server.steering by outcome: {'delivered': 9, 'full': 3, 'unread': 4, 'too_large': 1}
+
+18 of 18 expectations held

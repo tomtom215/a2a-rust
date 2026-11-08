@@ -256,6 +256,38 @@ async fn a_spent_token_budget_fails_the_task_as_budget_exhausted() {
     );
 }
 
+/// A provider may report any `u64` as its usage. The budget's status goes out
+/// on every status update, and a number past 2^53 cannot be written to the
+/// event queue (a protobuf `Struct` holds doubles), which used to make the
+/// failure that ends the run unwritable too: the task stayed `working`, for
+/// ever (found by the live campaign, 2026-11-08).
+#[tokio::test]
+async fn a_provider_reporting_an_absurd_token_count_still_ends_the_task() {
+    use a2a_protocol_server::tool_loop::TokenUsage;
+    use a2a_protocol_types::budget::{Budget, TOKENS_METER};
+
+    let absurd = || {
+        asks("service_status", r#"{"service":"checkout"}"#)
+            .map(|t| t.with_usage(TokenUsage::new(Some(u64::MAX), Some(u64::MAX))))
+    };
+    let handler = handler(scripted(vec![absurd(), absurd()]));
+    let mut message = Message::user_text("m1", "go");
+    Budget::new()
+        .with_meter(TOKENS_METER, 1000)
+        .unwrap()
+        .attach(&mut message);
+    let task = match handler
+        .on_send_message(MessageSendParams::new(message), false, None)
+        .await
+    {
+        Ok(SendMessageResult::Response(SendMessageResponse::Task(task))) => task,
+        other => panic!("expected a task, got {other:?}"),
+    };
+    assert_eq!(task.status.state, TaskState::Failed, "{task:?}");
+    assert_eq!(task.failure_class(), Some(FailureClass::BudgetExhausted));
+    assert!(reason(&task).contains("is spent"), "{}", reason(&task));
+}
+
 #[tokio::test]
 async fn a_message_without_text_is_refused_as_an_invalid_request() {
     let handler = handler(scripted(vec![says("unused")]));

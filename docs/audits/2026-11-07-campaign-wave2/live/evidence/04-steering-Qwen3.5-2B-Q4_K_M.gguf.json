@@ -1,0 +1,136 @@
+{
+  "header": {
+    "load_at_start": "3.78",
+    "model_file": "Qwen3.5-2B-Q4_K_M.gguf",
+    "time": "2026-11-08T00:31:09Z",
+    "title": "steering a running task with a real model"
+  },
+  "jsonrpc": {
+    "answering": {
+      "accepted": true,
+      "in_requests": []
+    },
+    "bound": {
+      "accepted": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "answer": null,
+      "refused": [
+        "{\"http\": 200, \"error\": {\"code\": -32603, \"message\": \"the steering inbox of task 43ce51e6-7ef6-49f4-a359-0499076306b0 holds its 4 messages; retry later\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.RetryInfo\", \"retryDelay\": \"1s\"}]}}",
+        "{\"http\": 200, \"error\": {\"code\": -32603, \"message\": \"the steering inbox of task 43ce51e6-7ef6-49f4-a359-0499076306b0 holds its 4 messages; retry later\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.RetryInfo\", \"retryDelay\": \"1s\"}]}}",
+        "{\"http\": 200, \"error\": {\"code\": -32603, \"message\": \"the steering inbox of task 43ce51e6-7ef6-49f4-a359-0499076306b0 holds its 4 messages; retry later\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.RetryInfo\", \"retryDelay\": \"1s\"}]}}"
+      ],
+      "state": "TASK_STATE_FAILED"
+    },
+    "cancel": {
+      "dropped": true,
+      "seconds": 0.0,
+      "state": "TASK_STATE_CANCELED",
+      "steer_after": [
+        false,
+        "{\"http\": 200, \"error\": {\"code\": -32004, \"message\": \"task 19213be9-e3e4-49bb-a387-27e4cdf7bf64 is in terminal state 'TASK_STATE_CANCELED' and cannot accept new messages\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"UNSUPPORTED_OPERATION\"}]}}"
+      ]
+    },
+    "ended": {
+      "accepted": false,
+      "detail": "{\"http\": 200, \"error\": {\"code\": -32004, \"message\": \"task 9c6ff63c-3dc8-4eb3-9c43-274178178799 is in terminal state 'TASK_STATE_COMPLETED' and cannot accept new messages\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"UNSUPPORTED_OPERATION\"}]}}"
+    },
+    "goal": {
+      "answer": "PINEAPPLE",
+      "carrying_steer": [
+        1,
+        2
+      ],
+      "requests": 3,
+      "state": "TASK_STATE_COMPLETED"
+    },
+    "oversize": {
+      "accepted": false,
+      "detail": "{\"http\": 200, \"error\": {\"code\": -32600, \"message\": \"a steering message is 70198 bytes, over this server's limit of 65536 bytes\"}}"
+    },
+    "owner": {
+      "accepted": false,
+      "bob_cancel": [
+        200,
+        "{\"jsonrpc\": \"2.0\", \"id\": 1, \"error\": {\"code\": -32001, \"message\": \"Task not found: ba10d850-5f23-4310-8887-38c6b7681539\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-p"
+      ],
+      "detail": "{\"http\": 200, \"error\": {\"code\": -32001, \"message\": \"Task not found: ba10d850-5f23-4310-8887-38c6b7681539\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"TASK_NOT_FOUND\"}]}}"
+    },
+    "steering_counts": {
+      "delivered": 9,
+      "full": 3,
+      "too_large": 1,
+      "unread": 4
+    }
+  },
+  "midstream": {
+    "accepted": true,
+    "answer": "Monitoring is essential for maintaining operational stability. Without it, issues remain hidden, allowing minor problems to escalate into major failures. Regular checks ensure services remain healthy and respond to changes in performance or resource needs.\n\nBeyond detecting errors, monitoring provides deep insights into system health. It helps identify patterns and anomalies that are impossible to catch manually, enabling proactive rather than reactive problem-solving. By tracking resource usage, performance metrics, and error logs, teams can make informed decisions about scaling, optimizing, and maintaining infrastructure. Ultimately, monitoring transforms data into actionable intelligence, which is crucial for the long-term growth and reliability of any system.",
+    "carried": [],
+    "state": "TASK_STATE_COMPLETED"
+  },
+  "rest": {
+    "answering": {
+      "accepted": true,
+      "in_requests": []
+    },
+    "bound": {
+      "accepted": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "answer": "WORK-DONE",
+      "refused": [
+        "{\"http\": 503, \"body\": {\"error\": {\"code\": 503, \"details\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"INTERNAL_ERROR\"}, {\"@type\": \"type.googleapis.com/google.rpc.RetryInfo\", \"retryDelay\": \"1s\"}], \"message\": \"the steering inbox of task 5448b9af-7350-",
+        "{\"http\": 503, \"body\": {\"error\": {\"code\": 503, \"details\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"INTERNAL_ERROR\"}, {\"@type\": \"type.googleapis.com/google.rpc.RetryInfo\", \"retryDelay\": \"1s\"}], \"message\": \"the steering inbox of task 5448b9af-7350-",
+        "{\"http\": 503, \"body\": {\"error\": {\"code\": 503, \"details\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"INTERNAL_ERROR\"}, {\"@type\": \"type.googleapis.com/google.rpc.RetryInfo\", \"retryDelay\": \"1s\"}], \"message\": \"the steering inbox of task 5448b9af-7350-"
+      ],
+      "state": "TASK_STATE_COMPLETED"
+    },
+    "cancel": {
+      "dropped": true,
+      "seconds": 0.0,
+      "state": "TASK_STATE_CANCELED",
+      "steer_after": [
+        false,
+        "{\"http\": 400, \"body\": {\"error\": {\"code\": 400, \"details\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"UNSUPPORTED_OPERATION\"}], \"message\": \"task 9ea804be-c3d2-400b-bcf4-7233eeb459ce is in terminal state 'TASK_STATE_CANCELED' and cannot accept new me"
+      ]
+    },
+    "ended": {
+      "accepted": false,
+      "detail": "{\"http\": 400, \"body\": {\"error\": {\"code\": 400, \"details\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"UNSUPPORTED_OPERATION\"}], \"message\": \"task ffa3baf4-1d67-4576-92d0-bb16bfdc93bc is in terminal state 'TASK_STATE_COMPLETED' and cannot accept new messages\", \"status\": \"FAILED_PRECONDITION\"}}}"
+    },
+    "goal": {
+      "answer": "PINEAPPLE",
+      "carrying_steer": [
+        1,
+        2
+      ],
+      "requests": 3,
+      "state": "TASK_STATE_COMPLETED"
+    },
+    "oversize": {
+      "accepted": false,
+      "detail": "{\"http\": 413, \"body\": {\"error\": {\"code\": 413, \"details\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"INVALID_REQUEST\"}], \"message\": \"a steering message is 70198 bytes, over this server's limit of 65536 bytes\", \"status\": \"INVALID_ARGUMENT\"}}}"
+    },
+    "owner": {
+      "accepted": false,
+      "bob_cancel": [
+        404,
+        "{\"error\": {\"code\": 404, \"details\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"TASK_NOT_FOUND\"}], \"message\": \"Task not found: fff37b04-0606-4a90-81e"
+      ],
+      "detail": "{\"http\": 404, \"body\": {\"error\": {\"code\": 404, \"details\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"TASK_NOT_FOUND\"}], \"message\": \"Task not found: fff37b04-0606-4a90-81e9-c78f34d629e8\", \"status\": \"NOT_FOUND\"}}}"
+    },
+    "steering_counts": {
+      "delivered": 9,
+      "full": 3,
+      "too_large": 1,
+      "unread": 4
+    }
+  }
+}

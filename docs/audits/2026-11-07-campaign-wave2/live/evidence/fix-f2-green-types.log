@@ -1,0 +1,39 @@
+   Compiling a2a-protocol-types v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-a0d0167778a2b513b/crates/a2a-protocol-types)
+    Finished `test` profile [unoptimized] target(s) in 4.72s
+     Running unittests src/lib.rs (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/target-test/debug/deps/a2a_protocol_types-39621ca4e5d0f5a6)
+
+running 31 tests
+test budget::handle::tests::a_charge_counts_down_and_an_unnamed_meter_is_unlimited ... ok
+test budget::handle::tests::a_deadline_beyond_instant_is_about_thirty_years_off ... ok
+test budget::handle::tests::a_grant_gives_the_smaller_of_asked_and_left ... ok
+test budget::handle::tests::a_meter_the_request_omits_goes_as_zero_and_one_only_it_names_passes ... ok
+test budget::handle::tests::a_parent_without_a_deadline_passes_the_requested_time_through ... ok
+test budget::handle::tests::a_grant_never_names_more_than_the_child_accepts ... ok
+test budget::handle::tests::a_refused_grant_reserves_nothing ... ok
+test budget::handle::tests::a_status_never_carries_a_number_the_wire_cannot_hold ... ok
+test budget::handle::tests::an_overdraft_is_recorded_and_reported ... ok
+test budget::handle::tests::an_overdraft_of_zero_is_not_reported ... ok
+test budget::handle::tests::exactly_a_millisecond_is_granted ... ok
+test budget::handle::tests::no_time_left_after_the_reserve_is_refused ... ok
+test budget::handle::tests::releasing_returns_the_whole_reservation ... ok
+test budget::handle::tests::exhausted_says_which_bound ... ok
+test budget::handle::tests::ten_children_cannot_each_be_given_the_whole ... ok
+test budget::handle::tests::the_childs_time_is_inside_the_parents ... ok
+test budget::handle::tests::the_debug_form_names_the_handle_and_its_status ... ok
+test budget::handle::tests::the_status_reports_what_is_left_and_spent ... ok
+test budget::handle::tests::under_a_millisecond_is_refused_here ... ok
+test budget::tests::a_grant_round_trips_and_declares_the_extension ... ok
+test budget::tests::a_huge_duration_saturates ... ok
+test budget::tests::a_status_round_trips_beside_other_metadata ... ok
+test budget::tests::at_most_sixteen_meters ... ok
+test budget::tests::attach_keeps_other_metadata_and_replaces_a_non_object ... ok
+test budget::tests::either_part_alone_is_a_grant_and_neither_is_not ... ok
+test budget::handle::tests::concurrent_charges_neither_lose_nor_double_count ... ok
+test budget::tests::meter_names_are_bounded ... ok
+test failure::tests::budget_exhausted_is_not_an_invitation_to_retry_identically ... ok
+test trace_context::tests::empty_and_whitespace_only_members_do_not_consume_the_member_budget ... ok
+test budget::handle::tests::settling_refunds_the_unspent_part ... ok
+test budget::tests::a_received_grant_is_validated ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 461 filtered out; finished in 0.00s
+

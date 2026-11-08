@@ -1,0 +1,75 @@
+{
+  "case": "B",
+  "env": {
+    "C_EXTRA_BODY": "{\"max_tokens\":48}"
+  },
+  "finish_reasons": [
+    "{\"arrayValue\": {\"values\": [{\"stringValue\": \"stop\"}]}}",
+    "{\"arrayValue\": {\"values\": [{\"stringValue\": \"tool_calls\"}]}}"
+  ],
+  "header": {
+    "load_at_start": "0.89",
+    "model_file": "gemma-4-E2B-it-Q4_0.gguf",
+    "time": "2026-11-08T01:29:05Z",
+    "title": "M-1 empty and cut-off final replies"
+  },
+  "invoke_agent_duration": [
+    {
+      "count": "1",
+      "error.type": null
+    },
+    {
+      "count": "1",
+      "error.type": null
+    },
+    {
+      "count": "2",
+      "error.type": null
+    },
+    {
+      "count": "2",
+      "error.type": null
+    },
+    {
+      "count": "3",
+      "error.type": null
+    }
+  ],
+  "prompt": "How is the billing service doing?",
+  "runs": {
+    "grpc": {
+      "answer_metadata": null,
+      "answer_text": "I'm sorry, but I could not find a service named 'billing'. Please use the `list_services` tool to see the available services.",
+      "failure": null,
+      "seconds": 4.0,
+      "state": "TASK_STATE_COMPLETED",
+      "status_message_metadata": null,
+      "status_text": "",
+      "trace_lines": 1
+    },
+    "jsonrpc": {
+      "answer_metadata": null,
+      "answer_text": "I cannot find a service named \"billing service\". The available services are \"payments-api\", \"checkout\", and \"search\".",
+      "failure": null,
+      "http": 200,
+      "rpc_error": null,
+      "seconds": 4.8,
+      "state": "TASK_STATE_COMPLETED",
+      "status_message_metadata": null,
+      "status_text": "",
+      "trace_lines": 2
+    },
+    "rest": {
+      "answer_metadata": null,
+      "answer_text": "I could not find a service named \"billing\" in the inventory. The available services are: payments-api, checkout, and search.",
+      "failure": null,
+      "http": 200,
+      "raw_error": null,
+      "seconds": 4.5,
+      "state": "TASK_STATE_COMPLETED",
+      "status_message_metadata": null,
+      "status_text": "",
+      "trace_lines": 2
+    }
+  }
+}

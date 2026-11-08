@@ -1,0 +1,23 @@
+== empty replies after tool calls: 20 runs of 'Restart the checkout service. Then call restart_service for checkout a second time to make sure the restart took.' (load 4.73)
+   run 0: TASK_STATE_COMPLETED 5.9s; tools that ran 1; trace artifact True; ''
+   run 1: TASK_STATE_COMPLETED 4.9s; tools that ran 1; trace artifact True; ''
+   run 2: TASK_STATE_FAILED 3.3s; tools that ran 1; trace artifact False; 'the model returned an empty answer'
+   run 3: TASK_STATE_FAILED 3.3s; tools that ran 1; trace artifact False; 'the model returned an empty answer'
+   run 4: TASK_STATE_FAILED 3.0s; tools that ran 1; trace artifact False; 'the model returned an empty answer'
+   run 5: TASK_STATE_COMPLETED 6.2s; tools that ran 1; trace artifact True; ''
+   run 6: TASK_STATE_COMPLETED 5.2s; tools that ran 1; trace artifact True; ''
+   run 7: TASK_STATE_FAILED 25.1s; tools that ran 1; trace artifact False; 'the model provider answered HTTP 500'
+   run 8: TASK_STATE_FAILED 18.3s; tools that ran 1; trace artifact False; 'the model returned an empty answer'
+   run 9: TASK_STATE_FAILED 3.1s; tools that ran 1; trace artifact False; 'the model returned an empty answer'
+   run 10: TASK_STATE_FAILED 3.1s; tools that ran 1; trace artifact False; 'the model returned an empty answer'
+   run 11: TASK_STATE_COMPLETED 5.5s; tools that ran 1; trace artifact True; ''
+   run 12: TASK_STATE_FAILED 3.4s; tools that ran 1; trace artifact False; 'the model returned an empty answer'
+   run 13: TASK_STATE_COMPLETED 6.4s; tools that ran 1; trace artifact True; ''
+   run 14: TASK_STATE_FAILED 3.5s; tools that ran 1; trace artifact False; 'the model returned an empty answer'
+   run 15: TASK_STATE_FAILED 3.8s; tools that ran 1; trace artifact False; 'the model returned an empty answer'
+   run 16: TASK_STATE_COMPLETED 11.4s; tools that ran 1; trace artifact True; ''
+   run 17: TASK_STATE_COMPLETED 7.9s; tools that ran 1; trace artifact True; ''
+   run 18: TASK_STATE_FAILED 4.2s; tools that ran 1; trace artifact False; 'the model returned an empty answer'
+   run 19: TASK_STATE_COMPLETED 9.1s; tools that ran 1; trace artifact True; ''
+   11 of 20 failed; 11 of them had run tools and carry no trace of them
+  note  11/20 runs failed (['the model returned an empty answer', 'the model returned an empty answer']); 11 ran tools and left no trace artifact

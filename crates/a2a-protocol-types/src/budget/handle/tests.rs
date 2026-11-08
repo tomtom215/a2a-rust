@@ -327,3 +327,76 @@ fn a_deadline_beyond_instant_is_about_thirty_years_off() {
     assert!(left > year * 29, "the deadline is under 29 years off");
     assert!(left <= year * 30, "the deadline is over 30 years off");
 }
+
+/// The status rides in the metadata of every status update, and a task's
+/// events are written once, for every binding: over gRPC `metadata` is a
+/// `google.protobuf.Struct`, whose numbers are doubles, so a number past 2^53
+/// is refused (the server's event queue). A provider can report any `u64` of
+/// usage, and a child can report any `u64` of spend (a parent settles with
+/// it): one past 2^53 made every later status update of the task unwritable,
+/// the failure that ended it included, and the task stayed `working`
+/// (found by the live campaign, 2026-11-08). The status says "at least this
+/// much" at the largest number the wire holds, instead.
+#[test]
+fn a_status_never_carries_a_number_the_wire_cannot_hold() {
+    const WIRE_MAX: u64 = 1 << 53;
+    let h = BudgetHandle::start(&tokens(1000));
+    assert!(
+        h.charge("tokens", u64::MAX).is_err(),
+        "the meter is overdrawn"
+    );
+    let status = h.status();
+    assert_eq!(status.spent["tokens"], WIRE_MAX);
+    assert_eq!(status.meters["tokens"], 0);
+    // What is in range is untouched, up to and including 2^53 itself.
+    let h = BudgetHandle::start(&tokens(1000));
+    let _ = h.charge("tokens", WIRE_MAX - 1);
+    assert_eq!(h.status().spent["tokens"], WIRE_MAX - 1);
+    let _ = h.charge("tokens", 1);
+    assert_eq!(h.status().spent["tokens"], WIRE_MAX);
+    let _ = h.charge("tokens", 1);
+    assert_eq!(
+        h.status().spent["tokens"],
+        WIRE_MAX,
+        "past it, the largest the wire holds"
+    );
+    // A grant larger than the wire holds is reported as the largest it holds.
+    let h = BudgetHandle::start(&tokens(u64::MAX));
+    assert_eq!(h.status().meters["tokens"], WIRE_MAX);
+    // A child's report of spend past it settles into the same bound.
+    let parent = BudgetHandle::start(&tokens(1000));
+    let grant = parent.grant(&tokens(500)).unwrap();
+    let reported = BudgetStatus::new(
+        None,
+        BTreeMap::new(),
+        BTreeMap::from([("tokens".to_owned(), u64::MAX)]),
+    );
+    grant.settle(Some(&reported));
+    assert_eq!(parent.status().spent["tokens"], WIRE_MAX);
+    // And the status, as written into metadata, holds no number past it.
+    let mut metadata = None;
+    parent.status().attach_to(&mut metadata);
+    let text = metadata.unwrap().to_string();
+    assert!(!text.contains("18446744073709551615"), "{text}");
+}
+
+/// A meter only the request names passes through to the child, since the
+/// parent's budget does not limit it. The child's message carries it in
+/// `metadata`, which the child's server refuses past 2^53, so a request for
+/// `u64::MAX` ("all there is", as `examples/live-model`'s coordinator asks of
+/// a budget that has the meter) used to fail the delegation with
+/// `InvalidParams` from the child when the parent's budget named only a
+/// deadline (found by the live campaign, 2026-11-08). It goes as the largest
+/// number the wire holds; a smaller request is untouched.
+#[test]
+fn a_meter_only_the_request_names_is_granted_at_most_what_the_wire_holds() {
+    const WIRE_MAX: u64 = 1 << 53;
+    let parent = BudgetHandle::start(&Budget::new().with_time(Duration::from_secs(10)));
+    let grant = parent.grant(&tokens(u64::MAX)).unwrap();
+    assert_eq!(grant.budget().meters["tokens"], WIRE_MAX);
+    assert!(grant.budget().validate().is_ok());
+    let grant = parent.grant(&tokens(12_345)).unwrap();
+    assert_eq!(grant.budget().meters["tokens"], 12_345);
+    let grant = parent.grant(&tokens(WIRE_MAX)).unwrap();
+    assert_eq!(grant.budget().meters["tokens"], WIRE_MAX);
+}

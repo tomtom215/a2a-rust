@@ -1,0 +1,10 @@
+crates/a2a-protocol-server/src/skills/discover.rs:335:9: replace Scan<'_>::note_listing with ()
+crates/a2a-protocol-server/src/skills/discover.rs:413:5: replace list_files -> Listing with Default::default()
+crates/a2a-protocol-server/src/skills/discover.rs:418:31: replace |= with &= in list_files
+crates/a2a-protocol-server/src/skills/discover.rs:424:27: replace |= with &= in list_files
+crates/a2a-protocol-server/src/skills/discover.rs:431:5: replace is_link -> bool with true
+crates/a2a-protocol-server/src/skills/discover.rs:431:5: replace is_link -> bool with false
+crates/a2a-protocol-server/src/tool_loop/openai.rs:430:5: replace truncated -> String with String::new()
+crates/a2a-protocol-server/src/tool_loop/openai.rs:430:5: replace truncated -> String with "xyzzy".into()
+crates/a2a-protocol-server/src/tool_loop/openai.rs:439:24: replace > with == in truncated
+crates/a2a-protocol-server/src/tool_loop/openai.rs:439:24: replace > with < in truncated

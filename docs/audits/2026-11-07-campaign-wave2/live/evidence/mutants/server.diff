@@ -1,0 +1,109 @@
+diff --git a/crates/a2a-protocol-server/src/skills/discover.rs b/crates/a2a-protocol-server/src/skills/discover.rs
+index d6898379..889bd187 100644
+--- a/crates/a2a-protocol-server/src/skills/discover.rs
++++ b/crates/a2a-protocol-server/src/skills/discover.rs
+@@ -332,6 +332,17 @@ impl Scan<'_> {
+     }
+ 
+     fn note_listing(&mut self, file: &Path, listing: &Listing) {
++        for dir in &listing.linked {
++            self.note(
++                Severity::Warning,
++                DiagnosticKind::SymlinkNotFollowed,
++                file,
++                format!(
++                    "`{dir}/` is a symbolic link, so its files are neither listed nor readable \
++                     (a link is how a directory someone else controls gets into a skill)"
++                ),
++            );
++        }
+         if !listing.scripts.is_empty() {
+             self.note(
+                 Severity::Info,
+@@ -387,20 +398,39 @@ pub(super) struct Listing {
+     pub(super) scripts: Vec<String>,
+     /// Whether a bound stopped a listing.
+     pub(super) truncated: bool,
++    /// The directories among `references/`, `assets/` and `scripts/` that are
++    /// symbolic links, and so were not listed.
++    pub(super) linked: Vec<&'static str>,
+ }
+ 
+ /// Lists the regular files below `references/`, `assets/` and `scripts/` of
+ /// the skill resolved to `root`. Links are not followed, so a link is not
+-/// listed.
++/// listed, and neither is a directory of the three that is itself a link:
++/// what it points at is somewhere else, and its entries' names are not the
++/// skill's to tell the model (`read_skill_file` refuses every path through
++/// it, since the path leaves the directory it may be read from).
+ pub(super) fn list_files(root: &Path) -> Listing {
+     let mut listing = Listing::default();
+     for dir in READABLE_DIRS {
+-        listing.truncated |= walk(root, dir, &mut listing.resources);
++        if is_link(root, dir) {
++            listing.linked.push(dir);
++        } else {
++            listing.truncated |= walk(root, dir, &mut listing.resources);
++        }
++    }
++    if is_link(root, "scripts") {
++        listing.linked.push("scripts");
++    } else {
++        listing.truncated |= walk(root, "scripts", &mut listing.scripts);
+     }
+-    listing.truncated |= walk(root, "scripts", &mut listing.scripts);
+     listing
+ }
+ 
++/// Whether `root/dir` is a symbolic link (to anything, or to nothing).
++fn is_link(root: &Path, dir: &str) -> bool {
++    fs::symlink_metadata(root.join(dir)).is_ok_and(|m| m.file_type().is_symlink())
++}
++
+ /// Appends the files below `root/dir` to `out` as `dir/…`, in name order, and
+ /// says whether a bound stopped it. The walk keeps its own stack, so a deep
+ /// tree cannot overflow the call stack.
+diff --git a/crates/a2a-protocol-server/src/tool_loop/openai.rs b/crates/a2a-protocol-server/src/tool_loop/openai.rs
+index f6f2aa10..aeda4e1b 100644
+--- a/crates/a2a-protocol-server/src/tool_loop/openai.rs
++++ b/crates/a2a-protocol-server/src/tool_loop/openai.rs
+@@ -417,17 +417,31 @@ async fn read_prefix(mut body: hyper::body::Incoming, limit: usize) -> Vec<u8> {
+     out
+ }
+ 
+-/// `bytes` as text, cut to at most `limit` bytes on a character boundary.
++/// `bytes` as one printable line of text, at most `limit` bytes of it, cut on a
++/// character boundary.
++///
++/// The text is the provider's, and it reaches the operator's log through
++/// [`ModelError`]'s `Display`. A control character in it would be written
++/// raw: a newline starts a log line the provider wrote, an escape sequence
++/// reaches the operator's terminal. Each is written as the escape Rust gives
++/// it (`\n`, `\u{1b}`), and the bound is on what is shown, so an escape is
++/// kept whole or left out.
+ fn truncated(bytes: &[u8], limit: usize) -> String {
+     let text = String::from_utf8_lossy(bytes);
+-    if text.len() <= limit {
+-        return text.into_owned();
+-    }
+-    let mut end = limit;
+-    while !text.is_char_boundary(end) {
+-        end -= 1;
++    let mut shown = String::with_capacity(text.len().min(limit));
++    for c in text.chars() {
++        let before = shown.len();
++        if c.is_control() {
++            shown.extend(c.escape_default());
++        } else {
++            shown.push(c);
++        }
++        if shown.len() > limit {
++            shown.truncate(before);
++            break;
++        }
+     }
+-    text[..end].to_owned()
++    shown
+ }
+ 
+ #[cfg(test)]

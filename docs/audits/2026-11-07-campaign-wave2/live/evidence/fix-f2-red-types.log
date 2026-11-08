@@ -1,0 +1,96 @@
+   Compiling cc v1.10.0
+   Compiling serde_core v1.0.229
+   Compiling rand_core v0.10.1
+   Compiling syn v2.0.119
+   Compiling getrandom v0.4.3
+   Compiling zerocopy-derive v0.8.63
+   Compiling syn v3.0.9
+   Compiling rustix v1.1.5
+   Compiling zerocopy v0.8.63
+   Compiling serde_derive v1.0.229
+   Compiling regex-syntax v0.8.11
+   Compiling linux-raw-sys v0.12.1
+   Compiling bitflags v2.13.2
+   Compiling serde_json v1.0.154
+   Compiling half v2.7.1
+   Compiling serde v1.0.229
+   Compiling ring v0.17.14
+   Compiling alloca v0.4.0
+   Compiling once_cell v1.21.4
+   Compiling memchr v2.8.3
+   Compiling fastrand v2.5.0
+   Compiling tempfile v3.27.0
+   Compiling ciborium-ll v0.2.2
+   Compiling regex-automata v0.4.18
+   Compiling itertools v0.13.0
+   Compiling wait-timeout v0.2.1
+   Compiling quick-error v1.2.3
+   Compiling bit-vec v0.10.1
+   Compiling criterion-plot v0.8.2
+   Compiling bit-set v0.11.1
+   Compiling chacha20 v0.10.2
+   Compiling rustls-pki-types v1.15.1
+   Compiling rusty-fork v0.3.1
+   Compiling regex v1.13.1
+   Compiling rayon v1.12.0
+   Compiling tinytemplate v1.2.1
+   Compiling ciborium v0.2.2
+   Compiling rand v0.10.3
+   Compiling rand_xorshift v0.5.0
+   Compiling core_detect v1.0.0
+   Compiling unarray v0.1.4
+   Compiling a2a-protocol-types v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-a0d0167778a2b513b/crates/a2a-protocol-types)
+   Compiling proptest v1.12.0
+   Compiling criterion v0.8.2
+   Compiling rcgen v0.14.10
+    Finished `test` profile [unoptimized] target(s) in 23.28s
+     Running unittests src/lib.rs (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/target-test/debug/deps/a2a_protocol_types-39621ca4e5d0f5a6)
+
+running 21 tests
+test budget::handle::tests::a_deadline_beyond_instant_is_about_thirty_years_off ... ok
+test budget::handle::tests::a_charge_counts_down_and_an_unnamed_meter_is_unlimited ... ok
+test budget::handle::tests::a_grant_gives_the_smaller_of_asked_and_left ... ok
+test budget::handle::tests::a_meter_the_request_omits_goes_as_zero_and_one_only_it_names_passes ... ok
+test budget::handle::tests::a_grant_never_names_more_than_the_child_accepts ... ok
+test budget::handle::tests::a_parent_without_a_deadline_passes_the_requested_time_through ... ok
+test budget::handle::tests::an_overdraft_is_recorded_and_reported ... ok
+test budget::handle::tests::an_overdraft_of_zero_is_not_reported ... ok
+test budget::handle::tests::exactly_a_millisecond_is_granted ... ok
+test budget::handle::tests::a_refused_grant_reserves_nothing ... ok
+test budget::handle::tests::no_time_left_after_the_reserve_is_refused ... ok
+test budget::handle::tests::exhausted_says_which_bound ... ok
+test budget::handle::tests::settling_refunds_the_unspent_part ... ok
+test budget::handle::tests::concurrent_charges_neither_lose_nor_double_count ... ok
+test budget::handle::tests::ten_children_cannot_each_be_given_the_whole ... ok
+test budget::handle::tests::the_childs_time_is_inside_the_parents ... ok
+test budget::handle::tests::the_debug_form_names_the_handle_and_its_status ... ok
+test budget::handle::tests::the_status_reports_what_is_left_and_spent ... ok
+test budget::handle::tests::under_a_millisecond_is_refused_here ... ok
+test budget::handle::tests::releasing_returns_the_whole_reservation ... ok
+test budget::handle::tests::a_status_never_carries_a_number_the_wire_cannot_hold ... FAILED
+
+failures:
+
+---- budget::handle::tests::a_status_never_carries_a_number_the_wire_cannot_hold stdout ----
+
+thread 'budget::handle::tests::a_status_never_carries_a_number_the_wire_cannot_hold' (29860) panicked at crates/a2a-protocol-types/src/budget/handle/tests.rs:346:5:
+assertion `left == right` failed
+  left: 18446744073709551615
+ right: 9007199254740992
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::assert_failed_inner
+   3: core::panicking::assert_failed::<u64, u64>
+   4: a2a_protocol_types::budget::handle::tests::a_status_never_carries_a_number_the_wire_cannot_hold
+   5: a2a_protocol_types::budget::handle::tests::a_status_never_carries_a_number_the_wire_cannot_hold::{closure#0}
+   6: <a2a_protocol_types::budget::handle::tests::a_status_never_carries_a_number_the_wire_cannot_hold::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    budget::handle::tests::a_status_never_carries_a_number_the_wire_cannot_hold
+
+test result: FAILED. 20 passed; 1 failed; 0 ignored; 0 measured; 471 filtered out; finished in 0.06s
+
+error: test failed, to rerun pass `-p a2a-protocol-types --lib`

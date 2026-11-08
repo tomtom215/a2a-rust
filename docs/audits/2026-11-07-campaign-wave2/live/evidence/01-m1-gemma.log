@@ -1,0 +1,39 @@
+== M-1 empty and cut-off final replies (load 0.89)
+-- case A: 'Explain in detail why monitoring matters for a production service.' env={'C_EXTRA_BODY': '{"max_tokens":24}'}
+   jsonrpc  {"seconds": 2.9, "http": 200, "state": "TASK_STATE_COMPLETED", "failure": null, "status_text": "The answer was cut off at the model's output limit and may be incomplete.", "status_message_metadata": {"a2a-rust.com/finish-reason": "length"}, "answer_metadata": {"a2a-rust.com/finish-reason": "length"}, "trace_lines": 0, "rpc_error": null}
+   jsonrpc  answer_text='Monitoring a production service is not just a "nice-to-have" feature; it is a fundamental necessity for maintaining'
+   rest     {"seconds": 2.0, "http": 200, "state": "TASK_STATE_COMPLETED", "failure": null, "status_text": "The answer was cut off at the model's output limit and may be incomplete.", "status_message_metadata": {"a2a-rust.com/finish-reason": "length"}, "answer_metadata": {"a2a-rust.com/finish-reason": "length"}, "trace_lines": 0, "raw_error": null}
+   rest     answer_text='Monitoring is critically important for a production service because it provides the necessary visibility into the operational health, performance, and behavior of'
+   grpc     {"seconds": 1.9, "state": "TASK_STATE_COMPLETED", "failure": null, "status_text": "The answer was cut off at the model's output limit and may be incomplete.", "status_message_metadata": {"a2a-rust.com/finish-reason": "length"}, "answer_metadata": {"a2a-rust.com/finish-reason": "length"}, "trace_lines": 0}
+   grpc     answer_text="Monitoring is a crucial practice for any production service and is not a luxury; it's a fundamental requirement for maintaining reliability"
+   gen_ai.invoke_agent.duration series: [{'error.type': None, 'count': '1'}, {'error.type': None, 'count': '2'}, {'error.type': None, 'count': '3'}]
+  ok    A jsonrpc: completed with the finish-reason marker on the answer artifact
+  ok    A jsonrpc: the Completed status message says the answer was cut off
+  ok    A rest: completed with the finish-reason marker on the answer artifact
+  ok    A rest: the Completed status message says the answer was cut off
+  ok    A grpc: completed with the finish-reason marker on the answer artifact
+  ok    A grpc: the Completed status message says the answer was cut off
+-- case B: 'How is the billing service doing?' env={'C_EXTRA_BODY': '{"max_tokens":48}'}
+   jsonrpc  {"seconds": 4.8, "http": 200, "state": "TASK_STATE_COMPLETED", "failure": null, "status_text": "", "status_message_metadata": null, "answer_metadata": null, "trace_lines": 2, "rpc_error": null}
+   jsonrpc  answer_text='I cannot find a service named "billing service". The available services are "payments-api", "checkout", and "search".'
+   rest     {"seconds": 4.5, "http": 200, "state": "TASK_STATE_COMPLETED", "failure": null, "status_text": "", "status_message_metadata": null, "answer_metadata": null, "trace_lines": 2, "raw_error": null}
+   rest     answer_text='I could not find a service named "billing" in the inventory. The available services are: payments-api, checkout, and search.'
+   grpc     {"seconds": 4.0, "state": "TASK_STATE_COMPLETED", "failure": null, "status_text": "", "status_message_metadata": null, "answer_metadata": null, "trace_lines": 1}
+   grpc     answer_text="I'm sorry, but I could not find a service named 'billing'. Please use the `list_services` tool to see the available services."
+   gen_ai.invoke_agent.duration series: [{'error.type': None, 'count': '1'}, {'error.type': None, 'count': '1'}, {'error.type': None, 'count': '2'}, {'error.type': None, 'count': '2'}, {'error.type': None, 'count': '3'}]
+-- case C: 'What is 17 times 23? Think it through.' env={'C_THINKING': '1', 'C_EXTRA_BODY': '{"max_tokens":40}'}
+   jsonrpc  {"seconds": 4.1, "http": 200, "state": "TASK_STATE_FAILED", "failure": "budget-exhausted", "status_text": "the model stopped at its output limit before it wrote any text", "status_message_metadata": {"a2a-rust.com/failure": "budget-exhausted"}, "answer_metadata": null, "trace_lines": 0, "rpc_error": null}
+   jsonrpc  answer_text=None
+   rest     {"seconds": 3.1, "http": 200, "state": "TASK_STATE_FAILED", "failure": "budget-exhausted", "status_text": "the model stopped at its output limit before it wrote any text", "status_message_metadata": {"a2a-rust.com/failure": "budget-exhausted"}, "answer_metadata": null, "trace_lines": 0, "raw_error": null}
+   rest     answer_text=None
+   grpc     {"seconds": 3.1, "state": "TASK_STATE_FAILED", "failure": "budget-exhausted", "status_text": "the model stopped at its output limit before it wrote any text", "status_message_metadata": {"a2a-rust.com/failure": "budget-exhausted"}, "answer_metadata": null, "trace_lines": 0}
+   grpc     answer_text=None
+   gen_ai.invoke_agent.duration series: [{'error.type': 'empty_answer', 'count': '1'}, {'error.type': 'empty_answer', 'count': '2'}, {'error.type': 'empty_answer', 'count': '2'}, {'error.type': 'empty_answer', 'count': '3'}]
+  ok    C jsonrpc: the task failed (state TASK_STATE_FAILED)
+  ok    C jsonrpc: failure class budget-exhausted (got budget-exhausted)
+  ok    C rest: the task failed (state TASK_STATE_FAILED)
+  ok    C rest: failure class budget-exhausted (got budget-exhausted)
+  ok    C grpc: the task failed (state TASK_STATE_FAILED)
+  ok    C grpc: failure class budget-exhausted (got budget-exhausted)
+
+12 of 12 expectations held

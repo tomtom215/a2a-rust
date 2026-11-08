@@ -332,6 +332,17 @@ impl Scan<'_> {
     }
 
     fn note_listing(&mut self, file: &Path, listing: &Listing) {
+        for dir in &listing.linked {
+            self.note(
+                Severity::Warning,
+                DiagnosticKind::SymlinkNotFollowed,
+                file,
+                format!(
+                    "`{dir}/` is a symbolic link, so its files are neither listed nor readable \
+                     (a link is how a directory someone else controls gets into a skill)"
+                ),
+            );
+        }
         if !listing.scripts.is_empty() {
             self.note(
                 Severity::Info,
@@ -387,18 +398,37 @@ pub(super) struct Listing {
     pub(super) scripts: Vec<String>,
     /// Whether a bound stopped a listing.
     pub(super) truncated: bool,
+    /// The directories among `references/`, `assets/` and `scripts/` that are
+    /// symbolic links, and so were not listed.
+    pub(super) linked: Vec<&'static str>,
 }
 
 /// Lists the regular files below `references/`, `assets/` and `scripts/` of
 /// the skill resolved to `root`. Links are not followed, so a link is not
-/// listed.
+/// listed, and neither is a directory of the three that is itself a link:
+/// what it points at is somewhere else, and its entries' names are not the
+/// skill's to tell the model (`read_skill_file` refuses every path through
+/// it, since the path leaves the directory it may be read from).
 pub(super) fn list_files(root: &Path) -> Listing {
     let mut listing = Listing::default();
     for dir in READABLE_DIRS {
-        listing.truncated |= walk(root, dir, &mut listing.resources);
+        if is_link(root, dir) {
+            listing.linked.push(dir);
+        } else {
+            listing.truncated |= walk(root, dir, &mut listing.resources);
+        }
     }
-    listing.truncated |= walk(root, "scripts", &mut listing.scripts);
+    if is_link(root, "scripts") {
+        listing.linked.push("scripts");
+    } else {
+        listing.truncated |= walk(root, "scripts", &mut listing.scripts);
+    }
     listing
+}
+
+/// Whether `root/dir` is a symbolic link (to anything, or to nothing).
+fn is_link(root: &Path, dir: &str) -> bool {
+    fs::symlink_metadata(root.join(dir)).is_ok_and(|m| m.file_type().is_symlink())
 }
 
 /// Appends the files below `root/dir` to `out` as `dir/…`, in name order, and
