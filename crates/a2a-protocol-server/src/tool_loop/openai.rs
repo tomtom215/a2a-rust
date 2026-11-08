@@ -417,17 +417,31 @@ async fn read_prefix(mut body: hyper::body::Incoming, limit: usize) -> Vec<u8> {
     out
 }
 
-/// `bytes` as text, cut to at most `limit` bytes on a character boundary.
+/// `bytes` as one printable line of text, at most `limit` bytes of it, cut on a
+/// character boundary.
+///
+/// The text is the provider's, and it reaches the operator's log through
+/// [`ModelError`]'s `Display`. A control character in it would be written
+/// raw: a newline starts a log line the provider wrote, an escape sequence
+/// reaches the operator's terminal. Each is written as the escape Rust gives
+/// it (`\n`, `\u{1b}`), and the bound is on what is shown, so an escape is
+/// kept whole or left out.
 fn truncated(bytes: &[u8], limit: usize) -> String {
     let text = String::from_utf8_lossy(bytes);
-    if text.len() <= limit {
-        return text.into_owned();
+    let mut shown = String::with_capacity(text.len().min(limit));
+    for c in text.chars() {
+        let before = shown.len();
+        if c.is_control() {
+            shown.extend(c.escape_default());
+        } else {
+            shown.push(c);
+        }
+        if shown.len() > limit {
+            shown.truncate(before);
+            break;
+        }
     }
-    let mut end = limit;
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    text[..end].to_owned()
+    shown
 }
 
 #[cfg(test)]

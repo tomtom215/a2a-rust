@@ -15,6 +15,35 @@ fn an_error_body_is_cut_on_a_character_boundary() {
     assert_eq!(truncated("aé".as_bytes(), 2), "a");
 }
 
+/// The body is the provider's text, and it reaches the operator's log through
+/// `ModelError`'s `Display`: a newline in it would start a log line the
+/// provider wrote, and an escape sequence would reach the operator's terminal
+/// raw (found by the live campaign, 2026-11-08). Control characters are
+/// written as the escapes Rust gives them, so the body is one printable line,
+/// and the bound is on what is shown.
+#[test]
+fn an_error_body_carries_no_control_character() {
+    assert_eq!(
+        truncated(b"a\nb\r\x1b[31mc\x07\x00d\te", 512),
+        r"a\nb\r\u{1b}[31mc\u{7}\u{0}d\te"
+    );
+    assert_eq!(
+        truncated(
+            b"ok\n2026-11-08T00:00:00Z ERROR forged: admin session opened",
+            512
+        ),
+        r"ok\n2026-11-08T00:00:00Z ERROR forged: admin session opened"
+    );
+    // C1 controls too (U+0085 NEL ends a line on some terminals), but not
+    // ordinary text, spaces or letters outside ASCII.
+    assert_eq!(truncated("a\u{85}b é ü".as_bytes(), 512), r"a\u{85}b é ü");
+    // The bound is on what is shown: 200 escapes of 6 bytes are cut at 512.
+    let shown = truncated(&[0x1b; 200], 512);
+    assert!(shown.len() <= 512, "{} bytes", shown.len());
+    assert!(shown.starts_with(r"\u{1b}\u{1b}"));
+    assert!(!shown.chars().any(char::is_control));
+}
+
 #[test]
 fn content_parts_and_missing_fields_are_read() {
     let turn = parse_completion(

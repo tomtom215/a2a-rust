@@ -1670,6 +1670,35 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A provider's, or a delegated child's, absurd token count left the task `working` for ever** (types and
+  server; found by the live-model campaign, 2026-11-08, by serving a scripted provider and a scripted peer
+  to a budgeted agent). `BudgetHandle::status()` is written onto every status update, and the server
+  refuses an event that holds a number past 2^53 (a gRPC `metadata` is a protobuf `Struct`, whose numbers
+  are doubles). A model reply that reported `usage` of 2^64 - 1 tokens, or a child whose final status
+  reported that much `spent`, put such a number in `spent`, so the status update that ends the task was
+  refused, and so was the failure written when the executor then returned its error: the task stayed
+  `working` (a blocking send returned that snapshot; a poll never saw it end; both reproduced against the
+  tool loop and against a coordinator delegating with `Delegation::start_budgeted`). The status now
+  reports no number past 2^53, "at least this much" at that largest value; the account itself still counts
+  the real spend. `a_status_never_carries_a_number_the_wire_cannot_hold` (types) and
+  `a_provider_reporting_an_absurd_token_count_still_ends_the_task` (server) fail without the change.
+
+- **`activate_skill` listed the files of a directory outside the skill when `references/`, `assets/` or
+  `scripts/` was itself a symbolic link** (server, `skills`; found by the live-model campaign, 2026-11-08).
+  The listing skipped links among a resource directory's entries but followed the resource directory:
+  `references` linked to `/etc` told the model the names of 100 files there, and the tool-trace artifact
+  carried them to the caller. `read_skill_file` already refused every read through such a link, so no
+  content left; the names did. A resource directory that is a link is now not listed, and discovery says
+  so (a `SymlinkNotFollowed` warning on the skill's `SKILL.md`).
+
+- **A model provider's error body could forge log lines and send terminal escapes to the operator's log**
+  (server, `tool-loop`; found by the live-model campaign, 2026-11-08). The 512-byte body in
+  `ModelError::Status` and `RateLimited`, which reaches the operator's log and spans through `Display`, was the
+  provider's text with its control characters intact: a body of `x`, a newline and `2026-11-08T00:00:00Z ERROR
+  forged: ...` began a line of its own on standard error, and an ANSI sequence arrived raw. Providers
+  echo parts of the prompt in such bodies, so the text is not always the provider's own. Control characters are
+  now written as Rust writes them (`\n`, `\u{1b}`), and the 512-byte bound applies to what is shown.
+
 - **A page token with a separator and a timestamp no store wrote made PostgreSQL answer an internal
   error that carried the database's own message** (found while closing the change above). The SQL stores'
   cursor decoder checked only for the separator, so a token such as `x`, a newline and an id reached
