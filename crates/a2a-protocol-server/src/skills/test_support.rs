@@ -5,7 +5,9 @@
 //! and the skills to put in one.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::path::Path;
+use std::path::PathBuf;
 
 use super::{SkillCatalog, SkillSource, SkillsConfig};
 

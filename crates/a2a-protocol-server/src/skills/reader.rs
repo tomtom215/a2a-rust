@@ -189,19 +189,18 @@ pub(super) fn verify(file: &File, resolved: &Path, boundary: &Path) -> Result<()
     Ok(())
 }
 
-/// What names a file where std says: its device and inode. Elsewhere every
-/// file has the same, so [`verify`] has only the path comparison to go on.
+/// What names a file where std says: its device and inode.
+#[cfg(unix)]
 fn identity(metadata: &fs::Metadata) -> (u64, u64) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        (metadata.dev(), metadata.ino())
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = metadata;
-        (0, 0)
-    }
+    use std::os::unix::fs::MetadataExt;
+    (metadata.dev(), metadata.ino())
+}
+
+/// Elsewhere every file has the same, so [`verify`] has only the path
+/// comparison to go on.
+#[cfg(not(unix))]
+const fn identity(_: &fs::Metadata) -> (u64, u64) {
+    (0, 0)
 }
 
 /// Reads at most `max` bytes of `file`: more than that is refused. The bound is
