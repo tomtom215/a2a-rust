@@ -1,0 +1,15 @@
+{"attack": "send NUL in text", "verdict": "held", "detail": {"http": 200, "code": null, "message": null, "tasks_created": 1, "ok": true}}
+{"attack": "send NUL in part.metadata.value", "verdict": "held", "detail": {"http": 200, "code": null, "message": null, "tasks_created": 1, "ok": true}}
+{"attack": "send NUL in part.metadata.key", "verdict": "held", "detail": {"http": 200, "code": null, "message": null, "tasks_created": 1, "ok": true}}
+{"attack": "send NUL in part.filename", "verdict": "held", "detail": {"http": 200, "code": null, "message": null, "tasks_created": 1, "ok": true}}
+{"attack": "send NUL in part.mediaType", "verdict": "held", "detail": {"http": 200, "code": -32005, "message": "message part 0 has media type \"a\\0b\", which the agent card does not declare (defaultInputModes or a skill's inputModes)", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in part.data", "verdict": "held", "detail": {"http": 200, "code": null, "message": null, "tasks_created": 1, "ok": true}}
+{"attack": "send NUL in part.url", "verdict": "held", "detail": {"http": 200, "code": null, "message": null, "tasks_created": 1, "ok": true}}
+{"attack": "send NUL in message.metadata.value", "verdict": "held", "detail": {"http": 200, "code": null, "message": null, "tasks_created": 1, "ok": true}}
+{"attack": "send NUL in message.metadata.key", "verdict": "held", "detail": {"http": 200, "code": null, "message": null, "tasks_created": 1, "ok": true}}
+{"attack": "send NUL in message.extensions", "verdict": "held", "detail": {"http": 200, "code": null, "message": null, "tasks_created": 1, "ok": true}}
+{"attack": "send NUL in message.referenceTaskIds", "verdict": "held", "detail": {"http": 200, "code": -32602, "message": "message.referenceTaskIds must not contain control characters", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in idempotency.key", "verdict": "held", "detail": {"http": 200, "code": -32602, "message": "idempotency key accepts only ASCII alphanumerics and `-`, `_`, `.`, `:`", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in role", "verdict": "held", "detail": {"http": 200, "code": -32602, "message": "invalid params: unknown variant `a\u0000b`, expected one of `ROLE_UNSPECIFIED`, `unspecified`, `ROLE_USER`, `user`, `ROLE_AGENT`, `agent`", "tasks_created": 0, "ok": false}}
+{"attack": "target alive, no panic", "verdict": "held", "detail": {"alive": true, "rss_kb": 28844, "fds": 11, "threads": 5, "panics": 0}}
+{"tally": {"tried": 14, "held": 14, "deviation": 0}}

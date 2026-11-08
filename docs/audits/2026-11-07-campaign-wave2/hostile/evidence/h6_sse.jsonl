@@ -1,0 +1,2 @@
+{"attack": "SSE: 50 subscribers never read a 300 000-event task; the task must still finish", "verdict": "held", "detail": {"problems": [], "seconds": 13.0, "rss_kb": [23344, 104248, 87660], "fds": [11, 11], "cpu_s": 18.8, "task_state_while_50_subscribers_never_read": "TASK_STATE_COMPLETED", "rss_kb_before_close": 100444}}
+{"tally": {"tried": 1, "held": 1, "deviation": 0}}

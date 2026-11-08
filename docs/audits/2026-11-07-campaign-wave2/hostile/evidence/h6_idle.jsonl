@@ -1,0 +1,2 @@
+{"attack": "10 000 idle connections that send nothing: the server closes them within its 75 s idle bound, serves others, recovers", "verdict": "held", "detail": {"problems": [], "seconds": 98.7, "rss_kb": [23616, 95860, 96444], "fds": [10, 11], "cpu_s": 0.8, "opened": 10000, "refused": 0, "peak_fds": 10010, "peak_rss_kb": 91276, "legit_send_while_open": true, "closed_by_server_after_80s": 10000}}
+{"tally": {"tried": 1, "held": 1, "deviation": 0}}

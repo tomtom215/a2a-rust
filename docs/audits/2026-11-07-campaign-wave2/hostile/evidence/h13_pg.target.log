@@ -1,0 +1,49 @@
+[h13_pg] serving on 49001
+[h13_pg] exec start 9363aea0-4626-42ec-82b4-d9a5605680ee
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 1, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 1, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[h13_pg] exec start a4c40a55-35a4-4c08-abfc-8d278815e327
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[h13_pg] exec start 6d340382-72a3-4f6b-8db4-51cb0143b2d6
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 1, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 1, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[purge] PurgeReport { tasks_deleted: 0, parked_tasks_deleted: 0, orphan_rows_deleted: 0, idempotency_keys_deleted: 0, events_compacted: 0, batches: 0, complete: true }
+[target] serve ended: ServeReport { accepted: 8, drained: true, abandoned: 0, tasks: Some(InFlightReport { completed: 0, cancelled: 0, still_running: 0, finished: true }), refused: None }

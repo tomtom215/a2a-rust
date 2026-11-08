@@ -1,0 +1,8 @@
+{"attack": "api key: valid key", "verdict": "held", "detail": {"status": 200, "accepted": true}}
+{"attack": "api key: empty key (SEC-05: an empty key once failed open)", "verdict": "held", "detail": {"status": 401, "accepted": false}}
+{"attack": "api key: key with a trailing space", "verdict": "held", "detail": {"status": 200, "accepted": true}}
+{"attack": "api key: key in the Authorization header", "verdict": "held", "detail": {"status": 401, "accepted": false}}
+{"attack": "api key: upper-case header name", "verdict": "held", "detail": {"status": 200, "accepted": true}}
+{"attack": "api key: two x-api-key headers, bad then good", "verdict": "held", "detail": {"status": 401, "accepted": false}}
+{"attack": "target alive", "verdict": "held", "detail": {"alive": true, "rss_kb": 25572, "fds": 11, "threads": 5, "panics": 0}}
+{"tally": {"tried": 7, "held": 7, "deviation": 0}}

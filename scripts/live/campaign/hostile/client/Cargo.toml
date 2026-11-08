@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The client side of the hostile campaign: one binary that drives a2a-protocol-client
+# against a server the campaign controls (a hostile one written in Python,
+# h12_hostile_servers.py), with every call bounded by a deadline and the process's
+# peak RSS reported. Outside the workspace, like scripts/live/replica.
+# Build: CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=$SP/hostile/client-target cargo build \
+#   --manifest-path scripts/live/campaign/hostile/client/Cargo.toml
+
+[package]
+name = "a2a-hostile-client"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[[bin]]
+name = "a2a-hostile-client"
+path = "src/main.rs"
+
+[dependencies]
+a2a-protocol-client = { path = "../../../../../crates/a2a-protocol-client" }
+a2a-protocol-types = { path = "../../../../../crates/a2a-protocol-types" }
+tokio = { version = "1", features = ["full"] }
+
+[workspace]

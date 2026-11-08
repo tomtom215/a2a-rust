@@ -1,0 +1,8 @@
+{"attack": "static bearer: valid token", "verdict": "held", "detail": {"status": 200, "accepted": true}}
+{"attack": "static bearer: token of a prefix", "verdict": "held", "detail": {"status": 401, "accepted": false}}
+{"attack": "static bearer: token plus a NUL", "verdict": "held", "detail": {"status": 400, "accepted": false}}
+{"attack": "static bearer: empty bearer", "verdict": "held", "detail": {"status": 401, "accepted": false}}
+{"attack": "static bearer: bearer with only spaces", "verdict": "held", "detail": {"status": 401, "accepted": false}}
+{"attack": "static bearer: lower-case scheme", "verdict": "held", "detail": {"status": 200, "accepted": true}}
+{"attack": "target alive", "verdict": "held", "detail": {"alive": true, "rss_kb": 25708, "fds": 10, "threads": 5, "panics": 0}}
+{"tally": {"tried": 7, "held": 7, "deviation": 0}}

@@ -31,26 +31,42 @@ pub fn encode(updated_at: &str, id: &str) -> String {
 /// Decodes a page token into its `(updated_at, id)` parts.
 ///
 /// Returns `None` for a token that [`encode`] could not have produced: one
-/// with no separator, or whose `updated_at` is not a real UTC date and time
+/// with no separator, whose `updated_at` is not a real UTC date and time
 /// written as the stores write it (`YYYY-MM-DD HH:MM:SS`, then up to six
-/// fractional digits: `SQLite` writes three, `PostgreSQL`'s `to_char` six).
-/// Callers refuse that with [`unrecognised_token`](super::pagination::unrecognised_token)
-/// rather than scanning from the top, so a forged or corrupt cursor never
-/// triggers a full table scan, and one with a separator but a nonsense
-/// timestamp never reaches `PostgreSQL`'s `::timestamp` cast, which answers
-/// it with a database error.
+/// fractional digits: `SQLite` writes three, `PostgreSQL`'s `to_char` six),
+/// outside the range `PostgreSQL`'s own `timestamp` type holds (year 0001
+/// to 9999 — unlike this crate's own RFC 3339 parser, whose range starts at
+/// year 0000, the proleptic Gregorian calendar's first representable year,
+/// which `::timestamp` has no year for), or whose `id` carries a NUL: no
+/// store ever wrote one (ids with a NUL are refused at ingress), and
+/// `PostgreSQL` cannot bind one in a text parameter.
+///
+/// Callers refuse all of this with
+/// [`unrecognised_token`](super::pagination::unrecognised_token) rather than
+/// scanning from the top, so a forged or corrupt cursor never triggers a
+/// full table scan, and one with a separator but a nonsense or out-of-range
+/// timestamp, or a NUL in its id, never reaches `PostgreSQL`'s cast or bind,
+/// which would otherwise answer a database error carrying its own message
+/// (hostile campaign, wave 2: `0000-01-01 00:00:00` and an id with a NUL both
+/// passed every check here and reached `PostgreSQL` as `-32603`).
 pub fn decode(token: &str) -> Option<(&str, &str)> {
     let (updated_at, id) = token.split_once('\n')?;
+    if id.contains('\0') {
+        return None;
+    }
     is_timestamp(updated_at).then_some((updated_at, id))
 }
 
 /// Whether `s` is `YYYY-MM-DD HH:MM:SS` with an optional fraction of one to
-/// six digits, and a date and time that exist.
+/// six digits, a date and time that exist, and a year `PostgreSQL`'s
+/// `timestamp` type can hold (`0001` to `9999`: it has no year `0000`, unlike
+/// this crate's own RFC 3339 parser).
 fn is_timestamp(s: &str) -> bool {
     let b = s.as_bytes();
     let shaped = s.is_ascii()
         && b.len() >= 19
         && b[10] == b' '
+        && !s.starts_with("0000")
         && match &b[19..] {
             [] => true,
             [b'.', fraction @ ..] => {
@@ -83,6 +99,17 @@ mod tests {
             decode(&token),
             Some(("2026-01-15 10:30:45.123", "weird\nid\nwith\nnewlines"))
         );
+    }
+
+    /// A NUL in the id is no id any store holds (ids are refused with one at
+    /// ingress), and PostgreSQL cannot bind it in a text parameter.
+    #[test]
+    fn an_id_with_a_nul_is_rejected() {
+        for id in ["\0", "a\0b", "\0\0\0"] {
+            assert_eq!(decode(&encode("2026-01-15 10:30:45", id)), None, "{id:?}");
+        }
+        // Other control characters in the id are legal text, as before.
+        assert!(decode(&encode("2026-01-15 10:30:45", "a\nb\tc")).is_some());
     }
 
     #[test]
@@ -143,6 +170,11 @@ mod tests {
             "2026-01-15 24:00:00",
             "2026-01-15 10:60:00",
             "2026-01-15 10:30:61",
+            // A real date to the RFC 3339 parser (year 0000 is its first
+            // year), but not to PostgreSQL, whose `::timestamp` cast has no
+            // year 0 and answers a database error (hostile campaign, wave 2).
+            "0000-01-01 00:00:00",
+            "0000-12-31 23:59:59.999999",
             // Not ASCII, at the length of a timestamp.
             "2026-01-15 10:30:4é",
             "2026-01-15 10:30:45.\u{661}",

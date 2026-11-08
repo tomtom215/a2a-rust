@@ -1,0 +1,15 @@
+{"attack": "send NUL in text", "verdict": "DEVIATION", "detail": {"http": 200, "code": -32603, "message": "internal error (reference 242824305196)", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in part.metadata.value", "verdict": "DEVIATION", "detail": {"http": 200, "code": -32603, "message": "internal error (reference 6e9b6bd519d2)", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in part.metadata.key", "verdict": "DEVIATION", "detail": {"http": 200, "code": -32603, "message": "internal error (reference 5aaa3d430129)", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in part.filename", "verdict": "DEVIATION", "detail": {"http": 200, "code": -32603, "message": "internal error (reference e73ed32304cd)", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in part.mediaType", "verdict": "held", "detail": {"http": 200, "code": -32005, "message": "message part 0 has media type \"a\\0b\", which the agent card does not declare (defaultInputModes or a skill's inputModes)", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in part.data", "verdict": "DEVIATION", "detail": {"http": 200, "code": -32603, "message": "internal error (reference 24ab2b1d3c92)", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in part.url", "verdict": "DEVIATION", "detail": {"http": 200, "code": -32603, "message": "internal error (reference e3bafb07d1c2)", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in message.metadata.value", "verdict": "DEVIATION", "detail": {"http": 200, "code": -32603, "message": "internal error (reference 81dcf2096970)", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in message.metadata.key", "verdict": "DEVIATION", "detail": {"http": 200, "code": -32603, "message": "internal error (reference 72d529f87145)", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in message.extensions", "verdict": "DEVIATION", "detail": {"http": 200, "code": -32603, "message": "internal error (reference 8f21c3a8e5a2)", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in message.referenceTaskIds", "verdict": "held", "detail": {"http": 200, "code": -32602, "message": "message.referenceTaskIds must not contain control characters", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in idempotency.key", "verdict": "held", "detail": {"http": 200, "code": -32602, "message": "idempotency key accepts only ASCII alphanumerics and `-`, `_`, `.`, `:`", "tasks_created": 0, "ok": false}}
+{"attack": "send NUL in role", "verdict": "held", "detail": {"http": 200, "code": -32602, "message": "invalid params: unknown variant `a\u0000b`, expected one of `ROLE_UNSPECIFIED`, `unspecified`, `ROLE_USER`, `user`, `ROLE_AGENT`, `agent`", "tasks_created": 0, "ok": false}}
+{"attack": "target alive, no panic", "verdict": "held", "detail": {"alive": true, "rss_kb": 29560, "fds": 16, "threads": 5, "panics": 0}}
+{"tally": {"tried": 14, "held": 5, "deviation": 9}}
