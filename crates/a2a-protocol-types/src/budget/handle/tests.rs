@@ -327,3 +327,55 @@ fn a_deadline_beyond_instant_is_about_thirty_years_off() {
     assert!(left > year * 29, "the deadline is under 29 years off");
     assert!(left <= year * 30, "the deadline is over 30 years off");
 }
+
+/// The status rides in the metadata of every status update, and a task's
+/// events are written once, for every binding: over gRPC `metadata` is a
+/// `google.protobuf.Struct`, whose numbers are doubles, so a number past 2^53
+/// is refused (the server's event queue). A provider can report any `u64` of
+/// usage, and a child can report any `u64` of spend (a parent settles with
+/// it): one past 2^53 made every later status update of the task unwritable,
+/// the failure that ended it included, and the task stayed `working`
+/// (found by the live campaign, 2026-11-08). The status says "at least this
+/// much" at the largest number the wire holds, instead.
+#[test]
+fn a_status_never_carries_a_number_the_wire_cannot_hold() {
+    const WIRE_MAX: u64 = 1 << 53;
+    let h = BudgetHandle::start(&tokens(1000));
+    assert!(
+        h.charge("tokens", u64::MAX).is_err(),
+        "the meter is overdrawn"
+    );
+    let status = h.status();
+    assert_eq!(status.spent["tokens"], WIRE_MAX);
+    assert_eq!(status.meters["tokens"], 0);
+    // What is in range is untouched, up to and including 2^53 itself.
+    let h = BudgetHandle::start(&tokens(1000));
+    let _ = h.charge("tokens", WIRE_MAX - 1);
+    assert_eq!(h.status().spent["tokens"], WIRE_MAX - 1);
+    let _ = h.charge("tokens", 1);
+    assert_eq!(h.status().spent["tokens"], WIRE_MAX);
+    let _ = h.charge("tokens", 1);
+    assert_eq!(
+        h.status().spent["tokens"],
+        WIRE_MAX,
+        "past it, the largest the wire holds"
+    );
+    // A grant larger than the wire holds is reported as the largest it holds.
+    let h = BudgetHandle::start(&tokens(u64::MAX));
+    assert_eq!(h.status().meters["tokens"], WIRE_MAX);
+    // A child's report of spend past it settles into the same bound.
+    let parent = BudgetHandle::start(&tokens(1000));
+    let grant = parent.grant(&tokens(500)).unwrap();
+    let reported = BudgetStatus::new(
+        None,
+        BTreeMap::new(),
+        BTreeMap::from([("tokens".to_owned(), u64::MAX)]),
+    );
+    grant.settle(Some(&reported));
+    assert_eq!(parent.status().spent["tokens"], WIRE_MAX);
+    // And the status, as written into metadata, holds no number past it.
+    let mut metadata = None;
+    parent.status().attach_to(&mut metadata);
+    let text = metadata.unwrap().to_string();
+    assert!(!text.contains("18446744073709551615"), "{text}");
+}

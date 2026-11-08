@@ -25,6 +25,10 @@ pub const MIN_GRANT_RESERVE: Duration = Duration::from_millis(100);
 /// The most time a grant keeps back from a child.
 pub const MAX_GRANT_RESERVE: Duration = Duration::from_secs(5);
 
+/// The largest number [`BudgetHandle::status`] reports: 2^53, the largest a
+/// protobuf number holds exactly.
+const MAX_REPORTED: u64 = 1 << 53;
+
 /// A bound that was hit: the deadline, or a meter overdrawn.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -165,8 +169,18 @@ impl BudgetHandle {
 
     /// What is left and spent, for the task's metadata. `spent` includes
     /// what is reserved for children not yet settled.
+    ///
+    /// No number in it is more than 2^53, the largest a protobuf number (a
+    /// double, which is what `metadata` is over gRPC) holds exactly: the status
+    /// is written onto every status update, and the server refuses an event
+    /// that holds a larger one, the one that ends the task included. A
+    /// provider can report any `u64` as its usage and a child any `u64` as its
+    /// spend, so the account can hold more; the status then says "at least
+    /// this much", at that largest number.
     #[must_use]
     pub fn status(&self) -> BudgetStatus {
+        // A deadline is at most about 30 years off (`far_future`): under 2^53
+        // milliseconds, so it needs no bound of its own.
         let remaining_ms = self
             .remaining_time()
             .map(|t| u64::try_from(t.as_millis()).unwrap_or(u64::MAX));
@@ -174,13 +188,13 @@ impl BudgetHandle {
             .account
             .meters
             .iter()
-            .map(|(n, m)| (n.clone(), m.remaining()))
+            .map(|(n, m)| (n.clone(), m.remaining().min(MAX_REPORTED)))
             .collect();
         let spent = self
             .account
             .meters
             .iter()
-            .map(|(n, m)| (n.clone(), m.spent.load(Ordering::Acquire)))
+            .map(|(n, m)| (n.clone(), m.spent.load(Ordering::Acquire).min(MAX_REPORTED)))
             .collect();
         BudgetStatus::new(remaining_ms, meters, spent)
     }
