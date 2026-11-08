@@ -69,9 +69,10 @@ async fn main() {
         .with_config(serve);
     eprintln!("[{}] serving on {port}", env("NAME").unwrap_or_default());
     let report = server
-        .serve_with_shutdown(dispatcher, async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
+        // SIGTERM as well as SIGINT: `ctrl_c()` alone leaves a `kill -TERM` to
+        // the default action, a hard kill, which the first run of
+        // `c1_chaos.py cancel_handoff` mistook for a graceful hand-off.
+        .serve_with_shutdown(dispatcher, a2a_protocol_server::serve::shutdown_signal())
         .await;
     eprintln!("[target] serve ended: {report:?}");
     let _ = handler.shutdown().await;

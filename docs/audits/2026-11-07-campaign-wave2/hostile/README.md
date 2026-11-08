@@ -45,7 +45,7 @@ comment).
 |---|---|---|---|---|
 | W2-hostile-1 | high | hostile input → SQL | `ListTasks` page token with a `0000-01-01`-shaped `updated_at`, or a NUL in its id, reached `PostgreSQL`'s `::timestamp` cast/bind and came back `-32603` carrying the database's own message | **FIXED** (commit below) |
 | W2-hostile-2 | high | hostile input → SQL | `statusTimestampAfter` (and a task's own status timestamp) with a `0000-*` year reached `::timestamptz` the same way | **FIXED** (commit below) |
-| W2-hostile-3 | high | replica chaos, resilience | a `CancelTask` that lands on a replica other than the one running the turn, exactly as that replica is shutting down, falls back to a direct `tasks`-table write that never appends a terminal event to the log and never releases the turn claim: a permanent orphan claim (the reaper's own query excludes terminal tasks) and a cancellation no event-log consumer (push outbox, replay, audit) ever sees | **DESCRIBED, NOT FIXED** — design decision, see below |
+| W2-hostile-3 | medium (was high; see the correction) | replica chaos, resilience | a `CancelTask` written by a replica that does not run the turn stores `Canceled` and appends no terminal event itself; the log's ending then comes from the owner's own event processor, so if the **owner dies abruptly** before it can, the cancellation is in no log, and an expired claim row stays (the reaper's own query excludes terminal tasks). **Not a graceful-shutdown defect**: the harness binary handled only `SIGINT`, so its `SIGTERM` was a hard kill | **DESCRIBED, NOT FIXED** (design: duplicate terminal events); graceful path pinned by tests |
 | W2-hostile-4 | medium | hostile input | a `SendMessage` whose `extensions` array or `metadata` key carries a NUL (`\u0000`) succeeds on the in-memory, SQLite and tenant-in-memory stores but answers `-32603` on every PostgreSQL store (`jsonb` cannot hold a NUL): a hostile string the handler does not refuse reaches the database and comes back as an internal error, and the five stores disagree on the same input | not fixed — see below |
 | W2-hostile-5 | low | observability | ten HTTP+JSON routes a `BearerTokenAuthInterceptor` protects answer an unauthenticated caller `200`/`404`/`204` instead of `401` before the method/route is resolved (unknown JSON-RPC method, malformed JSON, oversized body, a REST 404, `GET /metrics`): no data crosses the boundary, but the shape of the answer differs from the reference `401`, so an unauthenticated probe can tell a live route from a dead one, and a parse error from a method-not-found one | not fixed — see below |
 
@@ -125,7 +125,22 @@ is what the brief's fixing discipline asks for) and `cargo mutants` on this
 diff (RUSTFLAGS unset, as required — not run for time; the maintainer's own
 incremental mutation gate on the real PR diff is the authoritative run).
 
-### W2-hostile-3: cross-replica cancel during a shutdown hand-off loses the terminal event and the claim
+### W2-hostile-3: cross-replica cancel, then the owner dies abruptly: the terminal event and the claim
+
+> **Correction, 2026-11-08, by the session that merged this report.** The title and the paragraphs below say the replica
+> was shutting down gracefully on `SIGTERM`. It was not. The harness binary
+> (`target/src/main.rs`) waits on `tokio::signal::ctrl_c()`, which is `SIGINT` only, and `c1_chaos.py`'s `cancel_handoff`
+> sends signal 15; nothing in the binary handles it, so the process was killed at once, as by `kill -9`: no drain, no claim
+> release, no events. (`serve::shutdown_signal` is the SDK's helper for this and `serve/signal.rs` warns about exactly this
+> mistake.) What the evidence shows is therefore **the owner dying abruptly right after a cancel taken on another replica**.
+> Reproduced here without processes, with the graceful path a `SIGTERM` takes (`shutdown_with_timeout`: cancel, drain, release),
+> in `tests/turn_claims` on SQLite and PostgreSQL: the cancel's terminal event **is** logged and the claim **is** free
+> (`a_cancel_taken_as_its_replica_shuts_down_still_logs_the_end_and_frees_the_task`), and so it is with the owner left running
+> (`a_cancel_taken_on_another_replica_logs_the_end`). The abrupt `shutdown()`, which the docs say "cuts their streams off without
+> a terminal event", is not what a deployment runs on `SIGTERM`. The gap that remains is narrower and real, and the options
+> below still apply to it; its severity is medium, not high, because it needs the owner to die inside the window between
+> the cancel's store write and its own next renewal. Re-run the scenario with `kill -9` instead of `SIGTERM` to see it.
+
 
 **PROVEN**, reproduced twice (`c1_chaos.py cancel_handoff`, and a standalone
 probe kept long enough to rule out delayed cleanup). Not fixed: it spans the

@@ -2791,6 +2791,14 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 - **A status written with no event** (audit E-F25): a `CancelTask` of a parked task on one replica, and a task the claim reaper ends, write a status with no event in the log, so a subscriber on another replica learns of it at its next poll (up to `subscribe_reattach_max_interval`), also with `with_log_notifications`; measured: 2.0 s for a cancel at a 2 s ceiling.
 
+- **A cancel taken on another replica, then the owner's abrupt death** (hostile campaign W2-hostile-3, 2026-11-08): `CancelTask` on a replica
+  that does not run the turn stores `Canceled` and leaves the terminal event to the owner's own event processor. If the owner is killed
+  (`kill -9`, an out-of-memory kill, a `SIGTERM` nothing handles) before it ends the turn, the task is `Canceled` in the store with no terminal
+  event in its log, which webhooks, the audit trail and a resuming subscriber read, and its expired claim row stays, because the reaper's
+  query excludes terminal tasks. The owner left running, or shut down by `shutdown_with_timeout` (what `Server::serve_with_shutdown` runs on
+  `SIGTERM`), logs the event and frees the claim (`tests/turn_claims`, SQLite and PostgreSQL). Closing the gap needs the canceller to append
+  the ending itself and the processor to skip an ending already logged, so a decision on duplicate terminal events; not changed.
+
 - **Parked-task expiry** (audit D-18): a parked task deleted by `parked_max_age` answers `TaskNotFound` afterwards, and a stream open on it ends without a terminal state; a continuation that read the task a moment before the sweep and takes its claim after it writes the task again, without its event log.
 
 - **Agent Skills** (ADR 0035): the catalog is a snapshot taken at start-up (no hot reload; build a new executor to pick up a change); scripts are never run; on a platform without Unix file identities (Windows) the reader's check after the open compares paths only, a hard link names any file its maker can read, and a file replaced by a FIFO between the check and the open holds one blocking-pool thread; not yet run against a live model, on Windows or on macOS.

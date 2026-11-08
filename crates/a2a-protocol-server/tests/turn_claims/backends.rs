@@ -72,6 +72,20 @@ mod sqlite {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_a_cancel_taken_as_its_replica_shuts_down_still_logs_the_end_and_frees_the_task()
+    {
+        a_cancel_taken_as_its_replica_shuts_down_still_logs_the_end_and_frees_the_task(
+            &TempDb::new("cancel-down"),
+        )
+        .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_a_cancel_taken_on_another_replica_logs_the_end() {
+        a_cancel_taken_on_another_replica_logs_the_end(&TempDb::new("cancel-up")).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn sqlite_a_replica_shut_down_releases_its_claims_at_once() {
         a_replica_shut_down_releases_its_claims_at_once(&TempDb::new("shutdown")).await;
     }
@@ -242,6 +256,23 @@ pub(crate) mod postgres {
     async fn postgres_a_retry_while_its_send_runs_on_another_replica_is_replayed() {
         let db = TestDb::create("retry_runs").await;
         a_retry_while_its_send_runs_on_another_replica_is_replayed(&db).await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_cancel_taken_as_its_replica_shuts_down_still_logs_the_end_and_frees_the_task()
+     {
+        let db = TestDb::create("canceldown").await;
+        a_cancel_taken_as_its_replica_shuts_down_still_logs_the_end_and_frees_the_task(&db).await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_cancel_taken_on_another_replica_logs_the_end() {
+        let db = TestDb::create("cancelup").await;
+        a_cancel_taken_on_another_replica_logs_the_end(&db).await;
         db.drop_db().await;
     }
 
