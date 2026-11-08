@@ -1003,6 +1003,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **A NUL character (U+0000) anywhere in a `SendMessage` request is now `InvalidParams` on every store** (hostile campaign, wave 2,
+  2026-11-08). PostgreSQL's `jsonb` cannot hold one, so the three PostgreSQL stores answered `-32603` (carrying the database's own message)
+  and created no task for a NUL in a text part, filename, URL, media type, metadata key or value, extension or `data` value, while the
+  in-memory, SQLite and encrypted-in-memory stores accepted the same request: nine of fourteen message fields disagreed. The handler now
+  refuses it once, before anything is stored, naming no value, the way ids already refuse every control character. A client that sent
+  a NUL to the stores that accepted it now gets an error; text that merely spells the escape (a backslash and `u0000`) is still accepted.
 - **`ListTasks` with a page token the server could not have issued is now `InvalidParams`** (adopter
   walk-through decision 2, 2026-11-07; Google AIP-158: an invalid page token is an invalid
   argument). All five stores (in-memory, SQLite, PostgreSQL and the two tenant-aware SQL

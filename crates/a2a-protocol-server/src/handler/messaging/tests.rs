@@ -2302,6 +2302,93 @@ fn token_still_evictable_spares_fresh_live_token() {
     assert!(token_still_evictable(&aged, later, max_age));
 }
 
+// ── a NUL character is refused in every field, for every store ───────────
+
+/// A send carrying one NUL, in a different field each time.
+fn nul_requests() -> Vec<(&'static str, MessageSendParams)> {
+    use a2a_protocol_types::message::Part;
+    let with = |mutate: fn(&mut MessageSendParams)| {
+        let mut params = make_params(None);
+        mutate(&mut params);
+        params
+    };
+    let in_part = |part: Part| {
+        let mut params = make_params(None);
+        params.message.parts = vec![part];
+        params
+    };
+    let mut filename = Part::text("x");
+    filename.filename = Some("a\u{0}b".into());
+    let mut part_metadata = Part::text("x");
+    part_metadata.metadata = Some(serde_json::json!({"k": "a\u{0}b"}));
+    vec![
+        ("text", in_part(Part::text("a\u{0}b"))),
+        ("part filename", in_part(filename)),
+        ("part metadata value", in_part(part_metadata)),
+        (
+            "data part value",
+            in_part(Part::data(serde_json::json!({"d": {"k": ["a\u{0}b"]}}))),
+        ),
+        (
+            "message metadata key",
+            with(|p| p.message.metadata = Some(serde_json::json!({"a\u{0}b": 1}))),
+        ),
+        (
+            "nested metadata value",
+            with(|p| p.message.metadata = Some(serde_json::json!({"o": {"l": ["x", "a\u{0}b"]}}))),
+        ),
+        (
+            "request metadata",
+            with(|p| p.metadata = Some(serde_json::json!({"k": "a\u{0}b"}))),
+        ),
+        (
+            "extension",
+            with(|p| p.message.extensions = Some(vec!["https://x.example/a\u{0}b".into()])),
+        ),
+    ]
+}
+
+/// `PostgreSQL`'s `jsonb` cannot hold U+0000, so a send carrying one in a text
+/// part, a filename, a metadata key or value, an extension or a `data` value
+/// failed `-32603` there and succeeded on the other stores (hostile campaign,
+/// wave 2, `W2-hostile-4`). It is `InvalidParams` on every store now, naming
+/// no value; text that merely spells the escape is not refused.
+#[tokio::test]
+async fn a_nul_character_in_any_field_of_a_send_is_refused() {
+    for (what, params) in nul_requests() {
+        let err = make_handler()
+            .on_send_message(params, false, None)
+            .await
+            .expect_err(what);
+        match err {
+            ServerError::InvalidField { field, message } => {
+                assert_eq!(field, "message", "{what}");
+                assert!(message.contains("NUL"), "{what}: {message}");
+                assert!(
+                    !message.contains("a\u{0}b"),
+                    "{what} echoed the value: {message}"
+                );
+            }
+            other => panic!("{what}: expected InvalidParams, got {other:?}"),
+        }
+    }
+}
+
+/// Text that spells the escape, a backslash and `u0000`, is not a NUL: it
+/// must still be accepted (a check on the serialized text would match it).
+#[tokio::test]
+async fn text_that_spells_a_nul_escape_is_not_refused() {
+    let handler = make_handler();
+    let mut params = make_params(None);
+    params.message.parts = vec![a2a_protocol_types::message::Part::text(
+        "the escape is \\u0000, a backslash then u0000",
+    )];
+    handler
+        .on_send_message(params, false, None)
+        .await
+        .expect("a backslash and u0000 are text");
+}
+
 // ── message.id takes the same rule as the other ids ──────────────────────
 
 /// `message.id` was validated nowhere, while reaching further than either id
