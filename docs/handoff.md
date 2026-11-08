@@ -66,6 +66,17 @@ session re-runs it instead of copying the number. What was not run is under *Not
   `-D warnings` (two redundant clones in tests, fixed) and the docs.rs doc build (`--cfg docsrs`): exit 0; `scripts/preflight_all.py --skip-ci-yml`, 13 rows, **12
   PASS**: `dco`, `coverage ignores`, the ITK traversal self-test, the official TCK, the TCK self-test, all bindings, the official client against this server, card
   signature interop, gRPC wire compatibility, loom, `cargo deny` and `cargo semver-checks`; the 13th is the promtool gate, see *First, next* 2.
+  CI's `test` matrix on `bdf025af` (a docs-only difference from `fd5c0b84`: `git diff --stat fd5c0b84 bdf025af -- . ':!docs'` is empty), `nextest --profile ci`,
+  `RUSTFLAGS=-D warnings`, live PostgreSQL: the nine single-package variants (client with `tls-rustls`; server with each of `tls-rustls`, `sqlite`, `postgres`, `axum`,
+  `tool-loop`, `skills`, `auth-jwt`, `auth-jwt,tls-rustls`) passed, 0 failures (1330, 3180, 3557, 3248, 3274, 3349, 3528, 3256, 3256 tests). The seven `--workspace`
+  variants **did not run**: each exited 101 at a build step before any test started (`linking with cc failed`; five logs say `No space left on device`, and the
+  two `--features signing` and `tracing` logs say only `ld terminated with signal 7 [Bus error]`, which I read as the same full disk, CONJECTURED: the same crates link
+  and pass one package at a time). They were then run **one package at a time**, with the
+  test executables deleted between packages: default features, all 26 workspace members; `--no-default-features`, all 26; `--all-features`, the 22 members that are not
+  published crates (the four published ones were run with all features earlier); and `--features signing` (6 members that define it), `tracing` (5), `websocket` (4), `grpc` (4):
+  **every one of the 93 runs exited 0** (`scratchpad/members_summary.log`, `members2_summary.log`; e.g. default features, server 3180 passed and 15 skipped, client 1330,
+  types 662, SDK 27, discovery 17, CLI 81; four members have no tests: `a2a-benchmarks`, `a2a-tck-sut`, `live-model`, `swarm`). **That is not CI's command**: `--workspace`
+  unifies features across all members in one build, and a package-at-a-time run does not, so a failure that appears only under unified features would not show here.
   Before that: the moved in-memory token tests and `store_tests` (21 passed), the skills lib tests (175 passed). Workspace, `-D warnings`:
   `cargo clippy --workspace --all-targets` with all features and with defaults, `cargo hack clippy --each-feature` over the four published
   crates (61 combinations), and the Windows cross-clippy (`--target x86_64-pc-windows-gnu`, after two fixes): exit 0; `cargo test --doc
@@ -126,8 +137,8 @@ session re-runs it instead of copying the number. What was not run is under *Not
    worktree** (`git worktree remove`) before running the gates: a leftover one breaks `check_gate_reachability.py`.
 2. The CI parity still not run on this tree: `observability.yml:promtool` (`promtool check config`, `check rules`, `test rules` and `amtool check-config`: its
    step that downloads Alertmanager got HTTP 504 twice through this machine's proxy, the Prometheus tarball before it passed its SHA-256; `check_stack.py`,
-   which needs neither, passes), the rest of `ci.yml`'s `test` matrix (`--workspace` with default features, with none, with `signing`, `tracing`,
-   `websocket` and `grpc`, and each server feature alone: only the all-features run of the four published crates was done), the examples run
+   which needs neither, passes), the `--workspace` form of `ci.yml`'s `test` matrix (every variant passes one package at a time, see *Verified*; the single
+   `--workspace` build that unifies features does not fit this disk, so run it on a runner with room), the examples run
    (clippy compiled them; `example-surface` jobs were not run), the TCK cross-language legs, the example-agent TCK legs, fuzzing (needs cargo-fuzz), Kani, the
    Docker-built jobs (ACTS, ITK image, the deploy image), and the Windows and macOS *test* legs (Windows only cross-clippy'd; macOS cannot be cross-checked here).
 3. Mutation not yet run: `skills/reader.rs` and `skills/tools.rs` in the real server crate; the whole diff against `origin/main` the way
