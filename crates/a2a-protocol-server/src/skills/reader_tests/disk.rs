@@ -72,6 +72,11 @@ fn a_directory_is_not_a_file() {
     assert_eq!(read(&root, "assets/"), Err(Refusal::NotAFile));
 }
 
+// Unix only: a path below a regular file fails there with `ENOTDIR`, which is
+// not "not found". Windows answers it with another kind (this assertion
+// failed on both Windows CI jobs), so the mapping itself is tested below on
+// every platform.
+#[cfg(unix)]
 #[test]
 fn another_failure_to_resolve_is_unreadable_not_not_found() {
     let scratch = Scratch::new("notdir");
@@ -81,6 +86,24 @@ fn another_failure_to_resolve_is_unreadable_not_not_found() {
         read(&root, "references/guide.md/below"),
         Err(Refusal::Unreadable(_))
     ));
+}
+
+#[test]
+fn only_a_missing_file_is_not_found() {
+    assert_eq!(
+        from_io(&io::Error::from(io::ErrorKind::NotFound)),
+        Refusal::NotFound
+    );
+    for (kind, said) in [
+        (io::ErrorKind::PermissionDenied, "permission denied"),
+        (io::ErrorKind::NotADirectory, "not a directory"),
+        (io::ErrorKind::InvalidInput, "invalid input parameter"),
+    ] {
+        assert_eq!(
+            from_io(&io::Error::from(kind)),
+            Refusal::Unreadable(said.to_owned())
+        );
+    }
 }
 
 #[test]

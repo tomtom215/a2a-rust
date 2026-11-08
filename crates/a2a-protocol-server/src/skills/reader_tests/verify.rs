@@ -13,8 +13,15 @@ fn a_path_that_is_not_its_own_resolution_is_caught_after_the_open() {
     let file = root.join("references/guide.md");
     let handle = File::open(&file).expect("opens");
     assert_eq!(verify(&handle, &file, &boundary), Ok(()));
-    // Not in its resolved form.
-    let roundabout = root.join("references/deep/../guide.md");
+    // Not in its resolved form. Built as text, not with `join`: on Windows the
+    // scratch root is a `\\?\` path, and `PathBuf::push` onto one removes `.`
+    // and `..` (std's `_push`), which would hand `verify` the resolved path.
+    let sep = std::path::MAIN_SEPARATOR;
+    let roundabout = PathBuf::from(format!(
+        "{}{sep}references{sep}deep{sep}..{sep}guide.md",
+        root.display()
+    ));
+    assert_ne!(roundabout, file, "the path keeps its `..`");
     assert_eq!(
         verify(&handle, &roundabout, &boundary),
         Err(Refusal::ChangedWhileOpening)
