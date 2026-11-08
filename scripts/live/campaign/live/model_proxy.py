@@ -13,8 +13,8 @@ after a steering message, a tool result with control characters, a skill's text.
 
 A request path that is not printable ASCII starting with "/" is answered 400 (it would
 otherwise raise inside http.client and drop the connection), and a response header the
-upstream sends is relayed with any CR or LF in its value replaced by a space and is dropped
-if its name is not a token.
+upstream sends is relayed with any CR or LF removed from its name and replaced by a space in
+its value.
 """
 import http.client
 import json
@@ -43,7 +43,8 @@ class H(BaseHTTPRequestHandler):
         self.forward(self.rfile.read(n))
 
     def forward(self, body):
-        if not re.fullmatch(r"/[\x21-\x7e]*", self.path):
+        path = self.path
+        if not re.fullmatch(r"/[\x21-\x7e]*", path):
             self.send_error(400, "the request path must be printable ASCII and start with /")
             return
         with LOCK:
@@ -53,16 +54,14 @@ class H(BaseHTTPRequestHandler):
         conn = http.client.HTTPConnection("127.0.0.1", UP, timeout=3600)
         headers = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "connection", "content-length", "accept-encoding")}
         headers["Content-Length"] = str(len(body))
-        conn.request(self.command, self.path, body=body, headers=headers)
+        conn.request(self.command, path, body=body, headers=headers)
         r = conn.getresponse()
         self.send_response(r.status)
         sent = bytearray()
         for k, v in r.getheaders():
             if k.lower() in ("transfer-encoding", "connection", "content-length"):
                 continue
-            if not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", k):
-                continue
-            self.send_header(k, re.sub(r"[\r\n]+", " ", v))
+            self.send_header(k.replace("\r", "").replace("\n", ""), v.replace("\r", " ").replace("\n", " "))
         self.send_header("Transfer-Encoding", "chunked")
         self.end_headers()
         total = 0
