@@ -10,7 +10,7 @@
 //! running task and lists the extension URI is put in that turn's [`Inbox`]
 //! instead of being refused. An executor reads it with
 //! [`RequestContext::inbox`](crate::RequestContext::inbox); one that never
-//! does is unaffected. [`ToolLoopExecutor::with_steering`] reads it between
+//! does is unaffected. `ToolLoopExecutor::with_steering` reads it between
 //! model steps (feature `tool-loop`).
 //!
 //! # What admission does
@@ -36,7 +36,6 @@
 //! and a finished one is refused as it always was.
 //!
 //! [`RequestHandlerBuilder::with_steering`]: crate::RequestHandlerBuilder::with_steering
-//! [`ToolLoopExecutor::with_steering`]: crate::tool_loop::ToolLoopExecutor
 //! [`TurnClaimStore::hand_steering`]: crate::store::TurnClaimStore::hand_steering
 //! [`ServerError::Overloaded`]: crate::ServerError::Overloaded
 

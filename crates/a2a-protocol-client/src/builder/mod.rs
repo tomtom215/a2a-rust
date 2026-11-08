@@ -643,7 +643,7 @@ impl ClientBuilder {
     ///
     /// - Three wire calls instead of one (the stream, then `GetTask`), and
     ///   [`send_timeout`](Self::with_send_timeout) bounds the whole of them.
-    /// - [`CallInterceptor`](crate::CallInterceptor)s, spans and metrics see
+    /// - [`CallInterceptor`]s, spans and metrics see
     ///   `SendStreamingMessage` and `GetTask`, not `SendMessage`.
     /// - A stream that is cut before the task is terminal or interrupted ends
     ///   the send with the stream's error, as a cut blocking send does; the
@@ -651,7 +651,7 @@ impl ClientBuilder {
     ///   picks it up.
     /// - If the stored task does not reach the state the stream reported
     ///   within a few seconds the send fails with
-    ///   [`ClientError::InvalidAgentResponse`](crate::ClientError::InvalidAgentResponse)
+    ///   [`ClientError::InvalidAgentResponse`]
     ///   rather than answer with an older state.
     #[must_use]
     pub const fn with_blocking_over_stream(mut self, val: bool) -> Self {
