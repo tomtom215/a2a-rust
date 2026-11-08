@@ -73,10 +73,15 @@ where
     })
 }
 
-/// `f` as a `u64` when it is finite, non-negative, has no fraction and fits.
+/// 2^64: the first float no `u64` holds.
+const TWO_POW_64: f64 = 18_446_744_073_709_551_616.0;
+
+/// `f` as a `u64` when it is finite, non-negative, has no fraction and is
+/// below 2^64 (at 2^64 the cast would saturate to `u64::MAX`, a count the
+/// provider did not report).
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // each excluded by the test
 fn whole(f: f64) -> Option<u64> {
-    (f.is_finite() && f >= 0.0 && f.fract() == 0.0 && f < 1.8e19).then_some(f as u64)
+    (f.is_finite() && f >= 0.0 && f.fract() == 0.0 && f < TWO_POW_64).then_some(f as u64)
 }
 
 /// A chat completion's first choice as a [`ModelTurn`].

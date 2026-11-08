@@ -96,6 +96,17 @@ fn a_malformed_token_count_is_no_usage_and_not_a_refused_completion() {
         counts(r#"{"prompt_tokens":18446744073709551615}"#),
         Some((Some(u64::MAX), None))
     );
+    // The edge of what a float can say: the largest whole float below 2^64 is
+    // itself, and 2^64 is no count (the cast would have made it `u64::MAX`).
+    assert_eq!(
+        counts(r#"{"prompt_tokens":18446744073709549568.0}"#),
+        Some((Some(18_446_744_073_709_549_568), None))
+    );
+    assert_eq!(
+        counts(r#"{"prompt_tokens":18446744073709551616.0}"#),
+        Some((None, None))
+    );
+    assert_eq!(counts(r#"{"prompt_tokens":-0.0}"#), Some((Some(0), None)));
     // Anything else is a missing count, the other count unaffected.
     for bad in [
         "1.5", "-3", "\"12\"", "null", "true", "[1]", "{}", "1e300", "-0.5",
