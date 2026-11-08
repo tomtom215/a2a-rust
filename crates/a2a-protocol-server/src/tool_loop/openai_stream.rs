@@ -56,7 +56,9 @@ struct DeltaFunction {
 
 #[derive(Deserialize)]
 struct ChunkUsage {
+    #[serde(default, deserialize_with = "super::openai_parse::count")]
     prompt_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "super::openai_parse::count")]
     completion_tokens: Option<u64>,
 }
 

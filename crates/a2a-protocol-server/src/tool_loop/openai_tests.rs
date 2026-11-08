@@ -67,6 +67,51 @@ fn content_parts_and_missing_fields_are_read() {
     ));
 }
 
+/// The token counts are the provider's own report and only a budget reads
+/// them: a count that is not a whole non-negative number is no usage, and does
+/// not cost the completion (hostile campaign, wave 2, W2-LIVE-10: a float, a
+/// negative number or a string made a good answer "unreadable").
+#[test]
+fn a_malformed_token_count_is_no_usage_and_not_a_refused_completion() {
+    let with = |usage: &str| {
+        let body =
+            format!(r#"{{"choices":[{{"message":{{"content":"hello"}}}}],"usage":{usage}}}"#);
+        parse_completion(body.as_bytes()).expect("the completion is read")
+    };
+    let counts = |usage: &str| {
+        let turn = with(usage);
+        assert_eq!(turn.text, "hello", "{usage}");
+        turn.usage.map(|u| (u.input_tokens, u.output_tokens))
+    };
+    // Whole numbers, a float that is one, and the largest `u64`.
+    assert_eq!(
+        counts(r#"{"prompt_tokens":12,"completion_tokens":5}"#),
+        Some((Some(12), Some(5)))
+    );
+    assert_eq!(
+        counts(r#"{"prompt_tokens":12.0,"completion_tokens":0}"#),
+        Some((Some(12), Some(0)))
+    );
+    assert_eq!(
+        counts(r#"{"prompt_tokens":18446744073709551615}"#),
+        Some((Some(u64::MAX), None))
+    );
+    // Anything else is a missing count, the other count unaffected.
+    for bad in [
+        "1.5", "-3", "\"12\"", "null", "true", "[1]", "{}", "1e300", "-0.5",
+    ] {
+        assert_eq!(
+            counts(&format!(
+                r#"{{"prompt_tokens":{bad},"completion_tokens":7}}"#
+            )),
+            Some((None, Some(7))),
+            "prompt_tokens: {bad}"
+        );
+    }
+    // Not an object at all is still refused: that is not a usage.
+    assert!(parse_completion(br#"{"choices":[{"message":{"content":"x"}}],"usage":5}"#).is_err());
+}
+
 /// The completion's id and the first choice's finish reason, as the
 /// provider spelled it, for `gen_ai.response.id` and
 /// `gen_ai.response.finish_reasons`; absent, neither is claimed.

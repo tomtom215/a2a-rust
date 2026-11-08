@@ -30,6 +30,7 @@ let tool_loop = ToolLoop::new(model, tools)
 | `ToolLoop::new(model, tools)` | — | A loop over a `ToolModel` and a `ToolSet` |
 | `with_preamble(text)` | none | The system preamble every turn is sent with |
 | `with_max_turns(n)` | 8 (`DEFAULT_MAX_TURNS`) | How many model turns a run may take. `0` is taken as `1`: a run asks the model at least once |
+| `with_max_calls_per_turn(n)` | 64 (`DEFAULT_MAX_CALLS_PER_TURN`) | How many tool calls one model reply may make. The first `n` run; the rest are dropped, with a line in the trace saying so. `0` is taken as `1` |
 | `with_recover_text_calls(bool)` | on | Whether a final reply that is exactly one JSON object naming a tool in the set (bare, in a code fence, or between `<tool_call>` tags) is run as that call rather than returned as the answer |
 | `with_idempotency_secret([u8; 32])` | drawn per loop | The secret call keys are derived under; see [Idempotency keys](./tools.md#idempotency-keys) |
 | `with_agent_name(name)` | none | Recorded as `gen_ai.agent.name` on the run's metrics |
@@ -55,8 +56,15 @@ takes the message's text parts, joined by newlines, as the prompt, and emits:
 2. The `answer` artifact (`ANSWER_ARTIFACT_ID`): the model's final text.
 3. The `tool-trace` artifact (`TRACE_ARTIFACT_ID`), when at least one tool
    ran: one line per call, in the order they ran, as
-   `name(arguments) -> result`.
+   `name(arguments) -> result`. A line is at most 16 KiB
+   (`TRACE_LINE_LIMIT`); a longer one is cut and ends `… [N more bytes]`. The
+   model is given the whole result either way.
 4. `Completed`.
+
+When a run **fails** after a tool ran, the same artifact is sent first, then
+`Failed` (it was not before 0.16.0, and an empty final reply used to complete
+the task with it). A caller that cannot see which calls ran retries with new
+idempotency keys and runs them again.
 
 A message with no text is refused: the run returns `InvalidParams` ("the
 message has no text to answer") and the task fails.

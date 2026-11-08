@@ -40,6 +40,16 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`ToolLoop::with_max_calls_per_turn`** (default `DEFAULT_MAX_CALLS_PER_TURN`, 64; hostile campaign, wave 2, W2-LIVE-5): a model reply with
+  more tool calls than this runs the first ones, drops the rest and says so in the trace. With no bound a reply of 90,000 calls (7.6 MB, inside the
+  8 MiB response cap) took a loop from 21 MB to a 1.4 GB peak in 14 s; the dropped calls are not kept in the conversation. A model that wrote more
+  than 64 calls in one reply now sees only 64 results.
+- **A tool trace line is at most `TRACE_LINE_LIMIT` bytes** (16 KiB; W2-LIVE-4). The result still goes whole to the model, but the `tool-trace`
+  artifact had no bound: a result of 1 to 8 MiB went into every `GetTask` body, and at 16 or 20 MiB the finished run failed `-32603` (the event
+  exceeded the 16 MiB limit) and its answer was lost. A longer line is cut on a character boundary and ends `… [N more bytes]`.
+- **A run that fails after a tool ran sends its `tool-trace` first** (W2-LIVE-3). It was sent only on success, so a task that failed after a side
+  effect showed the caller nothing of it, and a retry ran the effect again under new idempotency keys; the empty-answer failure above made this
+  common (Gemma 4 E2B failed 11 of 20 runs of the idempotency prompt after the restart had run). Nothing is sent when no call ran.
 - **A cut-off answer carries its `finish_reason`** (audit M-1). `Answer` has `finish_reason`, the final
   reply's own, and `truncated()`, true for `length` (`FINISH_REASON_LENGTH`; a `ToolModel` of your own
   reports a cut-off reply with `ModelTurn::with_finish_reason("length")`). Under `ToolLoopExecutor`, a

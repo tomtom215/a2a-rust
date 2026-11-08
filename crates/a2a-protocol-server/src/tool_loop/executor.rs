@@ -16,6 +16,7 @@ use super::answer::{Answer, FINISH_REASON_LENGTH, FINISH_REASON_METADATA_KEY};
 use super::idempotency;
 use super::run::{LoopError, ToolLoop};
 use super::steering::Side;
+use super::trace::Sink;
 use crate::executor::AgentExecutor;
 use crate::executor_helpers::EventEmitter;
 use crate::request_context::RequestContext;
@@ -125,6 +126,7 @@ impl ToolLoopExecutor {
         ctx: &RequestContext,
         emit: &EventEmitter<'_>,
         prompt: &str,
+        trace: &Sink,
     ) -> A2aResult<Result<super::Answer, LoopError>> {
         let scope = idempotency::task_scope(&ctx.task_id.0, &ctx.message.id.0);
         let cancel = &ctx.cancellation_token;
@@ -133,6 +135,7 @@ impl ToolLoopExecutor {
             let side = Side {
                 drafts: None,
                 inbox,
+                trace: Some(trace),
             };
             return Ok(self
                 .tool_loop
@@ -143,6 +146,7 @@ impl ToolLoopExecutor {
         let side = Side {
             drafts: Some(&tx),
             inbox,
+            trace: Some(trace),
         };
         let run = self
             .tool_loop
@@ -188,16 +192,19 @@ impl AgentExecutor for ToolLoopExecutor {
             let emit = EventEmitter::new(ctx, queue);
             emit.status(TaskState::Working).await?;
 
-            match self.run(ctx, &emit, &prompt).await? {
+            let trace = Sink::default();
+            match self.run(ctx, &emit, &prompt, &trace).await? {
                 Ok(answer) => complete(ctx, queue, &emit, answer).await,
                 Err(LoopError::Cancelled) => Ok(()),
                 Err(e @ (LoopError::TurnLimit(_) | LoopError::Budget(_))) => {
+                    send_trace(&emit, &trace).await?;
                     emit.fail(e.failure_class(), e.to_string()).await
                 }
                 Err(e) => {
                     // The whole error is the operator's; the caller gets
                     // `caller_message`, without the provider's body or URL.
                     trace_warn!(error = %e, "the run failed");
+                    send_trace(&emit, &trace).await?;
                     emit.fail(e.failure_class(), e.caller_message()).await
                 }
             }
@@ -260,4 +267,24 @@ async fn complete(
             status,
         )))
         .await
+}
+
+/// Sends the trace of a run that failed, before the failure: the calls it made
+/// have run whatever became of the answer, and a caller that cannot see them
+/// retries with new idempotency keys and runs them again. Since M-1 an empty
+/// final reply after tools fails the task, where it used to complete it with
+/// this trace, and a run that hit the turn bound or its budget never had it
+/// (hostile campaign, wave 2, W2-LIVE-3). Nothing is sent when no call ran.
+async fn send_trace(emit: &EventEmitter<'_>, trace: &Sink) -> A2aResult<()> {
+    let lines = trace.take();
+    if lines.is_empty() {
+        return Ok(());
+    }
+    emit.artifact(
+        TRACE_ARTIFACT_ID,
+        vec![Part::text(lines.join("\n"))],
+        None,
+        Some(true),
+    )
+    .await
 }

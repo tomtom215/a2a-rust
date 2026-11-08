@@ -88,10 +88,12 @@ mod openai_stream;
 mod recover;
 mod retry;
 mod run;
+mod run_support;
 #[cfg(feature = "skills")]
 mod skills;
 mod steering;
 mod tool;
+mod trace;
 
 pub use answer::{Answer, FINISH_REASON_LENGTH, FINISH_REASON_METADATA_KEY};
 pub use drafts::{FLUSH_AFTER, FLUSH_BYTES, draft_artifact_id};
@@ -103,5 +105,6 @@ pub use model::{
 };
 pub use openai::{DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_TIMEOUT, ERROR_BODY_LIMIT, OpenAiChatModel};
 pub use retry::ModelRetry;
-pub use run::{DEFAULT_MAX_TURNS, LoopError, ToolLoop};
+pub use run::{DEFAULT_MAX_CALLS_PER_TURN, DEFAULT_MAX_TURNS, LoopError, ToolLoop};
 pub use tool::{DuplicateTool, Tool, ToolError, ToolInvocation, ToolSet};
+pub use trace::TRACE_LINE_LIMIT;

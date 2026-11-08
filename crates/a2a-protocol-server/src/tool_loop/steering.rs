@@ -7,17 +7,20 @@
 use a2a_protocol_types::budget::BudgetHandle;
 
 use super::model::{ChatMessage, TextSink};
-use super::run::{LoopError, out_of_time};
+use super::run::LoopError;
+use super::run_support::out_of_time;
 use crate::steering::Inbox;
 
-/// What a run reads and writes beside its prompt: the drafts it streams out
-/// and the inbox it reads from.
+/// What a run reads and writes beside its prompt: the drafts it streams out,
+/// the inbox it reads from and the sink its trace lines are copied to.
 #[derive(Clone, Copy, Default)]
 pub(super) struct Side<'a> {
     /// Each turn's text, as it arrives, with the turn's number.
     pub(super) drafts: Option<&'a tokio::sync::mpsc::UnboundedSender<(usize, String)>>,
     /// Where steering messages wait; `None` reads none.
     pub(super) inbox: Option<&'a Inbox>,
+    /// Where each trace line is also put as it is made, for a run that fails.
+    pub(super) trace: Option<&'a super::trace::Sink>,
 }
 
 impl Side<'_> {
@@ -207,6 +210,7 @@ mod tests {
         let side = Side {
             drafts: None,
             inbox: Some(&inbox),
+            trace: None,
         };
         let answer = tool_loop
             .run_drafting("scope", "do it", &CancellationToken::new(), None, side)
@@ -271,6 +275,7 @@ mod tests {
         let side = Side {
             drafts: Some(&tx),
             inbox: None,
+            trace: None,
         };
         let sink = side.sink(3).expect("drafts are on");
         sink.push("hello");

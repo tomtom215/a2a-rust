@@ -6,8 +6,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use a2a_protocol_types::budget::{BudgetHandle, Exhausted, TOKENS_METER};
-use serde_json::Value;
+use a2a_protocol_types::budget::BudgetHandle;
 use tokio_util::sync::CancellationToken;
 
 use super::answer::Answer;
@@ -16,8 +15,10 @@ pub use super::loop_error::LoopError;
 use super::model::{ChatMessage, ChatRequest, ToolCall, ToolModel};
 use super::recover;
 use super::retry::ModelRetry;
+use super::run_support::{charge_usage, give_ids, limit_calls, parse_arguments};
 use super::steering::{Side, before_turn};
 use super::tool::{ToolError, ToolInvocation, ToolSet};
+use super::trace;
 use crate::rpc_span::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 
 /// The turn bound when none is set.
@@ -27,6 +28,14 @@ use crate::rpc_span::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 /// enough that a model which never stops calling tools fails in seconds
 /// rather than at the executor timeout.
 pub const DEFAULT_MAX_TURNS: usize = 8;
+
+/// The tool calls one model reply may make when none is set.
+///
+/// The first this many run and the rest are dropped. A model that writes a
+/// hundred calls in one reply is broken or hostile, and with no bound a reply
+/// of 90,000 of them took a loop from 21 MB to 1.4 GB (hostile campaign, wave
+/// 2, W2-LIVE-5).
+pub const DEFAULT_MAX_CALLS_PER_TURN: usize = 64;
 
 /// A model, the tools it may call, and the bounded loop between them.
 ///
@@ -47,6 +56,7 @@ pub struct ToolLoop {
     pub(super) tools: ToolSet,
     pub(super) preamble: String,
     max_turns: usize,
+    max_calls_per_turn: usize,
     recover_text_calls: bool,
     secret: Secret,
     agent_name: Option<String>,
@@ -60,6 +70,7 @@ impl fmt::Debug for ToolLoop {
             .field("model", &self.model.model_name())
             .field("tools", &self.tools)
             .field("max_turns", &self.max_turns)
+            .field("max_calls_per_turn", &self.max_calls_per_turn)
             .field("recover_text_calls", &self.recover_text_calls)
             .field("agent_name", &self.agent_name)
             .field("model_retry", &self.model_retry)
@@ -77,6 +88,7 @@ impl ToolLoop {
             tools,
             preamble: String::new(),
             max_turns: DEFAULT_MAX_TURNS,
+            max_calls_per_turn: DEFAULT_MAX_CALLS_PER_TURN,
             recover_text_calls: true,
             secret: idempotency::fresh_secret(),
             agent_name: None,
@@ -133,6 +145,15 @@ impl ToolLoop {
         self
     }
 
+    /// Sets how many tool calls one model reply may make; the first this many
+    /// run and the rest are dropped, with a line in the trace saying so. `0` is
+    /// taken as `1`. [`DEFAULT_MAX_CALLS_PER_TURN`] when not set.
+    #[must_use]
+    pub const fn with_max_calls_per_turn(mut self, max_calls: usize) -> Self {
+        self.max_calls_per_turn = if max_calls == 0 { 1 } else { max_calls };
+        self
+    }
+
     /// Whether a final reply that is exactly one JSON object naming a tool
     /// in the set — bare, in a code fence, or between `<tool_call>` tags —
     /// is run as that call rather than returned as the answer. On by
@@ -148,6 +169,12 @@ impl ToolLoop {
     #[must_use]
     pub const fn max_turns(&self) -> usize {
         self.max_turns
+    }
+
+    /// The bound on the tool calls of one reply.
+    #[must_use]
+    pub const fn max_calls_per_turn(&self) -> usize {
+        self.max_calls_per_turn
     }
 
     /// Sends `user_text` and runs turns until the model answers without a
@@ -265,6 +292,7 @@ impl ToolLoop {
 
             let mut text = reply.text;
             let mut calls = reply.tool_calls;
+            limit_calls(&mut calls, self.max_calls_per_turn, &mut trace, side.trace);
             if calls.is_empty() {
                 let recovered = if self.recover_text_calls {
                     recover::text_call(&text, &names)
@@ -283,11 +311,7 @@ impl ToolLoop {
                 ));
                 text.clear();
             }
-            for (i, call) in calls.iter_mut().enumerate() {
-                if call.id.is_empty() {
-                    call.id = format!("call-{turn}-{i}");
-                }
-            }
+            give_ids(&mut calls, turn);
             messages.push(ChatMessage::Assistant {
                 text,
                 tool_calls: calls.clone(),
@@ -298,7 +322,8 @@ impl ToolLoop {
                     return Err(LoopError::Cancelled);
                 }
                 let content = self.call(run, &call, cancel, scope, &mut done).await?;
-                trace.push(format!("{}({}) -> {content}", call.name, call.arguments));
+                let line = trace::line(&call.name, &call.arguments, &content);
+                trace::record(&mut trace, side.trace, line);
                 messages.push(ChatMessage::ToolResult {
                     call_id: call.id,
                     name: call.name,
@@ -432,55 +457,6 @@ impl ToolLoop {
                 })
             }
         }
-    }
-}
-
-/// [`LoopError::Budget`] once `budget`'s deadline has passed or its
-/// [`TOKENS_METER`] has nothing left: a turn would only overdraw it.
-pub(super) fn out_of_time(budget: Option<&BudgetHandle>) -> Result<(), LoopError> {
-    let Some(budget) = budget else { return Ok(()) };
-    if budget.remaining_time() == Some(std::time::Duration::ZERO) {
-        return Err(LoopError::Budget(Exhausted::Time));
-    }
-    if budget.remaining(TOKENS_METER) == Some(0) {
-        return Err(LoopError::Budget(Exhausted::Meter {
-            name: TOKENS_METER.to_owned(),
-            overdraft: 0,
-        }));
-    }
-    Ok(())
-}
-
-/// Charges `reply`'s reported usage, input plus output, to `budget`'s
-/// [`TOKENS_METER`]; [`LoopError::Budget`] once that is spent.
-fn charge_usage(
-    budget: Option<&BudgetHandle>,
-    reply: &super::model::ModelTurn,
-) -> Result<(), LoopError> {
-    if let (Some(budget), Some(usage)) = (budget, reply.usage) {
-        let used = usage
-            .input_tokens
-            .unwrap_or(0)
-            .saturating_add(usage.output_tokens.unwrap_or(0));
-        budget
-            .charge(TOKENS_METER, used)
-            .map_err(LoopError::Budget)?;
-    }
-    Ok(())
-}
-
-/// A call's arguments as the object a [`Tool`](super::Tool) is given. Empty
-/// text is taken as no arguments, which some providers send for a tool that
-/// takes none.
-fn parse_arguments(raw: &str) -> Result<Value, String> {
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return Ok(Value::Object(serde_json::Map::new()));
-    }
-    match serde_json::from_str::<Value>(raw) {
-        Ok(object @ Value::Object(_)) => Ok(object),
-        Ok(_) => Err("the arguments must be a JSON object".to_owned()),
-        Err(e) => Err(format!("the arguments are not valid JSON ({e})")),
     }
 }
 

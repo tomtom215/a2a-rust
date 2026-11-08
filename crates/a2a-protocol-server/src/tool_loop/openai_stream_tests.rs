@@ -53,6 +53,24 @@ fn text_arrives_piece_by_piece_and_the_turn_is_the_whole() {
     assert_eq!(turn.usage, Some(TokenUsage::new(Some(12), Some(5))));
 }
 
+/// The same rule on a stream: a chunk whose usage is not whole numbers has no
+/// usage, and the turn it ends is still a turn (W2-LIVE-10).
+#[test]
+fn a_malformed_token_count_in_a_chunk_is_no_usage() {
+    let (sink, _rx) = sink();
+    let mut turn = Turn::default();
+    for payload in [
+        r#"{"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}"#,
+        r#"{"choices":[],"usage":{"prompt_tokens":1.5,"completion_tokens":-3}}"#,
+        "[DONE]",
+    ] {
+        turn.data(payload, &sink).expect("a chunk");
+    }
+    let turn = turn.finish().expect("a turn");
+    assert_eq!(turn.text, "ok");
+    assert_eq!(turn.usage, Some(TokenUsage::new(None, None)));
+}
+
 /// Two calls, their arguments in pieces and interleaved by `index`.
 #[test]
 fn tool_calls_are_put_together_by_index() {
