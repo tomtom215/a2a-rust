@@ -60,6 +60,12 @@ session re-runs it instead of copying the number. What was not run is under *Not
   server six, SDK none; each is in the CHANGELOG's Breaking Changes and the upgrade guide, two UnwindSafe losses (`CardFetchOptions`,
   `AuthFailureThrottle`) added today (the commit message of `179e71fa` says "types 13 checks failing in two lints": the tool's line was 2 lints). Earlier today, before
   the final changes, the doctests in three feature sets (533, 532, 532 passed) and `cargo hack clippy --each-feature` (61 combinations) passed.
+  Later the same day, on `fd5c0b84`: `cargo hack clippy --each-feature` (61 combinations) and the SLIMRPC binding (format, clippy with and without default
+  features, `cargo build --bin slim-node`, `cargo test -- --test-threads=1`, the in-process example, the packaging check): exit 0; `cargo run -p agent-team
+  --release --all-features`, the dogfood suite: exit 0 ("Every claimed SDK feature was exercised"); nightly 1.102 clippy over the workspace with all features
+  `-D warnings` (two redundant clones in tests, fixed) and the docs.rs doc build (`--cfg docsrs`): exit 0; `scripts/preflight_all.py --skip-ci-yml`, 13 rows, **12
+  PASS**: `dco`, `coverage ignores`, the ITK traversal self-test, the official TCK, the TCK self-test, all bindings, the official client against this server, card
+  signature interop, gRPC wire compatibility, loom, `cargo deny` and `cargo semver-checks`; the 13th is the promtool gate, see *First, next* 2.
   Before that: the moved in-memory token tests and `store_tests` (21 passed), the skills lib tests (175 passed). Workspace, `-D warnings`:
   `cargo clippy --workspace --all-targets` with all features and with defaults, `cargo hack clippy --each-feature` over the four published
   crates (61 combinations), and the Windows cross-clippy (`--target x86_64-pc-windows-gnu`, after two fixes): exit 0; `cargo test --doc
@@ -118,11 +124,12 @@ session re-runs it instead of copying the number. What was not run is under *Not
 1. Both campaign reports are in and merged. If a third wave runs, treat each report as data (re-run what it claims, read the source it cites,
    only then fix: two of the hostile agent's findings and one of the live agent's were wrong or incomplete on re-checking), and **remove its
    worktree** (`git worktree remove`) before running the gates: a leftover one breaks `check_gate_reachability.py`.
-2. The CI parity not yet run on this tree: the SLIMRPC binding (`bindings/a2a-protocol-slimrpc`, its own lockfile and about 4.4 GB), the nightly
-   clippy and the docs.rs build (`rustup toolchain install nightly --profile minimal -c clippy -c rust-docs`), the dogfood run (`cargo run -p
-   agent-team --release --all-features`), `cargo hack clippy --each-feature` on the final tree (it passed earlier today, before the last changes),
-   the PostgreSQL suites (`python3 scripts/run_postgres_suites.py`; the server suites above ran against PostgreSQL), `scripts/preflight_all.py`
-   phases 2 and 3 (TCK, ITK and the rest), and the examples run (clippy only compiled them). macOS cannot be cross-checked here.
+2. The CI parity still not run on this tree: `observability.yml:promtool` (`promtool check config`, `check rules`, `test rules` and `amtool check-config`: its
+   step that downloads Alertmanager got HTTP 504 twice through this machine's proxy, the Prometheus tarball before it passed its SHA-256; `check_stack.py`,
+   which needs neither, passes), the rest of `ci.yml`'s `test` matrix (`--workspace` with default features, with none, with `signing`, `tracing`,
+   `websocket` and `grpc`, and each server feature alone: only the all-features run of the four published crates was done), the examples run
+   (clippy compiled them; `example-surface` jobs were not run), the TCK cross-language legs, the example-agent TCK legs, fuzzing (needs cargo-fuzz), Kani, the
+   Docker-built jobs (ACTS, ITK image, the deploy image), and the Windows and macOS *test* legs (Windows only cross-clippy'd; macOS cannot be cross-checked here).
 3. Mutation not yet run: `skills/reader.rs` and `skills/tools.rs` in the real server crate; the whole diff against `origin/main` the way
    `mutants.yml` shards it (this session ran per-area diffs). The two out-of-diff survivors above are open.
 4. Then re-point the spec ledger after the last CHANGELOG edit (`python3 scripts/check_spec_ledger.py --fix-lines`: it cites a CHANGELOG line),
