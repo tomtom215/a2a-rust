@@ -1,0 +1,1 @@
+crates/a2a-protocol-types/src/budget/handle.rs:230:9: replace BudgetHandle::grant -> Result<ChildGrant, Exhausted> with Ok(Default::default())

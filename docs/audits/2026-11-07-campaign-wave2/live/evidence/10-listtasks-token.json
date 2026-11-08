@@ -1,0 +1,196 @@
+{
+  "header": {
+    "load_at_start": "1.74",
+    "time": "2026-11-08T01:12:57Z",
+    "title": "ListTasks with a malformed page token"
+  },
+  "rows": [
+    {
+      "grpc": {
+        "grpc_message": "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged",
+        "grpc_status": "3"
+      },
+      "jsonrpc": {
+        "code": -32602,
+        "http": 200,
+        "ok": false,
+        "tasks": null
+      },
+      "rest": {
+        "http": 400,
+        "ok": false
+      },
+      "token": "garbage"
+    },
+    {
+      "grpc": {
+        "grpc_message": null,
+        "grpc_status": "0"
+      },
+      "jsonrpc": {
+        "code": null,
+        "http": 200,
+        "ok": true,
+        "tasks": 3
+      },
+      "rest": {
+        "http": 200,
+        "ok": true
+      },
+      "token": "empty"
+    },
+    {
+      "grpc": {
+        "grpc_message": "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged",
+        "grpc_status": "3"
+      },
+      "jsonrpc": {
+        "code": -32602,
+        "http": 200,
+        "ok": false,
+        "tasks": null
+      },
+      "rest": {
+        "http": 400,
+        "ok": false
+      },
+      "token": "huge"
+    },
+    {
+      "grpc": {
+        "grpc_message": "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged",
+        "grpc_status": "3"
+      },
+      "jsonrpc": {
+        "code": -32602,
+        "http": 200,
+        "ok": false,
+        "tasks": null
+      },
+      "rest": {
+        "http": 400,
+        "ok": false
+      },
+      "token": "nul"
+    },
+    {
+      "grpc": {
+        "grpc_message": "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged",
+        "grpc_status": "3"
+      },
+      "jsonrpc": {
+        "code": -32602,
+        "http": 200,
+        "ok": false,
+        "tasks": null
+      },
+      "rest": {
+        "http": 400,
+        "ok": false
+      },
+      "token": "jsonish"
+    },
+    {
+      "grpc": {
+        "grpc_message": "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged",
+        "grpc_status": "3"
+      },
+      "jsonrpc": {
+        "code": -32602,
+        "http": 200,
+        "ok": false,
+        "tasks": null
+      },
+      "rest": {
+        "http": 400,
+        "ok": false
+      },
+      "token": "negative"
+    },
+    {
+      "grpc": {
+        "grpc_message": "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged",
+        "grpc_status": "3"
+      },
+      "jsonrpc": {
+        "code": -32602,
+        "http": 200,
+        "ok": false,
+        "tasks": null
+      },
+      "rest": {
+        "http": 400,
+        "ok": false
+      },
+      "token": "number"
+    },
+    {
+      "grpc": {
+        "grpc_message": "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged",
+        "grpc_status": "3"
+      },
+      "jsonrpc": {
+        "code": -32602,
+        "http": 200,
+        "ok": false,
+        "tasks": null
+      },
+      "rest": {
+        "http": 400,
+        "ok": false
+      },
+      "token": "unicode"
+    },
+    {
+      "grpc": {
+        "grpc_message": "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged",
+        "grpc_status": "3"
+      },
+      "jsonrpc": {
+        "code": -32602,
+        "http": 200,
+        "ok": false,
+        "tasks": null
+      },
+      "rest": {
+        "http": 400,
+        "ok": false
+      },
+      "token": "slash"
+    },
+    {
+      "grpc": {
+        "grpc_message": "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged",
+        "grpc_status": "3"
+      },
+      "jsonrpc": {
+        "code": -32602,
+        "http": 200,
+        "ok": false,
+        "tasks": null
+      },
+      "rest": {
+        "http": 400,
+        "ok": false
+      },
+      "token": "flipped"
+    },
+    {
+      "grpc": {
+        "grpc_message": "pageToken%20is%20malformed:%20pass%20the%20previous%20page's%20nextPageToken%20unchanged",
+        "grpc_status": "3"
+      },
+      "jsonrpc": {
+        "code": -32602,
+        "http": 200,
+        "ok": false,
+        "tasks": null
+      },
+      "rest": {
+        "http": 400,
+        "ok": false
+      },
+      "token": "truncated"
+    }
+  ]
+}

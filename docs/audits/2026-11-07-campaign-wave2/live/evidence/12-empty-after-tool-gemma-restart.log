@@ -1,0 +1,23 @@
+== empty replies after tool calls: 20 runs of 'Restart the checkout service, then tell me what you did.' (load 7.03)
+   run 0: TASK_STATE_COMPLETED 3.5s; tools that ran 1; trace artifact True; ''
+   run 1: TASK_STATE_FAILED 37.4s; tools that ran 0; trace artifact False; 'the model stopped at its output limit before it wrote any text'
+   run 2: TASK_STATE_COMPLETED 4.9s; tools that ran 1; trace artifact True; ''
+   run 3: TASK_STATE_COMPLETED 3.6s; tools that ran 1; trace artifact True; ''
+   run 4: TASK_STATE_COMPLETED 3.7s; tools that ran 1; trace artifact True; ''
+   run 5: TASK_STATE_COMPLETED 4.7s; tools that ran 1; trace artifact True; ''
+   run 6: TASK_STATE_COMPLETED 3.0s; tools that ran 1; trace artifact True; ''
+   run 7: TASK_STATE_COMPLETED 4.8s; tools that ran 1; trace artifact True; ''
+   run 8: TASK_STATE_COMPLETED 3.3s; tools that ran 1; trace artifact True; ''
+   run 9: TASK_STATE_COMPLETED 4.9s; tools that ran 1; trace artifact True; ''
+   run 10: TASK_STATE_COMPLETED 4.1s; tools that ran 1; trace artifact True; ''
+   run 11: TASK_STATE_COMPLETED 2.3s; tools that ran 1; trace artifact True; ''
+   run 12: TASK_STATE_COMPLETED 3.2s; tools that ran 1; trace artifact True; ''
+   run 13: TASK_STATE_COMPLETED 2.2s; tools that ran 1; trace artifact True; ''
+   run 14: TASK_STATE_COMPLETED 2.9s; tools that ran 1; trace artifact True; ''
+   run 15: TASK_STATE_COMPLETED 2.2s; tools that ran 1; trace artifact True; ''
+   run 16: TASK_STATE_FAILED 24.1s; tools that ran 0; trace artifact False; 'the model stopped at its output limit before it wrote any text'
+   run 17: TASK_STATE_COMPLETED 3.1s; tools that ran 1; trace artifact True; ''
+   run 18: TASK_STATE_COMPLETED 3.3s; tools that ran 1; trace artifact True; ''
+   run 19: TASK_STATE_COMPLETED 3.2s; tools that ran 1; trace artifact True; ''
+   2 of 20 failed; 0 of them had run tools and carry no trace of them
+  note  2/20 runs failed (['the model stopped at its output limit before it wrote any te', 'the model stopped at its output limit before it wrote any te']); 0 ran tools and left no trace artifact

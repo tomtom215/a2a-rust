@@ -1,0 +1,15 @@
+date: 2026-11-08T01:44:50Z
+uname: Linux 6.18.44-fc-v310 x86_64
+cpus: 4; load: 3.64 4.85 4.32; memory (MiB): total 16086, available 10652
+tree: 0f98f1948fc6f8c5fe77a004a511b622aca83762 on worktree-agent-a0d0167778a2b513b
+rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
+llama-server --version:
+  version: 0.9.0-dev (build 1, commit 80d2c0c)
+  built with GNU 13.3.0 for Linux x86_64
+model: Qwen3.5-2B-Q4_K_M.gguf 1280835840 bytes sha256 aaf42c8b7c3cab2b...
+model: gemma-4-E2B-it-Q4_0.gguf 2841481184 bytes sha256 8e30dff3ac4c8434...
+command lines (one model at a time, port 11434):
+  llama-server -m /opt/models/Qwen3.5-2B-Q4_K_M.gguf --host 127.0.0.1 --port 11434 --jinja -c 8192 -np 1 -t 2
+  llama-server -m /opt/models/gemma-4-E2B-it-Q4_0.gguf --host 127.0.0.1 --port 11434 --jinja -c 8192 -np 1 -t 2
+  (the genai-agent runs add --reasoning off, as its README does; the other runs send
+   chat_template_kwargs {"enable_thinking": false} per request unless the run says thinking is on)

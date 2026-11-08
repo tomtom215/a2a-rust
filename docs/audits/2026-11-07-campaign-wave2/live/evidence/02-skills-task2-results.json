@@ -1,0 +1,32 @@
+[
+  {
+    "args": "{\"skill\": \"vanish-skill\", \"path\": \"references/v.md\"}",
+    "result": "error: the skill's directory has changed since start-up; restart to load skills again",
+    "tool": "read_skill_file"
+  },
+  {
+    "args": "{\"name\": \"vanish-skill\"}",
+    "result": "<skill_content name=\"vanish-skill\">\nRead references/v.md.\n\nPaths in this skill are relative to the skill's directory; read a file with read_skill_file.\n<skill_resources>\n  <file>references/v.md</file>\n</skill_resources>\n</skill_content>",
+    "tool": "activate_skill"
+  },
+  {
+    "args": "{\"skill\": \"moved-skill\", \"path\": \"references/m.md\"}",
+    "result": "error: the skill's directory has changed since start-up; restart to load skills again",
+    "tool": "read_skill_file"
+  },
+  {
+    "args": "{\"skill\": \"swap-skill\", \"path\": \"references/swap.md\"}",
+    "result": "error: the path leaves the directory it may be read from (a symbolic link points outside it)",
+    "tool": "read_skill_file"
+  },
+  {
+    "args": "{\"skill\": \"swap-skill\", \"path\": \"references/grown.md\"}",
+    "result": "small\n",
+    "tool": "read_skill_file"
+  },
+  {
+    "args": "{\"skill\": \"good-skill\", \"path\": \"references/guide.md\"}",
+    "result": "error: the file is larger than the 65536 bytes this reader returns",
+    "tool": "read_skill_file"
+  }
+]

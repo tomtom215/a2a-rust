@@ -1,0 +1,36 @@
+{
+  "grpc": {
+    "accepted": [
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ],
+    "receipt": [
+      {
+        "debug": "UnexpectedStatus { status: 429, body: \"the steering inbox of task 16c614a5-4991-4c0d-bd0e-cd95b9866708 holds its 4 messages; retry later\", retry_after: None }",
+        "error": "unexpected HTTP status 429: the steering inbox of task 16c614a5-4991-4c0d-bd0e-cd95b9866708 holds its 4 messages; retry later"
+      }
+    ],
+    "refusal": [
+      {
+        "debug": "UnexpectedStatus { status: 429, body: \"the steering inbox of task 16c614a5-4991-4c0d-bd0e-cd95b9866708 holds its 4 messages; retry later\", retry_after: None }",
+        "error": "unexpected HTTP status 429: the steering inbox of task 16c614a5-4991-4c0d-bd0e-cd95b9866708 holds its 4 messages; retry later"
+      }
+    ],
+    "turns": [
+      "GRPC-MARK reply with the single word PINEAPPLE",
+      "GRPC-FILL-0",
+      "GRPC-FILL-1",
+      "GRPC-FILL-2"
+    ]
+  },
+  "header": {
+    "load_at_start": "4.10",
+    "model_file": "Qwen3.5-2B-Q4_K_M.gguf",
+    "time": "2026-11-08T01:25:27Z",
+    "title": "steering a running task with a real model"
+  }
+}

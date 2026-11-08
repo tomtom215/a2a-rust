@@ -1,0 +1,213 @@
+{
+  "failed": 11,
+  "failed_after_tools_without_trace": 11,
+  "header": {
+    "load_at_start": "4.73",
+    "model_file": "gemma-4-E2B-it-Q4_0.gguf",
+    "time": "2026-11-08T01:37:47Z",
+    "title": "empty replies after tool calls: 20 runs of 'Restart the checkout service. Then call restart_service for checkout a second time to make sure the restart took.'"
+  },
+  "prompt": "Restart the checkout service. Then call restart_service for checkout a second time to make sure the restart took.",
+  "rows": [
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 0,
+      "seconds": 5.9,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 1,
+      "seconds": 4.9,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": false,
+      "has_trace_artifact": false,
+      "restarts": 1,
+      "run": 2,
+      "seconds": 3.3,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model returned an empty answer",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": false,
+      "has_trace_artifact": false,
+      "restarts": 1,
+      "run": 3,
+      "seconds": 3.3,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model returned an empty answer",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": false,
+      "has_trace_artifact": false,
+      "restarts": 1,
+      "run": 4,
+      "seconds": 3.0,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model returned an empty answer",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 5,
+      "seconds": 6.2,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 6,
+      "seconds": 5.2,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": false,
+      "has_trace_artifact": false,
+      "restarts": 1,
+      "run": 7,
+      "seconds": 25.1,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider answered HTTP 500",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": false,
+      "has_trace_artifact": false,
+      "restarts": 1,
+      "run": 8,
+      "seconds": 18.3,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model returned an empty answer",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": false,
+      "has_trace_artifact": false,
+      "restarts": 1,
+      "run": 9,
+      "seconds": 3.1,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model returned an empty answer",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": false,
+      "has_trace_artifact": false,
+      "restarts": 1,
+      "run": 10,
+      "seconds": 3.1,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model returned an empty answer",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 11,
+      "seconds": 5.5,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": false,
+      "has_trace_artifact": false,
+      "restarts": 1,
+      "run": 12,
+      "seconds": 3.4,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model returned an empty answer",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 13,
+      "seconds": 6.4,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": false,
+      "has_trace_artifact": false,
+      "restarts": 1,
+      "run": 14,
+      "seconds": 3.5,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model returned an empty answer",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": false,
+      "has_trace_artifact": false,
+      "restarts": 1,
+      "run": 15,
+      "seconds": 3.8,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model returned an empty answer",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 16,
+      "seconds": 11.4,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 17,
+      "seconds": 7.9,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": false,
+      "has_trace_artifact": false,
+      "restarts": 1,
+      "run": 18,
+      "seconds": 4.2,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model returned an empty answer",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 19,
+      "seconds": 9.1,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    }
+  ]
+}

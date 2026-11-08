@@ -1,0 +1,213 @@
+{
+  "failed": 2,
+  "failed_after_tools_without_trace": 0,
+  "header": {
+    "load_at_start": "7.03",
+    "model_file": "gemma-4-E2B-it-Q4_0.gguf",
+    "time": "2026-11-08T01:35:30Z",
+    "title": "empty replies after tool calls: 20 runs of 'Restart the checkout service, then tell me what you did.'"
+  },
+  "prompt": "Restart the checkout service, then tell me what you did.",
+  "rows": [
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 0,
+      "seconds": 3.5,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": false,
+      "has_trace_artifact": false,
+      "restarts": 0,
+      "run": 1,
+      "seconds": 37.4,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model stopped at its output limit before it wrote any text",
+      "tool_calls_that_ran": 0
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 2,
+      "seconds": 4.9,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 3,
+      "seconds": 3.6,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 4,
+      "seconds": 3.7,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 5,
+      "seconds": 4.7,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 6,
+      "seconds": 3.0,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 7,
+      "seconds": 4.8,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 8,
+      "seconds": 3.3,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 9,
+      "seconds": 4.9,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 10,
+      "seconds": 4.1,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 11,
+      "seconds": 2.3,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 12,
+      "seconds": 3.2,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 13,
+      "seconds": 2.2,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 14,
+      "seconds": 2.9,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 15,
+      "seconds": 2.2,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": false,
+      "has_trace_artifact": false,
+      "restarts": 0,
+      "run": 16,
+      "seconds": 24.1,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model stopped at its output limit before it wrote any text",
+      "tool_calls_that_ran": 0
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 17,
+      "seconds": 3.1,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 18,
+      "seconds": 3.3,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    },
+    {
+      "has_answer": true,
+      "has_trace_artifact": true,
+      "restarts": 1,
+      "run": 19,
+      "seconds": 3.2,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "tool_calls_that_ran": 1
+    }
+  ]
+}

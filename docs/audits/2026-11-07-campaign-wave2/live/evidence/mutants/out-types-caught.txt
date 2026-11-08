@@ -1,0 +1,2 @@
+crates/a2a-protocol-types/src/budget/handle.rs:31:32: replace << with >>
+crates/a2a-protocol-types/src/budget/handle.rs:185:9: replace BudgetHandle::status -> BudgetStatus with Default::default()

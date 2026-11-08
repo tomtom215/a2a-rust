@@ -1,0 +1,68 @@
+{
+  "header": {
+    "load_at_start": "4.03",
+    "model_file": "gemma-4-E2B-it-Q4_0.gguf",
+    "time": "2026-11-08T01:43:31Z",
+    "title": "steering a running task with a real model"
+  },
+  "jsonrpc": {
+    "answering": {
+      "accepted": true,
+      "in_requests": []
+    },
+    "bound": {
+      "accepted": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "answer": null,
+      "refused": [
+        "{\"http\": 200, \"error\": {\"code\": -32603, \"message\": \"the steering inbox of task ab3ae0e9-9334-4326-b458-c603cd6f0bee holds its 4 messages; retry later\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.RetryInfo\", \"retryDelay\": \"1s\"}]}}",
+        "{\"http\": 200, \"error\": {\"code\": -32603, \"message\": \"the steering inbox of task ab3ae0e9-9334-4326-b458-c603cd6f0bee holds its 4 messages; retry later\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.RetryInfo\", \"retryDelay\": \"1s\"}]}}",
+        "{\"http\": 200, \"error\": {\"code\": -32603, \"message\": \"the steering inbox of task ab3ae0e9-9334-4326-b458-c603cd6f0bee holds its 4 messages; retry later\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.RetryInfo\", \"retryDelay\": \"1s\"}]}}"
+      ],
+      "state": "TASK_STATE_FAILED"
+    },
+    "cancel": {
+      "dropped": true,
+      "seconds": 0.0,
+      "state": "TASK_STATE_CANCELED",
+      "steer_after": [
+        false,
+        "{\"http\": 200, \"error\": {\"code\": -32004, \"message\": \"task 85af5c68-0544-44ef-857e-ceb1352e2b34 is in terminal state 'TASK_STATE_CANCELED' and cannot accept new messages\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"UNSUPPORTED_OPERATION\"}]}}"
+      ]
+    },
+    "ended": {
+      "accepted": false,
+      "detail": "{\"http\": 200, \"error\": {\"code\": -32004, \"message\": \"task 5e9c585d-cdb1-47bc-a107-e0e273b9327f is in terminal state 'TASK_STATE_COMPLETED' and cannot accept new messages\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"UNSUPPORTED_OPERATION\"}]}}"
+    },
+    "goal": {
+      "answer": "PINEAPPLE",
+      "carrying_steer": [
+        1
+      ],
+      "requests": 2,
+      "state": "TASK_STATE_COMPLETED"
+    },
+    "oversize": {
+      "accepted": false,
+      "detail": "{\"http\": 200, \"error\": {\"code\": -32600, \"message\": \"a steering message is 70198 bytes, over this server's limit of 65536 bytes\"}}"
+    },
+    "owner": {
+      "accepted": false,
+      "bob_cancel": [
+        200,
+        "{\"jsonrpc\": \"2.0\", \"id\": 1, \"error\": {\"code\": -32001, \"message\": \"Task not found: 7797b938-e44b-4dad-9fd8-9cf67bc4005d\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-p"
+      ],
+      "detail": "{\"http\": 200, \"error\": {\"code\": -32001, \"message\": \"Task not found: 7797b938-e44b-4dad-9fd8-9cf67bc4005d\", \"data\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"domain\": \"a2a-protocol.org\", \"reason\": \"TASK_NOT_FOUND\"}]}}"
+    },
+    "steering_counts": {
+      "delivered": 9,
+      "full": 3,
+      "too_large": 1,
+      "unread": 4
+    }
+  }
+}

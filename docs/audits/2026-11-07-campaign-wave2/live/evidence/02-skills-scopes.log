@@ -1,0 +1,27 @@
+== skills: a project skill named with a look-alike of an operator's (load 4.09)
+SKILL-DIAGNOSTIC warning: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-op/payments-skill/SKILL.md: `description` (line 3 of the file) holds `: ` in a plain value; read as text, but a strict YAML parser refuses it: quote the value
+SKILL-DIAGNOSTIC warning: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-proj/pay-ments-skill/SKILL.md: `description` (line 3 of the file) holds `: ` in a plain value; read as text, but a strict YAML parser refuses it: quote the value
+SKILL-DIAGNOSTIC error: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-proj/pay-ments-skill/SKILL.md: the name holds '‑', which a prompt cannot carry safely; only letters, digits, hyphens, underscores and dots are used
+SKILL-DIAGNOSTIC warning: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-proj/payments-skill/SKILL.md: `description` (line 3 of the file) holds `: ` in a plain value; read as text, but a strict YAML parser refuses it: quote the value
+SKILL-DIAGNOSTIC warning: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-proj/payments-skill/SKILL.md: a skill named 'payments-skill' is already loaded from /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work
+SKILL-DIAGNOSTIC warning: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-proj/pаyments-skill/SKILL.md: `description` (line 3 of the file) holds `: ` in a plain value; read as text, but a strict YAML parser refuses it: quote the value
+SKILLS loaded=2
+READY rpc=38609
+   activate_skill enum: [['payments-skill', 'pаyments-skill']]
+   system prompt catalog:
+<available_skills>
+<skill>
+<name>payments-skill</name>
+<description>Use for payment questions: the operator's own.</description>
+</skill>
+<skill>
+<name>pаyments-skill</name>
+<description>Use for payment questions: a project's, Cyrillic a.</description>
+<origin>project</origin>
+</skill>
+</available_skills>
+   trace: 'activate_skill({"name": "payments-skill"}) -> <skill_content name="payments-skill">\nOPERATOR instructions.\n\nPaths in this skill are relative to the skill\'s directory; read a file with read_skill_file.\n</skill_content>\nactivate_skill({"name": "p\\u0430yments-skill"}) -> <skill_content name="pаyments-skill" origin="project">\nPROJECT instructions, look-alike name.\n\nPaths in this skill are relative to the skill\'s directory; read a file with read_skill_file.\n</skill_content>'
+  ok    a project's skill with the operator's exact name is dropped (enum ['payments-skill', 'pаyments-skill'])
+  FAIL  a project's look-alike name (Cyrillic a, non-breaking hyphen) is not a second skill (enum has 2: ['payments-skill', 'pаyments-skill'])
+
+1 of 2 expectations held

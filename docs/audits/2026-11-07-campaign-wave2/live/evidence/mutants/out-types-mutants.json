@@ -1,0 +1,85 @@
+[
+  {
+    "diff": "--- crates/a2a-protocol-types/src/budget/handle.rs\n+++ replace << with >>\n@@ -23,17 +23,17 @@\n pub const MIN_GRANT_RESERVE: Duration = Duration::from_millis(100);\n \n /// The most time a grant keeps back from a child.\n pub const MAX_GRANT_RESERVE: Duration = Duration::from_secs(5);\n \n /// The largest number a status reports or a grant carries: 2^53, the largest a\n /// protobuf number holds exactly, which is what `metadata` is over gRPC (see\n /// [`BudgetHandle::status`]).\n-const MAX_WIRE_NUMBER: u64 = 1 << 53;\n+const MAX_WIRE_NUMBER: u64 = 1 >> /* ~ changed by cargo-mutants ~ */ 53;\n \n /// A bound that was hit: the deadline, or a meter overdrawn.\n #[derive(Debug, Clone, PartialEq, Eq)]\n #[non_exhaustive]\n pub enum Exhausted {\n     /// No time is left.\n     Time,\n     /// The meter has nothing left; `overdraft` is how far past zero the\n",
+    "file": "crates/a2a-protocol-types/src/budget/handle.rs",
+    "function": null,
+    "genre": "BinaryOperator",
+    "name": "crates/a2a-protocol-types/src/budget/handle.rs:31:32: replace << with >>",
+    "package": "a2a-protocol-types",
+    "replacement": ">>",
+    "span": {
+      "end": {
+        "column": 34,
+        "line": 31
+      },
+      "start": {
+        "column": 32,
+        "line": 31
+      }
+    }
+  },
+  {
+    "diff": "--- crates/a2a-protocol-types/src/budget/handle.rs\n+++ replace BudgetHandle::status -> BudgetStatus with Default::default()\n@@ -177,37 +177,17 @@\n     /// that holds a larger one, the one that ends the task included. A\n     /// provider can report any `u64` as its usage and a child any `u64` as its\n     /// spend, so the account can hold more; the status then says \"at least\n     /// this much\", at that largest number.\n     #[must_use]\n     pub fn status(&self) -> BudgetStatus {\n         // A deadline is at most about 30 years off (`far_future`): under 2^53\n         // milliseconds, so it needs no bound of its own.\n-        let remaining_ms = self\n-            .remaining_time()\n-            .map(|t| u64::try_from(t.as_millis()).unwrap_or(u64::MAX));\n-        let meters = self\n-            .account\n-            .meters\n-            .iter()\n-            .map(|(n, m)| (n.clone(), m.remaining().min(MAX_WIRE_NUMBER)))\n-            .collect();\n-        let spent = self\n-            .account\n-            .meters\n-            .iter()\n-            .map(|(n, m)| {\n-                (\n-                    n.clone(),\n-                    m.spent.load(Ordering::Acquire).min(MAX_WIRE_NUMBER),\n-                )\n-            })\n-            .collect();\n-        BudgetStatus::new(remaining_ms, meters, spent)\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Carves a child's budget out of this one, as `request` asks.\n     ///\n     /// * **Time:** the smaller of the request's and what is left here less\n     ///   a reserve (5% of what is left, from [`MIN_GRANT_RESERVE`] to\n     ///   [`MAX_GRANT_RESERVE`]).\n     /// * **Meters:** each meter this budget names goes to the child as the\n",
+    "file": "crates/a2a-protocol-types/src/budget/handle.rs",
+    "function": {
+      "function_name": "BudgetHandle::status",
+      "return_type": "-> BudgetStatus",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 206
+        },
+        "start": {
+          "column": 5,
+          "line": 171
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/a2a-protocol-types/src/budget/handle.rs:185:9: replace BudgetHandle::status -> BudgetStatus with Default::default()",
+    "package": "a2a-protocol-types",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 55,
+        "line": 205
+      },
+      "start": {
+        "column": 9,
+        "line": 185
+      }
+    }
+  },
+  {
+    "diff": "--- crates/a2a-protocol-types/src/budget/handle.rs\n+++ replace BudgetHandle::grant -> Result<ChildGrant, Exhausted> with Ok(Default::default())\n@@ -222,64 +222,17 @@\n     ///\n     /// # Errors\n     ///\n     /// [`Exhausted`] when less than a millisecond is left after the reserve\n     /// (or asked for), or a meter the request names with a non-zero amount\n     /// is empty here. Nothing is reserved then. A request that names no\n     /// meter succeeds on an exhausted budget, granting its meters as 0.\n     pub fn grant(&self, request: &Budget) -> Result<ChildGrant, Exhausted> {\n-        let mut child = Budget::new();\n-        if let Some(left) = self.remaining_time() {\n-            let reserve = (left / 20).clamp(MIN_GRANT_RESERVE, MAX_GRANT_RESERVE);\n-            let mut time = left.saturating_sub(reserve);\n-            if let Some(asked) = request.remaining_time() {\n-                time = time.min(asked);\n-            }\n-            // Under a millisecond goes out as `remainingMs: 0`, which the\n-            // child refuses; refused here instead.\n-            if time < Duration::from_millis(1) {\n-                return Err(Exhausted::Time);\n-            }\n-            child = child.with_time(time);\n-        } else if let Some(asked) = request.remaining_time() {\n-            if asked < Duration::from_millis(1) {\n-                return Err(Exhausted::Time);\n-            }\n-            child = child.with_time(asked);\n-        }\n-        let mut reserved = BTreeMap::new();\n-        for (name, m) in &self.account.meters {\n-            let asked = request.meters.get(name).copied().unwrap_or(0);\n-            let Some(taken) = reserve_up_to(m, asked) else {\n-                self.refund_all(&reserved);\n-                return Err(Exhausted::Meter {\n-                    name: name.clone(),\n-                    overdraft: 0,\n-                });\n-            };\n-            reserved.insert(name.clone(), taken);\n-            child.meters.insert(name.clone(), taken);\n-        }\n-        for (name, &asked) in &request.meters {\n-            if child.meters.len() >= super::MAX_METERS {\n-                break;\n-            }\n-            // As the largest number the wire holds: the child's server refuses\n-            // a larger one in the message's `metadata`.\n-            child\n-                .meters\n-                .entry(name.clone())\n-                .or_insert(asked.min(MAX_WIRE_NUMBER));\n-        }\n-        Ok(ChildGrant {\n-            budget: child,\n-            reserved,\n-            parent: self.clone(),\n-        })\n+        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     fn refund_all(&self, reserved: &BTreeMap<String, u64>) {\n         for (name, &amount) in reserved {\n             if let Some(m) = self.account.meters.get(name) {\n                 // Saturating: the reservation added exactly `amount`.\n                 update(&m.spent, |s| s.saturating_sub(amount));\n             }\n",
+    "file": "crates/a2a-protocol-types/src/budget/handle.rs",
+    "function": {
+      "function_name": "BudgetHandle::grant",
+      "return_type": "-> Result<ChildGrant, Exhausted>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 278
+        },
+        "start": {
+          "column": 5,
+          "line": 208
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/a2a-protocol-types/src/budget/handle.rs:230:9: replace BudgetHandle::grant -> Result<ChildGrant, Exhausted> with Ok(Default::default())",
+    "package": "a2a-protocol-types",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 11,
+        "line": 277
+      },
+      "start": {
+        "column": 9,
+        "line": 230
+      }
+    }
+  }
+]

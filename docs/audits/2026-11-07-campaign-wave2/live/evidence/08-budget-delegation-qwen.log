@@ -1,0 +1,32 @@
+== budgets and delegation with a real model (load 2.30)
+-- exhaust 150 tokens: TASK_STATE_FAILED in 3.9s; 'the budget\'s meter "tokens" is spent (412 over)'; failure {'a2a-rust.com/failure': 'budget-exhausted'}; budget {'meters': {'tokens': 0}, 'spent': {'tokens': 562}}
+  ok    a 150-token budget ends the run budget-exhausted (TASK_STATE_FAILED, {'a2a-rust.com/failure': 'budget-exhausted'})
+-- exhaust 700 tokens: TASK_STATE_FAILED in 13.3s; 'the budget\'s meter "tokens" is spent (469 over)'; failure {'a2a-rust.com/failure': 'budget-exhausted'}; budget {'meters': {'tokens': 0}, 'spent': {'tokens': 1169}}
+-- exhaust 2000 tokens: TASK_STATE_COMPLETED in 12.8s; ''; failure None; budget {'meters': {'tokens': 175}, 'spent': {'tokens': 1825}}
+-- 4 s deadline during a model turn: TASK_STATE_FAILED in 4.0s; "[-32603] the caller's budget deadline passed"; failure {'a2a-rust.com/failure': 'budget-exhausted'}
+  ok    a 4 s deadline ended a running model turn within 15 s (took 4.0 s)
+-- 4 s deadline during a 30 s tool: TASK_STATE_FAILED in 4.0s; "[-32603] the caller's budget deadline passed"
+  ok    a 4 s deadline ended a running tool within 15 s (took 4.0 s)
+-- a request right after the deadline cut a turn: TASK_STATE_COMPLETED in 1006.6s
+-- delegate, budget 100000 tokens: TASK_STATE_COMPLETED in 7.7s; budget {'meters': {'tokens': 98806}, 'spent': {'tokens': 1194}}; answer 'worker task d26b28ee-0d56-4fb6-b9a0-39da4a707e41: WORK-DONE'
+     coord: t=1794100495436 DELEGATION grant=Budget { remaining_ms: None, meters: {"tokens": 100000} }
+     coord: t=1794100503171 DELEGATION ended after 7.7s task=Some("d26b28ee-0d56-4fb6-b9a0-39da4a707e41") outcome=Completed
+  ok    a coordinator with a budget delegates and completes
+  ok    the coordinator's budget was charged what the worker spent (spent.tokens = 1194)
+-- delegate, budget 300 tokens: TASK_STATE_FAILED in 2.3s; '[-32603] internal error (reference d3c24cb7d458)'; budget {'meters': {'tokens': 0}, 'spent': {'tokens': 549}}
+     coord: t=1794100503389 DELEGATION grant=Budget { remaining_ms: None, meters: {"tokens": 300} }
+     coord: t=1794100505639 DELEGATION ended after 2.3s task=Some("00114e55-c49b-47ed-8f61-e17467522a86") outcome=Failed class=BudgetExhausted state=TASK_STATE_FAILED message=Some("the budget's meter \"tokens\" is spent (249 over)")
+  ok    a budget too small for the worker's run fails the delegation
+-- worker SIGKILLed mid-run: coordinator TASK_STATE_FAILED 1.8s later; '[-32603] internal error (reference 05ef57c26947)'
+     coord: t=1794100505855 DELEGATION grant=Budget { remaining_ms: None, meters: {"tokens": 100000} }
+     coord: t=1794100512285 DELEGATION ended after 6.4s task=Some("bd2960bb-25a8-47da-8a29-c1105f8e6545") outcome=Lost(Some(Http(hyper::Error(Body, Custom { kind: UnexpectedEof, error: "unexpected EOF during chunk size line" }))))
+  ok    a killed worker ends the coordinator's task within 120 s (TASK_STATE_FAILED, 1.8s)
+-- coordinator cancelled mid-run: coordinator TASK_STATE_CANCELED; worker's tool dropped: True after 0.2s
+     coord: t=1794100512499 DELEGATION grant=Budget { remaining_ms: None, meters: {"tokens": 100000} }
+     coord: t=1794100516509 DELEGATION ended after 4.0s task=Some("4d4e6340-006a-4b16-8c29-b8e45ba7a742") outcome=Canceled(TaskStatus { state: Canceled, message: None, timestamp: Some("2026-11-08T01:15:16.507Z") })
+  ok    cancelling the coordinator cancels the worker's run (its sleeping tool was dropped)
+-- coordinator given a deadline only (grant asks tokens=u64::MAX): TASK_STATE_FAILED; '[-32603] internal error (reference d77ff35c1ba3)'
+     coord: t=1794100516921 DELEGATION grant=Budget { remaining_ms: Some(56998), meters: {"tokens": 18446744073709551615} }
+     coord: t=1794100516925 DELEGATION start failed: protocol error: [-32602] message.metadata holds the integer 18446744073709551615, beyond the ±2^53 a protobuf number holds exactly
+
+8 of 8 expectations held

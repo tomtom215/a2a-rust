@@ -1,0 +1,18 @@
+== empty replies after tool calls: 15 runs of 'How is the billing service doing?' (load 2.44)
+   run 0: TASK_STATE_COMPLETED 4.5s; tools that ran 2; trace artifact True; ''
+   run 1: TASK_STATE_COMPLETED 3.5s; tools that ran 1; trace artifact True; ''
+   run 2: TASK_STATE_COMPLETED 4.5s; tools that ran 2; trace artifact True; ''
+   run 3: TASK_STATE_COMPLETED 5.0s; tools that ran 2; trace artifact True; ''
+   run 4: TASK_STATE_COMPLETED 9.1s; tools that ran 2; trace artifact True; ''
+   run 5: TASK_STATE_COMPLETED 6.3s; tools that ran 2; trace artifact True; ''
+   run 6: TASK_STATE_COMPLETED 7.4s; tools that ran 2; trace artifact True; ''
+   run 7: TASK_STATE_COMPLETED 6.3s; tools that ran 2; trace artifact True; ''
+   run 8: TASK_STATE_COMPLETED 6.4s; tools that ran 2; trace artifact True; ''
+   run 9: TASK_STATE_COMPLETED 6.0s; tools that ran 2; trace artifact True; ''
+   run 10: TASK_STATE_COMPLETED 31.5s; tools that ran 1; trace artifact True; ''
+   run 11: TASK_STATE_COMPLETED 5.4s; tools that ran 1; trace artifact True; ''
+   run 12: TASK_STATE_COMPLETED 5.3s; tools that ran 1; trace artifact True; ''
+   run 13: TASK_STATE_COMPLETED 7.0s; tools that ran 2; trace artifact True; ''
+   run 14: TASK_STATE_COMPLETED 9.3s; tools that ran 2; trace artifact True; ''
+   0 of 15 failed; 0 of them had run tools and carry no trace of them
+  note  0/15 runs failed ([]); 0 ran tools and left no trace artifact
