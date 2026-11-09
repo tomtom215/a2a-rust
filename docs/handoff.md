@@ -26,8 +26,8 @@ session re-runs it instead of copying the number. What was not run is under *Not
 
 - **Where the code is.** Pull request #197 merged: `main` is `27889e09` (`git rev-parse origin/main`), the workspace reads 0.16.0, and
   **nothing is tagged**: the newest tag is `v0.15.0` (`git tag --sort=-creatordate | head -1`). The maintainer tags; nothing here does.
-- **This session's branch** is `claude/affectionate-gauss-5yn4f5` off `main`, 96 commits ahead before the latest of this file's commits (`git log --oneline
-  origin/main..HEAD | wc -l`), in **draft pull request #203** (https://github.com/tomtom215/a2a-rust/pull/203). CI has run three times on it
+- **This session's branch** is `claude/affectionate-gauss-5yn4f5` off `main`, 98 commits ahead before the latest of this file's commits (`git log --oneline
+  origin/main..HEAD | wc -l`), in **draft pull request #203** (https://github.com/tomtom215/a2a-rust/pull/203). CI has run four times on it
   (*Verified*). Started on the maintainer's instruction of 2026-11-07: ADR 0035 (agent skills) and
   ADR 0036 (steering) **before the tag** (moving the decision of 2026-11-03), the adversarial campaign, and the deferred items, with CI at 60 to
   90 minutes a run so few runs, and surviving mutants prevented by writing the tests with the code and running cargo-mutants on the diff
@@ -98,6 +98,18 @@ session re-runs it instead of copying the number. What was not run is under *Not
   failure, 7 skipped; **both Windows Test jobs, both macOS, both Ubuntu and PostgreSQL integration passed**; the two failures are CodeQL and the label gate. Durations, start to
   completion: Windows 83 and 107 minutes (the jobs now run all 25 steps instead of stopping at step 6), macOS 88 and 89, so budget two hours a run. *Third pass*, head `a647094e` (`1da23c01` and the first handoff update): 83 check runs, 74 success, 2 failure, 7 skipped; **every Test job passed**
   (macOS 1.94 last, 110 minutes after the push); the failures are the label gate and CodeQL's one remaining alert.
+  *Fourth pass*, head `432c0d02` (a docs-only difference from `a647094e`; the `mutation-test` label was added right after the push): 132 check runs, 121 success, 2 failure, 9 skipped, none
+  running at 00:06 UTC on 2026-11-09. **CodeQL passes** ("No new alerts in code changed by this pull request"; the maintainer dismissed alert 205). **Mutation run 42525027544: all 46 shard jobs
+  and the aggregator succeeded**, so no survivor, failure or timeout across the 678-file diff; it took 150 minutes wall clock (21:24 to 23:54); server shards 53.7 to 92.4 minutes, 18 of the
+  40 over 75 minutes and none near the job's `timeout-minutes: 180` (`mutants.yml:1235`; the comment above it still says 75, which is stale), client 23.0 and 28.1, types 11.2 and 10.1,
+  discovery 0.4, sdk 0.3. The two failures: *Test (stable, windows-latest)*, one flaky test, and a stale *Mutation Testing (incremental)* failure from the run the push itself started a few
+  seconds before the label was added (it saw no label; that run was cancelled when the label run began), which only a new head replaces. The flaky test,
+  `a2a-protocol-client discovery::fleet_tests::a_zero_draw_leaves_the_lifetime_whole` (`left: 2, right: 1`): the counting server's `Date` has one-second resolution, so a response arrives up to a
+  second old (RFC 9111 §4.2.3, `apparent_age` in `freshness.rs`) and the test advanced 9 s of a 10 s lifetime, leaving that second as its whole margin; `stale_window.rs` already records the
+  same trap for its cases. Reproduced on Linux under 12 busy loops on 4 vCPUs (2 of 600 runs, 1 of 150 runs of the whole module; 0 of 400 on a quiet machine) and, with a `Date` 1.5 s old
+  injected, 5 of 5; fixed in `d3269f4f` (the server sends a `Date` 5 s ahead, an age of zero), which passed 2400 of 2400 under the same load. `jitter_shortens_freshness_by_the_drawn_share`
+  has a 0.5 s margin and passed 1500 of 1500 under that load, so it is unchanged. The edit took `fleet_tests.rs` over the 500-line ratchet, so the jitter tests moved to
+  `fleet_tests/jitter.rs`. Pushing that fix restarts CI and the mutation run: the next result is the one to merge on.
   **CodeQL**: four alerts in scripts no workflow runs: `scripts/live/campaign/live/model_proxy.py` (partial SSRF at the upstream request; response splitting twice at the
   header relay) and `scripts/live/adopter/06-manifest-lint.py:73` (clear-text logging: the line prints a Kubernetes Secret reference's name and key, not a secret, so a
   false positive, left for you to dismiss). The proxy listens on `127.0.0.1` and connects only to its upstream port; a probe found one real defect (a control character in
@@ -164,11 +176,9 @@ session re-runs it instead of copying the number. What was not run is under *Not
    only then fix: two of the hostile agent's findings and one of the live agent's were wrong or incomplete on re-checking), and **remove its
    worktree** (`git worktree remove`) before running the gates: a leftover one breaks `check_gate_reachability.py`.
 2. CI parity: CI has now run everything in `ci.yml` that is not skipped, twice (76 of 83 check runs reached a conclusion; the examples, the TCK cross-language and
-   example-agent legs, the fuzz smoke jobs, Kani, the Docker-built jobs and the Windows and macOS test legs are in it). What no run has done: the incremental mutation shards
-   over the whole diff (they start when the PR carries the `mutation-test` label, which the maintainer asked to be added on 2026-11-08 after this file's commit, so read their result on the PR; the workflow's own comments disagree, "about two hours" a server shard against a 75-minute
-   timeout it calls unmeasured, and this diff is 678 files, so read the first shard's log before trusting a pass).
-3. Mutation not yet run: `skills/reader.rs` and `skills/tools.rs` in the real server crate; the whole diff against `origin/main` the way
-   `mutants.yml` shards it (this session ran per-area diffs). The two out-of-diff survivors above are open.
+   example-agent legs, the fuzz smoke jobs, Kani, the Docker-built jobs and the Windows and macOS test legs are in it). The incremental mutation shards ran over the whole diff on `432c0d02` and all passed (*Verified*); the comment above
+   the shard job in `mutants.yml` says 75 minutes while its `timeout-minutes` is 180 and 18 shards ran past 75, so that comment is stale (yours to fix).
+3. Mutation: the whole diff ran the way `mutants.yml` shards it (*Verified*, fourth pass), `skills/reader.rs` and `skills/tools.rs` included. The two out-of-diff survivors above are open.
 4. Then re-point the spec ledger after the last CHANGELOG edit (`python3 scripts/check_spec_ledger.py --fix-lines`: it cites a CHANGELOG line),
    update this file (the pull request is open: #203, draft); the register is current for E-F15, D-03 (d), B-11, E-F25 and D-18
    (`scripts/audit/plan_status.py`: 191 of 191). The adopter's open lows (D-6, D-9 to D-13, D-16 to D-18) are in
@@ -179,10 +189,10 @@ session re-runs it instead of copying the number. What was not run is under *Not
 5. The maintainer's open items stay as *Waiting on the maintainer*: the two redundant remote branches, RustSec, the `v*` tag ruleset,
    ADR 0028.
 
-- **Not verified** (as of this checkpoint): the mutation shards over the whole diff (*First, next* 2); two reaper tests
+- **Not verified** (as of this checkpoint): two reaper tests
   (`handler::claims::reaper::tests`) failed once in my first local run of the PostgreSQL step against a long-used shared database and passed in ten later runs and in CI,
   cause unexplained (CONJECTURED: more than 32 older abandoned tasks in the shared database push this run's orphan out of the reaper's sweep, `ORDER BY updated_at LIMIT 32`;
-  seeding 40 old orphans failed a different assertion, so it is not shown); everything under *First, next* 1 and 3; a live model run of skills or steering beyond what the agent ran (it ran both, on Qwen3.5-2B and Gemma 4 E2B, over JSON-RPC, HTTP+JSON and
+  seeding 40 old orphans failed a different assertion, so it is not shown); everything under *First, next* 1; a live model run of skills or steering beyond what the agent ran (it ran both, on Qwen3.5-2B and Gemma 4 E2B, over JSON-RPC, HTTP+JSON and
   gRPC); steering over WebSocket (carried as any `SendMessage`, not tested); anything through PgBouncer; Kubernetes; IPv6 on the wire (this kernel has
   none).
 
@@ -390,11 +400,10 @@ session start.
 
 ## Waiting on the maintainer
 
-- **Pull request #203 (2026-11-08), your calls:** CodeQL alert 205 (`scripts/live/adopter/06-manifest-lint.py:73`, a false positive: it prints a Secret
-  reference's name and key), the only alert left: dismiss it from its own page, https://github.com/tomtom215/a2a-rust/security/code-scanning/205 (it did not appear in the
-  Security tab's list for the maintainer on 2026-11-08; the PR's filter is `pr:203`), or change the script, which costs a CI run; the commits' Unverified status (above); marking the PR
-  ready once the mutation shards, started by the `mutation-test` label added on 2026-11-08, have reported. A push to the branch cancels a running CI run (`cancel-in-progress` on
-  non-main refs) and restarts the shards, so push once per full run.
+- **Pull request #203 (2026-11-09), your calls:** marking it ready (CI and the mutation shards are green on `432c0d02` except one flaky test, fixed in `d3269f4f`, whose push restarts
+  both); the commits' Unverified status (above); the stale comment above the incremental shard job in `mutants.yml` (75 minutes against a `timeout-minutes` of 180). Done on 2026-11-08: the
+  `mutation-test` label was added, and CodeQL alert 205 (`06-manifest-lint.py:73`, which prints a Secret reference's name and key, not a secret) was dismissed. A push to the branch
+  cancels a running CI run (`cancel-in-progress` on non-main refs) and restarts the shards, so push once per full run.
 - **Added to 0.16.0 on 2026-11-07, the choices made for you (each open to a veto; reasons in the ADR or the commit):**
   - *Skills' YAML is read in-tree, not by a crate* (ADR 0035 decision 9): reads CONTRIBUTING's dependency rule ("a standards-defined parser
     uses the audited crate") against its letter; the way back is `saphyr-parser` behind the same interface.
@@ -1048,6 +1057,11 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- **A cache test against a server whose `Date` has one-second resolution needs a margin over one second, or a `Date` ahead of now (2026-11-09).** The resolver ages a response by
+  `received_at - Date` (RFC 9111 §4.2.3), so a response arrives up to a second old, and a case that expects a card to be fresh with a second to spare fails on about one run in three
+  hundred under load and more often on a slow runner (`a_zero_draw_leaves_the_lifetime_whole`: 2 of 600 under 12 busy loops, and a Windows job in CI). A `Date` ahead of now is an age of
+  zero; one 1.5 s old makes the failure certain, which is how to prove the cause. Measure a suspected flake with `cargo nextest run --stress-count N` under busy loops
+  (`(while :; do :; done) &`, 12 of them on 4 vCPUs) and prove the fix with more runs than found it.
 - **The first CI run finds what local parity cannot, and a push cancels the run (2026-11-08).** Per-package tests, clippy and the Windows cross-clippy were green, and CI's
   first pass still found three defects: a gate that scans file text (`run_postgres_suites.py` takes a doc comment naming the URL variable for a PostgreSQL suite), a 30 ms claim
   time to live that a stall can lapse, and two tests that assume Unix paths (`PathBuf::push` onto a `\\?\` path removes `..`). Run `scripts/run_postgres_suites.py` against a
