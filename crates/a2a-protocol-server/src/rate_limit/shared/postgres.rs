@@ -11,12 +11,33 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// `window_no` is part of the primary key rather than a column to
 /// overwrite, so a request arriving as the window turns lands in the new
 /// window's row instead of racing an update against the old one.
+///
+/// `window_secs` is the width `window_no` was numbered under. A table is
+/// shared by every component given this counter, and they do not all count in
+/// windows of one width (the rate limiter's default is 60 s and the
+/// authentication-failure throttle's is 300 s). `window_no` numbers of
+/// different widths are not comparable, so a sweep that does not know a row's
+/// width deletes another width's live rows: measured with the two statements
+/// below, a 60 s sweep removed a 300 s row whose count was 3.
 const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS a2a_rate_limit (
         caller       TEXT   NOT NULL,
         window_no    BIGINT NOT NULL,
         request_count BIGINT NOT NULL,
+        window_secs  BIGINT NOT NULL DEFAULT 0,
         PRIMARY KEY (caller, window_no)
     )";
+
+/// Adds `window_secs` to a table an earlier release made.
+///
+/// A row written before the column existed has the default `0`, which a sweep
+/// treats as expired: the counts of a window or two are forgotten once, at
+/// the upgrade, which is what a restart already does to them.
+const ADD_WINDOW_SECS_SQL: &str = "DO $$ BEGIN \
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns \
+        WHERE table_schema = current_schema() AND table_name = 'a2a_rate_limit' \
+        AND column_name = 'window_secs') \
+    THEN ALTER TABLE a2a_rate_limit ADD COLUMN window_secs BIGINT NOT NULL DEFAULT 0; \
+    END IF; END $$";
 
 /// Count one request and return the new total, in one statement.
 ///
@@ -33,20 +54,25 @@ const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS a2a_rate_limit (
 /// a full limit.
 ///
 /// `$2` is the window width in seconds.
-const COUNT_SQL: &str = "INSERT INTO a2a_rate_limit (caller, window_no, request_count) \
-     VALUES ($1, floor(extract(epoch from now()) / $2::bigint)::bigint, 1) \
+const COUNT_SQL: &str = "INSERT INTO a2a_rate_limit (caller, window_no, request_count, window_secs) \
+     VALUES ($1, floor(extract(epoch from now()) / $2::bigint)::bigint, 1, $2::bigint) \
      ON CONFLICT (caller, window_no) \
-     DO UPDATE SET request_count = a2a_rate_limit.request_count + 1 \
+     DO UPDATE SET request_count = a2a_rate_limit.request_count + 1, \
+                   window_secs = EXCLUDED.window_secs \
      RETURNING request_count";
 
-/// Drop rows for windows before the previous one, on the database's clock.
+/// Drop rows of width `$1` for windows before the previous one, on the
+/// database's clock, and every row whose width is not recorded.
 ///
 /// The previous window is kept: a count that was already past `now()` when
 /// the window turned lands in it, and a clock that steps back (a failover
 /// onto a host with a different clock) puts `now()` one window behind
-/// rows already written. `$1` is the window width in seconds.
+/// rows already written. Rows of another width are left to the sweep of that
+/// width (see [`CREATE_TABLE_SQL`]). `$1` is the window width in seconds.
 const SWEEP_SQL: &str = "DELETE FROM a2a_rate_limit \
-     WHERE window_no < floor(extract(epoch from now()) / $1::bigint)::bigint - 1";
+     WHERE (window_secs = $1::bigint \
+            AND window_no < floor(extract(epoch from now()) / $1::bigint)::bigint - 1) \
+        OR window_secs = 0";
 
 /// How many counts between sweeps of expired windows.
 ///
@@ -143,7 +169,7 @@ impl PostgresRateLimitCounter {
     pub async fn from_pool(pool: sqlx::PgPool) -> A2aResult<Self> {
         // Under the crate's schema lock, so replicas starting against an
         // empty database do not race. See `store::pg_schema`.
-        crate::store::pg_schema::apply(&pool, &[CREATE_TABLE_SQL])
+        crate::store::pg_schema::apply(&pool, &[CREATE_TABLE_SQL, ADD_WINDOW_SECS_SQL])
             .await
             .map_err(|e| A2aError::internal(format!("rate-limit counter migrate: {e}")))?;
         Ok(Self {

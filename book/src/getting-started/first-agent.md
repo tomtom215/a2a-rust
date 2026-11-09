@@ -82,8 +82,7 @@ the rest. The server's builder refuses a card without a description, or without
 a skill that has at least one tag (spec §5.7):
 
 ```rust,no_run
-use a2a_protocol_sdk::prelude::*;
-
+# use a2a_protocol_sdk::prelude::*;
 fn make_agent_card(url: &str) -> AgentCard {
     AgentCard::new("Calculator Agent", "1.0.0", AgentInterface::jsonrpc(url))
         .with_description("Evaluates simple arithmetic expressions")
@@ -101,7 +100,7 @@ fn make_agent_card(url: &str) -> AgentCard {
 Build the request handler and start an HTTP server:
 
 ```rust,no_run
-use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::prelude::*;
 use std::sync::Arc;
 # struct CalcExecutor;
 # agent_executor!(CalcExecutor, |_ctx, _queue| async { Ok(()) });
@@ -140,7 +139,8 @@ async fn main() -> std::io::Result<()> {
 > free `serve()` and `serve_with_addr()` this page used to show are deprecated
 > since 0.16.0: neither can be stopped.
 
-Steps 1 to 3 go in `src/main.rs`, in that order. Start the agent:
+Steps 1 to 3 go in `src/main.rs`, in that order, under the one
+`use a2a_protocol_sdk::prelude::*;` that Step 1 opens with. Start the agent:
 
 ```bash
 cargo run --bin my-agent

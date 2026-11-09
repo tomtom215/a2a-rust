@@ -1,0 +1,3 @@
+[probe3] serving on 33001
+[probe3] exec start 16a26eca-84cd-4d56-ab66-b6290bec0ceb
+[target] serve ended: ServeReport { accepted: 2, drained: true, abandoned: 0, tasks: Some(InFlightReport { completed: 0, cancelled: 0, still_running: 0, finished: true }), refused: None }

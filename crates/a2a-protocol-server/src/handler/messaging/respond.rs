@@ -179,7 +179,11 @@ impl RequestHandler {
                 .with_catch_up(self.lag_catch_up_hook(snapshot.id.clone()))
                 .with_final_snapshot(self.final_snapshot_hook(snapshot.id.clone(), move |task| {
                     shape_response_history(task, response_history_length);
-                }));
+                }))
+                // F14: a stream whose executor ended without finishing the
+                // task (it panicked) ends with the task's stored terminal
+                // state, not with nothing.
+                .with_closed_early(Some(self.closed_early_hook(snapshot.id.clone())));
             reader.set_provisional_task(StreamResponse::Task(snapshot));
             SendMessageResult::Stream(reader)
         } else {

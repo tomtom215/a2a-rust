@@ -25,7 +25,7 @@ than this page quietly becoming wrong.
 | A task created on one replica is readable on another | **Yes** | The store holds it |
 | `GetTask` / `ListTasks` see every replica's tasks | **Yes** | Same |
 | A subscription terminates when the task finishes elsewhere | **Yes** | The reattach hook polls the store |
-| A subscriber sees intermediate events from another replica | **Yes, up to a poll late** | The reattach hook replays them from the store's event log |
+| A subscriber sees intermediate events from another replica | **Yes, up to a poll late**, or at once with `with_log_notifications` (PostgreSQL) | The reattach hook replays them from the store's event log; with the opt-in, an append wakes it ([Streaming across replicas](./horizontal-scaling/streaming.md)) |
 | Rate limiting enforces the configured limit | **Only with a shared counter** | Otherwise each replica counts alone |
 | A second send to a running task is refused | **Yes** | The turn's claim, a row in the shared database ([Continuations and cancellation](./horizontal-scaling/turn-claims.md)) |
 | A continuation of a parked task starts from what the last turn stored | **Yes** | It waits for the claim, then reads the task again |

@@ -8,6 +8,8 @@ turn, provider-neutral. This page covers `OpenAiChatModel`, the bundled client
 for the chat-completions API, and writing a `ToolModel` for any other
 provider.
 
+> **Cargo feature.** Every block on this page needs the `tool-loop` feature: `a2a-protocol-sdk = { version = "0.16", features = ["tool-loop"] }`, or `a2a-protocol-server = { version = "0.16", features = ["tool-loop"] }` on its own.
+
 ## `OpenAiChatModel`
 
 `OpenAiChatModel` sends each turn as `POST {base}/chat/completions`, the API
@@ -48,7 +50,9 @@ Tool-call arguments are read whether the server sends them as a JSON string,
 as OpenAI does, or as an object, as some compatible servers do. A reply's
 `usage`, `model`, `id` and first choice's `finish_reason` are kept for the
 budget and the spans. A non-2xx answer becomes `ModelError::Status` with the
-status and at most 512 bytes of the body (`ERROR_BODY_LIMIT`).
+status and at most 512 bytes of the body (`ERROR_BODY_LIMIT`), with each
+control character written as an escape (`\n`, `\u{1b}`), so a body cannot start a
+log line or send a terminal sequence; the 512 bytes are what is shown.
 
 For drafts, `complete_streaming` sends `"stream": true` with
 `"stream_options": {"include_usage": true}` and reads the server-sent

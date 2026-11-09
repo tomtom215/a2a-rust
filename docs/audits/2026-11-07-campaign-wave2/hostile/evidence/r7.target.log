@@ -1,0 +1,12 @@
+[r7] serving on 47008
+[r7] exec start 35edc094-0aee-440d-835f-6c89b08d823c
+[r7] exec start ec4f258a-e02e-4bde-92dc-d339b55f8806
+[r7] exec start c8d1f988-f281-41e9-aa7d-80099cf6d00a
+[r7] exec start a3cc5a1f-6487-4aed-8678-d647f2a599d3
+[r7] exec start a8ebb605-1fc5-4833-ba0f-5cf83e9ee42e
+[r7] exec start 11503e64-2766-45c6-a06d-dfcf106f3ae3
+[r7] exec start 63e8efba-6802-4763-80fa-2fbc38a5e521
+[r7] exec start 77299ffc-a8fb-494d-afda-5e8d32ea00b0
+[r7] exec start bc7f96c6-41c2-4e3b-93c9-f2c5baba79dc
+[r7] exec start e7c1dcca-0bdb-4462-87df-d68311b4a978
+[target] serve ended: ServeReport { accepted: 11, drained: true, abandoned: 0, tasks: Some(InFlightReport { completed: 0, cancelled: 0, still_running: 0, finished: true }), refused: None }

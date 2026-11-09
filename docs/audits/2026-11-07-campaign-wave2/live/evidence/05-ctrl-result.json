@@ -1,0 +1,12 @@
+{
+  "esc_in_stderr": false,
+  "header": {
+    "load_at_start": "13.19",
+    "time": "2026-11-08T01:21:51Z",
+    "title": "a tool result with control characters (scripted)"
+  },
+  "state": "TASK_STATE_COMPLETED",
+  "status_text": "",
+  "tool_message": "ok\u001b[31mRED\u001b[0m\u0000NUL\u0007BEL\r\nFAKE-LINE: task COMPLETED\u202egnp.exe\u2028\ufeffdone",
+  "trace": "ctrl_result({}) -> ok\u001b[31mRED\u001b[0m\u0000NUL\u0007BEL\r\nFAKE-LINE: task COMPLETED\u202egnp.exe\u2028\ufeffdone"
+}

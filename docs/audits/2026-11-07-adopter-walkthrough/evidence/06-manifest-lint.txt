@@ -1,0 +1,11 @@
+Deployment deploy-agent replicas 2 image ghcr.io/tomtom215/a2a-rust/deploy-agent:0.16.0
+container ports [8080] | Dockerfile PORT 8080
+livenessProbe /health http
+readinessProbe /ready http
+startupProbe /health http
+env: ['A2A_DATABASE_URL', 'AGENT_URL', 'DRAIN_DELAY_SECONDS', 'POD_NAMESPACE', 'PORT', 'TOKIO_WORKER_THREADS', '_RJEM_MALLOC_CONF']
+  A2A_DATABASE_URL <- Secret deploy-agent-db/url
+Service deploy-agent targetPort ['http'] selector {'app': 'deploy-agent'}
+NetworkPolicy deploy-agent podSelector {'app': 'deploy-agent'}
+Ingress agent.example.com / -> {'name': 'deploy-agent', 'port': {'name': 'http'}}
+06-manifest-lint: 5 document(s), 0 finding(s); NOT schema-validated (no kubectl, no kubeconform)

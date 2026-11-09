@@ -1,0 +1,119 @@
+2026-11-08T01:19:57.945010Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=console to print spans
+Genai + A2A Agent Example
+=========================
+
+Model: qwen3.5:2b
+Set GENAI_MODEL to change it. Unknown model names route to the
+OpenAI-compatible endpoint on http://localhost:11434/v1/ — run
+llama.cpp's llama-server, vLLM or Ollama there for a local agent.
+
+2026-11-08T01:19:57.981527Z  WARN a2a_protocol_server::builder: agent card warning=supportedInterfaces: GRPC at "127.0.0.1:37281" is not an absolute URL; a client cannot reach it from the card (a2a.proto AgentInterface.url)
+2026-11-08T01:19:57.981557Z  WARN a2a_protocol_server::builder: agent card warning=supportedInterfaces: the custom binding "WEBSOCKET" is not a URI (spec §5.8: it SHOULD be a URI)
+2026-11-08T01:19:57.981606Z  WARN a2a_protocol_server::builder: agent card warning=supportedInterfaces: GRPC at "127.0.0.1:37281" is not an absolute URL; a client cannot reach it from the card (a2a.proto AgentInterface.url)
+2026-11-08T01:19:57.981609Z  WARN a2a_protocol_server::builder: agent card warning=supportedInterfaces: the custom binding "WEBSOCKET" is not a URI (spec §5.8: it SHOULD be a URI)
+2026-11-08T01:19:57.989422Z  WARN a2a_protocol_server::handler::undeclared_binding: undeclared binding binding="https://a2a-rust.com/bindings/websocket/v1" reason=this listener serves https://a2a-rust.com/bindings/websocket/v1, but the agent card declares no interface with that protocolBinding, so a client reading the card cannot find it (spec §5.2: agents MUST declare all supported protocols in their AgentCard)
+JSON-RPC  http://127.0.0.1:37499
+HTTP+JSON http://127.0.0.1:37499
+gRPC      127.0.0.1:37281
+WebSocket ws://127.0.0.1:34183
+
+LLM leg: EXERCISED — 'qwen3.5:2b' answered a real request.
+
+=== Coverage: every A2A method over every binding ===
+
+  --- JSONRPC ---
+2026-11-08T01:20:21.651437Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=connection closed before message completed
+2026-11-08T01:20:26.387108Z  WARN a2a_protocol_client::transport::jsonrpc: JSON-RPC error response method="CancelTask" code=-32002
+2026-11-08T01:20:26.389981Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=connection closed before message completed
+2026-11-08T01:20:31.394061Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=connection closed before message completed
+2026-11-08T01:20:31.396036Z  WARN a2a_protocol_server::handler::push_config: push config sends its token or credentials to a plaintext http:// webhook; spec §13.4 says credentials SHOULD travel only over encrypted connections (HttpPushSender::https_only refuses such configs) webhook=http://127.0.0.1:33797
+    [ok]   SendMessage                        task 344528ff-ba0e-42bb-bc73-665fff31a273
+    [ok]   SendStreamingMessage               2 event(s), 0 lag signal(s) (still open)
+    [ok]   GetTask                            state Completed
+    [ok]   ListTasks                          3 task(s)
+    [ok]   CancelTask                         refused as expected: protocol error: [-32002] Task cannot be canceled: 6483dbf3-ba77-4b36-ab15-420e54c53ab2
+    [ok]   SubscribeToTask                    1 event(s)
+    [ok]   CreateTaskPushNotificationConfig   config Some("1f46b42a-957b-48de-8940-e59eda7c0c53")
+    [ok]   ListTaskPushNotificationConfigs    1 config(s)
+    [ok]   GetTaskPushNotificationConfig      url http://127.0.0.1:33797/webhook
+    [ok]   DeleteTaskPushNotificationConfig   deleted
+    [ok]   GetExtendedAgentCard               card 'Genai LLM Agent'
+  --- HTTP+JSON ---
+2026-11-08T01:20:57.013559Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=connection closed before message completed
+2026-11-08T01:21:01.407050Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=read header from client timeout
+2026-11-08T01:21:01.407515Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=read header from client timeout
+2026-11-08T01:21:35.399136Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=connection closed before message completed
+2026-11-08T01:21:40.401374Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=connection closed before message completed
+2026-11-08T01:21:40.403235Z  WARN a2a_protocol_server::handler::push_config: push config sends its token or credentials to a plaintext http:// webhook; spec §13.4 says credentials SHOULD travel only over encrypted connections (HttpPushSender::https_only refuses such configs) webhook=http://127.0.0.1:33797
+    [ok]   SendMessage                        task 0dc8b592-e848-487a-b500-c2d140e86a12
+    [ok]   SendStreamingMessage               2 event(s), 0 lag signal(s) (still open)
+    [ok]   GetTask                            state Completed
+    [ok]   ListTasks                          7 task(s)
+    [ok]   CancelTask                         refused as expected: protocol error: [-32002] Task cannot be canceled: cf455a94-f42b-48d2-95d3-31d4ca2dcc96
+    [ok]   SubscribeToTask                    1 event(s)
+    [ok]   CreateTaskPushNotificationConfig   config Some("5b64928e-e9af-45c5-802b-6b9d124c47c1")
+    [ok]   ListTaskPushNotificationConfigs    1 config(s)
+    [ok]   GetTaskPushNotificationConfig      url http://127.0.0.1:33797/webhook
+    [ok]   DeleteTaskPushNotificationConfig   deleted
+    [ok]   GetExtendedAgentCard               card 'Genai LLM Agent'
+  --- GRPC ---
+2026-11-08T01:22:10.410495Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=read header from client timeout
+2026-11-08T01:22:42.935612Z  WARN a2a_protocol_server::handler::push_config: push config sends its token or credentials to a plaintext http:// webhook; spec §13.4 says credentials SHOULD travel only over encrypted connections (HttpPushSender::https_only refuses such configs) webhook=http://127.0.0.1:33797
+    [ok]   SendMessage                        task a2981a6d-f1ec-45ab-b773-6912c71b4fed
+    [ok]   SendStreamingMessage               2 event(s), 0 lag signal(s) (still open)
+    [ok]   GetTask                            state Completed
+    [ok]   ListTasks                          11 task(s)
+    [ok]   CancelTask                         refused as expected: protocol error: [-32002] Task cannot be canceled: c2fb46e9-a663-48fc-a238-b9469ff0646f
+    [ok]   SubscribeToTask                    3 event(s)
+    [ok]   CreateTaskPushNotificationConfig   config Some("7d59cda5-f09f-432b-946c-3093cb35e459")
+    [ok]   ListTaskPushNotificationConfigs    1 config(s)
+    [ok]   GetTaskPushNotificationConfig      url http://127.0.0.1:33797/webhook
+    [ok]   DeleteTaskPushNotificationConfig   deleted
+    [ok]   GetExtendedAgentCard               card 'Genai LLM Agent'
+  --- WEBSOCKET ---
+2026-11-08T01:22:55.018953Z  WARN a2a_protocol_client::transport::websocket: JSON-RPC error over WebSocket method="CancelTask" code=-32002
+2026-11-08T01:23:00.025557Z  WARN a2a_protocol_server::handler::push_config: push config sends its token or credentials to a plaintext http:// webhook; spec §13.4 says credentials SHOULD travel only over encrypted connections (HttpPushSender::https_only refuses such configs) webhook=http://127.0.0.1:33797
+    [ok]   SendMessage                        task 7e26be89-17ab-47ad-b258-4ab205d94841
+    [ok]   SendStreamingMessage               2 event(s), 0 lag signal(s) (still open)
+    [ok]   GetTask                            state Completed
+    [ok]   ListTasks                          15 task(s)
+    [ok]   CancelTask                         refused as expected: protocol error: [-32002] Task cannot be canceled: 96f3f14b-eeb4-4f80-a7a6-e34369a3d951
+    [ok]   SubscribeToTask                    1 event(s)
+    [ok]   CreateTaskPushNotificationConfig   config Some("4a23de90-03d2-4132-8f7f-a2c4d3b63720")
+    [ok]   ListTaskPushNotificationConfigs    1 config(s)
+    [ok]   GetTaskPushNotificationConfig      url http://127.0.0.1:33797/webhook
+    [ok]   DeleteTaskPushNotificationConfig   deleted
+    [ok]   GetExtendedAgentCard               card 'Genai LLM Agent'
+  --- counter-tests (calls that must be refused) ---
+2026-11-08T01:23:00.038734Z  WARN a2a_protocol_client::transport::jsonrpc: JSON-RPC error response method="GetTask" code=-32001
+2026-11-08T01:23:00.041573Z  WARN a2a_protocol_client::transport::jsonrpc: JSON-RPC error response method="CancelTask" code=-32001
+2026-11-08T01:23:00.043629Z  WARN a2a_protocol_client::transport::jsonrpc: JSON-RPC error response method="CreateTaskPushNotificationConfig" code=-32003
+2026-11-08T01:23:00.048961Z  WARN a2a_protocol_client::transport::jsonrpc: JSON-RPC error response method="GetExtendedAgentCard" code=-32004
+2026-11-08T01:23:00.050373Z  WARN a2a_protocol_client::transport::jsonrpc: JSON-RPC error response to streaming request code=-32004
+    [ok]   GetTask on an unknown id                     refused: TaskNotFound
+    [ok]   CancelTask on an unknown id                  refused: TaskNotFound
+    [ok]   push config against a card without pushNotifications refused: PushNotificationNotSupported
+    [ok]   extended card against a card without extendedAgentCard refused: UnsupportedOperation
+    [ok]   streaming against a card without streaming   refused: protocol error: [-32004] agent does not support streaming (AgentCard.capabilities.streaming is not true)
+
+METHOD                             JSONRPC    HTTP+JSON     GRPC      WEBSOCKET 
+SendMessage                          ok          ok          ok          ok     
+SendStreamingMessage                 ok          ok          ok          ok     
+GetTask                              ok          ok          ok          ok     
+ListTasks                            ok          ok          ok          ok     
+CancelTask                           ok          ok          ok          ok     
+SubscribeToTask                      ok          ok          ok          ok     
+CreateTaskPushNotificationConfig     ok          ok          ok          ok     
+GetTaskPushNotificationConfig        ok          ok          ok          ok     
+ListTaskPushNotificationConfigs      ok          ok          ok          ok     
+DeleteTaskPushNotificationConfig     ok          ok          ok          ok     
+GetExtendedAgentCard                 ok          ok          ok          ok     
+
+44 exercised, 0 not applicable, 0 missing, of 44 cells
+Rows: the 11 methods `service A2AService` declares in the ratified proto (see a2a_protocol_types::method).
+Columns: 3 spec-named bindings (§9 §10 §11) plus WEBSOCKET, a §12 custom binding this SDK adds.
+
+Every A2A method was exercised over every binding, and every
+counter-test was refused as the specification requires.
+
+LLM leg exercised against 'qwen3.5:2b'.

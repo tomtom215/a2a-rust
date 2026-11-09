@@ -347,6 +347,44 @@ async fn a_run_that_fails_records_why() {
     assert_eq!(only(&rm, "gen_ai.invoke_agent.inference_calls").sum, 2.0);
 }
 
+/// Replies with no text, at its output limit.
+struct Mute;
+impl ToolModel for Mute {
+    fn model_name(&self) -> &'static str {
+        "mute"
+    }
+    fn provider_name(&self) -> &'static str {
+        "test"
+    }
+    fn complete<'a>(
+        &'a self,
+        _request: ChatRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<ModelTurn, ModelError>> + Send + 'a>> {
+        Box::pin(async { Ok(ModelTurn::new("", Vec::new()).with_finish_reason("length")) })
+    }
+}
+
+/// A run whose final reply has no text is recorded as failed
+/// `empty_answer`, not as a run that answered (audit M-1).
+#[tokio::test]
+async fn a_run_with_an_empty_answer_records_why() {
+    let (meter, reader, _provider) = recording_meter();
+    let tool_loop = ToolLoop::new(Mute, ToolSet::new()).with_meter(&meter);
+    let result = tool_loop.run("hi", &CancellationToken::new()).await;
+    assert!(
+        matches!(result, Err(LoopError::EmptyAnswer { .. })),
+        "{result:?}"
+    );
+    let rm = collect(&reader);
+    let run = only(&rm, "gen_ai.invoke_agent.duration");
+    assert_eq!(run.get("error.type"), Some("empty_answer"));
+    // The turn itself succeeded: the provider answered.
+    assert_eq!(
+        only(&rm, "gen_ai.client.inference.duration").get("error.type"),
+        None
+    );
+}
+
 /// Never answers.
 struct Silent;
 impl ToolModel for Silent {

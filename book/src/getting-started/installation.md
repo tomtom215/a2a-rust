@@ -41,9 +41,10 @@ This is useful when:
 ## Feature Flags
 
 Features are off by default to minimize compile times and dependency trees, with
-these exceptions. **`tls-rustls` is on by default** for `a2a-protocol-client`
-and `a2a-protocol-sdk`, because the A2A spec serves agents over HTTPS and the
-client (and the bundled push sender) must reach them out of the box.
+these exceptions. **`tls-rustls` is on by default** for `a2a-protocol-client`,
+`a2a-protocol-server` and `a2a-protocol-sdk`, because the A2A spec serves agents
+over HTTPS and the client, the bundled push sender and the server's JWKS, OIDC
+and model-endpoint fetches must reach them out of the box.
 **`tracing` and `otel` are on by default** for `a2a-protocol-client`,
 `a2a-protocol-server` and `a2a-protocol-sdk`, so a default build logs through,
 and records OpenTelemetry spans and metrics with, whatever `tracing` subscriber
@@ -57,7 +58,7 @@ no logging, no OpenTelemetry and no webhook receiver.
 Some features turn on others. The arrows below are the `[features]` tables of
 the four crates' `Cargo.toml`, as the SDK forwards them. `websocket`, `sqlite`,
 `postgres`, `axum`, `tool-loop`, `auth-jwt` and `encryption` turn on no other
-feature, and are left out:
+feature, and are left out. `skills` turns on `tool-loop` and is not drawn:
 
 <figure class="diagram">
 <a href="../images/diagrams/gs-feature-map.light.svg"><img class="diagram-light" src="../images/diagrams/gs-feature-map.light.svg" alt="Feature implications: otel-prometheus and otlp-json each turn on otlp, otlp turns on otel, otel turns on tracing; grpc-tls turns on grpc and tls-rustls, grpc turns on the types crate's proto; audit turns on the types crate's signing. The SDK's defaults, boxed, are otlp, otel, tracing, tls-rustls and webhook."></a>
@@ -93,7 +94,7 @@ feature, and are left out:
 |---------|-------------|
 | `signing` | Forwards `a2a-protocol-types/signing`; adds `RequestHandlerBuilder::with_content_signer`, which signs every artifact, status message and direct reply the server sends, not a task's history (ADR 0027). The server never signs or verifies the card it serves: sign it with `sign_card_es256` before handing it to the builder |
 | `tracing` | Structured logging via the `tracing` crate (on by default) |
-| `tls-rustls` | HTTPS delivery for the bundled push-notification sender; HTTPS on the server's own listener (`Server::with_tls`, `Server::with_tls_pem`); `MutualTlsAuthInterceptor`, which names a caller from its client certificate (also available with `grpc-tls`) |
+| `tls-rustls` | HTTPS delivery for the bundled push-notification sender; HTTPS on the server's own listener (`Server::with_tls`, `Server::with_tls_pem`); `MutualTlsAuthInterceptor`, which names a caller from its client certificate (also available with `grpc-tls`); on by default since 0.16.0 |
 | `sqlite` | SQLite-backed task and push config stores via `sqlx` |
 | `postgres` | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
@@ -106,6 +107,7 @@ feature, and are left out:
 | `conformance` | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Axum framework integration (`RestRouter`) |
 | `tool-loop` | Tool calling inside a task: `tool_loop::ToolLoop`, `ToolLoopExecutor` and the chat-completions client `OpenAiChatModel` |
+| `skills` | Agent Skills in the tool loop, scripts never run: `skills::SkillCatalog` and `ToolLoopExecutor::with_skills` (ADR 0035; implies `tool-loop`) |
 | `auth-jwt` | JWT bearer-token authentication (`JwtAuthInterceptor`) |
 | `encryption` | Encryption at rest for task content (`EncryptedTaskStore`) |
 | `audit` | Tamper-evident audit trail (`RequestHandlerBuilder::with_audit`, ADR 0015): calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, signed checkpoints, legal holds, a six-month retention floor; SQLite/PostgreSQL audit stores with those features |
@@ -128,6 +130,7 @@ feature, and are left out:
 | `otel-prometheus` | Enables the server's `otel-prometheus`: `OTEL_METRICS_EXPORTER=prometheus` serves `/metrics` (off by default; implies `otlp`) |
 | `axum` | Enables Axum integration in the server |
 | `tool-loop` | Enables `tool-loop` in the server (`server::tool_loop`) |
+| `skills` | Enables `skills` in the server (`server::skills`; implies `tool-loop`) |
 | `auth-jwt` | Enables JWT bearer-token authentication in the server |
 | `encryption` | Enables encryption at rest for task content in the server |
 | `audit` | Enables the audit trail in the server and its record types in `a2a-protocol-types` |

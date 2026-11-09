@@ -8,6 +8,8 @@ covers setup, the frame protocol and authentication. This page covers running
 it in production: serving `wss://`, refusing other sites' pages, and bounding
 how many connections it holds and for how long.
 
+> **Cargo feature.** `WebSocketDispatcher` needs the `websocket` feature: `a2a-protocol-sdk = { version = "0.16", features = ["websocket"] }`, or `a2a-protocol-server = { version = "0.16", features = ["websocket"] }` on its own.
+
 ## TLS and origins
 
 The listener is `ws://` by default. With the `tls-rustls` feature,

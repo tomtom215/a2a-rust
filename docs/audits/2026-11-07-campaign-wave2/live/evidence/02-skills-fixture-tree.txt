@@ -1,0 +1,187 @@
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile:
+total 92
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 badname-skill
+drwxr-xr-x 3 root root 4096 Nov  8 01:17 big-skill
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 bigdesc-skill
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 bomb-skill
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 deep-skill
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 dupkey-skill
+drwxr-xr-x 3 root root 4096 Nov  8 01:17 fifo-skill
+drwxr-xr-x 5 root root 4096 Nov  8 01:17 good-skill
+drwxr-xr-x 3 root root 4096 Nov  8 01:17 inject-skill
+drwxr-xr-x 3 root root 4096 Nov  8 01:17 link-skill
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 longname-skill
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 mismatch-dir
+drwxr-xr-x 3 root root 4096 Nov  8 01:17 moved-skill
+drwxr-xr-x 3 root root 4096 Nov  8 01:17 moved-target
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 nofm-skill
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 nul-skill
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 payments-skill
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 pаyments-skill
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 reflink-skill
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 reflink2-skill
+drwxr-xr-x 3 root root 4096 Nov  8 01:17 swap-skill
+drwxr-xr-x 3 root root 4096 Nov  8 01:17 utf8-skill
+drwxr-xr-x 3 root root 4096 Nov  8 01:17 vanish-skill
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/badname-skill:
+total 4
+-rw-r--r-- 1 root root 91 Nov  8 01:17 SKILL.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/big-skill:
+total 8
+-rw-r--r-- 1 root root   96 Nov  8 01:17 SKILL.md
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 references
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/big-skill/references:
+total 51200
+-rw-r--r-- 1 root root 52428800 Nov  8 01:17 big.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/bigdesc-skill:
+total 10244
+-rw-r--r-- 1 root root 10485809 Nov  8 01:17 SKILL.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/bomb-skill:
+total 4
+-rw-r--r-- 1 root root 720 Nov  8 01:17 SKILL.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/deep-skill:
+total 15648
+-rw-r--r-- 1 root root 16022976 Nov  8 01:17 SKILL.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/dupkey-skill:
+total 4
+-rw-r--r-- 1 root root 115 Nov  8 01:17 SKILL.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/fifo-skill:
+total 8
+-rw-r--r-- 1 root root   87 Nov  8 01:17 SKILL.md
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 references
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/fifo-skill/references:
+total 4
+-rw-r--r-- 1 root root 3 Nov  8 01:17 ok.md
+prw-r--r-- 1 root root 0 Nov  8 01:17 pipe
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/good-skill:
+total 16
+-rw-r--r-- 1 root root  188 Nov  8 01:17 SKILL.md
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 assets
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 references
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 scripts
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/good-skill/assets:
+total 4
+-rw-r--r-- 1 root root 15 Nov  8 01:17 data.txt
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/good-skill/references:
+total 4
+-rw-r--r-- 1 root root 66 Nov  8 01:17 guide.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/good-skill/scripts:
+total 4
+-rw-r--r-- 1 root root 61 Nov  8 01:17 run.sh
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/inject-skill:
+total 8
+-rw-r--r-- 1 root root  674 Nov  8 01:17 SKILL.md
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 references
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/inject-skill/references:
+total 4
+-rw-r--r-- 1 root root 185 Nov  8 01:17 inject.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/link-skill:
+total 8
+-rw-r--r-- 1 root root   96 Nov  8 01:17 SKILL.md
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 references
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/link-skill/references:
+total 4
+lrwxrwxrwx 1 root root  4 Nov  8 01:17 abs_dir -> /tmp
+lrwxrwxrwx 1 root root  4 Nov  8 01:17 dir_link -> /etc
+lrwxrwxrwx 1 root root 13 Nov  8 01:17 file_link -> /etc/hostname
+lrwxrwxrwx 1 root root 11 Nov  8 01:17 inside_link -> ../SKILL.md
+lrwxrwxrwx 1 root root  4 Nov  8 01:17 loop -> loop
+-rw-r--r-- 1 root root 16 Nov  8 01:17 plain.md
+lrwxrwxrwx 1 root root  2 Nov  8 01:17 up_link -> ..
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/longname-skill:
+total 8
+-rw-r--r-- 1 root root 5071 Nov  8 01:17 SKILL.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/mismatch-dir:
+total 4
+-rw-r--r-- 1 root root 87 Nov  8 01:17 SKILL.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/moved-skill:
+total 8
+-rw-r--r-- 1 root root   94 Nov  8 01:17 SKILL.md
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 references
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/moved-skill/references:
+total 4
+-rw-r--r-- 1 root root 16 Nov  8 01:17 m.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/moved-target:
+total 8
+-rw-r--r-- 1 root root   80 Nov  8 01:17 SKILL.md
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 references
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/moved-target/references:
+total 4
+-rw-r--r-- 1 root root 19 Nov  8 01:17 m.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/nofm-skill:
+total 4
+-rw-r--r-- 1 root root 35 Nov  8 01:17 SKILL.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/nul-skill:
+total 4
+-rw-r--r-- 1 root root 91 Nov  8 01:17 SKILL.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/payments-skill:
+total 4
+-rw-r--r-- 1 root root 113 Nov  8 01:17 SKILL.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/pаyments-skill:
+total 4
+-rw-r--r-- 1 root root 111 Nov  8 01:17 SKILL.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/reflink-skill:
+total 4
+-rw-r--r-- 1 root root 100 Nov  8 01:17 SKILL.md
+lrwxrwxrwx 1 root root   4 Nov  8 01:17 references -> /etc
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/reflink2-skill:
+total 4
+-rw-r--r-- 1 root root 103 Nov  8 01:17 SKILL.md
+lrwxrwxrwx 1 root root  24 Nov  8 01:17 references -> ../good-skill/references
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/swap-skill:
+total 8
+-rw-r--r-- 1 root root   97 Nov  8 01:17 SKILL.md
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 references
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/swap-skill/references:
+total 4
+-rw-r--r-- 1 root root 28 Nov  8 01:17 swap.md
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/utf8-skill:
+total 8
+-rw-r--r-- 1 root root   91 Nov  8 01:17 SKILL.md
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 references
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/utf8-skill/references:
+total 8
+-rw-r--r-- 1 root root 17 Nov  8 01:17 bad.bin
+-rw-r--r-- 1 root root  4 Nov  8 01:17 latin1.txt
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/vanish-skill:
+total 8
+-rw-r--r-- 1 root root   98 Nov  8 01:17 SKILL.md
+drwxr-xr-x 2 root root 4096 Nov  8 01:17 references
+
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-hostile/vanish-skill/references:
+total 4
+-rw-r--r-- 1 root root 17 Nov  8 01:17 v.md

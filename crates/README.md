@@ -85,6 +85,7 @@ enable them:
 | `otel-prometheus` | server | `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` for a Prometheus that scrapes; off by default everywhere (implies `otlp`) |
 | `axum` | server | Axum framework integration |
 | `tool-loop` | server | Tool calling inside a task: `tool_loop::ToolLoop`, `ToolLoopExecutor`, `OpenAiChatModel` (ADR 0022) |
+| `skills` | server | Agent Skills in the tool loop, scripts never run: `skills::SkillCatalog`, `ToolLoopExecutor::with_skills` (ADR 0035; implies `tool-loop`) |
 | `auth-jwt` | server | JWT bearer-token authentication (HS256/RS256/ES256, static or remote JWKS with OIDC discovery) via `ring`; the header/token interceptors (`ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`) need no feature |
 | `encryption` | server | Encryption at rest for task content (`EncryptedTaskStore`): every part sealed with AES-256-GCM via `ring`, or a cipher of your own |
 | `conformance` | server | Harness that grades an `AgentExecutor` against the protocol invariants that hold for any agent — terminal states, legal transitions, cooperative cancellation, parking. Intended as a dev-dependency; pulls in no extra dependencies |

@@ -1,0 +1,11 @@
+== observability canaries: provider error body (load 3.02)
+   errbody    {'traces': 1, 'logs': 1, 'agent-stderr': 2}
+   prompt     {}
+   span 'invoke_agent': status {"message": "", "code": 2}; attributes []; events [{'name': 'tool loop: the model provider failed a turn', 'attributes': ['error']}, {'name': 'the run failed', 'attributes': ['error']}]
+   log record: {"timeUnixNano": "0", "observedTimeUnixNano": "1794099036423870329", "severityNumber": 13, "severityText": "WARN", "body": {"stringValue": "tool loop: the model provider failed a turn"}, "attributes": [{"key": "error", "value": {"stringValue": "the model provider answered HTTP 502: CANARY_ERRBODY_b1"}}], "droppedAttributesCount": 0, "flags": 1, "traceId": "8e306b7b3fc52ac6eb23f9d674388e1a", "spanI
+   log record: {"timeUnixNano": "0", "observedTimeUnixNano": "1794099036424111494", "severityNumber": 13, "severityText": "WARN", "body": {"stringValue": "the run failed"}, "attributes": [{"key": "error", "value": {"stringValue": "the model provider answered HTTP 502: CANARY_ERRBODY_b1"}}], "droppedAttributesCount": 0, "flags": 1, "traceId": "8e306b7b3fc52ac6eb23f9d674388e1a", "spanId": "bd9423ee31695bc1", "even
+  ok    the provider's error body is not in the task
+  FAIL  the provider's error body is not in a span
+  note  errbody appears in: {'traces': 1, 'logs': 1, 'agent-stderr': 2} (the book says the body goes to the operator's log)
+
+1 of 2 expectations held

@@ -17,6 +17,41 @@ use super::decisions::json_byte_len;
 use crate::error::{ServerError, ServerResult};
 use crate::portable::{inexact_number, standard_base64};
 
+/// Refuses a NUL character (U+0000) in any string of the request, in an
+/// object key as well as a value. A `jsonb` column cannot hold one, so a
+/// PostgreSQL store answered `-32603` (with its own message) and created no
+/// task, where the in-memory and `SQLite` stores took the same request: the
+/// stores disagreed on what a client may send (hostile campaign, wave 2,
+/// `W2-hostile-4`). Refused once, here, for every store, as the ids already
+/// refuse every control character. An escaped backslash and `u0000` is text,
+/// not a NUL, and is not refused. The error names no field and repeats no
+/// value.
+fn refuse_nul(params: &MessageSendParams) -> ServerResult<()> {
+    fn has_nul(value: &serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::String(s) => s.contains('\0'),
+            serde_json::Value::Array(items) => items.iter().any(has_nul),
+            serde_json::Value::Object(map) => map
+                .iter()
+                .any(|(key, item)| key.contains('\0') || has_nul(item)),
+            _ => false,
+        }
+    }
+    // The wire form is what is stored, so it is what is checked: every text
+    // part, filename, URL, media type, extension, `data` value and metadata
+    // string at once. A request that cannot be serialized has no NUL to find;
+    // the store refuses it as before.
+    if let Ok(wire) = serde_json::to_value(params)
+        && has_nul(&wire)
+    {
+        return Err(ServerError::InvalidField {
+            field: "message".into(),
+            message: "the request must not contain a NUL character (U+0000) in any field".into(),
+        });
+    }
+    Ok(())
+}
+
 /// Which file references a message may carry; see
 /// [`refuse_private_file_urls`](crate::RequestHandlerBuilder::refuse_private_file_urls).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,6 +155,7 @@ impl RequestHandler {
             max_meta,
         )?;
         check_metadata_size(params.metadata.as_ref(), "request", "metadata", max_meta)?;
+        refuse_nul(params)?;
         Ok(content_check)
     }
 

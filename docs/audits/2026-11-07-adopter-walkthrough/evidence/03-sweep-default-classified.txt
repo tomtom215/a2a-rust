@@ -1,0 +1,225 @@
+default-feature doctests: 340  failed: 66
+book/src/building-agents/authentication/authorization.md:21  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::auth::jwt`
+    page names features: NONE
+book/src/building-agents/authentication/jwt.md:48  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::auth::jwt`
+    page names features: ['auth-jwt', 'tls-rustls']
+book/src/building-agents/authentication/jwt.md:92  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::auth::jwt`
+    page names features: ['auth-jwt', 'tls-rustls']
+book/src/building-agents/dispatchers.md:39  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+    page names features: ['axum', 'grpc', 'grpc-tls', 'websocket']
+book/src/building-agents/dispatchers/axum.md:17  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::RestRouter`
+    page names features: ['axum']
+book/src/building-agents/dispatchers/axum.md:59  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::RestRouter`
+    page names features: ['axum']
+book/src/building-agents/dispatchers/grpc.md:18  all-features=-
+    error[E0432]: unresolved imports `a2a_protocol_server::GrpcDispatcher`, `a2a_protocol_server::GrpcConfig`
+    page names features: ['grpc', 'grpc-tls']
+book/src/building-agents/dispatchers/grpc.md:72  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::dispatch::grpc`
+    page names features: ['grpc', 'grpc-tls']
+book/src/building-agents/dispatchers/grpc.md:139  all-features=-
+    error[E0433]: cannot find `GrpcDispatcher` in `a2a_protocol_server`
+    page names features: ['grpc', 'grpc-tls']
+book/src/building-agents/dispatchers/websocket.md:23  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+    page names features: ['tls-rustls']
+book/src/building-agents/dispatchers/websocket.md:61  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+    page names features: ['tls-rustls']
+book/src/building-agents/dispatchers/websocket.md:144  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+    page names features: ['tls-rustls']
+book/src/building-agents/push-notifications/storage.md:57  all-features=-
+    error[E0432]: unresolved imports `a2a_protocol_server::push::PushConfigCipher`, `a2a_protocol_server::push::SqlitePushConfigStore`
+    page names features: ['postgres', 'sqlite']
+book/src/building-agents/stores/custom.md:127  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::PostgresPushConfigStore`
+    page names features: ['tracing']
+book/src/building-agents/stores/postgres.md:18  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::store::PostgresTaskStore`
+    page names features: ['postgres']
+book/src/building-agents/stores/postgres.md:53  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::store::PostgresTaskStore`
+    page names features: ['postgres']
+book/src/building-agents/stores/sqlite.md:15  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::store::SqliteTaskStore`
+    page names features: ['sqlite']
+book/src/building-agents/stores/tenants.md:65  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::store::TenantAwareSqliteTaskStore`
+    page names features: ['sqlite']
+book/src/building-agents/tool-loop.md:37  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+    page names features: ['tls-rustls', 'tool-loop']
+book/src/building-agents/tool-loop/models.md:16  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+    page names features: ['tls-rustls']
+book/src/building-agents/tool-loop/models.md:94  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+    page names features: ['tls-rustls']
+book/src/building-agents/tool-loop/running.md:13  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+    page names features: ['otel']
+book/src/building-agents/tool-loop/running.md:103  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+    page names features: ['otel']
+book/src/building-agents/tool-loop/tools.md:27  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+    page names features: NONE
+book/src/building-agents/tool-loop/tools.md:100  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+    page names features: NONE
+book/src/building-agents/tool-loop/tools.md:160  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+    page names features: NONE
+book/src/client/builder/grpc.md:21  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_client::GrpcTransport`
+    page names features: ['grpc', 'grpc-tls']
+book/src/client/builder/grpc.md:37  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_client::transport::grpc`
+    page names features: ['grpc', 'grpc-tls']
+book/src/client/delegation.md:344  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::store::PostgresLeaseStore`
+    page names features: ['postgres', 'sqlite', 'tracing']
+book/src/concepts/agent-cards/local-discovery.md:14  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_discovery`
+    page names features: ['signing']
+book/src/concepts/agent-cards/local-discovery.md:29  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_discovery`
+    page names features: ['signing']
+book/src/concepts/transport-layers/grpc.md:53  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_client::transport::grpc`
+    page names features: ['grpc', 'grpc-tls', 'tls-rustls', 'tracing']
+book/src/concepts/transport-layers/grpc.md:89  all-features=-
+    error[E0599]: no method named `build_grpc` found for struct `ClientBuilder` in the current scope
+    page names features: ['grpc', 'grpc-tls', 'tls-rustls', 'tracing']
+book/src/concepts/transport-layers/grpc.md:128  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_client::transport::grpc`
+    page names features: ['grpc', 'grpc-tls', 'tls-rustls', 'tracing']
+book/src/concepts/transport-layers/grpc.md:189  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::dispatch::grpc`
+    page names features: ['grpc', 'grpc-tls', 'tls-rustls', 'tracing']
+book/src/concepts/transport-layers/websocket.md:47  all-features=-
+    error[E0432]: unresolved imports `a2a_protocol_client::WebSocketTransport`, `a2a_protocol_client::WebSocketTransportConfig`
+    page names features: ['tls-rustls', 'tracing', 'websocket']
+book/src/deployment/audit.md:38  all-features=-
+    error[E0433]: cannot find `audit` in `a2a_protocol_server`
+    page names features: ['audit', 'encryption', 'otel', 'postgres', 'sqlite']
+book/src/deployment/audit.md:126  all-features=-
+    error[E0433]: cannot find `audit` in `a2a_protocol_server`
+    page names features: ['audit', 'encryption', 'otel', 'postgres', 'sqlite']
+book/src/deployment/audit.md:187  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::audit`
+    page names features: ['audit', 'encryption', 'otel', 'postgres', 'sqlite']
+book/src/deployment/audit.md:262  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::audit`
+    page names features: ['audit', 'encryption', 'otel', 'postgres', 'sqlite']
+book/src/deployment/audit.md:302  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::audit`
+    page names features: ['audit', 'encryption', 'otel', 'postgres', 'sqlite']
+book/src/deployment/audit.md:360  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::audit`
+    page names features: ['audit', 'encryption', 'otel', 'postgres', 'sqlite']
+book/src/deployment/audit.md:397  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::audit`
+    page names features: ['audit', 'encryption', 'otel', 'postgres', 'sqlite']
+book/src/deployment/horizontal-scaling/rate-limiting.md:17  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::PostgresRateLimitCounter`
+    page names features: NONE
+book/src/deployment/horizontal-scaling/shared-stores.md:13  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::push::PostgresPushConfigStore`
+    page names features: NONE
+book/src/deployment/horizontal-scaling/sustained-load.md:73  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::store::PostgresTaskStore`
+    page names features: NONE
+book/src/deployment/oversight.md:151  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_types::approval::action_digest`
+    page names features: ['signing']
+book/src/deployment/production.md:50  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_types::provenance::ContentSigner`
+    page names features: ['grpc-tls', 'postgres', 'signing', 'tls-rustls', 'tracing']
+book/src/deployment/provenance.md:20  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_client::jwks`
+    page names features: ['signing']
+book/src/deployment/provenance.md:111  all-features=-
+    error[E0432]: unresolved imports `a2a_protocol_types::provenance::ContentSigner`, `a2a_protocol_types::provenance::sign_content`
+    page names features: ['signing']
+book/src/deployment/provenance.md:129  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_types::provenance::verify_content`
+    page names features: ['signing']
+book/src/deployment/provenance.md:153  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_types::provenance::ContentSigner`
+    page names features: ['signing']
+book/src/deployment/provenance.md:177  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_types::signing`
+    page names features: ['signing']
+book/src/deployment/security.md:134  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_sdk::server::store::encrypted`
+    page names features: ['auth-jwt', 'encryption', 'grpc', 'grpc-tls', 'proto', 'signing', 'tls-rustls']
+book/src/deployment/security.md:240  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_types::signing`
+    page names features: ['auth-jwt', 'encryption', 'grpc', 'grpc-tls', 'proto', 'signing', 'tls-rustls']
+book/src/deployment/testing/conformance.md:22  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::conformance`
+    page names features: ['conformance']
+book/src/deployment/testing/conformance.md:100  all-features=-
+    error[E0433]: cannot find `conformance` in `a2a_protocol_server`
+    page names features: ['conformance']
+book/src/examples/resilient-agent.md:117  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::store::SqliteTaskStore`
+    page names features: ['postgres', 'sqlite']
+book/src/reference/upgrading/0.11-to-0.12.md:50  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_client::WebSocketTransportConfig`
+    page names features: ['grpc-tls']
+book/src/reference/upgrading/0.11-to-0.12.md:149  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_client::transport::grpc`
+    page names features: ['grpc-tls']
+book/src/reference/upgrading/0.14-to-0.15/agent-cards.md:180  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_types::signing`
+    page names features: NONE
+book/src/reference/upgrading/0.14-to-0.15/authentication.md:168  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::store::tenant_sqlite_store`
+    page names features: ['auth-jwt', 'postgres', 'sqlite']
+book/src/reference/upgrading/0.14-to-0.15/authentication.md:214  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::auth::jwt`
+    page names features: ['auth-jwt', 'postgres', 'sqlite']
+book/src/reference/upgrading/0.14-to-0.15/wire-and-bindings.md:53  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_types::proto`
+    page names features: ['proto']
+book/src/reference/upgrading/0.15-to-0.16.md:23  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+    page names features: ['grpc', 'otel', 'tls-rustls', 'tracing']
+book/src/reference/upgrading/0.15-to-0.16.md:50  all-features=-
+    error[E0432]: unresolved import `a2a_protocol_server::auth::JwtValidator`
+    page names features: ['grpc', 'otel', 'tls-rustls', 'tracing']
+
+blocks whose page never names the feature the block needs (or the symbol is not one I can map): 24
+  book/src/building-agents/authentication/authorization.md:21  needs auth-jwt; page names none; error[E0432]: unresolved import `a2a_protocol_server::auth::jwt`
+  book/src/building-agents/dispatchers/websocket.md:23  needs websocket; page names ['tls-rustls']; error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+  book/src/building-agents/dispatchers/websocket.md:61  needs websocket; page names ['tls-rustls']; error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+  book/src/building-agents/dispatchers/websocket.md:144  needs websocket; page names ['tls-rustls']; error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+  book/src/building-agents/stores/custom.md:127  needs postgres; page names ['tracing']; error[E0432]: unresolved import `a2a_protocol_server::PostgresPushConfigStore`
+  book/src/building-agents/tool-loop/models.md:16  needs tool-loop; page names ['tls-rustls']; error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+  book/src/building-agents/tool-loop/models.md:94  needs tool-loop; page names ['tls-rustls']; error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+  book/src/building-agents/tool-loop/running.md:13  needs tool-loop; page names ['otel']; error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+  book/src/building-agents/tool-loop/running.md:103  needs tool-loop; page names ['otel']; error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+  book/src/building-agents/tool-loop/tools.md:27  needs tool-loop; page names none; error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+  book/src/building-agents/tool-loop/tools.md:100  needs tool-loop; page names none; error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+  book/src/building-agents/tool-loop/tools.md:160  needs tool-loop; page names none; error[E0432]: unresolved import `a2a_protocol_sdk::server::tool_loop`
+  book/src/concepts/agent-cards/local-discovery.md:14  needs None; page names ['signing']; error[E0432]: unresolved import `a2a_protocol_discovery`
+  book/src/concepts/agent-cards/local-discovery.md:29  needs None; page names ['signing']; error[E0432]: unresolved import `a2a_protocol_discovery`
+  book/src/deployment/horizontal-scaling/rate-limiting.md:17  needs postgres; page names none; error[E0432]: unresolved import `a2a_protocol_server::PostgresRateLimitCounter`
+  book/src/deployment/horizontal-scaling/shared-stores.md:13  needs postgres; page names none; error[E0432]: unresolved import `a2a_protocol_server::push::PostgresPushConfigStore`
+  book/src/deployment/horizontal-scaling/sustained-load.md:73  needs postgres; page names none; error[E0432]: unresolved import `a2a_protocol_server::store::PostgresTaskStore`
+  book/src/deployment/oversight.md:151  needs None; page names ['signing']; error[E0432]: unresolved import `a2a_protocol_types::approval::action_digest`
+  book/src/deployment/provenance.md:20  needs None; page names ['signing']; error[E0432]: unresolved import `a2a_protocol_client::jwks`
+  book/src/reference/upgrading/0.11-to-0.12.md:50  needs websocket; page names ['grpc-tls']; error[E0432]: unresolved import `a2a_protocol_client::WebSocketTransportConfig`
+  book/src/reference/upgrading/0.11-to-0.12.md:149  needs grpc; page names ['grpc-tls']; error[E0432]: unresolved import `a2a_protocol_client::transport::grpc`
+  book/src/reference/upgrading/0.14-to-0.15/agent-cards.md:180  needs signing; page names none; error[E0432]: unresolved import `a2a_protocol_types::signing`
+  book/src/reference/upgrading/0.15-to-0.16.md:23  needs websocket; page names ['grpc', 'otel', 'tls-rustls', 'tracing']; error[E0432]: unresolved import `a2a_protocol_server::WebSocketDispatcher`
+  book/src/reference/upgrading/0.15-to-0.16.md:50  needs auth-jwt; page names ['grpc', 'otel', 'tls-rustls', 'tracing']; error[E0432]: unresolved import `a2a_protocol_server::auth::JwtValidator`

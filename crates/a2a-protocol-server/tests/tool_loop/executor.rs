@@ -26,7 +26,7 @@ use a2a_protocol_types::task::{Task, TaskState};
 
 use super::{Scripted, Status, asks, says};
 
-fn handler(tool_loop: ToolLoop) -> Arc<RequestHandler> {
+pub(super) fn handler(tool_loop: ToolLoop) -> Arc<RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(ToolLoopExecutor::new(tool_loop))
             .without_agent_card()
@@ -35,7 +35,7 @@ fn handler(tool_loop: ToolLoop) -> Arc<RequestHandler> {
     )
 }
 
-fn scripted(replies: Vec<Result<ModelTurn, ModelError>>) -> ToolLoop {
+pub(super) fn scripted(replies: Vec<Result<ModelTurn, ModelError>>) -> ToolLoop {
     ToolLoop::new(Scripted::new(replies), ToolSet::new().with(Status).unwrap())
 }
 
@@ -44,7 +44,7 @@ fn params(text: &str) -> MessageSendParams {
 }
 
 /// Each event of a streamed run, as a short label.
-async fn streamed(handler: &RequestHandler) -> Vec<String> {
+pub(super) async fn streamed(handler: &RequestHandler) -> Vec<String> {
     let Ok(SendMessageResult::Stream(mut stream)) = handler
         .on_send_message(params("how is checkout?"), true, None)
         .await
@@ -71,7 +71,7 @@ async fn streamed(handler: &RequestHandler) -> Vec<String> {
     labels
 }
 
-async fn blocking(handler: &RequestHandler, text: &str) -> Task {
+pub(super) async fn blocking(handler: &RequestHandler, text: &str) -> Task {
     match handler.on_send_message(params(text), false, None).await {
         Ok(SendMessageResult::Response(SendMessageResponse::Task(task))) => task,
         other => panic!("expected a task, got {other:?}"),
@@ -79,7 +79,7 @@ async fn blocking(handler: &RequestHandler, text: &str) -> Task {
 }
 
 /// The text of a failed task's status message.
-fn reason(task: &Task) -> String {
+pub(super) fn reason(task: &Task) -> String {
     task.status
         .message
         .as_ref()
@@ -254,6 +254,38 @@ async fn a_spent_token_budget_fails_the_task_as_budget_exhausted() {
         reason(&task),
         "the budget's meter \"tokens\" is spent (30 over)"
     );
+}
+
+/// A provider may report any `u64` as its usage. The budget's status goes out
+/// on every status update, and a number past 2^53 cannot be written to the
+/// event queue (a protobuf `Struct` holds doubles), which used to make the
+/// failure that ends the run unwritable too: the task stayed `working`, for
+/// ever (found by the live campaign, 2026-11-08).
+#[tokio::test]
+async fn a_provider_reporting_an_absurd_token_count_still_ends_the_task() {
+    use a2a_protocol_server::tool_loop::TokenUsage;
+    use a2a_protocol_types::budget::{Budget, TOKENS_METER};
+
+    let absurd = || {
+        asks("service_status", r#"{"service":"checkout"}"#)
+            .map(|t| t.with_usage(TokenUsage::new(Some(u64::MAX), Some(u64::MAX))))
+    };
+    let handler = handler(scripted(vec![absurd(), absurd()]));
+    let mut message = Message::user_text("m1", "go");
+    Budget::new()
+        .with_meter(TOKENS_METER, 1000)
+        .unwrap()
+        .attach(&mut message);
+    let task = match handler
+        .on_send_message(MessageSendParams::new(message), false, None)
+        .await
+    {
+        Ok(SendMessageResult::Response(SendMessageResponse::Task(task))) => task,
+        other => panic!("expected a task, got {other:?}"),
+    };
+    assert_eq!(task.status.state, TaskState::Failed, "{task:?}");
+    assert_eq!(task.failure_class(), Some(FailureClass::BudgetExhausted));
+    assert!(reason(&task).contains("is spent"), "{}", reason(&task));
 }
 
 #[tokio::test]

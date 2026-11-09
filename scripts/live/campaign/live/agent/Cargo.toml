@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The agent behind scripts/live/campaign/live/*.py: a ToolLoopExecutor over a
+# real (or scripted) OpenAI-compatible model, with skills, steering,
+# authentication, telemetry and a set of tools chosen by the environment.
+# Outside the workspace, like scripts/live/steering; nothing in CI builds it.
+# Build, from the repository root (the lockfile is copied so the dependencies
+# are the ones the workspace tests):
+#   cp Cargo.lock scripts/live/campaign/live/agent/Cargo.lock
+#   CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 cargo build \
+#     --manifest-path scripts/live/campaign/live/agent/Cargo.toml --target-dir <dir>
+
+[package]
+name    = "a2a-campaign-agent"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[[bin]]
+name = "a2a-campaign-agent"
+path = "src/main.rs"
+
+[[bin]]
+name = "a2a-campaign-client"
+path = "src/client.rs"
+
+[dependencies]
+a2a-protocol-sdk = { path = "../../../../../crates/a2a-protocol-sdk", features = ["tool-loop", "skills", "grpc", "websocket", "otlp-json"] }
+serde            = "1"
+serde_json       = "1"
+uuid             = { version = "1", features = ["v4"] }
+tokio            = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
+
+[workspace]

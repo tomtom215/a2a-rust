@@ -1,0 +1,36 @@
+== observability canaries: scripted (load 3.59)
+   state TASK_STATE_COMPLETED
+   canary -> where it appeared (signals: traces, metrics, logs; ':request-header' is the export's own headers)
+   prompt     CANARY_PROMPT_a1         {}
+   meta       CANARY_META_a2           {}
+   header     CANARY_HEADER_a3         {}
+   bearer     CANARY_BEARER_a4         {}
+   toolarg    CANARY_TOOLARG_a5        {'task-json': 1}
+   toolresult CANARY_TOOLRESULT_a6     {'task-json': 1}
+   skillbody  CANARY_SKILLBODY_a7      {'task-json': 1}
+   skillref   CANARY_SKILLREF_a8       {'task-json': 1}
+   reply      CANARY_REPLY_a9          {'task-json': 1}
+   errbody    CANARY_ERRBODY_b1        {}
+   exportkey  CANARY_EXPORTKEY_b2      {'traces:request-header': 1, 'metrics:request-header': 1, 'logs:request-header': 1}
+   steer      CANARY_STEER_b3          {}
+  ok    prompt canary is not in any exported span
+  ok    toolarg canary is not in any exported span
+  ok    toolresult canary is not in any exported span
+  ok    skillbody canary is not in any exported span
+  ok    skillref canary is not in any exported span
+  ok    reply canary is not in any exported span
+  ok    prompt canary is not in any exported metric
+  ok    meta canary is not in any exported metric
+  ok    header canary is not in any exported metric
+  ok    bearer canary is not in any exported metric
+  ok    toolarg canary is not in any exported metric
+  ok    toolresult canary is not in any exported metric
+  ok    skillbody canary is not in any exported metric
+  ok    skillref canary is not in any exported metric
+  ok    reply canary is not in any exported metric
+  ok    steer canary is not in any exported metric
+  ok    bearer canary is in no span, log, stderr or the task ({})
+  ok    header canary is in no span, log, stderr or the task ({})
+  ok    exportkey canary is in no span, log, stderr or the task ({'traces:request-header': 1, 'metrics:request-header': 1, 'logs:request-header': 1})
+
+19 of 19 expectations held

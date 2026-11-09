@@ -104,6 +104,18 @@ pub(super) struct TaskEntry {
     pub(super) applied: Option<u64>,
 }
 
+impl TaskEntry {
+    /// Whether this task is parked (`input-required` or `auth-required`) and
+    /// was last written at or before `cutoff`: a wait nobody has answered for
+    /// as long as [`TaskStoreConfig::parked_task_ttl`] allows. `false` without
+    /// a cutoff, which is how an unset TTL reads: nothing parked expires.
+    pub(super) fn expired_parked(&self, cutoff: Option<Instant>) -> bool {
+        cutoff.is_some_and(|cutoff| {
+            self.task.status.state.is_interrupted() && self.last_updated <= cutoff
+        })
+    }
+}
+
 /// Internal data structure holding the primary store and secondary indexes.
 ///
 /// All three collections are protected by a single `RwLock` to guarantee
@@ -164,6 +176,11 @@ pub(super) struct StoreData {
     /// working, over this store's life. Guarded by the write lock with the
     /// maps. See [`InMemoryTaskStore::live_evictions`].
     pub(super) live_evictions: u64,
+    /// How many parked tasks have been removed after sitting parked past
+    /// [`TaskStoreConfig::parked_task_ttl`], over this store's life. Guarded
+    /// by the write lock with the maps. See
+    /// [`InMemoryTaskStore::parked_evictions`].
+    pub(super) parked_evictions: u64,
 }
 
 impl StoreData {
@@ -178,6 +195,7 @@ impl StoreData {
             idempotency_index: HashMap::new(),
             budget: None,
             live_evictions: 0,
+            parked_evictions: 0,
         }
     }
 
@@ -185,48 +203,54 @@ impl StoreData {
     /// `max_capacity` and holds nothing that eviction may remove: `id` is new,
     /// the store is full, and every task in it is parked waiting for input or
     /// authorization (audit D-18). A parked task is a person's pending
-    /// decision, and capacity eviction never removes one.
+    /// decision, and capacity eviction does not remove one, unless it has sat
+    /// parked since `cutoff` ([`TaskStoreConfig::parked_task_ttl`]).
     ///
-    /// The scan stops at the first task that is not parked, so a store with
-    /// almost any other task in it answers at once; it walks the whole store
-    /// only in the state where it must refuse.
+    /// The scan stops at the first task that is not parked or has expired, so
+    /// a store with almost any other task in it answers at once; it walks the
+    /// whole store only in the state where it must refuse.
     pub(super) fn refuses_for_parked_tasks(
         &self,
         id: &TaskId,
         max_capacity: Option<usize>,
+        cutoff: Option<Instant>,
     ) -> bool {
         max_capacity.is_some_and(|max| self.len() >= max)
             && !self.entries.is_empty()
             && !self.entries.contains_key(id)
-            && self
-                .entries
-                .values()
-                .all(|entry| entry.task.status.state.is_interrupted())
+            && self.entries.values().all(|entry| {
+                entry.task.status.state.is_interrupted() && !entry.expired_parked(cutoff)
+            })
     }
 
     /// Whether a write of `id` may go ahead under the shared budget: always
     /// for a task already held, and for a new one when a slot is free or can
-    /// be freed by evicting this store's own oldest terminal task. Another
-    /// partition's tasks are never evicted for it, and a running task never
-    /// is.
-    pub(super) fn admit(&mut self, id: &TaskId) -> bool {
+    /// be freed by evicting this store's own oldest terminal task, or its
+    /// oldest task parked since `cutoff` ([`TaskStoreConfig::parked_task_ttl`]).
+    /// Another partition's tasks are never evicted for it, and a running task
+    /// never is.
+    pub(super) fn admit(&mut self, id: &TaskId, cutoff: Option<Instant>) -> bool {
         let Some(budget) = self.budget.clone() else {
             return true;
         };
         if self.entries.contains_key(id) || budget.reserve() {
             return true;
         }
-        let oldest_terminal = self
+        let oldest_finished = self
             .order_index
             .values()
             .find(|candidate| {
                 self.entries
                     .get(*candidate)
-                    .is_some_and(|e| e.task.status.state.is_terminal())
+                    .is_some_and(|e| e.task.status.state.is_terminal() || e.expired_parked(cutoff))
             })
             .cloned();
-        oldest_terminal.is_some_and(|victim| {
-            self.remove(&victim);
+        oldest_finished.is_some_and(|victim| {
+            if let Some(entry) = self.remove(&victim)
+                && entry.expired_parked(cutoff)
+            {
+                self.parked_evictions += 1;
+            }
             budget.reserve()
         })
     }
@@ -1028,11 +1052,13 @@ impl TaskStore for InMemoryTaskStore {
                     drop(store);
                     return Err(conflict.into_error());
                 }
-                if store.refuses_for_parked_tasks(&task.id, self.config.max_capacity) {
+                let parked_cutoff = self.config.parked_cutoff();
+                if store.refuses_for_parked_tasks(&task.id, self.config.max_capacity, parked_cutoff)
+                {
                     drop(store);
                     return Err(full_of_parked_tasks());
                 }
-                if !store.admit(&task.id) {
+                if !store.admit(&task.id, parked_cutoff) {
                     drop(store);
                     return Err(budget_exhausted());
                 }
@@ -1279,16 +1305,14 @@ impl TaskStore for InMemoryTaskStore {
 
             // Decode the cursor: the opaque page token is the `millis:seq`
             // order key of the last item on the previous page. A malformed
-            // token yields an empty page (matching the previous "unknown
-            // cursor → empty" contract) rather than starting from the top.
-            // `None` starts a fresh listing.
+            // token is `InvalidParams` (until 0.16.0 an empty page, which a
+            // client cannot tell from the end of the listing) rather than
+            // starting from the top. `None` starts a fresh listing.
             let cursor_key: Option<OrderKey> = match params.page_token.as_deref() {
                 None => None,
                 Some(tok) => match decode_order_key(tok) {
                     Some(key) => Some(key),
-                    None => {
-                        return Ok(TaskListResponse::new(Vec::new()));
-                    }
+                    None => return Err(crate::store::pagination::unrecognised_token()),
                 },
             };
 
@@ -1398,11 +1422,13 @@ impl TaskStore for InMemoryTaskStore {
                 if store.entries.contains_key(&task.id) {
                     return Ok(false);
                 }
-                if store.refuses_for_parked_tasks(&task.id, self.config.max_capacity) {
+                let parked_cutoff = self.config.parked_cutoff();
+                if store.refuses_for_parked_tasks(&task.id, self.config.max_capacity, parked_cutoff)
+                {
                     drop(store);
                     return Err(full_of_parked_tasks());
                 }
-                if !store.admit(&task.id) {
+                if !store.admit(&task.id, parked_cutoff) {
                     drop(store);
                     return Err(budget_exhausted());
                 }
@@ -1575,6 +1601,7 @@ mod tests {
         let store = InMemoryTaskStore::with_config(TaskStoreConfig {
             max_capacity: None,
             task_ttl: Some(Duration::from_millis(1)),
+            parked_task_ttl: None,
             eviction_interval: 1,
             max_page_size: 100,
             max_events_per_task: Some(8),
@@ -2204,20 +2231,33 @@ mod tests {
         );
     }
 
+    /// A token this store did not issue is `InvalidParams`, not an empty
+    /// page (which reads as the end of the listing).
     #[tokio::test]
-    async fn list_invalid_page_token_returns_empty() {
+    async fn list_invalid_page_token_is_invalid_params() {
         let store = InMemoryTaskStore::new();
         store
             .save(&make_task("t1", TaskState::Submitted))
             .await
             .unwrap();
 
-        let params = ListTasksParams::new().with_page_token("nonexistent-cursor".to_string());
-        let response = store.list(&params).await.unwrap();
-        assert!(
-            response.tasks.is_empty(),
-            "invalid page_token should yield empty results"
-        );
+        for token in [
+            "nonexistent-cursor",
+            "12",
+            "12:x",
+            "x:3",
+            ":",
+            "12:3:4",
+            "-",
+        ] {
+            let params = ListTasksParams::new().with_page_token(token.to_string());
+            let err = store.list(&params).await.unwrap_err();
+            assert_eq!(
+                err.code,
+                a2a_protocol_types::error::ErrorCode::InvalidParams,
+                "{token}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -2247,6 +2287,7 @@ mod tests {
         let config = TaskStoreConfig {
             max_capacity: None,
             task_ttl: Some(Duration::from_millis(1)),
+            parked_task_ttl: None,
             eviction_interval: 1,
             max_page_size: 100,
             max_events_per_task: Some(8),
@@ -2288,6 +2329,7 @@ mod tests {
         let config = TaskStoreConfig {
             max_capacity: None,
             task_ttl: Some(Duration::from_secs(3600)),
+            parked_task_ttl: None,
             eviction_interval: 1,
             max_page_size: 100,
             max_events_per_task: Some(8),
@@ -2326,6 +2368,7 @@ mod tests {
         let store = InMemoryTaskStore::with_config(TaskStoreConfig {
             max_capacity: Some(4),
             task_ttl: None,
+            parked_task_ttl: None,
             eviction_interval: 0,
             max_page_size: 100,
             max_events_per_task: Some(8),
@@ -2358,6 +2401,7 @@ mod tests {
         let config = TaskStoreConfig {
             max_capacity: Some(2),
             task_ttl: None,
+            parked_task_ttl: None,
             eviction_interval: 1,
             max_page_size: 100,
             max_events_per_task: Some(8),
@@ -2407,6 +2451,7 @@ mod tests {
         let config = TaskStoreConfig {
             max_capacity: Some(2),
             task_ttl: None,
+            parked_task_ttl: None,
             eviction_interval: 1,
             max_page_size: 100,
             max_events_per_task: Some(8),
@@ -2451,6 +2496,7 @@ mod tests {
         let config = TaskStoreConfig {
             max_capacity: Some(2),
             task_ttl: None,
+            parked_task_ttl: None,
             eviction_interval: 1,
             max_page_size: 100,
             max_events_per_task: Some(8),
@@ -2879,6 +2925,7 @@ mod artifact_delta_tests {
         let store = InMemoryTaskStore::with_config(TaskStoreConfig {
             max_capacity: None,
             task_ttl: Some(Duration::from_millis(1)),
+            parked_task_ttl: None,
             eviction_interval: 1,
             max_page_size: 100,
             max_events_per_task: Some(8),

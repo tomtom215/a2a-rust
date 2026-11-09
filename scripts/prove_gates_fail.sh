@@ -517,6 +517,7 @@ injection_for() {
         "cargo clippy"*"--features tracing"*)
             echo "clippy:$CLIENT_LIB:tracing" ;;
         "cargo clippy"*"--features tool-loop"*) echo "clippy:$SERVER_LIB:tool-loop" ;;
+        "cargo clippy"*"--features skills"*) echo "clippy:$SERVER_LIB:skills" ;;
         "cargo clippy"*"--features tls-rustls"*)
             echo "clippy:$CLIENT_LIB:tls-rustls" ;;
         "cargo clippy"*"--features sqlite"*)
@@ -542,6 +543,7 @@ injection_for() {
         "cargo test"*"--features tracing"*)
             echo "test:$CLIENT_LIB:tracing" ;;
         "cargo test"*"--features tool-loop"*) echo "test:$SERVER_LIB:tool-loop" ;;
+        "cargo test"*"--features skills"*) echo "test:$SERVER_LIB:skills" ;;
         "cargo test -p a2a-protocol-client --features tls-rustls")
             echo "test:$CLIENT_LIB:tls-rustls" ;;
         "cargo test -p a2a-protocol-server --features tls-rustls")

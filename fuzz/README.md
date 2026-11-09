@@ -29,12 +29,15 @@ Fuzz testing validates that every parser of peer input handles arbitrary and mal
 | `sealed_ring_value` | `Aes256GcmCipher`'s open of a stored value (key-id length and id, nonce, tag); asserts nothing unsealed opens and a sealed value changed in any way is refused |
 | `sealed_part` | `EncryptedTaskStore`'s read of a stored part (media type, `sealedPart` shape, version, base64); same assertions, and an unsealed part passes only under `accept_unsealed_parts` |
 | `sealed_push_config` | The SQL push-config stores' read of a stored config with a cipher (`a2a-sealed:v1:` prefix, base64); same assertions |
+| `skill_frontmatter` | An Agent Skills `SKILL.md` (ADR 0035): the frontmatter's size bound, the reader of the YAML subset (scalar styles, escapes, folding, one level of mapping, and a name for anything it does not read) and each field's and the body's checks |
 | `sealed_audit_value` | `AuditLog::reveal` and `digest_matches` over a protected record with one value, wrapped key or keyed digest changed; asserts a change is refused, read as erased or as clear text as documented, and never reveals another name or matches |
 
 The server's private parsers are reached through `a2a_protocol_server::fuzzing`,
 and the client's through `a2a_protocol_client::fuzzing`: modules compiled only
 under `cfg(fuzzing)` (set by `cargo fuzz`) and `cfg(test)`, which forward to
-each parser unchanged.
+each parser unchanged. The one exception is the Agent Skills reader, which
+`skill_frontmatter` reaches through `a2a_protocol_server::skills::fuzz_frontmatter`
+(the same two `cfg`s, and tested in the module that owns it).
 
 ### Every parser of peer input, and what fuzzes it
 
@@ -66,6 +69,7 @@ is a peer too: the `store → server` rows read what the stores hold.
 | store → server | a sealed value at rest | `Aes256GcmCipher::open` (`encryption`) | `sealed_ring_value` |
 | store → server | a sealed task part | `EncryptedTaskStore`'s `open_part` | `sealed_part` |
 | store → server | a sealed push config | `Sealing::decode_text` (`sqlite`, `postgres`) | `sealed_push_config` |
+| operator or project → server | a skills directory's `SKILL.md` | `skills` frontmatter and YAML reader (`skills` feature) | `skill_frontmatter` |
 | store → server | a sealed audit value, wrapped subject key, keyed digest | `AuditPrivacy::reveal`, `unwrap`, `digest_matches` (`audit`) | `sealed_audit_value` |
 
 Not covered: the SQL stores' page tokens are split by

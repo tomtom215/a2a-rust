@@ -1,0 +1,17 @@
+--- cargo install --path tools/a2a-cli --debug --root /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/cli-install (no --locked)
+  Installing a2a-cli v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-aefdbbc4b8f3742b2/tools/a2a-cli)
+    Updating crates.io index
+     Locking 230 packages to highest Rust 1.94 compatible versions
+      Adding matchit v0.8.4 (available: v0.8.6)
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `debug` profile [unoptimized] target(s) in 3m 51s
+  Installing /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/cli-install/bin/a2a
+   Installed package `a2a-cli v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-aefdbbc4b8f3742b2/tools/a2a-cli)` (executable `a2a`)
+warning: be sure to add `/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/cli-install/bin` to your PATH to be able to run the installed binaries
+
+real	3m51.633s
+user	2m22.855s
+sys	0m15.108s
+install exit: 0
+a2a 0.16.0

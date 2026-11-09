@@ -69,16 +69,54 @@ pub(super) const SQLITE_APPEND: &str = concat!(
 );
 
 #[cfg(feature = "postgres")]
+macro_rules! pg_append {
+    () => {
+        concat!(
+            "INSERT INTO tenant_task_events (tenant_id, task_id, seq, payload) SELECT $1, $2, $3, $4 WHERE ",
+            crate::store::claim::fence_sql!(postgres "$5::text", "$2"),
+            " ON CONFLICT (tenant_id, task_id, seq) DO NOTHING"
+        )
+    };
+}
+
+#[cfg(feature = "postgres")]
 /// Fenced by the turn's claim token, `$5` (`crate::store::claim`).
-pub(super) const PG_APPEND: &str = concat!(
-    "INSERT INTO tenant_task_events (tenant_id, task_id, seq, payload) SELECT $1, $2, $3, $4 WHERE ",
-    crate::store::claim::fence_sql!(postgres "$5::text", "$2"),
-    " ON CONFLICT (tenant_id, task_id, seq) DO NOTHING"
+pub(super) const PG_APPEND: &str = pg_append!();
+
+#[cfg(feature = "postgres")]
+/// [`PG_APPEND`] that also announces the append, as
+/// `postgres_store::event_log::APPEND_NOTIFY_SQL` does: channel `$6`, payload
+/// `$7`.
+pub(super) const PG_APPEND_NOTIFY: &str = concat!(
+    "WITH ins AS (",
+    pg_append!(),
+    " RETURNING 1) SELECT pg_notify($6, $7) FROM ins"
 );
 
 #[cfg(feature = "sqlite")]
 pub(super) const SQLITE_SELECT_AFTER: &str = "SELECT seq, payload FROM tenant_task_events \
      WHERE tenant_id = ?1 AND task_id = ?2 AND seq > ?3 ORDER BY seq LIMIT ?4";
+
+/// The tenant store's append of `payload` at `position`, announcing it under
+/// `key` when there is one (see `PG_APPEND_NOTIFY`).
+#[cfg(feature = "postgres")]
+pub(super) fn pg_append_query<'q>(
+    partition: &'q str,
+    task: &'q str,
+    position: i64,
+    payload: &'q serde_json::Value,
+    fence: Option<&'q str>,
+    key: Option<&'q str>,
+) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    let sql = super::log_notify::append_sql(key, PG_APPEND, PG_APPEND_NOTIFY);
+    let append = sqlx::query(sql)
+        .bind(partition)
+        .bind(task)
+        .bind(position)
+        .bind(payload)
+        .bind(fence);
+    super::log_notify::announce(append, key)
+}
 
 #[cfg(feature = "postgres")]
 pub(super) const PG_SELECT_AFTER: &str = "SELECT seq, payload FROM tenant_task_events \

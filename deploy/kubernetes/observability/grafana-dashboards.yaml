@@ -858,7 +858,7 @@ data:
           "id": 12,
           "type": "timeseries",
           "title": "Agent runs per second, by outcome",
-          "description": "One per run of the tool loop (gen_ai.invoke_agent.duration's count). error_type: the model's error when a turn failed, tool_fatal, turn_limit, budget_exhausted, cancelled; ok for a run that answered.",
+          "description": "One per run of the tool loop (gen_ai.invoke_agent.duration's count). error_type: the model's error when a turn failed, tool_fatal, turn_limit, budget_exhausted, empty_answer, cancelled; ok for a run that answered.",
           "datasource": {
             "type": "prometheus",
             "uid": "a2a-prometheus"

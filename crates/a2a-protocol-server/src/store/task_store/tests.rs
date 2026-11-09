@@ -149,6 +149,7 @@ fn task_store_config_clone_and_debug() {
     let config = super::TaskStoreConfig {
         max_capacity: Some(500),
         task_ttl: None,
+        parked_task_ttl: None,
         eviction_interval: 32,
         max_page_size: 100,
         max_events_per_task: Some(8),

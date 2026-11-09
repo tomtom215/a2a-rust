@@ -1,0 +1,78 @@
+{
+  "case": "C",
+  "env": {
+    "C_EXTRA_BODY": "{\"max_tokens\":40}",
+    "C_THINKING": "1"
+  },
+  "finish_reasons": [
+    "{\"arrayValue\": {\"values\": [{\"stringValue\": \"error\"}]}}",
+    "{\"arrayValue\": {\"values\": [{\"stringValue\": \"length\"}]}}"
+  ],
+  "header": {
+    "load_at_start": "0.89",
+    "model_file": "gemma-4-E2B-it-Q4_0.gguf",
+    "time": "2026-11-08T01:29:05Z",
+    "title": "M-1 empty and cut-off final replies"
+  },
+  "invoke_agent_duration": [
+    {
+      "count": "1",
+      "error.type": "empty_answer"
+    },
+    {
+      "count": "2",
+      "error.type": "empty_answer"
+    },
+    {
+      "count": "2",
+      "error.type": "empty_answer"
+    },
+    {
+      "count": "3",
+      "error.type": "empty_answer"
+    }
+  ],
+  "prompt": "What is 17 times 23? Think it through.",
+  "runs": {
+    "grpc": {
+      "answer_metadata": null,
+      "answer_text": null,
+      "failure": "budget-exhausted",
+      "seconds": 3.1,
+      "state": "TASK_STATE_FAILED",
+      "status_message_metadata": {
+        "a2a-rust.com/failure": "budget-exhausted"
+      },
+      "status_text": "the model stopped at its output limit before it wrote any text",
+      "trace_lines": 0
+    },
+    "jsonrpc": {
+      "answer_metadata": null,
+      "answer_text": null,
+      "failure": "budget-exhausted",
+      "http": 200,
+      "rpc_error": null,
+      "seconds": 4.1,
+      "state": "TASK_STATE_FAILED",
+      "status_message_metadata": {
+        "a2a-rust.com/failure": "budget-exhausted"
+      },
+      "status_text": "the model stopped at its output limit before it wrote any text",
+      "trace_lines": 0
+    },
+    "rest": {
+      "answer_metadata": null,
+      "answer_text": null,
+      "failure": "budget-exhausted",
+      "http": 200,
+      "raw_error": null,
+      "seconds": 3.1,
+      "state": "TASK_STATE_FAILED",
+      "status_message_metadata": {
+        "a2a-rust.com/failure": "budget-exhausted"
+      },
+      "status_text": "the model stopped at its output limit before it wrote any text",
+      "trace_lines": 0
+    }
+  }
+}

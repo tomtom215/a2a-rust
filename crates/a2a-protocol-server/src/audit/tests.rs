@@ -377,7 +377,7 @@ fn the_audited_task_store_overrides_every_task_store_method() {
     let wanted = methods(&trait_src, "pub trait TaskStore");
     let have = methods(&wrapper_src, "impl TaskStore for AuditedTaskStore");
     assert!(
-        wanted.len() >= 19,
+        wanted.len() >= 20,
         "parsed {} trait methods: {wanted:?}",
         wanted.len()
     );

@@ -361,3 +361,34 @@ async fn a_trim_reaches_the_wrapped_log() {
     assert_eq!(store.trim_event_log(&task.id, 3).await.unwrap(), 2);
     assert_eq!(inner.earliest_event_seq(&task.id).await.unwrap(), Some(3));
 }
+
+/// The wrapper hands on the wrapped store's watch of its event log: the watch
+/// it returns is the wrapped store's own (a notification to the inner store
+/// wakes it), and a store that watches nothing gives none. Without the forward
+/// the trait's default answers `None` for every wrapped store.
+#[test]
+fn the_watch_of_the_event_log_is_the_wrapped_stores() {
+    use futures_util::FutureExt as _;
+    let wrap = |inner: Arc<dyn TaskStore>| AuditedTaskStore {
+        inner,
+        log: Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new()))),
+        metrics: Arc::new(NoopMetrics),
+    };
+    let id = a2a_protocol_types::task::TaskId::new("t-1");
+    let inner = Arc::new(crate::store::log_wake::testing::Watching::new());
+    let watch = wrap(Arc::clone(&inner) as Arc<dyn TaskStore>)
+        .watch_event_log(&id)
+        .expect("the wrapped store watches");
+    inner
+        .wakers
+        .notify(&crate::store::log_wake::key("", "t-1").expect("fits"));
+    assert_eq!(watch.now_or_never(), Some(crate::store::LogWake::Notified));
+
+    let mut mute = crate::store::log_wake::testing::Watching::new();
+    mute.mute = true;
+    assert!(
+        wrap(Arc::new(mute) as Arc<dyn TaskStore>)
+            .watch_event_log(&id)
+            .is_none()
+    );
+}

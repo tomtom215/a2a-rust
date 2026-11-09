@@ -293,7 +293,7 @@ jobs:
       # them, against exactly one that was current. release.yml checks the
       # four crate manifests against the tag; prose is not a manifest.
       - name: Dependency snippets name the current release line
-        run: python3 scripts/check_doc_versions.py
+        run: python3 scripts/check_doc_versions.py --self-test && python3 scripts/check_doc_versions.py
 
       # The book had pages for ten of the sixteen crates under examples/ and
       # said so in one sentence nothing kept true; check_book_code.sh asks
@@ -606,6 +606,10 @@ jobs:
         run: cargo clippy -p a2a-protocol-server --all-targets --features tool-loop -- -D warnings
       - name: Clippy (tool-loop + tls-rustls)
         run: cargo clippy -p a2a-protocol-server --all-targets --features tool-loop,tls-rustls -- -D warnings
+      # Agent Skills (ADR 0035) adds no dependency, so its leg is the feature
+      # built alone: it implies `tool-loop` and nothing else.
+      - name: Clippy (skills)
+        run: cargo clippy -p a2a-protocol-server --all-targets --features skills -- -D warnings
       - name: Clippy (websocket)
         run: cargo clippy --workspace --all-targets --features websocket -- -D warnings
       - name: Clippy (grpc)
@@ -702,6 +706,8 @@ jobs:
         run: cargo nextest run --profile ci -p a2a-protocol-server --features axum
       - name: Test (tool-loop feature)
         run: cargo nextest run --profile ci -p a2a-protocol-server --features tool-loop
+      - name: Test (skills feature)
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features skills
       # Dedicated websocket/grpc legs: --all-features also compiles these,
       # but a feature-specific regression (missing gate, dep drift) only
       # surfaces when the feature is built in isolation.

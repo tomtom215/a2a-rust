@@ -8,6 +8,8 @@ process and wrong for two: each replica admits the full configured rate, so
 **N replicas admit N times the limit**. Two limiters configured for 5 requests
 per window admit 10 — measured, not inferred.
 
+> **Cargo feature.** `PostgresRateLimitCounter` needs the `postgres` feature: `a2a-protocol-sdk = { version = "0.16", features = ["postgres"] }`, or `a2a-protocol-server = { version = "0.16", features = ["postgres"] }` on its own.
+
 If the limiter exists to protect an upstream with a real quota, that is the
 whole point of it defeated, and it fails in the direction that matters least
 when you have one replica and most when you have twenty.
@@ -124,6 +126,16 @@ older ones, cannot delete a window another replica is still counting in. A
 `RateLimitCounter` of your own, backed by a store with a clock every replica
 shares, can do the same; one with no clock of its own should count under the
 `window` it is given.
+
+Window numbers of different widths are not comparable, and the limiter (60 s by
+default) and `AuthFailureThrottle` (300 s) can share one counter and its table.
+So each row records the width it was numbered under (`window_secs`), and a sweep
+removes its own width's stale rows and leaves the others. Before 0.16.0 a sweep
+numbered the cut-off by its own width and deleted every other width's live rows:
+measured, a 60 s sweep removed a 300 s row whose count was 3. A table made by an
+earlier release gains the column when the counter starts, and the rows that
+record no width are removed by the first sweep, which forgets a window or two of
+counts once.
 
 The `Retry-After` on a refusal is still computed from the replica's own clock,
 so with a skewed replica it can be off by the skew.

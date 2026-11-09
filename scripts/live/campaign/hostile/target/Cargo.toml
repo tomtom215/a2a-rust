@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The hostile-campaign target (wave 2): one server whose store, auth, tenancy,
+# steering, push guard and bindings are chosen from the environment, and whose
+# executor misbehaves on request (the message text selects it, see src/exec.rs).
+# Outside the workspace, no lockfile committed, like scripts/live/replica.
+# Build (a harness: CI's `-D warnings` is not needed):
+#   CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 \
+#   CARGO_TARGET_DIR=$SP/hostile/target cargo build \
+#     --manifest-path scripts/live/campaign/hostile/target/Cargo.toml
+
+[package]
+name = "a2a-hostile-target"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[[bin]]
+name = "a2a-hostile-target"
+path = "src/main.rs"
+
+[dependencies]
+a2a-protocol-server = { path = "../../../../../crates/a2a-protocol-server", features = ["postgres", "sqlite", "websocket", "grpc", "auth-jwt", "encryption"] }
+a2a-protocol-types = { path = "../../../../../crates/a2a-protocol-types" }
+tokio = { version = "1", features = ["full"] }
+
+[workspace]

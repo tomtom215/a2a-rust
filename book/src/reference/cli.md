@@ -181,7 +181,7 @@ library.
 | Code | Meaning |
 |---|---|
 | `0` | Success. |
-| `1` | A protocol or transport error, or a failed offline check. One `error: …` line on standard error. When the agent answered with a structured error, a second line carries it as JSON, `{"error":{"code":…,"message":…}}`, so a script can read the code. A network command prints nothing on standard output; an offline command still prints its report. |
+| `1` | A protocol or transport error, or a failed offline check. An `error: …` line on standard error. When the agent answered with a structured error, the next line carries it as JSON, `{"error":{"code":…,"message":…}}`, so a script can read the code. The SDK's own log line for the same failure (`WARN a2a_protocol_client::transport::jsonrpc: JSON-RPC error response …`) may come before them, because the CLI installs the SDK's subscriber: read the last line, or the last two, and not the first. A network command prints nothing on standard output; an offline command still prints its report. |
 | `2` | A usage error: unknown flag or command, missing argument, or a value that does not parse (`--timeout 0`, `--header` without `=`). Reported before any network call. Also returned when the `OTEL_*` environment names a telemetry configuration the SDK cannot use. |
 
 From the recorded session, a task that does not exist:

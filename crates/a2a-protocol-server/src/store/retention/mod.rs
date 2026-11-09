@@ -58,12 +58,25 @@
 //!
 //! # What it will not delete
 //!
-//! Only terminal tasks — `Completed`, `Failed`, `Canceled`, `Rejected`. A task
-//! that is still `Working`, or parked in `InputRequired` waiting for a human,
-//! is never eligible however old it is. The in-memory store does evict
-//! non-terminal tasks as a last resort under capacity pressure, because RAM is
-//! a hard bound; disk is not, and an unbounded-age `InputRequired` task is a
-//! workflow waiting on someone, not a leak.
+//! Terminal tasks — `Completed`, `Failed`, `Canceled`, `Rejected` — and,
+//! only when the policy says so, parked ones.
+//!
+//! A task that is still `Working` is never eligible, however old it is. One
+//! parked in `InputRequired` or `AuthRequired` is a workflow waiting on
+//! someone, not a leak, and by default it is never eligible either: the
+//! in-memory store does evict non-terminal tasks as a last resort under
+//! capacity pressure, because RAM is a hard bound, but disk is not.
+//!
+//! An operator whose parked tasks are abandoned by the people they wait on can
+//! opt in with [`RetentionPolicy::with_parked_max_age`] (ADR 0056, which
+//! amends ADR 0011). A parked task whose last update is older than that is
+//! then **deleted**, with its event log, as a terminal one is: a store cannot
+//! write the cancellation a handler would (the event, the push notification,
+//! the audit record), so it does not pretend to. A client that answers it
+//! afterwards is told the task was not found; a stream open on it ends
+//! without a terminal state. A task that a turn is running on right now (a
+//! live claim) is skipped, whatever its age. The count is
+//! [`PurgeReport::parked_tasks_deleted`].
 
 // Gated as `effective_batch_size` is: its callers are the SQL sweeps, and
 // without a backend it is dead code under `-D warnings`.
@@ -108,6 +121,13 @@ pub fn terminal_states() -> Vec<TaskState> {
     TERMINAL_STATES.to_vec()
 }
 
+/// The states [`RetentionPolicy::parked_max_age`] may delete: a task waiting
+/// for input or authorization. Listed here for the reason
+/// [`TERMINAL_STATES`] is, and checked in the tests against
+/// [`TaskState::is_interrupted`] for every variant.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+const PARKED_STATES: [TaskState; 2] = [TaskState::InputRequired, TaskState::AuthRequired];
+
 /// How long an idempotency key is kept when nothing else is asked for.
 ///
 /// One day. The number has to exceed the longest window in which a client
@@ -139,6 +159,32 @@ pub struct RetentionPolicy {
     /// by the database rather than the caller — an application clock that runs
     /// fast would otherwise delete work that is younger than it looks.
     pub terminal_max_age: Duration,
+
+    /// Parked tasks (`input-required`, `auth-required`) whose last update is
+    /// older than this are eligible too. `None`, the default, deletes none:
+    /// a parked task is a workflow waiting on someone, and every release
+    /// before this field kept it for ever (ADR 0011; ADR 0056 amends it).
+    ///
+    /// # What deleting one costs
+    ///
+    /// The task is deleted, with its event log, not cancelled: a store cannot
+    /// write what a `CancelTask` writes (the event a stream replays, the push
+    /// notification, the audit record), and a purge that made up a
+    /// cancellation without them would leave a task that says `canceled` and
+    /// a history that does not. So a client that answers the task afterwards
+    /// is told it was not found, and a stream open on it ends without a
+    /// terminal state. The age is measured from `updated_at`, by the
+    /// database's clock, as for terminal tasks.
+    ///
+    /// A task that a turn is running on now (an unexpired turn claim) is
+    /// skipped however old it is: a continuation in flight is not abandoned.
+    ///
+    /// # Idempotency keys
+    ///
+    /// A key must outlive the task it names, so
+    /// [`effective_idempotency_key_max_age`](Self::effective_idempotency_key_max_age)
+    /// is never below this either.
+    pub parked_max_age: Option<Duration>,
 
     /// Rows per `DELETE`. Default 1,000.
     ///
@@ -209,6 +255,7 @@ impl RetentionPolicy {
             terminal_max_age,
             batch_size: 1_000,
             idempotency_key_max_age: Some(DEFAULT_IDEMPOTENCY_KEY_MAX_AGE),
+            parked_max_age: None,
             max_batches: None,
             max_events_per_live_task: None,
         }
@@ -220,6 +267,19 @@ impl RetentionPolicy {
     #[must_use]
     pub const fn with_max_events_per_live_task(mut self, max: Option<u64>) -> Self {
         self.max_events_per_live_task = max;
+        self
+    }
+
+    /// Deletes parked tasks (`input-required`, `auth-required`) that have sat
+    /// unanswered for `max_age`. Unset by default: nothing parked is deleted.
+    ///
+    /// See [`parked_max_age`](Self::parked_max_age) for what it deletes and
+    /// what that costs. Measured in whole seconds, as
+    /// [`terminal_max_age`](Self::terminal_max_age) is: a sub-second part is
+    /// dropped.
+    #[must_use]
+    pub const fn with_parked_max_age(mut self, max_age: Duration) -> Self {
+        self.parked_max_age = Some(max_age);
         self
     }
 
@@ -242,7 +302,8 @@ impl RetentionPolicy {
     }
 
     /// The key age the sweep actually uses: never below
-    /// [`terminal_max_age`](Self::terminal_max_age).
+    /// [`terminal_max_age`](Self::terminal_max_age), nor below
+    /// [`parked_max_age`](Self::parked_max_age) when one is set.
     ///
     /// A key must outlive the task it names. Deleting one while its task is
     /// still retained turns the next retry into a second task rather than a
@@ -253,8 +314,10 @@ impl RetentionPolicy {
     /// instead of being honoured into a defect.
     #[must_use]
     pub fn effective_idempotency_key_max_age(&self) -> Option<Duration> {
-        self.idempotency_key_max_age
-            .map(|age| age.max(self.terminal_max_age))
+        self.idempotency_key_max_age.map(|age| {
+            age.max(self.terminal_max_age)
+                .max(self.parked_max_age.unwrap_or_default())
+        })
     }
 
     /// Bounds how many batches a single sweep runs.
@@ -291,8 +354,17 @@ impl RetentionPolicy {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct PurgeReport {
-    /// Task rows deleted.
+    /// Terminal task rows deleted.
     pub tasks_deleted: u64,
+    /// Parked task rows deleted for being older than
+    /// [`RetentionPolicy::parked_max_age`]. Zero without it, which is the
+    /// default.
+    ///
+    /// Counted apart from [`tasks_deleted`](Self::tasks_deleted), and not in
+    /// it: a terminal task is finished work being forgotten, a parked one is
+    /// a wait nobody answered, and an operator watching the second wants to
+    /// see it move on its own.
+    pub parked_tasks_deleted: u64,
     /// Side-table rows this sweep had to reclaim itself: artifact-journal
     /// rows and event-log rows whose task was deleted.
     ///
@@ -354,140 +426,12 @@ pub(crate) fn terminal_state_labels() -> Vec<String> {
     terminal_states().iter().map(TaskState::to_string).collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn terminal_states_matches_is_terminal_for_every_variant() {
-        // `TaskState::ALL` is only reachable here, in test code compiled
-        // against the workspace copy of a2a-protocol-types. That is the point:
-        // it gives this crate an enumeration of a `#[non_exhaustive]` foreign
-        // enum without the library depending on an API the published version
-        // does not have yet.
-        let purgeable = terminal_states();
-        for state in TaskState::ALL {
-            assert_eq!(
-                purgeable.contains(&state),
-                state.is_terminal(),
-                "{state} must be purgeable exactly when it is terminal"
-            );
-        }
-        assert_eq!(
-            purgeable.len(),
-            TaskState::ALL.iter().filter(|s| s.is_terminal()).count(),
-            "TERMINAL_STATES has drifted from is_terminal(); a new terminal \
-             state would otherwise never be purged"
-        );
-    }
-
-    #[test]
-    #[cfg(any(feature = "sqlite", feature = "postgres"))]
-    fn labels_are_the_stored_spellings() {
-        let labels = terminal_state_labels();
-        assert!(labels.contains(&"TASK_STATE_COMPLETED".to_string()));
-        assert!(labels.contains(&"TASK_STATE_REJECTED".to_string()));
-        assert_eq!(labels.len(), terminal_states().len());
-        // The store writes `task.status.state.to_string()`; if that ever stops
-        // agreeing with what a purge looks for, every sweep silently becomes a
-        // no-op.
-        assert_eq!(labels[0], TaskState::Completed.to_string());
-    }
-
-    #[test]
-    #[cfg(any(feature = "sqlite", feature = "postgres"))]
-    fn zero_batch_size_cannot_stall_a_sweep() {
-        let policy = RetentionPolicy::new(Duration::from_secs(1)).with_batch_size(0);
-        assert_eq!(
-            policy.effective_batch_size(),
-            1,
-            "a zero batch size would delete nothing while looping forever"
-        );
-    }
-
-    #[test]
-    fn builders_compose() {
-        let policy = RetentionPolicy::new(Duration::from_secs(60))
-            .with_batch_size(50)
-            .with_max_batches(3);
-        assert_eq!(policy.terminal_max_age, Duration::from_secs(60));
-        assert_eq!(policy.batch_size, 50);
-        assert_eq!(policy.max_batches, Some(3));
-    }
-
-    #[test]
-    fn report_defaults_to_nothing_done_but_complete() {
-        let report = PurgeReport::default();
-        assert_eq!(report.tasks_deleted, 0);
-        assert!(!report.complete, "default must not claim a completed sweep");
-    }
+/// The `state` column values the parked sweep matches; built as
+/// [`terminal_state_labels`] is.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+pub(crate) fn parked_state_labels() -> Vec<String> {
+    PARKED_STATES.iter().map(TaskState::to_string).collect()
 }
 
-// ── The idempotency key TTL and its floor ────────────────────────────────────
-
 #[cfg(test)]
-mod key_age_tests {
-    use super::{DEFAULT_IDEMPOTENCY_KEY_MAX_AGE, RetentionPolicy};
-    use std::time::Duration;
-
-    #[test]
-    fn a_new_policy_expires_keys_after_a_day() {
-        let policy = RetentionPolicy::new(Duration::from_secs(3600));
-        assert_eq!(
-            policy.idempotency_key_max_age,
-            Some(DEFAULT_IDEMPOTENCY_KEY_MAX_AGE),
-            "keys accumulated for ever before this default existed"
-        );
-        assert_eq!(DEFAULT_IDEMPOTENCY_KEY_MAX_AGE, Duration::from_hours(24));
-    }
-
-    /// The invariant the whole design rests on: a key outlives the task it
-    /// names.
-    ///
-    /// A key expiring while its task is still retained does not produce a
-    /// replay and does not produce a clear "that task is gone" — it produces
-    /// a *second* task alongside the first, and the caller ends up with two
-    /// ids for one logical send. So a policy asking for that is clamped
-    /// rather than obeyed.
-    #[test]
-    fn a_key_age_below_the_task_age_is_raised_to_it() {
-        let policy = RetentionPolicy::new(Duration::from_hours(30 * 24))
-            .with_idempotency_key_max_age(Some(Duration::from_secs(60)));
-        assert_eq!(
-            policy.effective_idempotency_key_max_age(),
-            Some(Duration::from_hours(30 * 24)),
-            "a key must not be swept while the task it names is still kept"
-        );
-        assert_eq!(
-            policy.idempotency_key_max_age,
-            Some(Duration::from_secs(60)),
-            "the field itself is untouched — the clamp is in the accessor, so \
-             what the operator set stays readable"
-        );
-    }
-
-    /// Counter-test: a key age above the task age is honoured exactly.
-    ///
-    /// Without it, an accessor that always returned `terminal_max_age` would
-    /// satisfy the test above.
-    #[test]
-    fn a_key_age_above_the_task_age_is_used_as_given() {
-        let policy = RetentionPolicy::new(Duration::from_secs(3600))
-            .with_idempotency_key_max_age(Some(Duration::from_hours(7 * 24)));
-        assert_eq!(
-            policy.effective_idempotency_key_max_age(),
-            Some(Duration::from_hours(7 * 24))
-        );
-    }
-
-    #[test]
-    fn opting_out_stays_opted_out() {
-        let policy =
-            RetentionPolicy::new(Duration::from_secs(3600)).with_idempotency_key_max_age(None);
-        assert_eq!(
-            policy.effective_idempotency_key_max_age(),
-            None,
-            "the clamp must not resurrect a sweep the operator turned off"
-        );
-    }
-}
+mod tests;

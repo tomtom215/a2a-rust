@@ -1,0 +1,9 @@
+== amplification: calls per reply, tool result size (load 1.44)
+   10000 calls x 8 turns: TASK_STATE_FAILED in 5.66s, RSS 21292 -> peak 503124 kB
+   40000 calls x 3 turns: TASK_STATE_FAILED in 3.4s, RSS 20700 -> peak 449016 kB
+   90000 calls x 4 turns: TASK_STATE_FAILED in 13.73s, RSS 21512 -> peak 1424456 kB
+   tool result 1024 KiB: TASK_STATE_COMPLETED in 0.12s; GetTask body 1048958 B; trace 1048622 chars; model request 1049555 B; '' []
+   tool result 4096 KiB: TASK_STATE_COMPLETED in 0.39s; GetTask body 4194686 B; trace 4194350 chars; model request 4195283 B; '' []
+   tool result 8192 KiB: TASK_STATE_COMPLETED in 0.72s; GetTask body 8388990 B; trace 8388654 chars; model request 8389587 B; '' []
+   tool result 16384 KiB: TASK_STATE_FAILED in 1.01s; GetTask body 640 B; trace 0 chars; model request 16778196 B; '[-32603] internal error (reference 97aa18107792)' ['2026-11-08T02:01:45.518643Z ERROR a2a_protocol_server::error::withheld: executor failed; its internal error is withheld from the caller task_id=cf75e95d-69c9-48d3-99c7-cfd9f71f913c reference=97aa18107792 error=event size 16777462 bytes exceeds maximum 16777216']
+   tool result 20480 KiB: TASK_STATE_FAILED in 1.19s; GetTask body 640 B; trace 0 chars; model request 20972500 B; '[-32603] internal error (reference 8882232acf2b)' ['2026-11-08T02:01:47.730425Z ERROR a2a_protocol_server::error::withheld: executor failed; its internal error is withheld from the caller task_id=9747f98a-4fd0-465c-a3c9-d668c684dbb5 reference=8882232acf2b error=event size 20971766 bytes exceeds maximum 16777216']

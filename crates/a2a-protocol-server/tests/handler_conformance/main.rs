@@ -23,6 +23,7 @@ mod s3_agent;
 mod auth_before_store;
 mod cancel_and_push;
 mod extension_activation;
+mod list_bad_token_wire;
 mod list_empty_wire;
 mod not_found_wire;
 mod push_gate;

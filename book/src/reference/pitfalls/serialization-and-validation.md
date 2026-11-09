@@ -59,6 +59,10 @@ match task.status.state {
 
 `TaskId` and `ContextId` should not accept empty or whitespace-only strings. Build them with `TaskId::try_new` / `ContextId::try_new`, which reject such values; `new`, `From<String>` and `From<&str>` accept them for backward compatibility.
 
+### A NUL character is refused in a `SendMessage`, and a page token you did not get from the server is too
+
+A request with U+0000 in any string, a key included (text, filename, URL, metadata, extension, a `data` value), is refused with `InvalidParams` before anything is stored, on every store: PostgreSQL's `jsonb` cannot hold one, and the stores used to disagree about it. A `ListTasks` page token that is not the previous page's `nextPageToken`, unchanged, is `InvalidParams` too; it used to answer an empty page, which reads as the end of the listing.
+
 ### A file part needs a source
 
 v1.0 carries a file as `Part::raw(bytes)` or `Part::url(uri)`. The v0.3 `FileContent` type is deprecated, and `Part::file(FileContent)` turns one with neither `bytes` nor `uri` into an empty raw part instead of refusing it, so call `FileContent::validate()` first if you still use it.

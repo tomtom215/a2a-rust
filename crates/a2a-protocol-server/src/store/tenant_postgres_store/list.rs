@@ -81,10 +81,10 @@ impl TenantAwarePostgresTaskStore {
         // descending (spec §3.1.4) within the current tenant. The cursor
         // timestamp is a UTC wall-clock string reconstructed via
         // `::timestamp AT TIME ZONE 'UTC'`, independent of session time
-        // zone. A token not produced by us decodes to None → empty page.
+        // zone. A token not produced by us decodes to None → InvalidParams.
         if let Some(ref token) = params.page_token {
             let Some((cursor_ua, cursor_id)) = crate::store::cursor::decode(token) else {
-                return Ok(TaskListResponse::new(Vec::new()));
+                return Err(crate::store::pagination::unrecognised_token());
             };
             bind_values.push(cursor_ua.to_string());
             let ua_idx = bind_values.len();

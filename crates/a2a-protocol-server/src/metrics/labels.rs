@@ -152,6 +152,26 @@ pub mod queue_handoff_error {
     pub const CHANNEL_CLOSED: &str = "channel_closed";
 }
 
+/// Why a `SubscribeToTask` stream stopped waiting on a task's event log, as
+/// [`Metrics::on_subscribe_wake`](crate::metrics::Metrics::on_subscribe_wake)
+/// reports it (audit E-F25 (b), ADR 0057).
+pub mod subscribe_wake {
+    /// The store said an event was appended to the task's log
+    /// ([`LogWake::Notified`](crate::store::LogWake::Notified)).
+    pub const NOTIFICATION: &str = "notification";
+    /// The store lost the source of its notifications and has it again, so it
+    /// woke every stream to look
+    /// ([`LogWake::Resynced`](crate::store::LogWake::Resynced)). A rising
+    /// count is a database connection that keeps dropping.
+    pub const RESYNC: &str = "resync";
+    /// Nothing woke the stream before its timer ran out.
+    ///
+    /// On a store with notifications, a wait nothing was appended in, or a
+    /// notification that never arrived. (A store without them reports no wake
+    /// at all.)
+    pub const TIMEOUT: &str = "timeout";
+}
+
 /// The control plane's label values (audit H11; ADR 0038 section 4).
 ///
 /// Each set is bounded, so a dashboard can list every value; no task, root,
@@ -198,6 +218,31 @@ pub mod control {
         pub const HALT: &str = "halt";
         /// A resume.
         pub const RESUME: &str = "resume";
+    }
+
+    /// How a steering message ended, as
+    /// [`Metrics::on_steering`](crate::metrics::Metrics::on_steering) reports
+    /// it (ADR 0036). Every value is one message.
+    pub mod steering {
+        /// Put in the inbox of the turn running on this replica.
+        pub const DELIVERED: &str = "delivered";
+        /// Stored for the replica that holds the turn's claim.
+        pub const HANDED_OFF: &str = "handed_off";
+        /// Answered from the message's idempotency key: not delivered again.
+        pub const REPLAYED: &str = "replayed";
+        /// Refused: the turn's inbox holds its capacity.
+        pub const FULL: &str = "full";
+        /// Refused: the turn ended, or its claim lapsed, before delivery.
+        pub const ENDED: &str = "ended";
+        /// Refused: larger than the configured message size.
+        pub const TOO_LARGE: &str = "too_large";
+        /// Refused: the job (or tenant, or server) is halted.
+        pub const HALTED: &str = "halted";
+        /// Accepted, and still unread when the turn ended: dropped with it.
+        pub const UNREAD: &str = "unread";
+        /// Taken from the store into a turn's inbox on this replica, after
+        /// another replica handed it off.
+        pub const RECEIVED: &str = "received";
     }
 
     /// Turn-claim events, as

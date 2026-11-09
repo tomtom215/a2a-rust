@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The agent behind scripts/live/steering/steering_live.py: one replica that
+# takes steering messages (ADR 0036) over a PostgreSQL task store. Outside the
+# workspace, like scripts/live/replica; built from this checkout against the
+# crates beside it. Build, from the repository root (the lockfile is copied so
+# the dependencies are the ones the workspace tests):
+#   cp Cargo.lock scripts/live/steering/Cargo.lock
+#   CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 cargo build -j2 \
+#     --manifest-path scripts/live/steering/Cargo.toml --target-dir target/live/steering
+
+[package]
+name = "a2a-live-steering"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[[bin]]
+name = "a2a-live-steering-agent"
+path = "src/main.rs"
+
+[dependencies]
+a2a-protocol-server = { path = "../../../crates/a2a-protocol-server", features = ["postgres"] }
+a2a-protocol-types = { path = "../../../crates/a2a-protocol-types" }
+tokio = { version = "1", features = ["full"] }
+
+[workspace]

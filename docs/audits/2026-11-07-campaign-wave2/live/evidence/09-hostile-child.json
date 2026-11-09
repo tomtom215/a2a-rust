@@ -1,0 +1,40 @@
+{
+  "header": {
+    "load_at_start": "1.04",
+    "time": "2026-11-08T01:17:38Z",
+    "title": "a delegation to a child that reports an absurd spend"
+  },
+  "huge": {
+    "after_3s": "TASK_STATE_COMPLETED",
+    "coord_log": [
+      "t=1794100662989 DELEGATION grant=Budget { remaining_ms: None, meters: {\"tokens\": 100000} }",
+      "t=1794100662992 DELEGATION ended after 0.0s task=Some(\"fake-task-1\") outcome=Completed"
+    ],
+    "errors": [],
+    "first": "TASK_STATE_COMPLETED",
+    "rpc_error": null,
+    "status_text": ""
+  },
+  "sane": {
+    "after_3s": "TASK_STATE_COMPLETED",
+    "coord_log": [
+      "t=1794100659026 DELEGATION grant=Budget { remaining_ms: None, meters: {\"tokens\": 100000} }",
+      "t=1794100659029 DELEGATION ended after 0.0s task=Some(\"fake-task-1\") outcome=Completed"
+    ],
+    "errors": [],
+    "first": "TASK_STATE_COMPLETED",
+    "rpc_error": null,
+    "status_text": ""
+  },
+  "timeonly": {
+    "after_3s": "TASK_STATE_COMPLETED",
+    "coord_log": [
+      "t=1794100666951 DELEGATION grant=Budget { remaining_ms: Some(56998), meters: {\"tokens\": 9007199254740992} }",
+      "t=1794100666954 DELEGATION ended after 0.0s task=Some(\"fake-task-1\") outcome=Completed"
+    ],
+    "errors": [],
+    "first": "TASK_STATE_COMPLETED",
+    "rpc_error": null,
+    "status_text": ""
+  }
+}

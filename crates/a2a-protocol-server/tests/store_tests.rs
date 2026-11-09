@@ -101,23 +101,6 @@ async fn list_with_page_token_returns_next_page() {
 }
 
 #[tokio::test]
-async fn list_with_invalid_page_token_returns_empty() {
-    let store = InMemoryTaskStore::new();
-    store
-        .save(&make_task("task-1", "ctx", TaskState::Working))
-        .await
-        .unwrap();
-
-    let params = {
-        let mut built = default_list_params();
-        built.page_token = Some("nonexistent-token".into());
-        built
-    };
-    let result = store.list(&params).await.unwrap();
-    assert!(result.tasks.is_empty());
-}
-
-#[tokio::test]
 async fn list_last_page_has_no_next_token() {
     let store = InMemoryTaskStore::new();
     for i in 0..3 {

@@ -478,7 +478,7 @@ id = "AIA-14-4e"
 source = "ai-act"
 provision = "Art. 14(4)(e)"
 requirement = "Natural persons can intervene in or interrupt the system through a 'stop' button or similar procedure that brings it to a halt in a safe state."
-sdk = "`CancelTask` on every binding signals the executor's cancellation token. `RequestHandler::halt` stops one tenant or the whole server: new sends are refused (HTTP 503, gRPC UNAVAILABLE) and every running task's token fires, until `resume`; each is an audit record naming the operator. With a halt store (`with_halt_store`, ADR 0019) a halt reaches every replica sharing it and survives a restart; the PostgreSQL and in-memory stores push it with the write (ADR 0024), so it arrives about one notification round trip after it commits, with the poll interval as the bound when a notification is lost. A cancel on a replica that does not run the task is pushed to the one that does, whose executor's token fires. A `Delegation` in the client cancels the tasks a task delegated to other agents when it is cancelled, so a stop reaches the whole tree. Graceful shutdown cancels in-flight work and reports what ignored cancellation."
+sdk = "`CancelTask` on every binding signals the executor's cancellation token. `RequestHandler::halt` stops one tenant or the whole server: new sends are refused (HTTP 503, gRPC UNAVAILABLE) and every running task's token fires, until `resume`; each is an audit record naming the operator. With a halt store (`with_halt_store`, ADR 0019) a halt reaches every replica sharing it and survives a restart; the PostgreSQL and in-memory stores push it with the write (ADR 0024), so it arrives about one notification round trip after it commits, with the poll interval as the bound when a notification is lost. A cancel on a replica that does not run the task is pushed to the one that does, whose executor's token fires. A `Delegation` in the client cancels the tasks a task delegated to other agents when it is cancelled, so a stop reaches the whole tree. Graceful shutdown cancels in-flight work and reports what ignored cancellation. A running task can also be steered, not only stopped: with `with_steering` a client message that declares the steering extension reaches the executor's inbox, through the same authentication, authorization and rate limit as any send, bounded by an inbox cap and a size cap, refused with `503` and `Retry-After` when full, and recorded as `task.steered` (ADR 0036)."
 status = "partial"
 code = [
   "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs::RequestHandler::on_cancel_task",
@@ -486,6 +486,8 @@ code = [
   "crates/a2a-protocol-server/src/handler/halt.rs::RequestHandler::resume",
   "crates/a2a-protocol-server/src/store/halt/mod.rs::HaltStore",
   "crates/a2a-protocol-client/src/delegation/mod.rs::Delegation",
+  "crates/a2a-protocol-server/src/handler/messaging/steer.rs::RequestHandler::steer_if_running",
+  "crates/a2a-protocol-server/src/steering/inbox.rs::Inbox",
 ]
 tests = [
   "crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs::cancel_task_signals_cancellation_token",
@@ -505,9 +507,17 @@ tests = [
   "crates/a2a-protocol-server/tests/kill_switch_conformance.rs::the_in_memory_halt_store_conforms",
   "crates/a2a-protocol-server/tests/kill_switch_conformance.rs::the_sqlite_halt_store_conforms",
   "crates/a2a-protocol-server/src/conformance/halt/tests.rs::each_flaw_is_named",
+  "crates/a2a-protocol-server/src/handler/messaging/steer_tests.rs::an_executor_that_reads_its_inbox_sees_the_messages_sent_while_it_works",
+  "crates/a2a-protocol-server/src/handler/messaging/steer_bounds_tests.rs::a_full_inbox_answers_503_with_the_executor_blocked",
+  "crates/a2a-protocol-server/tests/steering/main.rs::a_full_inbox_answers_503_with_retry_after_on_each_binding",
+  "crates/a2a-protocol-server/tests/steering/main.rs::a_caller_the_authorizer_refuses_cannot_steer_the_task",
+  "crates/a2a-protocol-server/tests/steering/main.rs::another_caller_cannot_steer_a_task_it_cannot_see",
+  "crates/a2a-protocol-server/src/handler/messaging/steer_tenant_tests.rs::a_tenant_cannot_steer_another_tenants_task",
+  "crates/a2a-protocol-server/tests/steering/audit.rs::a_delivery_is_recorded_with_who_sent_what_to_which_task",
+  "crates/a2a-protocol-server/tests/turn_claims/backends.rs::postgres_a_steering_message_reaches_the_executor_on_the_replica_that_holds_the_claim",
 ]
-evidence = ["docs/swarm-orchestration.md", "book/src/deployment/oversight.md", "docs/adr/0019-shared-halt-store.md", "docs/adr/0024-pushed-halts-and-cancels.md"]
-gap = "Without a halt store a halt holds in one process; with a SQLite store, or a custom one that does not push, another replica follows within its poll interval rather than at once. A cancel pushed to the replica running the task fires its token, but streams open there end without the `Canceled` frame (ADR 0024). An executor that ignores its token keeps running: nothing forces it to stop (a bounded cancel deadline that drops its future, as the executor timeout does, is not built). A crashed parent's delegated children stop only if it started them with a lease (ADR 0020, `Delegation::start_leased`); leases are opt-in."
+evidence = ["docs/swarm-orchestration.md", "book/src/deployment/oversight.md", "docs/adr/0019-shared-halt-store.md", "docs/adr/0024-pushed-halts-and-cancels.md", "docs/adr/0036-steering-a-running-task.md", "book/src/building-agents/steering.md", "scripts/live/steering/README.md"]
+gap = "Without a halt store a halt holds in one process; with a SQLite store, or a custom one that does not push, another replica follows within its poll interval rather than at once. A cancel pushed to the replica running the task fires its token, but streams open there end without the `Canceled` frame (ADR 0024). An executor that ignores its token keeps running: nothing forces it to stop (a bounded cancel deadline that drops its future, as the executor timeout does, is not built). A crashed parent's delegated children stop only if it started them with a lease (ADR 0020, `Delegation::start_leased`); leases are opt-in. A message handed off to a replica that has just died is accepted and never read until its claim's time to live runs out; steering messages are not in Task.history."
 
 [[control]]
 id = "AIA-15-4"
@@ -1611,7 +1621,7 @@ id = "ASI-MODEL"
 source = "owasp-asi"
 provision = "ASI01, ASI02, ASI05, ASI06"
 requirement = "Goal hijack, tool misuse, unexpected code execution, memory and context poisoning."
-sdk = "A client interceptor sees each request's params and each response's result, so an integrator's content filter or policy on what an agent sends and receives runs there; a server interceptor sees only the call context (method, caller, tenant, headers) and can refuse a call from it, and the message reaches only the executor, where a filter on what an agent is sent runs. When the model is hijacked anyway, the SDK contains the effects: a repeated side-effecting tool call runs once, the turn bound and the caller's token budget end a runaway run, content whose signature fails is refused before the model reads it, an approval gate refuses the requester's own approval, delegated budgets bound what children spend, a halt stops the run, and caller isolation hides other callers' tasks. `docs/injection-containment.md` has each scenario, against a model that obeys every instruction it reads."
+sdk = "A client interceptor sees each request's params and each response's result, so an integrator's content filter or policy on what an agent sends and receives runs there; a server interceptor sees only the call context (method, caller, tenant, headers) and can refuse a call from it, and the message reaches only the executor, where a filter on what an agent is sent runs. When the model is hijacked anyway, the SDK contains the effects: a repeated side-effecting tool call runs once, the turn bound and the caller's token budget end a runaway run, content whose signature fails is refused before the model reads it, an approval gate refuses the requester's own approval, delegated budgets bound what children spend, a halt stops the run, and caller isolation hides other callers' tasks. A skill's text, loaded from a skills directory (feature `skills`, ADR 0035), is contained as a page's is: it can only reach the tools the loop was given, `allowed-tools` is never honoured, scripts are never run, a project directory is not read until the operator trusts it, and a project skill cannot take an operator skill's name. `docs/injection-containment.md` has each scenario, against a model that obeys every instruction it reads."
 status = "integrator"
 tests = [
   "crates/a2a-protocol-sdk/tests/injection_containment/tool_results.rs::a_repeated_payment_planted_in_a_page_runs_once",
@@ -1622,9 +1632,15 @@ tests = [
   "crates/a2a-protocol-sdk/tests/injection_containment/delegation.rs::fan_out_stops_when_the_parents_budget_is_reserved",
   "crates/a2a-protocol-sdk/tests/injection_containment/delegation.rs::another_callers_task_cannot_be_read_on_an_injected_instruction",
   "crates/a2a-protocol-sdk/tests/injection_containment/operator.rs::a_halt_stops_an_injected_run_and_refuses_new_work",
+  "crates/a2a-protocol-sdk/tests/injection_containment/skills.rs::a_repeated_payment_planted_in_a_trusted_projects_skill_runs_once",
+  "crates/a2a-protocol-sdk/tests/injection_containment/skills.rs::differing_payments_planted_in_a_trusted_projects_skill_run_until_the_turn_bound",
+  "crates/a2a-protocol-sdk/tests/injection_containment/skills.rs::a_skill_cannot_give_itself_a_tool_through_allowed_tools",
+  "crates/a2a-protocol-sdk/tests/injection_containment/skills.rs::a_projects_skill_cannot_take_an_operators_name",
+  "crates/a2a-protocol-sdk/tests/injection_containment/skills.rs::a_project_directory_that_is_not_marked_trusted_is_not_read",
+  "crates/a2a-protocol-sdk/tests/injection_containment/skills.rs::a_skills_text_cannot_read_a_file_outside_it_or_return_a_script",
 ]
 evidence = ["docs/injection-containment.md"]
-gap = "Preventing the hijack is the integrator's: these attack the model, its tools and its memory, which live in the executor. What the SDK does not contain, each asserted by a test: differing side-effecting calls run until the turn bound or budget ends the run; unsigned content passes unless signatures are required; a trusted agent that is compromised is still obeyed, since a signature says who wrote content, not that it is safe."
+gap = "Preventing the hijack is the integrator's: these attack the model, its tools and its memory, which live in the executor. What the SDK does not contain, each asserted by a test: differing side-effecting calls run until the turn bound or budget ends the run (also when planted in a trusted project's skill); unsigned content passes unless signatures are required; a trusted agent that is compromised is still obeyed, since a signature says who wrote content, not that it is safe."
 
 # ── ISO/IEC 42001 ────────────────────────────────────────────────────────────
 

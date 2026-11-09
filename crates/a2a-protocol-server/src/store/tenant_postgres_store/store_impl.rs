@@ -27,6 +27,7 @@ use super::{SAVE_SQL, TenantAwarePostgresTaskStore, to_a2a_error};
 use crate::store::event_log_sql::{
     decode_json_row, encode_json, limit_to_i64, report_no_op_append, seq_from_i64, seq_to_i64,
 };
+use crate::store::log_notify;
 use crate::store::task_store::{RecordedEvent, TaskStore};
 use crate::store::tenant::TenantContext;
 use crate::store::tenant_event_log as evlog;
@@ -367,13 +368,11 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             // `rows_affected()` was discarded here until 0.13; see
             // `event_log_sql::report_no_op_append` for what it hid.
             let fence = crate::store::claim::current_fence();
+            // Announced only by a store opted in, and a task whose key fits.
+            let key = log_notify::announcement(self.log.as_ref(), &tenant, &task_id.0);
+            let (task, held, key) = (task_id.0.as_str(), fence.as_deref(), key.as_deref());
             let changed_nothing = crate::store::pg_retry::retry(&*self.metrics, || {
-                sqlx::query(evlog::PG_APPEND)
-                    .bind(&tenant)
-                    .bind(task_id.0.as_str())
-                    .bind(position)
-                    .bind(&payload)
-                    .bind(&fence)
+                evlog::pg_append_query(&tenant, task, position, &payload, held, key)
                     .execute(&self.pool)
             })
             .await
@@ -404,6 +403,10 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             }
             Ok(())
         })
+    }
+
+    fn watch_event_log(&self, task_id: &TaskId) -> Option<crate::store::LogWatch> {
+        log_notify::watch(self.log.as_ref(), &TenantContext::partition(), &task_id.0)
     }
 
     fn last_event_seq<'a>(

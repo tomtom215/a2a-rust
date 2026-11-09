@@ -1,0 +1,157 @@
+{
+  "R1": {
+    "restarts": [
+      "t=1794100680983 RESTART service=\"checkout\" key=a026ec2404f3b7572a709780432d36f5c1bdcb10b288ac8093d48ffb18e252a4 total=1"
+    ],
+    "state": "TASK_STATE_COMPLETED",
+    "trace": "restart_service({\"service\": \"checkout\"}) -> restarted checkout; restarts so far: 1\nrestart_service({\"service\": \"checkout\"}) -> not run again: an identical call already ran in this task and returned: restarted checkout; restarts so far: 1\nrestart_service({\"service\": \"checkout\"}) -> not run again: an identical call already ran in this task and returned: restarted checkout; restarts so far: 1\nlist_services({}) -> [\"payments-api\",\"checkout\",\"search\"]\nlist_services({}) -> [\"payments-api\",\"checkout\",\"search\"]\nsleep_work({\"seconds\": 1}) -> slept 1 seconds; the work is done\nsleep_work({\"seconds\": 1}) -> slept 1 seconds; the work is done\nrestart_service({\"service\": \"checkout\"}) -> not run again: an identical call already ran in this task and returned: restarted checkout; restarts so far: 1"
+  },
+  "R1b": {
+    "restarts": 4
+  },
+  "R2": {
+    "rss_kb": [
+      21640,
+      68764
+    ],
+    "second_request_bytes": 20972500,
+    "seconds": 1.09,
+    "state": "TASK_STATE_FAILED",
+    "task_bytes": 640,
+    "trace_chars": 0
+  },
+  "R6": {
+    "failure": {
+      "a2a-rust.com/failure": "budget-exhausted"
+    },
+    "seconds": 3.01,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "[-32603] the caller's budget deadline passed",
+    "tools": [
+      "t=1794100695941 START hang",
+      "t=1794100698938 DROP hang "
+    ]
+  },
+  "args_big": {
+    "rss_kb": 45316,
+    "seconds": 0.23,
+    "state": "TASK_STATE_COMPLETED",
+    "task_bytes": 2097511,
+    "trace_chars": 2097173,
+    "trace_head": "echo({\"text\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  },
+  "args_deep": {
+    "rss_kb": 29760,
+    "seconds": 0.07,
+    "state": "TASK_STATE_COMPLETED",
+    "task_bytes": 200442,
+    "trace_chars": 200106,
+    "trace_head": "echo({\"text\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
+  },
+  "args_notjson": {
+    "rss_kb": 27180,
+    "seconds": 0.05,
+    "state": "TASK_STATE_COMPLETED",
+    "task_bytes": 438,
+    "trace_chars": 104,
+    "trace_head": "echo(not json at all {{{) -> error: the arguments are not valid JSON (expected ident at line 1 column 2)"
+  },
+  "calls_100k": {
+    "rss_kb": [
+      21592,
+      27620
+    ],
+    "seconds": 0.12,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "the model provider's answer is larger than the 8388608-byte cap",
+    "task_bytes": 591
+  },
+  "calls_many": {
+    "rss_kb": [
+      21000,
+      151412
+    ],
+    "seconds": 1.41,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "the model asked for tools on all 4 turns without answering",
+    "task_bytes": 594,
+    "trace_chars": 0
+  },
+  "header": {
+    "load_at_start": "0.74",
+    "time": "2026-11-08T01:18:00Z",
+    "title": "tool results, tool-call abuse, budgets: scripted"
+  },
+  "name_big": {
+    "rss_kb": [
+      21524,
+      61232
+    ],
+    "seconds": 0.4,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "the model asked for tools on all 4 turns without answering",
+    "task_bytes": 594,
+    "trace_chars": 0
+  },
+  "name_path": {
+    "rss_kb": [
+      21708,
+      27792
+    ],
+    "seconds": 0.05,
+    "state": "TASK_STATE_COMPLETED",
+    "status_text": "",
+    "task_bytes": 460,
+    "trace_chars": 126
+  },
+  "usage_absent": {
+    "failure": null,
+    "requests": 2,
+    "seconds": 0.05,
+    "state": "TASK_STATE_COMPLETED",
+    "status_text": ""
+  },
+  "usage_float": {
+    "failure": {
+      "a2a-rust.com/failure": "internal"
+    },
+    "requests": 1,
+    "seconds": 0.01,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "the model provider's answer could not be read"
+  },
+  "usage_huge": {
+    "failure": {
+      "a2a-rust.com/failure": "budget-exhausted"
+    },
+    "requests": 1,
+    "seconds": 0.01,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "the budget's meter \"tokens\" is spent (18446744073709550615 over)"
+  },
+  "usage_negative": {
+    "failure": {
+      "a2a-rust.com/failure": "internal"
+    },
+    "requests": 1,
+    "seconds": 0.01,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "the model provider's answer could not be read"
+  },
+  "usage_string": {
+    "failure": {
+      "a2a-rust.com/failure": "internal"
+    },
+    "requests": 1,
+    "seconds": 0.01,
+    "state": "TASK_STATE_FAILED",
+    "status_text": "the model provider's answer could not be read"
+  },
+  "usage_zero": {
+    "failure": null,
+    "requests": 2,
+    "seconds": 0.05,
+    "state": "TASK_STATE_COMPLETED",
+    "status_text": ""
+  }
+}

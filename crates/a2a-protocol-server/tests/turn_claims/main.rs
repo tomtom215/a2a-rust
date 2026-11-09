@@ -397,6 +397,9 @@ pub use takeover::*;
 
 mod push;
 pub use push::*;
+
+mod steering;
+pub use steering::*;
 #[cfg(feature = "postgres")]
 mod upgrade;
 

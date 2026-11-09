@@ -1,0 +1,15 @@
+check_package_excludes: packaging is out of sync
+
+  crates/a2a-protocol-client/LICENSE: missing, so the `a2a-protocol-client` tarball carries no LICENSE; copy the repository's LICENSE
+  crates/a2a-protocol-client/NOTICE: missing, so the `a2a-protocol-client` tarball carries no NOTICE; copy the repository's NOTICE
+  crates/a2a-protocol-sdk/LICENSE: missing, so the `a2a-protocol-sdk` tarball carries no LICENSE; copy the repository's LICENSE
+  crates/a2a-protocol-sdk/NOTICE: missing, so the `a2a-protocol-sdk` tarball carries no NOTICE; copy the repository's NOTICE
+  crates/a2a-protocol-server/LICENSE: missing, so the `a2a-protocol-server` tarball carries no LICENSE; copy the repository's LICENSE
+  crates/a2a-protocol-server/NOTICE: missing, so the `a2a-protocol-server` tarball carries no NOTICE; copy the repository's NOTICE
+  crates/a2a-protocol-types/LICENSE: missing, so the `a2a-protocol-types` tarball carries no LICENSE; copy the repository's LICENSE
+  crates/a2a-protocol-types/NOTICE: missing, so the `a2a-protocol-types` tarball carries no NOTICE; copy the repository's NOTICE
+
+Cargo packages a crate's own directory: a LICENSE or NOTICE that is
+only at the repository root is in no published tarball. Copy them into
+each crate named above (Apache-2.0 §4(a), §4(d)).
+RED exit: 1

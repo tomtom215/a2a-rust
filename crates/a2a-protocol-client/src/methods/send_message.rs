@@ -91,6 +91,12 @@ impl A2aClient {
     /// is automatically merged into the request parameters. Per-request values
     /// take precedence.
     ///
+    /// With
+    /// [`ClientBuilder::with_blocking_over_stream`](crate::ClientBuilder::with_blocking_over_stream)
+    /// on, an agent whose card declares streaming is sent to as a stream and
+    /// answered with the stored task, so a load balancer's idle timeout does
+    /// not cut a long turn.
+    ///
     /// # Errors
     ///
     /// Returns [`ClientError`] on transport, serialization, or protocol errors.
@@ -120,6 +126,12 @@ impl A2aClient {
         const METHOD: &str = "SendMessage";
         require_well_formed(&params)?;
         self.require_inline_push_declared(&params, METHOD)?;
+
+        // B-11: a long turn behind a load balancer. `stream_message` applies
+        // the client's configuration itself.
+        if self.carries_over_stream(&params) {
+            return self.send_over_stream(params).await;
+        }
 
         apply_client_config(&mut params, &self.config);
 

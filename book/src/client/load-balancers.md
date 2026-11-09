@@ -21,7 +21,7 @@ a `504`, or a reset, or a timeout, depending on the balancer.
 The task is not cancelled. It goes on running on the agent, and the client,
 which never saw the answer, does not know its id.
 
-There are three remedies. Use whichever your deployment allows:
+There are four remedies. Use whichever your deployment allows:
 
 1. **Do not wait on the connection.** Send with `return_immediately` and
    follow the task. The send is answered at once, with the task, and no
@@ -61,7 +61,56 @@ There are three remedies. Use whichever your deployment allows:
    not this SDK's needs to do the same; a stream behind a balancer whose
    timeout is shorter than the server's heartbeat is cut like a blocking send.
 
-3. **Raise the balancer's idle timeout** above the longest turn you expect
+3. **Let the client stream for you.** With
+   `ClientBuilder::with_blocking_over_stream(true)`, `send_message` to an
+   agent whose card declares streaming is sent as `SendStreamingMessage`
+   and answered, as before, with the task: the code that calls it does not
+   change, and the stream's keep-alive comments are what cross the balancer.
+
+   ```rust,no_run
+   use a2a_protocol_client::ClientBuilder;
+   use a2a_protocol_types::AgentCard;
+
+   # fn f(card: AgentCard) -> a2a_protocol_client::ClientResult<()> {
+   // Built from the card, which says the agent streams.
+   let client = ClientBuilder::from_card(&card)?
+       .with_blocking_over_stream(true)
+       .build()?;
+   // `client.send_message(params).await?` now rides on a stream.
+   # drop(client);
+   # Ok(())
+   # }
+   ```
+
+   What the answer is, and what it costs:
+
+   - The stream is read until the task is terminal or interrupted
+     (`input-required`, `auth-required`), where a blocking send returns, and
+     the answer is the task **as the agent stores it** (a `GetTask` with the
+     send's `history_length`), not the client's reading of the events. That
+     is what the agent's own blocking answer is, and the same under
+     [`history_length`](./sending-messages.md). The store can be one event
+     behind the stream for a moment, so the read is repeated for about three
+     seconds; a task that never reaches the state the stream ended on is
+     `ClientError::InvalidAgentResponse`, never an older state passed off as
+     the answer.
+   - An agent that answers with one `Message` and no task is answered with it.
+   - It needs a card that declares streaming. A client built for a bare
+     endpoint has none to read and sends as it always did; so does a send
+     with `return_immediately`.
+   - Three wire calls instead of one. An interceptor, a span or a metric
+     sees `SendStreamingMessage` and `GetTask`, not `SendMessage`.
+   - `with_send_timeout` still bounds the whole send. A stream cut before the
+     task settles ends the send with the stream's error, as a cut blocking
+     send does; the task goes on, and
+     [`follow_task`](../building-agents/executor/interrupted.md) picks it up.
+
+   Tested against this repository's server behind a proxy that closes a
+   connection after 600 ms of silence: the plain blocking send is cut, on
+   both HTTP bindings, and the carried one is not
+   (`crates/a2a-protocol-client/tests/blocking_over_stream_e2e.rs`).
+
+4. **Raise the balancer's idle timeout** above the longest turn you expect
    (`idle_timeout.timeout_seconds` on an ALB, `proxy_read_timeout` in nginx).
    This is the only remedy that keeps a plain blocking send working, and it
    moves the limit rather than removing it.
@@ -154,7 +203,7 @@ timer running out on a connection that is otherwise quiet. A balancer that
 terminates HTTP/2 answers the PING itself: it shows the path to the balancer
 is up and nothing beyond it, and it does not stop a layer-7 balancer's read
 timeout on a request that is waiting for the agent. So PINGs are no remedy
-for a blocking send behind a layer-7 balancer; remedies 1 to 3 above are.
+for a blocking send behind a layer-7 balancer; remedies 1 to 4 above are.
 
 A client sends HTTP/2 PINGs only when asked:
 [`HttpPool`](./builder/pool.md) for the HTTP bindings,

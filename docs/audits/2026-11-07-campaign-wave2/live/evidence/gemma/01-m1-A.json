@@ -1,0 +1,79 @@
+{
+  "case": "A",
+  "env": {
+    "C_EXTRA_BODY": "{\"max_tokens\":24}"
+  },
+  "finish_reasons": [
+    "{\"arrayValue\": {\"values\": [{\"stringValue\": \"length\"}]}}",
+    "{\"arrayValue\": {\"values\": [{\"stringValue\": \"stop\"}]}}"
+  ],
+  "header": {
+    "load_at_start": "0.89",
+    "model_file": "gemma-4-E2B-it-Q4_0.gguf",
+    "time": "2026-11-08T01:29:05Z",
+    "title": "M-1 empty and cut-off final replies"
+  },
+  "invoke_agent_duration": [
+    {
+      "count": "1",
+      "error.type": null
+    },
+    {
+      "count": "2",
+      "error.type": null
+    },
+    {
+      "count": "3",
+      "error.type": null
+    }
+  ],
+  "prompt": "Explain in detail why monitoring matters for a production service.",
+  "runs": {
+    "grpc": {
+      "answer_metadata": {
+        "a2a-rust.com/finish-reason": "length"
+      },
+      "answer_text": "Monitoring is a crucial practice for any production service and is not a luxury; it's a fundamental requirement for maintaining reliability",
+      "failure": null,
+      "seconds": 1.9,
+      "state": "TASK_STATE_COMPLETED",
+      "status_message_metadata": {
+        "a2a-rust.com/finish-reason": "length"
+      },
+      "status_text": "The answer was cut off at the model's output limit and may be incomplete.",
+      "trace_lines": 0
+    },
+    "jsonrpc": {
+      "answer_metadata": {
+        "a2a-rust.com/finish-reason": "length"
+      },
+      "answer_text": "Monitoring a production service is not just a \"nice-to-have\" feature; it is a fundamental necessity for maintaining",
+      "failure": null,
+      "http": 200,
+      "rpc_error": null,
+      "seconds": 2.9,
+      "state": "TASK_STATE_COMPLETED",
+      "status_message_metadata": {
+        "a2a-rust.com/finish-reason": "length"
+      },
+      "status_text": "The answer was cut off at the model's output limit and may be incomplete.",
+      "trace_lines": 0
+    },
+    "rest": {
+      "answer_metadata": {
+        "a2a-rust.com/finish-reason": "length"
+      },
+      "answer_text": "Monitoring is critically important for a production service because it provides the necessary visibility into the operational health, performance, and behavior of",
+      "failure": null,
+      "http": 200,
+      "raw_error": null,
+      "seconds": 2.0,
+      "state": "TASK_STATE_COMPLETED",
+      "status_message_metadata": {
+        "a2a-rust.com/finish-reason": "length"
+      },
+      "status_text": "The answer was cut off at the model's output limit and may be incomplete.",
+      "trace_lines": 0
+    }
+  }
+}

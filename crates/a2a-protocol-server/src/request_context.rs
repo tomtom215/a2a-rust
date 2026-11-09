@@ -94,6 +94,9 @@ pub struct RequestContext {
 
     /// See [`content_check`](Self::content_check).
     pub(crate) content_check: ContentCheck,
+
+    /// See [`inbox`](Self::inbox).
+    pub(crate) inbox: Option<std::sync::Arc<crate::steering::Inbox>>,
 }
 
 impl RequestContext {
@@ -115,7 +118,45 @@ impl RequestContext {
             accepted_output_modes: Vec::new(),
             referenced_tasks: Vec::new(),
             content_check: ContentCheck::NotChecked,
+            inbox: None,
         }
+    }
+
+    /// The messages sent to this turn while it works (ADR 0036): `Some` when
+    /// the server was built with
+    /// [`with_steering`](crate::RequestHandlerBuilder::with_steering), `None`
+    /// otherwise, and `None` for an executor driven directly.
+    ///
+    /// An executor reads it when it can act on one: between steps of a loop,
+    /// or `recv().await` beside the work it is waiting on. One that never
+    /// reads it is unaffected, and whatever is still in it when the executor
+    /// returns is dropped with the turn (and counted as `unread`). The text
+    /// has the sender's authority over the task and no more: it does not
+    /// cancel, it is not an approval, and it is user text like any other.
+    ///
+    /// ```rust
+    /// # use a2a_protocol_server::RequestContext;
+    /// # fn between_steps(ctx: &RequestContext) -> Vec<String> {
+    /// let mut instructions = Vec::new();
+    /// if let Some(inbox) = ctx.inbox() {
+    ///     while let Some(steered) = inbox.try_recv() {
+    ///         instructions.extend(steered.message.texts().map(str::to_owned));
+    ///     }
+    /// }
+    /// instructions
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn inbox(&self) -> Option<&crate::steering::Inbox> {
+        self.inbox.as_deref()
+    }
+
+    /// Gives the turn an inbox, as the handler does when steering is on; for
+    /// an executor driven directly, as in a test.
+    #[must_use]
+    pub fn with_inbox(mut self, inbox: std::sync::Arc<crate::steering::Inbox>) -> Self {
+        self.inbox = Some(inbox);
+        self
     }
 
     /// The tasks the message's `referenceTaskIds` name, as the handler

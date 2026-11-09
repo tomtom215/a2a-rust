@@ -57,6 +57,22 @@ impl DeclaredCapabilities {
         self
     }
 
+    /// The flag the card holds for `capability`, and the name of the card
+    /// field it is read from.
+    const fn flag(self, capability: Capability) -> (bool, &'static str) {
+        match capability {
+            Capability::Streaming => (self.streaming, "streaming"),
+            Capability::PushNotifications => (self.push_notifications, "pushNotifications"),
+            Capability::ExtendedAgentCard => (self.extended_agent_card, "extendedAgentCard"),
+        }
+    }
+
+    /// Whether the card declares `capability`.
+    #[must_use]
+    pub const fn declares(self, capability: Capability) -> bool {
+        self.flag(capability).0
+    }
+
     /// `Ok` when the card declares `capability`.
     ///
     /// # Errors
@@ -64,11 +80,7 @@ impl DeclaredCapabilities {
     /// [`ClientError::CapabilityNotDeclared`] naming `method` and the card
     /// field that would declare the capability.
     pub fn require(self, capability: Capability, method: &str) -> ClientResult<()> {
-        let (declared, field) = match capability {
-            Capability::Streaming => (self.streaming, "streaming"),
-            Capability::PushNotifications => (self.push_notifications, "pushNotifications"),
-            Capability::ExtendedAgentCard => (self.extended_agent_card, "extendedAgentCard"),
-        };
+        let (declared, field) = self.flag(capability);
         if declared {
             Ok(())
         } else {

@@ -5,6 +5,8 @@
 
 Authentication says who the caller is; authorization says what it may do. This page covers refusing a token that lacks a scope, and refusing a call per operation or per task.
 
+> **Cargo feature.** `JwtAuthInterceptor` and `JwtValidator`, used below, need the `auth-jwt` feature: `a2a-protocol-sdk = { version = "0.16", features = ["auth-jwt"] }`, or `a2a-protocol-server = { version = "0.16", features = ["auth-jwt"] }` on its own.
+
 Spec §13.1 requires an authorization check on every operation, and §3.3.2 a
 `403` when the authenticated caller lacks a permission, naming the missing
 scope where that leaks nothing. Two pieces help.

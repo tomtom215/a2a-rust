@@ -1,0 +1,9 @@
+{"attack": "executor returned Ok with no terminal: stored state", "verdict": "held", "detail": {"state": "TASK_STATE_WORKING"}}
+{"attack": "a SubscribeToTask stream on the zombie opens", "verdict": "held", "detail": "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncache-control: no-cache, no-transform\r\nx-accel-buffering: no\r\ntransfer-encoding: chunked\r\ndate: Sun, 08 Nov 2026 01:36:58 GMT\r\n\r\n19B\r\nevent: message\nd"}
+{"attack": "zombie subscribers' connections after 30s (documented: SSE keep-alive keeps a quiet stream open; the cap below is the real bound, not a timer)", "verdict": "held", "detail": {"released": 0, "of": 50, "after_s": []}}
+{"attack": "the zombie is still `working` after the observation", "verdict": "held", "detail": {"state": "TASK_STATE_WORKING", "timestamp": "2026-11-08T01:36:57.279Z"}}
+{"attack": "the per-task subscriber cap (256) refuses one more", "verdict": "held", "detail": "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\na2a-version: 1.0\r\ncontent-length: 282\r\ndate: Sun, 08 Nov 2026 01:37:31 GMT\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"task 4d856610-9c65-450c-bbe8-40cf1b3515dc has 256 SubscribeToTask streams open, its limit (max_subscribers_per_task); subscribe again shortly\",\"data\":[{\"@type\":\"type.googleapis.com/google.rpc.RetryInfo\",\"retryDelay\":\"1s\"}]}}"}
+{"attack": "CancelTask on the zombie", "verdict": "held", "detail": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"result\": {\"artifacts\": [{\"artifactId\": \"p\", \"parts\": [{\"text\": \"0\"}]}], \"contextId\": \"2d434b32-62ec-47e8-a690-a47ed00bacce\", \"history\": [{\"messageId\": \"a2d2eaed-798f-4f3d-"}
+{"attack": "zombie after cancel", "verdict": "held", "detail": "TASK_STATE_CANCELED"}
+{"attack": "target alive", "verdict": "held", "detail": {"alive": true, "rss_kb": 39684, "fds": 294, "threads": 5, "panics": 0}}
+{"tally": {"tried": 8, "held": 8, "deviation": 0}}

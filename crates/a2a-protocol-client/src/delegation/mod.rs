@@ -93,6 +93,7 @@ mod outcome;
 mod policy;
 mod renewal;
 mod resume;
+mod steer;
 #[cfg(test)]
 mod testing;
 pub use continuation::{HAND_OFF_METADATA_KEY, HandOffPolicy};
@@ -102,6 +103,7 @@ pub use outcome::{Delegated, Outcome};
 pub use policy::ResumePolicy;
 use renewal::Renewal;
 use resume::Resumed;
+pub use steer::{ChildSteering, SteerHandle, Steering, steer_all};
 
 /// How long a cancel waits for the child's id, when it is asked for before
 /// the first event named the child.

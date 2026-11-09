@@ -34,12 +34,35 @@ pub const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS task_events (
         FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     )";
 
+/// The append, as a literal, so [`APPEND_NOTIFY_SQL`] is built from the same
+/// text and the two cannot drift.
+macro_rules! append_sql {
+    () => {
+        concat!(
+            "INSERT INTO task_events (task_id, seq, payload) SELECT $1, $2, $3 WHERE ",
+            crate::store::claim::fence_sql!(postgres "$4::text", "$1"),
+            " ON CONFLICT (task_id, seq) DO NOTHING"
+        )
+    };
+}
+
 /// Appends one event at a position. Idempotent by that position.
 /// Fenced by the turn's claim token, `$4` (`crate::store::claim`).
-pub(super) const APPEND_SQL: &str = concat!(
-    "INSERT INTO task_events (task_id, seq, payload) SELECT $1, $2, $3 WHERE ",
-    crate::store::claim::fence_sql!(postgres "$4::text", "$1"),
-    " ON CONFLICT (task_id, seq) DO NOTHING"
+pub(in crate::store) const APPEND_SQL: &str = append_sql!();
+
+/// [`APPEND_SQL`] that also announces the append, in the same statement: the
+/// insert is a data-modifying CTE, and `pg_notify` (channel `$5`, payload `$6`,
+/// the task's key) runs once for each row it inserted. No row inserted (a
+/// position already held, or a claim that was lost) is no notification, and the
+/// statement's result is `SELECT n` with `n` the rows inserted, so
+/// `rows_affected() == 0` still says "nothing was written", as it does for the
+/// plain insert (proved against the live database in `log_notify_tests`). One
+/// statement, so a send makes the round trips it did: `statement_count`.
+/// The notification is delivered when the statement commits.
+pub(in crate::store) const APPEND_NOTIFY_SQL: &str = concat!(
+    "WITH ins AS (",
+    append_sql!(),
+    " RETURNING 1) SELECT pg_notify($5, $6) FROM ins"
 );
 
 /// Reads a task's events after a position, in order. Exclusive, so the

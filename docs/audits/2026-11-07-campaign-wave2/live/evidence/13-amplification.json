@@ -1,0 +1,97 @@
+{
+  "calls": [
+    {
+      "calls_per_reply": 10000,
+      "max_turns": 8,
+      "rss_peak_kb": 503124,
+      "rss_start_kb": 21292,
+      "seconds": 5.66,
+      "state": "TASK_STATE_FAILED",
+      "status": "the model asked for tools on all 8 turns without answering"
+    },
+    {
+      "calls_per_reply": 40000,
+      "max_turns": 3,
+      "rss_peak_kb": 449016,
+      "rss_start_kb": 20700,
+      "seconds": 3.4,
+      "state": "TASK_STATE_FAILED",
+      "status": "the model asked for tools on all 3 turns without answering"
+    },
+    {
+      "calls_per_reply": 90000,
+      "max_turns": 4,
+      "rss_peak_kb": 1424456,
+      "rss_start_kb": 21512,
+      "seconds": 13.73,
+      "state": "TASK_STATE_FAILED",
+      "status": "the model asked for tools on all 4 turns without answering"
+    }
+  ],
+  "header": {
+    "load_at_start": "1.44",
+    "time": "2026-11-08T02:01:13Z",
+    "title": "amplification: calls per reply, tool result size"
+  },
+  "results": [
+    {
+      "logged_reason": [],
+      "rss_after_kb": 35332,
+      "second_model_request_bytes": 1049555,
+      "seconds": 0.12,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "task_body_bytes": 1048958,
+      "tool_result_kib": 1024,
+      "trace_chars": 1048622
+    },
+    {
+      "logged_reason": [],
+      "rss_after_kb": 52828,
+      "second_model_request_bytes": 4195283,
+      "seconds": 0.39,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "task_body_bytes": 4194686,
+      "tool_result_kib": 4096,
+      "trace_chars": 4194350
+    },
+    {
+      "logged_reason": [],
+      "rss_after_kb": 85480,
+      "second_model_request_bytes": 8389587,
+      "seconds": 0.72,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": "",
+      "task_body_bytes": 8388990,
+      "tool_result_kib": 8192,
+      "trace_chars": 8388654
+    },
+    {
+      "logged_reason": [
+        "2026-11-08T02:01:45.518643Z ERROR a2a_protocol_server::error::withheld: executor failed; its internal error is withheld from the caller task_id=cf75e95d-69c9-48d3-99c7-cfd9f71f913c reference=97aa18107792 error=event size 16777462 bytes exceeds maximum 16777216"
+      ],
+      "rss_after_kb": 60680,
+      "second_model_request_bytes": 16778196,
+      "seconds": 1.01,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "[-32603] internal error (reference 97aa18107792)",
+      "task_body_bytes": 640,
+      "tool_result_kib": 16384,
+      "trace_chars": 0
+    },
+    {
+      "logged_reason": [
+        "2026-11-08T02:01:47.730425Z ERROR a2a_protocol_server::error::withheld: executor failed; its internal error is withheld from the caller task_id=9747f98a-4fd0-465c-a3c9-d668c684dbb5 reference=8882232acf2b error=event size 20971766 bytes exceeds maximum 16777216"
+      ],
+      "rss_after_kb": 69088,
+      "second_model_request_bytes": 20972500,
+      "seconds": 1.19,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "[-32603] internal error (reference 8882232acf2b)",
+      "task_body_bytes": 640,
+      "tool_result_kib": 20480,
+      "trace_chars": 0
+    }
+  ]
+}

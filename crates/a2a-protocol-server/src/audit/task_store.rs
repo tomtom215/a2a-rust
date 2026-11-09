@@ -246,6 +246,10 @@ impl TaskStore for AuditedTaskStore {
         self.inner.hold_events(task_id, after)
     }
 
+    fn watch_event_log(&self, task_id: &TaskId) -> Option<crate::store::LogWatch> {
+        self.inner.watch_event_log(task_id)
+    }
+
     fn earliest_event_seq<'a>(&'a self, task_id: &'a TaskId) -> Fut<'a, Option<u64>> {
         self.inner.earliest_event_seq(task_id)
     }

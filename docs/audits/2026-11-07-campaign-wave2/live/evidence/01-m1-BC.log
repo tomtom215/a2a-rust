@@ -1,0 +1,25 @@
+== M-1 empty and cut-off final replies (load 2.47)
+-- case B: 'How is the billing service doing?' env={'C_EXTRA_BODY': '{"max_tokens":48}'}
+   jsonrpc  {"seconds": 10.0, "http": 200, "state": "TASK_STATE_FAILED", "failure": "internal", "status_text": "the model provider answered HTTP 500", "status_message_metadata": {"a2a-rust.com/failure": "internal"}, "answer_metadata": null, "trace_lines": 0, "rpc_error": null}
+   jsonrpc  answer_text=None
+   rest     {"seconds": 12.8, "http": 200, "state": "TASK_STATE_COMPLETED", "failure": null, "status_text": "The answer was cut off at the model's output limit and may be incomplete.", "status_message_metadata": {"a2a-rust.com/finish-reason": "length"}, "answer_metadata": {"a2a-rust.com/finish-reason": "length"}, "trace_lines": 2, "raw_error": null}
+   rest     answer_text='The billing service, `payments-api`, is currently in a **degraded** state. It has been running for approximately 20 days (1,814,400 seconds), and the version is 4.2'
+   grpc     {"seconds": 13.2, "state": "TASK_STATE_COMPLETED", "failure": null, "status_text": "The answer was cut off at the model's output limit and may be incomplete.", "status_message_metadata": {"a2a-rust.com/finish-reason": "length"}, "answer_metadata": {"a2a-rust.com/finish-reason": "length"}, "trace_lines": 2}
+   grpc     answer_text='The billing service, `payments-api`, is currently in a **degraded** state. It has been running for 1814400 seconds (which is 20 days) and is using version 4.2'
+   gen_ai.invoke_agent.duration series: [{'error.type': '500', 'count': '1'}, {'error.type': '500', 'count': '1'}, {'error.type': '500', 'count': '1'}, {'error.type': '500', 'count': '1'}, {'error.type': '500', 'count': '1'}, {'error.type': '500', 'count': '1'}, {'error.type': '500', 'count': '1'}, {'error.type': None, 'count': '1'}, {'error.type': '500', 'count': '1'}, {'error.type': None, 'count': '1'}, {'error.type': '500', 'count': '1'}, {'error.type': None, 'count': '1'}, {'error.type': '500', 'count': '1'}, {'error.type': None, 'count': '1'}, {'error.type': '500', 'count': '1'}, {'error.type': None, 'count': '1'}, {'error.type': '500', 'count': '1'}, {'error.type': None, 'count': '1'}, {'error.type': '500', 'count': '1'}, {'error.type': None, 'count': '2'}, {'error.type': '500', 'count': '1'}, {'error.type': None, 'count': '2'}]
+-- case C: 'What is 17 times 23? Think it through.' env={'C_THINKING': '1', 'C_EXTRA_BODY': '{"max_tokens":40}'}
+   jsonrpc  {"seconds": 5.4, "http": 200, "state": "TASK_STATE_FAILED", "failure": "budget-exhausted", "status_text": "the model stopped at its output limit before it wrote any text", "status_message_metadata": {"a2a-rust.com/failure": "budget-exhausted"}, "answer_metadata": null, "trace_lines": 0, "rpc_error": null}
+   jsonrpc  answer_text=None
+   rest     {"seconds": 5.4, "http": 200, "state": "TASK_STATE_FAILED", "failure": "budget-exhausted", "status_text": "the model stopped at its output limit before it wrote any text", "status_message_metadata": {"a2a-rust.com/failure": "budget-exhausted"}, "answer_metadata": null, "trace_lines": 0, "raw_error": null}
+   rest     answer_text=None
+   grpc     {"seconds": 5.2, "state": "TASK_STATE_FAILED", "failure": "budget-exhausted", "status_text": "the model stopped at its output limit before it wrote any text", "status_message_metadata": {"a2a-rust.com/failure": "budget-exhausted"}, "answer_metadata": null, "trace_lines": 0}
+   grpc     answer_text=None
+   gen_ai.invoke_agent.duration series: [{'error.type': 'empty_answer', 'count': '1'}, {'error.type': 'empty_answer', 'count': '1'}, {'error.type': 'empty_answer', 'count': '1'}, {'error.type': 'empty_answer', 'count': '2'}, {'error.type': 'empty_answer', 'count': '2'}, {'error.type': 'empty_answer', 'count': '2'}, {'error.type': 'empty_answer', 'count': '3'}]
+  ok    C jsonrpc: the task failed (state TASK_STATE_FAILED)
+  ok    C jsonrpc: failure class budget-exhausted (got budget-exhausted)
+  ok    C rest: the task failed (state TASK_STATE_FAILED)
+  ok    C rest: failure class budget-exhausted (got budget-exhausted)
+  ok    C grpc: the task failed (state TASK_STATE_FAILED)
+  ok    C grpc: failure class budget-exhausted (got budget-exhausted)
+
+6 of 6 expectations held

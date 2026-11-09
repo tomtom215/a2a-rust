@@ -1,0 +1,30 @@
+Genai + A2A Agent Example
+=========================
+
+Model: qwen3.5:0.8b
+Set GENAI_MODEL to change it. Unknown model names route to the
+OpenAI-compatible endpoint on http://localhost:11434/v1/ — run
+llama.cpp's llama-server, vLLM or Ollama there for a local agent.
+
+JSON-RPC  http://127.0.0.1:40877
+HTTP+JSON http://127.0.0.1:40877
+gRPC      127.0.0.1:45535
+WebSocket ws://127.0.0.1:33965
+
+LLM leg: EXERCISED — 'qwen3.5:0.8b' answered a real request.
+
+=== Coverage: every A2A method over every binding ===
+
+  --- JSONRPC ---
+    [ok]   SendMessage                        task e7d982e3-feef-4f0a-b38a-f1d576fafedf
+    [ok]   SendStreamingMessage               2 event(s), 0 lag signal(s) (still open)
+    [ok]   GetTask                            state Completed
+    [ok]   ListTasks                          3 task(s)
+    [ok]   CancelTask                         refused as expected: protocol error: [-32002] Task cannot be canceled: 94b74d5c-88ff-431b-b86d-9bbe8e4e255c
+    [ok]   SubscribeToTask                    1 event(s)
+    [ok]   CreateTaskPushNotificationConfig   config Some("7f9db107-7dcb-4d80-a55f-435318a20821")
+    [ok]   ListTaskPushNotificationConfigs    1 config(s)
+    [ok]   GetTaskPushNotificationConfig      url http://127.0.0.1:42747/webhook
+    [ok]   DeleteTaskPushNotificationConfig   deleted
+    [ok]   GetExtendedAgentCard               card 'Genai LLM Agent'
+  --- HTTP+JSON ---

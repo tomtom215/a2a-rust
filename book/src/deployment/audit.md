@@ -23,6 +23,7 @@ which articles it does and does not help with is in the
 | `run.started` | an executor starts working on a task | task, context and message ids, digests of the message and each part, the caller, the trace |
 | `task.event` | the agent emits an event and it is stored | its position in the task's event log, the new state, a digest, and which `run.started` it belongs to |
 | `task.cancel_requested` | `CancelTask` reaches a running task | task, the caller, the trace |
+| `task.steered` | a message is accepted into a running task's inbox (ADR 0036) | task and context, the message id, a digest of the message, `delivery` (`inbox` or `handed-off`), the caller, the trace. Not written for a refused message or a replayed retry |
 | `call.started` | a call is admitted, only in [required](#required-mode) mode | method, trace |
 | `approval` | the approval gate admits a decision | task, the approver, a digest of the action, `requestId`, `decision`, who asked (`requestedBy`); under a quorum, also `required`, `approvedBy`, `reachedExecutor` |
 | `halt` | an operator halts or resumes | the operator, `action`, `scope` (`all` or `tenant`) and, for a halt, `reason` and the ids of the tasks stopped |
@@ -232,7 +233,7 @@ padding.
 
 ## Following one task across agents
 
-The `call`, `call.started`, `run.started`, `task.cancel_requested` and
+The `call`, `call.started`, `run.started`, `task.cancel_requested`, `task.steered` and
 `approval` records carry the W3C trace id of the call that caused them, when
 the call has one. A `task.event` names its `run.started` by `runSeq`, and that
 record carries it; the records an operator writes (`halt`, `erasure`,

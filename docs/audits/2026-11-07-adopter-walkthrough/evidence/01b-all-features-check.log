@@ -1,0 +1,22 @@
+/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/check-all
+--- features requested
+a2a-protocol-types = { version = "0.16", features = ["signing", "audit", "proto"] }
+a2a-protocol-client = { version = "0.16", features = ["signing", "websocket", "grpc", "grpc-tls", "testing"] }
+a2a-protocol-server = { version = "0.16", features = ["signing", "sqlite", "postgres", "websocket", "grpc", "grpc-tls", "otlp", "otlp-json", "otel-prometheus", "conformance", "axum", "tool-loop", "auth-jwt", "encryption", "audit"] }
+a2a-protocol-sdk = { version = "0.16", features = ["signing", "grpc", "grpc-tls", "websocket", "sqlite", "postgres", "otlp-json", "otel-prometheus", "axum", "tool-loop", "auth-jwt", "encryption", "audit"] }
+a2a-protocol-client = { path = "/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-client-0.16.0" }
+a2a-protocol-sdk = { path = "/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-sdk-0.16.0" }
+a2a-protocol-server = { path = "/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0" }
+a2a-protocol-types = { path = "/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0" }
+    Updating crates.io index
+     Locking 317 packages to highest Rust 1.99.1 compatible versions
+      Adding crypto-common v0.1.6 (available: v0.1.7)
+      Adding matchit v0.8.4 (available: v0.8.6)
+    Finished `dev` profile [unoptimized] target(s) in 5m 35s
+
+real	5m36.156s
+user	3m8.066s
+sys	0m20.294s
+cargo check exit: 0
+--- which protoc did the build scripts use?
+build-script dirs: 74

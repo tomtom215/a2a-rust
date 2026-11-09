@@ -236,6 +236,7 @@ impl TenantAwareSqliteTaskStore {
         let mut report = super::retention::sqlite::purge(
             &self.pool,
             "tenant_tasks",
+            "t.tenant_id",
             &[evlog::SQLITE_DELETE_ORPHANS],
             super::tenant_idempotency::SQLITE_EXPIRE,
             policy,
@@ -551,10 +552,10 @@ impl TaskStore for TenantAwareSqliteTaskStore {
             };
             // Composite (updated_at, id) row-value cursor: status-timestamp
             // descending (spec §3.1.4), disambiguated by id when timestamps
-            // tie. A token not produced by us decodes to None → empty page.
+            // tie. A token not produced by us decodes to None → InvalidParams.
             if let Some(ref token) = params.page_token {
                 let Some((cursor_ua, cursor_id)) = super::cursor::decode(token) else {
-                    return Ok(TaskListResponse::new(Vec::new()));
+                    return Err(super::pagination::unrecognised_token());
                 };
                 let p = bind_values.len();
                 conditions.push(format!("(updated_at, id) < (?{}, ?{})", p + 1, p + 2));
@@ -1198,6 +1199,51 @@ mod tests {
                 .with_page_token(response.next_page_token);
             let response2 = store.list(&params2).await.unwrap();
             assert_eq!(response2.tasks.len(), 2, "second page should have 2 tasks");
+        })
+        .await;
+    }
+
+    /// A token this store could not have issued is `InvalidParams`, within a
+    /// tenant as without; and a token it did issue resumes the listing after
+    /// the task it names is deleted.
+    #[tokio::test]
+    async fn list_page_tokens_are_checked_and_survive_a_deleted_task() {
+        let store = make_store().await;
+        TenantContext::scope("tenant-a", async {
+            for i in 0..5 {
+                store
+                    .save(&make_task(&format!("t{i}"), "ctx1", TaskState::Submitted))
+                    .await
+                    .unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+            }
+            for token in ["no-separator", "x\ny", "2026-02-30 00:00:00.000\nt1"] {
+                let params = ListTasksParams::new().with_page_token(token.to_string());
+                let err = store.list(&params).await.unwrap_err();
+                assert_eq!(
+                    err.code,
+                    a2a_protocol_types::error::ErrorCode::InvalidParams,
+                    "{token:?}"
+                );
+            }
+            let first = store
+                .list(&ListTasksParams::new().with_page_size(2))
+                .await
+                .unwrap();
+            let ids = |r: &a2a_protocol_types::responses::TaskListResponse| {
+                r.tasks.iter().map(|t| t.id.0.clone()).collect::<Vec<_>>()
+            };
+            assert_eq!(ids(&first), ["t4", "t3"]);
+            store.delete(&first.tasks[1].id).await.unwrap();
+            let second = store
+                .list(
+                    &ListTasksParams::new()
+                        .with_page_size(2)
+                        .with_page_token(first.next_page_token),
+                )
+                .await
+                .unwrap();
+            assert_eq!(ids(&second), ["t2", "t1"]);
         })
         .await;
     }

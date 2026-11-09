@@ -1,0 +1,43 @@
+{
+  "header": {
+    "load_at_start": "2.50",
+    "time": "2026-11-08T01:11:39Z",
+    "title": "a delegation to a child that reports an absurd spend"
+  },
+  "huge": {
+    "after_3s": "TASK_STATE_WORKING",
+    "coord_log": [
+      "t=1794100304681 DELEGATION grant=Budget { remaining_ms: None, meters: {\"tokens\": 100000} }",
+      "t=1794100304683 DELEGATION ended after 0.0s task=Some(\"fake-task-1\") outcome=Completed"
+    ],
+    "errors": [
+      "2026-11-08T01:11:44.729441Z ERROR a2a_protocol_server::handler::messaging::execute: executor failed task_id=254866a5-2b4b-4e5d-b630-83892add04a5 error=[-32602] metadata holds the integer 18446744073709551615, beyond the \u00b12^53 a protobuf number holds exactly",
+      "2026-11-08T01:11:44.729536Z ERROR a2a_protocol_server::handler::messaging::execute: failed to write failure event to queue task_id=254866a5-2b4b-4e5d-b630-83892add04a5 error=[-32602] metadata holds the integer 18446744073709551615, beyond the \u00b12^53 a protobuf number holds exactly"
+    ],
+    "first": "TASK_STATE_WORKING",
+    "rpc_error": null,
+    "status_text": ""
+  },
+  "sane": {
+    "after_3s": "TASK_STATE_COMPLETED",
+    "coord_log": [
+      "t=1794100300717 DELEGATION grant=Budget { remaining_ms: None, meters: {\"tokens\": 100000} }",
+      "t=1794100300721 DELEGATION ended after 0.0s task=Some(\"fake-task-1\") outcome=Completed"
+    ],
+    "errors": [],
+    "first": "TASK_STATE_COMPLETED",
+    "rpc_error": null,
+    "status_text": ""
+  },
+  "timeonly": {
+    "after_3s": "TASK_STATE_COMPLETED",
+    "coord_log": [
+      "t=1794100308641 DELEGATION grant=Budget { remaining_ms: Some(56998), meters: {\"tokens\": 18446744073709551615} }",
+      "t=1794100308644 DELEGATION ended after 0.0s task=Some(\"fake-task-1\") outcome=Completed"
+    ],
+    "errors": [],
+    "first": "TASK_STATE_COMPLETED",
+    "rpc_error": null,
+    "status_text": ""
+  }
+}

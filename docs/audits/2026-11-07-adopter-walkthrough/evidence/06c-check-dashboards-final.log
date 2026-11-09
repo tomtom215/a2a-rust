@@ -1,0 +1,45 @@
+prometheus: 42 rules checked
+  a2a-client.json / Calls per second, by agent and binding: data
+  a2a-client.json / Failures by kind: data
+  a2a-client.json / p95 duration, non-streaming: data
+  a2a-client.json / Calls in the range by processes that started in it: data
+a2a-client.json: 5 queries
+  a2a-genai.json / Model calls per second, by model and outcome: data
+  a2a-genai.json / Failed model calls (ratio): data
+  a2a-genai.json / Model call duration, successful calls: data
+  a2a-genai.json / Tokens per second, input and output: data
+  a2a-genai.json / Tokens per model call: data
+  a2a-genai.json / Tool calls per second, by tool and outcome: data
+  a2a-genai.json / Tool call duration: data
+  a2a-genai.json / Agent runs per second, by outcome: data
+  a2a-genai.json / Agent run duration: data
+  a2a-genai.json / Model calls and tool calls per run: data
+a2a-genai.json: 21 queries
+  a2a-server.json / Calls per second, by binding: data
+  a2a-server.json / Calls per second, by method: data
+  a2a-server.json / Caller errors per second, by method and binding: data
+  a2a-server.json / Server span duration (p95), from traces: data
+  a2a-server.json / p50 / p95 / p99: data
+  a2a-server.json / Errors by method and kind: data
+  a2a-server.json / Requests without a response: data
+  a2a-server.json / Active event queues: data
+  a2a-server.json / HTTP connections: data
+  a2a-server.json / Store operations per second, by operation and outcome: data
+  a2a-server.json / Store operation duration (p95), by operation: data
+  a2a-server.json / Executor run duration (p50 / p95), by outcome: data
+  a2a-server.json / Executor runs per second, by outcome: data
+a2a-server.json: 22 queries
+FAIL recording rule a2a:rpc_client_error_ratio:rate5m: no series
+FAIL recording rule a2a:rpc_server_errors:rate5m: no series
+FAIL recording rule a2a:rpc_server_cancelled:rate5m: no series
+FAIL recording rule a2a:rpc_server_error_ratio:rate5m: no series
+FAIL recording rule a2a:push_deliveries:rate5m: no series
+FAIL recording rule a2a:push_delivery_failure_ratio:rate5m: no series
+FAIL recording rule a2a:store_retries:rate5m: no series
+FAIL recording rule a2a:executor_failure_ratio:rate5m: no series
+FAIL a2a-client.json / Failed calls (ratio), by agent: no data
+FAIL a2a-server.json / Failed calls (ratio): no data
+FAIL a2a-server.json / Failed calls per second, by method and binding: no data
+FAIL a2a-server.json / Persistence errors: no data
+FAIL a2a-server.json / Push deliveries, by outcome: no data
+check_dashboards: FAILED

@@ -76,7 +76,11 @@ if !response.next_page_token.is_empty() {
 Tasks are returned **most-recently-updated first** (spec §3.1.4): the first
 page holds the tasks whose state changed most recently. `page_token` is an
 opaque cursor — pass it back verbatim to fetch the next page; do not parse or
-construct it yourself.
+construct it yourself. A token the server could not have issued (one you built
+or cut) is refused with `InvalidParams` (JSON-RPC `-32602`, HTTP 400, gRPC
+`INVALID_ARGUMENT`) rather than answered with an empty page, which would read
+as the end of the listing. A token for a task that was deleted since still
+works: it names a position, not the row.
 
 ### Filtering Options
 

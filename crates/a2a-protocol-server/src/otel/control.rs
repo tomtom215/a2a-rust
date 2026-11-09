@@ -25,6 +25,8 @@ pub(super) struct Control {
     pub(super) halts: Counter<u64>,
     pub(super) halt_stopped: Counter<u64>,
     pub(super) claim_events: Counter<u64>,
+    pub(super) subscribe_wakes: Counter<u64>,
+    pub(super) steering_events: Counter<u64>,
 }
 
 impl Control {
@@ -54,6 +56,18 @@ impl Control {
                 .u64_counter("a2a.server.claim.events")
                 .with_description("Turn-claim events, by event")
                 .with_unit("{event}")
+                .build(),
+            subscribe_wakes: meter
+                .u64_counter("a2a.server.subscribe.wakes")
+                .with_description(
+                    "Times a subscribe stream stopped waiting on a task's event log, by cause",
+                )
+                .with_unit("{wake}")
+                .build(),
+            steering_events: meter
+                .u64_counter("a2a.server.steering")
+                .with_description("Steering messages, by how they ended")
+                .with_unit("{message}")
                 .build(),
         }
     }
@@ -126,6 +140,18 @@ impl Control {
         let mut attributes = vec![KeyValue::new("event", event.to_owned())];
         dims.extend(&mut attributes, None);
         self.claim_events.add(1, &attributes);
+    }
+
+    pub(super) fn subscribe_wake(&self, dims: &Dimensions, cause: &str) {
+        let mut attributes = vec![KeyValue::new("cause", cause.to_owned())];
+        dims.extend(&mut attributes, None);
+        self.subscribe_wakes.add(1, &attributes);
+    }
+
+    pub(super) fn steering(&self, dims: &Dimensions, outcome: &str) {
+        let mut attributes = vec![KeyValue::new("outcome", outcome.to_owned())];
+        dims.extend(&mut attributes, None);
+        self.steering_events.add(1, &attributes);
     }
 }
 

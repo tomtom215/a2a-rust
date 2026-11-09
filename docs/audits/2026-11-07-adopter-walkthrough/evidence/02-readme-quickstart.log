@@ -1,0 +1,52 @@
+project: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/readme-quickstart
+target:  /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/readme-quickstart/target
+--- cargo build
+   Compiling rand_chacha v0.9.0
+   Compiling rustls-webpki v0.103.16
+   Compiling hybrid-array v0.4.15
+   Compiling thread_local v1.1.10
+   Compiling subtle v2.6.1
+   Compiling serde v1.0.229
+   Compiling tonic v0.14.9
+   Compiling serde_json v1.0.154
+   Compiling getrandom v0.4.3
+   Compiling tracing-subscriber v0.3.23
+   Compiling rand v0.9.5
+   Compiling futures-executor v0.3.34
+   Compiling serde_derive v1.0.229
+   Compiling a2a-protocol-types v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-types-0.16.0)
+   Compiling opentelemetry_sdk v0.33.1
+   Compiling tonic-prost v0.14.9
+   Compiling block-buffer v0.12.1
+   Compiling tokio-rustls v0.26.6
+   Compiling crypto-common v0.2.2
+   Compiling prost-types v0.14.4
+   Compiling webpki-roots v1.0.11
+   Compiling const-oid v0.10.2
+   Compiling hyper-rustls v0.27.10
+   Compiling digest v0.11.3
+   Compiling tonic-types v0.14.9
+   Compiling uuid v1.29.1
+   Compiling opentelemetry-proto v0.33.1
+   Compiling tracing-opentelemetry v0.34.0
+   Compiling opentelemetry-http v0.33.1
+   Compiling a2a-protocol-client v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-client-0.16.0)
+   Compiling mutants v0.0.4
+   Compiling a2a-protocol-server v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-server-0.16.0)
+   Compiling cpufeatures v0.3.1
+   Compiling sha2 v0.11.1
+   Compiling opentelemetry-appender-tracing v0.33.1
+   Compiling serde_path_to_error v0.1.20
+   Compiling opentelemetry-otlp v0.33.1
+   Compiling a2a-protocol-sdk v0.16.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/unpacked/a2a-protocol-sdk-0.16.0)
+   Compiling readme-quickstart v0.1.0 (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/readme-quickstart)
+    Finished `dev` profile [unoptimized] target(s) in 1m 15s
+
+real	1m15.386s
+user	1m34.313s
+sys	0m9.154s
+--- cargo run (10 s)
+Hello, Tom!
+artifact: 3e290e22-9739-49e5-8c58-34e26e729ad3
+status: Completed
+exit: 0

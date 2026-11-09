@@ -1,0 +1,5 @@
+2026-11-08T00:46:17.994684Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=console to print spans
+2026-11-08T00:46:18.101775Z  WARN a2a_protocol_server::tool_loop::run: tool loop: the model provider failed a turn error=the model provider answered HTTP 502: upstream error CANARY_PROVIDER_ERROR_BODY_91e2
+2026-11-08T00:00:00.000000Z ERROR forged: admin session opened [31mRED[0m]0;title
+2026-11-08T00:46:18.101870Z  WARN a2a_protocol_server::tool_loop::executor: the run failed error=the model provider answered HTTP 502: upstream error CANARY_PROVIDER_ERROR_BODY_91e2
+2026-11-08T00:00:00.000000Z ERROR forged: admin session opened [31mRED[0m]0;title

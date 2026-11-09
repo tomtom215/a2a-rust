@@ -22,9 +22,10 @@ use std::time::{Duration, Instant};
 
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::streaming::EventQueueWriter;
+use a2a_protocol_server::streaming::{EventQueueReader, EventQueueWriter};
 use a2a_protocol_server::{EventEmitter, RequestHandler, RequestHandlerBuilder, SendMessageResult};
 use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{Task, TaskId, TaskState};
@@ -147,4 +148,61 @@ async fn on_a_multi_thread_runtime_a_panic_fails_the_task_streaming() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn on_a_multi_thread_runtime_a_panic_fails_the_task_blocking() {
     blocking_path().await;
+}
+
+/// Every frame of a streaming send's stream, in order, to its end. A stream
+/// that never ends fails the test after ten seconds instead of hanging it.
+async fn frames_of_a_streaming_send(handler: &RequestHandler) -> Vec<StreamResponse> {
+    let sent = handler
+        .on_send_message(send_params(false), true, None)
+        .await
+        .expect("accepted");
+    let SendMessageResult::Stream(mut reader) = sent else {
+        panic!("expected a stream");
+    };
+    let mut frames = Vec::new();
+    while let Some(frame) = tokio::time::timeout(Duration::from_secs(10), reader.read())
+        .await
+        .expect("the stream neither delivered a frame nor ended in ten seconds")
+    {
+        frames.push(frame.expect("a frame, not a stream error").event);
+    }
+    frames
+}
+
+/// F14 (audit D-03 d): the stream of a streaming send whose executor panics
+/// does not just stop. The last frame says the task failed, as a client
+/// reading the stream to its end is entitled to expect, so it does not have
+/// to guess from an end of stream (which is also how a dropped connection
+/// ends) and call `GetTask`.
+async fn streaming_path() {
+    let handler = handler();
+    let frames = frames_of_a_streaming_send(&handler).await;
+
+    let StreamResponse::Task(first) = frames.first().expect("a stream has a first frame") else {
+        panic!("the first frame is the task: {frames:?}");
+    };
+    let last = frames.last().expect("a stream has a last frame");
+    let failed = match last {
+        StreamResponse::StatusUpdate(update) => update.status.clone(),
+        StreamResponse::Task(task) => task.status.clone(),
+        other => panic!("the last frame must carry the terminal state: {other:?}"),
+    };
+    assert_eq!(failed.state, TaskState::Failed, "{frames:?}");
+    assert_eq!(
+        failed.message.as_ref().and_then(|m| m.text()),
+        Some("The agent stopped unexpectedly before it finished this task."),
+        "the frame carries the fixed message, not the panic's text: {failed:?}"
+    );
+    assert_failed_without_the_panic_text(&settled(&handler, &first.id).await);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn on_a_current_thread_runtime_a_streaming_send_ends_with_the_failed_state() {
+    streaming_path().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn on_a_multi_thread_runtime_a_streaming_send_ends_with_the_failed_state() {
+    streaming_path().await;
 }

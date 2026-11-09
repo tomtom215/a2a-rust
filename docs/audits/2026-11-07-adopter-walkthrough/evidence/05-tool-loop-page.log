@@ -1,0 +1,61 @@
+##### attempt 1: the page's dependency line alone
+project: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/tool-loop-page-1
+target:  /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/tool-loop-page-1/target
+error[E0433]: cannot find module or crate `tokio` in this scope
+  --> src/main.rs:28:3
+error[E0433]: cannot find module or crate `serde_json` in this scope
+  --> src/main.rs:17:9
+error[E0752]: `main` function is not allowed to be `async`
+  --> src/main.rs:29:1
+error[E0433]: cannot find module or crate `serde_json` in this scope
+  --> src/main.rs:16:29
+error: could not compile `tool-loop-page-1` (bin "tool-loop-page-1") due to 4 previous errors
+##### attempt 2: plus tokio and serde_json
+project: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/tool-loop-page-2
+target:  /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/adopter-projects/tool-loop-page-2/target
+extra dependency lines the page did not give: ['tokio = { version = "1", features = ["rt-multi-thread", "macros"] }', 'serde_json = "1"']
+    Finished `dev` profile [unoptimized] target(s) in 24.15s
+{"status":"ok"}
+--- a2a card
+{
+  "name": "clock-agent",
+  "description": "Tells the time by calling a tool",
+  "supportedInterfaces": [
+    {
+      "url": "http://127.0.0.1:3000",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "version": "1.0.0",
+  "capabilities": {
+--- a2a send (what time is it?)
+{
+  "task": {
+    "id": "574e2c5a-8150-4d93-9e4c-ea8ff003e9c4",
+    "contextId": "d4203de0-3078-417e-b73c-2d00a8903082",
+    "status": {
+      "state": "TASK_STATE_FAILED",
+      "message": {
+        "messageId": "e01df5df-b710-4e5e-8351-3d14ec95ad4f",
+        "contextId": "d4203de0-3078-417e-b73c-2d00a8903082",
+        "taskId": "574e2c5a-8150-4d93-9e4c-ea8ff003e9c4",
+        "role": "ROLE_AGENT",
+        "parts": [
+          {
+            "text": "could not reach the model provider"
+          }
+        ],
+        "metadata": {
+          "a2a-rust.com/failure": "transient"
+        },
+        "extensions": [
+          "https://a2a-rust.com/extensions/failure/v1"
+        ]
+      },
+      "timestamp": "2026-11-07T12:51:08.815Z"
+    }
+  }
+}
+took 0 s
+agent exit: 0

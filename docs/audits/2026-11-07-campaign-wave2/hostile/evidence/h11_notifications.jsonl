@@ -1,0 +1,12 @@
+{"attack": "unauthenticated SendMessage notification starts nothing", "verdict": "held", "detail": {"status": 204, "tasks_before": 0, "tasks_after": 0}}
+{"attack": "SendMessage notification with a wrong token starts nothing", "verdict": "held", "detail": {"status": 204, "tasks_after": 0}}
+{"attack": "authenticated SendMessage notification (recorded: does a valid notification run?)", "verdict": "held", "detail": {"status": 204, "tasks_after": 1, "ran": true}}
+{"attack": "CancelTask notification with no credential leaves alice's task alone", "verdict": "held", "detail": "TASK_STATE_WORKING"}
+{"attack": "CancelTask notification with a wrong token leaves alice's task alone", "verdict": "held", "detail": "TASK_STATE_WORKING"}
+{"attack": "CancelTask notification with bob's token leaves alice's task alone", "verdict": "held", "detail": "TASK_STATE_WORKING"}
+{"attack": "unauthenticated batch [CancelTask notification, GetTask] cancels nothing and leaks nothing", "verdict": "held", "detail": {"status": 200, "www-authenticate": null, "body": "[{\"error\":{\"code\":-32600,\"message\":\"authentication required\"},\"id\":1,\"jsonrpc\":\"2.0\"}]"}}
+{"attack": "bob's batch [CancelTask notification, GetTask] on alice's task does nothing", "verdict": "held", "detail": {"status": 200, "body": "[{\"error\":{\"code\":-32001,\"data\":[{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",\"domain\":\"a2a-protocol.org\",\"reason\":\"TASK_NOT_FOUND\"}],\"message\":\"Task not found: e9e8fb45-1052-4a05-9f1d-7e750986828f\"},\"id\":1,\"jsonrpc\":\"2.0\"}]"}}
+{"attack": "target alive", "verdict": "held", "detail": {"alive": true, "rss_kb": 27948, "fds": 12, "threads": 5, "panics": 0}}
+{"attack": "a batch of 1000 authenticated requests", "verdict": "held", "detail": {"status": 200, "seconds": 0.01, "bytes": 129}}
+{"attack": "a batch of 200 SendMessage (does one request bypass the per-request limits?)", "verdict": "held", "detail": {"status": 200, "seconds": 0.0, "tasks_now": 2}}
+{"tally": {"tried": 11, "held": 11, "deviation": 0}}

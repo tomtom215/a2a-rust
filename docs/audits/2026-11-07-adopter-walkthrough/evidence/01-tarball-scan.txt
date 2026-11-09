@@ -1,0 +1,26 @@
+=== a2a-protocol-client-0.16.0.crate
+  licence/notice files in tarball: NONE
+  manifest: {'name': 'a2a-protocol-client', 'version': '0.16.0', 'license': 'Apache-2.0', 'readme': 'README.md', 'repository': 'https://github.com/tomtom215/a2a-rust', 'rust-version': '1.94', 'edition': '2024', 'description': 'Agent2Agent (A2A) protocol v1.0 — HTTP client (hyper-backed)'}
+  email other than maintainer: 13 in 7 file(s)
+    src/discovery/card_span.rs: pw@agent.example
+    src/discovery/card_span.rs: pw@agent.example
+    src/jwks.rs: 127.0.0.1@evil.example
+    src/jwks.rs: 127.0.0.1@evil.example
+=== a2a-protocol-sdk-0.16.0.crate
+  licence/notice files in tarball: NONE
+  manifest: {'name': 'a2a-protocol-sdk', 'version': '0.16.0', 'license': 'Apache-2.0', 'readme': 'README.md', 'repository': 'https://github.com/tomtom215/a2a-rust', 'rust-version': '1.94', 'edition': '2024', 'description': 'Agent2Agent (A2A) protocol v1.0 — convenience umbrella re-export crate'}
+=== a2a-protocol-server-0.16.0.crate
+  licence/notice files in tarball: ['src/otel/telemetry/notice_tests.rs']
+  manifest: {'name': 'a2a-protocol-server', 'version': '0.16.0', 'license': 'Apache-2.0', 'readme': 'README.md', 'repository': 'https://github.com/tomtom215/a2a-rust', 'rust-version': '1.94', 'edition': '2024', 'description': 'Agent2Agent (A2A) protocol v1.0 — server framework (hyper-backed)'}
+  email other than maintainer: 40 in 17 file(s)
+    src/agent_card/lint_tests.rs: pw@cdn.example
+    src/agent_card/lint_tests.rs: pw@wiki.corp
+    src/audit/privacy/tests/erasure.rs: carol@example.test
+    src/audit/privacy/tests/erasure.rs: carol@example.test
+  developer path: 1 in 1 file(s)
+    src/sqlite_pool/network_fs/tests.rs: /home/agent/a2a.db
+  private key block: 1 in 1 file(s)
+    tests/serve_tls.rs: -----BEGIN PRIVATE KEY-----
+=== a2a-protocol-types-0.16.0.crate
+  licence/notice files in tarball: NONE
+  manifest: {'name': 'a2a-protocol-types', 'version': '0.16.0', 'license': 'Apache-2.0', 'readme': 'README.md', 'repository': 'https://github.com/tomtom215/a2a-rust', 'rust-version': '1.94', 'edition': '2024', 'description': 'Agent2Agent (A2A) protocol v1.0 — pure data types, serde only, no I/O'}

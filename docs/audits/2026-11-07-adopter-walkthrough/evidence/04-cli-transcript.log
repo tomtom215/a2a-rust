@@ -1,0 +1,1138 @@
+##### start the agents
+Echo agent listening on http://127.0.0.1:3111 (JSON-RPC + REST)
+##### help, version, usage errors
+=== version
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a --version
+--- stdout (11 bytes)
+a2a 0.16.0
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.03s
+
+=== help
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a --help
+--- stdout (4938 bytes)
+Command-line client for A2A agents, built on a2a-protocol-client.
+
+Every command prints its result to stdout as JSON. Exit codes: 0 success, 1 protocol or transport error (message on stderr, plus the agent's JSON error object when there is one), 2 usage error.
+
+Usage: a2a [OPTIONS] <COMMAND>
+
+Commands:
+  card    Fetch the agent card and print it; or sign or verify a card
+  audit   Verify an exported audit chain (offline)
+  send    Send one text message (`SendMessage`) and print the task or message
+  stream  Send one text message and stream the events (`SendStreamingMessage`), one JSON object per line, until the terminal event
+  task    Inspect, cancel or list tasks
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --binding <BINDING>
+          Protocol binding to speak to <URL> with. Without this flag the agent card is fetched from <URL>/.well-known/agent-card.json and the binding is chosen the way ClientBuilder::from_card does: the first interface the card lists that this client supports (spec §8.3.2) — and the card's URL for that interface is used, not <URL>. With this flag no card is fetched and <URL> is taken as the endpoint of that binding 
+--- stderr (0 bytes)
+
+--- exit 0 in 0.02s
+
+=== send help
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send --help
+--- stdout (4721 bytes)
+Send one text message (`SendMessage`) and print the task or message
+
+Usage: a2a send [OPTIONS] <URL> <TEXT>
+
+Arguments:
+  <URL>
+          Agent URL (see --binding for what it must point at)
+
+  <TEXT>
+          The message text; sent as a single text part
+
+Options:
+      --binding <BINDING>
+          Protocol binding to speak to <URL> with. Without this flag the agent card is fetched from <URL>/.well-known/agent-card.json and the binding is chosen the way ClientBuilder::from_card does: the first interface the card lists that this client supports (spec §8.3.2) — and the card's URL for that interface is used, not <URL>. With this flag no card is fetched and <URL> is taken as the endpoint of that binding (http(s):// for jsonrpc and rest, ws(s):// for websocket, host:port or http(s):// for grpc).
+
+          Possible values:
+          - jsonrpc:   JSON-RPC 2.0 over HTTP (spec §9)
+          - rest:      HTTP+JSON, the REST binding (spec §11)
+          - grpc:      gRPC (spec §10)
+          - websocket: WebSocket (a §12 custom binding)
+
+      --context-id <ID>
+          Continue an existing conversation
+
+      --task-id <ID>
+          Address an existing task (for example one waiting on input)
+
+      --timeout <SECS>
+          Per-request timeout in seconds; also bounds establishing a stream. `send` waits for the agent's turn, bounded by `--send-timeout`
+          
+          [default: 30]
+
+      --no-wait
+          Return as soon as the task is accepted rather than when it is done (`returnImmediately`). `send` only; `stream` ignores it
+
+      --send-timeout <SECS>
+          How long `send` waits for the agent to finish its turn, in seconds. A blocking send is answered only when the turn ends, which for an agent calling a model takes as long as the model does; `stream` shows the turn as it happens instead
+          
+          [default: 600]
+
+      --header <K=V>
+          Extra HTTP header sent with every request, e.g. `--header "Authorization=Bearer TOKEN"`. Repeatable; a repeated name, in any case, keeps the last. Over gRPC these become request metadata; over WebSocket they are sent on the upgrade request. A value given here is visible to other users of the machine in the process list: for a credential, use `--header-env`
+
+      --header-env <K=VAR>
+          Like `--header`, but the value is read from the environment variable named after the `=`, e.g. `--header-env Authorization=A2A_AUTH` with `A2A_AUTH='Bearer TOKEN'` exported. The value is the whole hea
+--- stderr (0 bytes)
+
+--- exit 0 in 0.02s
+
+=== no args
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a
+--- stdout (0 bytes)
+
+--- stderr (4400 bytes)
+Command-line client for A2A agents
+
+Usage: a2a [OPTIONS] <COMMAND>
+
+Commands:
+  card    Fetch the agent card and print it; or sign or verify a card
+  audit   Verify an exported audit chain (offline)
+  send    Send one text message (`SendMessage`) and print the task or message
+  stream  Send one text message and stream the events (`SendStreamingMessage`), one JSON object per line, until the terminal event
+  task    Inspect, cancel or list tasks
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --binding <BINDING>    Protocol binding to speak to <URL> with. Without this flag the agent card is fetched from <URL>/.well-known/agent-card.json and the binding is chosen the way ClientBuilder::from_card does: the first interface the card lists that this client supports (spec §8.3.2) — and the card's URL for that interface is used, not <URL>. With this flag no card is fetched and <URL> is taken as the endpoint of that binding (http(s):// for jsonrpc and rest, ws(s):// for websocket, host:port or http(s):// for grpc). [possible values: jsonrpc, rest, grpc, websocket]
+      --timeout <SECS>       Per-request timeout in seconds; also bounds establishing a st
+--- exit 2 in 0.02s
+
+=== unknown subcommand
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a frobnicate
+--- stdout (0 bytes)
+
+--- stderr (113 bytes)
+error: unrecognized subcommand 'frobnicate'
+
+Usage: a2a [OPTIONS] <COMMAND>
+
+For more information, try '--help'.
+
+--- exit 2 in 0.01s
+
+=== completions (not a subcommand)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a completions bash
+--- stdout (0 bytes)
+
+--- stderr (114 bytes)
+error: unrecognized subcommand 'completions'
+
+Usage: a2a [OPTIONS] <COMMAND>
+
+For more information, try '--help'.
+
+--- exit 2 in 0.02s
+
+=== --json (not a flag)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111 hi --json
+--- stdout (0 bytes)
+
+--- stderr (162 bytes)
+error: unexpected argument '--json' found
+
+  tip: to pass '--json' as a value, use '-- --json'
+
+Usage: a2a send <URL> <TEXT>
+
+For more information, try '--help'.
+
+--- exit 2 in 0.01s
+
+=== send without text
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111
+--- stdout (0 bytes)
+
+--- stderr (135 bytes)
+error: the following required arguments were not provided:
+  <TEXT>
+
+Usage: a2a send <URL> <TEXT>
+
+For more information, try '--help'.
+
+--- exit 2 in 0.01s
+
+=== send empty text
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111 
+--- stdout (397 bytes)
+{
+  "task": {
+    "id": "68b834dc-e0a5-4737-8c31-0979174661d0",
+    "contextId": "9dde9d07-9d5e-441b-bd47-904f80a41d4a",
+    "status": {
+      "state": "TASK_STATE_COMPLETED",
+      "timestamp": "2026-11-07T12:19:11.714Z"
+    },
+    "artifacts": [
+      {
+        "artifactId": "echo-artifact",
+        "parts": [
+          {
+            "text": "Echo: "
+          }
+        ]
+      }
+    ]
+  }
+}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.07s
+
+=== bad URL: no scheme
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card 127.0.0.1:3111
+--- stdout (0 bytes)
+
+--- stderr (86 bytes)
+error: invalid endpoint: base URL must start with http:// or https://: 127.0.0.1:3111
+
+--- exit 1 in 0.02s
+
+=== bad URL: garbage
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card not a url
+--- stdout (0 bytes)
+
+--- stderr (81 bytes)
+error: invalid endpoint: base URL must start with http:// or https://: not a url
+
+--- exit 1 in 0.01s
+
+=== timeout 0
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://127.0.0.1:3111 --timeout 0
+--- stdout (0 bytes)
+
+--- stderr (122 bytes)
+error: invalid value '0' for '--timeout <SECS>': 0 is not in 1..18446744073709551615
+
+For more information, try '--help'.
+
+--- exit 2 in 0.02s
+
+=== header without =
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://127.0.0.1:3111 --header novalue
+--- stdout (0 bytes)
+
+--- stderr (118 bytes)
+error: invalid value 'novalue' for '--header <K=V>': expected K=V, got `novalue`
+
+For more information, try '--help'.
+
+--- exit 2 in 0.01s
+
+=== header-env unset var
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://127.0.0.1:3111 --header-env X-A=NO_SUCH_VAR_A2A
+--- stdout (0 bytes)
+
+--- stderr (201 bytes)
+error: invalid value 'X-A=NO_SUCH_VAR_A2A' for '--header-env <K=VAR>': the environment variable NO_SUCH_VAR_A2A is not set, so there is no value for the X-A header
+
+For more information, try '--help'.
+
+--- exit 2 in 0.02s
+
+=== binding unknown
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://127.0.0.1:3111 --binding carrier-pigeon
+--- stdout (0 bytes)
+
+--- stderr (153 bytes)
+error: invalid value 'carrier-pigeon' for '--binding <BINDING>'
+  [possible values: jsonrpc, rest, grpc, websocket]
+
+For more information, try '--help'.
+
+--- exit 2 in 0.01s
+
+##### against echo-agent on http://127.0.0.1:3111
+=== card
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://127.0.0.1:3111
+--- stdout (2026 bytes)
+{
+  "name": "Echo Agent",
+  "description": "A simple echo agent that mirrors your input",
+  "supportedInterfaces": [
+    {
+      "url": "http://127.0.0.1:3111",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    },
+    {
+      "url": "http://127.0.0.1:3111",
+      "protocolBinding": "HTTP+JSON",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": true,
+    "extensions": [
+      {
+        "uri": "https://a2a-rust.com/extensions/idempotency/v1",
+        "description": "Client-supplied idempotency keys on message/send: a retried send returns the task the first one created instead of starting a second.",
+        "required": false
+      },
+      {
+        "uri": "https://a2a-rust.com/extensions/l
+--- stderr (0 bytes)
+
+--- exit 0 in 0.02s
+
+=== send
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111 hello from the walk-through
+--- stdout (424 bytes)
+{
+  "task": {
+    "id": "ec9d00c8-7b01-44e4-8459-d46f66822a42",
+    "contextId": "75226023-d19f-4fe8-9f7b-5930b392f66d",
+    "status": {
+      "state": "TASK_STATE_COMPLETED",
+      "timestamp": "2026-11-07T12:19:12.045Z"
+    },
+    "artifacts": [
+      {
+        "artifactId": "echo-artifact",
+        "parts": [
+          {
+            "text": "Echo: hello from the walk-through"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.03s
+
+=== send --binding rest
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111 over rest --binding rest
+--- stdout (406 bytes)
+{
+  "task": {
+    "id": "37288be0-c16c-4275-8110-4735d6c931dc",
+    "contextId": "9cf8cf6b-0c01-42b5-8fc8-aefaaf791a18",
+    "status": {
+      "state": "TASK_STATE_COMPLETED",
+      "timestamp": "2026-11-07T12:19:12.100Z"
+    },
+    "artifacts": [
+      {
+        "artifactId": "echo-artifact",
+        "parts": [
+          {
+            "text": "Echo: over rest"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.03s
+
+=== send --binding jsonrpc
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111 over jsonrpc --binding jsonrpc
+--- stdout (409 bytes)
+{
+  "task": {
+    "id": "d3123ad3-7084-442f-915a-3f6198b8e0d4",
+    "contextId": "2772071d-34a2-4c41-b6bf-755aa45ed88a",
+    "status": {
+      "state": "TASK_STATE_COMPLETED",
+      "timestamp": "2026-11-07T12:19:12.150Z"
+    },
+    "artifacts": [
+      {
+        "artifactId": "echo-artifact",
+        "parts": [
+          {
+            "text": "Echo: over jsonrpc"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.03s
+
+=== stream
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a stream http://127.0.0.1:3111 stream me
+--- stdout (799 bytes)
+{"task":{"id":"e9679e74-66be-43f8-99e8-9575fced14e8","contextId":"c1ef840d-8b1b-4333-ad98-6abad4243e8c","status":{"state":"TASK_STATE_SUBMITTED","timestamp":"2026-11-07T12:19:12.207Z"}}}
+{"statusUpdate":{"taskId":"e9679e74-66be-43f8-99e8-9575fced14e8","contextId":"c1ef840d-8b1b-4333-ad98-6abad4243e8c","status":{"state":"TASK_STATE_WORKING","timestamp":"2026-11-07T12:19:12.207Z"}}}
+{"artifactUpdate":{"taskId":"e9679e74-66be-43f8-99e8-9575fced14e8","contextId":"c1ef840d-8b1b-4333-ad98-6abad4243e8c","artifact":{"artifactId":"echo-artifact","parts":[{"text":"Echo: stream me"}]},"lastChunk":true}}
+{"statusUpdate":{"taskId":"e9679e74-66be-43f8-99e8-9575fced14e8","contextId":"c1ef840d-8b1b-4333-ad98-6abad4243e8c","status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-11-07T12:19:12.207Z"}}}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.04s
+
+=== send --no-wait slow
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111 slow:hold on --no-wait
+--- stdout (234 bytes)
+{
+  "task": {
+    "id": "c2b43539-cbb3-406c-b221-5ad3664eb670",
+    "contextId": "aa272a21-1188-4af0-8cd4-0fe29f4a2bef",
+    "status": {
+      "state": "TASK_STATE_SUBMITTED",
+      "timestamp": "2026-11-07T12:19:12.271Z"
+    }
+  }
+}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.04s
+
+task id: c2b43539-cbb3-406c-b221-5ad3664eb670
+=== task get
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a task get http://127.0.0.1:3111 c2b43539-cbb3-406c-b221-5ad3664eb670
+--- stdout (400 bytes)
+{
+  "id": "c2b43539-cbb3-406c-b221-5ad3664eb670",
+  "contextId": "aa272a21-1188-4af0-8cd4-0fe29f4a2bef",
+  "status": {
+    "state": "TASK_STATE_WORKING",
+    "timestamp": "2026-11-07T12:19:12.272Z"
+  },
+  "history": [
+    {
+      "messageId": "3dbc4724-0c65-4011-9054-8c8be3921ed7",
+      "role": "ROLE_USER",
+      "parts": [
+        {
+          "text": "slow:hold on"
+        }
+      ]
+    }
+  ]
+}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.02s
+
+=== task subscribe (ends when task ends)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a task subscribe http://127.0.0.1:3111 c2b43539-cbb3-406c-b221-5ad3664eb670
+--- stdout (721 bytes)
+{"task":{"id":"c2b43539-cbb3-406c-b221-5ad3664eb670","contextId":"aa272a21-1188-4af0-8cd4-0fe29f4a2bef","status":{"state":"TASK_STATE_WORKING","timestamp":"2026-11-07T12:19:12.272Z"},"history":[{"messageId":"3dbc4724-0c65-4011-9054-8c8be3921ed7","role":"ROLE_USER","parts":[{"text":"slow:hold on"}]}]}}
+{"artifactUpdate":{"taskId":"c2b43539-cbb3-406c-b221-5ad3664eb670","contextId":"aa272a21-1188-4af0-8cd4-0fe29f4a2bef","artifact":{"artifactId":"echo-artifact","parts":[{"text":"Echo: slow:hold on"}]},"lastChunk":true}}
+{"statusUpdate":{"taskId":"c2b43539-cbb3-406c-b221-5ad3664eb670","contextId":"aa272a21-1188-4af0-8cd4-0fe29f4a2bef","status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-11-07T12:19:12.674Z"}}}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.29s
+
+=== task cancel
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a task cancel http://127.0.0.1:3111 c2b43539-cbb3-406c-b221-5ad3664eb670
+--- stdout (0 bytes)
+
+--- stderr (446 bytes)
+2026-11-07T12:19:12.754944Z  WARN a2a_protocol_client::transport::jsonrpc: JSON-RPC error response method="CancelTask" code=-32002
+error: protocol error: [-32002] Task cannot be canceled: c2b43539-cbb3-406c-b221-5ad3664eb670
+{"error":{"code":-32002,"data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"TASK_NOT_CANCELABLE"}],"message":"Task cannot be canceled: c2b43539-cbb3-406c-b221-5ad3664eb670"}}
+
+--- exit 1 in 0.04s
+
+=== task cancel again (terminal)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a task cancel http://127.0.0.1:3111 c2b43539-cbb3-406c-b221-5ad3664eb670
+--- stdout (0 bytes)
+
+--- stderr (446 bytes)
+2026-11-07T12:19:12.810323Z  WARN a2a_protocol_client::transport::jsonrpc: JSON-RPC error response method="CancelTask" code=-32002
+error: protocol error: [-32002] Task cannot be canceled: c2b43539-cbb3-406c-b221-5ad3664eb670
+{"error":{"code":-32002,"data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"TASK_NOT_CANCELABLE"}],"message":"Task cannot be canceled: c2b43539-cbb3-406c-b221-5ad3664eb670"}}
+
+--- exit 1 in 0.04s
+
+=== task get unknown
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a task get http://127.0.0.1:3111 no-such-task
+--- stdout (0 bytes)
+
+--- stderr (372 bytes)
+2026-11-07T12:19:12.886478Z  WARN a2a_protocol_client::transport::jsonrpc: JSON-RPC error response method="GetTask" code=-32001
+error: protocol error: [-32001] Task not found: no-such-task
+{"error":{"code":-32001,"data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"TASK_NOT_FOUND"}],"message":"Task not found: no-such-task"}}
+
+--- exit 1 in 0.04s
+
+=== task list
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a task list http://127.0.0.1:3111 --page-size 2
+--- stdout (1049 bytes)
+{
+  "tasks": [
+    {
+      "id": "c2b43539-cbb3-406c-b221-5ad3664eb670",
+      "contextId": "aa272a21-1188-4af0-8cd4-0fe29f4a2bef",
+      "status": {
+        "state": "TASK_STATE_COMPLETED",
+        "timestamp": "2026-11-07T12:19:12.674Z"
+      },
+      "history": [
+        {
+          "messageId": "3dbc4724-0c65-4011-9054-8c8be3921ed7",
+          "role": "ROLE_USER",
+          "parts": [
+            {
+              "text": "slow:hold on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "e9679e74-66be-43f8-99e8-9575fced14e8",
+      "contextId": "c1ef840d-8b1b-4333-ad98-6abad4243e8c",
+      "status": {
+        "state": "TASK_STATE_COMPLETED",
+        "timestamp": "2026-11-07T12:19:12.207Z"
+      },
+      "history": [
+        {
+          "messageId": "541c8548-460b-4ee3-bae7-b2e11bcd2f67",
+          "role": "ROLE_USER",
+          "parts": [
+            {
+              "text": "stream me"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "nextPageToken": "1794053952207:19",
+  "pageSize": 2,
+  "totalSize": 6
+}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.04s
+
+=== task list context filter (none)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a task list http://127.0.0.1:3111 --context-id nope
+--- stdout (77 bytes)
+{
+  "tasks": [],
+  "nextPageToken": "",
+  "pageSize": 50,
+  "totalSize": 0
+}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.05s
+
+=== task list bad page token
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a task list http://127.0.0.1:3111 --page-token !!!
+--- stdout (76 bytes)
+{
+  "tasks": [],
+  "nextPageToken": "",
+  "pageSize": 0,
+  "totalSize": 0
+}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.03s
+
+=== send with --context-id
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111 ctx --context-id my-context
+--- stdout (374 bytes)
+{
+  "task": {
+    "id": "bb522f90-90ef-4ab2-9394-9167e3f5914d",
+    "contextId": "my-context",
+    "status": {
+      "state": "TASK_STATE_COMPLETED",
+      "timestamp": "2026-11-07T12:19:13.134Z"
+    },
+    "artifacts": [
+      {
+        "artifactId": "echo-artifact",
+        "parts": [
+          {
+            "text": "Echo: ctx"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.04s
+
+=== send --tenant
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111 tenant --tenant acme
+--- stdout (0 bytes)
+
+--- stderr (923 bytes)
+2026-11-07T12:19:13.188173Z  WARN a2a_protocol_client::transport::jsonrpc: JSON-RPC error response method="SendMessage" code=-32004
+error: protocol error: [-32004] this server cannot isolate tenants: its task store or push-config store does not partition by tenant, so a request naming a tenant would share every other tenant's records. Configure the TenantAware* stores, or call RequestHandlerBuilder::accept_unisolated_tenants() if tenants here only key limits
+{"error":{"code":-32004,"data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"UNSUPPORTED_OPERATION"}],"message":"this server cannot isolate tenants: its task store or push-config store does not partition by tenant, so a request naming a tenant would share every other tenant's records. Configure the TenantAware* stores, or call RequestHandlerBuilder::accept_unisolated_tenants() if tenants here only key limits"}}
+
+--- exit 1 in 0.03s
+
+=== send unicode+newline
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111 héllo 世界
+line two
+--- stdout (420 bytes)
+{
+  "task": {
+    "id": "2ebc01a6-368a-47de-91b6-a47874b883a4",
+    "contextId": "045cc99b-a57d-405d-8101-7fca00f477fb",
+    "status": {
+      "state": "TASK_STATE_COMPLETED",
+      "timestamp": "2026-11-07T12:19:13.223Z"
+    },
+    "artifacts": [
+      {
+        "artifactId": "echo-artifact",
+        "parts": [
+          {
+            "text": "Echo: héllo 世界\nline two"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.03s
+
+=== send 1 MiB of text
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ... [1048412 more characters cut] ...
+--- stdout (0 bytes)
+
+--- stderr (82 bytes)
+scripts/live/adopter/04-cli.sh: line 28: /usr/bin/timeout: Argument list too long
+
+--- exit 126 in 0.01s
+
+=== send 20 MiB of text
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ... [20971356 more characters cut] ...
+--- stdout (0 bytes)
+
+--- stderr (82 bytes)
+scripts/live/adopter/04-cli.sh: line 28: /usr/bin/timeout: Argument list too long
+
+--- exit 126 in 0.23s
+
+##### bindings other than the card's: grpc, websocket (echo-agent serves JSON-RPC and REST here)
+=== grpc to a port with nothing
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send 127.0.0.1:3111 x --binding grpc --grpc-plaintext
+--- stdout (0 bytes)
+
+--- stderr (366 bytes)
+error: protocol error: [-32603] protocol error: received message with invalid compression flag: 123 (valid flags are 0 and 1) while receiving response with status: 400 Bad Request
+{"error":{"code":-32603,"message":"protocol error: received message with invalid compression flag: 123 (valid flags are 0 and 1) while receiving response with status: 400 Bad Request"}}
+
+--- exit 1 in 0.04s
+
+=== websocket to an HTTP port
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send ws://127.0.0.1:3111 x --binding websocket
+--- stdout (0 bytes)
+
+--- stderr (101 bytes)
+error: unexpected HTTP status 404: {"error":{"code":404,"message":"not found","status":"NOT_FOUND"}}
+
+--- exit 1 in 0.05s
+
+##### no network, wrong URL
+=== closed port
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://127.0.0.1:1
+--- stdout (0 bytes)
+
+--- stderr (103 bytes)
+error: HTTP client error: client error (Connect): tcp connect error: Connection refused (os error 111)
+
+--- exit 1 in 0.04s
+
+=== closed port, --binding
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:1 hi --binding jsonrpc
+--- stdout (0 bytes)
+
+--- stderr (246 bytes)
+2026-11-07T12:19:14.595030Z ERROR a2a_protocol_client::transport::jsonrpc: HTTP client error method="SendMessage" error=client error (Connect)
+error: HTTP client error: client error (Connect): tcp connect error: Connection refused (os error 111)
+
+--- exit 1 in 0.04s
+
+=== unresolvable name
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://no-such-host.invalid
+--- stdout (0 bytes)
+
+--- stderr (125 bytes)
+error: HTTP client error: client error (Connect): dns error: failed to lookup address information: Name or service not known
+
+--- exit 1 in 0.03s
+
+=== wrong path (404 card)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://127.0.0.1:3111/nothing/here
+--- stdout (0 bytes)
+
+--- stderr (101 bytes)
+error: unexpected HTTP status 404: {"error":{"code":404,"message":"not found","status":"NOT_FOUND"}}
+
+--- exit 1 in 0.04s
+
+=== card URL given as-is
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://127.0.0.1:3111/.well-known/agent-card.json
+--- stdout (2026 bytes)
+{
+  "name": "Echo Agent",
+  "description": "A simple echo agent that mirrors your input",
+  "supportedInterfaces": [
+    {
+      "url": "http://127.0.0.1:3111",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    },
+    {
+      "url": "http://127.0.0.1:3111",
+      "protocolBinding": "HTTP+JSON",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": true,
+    "extensions": [
+      {
+        "uri": "https://a2a-rust.com/extensions/idempotency/v1",
+        "description": "Client-supplied idempotency keys on message/send: a retried send returns the task the first one created instead of starting a second.",
+        "required": false
+      },
+      {
+        "uri": "https://a2a-rust.com/extensions/lease/v1",
+        "description": "A delegated task is stopped when its parent stops renewing its lease; a GetTask activating this extension renews it.",
+        "required": false
+      },
+      {
+        "uri": "https://a2a-rust.com/extensions/failure/v1",
+        "description": "A failed task says why in a form a caller can match on, rather than only in prose.",
+        "required": false
+      },
+--- stderr (0 bytes)
+
+--- exit 0 in 0.04s
+
+=== https to an http port
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card https://127.0.0.1:3111
+--- stdout (0 bytes)
+
+--- stderr (102 bytes)
+error: HTTP client error: client error (Connect): received corrupt message of type InvalidContentType
+
+--- exit 1 in 0.02s
+
+=== http to a TLS-less gRPC port
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://127.0.0.1:3111/ --timeout 2
+--- stdout (2026 bytes)
+{
+  "name": "Echo Agent",
+  "description": "A simple echo agent that mirrors your input",
+  "supportedInterfaces": [
+    {
+      "url": "http://127.0.0.1:3111",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    },
+    {
+      "url": "http://127.0.0.1:3111",
+      "protocolBinding": "HTTP+JSON",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": true,
+    "extensions": [
+      {
+        "uri": "https://a2a-rust.com/extensions/idempotency/v1",
+        "description": "Client-supplied idempotency keys on message/send: a retried send returns the task the first one created instead of starting a second.",
+        "required": false
+      },
+      {
+        "uri": "https://a2a-rust.com/extensions/lease/v1",
+        "description": "A delegated task is stopped when its parent stops renewing its lease; a GetTask activating this extension renews it.",
+        "required": false
+      },
+      {
+        "uri": "https://a2a-rust.com/extensions/failure/v1",
+        "description": "A failed task says why in a form a caller can match on, rather than only in prose.",
+        "required": false
+      },
+--- stderr (0 bytes)
+
+--- exit 0 in 0.03s
+
+##### a 401, a 429, a 500, a non-JSON 200 (stub ports 3401, 3402, 3403, 3408)
+=== 401 via card
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3401 hi
+--- stdout (0 bytes)
+
+--- stderr (183 bytes)
+error: could not fetch the agent card from http://127.0.0.1:3401: unexpected HTTP status 401: {"error":"unauthorized"}
+hint: pass --binding to skip discovery and use the URL directly
+
+--- exit 1 in 0.05s
+
+=== 401 via --binding, with a secret header
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3401 hi --binding jsonrpc --header Authorization=Bearer s3cr3t-token-do-not-print
+--- stdout (0 bytes)
+
+--- stderr (203 bytes)
+2026-11-07T12:19:15.207071Z  WARN a2a_protocol_client::transport::jsonrpc: unexpected HTTP status method="SendMessage" status=401 Unauthorized
+error: unexpected HTTP status 401: {"error":"unauthorized"}
+
+--- exit 1 in 0.06s
+
+stub saw: 1 request(s) carrying the secret
+=== 401 with --header-env
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3401 hi --binding jsonrpc --header-env Authorization=A2A_AUTH
+--- stdout (0 bytes)
+
+--- stderr (203 bytes)
+2026-11-07T12:19:15.292863Z  WARN a2a_protocol_client::transport::jsonrpc: unexpected HTTP status method="SendMessage" status=401 Unauthorized
+error: unexpected HTTP status 401: {"error":"unauthorized"}
+
+--- exit 1 in 0.04s
+
+=== 429
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3402 hi --binding jsonrpc
+--- stdout (0 bytes)
+
+--- stderr (205 bytes)
+2026-11-07T12:19:15.374408Z  WARN a2a_protocol_client::transport::jsonrpc: unexpected HTTP status method="SendMessage" status=429 Too Many Requests
+error: unexpected HTTP status 429: {"error":"slow down"}
+
+--- exit 1 in 0.04s
+
+=== 429 card
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://127.0.0.1:3402
+--- stdout (0 bytes)
+
+--- stderr (57 bytes)
+error: unexpected HTTP status 429: {"error":"slow down"}
+
+--- exit 1 in 0.03s
+
+=== 500 html body
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3403 hi --binding jsonrpc
+--- stdout (0 bytes)
+
+--- stderr (205 bytes)
+2026-11-07T12:19:15.522553Z  WARN a2a_protocol_client::transport::jsonrpc: unexpected HTTP status method="SendMessage" status=500 Internal Server Error
+error: unexpected HTTP status 500: <html>boom</html>
+
+--- exit 1 in 0.05s
+
+=== 200 not JSON
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3408 hi --binding jsonrpc
+--- stdout (0 bytes)
+
+--- stderr (175 bytes)
+error: protocol binding mismatch: response is not JSON-RPC (expected ident at line 1 column 2); the server may use REST transport; check the agent card's supported_interfaces
+
+--- exit 1 in 0.03s
+
+=== rest 401
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3401 hi --binding rest --header Authorization=Bearer s3cr3t-token-do-not-print
+--- stdout (0 bytes)
+
+--- stderr (60 bytes)
+error: unexpected HTTP status 401: {"error":"unauthorized"}
+
+--- exit 1 in 0.02s
+
+=== userinfo in the URL (printed?)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://user:pw-in-url-123@127.0.0.1:3401
+--- stdout (0 bytes)
+
+--- stderr (60 bytes)
+error: unexpected HTTP status 401: {"error":"unauthorized"}
+
+--- exit 1 in 0.03s
+
+=== secret in the URL's query
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://127.0.0.1:3401/?api_key=qs-secret-456
+--- stdout (0 bytes)
+
+--- stderr (60 bytes)
+error: unexpected HTTP status 401: {"error":"unauthorized"}
+
+--- exit 1 in 0.05s
+
+##### half-open peer (3404 never answers) and stalled / cut streams
+=== half-open, --timeout 3
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3404 hi --binding jsonrpc --timeout 3 --send-timeout 3
+--- stdout (0 bytes)
+
+--- stderr (398 bytes)
+2026-11-07T12:19:18.860854Z ERROR a2a_protocol_client::transport::jsonrpc: request timed out method="SendMessage"
+error: timeout: SendMessage was not answered within 3 s. A blocking send waits for the agent's whole turn, and the task goes on running on the agent: raise ClientBuilder::with_send_timeout, or stream (send_streaming_message), or send with return_immediately(true) and follow the task
+
+--- exit 1 in 3.03s
+
+=== half-open card, --timeout 3
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card http://127.0.0.1:3404 --timeout 3
+--- stdout (0 bytes)
+
+--- stderr (51 bytes)
+error: transport error: agent card fetch timed out
+
+--- exit 1 in 3.02s
+
+=== stream: one event then a stall (3405), --timeout 3
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a stream http://127.0.0.1:3405 hi --timeout 3
+--- stdout (78 bytes)
+{"task":{"id":"t1","contextId":"c1","status":{"state":"TASK_STATE_WORKING"}}}
+
+--- stderr (312 bytes)
+2026-11-07T12:19:21.981660Z  WARN a2a_protocol_client::streaming::event_stream: JSON-RPC stream frame id mismatch: the frame does not echo the request id (spec §9.4.2); delivered, since the HTTP response binds it to this request expected=Some(String("dd5a4c23-f22a-470f-88b9-e4ff1f156aca")) got=Some(Number(1))
+
+--- exit 124 in 90.01s
+
+=== stream: cut mid-event (3409)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a stream http://127.0.0.1:3409 hi
+--- stdout (0 bytes)
+
+--- stderr (122 bytes)
+error: stream ended before its final event: the connection closed mid-frame, discarding 62 bytes of an unterminated event
+
+--- exit 1 in 0.10s
+
+=== credential to a card naming another host (3407)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3407 hi --header Authorization=Bearer s3cr3t-token-do-not-print
+--- stdout (0 bytes)
+
+--- stderr (210 bytes)
+error: the agent card at http://127.0.0.1:3407 names the interface http://evil.example.invalid:9, a different host, and --header would send your credentials there; pass --follow-card-origin if that is intended
+
+--- exit 1 in 0.07s
+
+=== same, with --follow-card-origin
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3407 hi --header Authorization=Bearer s3cr3t-token-do-not-print --follow-card-origin --timeout 3
+--- stdout (0 bytes)
+
+--- stderr (825 bytes)
+2026-11-07T12:20:52.358443Z  WARN a2a_protocol_client::plaintext: sending a credential over a plaintext connection to a non-loopback host; spec §13.4 says credentials SHOULD travel only over encrypted connections endpoint=http://evil.example.invalid:9 credential="authorization"
+2026-11-07T12:20:52.364039Z ERROR a2a_protocol_client::transport::jsonrpc: HTTP client error method="SendMessage" error=client error (Connect)
+error: HTTP client error: client error (Connect): dns error: failed to lookup address information: Name or service not known
+hint: the agent card at http://127.0.0.1:3407 sent this call to http://evil.example.invalid:9 (JSONRPC); if that address cannot be reached from here (a port-forward, a proxy, a card that advertises a bind address), pass --binding jsonrpc to call http://127.0.0.1:3407 directly
+
+--- exit 1 in 0.06s
+
+##### offline: card sign and verify, audit verify
+=== card sign
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card sign card.json --key key.der --alg eddsa --kid k1
+--- stdout (2244 bytes)
+{
+  "name": "Echo Agent",
+  "description": "A simple echo agent that mirrors your input",
+  "supportedInterfaces": [
+    {
+      "url": "http://127.0.0.1:3111",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    },
+    {
+      "url": "http://127.0.0.1:3111",
+      "protocolBinding": "HTTP+JSON",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": true,
+    "extensions": [
+      {
+        "uri": "https://a2a-rust.com/extensions/idempotency/v1",
+        "description": "Client-supplied idempotency keys on message/send: a retried send returns the task the first one created instead of starting a second.",
+        "required": false
+      },
+      {
+        "uri": "https://a2a-rust.com/extensions/lease/v1",
+        "description": "A delegated task is stopped when its parent stops renewing its lease; a GetTask activating this extension renews it.",
+        "required": false
+      },
+      {
+        "uri": "https://a2a-rust.com/extensions/failure/v1",
+        "description": "A failed task says why in a form a caller can match on, rather than only in prose.",
+        "required": false
+      },
+--- stderr (0 bytes)
+
+--- exit 0 in 0.02s
+
+=== card verify (good)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card verify signed.json --jwks jwks.json
+--- stdout (42 bytes)
+{
+  "signatures": 1,
+  "verified": true
+}
+
+--- stderr (0 bytes)
+
+--- exit 0 in 0.05s
+
+=== card verify (tampered)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card verify tampered.json --jwks jwks.json
+--- stdout (0 bytes)
+
+--- stderr (65 bytes)
+error: no signature on the agent card verifies under the key set
+
+--- exit 1 in 0.02s
+
+=== card verify (unsigned card)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card verify card.json --jwks jwks.json
+--- stdout (0 bytes)
+
+--- stderr (36 bytes)
+error: the agent card is not signed
+
+--- exit 1 in 0.03s
+
+=== card verify (missing file)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card verify nope.json --jwks jwks.json
+--- stdout (0 bytes)
+
+--- stderr (69 bytes)
+error: cannot read nope.json: No such file or directory (os error 2)
+
+--- exit 1 in 0.02s
+
+=== card verify (wrong key)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card verify signed.json --jwks /dev/fd/63
+--- stdout (0 bytes)
+
+--- stderr (65 bytes)
+error: no signature on the agent card verifies under the key set
+
+--- exit 1 in 0.05s
+
+=== card sign (key file is not a key)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a card sign card.json --key card.json --alg eddsa --kid k1
+--- stdout (0 bytes)
+
+--- stderr (60 bytes)
+error: signing failed: invalid Ed25519 key: InvalidEncoding
+
+--- exit 1 in 0.04s
+
+=== audit verify (missing file)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a audit verify nope.jsonl
+--- stdout (0 bytes)
+
+--- stderr (70 bytes)
+error: cannot read nope.jsonl: No such file or directory (os error 2)
+
+--- exit 1 in 0.02s
+
+=== audit verify (not records)
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a audit verify bad-records.json
+--- stdout (0 bytes)
+
+--- stderr (120 bytes)
+error: bad-records.json is not a JSON array of audit records: invalid type: map, expected a sequence at line 1 column 0
+
+--- exit 1 in 0.02s
+
+##### telemetry: OTEL endpoint with nothing listening must not break or hang the command
+=== send with an unreachable collector
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111 otel
+--- stdout (401 bytes)
+{
+  "task": {
+    "id": "886736cb-ae38-4783-8e60-38e462cdce92",
+    "contextId": "08005c65-24d6-4351-8ae2-414edbff31b2",
+    "status": {
+      "state": "TASK_STATE_COMPLETED",
+      "timestamp": "2026-11-07T12:20:53.216Z"
+    },
+    "artifacts": [
+      {
+        "artifactId": "echo-artifact",
+        "parts": [
+          {
+            "text": "Echo: otel"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+--- stderr (1018 bytes)
+2026-11-07T12:20:54.027646Z  WARN a2a_protocol_server::otel::telemetry::counting: OTLP export of traces to http://127.0.0.1:4318/v1/traces failed after the exporter's retries and the batch was dropped: Operation failed: HTTP export failed: network error (cause: client error (Connect): tcp connect error: Connection refused (os error 111))
+2026-11-07T12:20:54.804877Z  WARN a2a_protocol_server::otel::telemetry::counting: OTLP export of metrics to http://127.0.0.1:4318/v1/metrics failed after the exporter's retries and the batch was dropped: Operation failed: HTTP export failed: network error (cause: client error (Connect): tcp connect error: Connection refused (os error 111))
+2026-11-07T12:20:55.100676Z  WARN a2a_protocol_server::otel::telemetry::counting: OTLP export of logs to http://127.0.0.1:4318/v1/logs failed after the exporter's retries and the batch was dropped: Operation failed: HTTP export failed: network error (cause: client error (Connect): tcp connect error: Connection refused (os error 111))
+
+--- exit 0 in 1.95s
+
+=== send with an unusable OTEL setting
+$ /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a send http://127.0.0.1:3111 otel
+--- stdout (401 bytes)
+{
+  "task": {
+    "id": "46a7aeaa-d855-4993-8d1b-97a52ce17ca7",
+    "contextId": "397987c1-f557-4709-bb96-ef4dca236fa8",
+    "status": {
+      "state": "TASK_STATE_COMPLETED",
+      "timestamp": "2026-11-07T12:20:55.189Z"
+    },
+    "artifacts": [
+      {
+        "artifactId": "echo-artifact",
+        "parts": [
+          {
+            "text": "Echo: otel"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+--- stderr (266 bytes)
+2026-11-07T12:20:55.152454Z  WARN a2a_protocol_server::otel::telemetry::subscriber: OTEL_TRACES_EXPORTER="bogus" `bogus` is not an exporter this SDK has (it has `otlp`, `console`, `prometheus` for metrics, and `none`); nothing usable is left, so the default is used
+
+--- exit 0 in 0.06s
+
+##### SIGINT during a stream
+stdout:
+{"task":{"id":"t1","contextId":"c1","status":{"state":"TASK_STATE_WORKING"}}}
+stderr:
+2026-11-07T12:20:55.257140Z  WARN a2a_protocol_client::streaming::event_stream: JSON-RPC stream frame id mismatch: the frame does not echo the request id (spec §9.4.2); delivered, since the HTTP response binds it to this request expected=Some(String("b4abed02-abe1-4975-be74-1932f574f6af")) got=Some(Number(1))
+rc:
+##### done

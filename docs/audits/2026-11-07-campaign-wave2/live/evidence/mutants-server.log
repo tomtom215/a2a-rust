@@ -1,0 +1,35 @@
+Found 11 mutants to test
+ok       Unmutated baseline in 1s build + 133s test
+ERROR interrupted
+ERROR scenario execution internal error err=interrupted
+
+Stack backtrace:
+   0: <anyhow::Error>::msg::<&str>
+   1: cargo_mutants::interrupt::check_interrupted
+   2: <cargo_mutants::process::Process>::run
+   3: cargo_mutants::cargo::run_cargo
+   4: <cargo_mutants::lab::Worker>::run_one_scenario
+   5: <cargo_mutants::lab::Lab>::run_queue
+   6: std::sys::backtrace::__rust_begin_short_backtrace::<cargo_mutants::lab::test_mutants::{closure#1}::{closure#0}, core::result::Result<(), anyhow::Error>>
+   7: <std::thread::lifecycle::spawn_unchecked<cargo_mutants::lab::test_mutants::{closure#1}::{closure#0}, core::result::Result<(), anyhow::Error>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+   8: <std::sys::thread::unix::Thread>::new::thread_start
+   9: start_thread
+             at ./nptl/pthread_create.c:447:8
+  10: clone3
+             at ./misc/../sysdeps/unix/sysv/linux/x86_64/clone3.S:78:0 phase=Test
+Error: interrupted
+
+Stack backtrace:
+   0: <anyhow::Error>::msg::<&str>
+   1: cargo_mutants::interrupt::check_interrupted
+   2: <cargo_mutants::process::Process>::run
+   3: cargo_mutants::cargo::run_cargo
+   4: <cargo_mutants::lab::Worker>::run_one_scenario
+   5: <cargo_mutants::lab::Lab>::run_queue
+   6: std::sys::backtrace::__rust_begin_short_backtrace::<cargo_mutants::lab::test_mutants::{closure#1}::{closure#0}, core::result::Result<(), anyhow::Error>>
+   7: <std::thread::lifecycle::spawn_unchecked<cargo_mutants::lab::test_mutants::{closure#1}::{closure#0}, core::result::Result<(), anyhow::Error>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+   8: <std::sys::thread::unix::Thread>::new::thread_start
+   9: start_thread
+             at ./nptl/pthread_create.c:447:8
+  10: clone3
+             at ./misc/../sysdeps/unix/sysv/linux/x86_64/clone3.S:78:0

@@ -90,12 +90,18 @@ const STALE_WINDOW: i64 = -10;
 /// numbers windows by the database's clock and ignores it.
 const REPLICA_WINDOW: u64 = 7;
 
-/// A row from a window long past, which only a sweep removes.
+/// [`WIDE`] as the column stores it.
+const WIDE_SECS: i64 = 1 << 60;
+
+/// A row from a window long past, which only a sweep removes. It records the
+/// width the counts in these tests use, as a row written by `count` does.
 async fn seed_stale_row(pool: &PgPool) {
     sqlx::query(
-        "INSERT INTO a2a_rate_limit (caller, window_no, request_count) VALUES ('stale', $1, 1)",
+        "INSERT INTO a2a_rate_limit (caller, window_no, request_count, window_secs) \
+         VALUES ('stale', $1, 1, $2)",
     )
     .bind(STALE_WINDOW)
+    .bind(WIDE_SECS)
     .execute(pool)
     .await
     .expect("seed a stale window");
@@ -282,9 +288,11 @@ async fn the_sweep_keeps_the_previous_window_and_drops_older_ones() {
         .expect("counter connects");
     for window in [-2_i64, -1, 1] {
         sqlx::query(
-            "INSERT INTO a2a_rate_limit (caller, window_no, request_count) VALUES ('seed', $1, 1)",
+            "INSERT INTO a2a_rate_limit (caller, window_no, request_count, window_secs) \
+             VALUES ('seed', $1, 1, $2)",
         )
         .bind(window)
+        .bind(WIDE_SECS)
         .execute(&counter.pool)
         .await
         .expect("seed");
@@ -331,5 +339,152 @@ async fn an_unusable_width_is_an_error_not_a_count() {
     );
     assert_eq!(rows_of(&counter.pool, "k").await, Vec::<(i64, i64)>::new());
 
+    db.drop_db().await;
+}
+
+/// The width a row was counted under, by caller.
+async fn width_of(pool: &PgPool, caller: &str) -> Vec<i64> {
+    sqlx::query_scalar(
+        "SELECT window_secs FROM a2a_rate_limit WHERE caller = $1 ORDER BY window_no",
+    )
+    .bind(caller)
+    .fetch_all(pool)
+    .await
+    .expect("widths")
+}
+
+/// A sweep of one width leaves the rows of another alone. The rate limiter
+/// and the authentication-failure throttle share this table and count in
+/// windows of different widths; window numbers of different widths are not
+/// comparable, and before the width was recorded a 60 s sweep read a 300 s
+/// row's number as long past and deleted a live count (measured: a row of
+/// count 3). Here a row of width [`WIDE`] holds the database's current
+/// window 0, and a sweep of 60 s would put the cut-off at millions.
+#[tokio::test]
+#[ignore = "needs a live PostgreSQL (see the module docs)"]
+async fn a_sweep_leaves_the_rows_of_another_width() {
+    let db = ScratchDb::create("other_width").await;
+    let counter = PostgresRateLimitCounter::new(&db.url())
+        .await
+        .expect("counter connects");
+    for expected in 1..=3 {
+        let seen = counter.count("wide", 0, WIDE).await.expect("count");
+        assert_eq!(seen, expected);
+    }
+
+    counter.sweep(60).await;
+
+    assert_eq!(
+        rows_of(&counter.pool, "wide").await,
+        vec![(WIDE_NOW, 3)],
+        "a 60 s sweep must not read a row of another width as expired"
+    );
+
+    db.drop_db().await;
+}
+
+/// The other half: a sweep still removes what is stale for its own width,
+/// and a row with no recorded width (written before the column existed, so
+/// the default `0`) is removed by any sweep, since nothing says whose it is.
+#[tokio::test]
+#[ignore = "needs a live PostgreSQL (see the module docs)"]
+async fn a_sweep_removes_stale_rows_of_its_width_and_rows_with_none() {
+    let db = ScratchDb::create("own_width").await;
+    let counter = PostgresRateLimitCounter::new(&db.url())
+        .await
+        .expect("counter connects");
+    for (caller, width) in [("own", 60_i64), ("other", 300), ("legacy", 0)] {
+        sqlx::query(
+            "INSERT INTO a2a_rate_limit (caller, window_no, request_count, window_secs) \
+             VALUES ($1, 1, 4, $2)",
+        )
+        .bind(caller)
+        .bind(width)
+        .execute(&counter.pool)
+        .await
+        .expect("seed");
+    }
+
+    counter.sweep(60).await;
+
+    assert!(
+        rows_of(&counter.pool, "own").await.is_empty(),
+        "stale, same width"
+    );
+    assert!(
+        rows_of(&counter.pool, "legacy").await.is_empty(),
+        "no width recorded"
+    );
+    assert_eq!(
+        rows_of(&counter.pool, "other").await,
+        vec![(1, 4)],
+        "another width's row is the other sweep's to judge"
+    );
+
+    db.drop_db().await;
+}
+
+/// A count records the width it was numbered under, including onto a row an
+/// earlier release wrote (width `0`), which would otherwise be swept as
+/// unattributable while it is being counted into.
+#[tokio::test]
+#[ignore = "needs a live PostgreSQL (see the module docs)"]
+async fn a_count_records_its_width_even_on_a_row_without_one() {
+    let db = ScratchDb::create("record_width").await;
+    let counter = PostgresRateLimitCounter::new(&db.url())
+        .await
+        .expect("counter connects");
+    sqlx::query(
+        "INSERT INTO a2a_rate_limit (caller, window_no, request_count, window_secs) \
+         VALUES ('legacy', $1, 4, 0)",
+    )
+    .bind(WIDE_NOW)
+    .execute(&counter.pool)
+    .await
+    .expect("seed a row that records no width");
+
+    assert_eq!(counter.count("fresh", 0, WIDE).await.expect("count"), 1);
+    assert_eq!(counter.count("legacy", 0, WIDE).await.expect("count"), 5);
+
+    assert_eq!(width_of(&counter.pool, "fresh").await, vec![WIDE_SECS]);
+    assert_eq!(width_of(&counter.pool, "legacy").await, vec![WIDE_SECS]);
+
+    db.drop_db().await;
+}
+
+/// A table an earlier release made has no `window_secs`; starting against it
+/// adds the column, keeps its rows, and can be done again.
+#[tokio::test]
+#[ignore = "needs a live PostgreSQL (see the module docs)"]
+async fn a_table_from_an_earlier_release_gains_the_width_column() {
+    let db = ScratchDb::create("upgrade").await;
+    let pool = PgPool::connect(&db.url()).await.expect("connect");
+    sqlx::query(
+        "CREATE TABLE a2a_rate_limit (caller TEXT NOT NULL, window_no BIGINT NOT NULL, \
+         request_count BIGINT NOT NULL, PRIMARY KEY (caller, window_no))",
+    )
+    .execute(&pool)
+    .await
+    .expect("the earlier release's table");
+    sqlx::query("INSERT INTO a2a_rate_limit VALUES ('old', 7, 2)")
+        .execute(&pool)
+        .await
+        .expect("an earlier row");
+
+    for expected in 1..=2 {
+        let counter = PostgresRateLimitCounter::from_pool(pool.clone())
+            .await
+            .expect("starts against the old table, and again against the new one");
+        assert_eq!(
+            counter.count("new", 0, WIDE).await.expect("count"),
+            expected
+        );
+    }
+
+    assert_eq!(rows_of(&pool, "old").await, vec![(7, 2)]);
+    assert_eq!(width_of(&pool, "old").await, vec![0], "recorded as unknown");
+    assert_eq!(width_of(&pool, "new").await, vec![WIDE_SECS]);
+
+    pool.close().await;
     db.drop_db().await;
 }

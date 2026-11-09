@@ -1,0 +1,59 @@
+##### python3 scripts/check_doc_versions.py
+check_doc_versions: 56 dependency snippet(s) across 35 file(s) name the current 0.16 line; 2 allowlisted as historical; the deploy-agent manifest names image 0.16.0; the README's two TCK figures agree; no current prose offers a deprecated entry point; every page's dependency block names the crates its program uses
+exit: 0
+
+##### python3 scripts/check_book_examples.py
+check_book_examples: 16 example crates, 16 with a page, 0 exempt
+exit: 0
+
+##### python3 scripts/check_feature_tables.py
+check_feature_tables: every feature table agrees with 4 manifests
+exit: 0
+
+##### python3 scripts/check_api_reference.py
+check_api_reference: 460 name(s) listed in api-reference.md
+check_api_reference: a2a-protocol-types: 110 root name(s), 110 on the page, 0 missing, 0 unresolved glob(s)
+check_api_reference: a2a-protocol-client: 61 root name(s), 61 on the page, 0 missing, 0 unresolved glob(s)
+check_api_reference: a2a-protocol-server: 145 root name(s), 145 on the page, 0 missing, 0 unresolved glob(s)
+check_api_reference: a2a-protocol-sdk: 74 root name(s), 74 on the page, 0 missing, 0 unresolved glob(s)
+OK — every name on the page is defined in the crates, and every root-level export is on the page.
+exit: 0
+
+##### python3 scripts/check_doc_escapes.py
+check_doc_escapes: 1013 sources, no mangled doc comments
+exit: 0
+
+##### bash scripts/check_book_code.sh
+check_book_code: 4 ignored block(s) across 1 file(s), matching the baseline; every other Rust block in the book is compiled
+exit: 0
+
+##### bash scripts/check_benchmark_prose.sh
+check_benchmark_prose: 12 quoted value(s) agree with the tables on the page
+exit: 0
+
+##### python3 scripts/gen_sitemap.py --check
+gen_sitemap --check: sitemap matches SUMMARY.md
+exit: 0
+
+##### python3 scripts/check_readme_doctests.py
+check_readme_doctests: all 4 READMEs compile as doctests
+exit: 0
+
+##### python3 scripts/check_compliance_map.py --check
+check_compliance_map: 88 control(s), 331 cited test(s), 104 cited implementation(s), all present; map current
+exit: 0
+
+##### python3 scripts/check_panic_paths.py
+check_panic_paths --self-test: comments, literals, cfg(test) and #[path] test modules all excluded
+check_panic_paths: runtime library code has 0 unwrap, 13 expect, 0 panic!, 0 todo!; build scripts 3 unwrap, 3 expect (across 10 file(s), matching the baseline)
+exit: 0
+
+##### mdbook build book -d /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/book-out
+2026-11-07 13:44:54 [INFO] (mdbook::book): Book building has started
+2026-11-07 13:44:54 [INFO] (mdbook::book): Running the html backend
+2026-11-07 13:44:56 [WARN] (mdbook::renderer::html_handlebars::search): searchindex.json is very large (11162690 bytes)
+exit: 0
+##### python3 scripts/check_book_links.py /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/book-out
+check_book_links: 223 pages, 0 broken links
+exit: 0
+

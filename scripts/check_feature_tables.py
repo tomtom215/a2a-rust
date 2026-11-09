@@ -24,6 +24,28 @@ Which crate a table describes comes from where it sits: a crate's own README,
 or the nearest preceding heading naming a crate in backticks. A table this
 cannot attribute is an error, not a skip.
 
+Three more assertions cover where the defaults are *said* rather than tabulated
+(0.16.0 turned `tls-rustls` on by default in the server, and the Installation
+page, the README and the crate-map diagram went on saying it was the client's
+and the SDK's alone; found 2026-11-07, docs/audits/2026-11-07-adopter-walkthrough):
+
+  * a table with no Default column marks a default feature "on by default" in its
+    Description, and marks nothing else so;
+  * the Installation page's sentences `**`x` is on by default** for `crate`...`
+    name, per feature, exactly the crates whose manifest default holds it;
+  * `book/diagrams/gs-crate-map.mmd` lists each crate's `default:` features as
+    its manifest does.
+
+And one assertion about where a feature is *needed*: a book page whose Rust
+blocks use an item that exists only under a Cargo feature (`PostgresTaskStore`,
+`WebSocketDispatcher`, `tool_loop`, `auth::jwt`...) names that feature, in
+backticks or in quotes, on that page. The book's own doctests turn every feature
+on, so a page can compile there and fail for a reader who copied its dependency
+line (`a2a-protocol-server = "0.16"`) and was never told the feature: nine pages
+did, found 2026-11-07 by compiling every block against the default features
+(docs/audits/2026-11-07-adopter-walkthrough, 03-book-sweep.sh). The migration
+guides, ADR summaries and pitfalls pages describe what was true and are not read.
+
 Usage:
     python3 scripts/check_feature_tables.py
     python3 scripts/check_feature_tables.py --self-test
@@ -98,6 +120,15 @@ def check_table(where: str, crate: str, header: list[str], rows: list[list[str]]
         problems.append(f"{where}: `{f}` is a feature of {crate} and is missing from the table")
     for f in sorted(named - features):
         problems.append(f"{where}: `{f}` is in the table but {crate} has no such feature")
+    if "default" not in header and "description" in header:
+        col = header.index("description")
+        for r in rows:
+            f = plain(r[0])
+            said = col < len(r) and "on by default" in r[col].lower()
+            if said and f not in default:
+                problems.append(f"{where}: `{f}` is described as on by default, and {crate}'s default is {sorted(default)}")
+            elif not said and f in default:
+                problems.append(f"{where}: `{f}` is on by default in {crate} and its row does not say so")
     if "default" in header:
         col = header.index("default")
         for r in rows:
@@ -135,6 +166,106 @@ def check_overview(problems: list[str]) -> None:
         problems.append(f"{OVERVIEW}:{line}: `{f}` is a feature of a published crate and is missing")
 
 
+PROSE = ROOT / "book/src/getting-started/installation.md"
+# `**`a` and `b` are on by default** for `a2a-protocol-x`, `a2a-protocol-y` and `a2a-protocol-z``
+SAID = re.compile(
+    r"\*\*((?:`[a-z-]+`(?:,?\s+and\s+|,\s+)?)+)\s+(?:is|are)\s+on\s+by\s+default\*\*\s+for\s+"
+    r"((?:`a2a-protocol-[a-z]+`(?:,?\s+and\s+|,\s+)?)+)"
+)
+DIAGRAM = ROOT / "book/diagrams/gs-crate-map.mmd"
+NODE = re.compile(r'^\s*[a-z]+\["(a2a-protocol-[a-z]+)<br/>(.*?)"\]\s*$')
+
+
+def check_prose(problems: list[str]) -> None:
+    """The Installation page's "on by default for ..." sentences, per feature."""
+    text = PROSE.read_text()
+    said: dict[str, set[str]] = {}
+    for m in SAID.finditer(text):
+        feats = re.findall(r"`([a-z-]+)`", m.group(1))
+        crates = set(re.findall(r"`(a2a-protocol-[a-z]+)`", m.group(2)))
+        for f in feats:
+            said.setdefault(f, set()).update(crates)
+    if not said:
+        raise Unreadable(f"{PROSE.relative_to(ROOT)}: no \"on by default\" sentence found; the pattern in check_feature_tables.py needs to follow the prose")
+    for f, crates in sorted(said.items()):
+        actual = {c for c in CRATES if f in manifest(c)[1]}
+        if crates != actual:
+            problems.append(
+                f"{PROSE.relative_to(ROOT)}: says `{f}` is on by default for {sorted(crates)}, "
+                f"but the manifests turn it on in {sorted(actual)}"
+            )
+
+
+def check_diagram(problems: list[str]) -> None:
+    """The crate-map diagram's `default:` lists against the manifests."""
+    seen = set()
+    for line in DIAGRAM.read_text().splitlines():
+        m = NODE.match(line)
+        if not m or "default:" not in m.group(2):
+            continue
+        crate = m.group(1)
+        listed = m.group(2).split("default:", 1)[1].replace("<br/>", " ")
+        names = {x.strip() for x in listed.split(",") if x.strip()}
+        names = set() if names == {"none"} else names
+        seen.add(crate)
+        actual = manifest(crate)[1] if crate in CRATES else None
+        if actual is not None and names != actual:
+            problems.append(f"{DIAGRAM.relative_to(ROOT)}: {crate} lists default {sorted(names)}, its manifest has {sorted(actual)}")
+    for crate in sorted(set(CRATES) - seen):
+        problems.append(f"{DIAGRAM.relative_to(ROOT)}: no `default:` line for {crate}")
+
+
+# An item that exists only under a feature, as it appears in a Rust block.
+FEATURE_ITEMS = [
+    (r"\bauth::jwt\b|\bJwt(?:AuthInterceptor|Validator)\b", "auth-jwt"),
+    (r"\bWebSocket(?:Dispatcher|Transport)\b|\bdispatch::websocket\b", "websocket"),
+    (r"\bPostgres[A-Z]\w*", "postgres"),
+    (r"\b(?:TenantAware)?Sqlite[A-Z]\w*", "sqlite"),
+    (r"\btool_loop\b", "tool-loop"),
+    (r"\bGrpc(?:Dispatcher|Transport)\b|\bdispatch::grpc\b|\btransport::grpc\b|\bbuild_grpc\b", "grpc"),
+    (r"\bRestRouter\b|\bA2aRouter\b", "axum"),
+    (r"\ba2a_protocol_server::conformance\b|\bserver::conformance\b", "conformance"),
+    (r"\bEncrypted[A-Z]\w*", "encryption"),
+]
+BOOK_SUMMARY = ROOT / "book/src/SUMMARY.md"
+HISTORICAL_PAGES = (
+    "reference/upgrading/", "reference/changelog", "reference/adrs.md", "reference/pitfalls",
+    "deployment/dogfooding", "reference/mutation-history", "reference/conformance-history",
+)
+RUST_BLOCK = re.compile(r"^(?P<indent>[ \t]*)(?P<fence>`{3,})(?P<info>[^\n`]*)\n(?P<body>.*?)^(?P=indent)(?P=fence)[ \t]*$", re.M | re.S)
+
+
+def page_text_blocks(text: str) -> list[str]:
+    """The Rust blocks of a page that rustdoc compiles (not `ignore`, not `text`)."""
+    out = []
+    for m in RUST_BLOCK.finditer(text):
+        info = m.group("info").strip()
+        tags = [t for t in re.split(r"[,\s]+", info) if t]
+        if (not tags or tags[0] == "rust") and not any(t.startswith("ignore") for t in tags):
+            out.append(m.group("body"))
+    return out
+
+
+def check_pages_name_their_features(problems: list[str]) -> None:
+    """Each page that uses a feature-gated item names the feature."""
+    base = ROOT / "book/src"
+    pages = re.findall(r"\]\(\./([^)#]+\.md)\)", BOOK_SUMMARY.read_text())
+    for rel in dict.fromkeys(pages):
+        if rel.startswith(HISTORICAL_PAGES):
+            continue
+        text = (base / rel).read_text()
+        # Comments name things (`// or: RestRouter (Axum)`) without using them.
+        code = re.sub(r"//[^\n]*", "", "\n".join(page_text_blocks(text)))
+        for pattern, feature in FEATURE_ITEMS:
+            hit = re.search(pattern, code)
+            if hit and f"`{feature}`" not in text and f'"{feature}"' not in text:
+                problems.append(
+                    f"book/src/{rel}: a Rust block uses `{hit.group(0)}`, which needs the `{feature}` "
+                    f"feature, and the page never names it (a reader with the default features gets "
+                    f"`unresolved import`)"
+                )
+
+
 def run() -> list[str]:
     problems: list[str] = []
     for crate in CRATES:
@@ -155,6 +286,9 @@ def run() -> list[str]:
         for crate in sorted(set(CRATES) - seen):
             problems.append(f"{rel}: no feature table for {crate}")
     check_overview(problems)
+    check_prose(problems)
+    check_diagram(problems)
+    check_pages_name_their_features(problems)
     return problems
 
 
@@ -165,7 +299,16 @@ def self_test() -> None:
     assert [plain(r[0]) for r in rows] == ["a", "b"]
     text = "### `a2a-protocol-client`\n\n| Feature | Description |\n|--|--|\n| `x` | y |\n\n## Other\n"
     assert feature_tables(text)[0][1] == "a2a-protocol-client"
-    print("check_feature_tables --self-test: table parsing and crate attribution pass")
+    m = SAID.search("x **`a` and `b` are on by default** for `a2a-protocol-client`, `a2a-protocol-server` and `a2a-protocol-sdk`, y")
+    assert m and re.findall(r"`([a-z-]+)`", m.group(1)) == ["a", "b"]
+    assert re.findall(r"`(a2a-protocol-[a-z]+)`", m.group(2)) == ["a2a-protocol-client", "a2a-protocol-server", "a2a-protocol-sdk"]
+    n = NODE.match('    server["a2a-protocol-server<br/>builds agents<br/>default: tracing, otel,<br/>tls-rustls"]')
+    assert n and n.group(1) == "a2a-protocol-server" and "tls-rustls" in n.group(2)
+    blocks = page_text_blocks("```rust\nlet a = PostgresTaskStore;\n```\n```text\nB\n```\n```rust,ignore\nC\n```\n```toml\nD\n```\n")
+    assert blocks == ["let a = PostgresTaskStore;\n"], blocks
+    assert re.search(FEATURE_ITEMS[2][0], "use a2a_protocol_server::store::PostgresTaskStore;")
+    assert not re.search(FEATURE_ITEMS[2][0], "postgres is a database")
+    print("check_feature_tables --self-test: table parsing, crate attribution, prose, diagram and page patterns pass")
 
 
 def main() -> int:

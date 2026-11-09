@@ -1,0 +1,14 @@
+== a delegation to a child that reports an absurd spend (load 1.04)
+-- child reports spent.tokens=120: coordinator TASK_STATE_COMPLETED then TASK_STATE_COMPLETED; ''
+     coord: t=1794100659026 DELEGATION grant=Budget { remaining_ms: None, meters: {"tokens": 100000} }
+     coord: t=1794100659029 DELEGATION ended after 0.0s task=Some("fake-task-1") outcome=Completed
+-- child reports spent.tokens=18446744073709551615: coordinator TASK_STATE_COMPLETED then TASK_STATE_COMPLETED; ''
+     coord: t=1794100662989 DELEGATION grant=Budget { remaining_ms: None, meters: {"tokens": 100000} }
+     coord: t=1794100662992 DELEGATION ended after 0.0s task=Some("fake-task-1") outcome=Completed
+  ok    control: a child reporting 120 tokens completes the delegation
+  ok    a child reporting spent = u64::MAX leaves the coordinator's task terminal (it is TASK_STATE_COMPLETED)
+-- deadline-only budget, grant asks tokens=u64::MAX: TASK_STATE_COMPLETED then TASK_STATE_COMPLETED; ''; error None
+     coord: t=1794100666951 DELEGATION grant=Budget { remaining_ms: Some(56998), meters: {"tokens": 9007199254740992} }
+     coord: t=1794100666954 DELEGATION ended after 0.0s task=Some("fake-task-1") outcome=Completed
+
+2 of 2 expectations held

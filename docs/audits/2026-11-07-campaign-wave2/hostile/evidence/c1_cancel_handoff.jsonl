@@ -1,0 +1,3 @@
+{"attack": "cancel_handoff: invariants", "verdict": "DEVIATION", "detail": {"problems": ["tasks_with_no_terminal_event=10", "orphan_claims_on_terminal_tasks=10"], "invariants": {"tasks": 10, "states": {"TASK_STATE_CANCELED": 10}, "not_terminal": 0, "tasks_with_2plus_terminal_events": 0, "tasks_with_no_terminal_event": 10, "events_after_terminal": 0, "state_differs_from_terminal_event": 0, "orphan_claims_on_terminal_tasks": 10, "claims_total": 10, "seq_gaps": 0, "sent_but_missing": 0}, "tasks_whose_executor_started_twice": 0, "examples": {}, "settled": true}}
+{"attack": "every cancelled-while-handed-over task is canceled (or failed/transient), one terminal each", "verdict": "held", "detail": {"TASK_STATE_CANCELED": 10}}
+{"tally": {"tried": 2, "held": 1, "deviation": 1}}

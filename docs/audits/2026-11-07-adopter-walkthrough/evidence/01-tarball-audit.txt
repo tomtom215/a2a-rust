@@ -1,0 +1,110 @@
+=== a2a-protocol-client-0.16.0: 285 files, 2800 KiB uncompressed
+  .cargo_vcs_info.json              1
+  Cargo.lock                        1
+  Cargo.toml                        1
+  Cargo.toml.orig                   1
+  README.md                         1
+  benches                           1
+  build.rs                          1
+  proto                             5
+  src                             160
+  tests                           113
+  largest:
+       107.2 KiB  src/transport/websocket.rs
+        85.0 KiB  src/discovery.rs
+        79.3 KiB  src/transport/grpc.rs
+        78.1 KiB  src/retry.rs
+        70.1 KiB  src/token_provider.rs
+        69.2 KiB  src/streaming/event_stream.rs
+  files an adopter does not need (tests/benches/fuzz/CI/...): 117
+    Cargo.toml.orig
+    benches/sse_parse.rs
+    src/balance/tests/hedging.rs
+    src/call_span/tests/custom_transport.rs
+    tests/api_key_query.rs
+    tests/balancing/distribution.rs
+    tests/balancing/ejection.rs
+    tests/balancing/harness.rs
+  build.rs present; protos in tarball: ['proto/a2a_v1/a2a.proto', 'proto/a2a_v1/google/api/annotations.proto', 'proto/a2a_v1/google/api/client.proto', 'proto/a2a_v1/google/api/field_behavior.proto', 'proto/a2a_v1/google/api/http.proto']
+=== a2a-protocol-sdk-0.16.0: 55 files, 449 KiB uncompressed
+  .cargo_vcs_info.json              1
+  Cargo.lock                        1
+  Cargo.toml                        1
+  Cargo.toml.orig                   1
+  README.md                         1
+  src                               1
+  tests                            49
+  largest:
+        76.2 KiB  Cargo.lock
+        19.8 KiB  tests/observability_e2e/main.rs
+        17.7 KiB  tests/grpc_address_e2e.rs
+        15.5 KiB  tests/grpc_e2e.rs
+        13.3 KiB  tests/observability_e2e/streams.rs
+        12.2 KiB  tests/client_spans.rs
+  files an adopter does not need (tests/benches/fuzz/CI/...): 50
+    Cargo.toml.orig
+    tests/api_key_placement_e2e.rs
+    tests/auth_failure_throttle_grpc.rs
+    tests/auth_rejection_e2e.rs
+    tests/binding_equivalence/auth.rs
+    tests/binding_equivalence/errors.rs
+    tests/binding_equivalence/functionality.rs
+    tests/binding_equivalence/harness.rs
+=== a2a-protocol-server-0.16.0: 957 files, 9997 KiB uncompressed
+  .cargo_vcs_info.json              1
+  Cargo.lock                        1
+  Cargo.toml                        1
+  Cargo.toml.orig                   1
+  README.md                         1
+  benches                           1
+  build.rs                          1
+  proto                             5
+  src                             617
+  tests                           328
+  largest:
+       132.7 KiB  src/dispatch/websocket.rs
+       128.0 KiB  tests/postgres_store_tests.rs
+       125.7 KiB  src/streaming/event_queue/in_memory.rs
+       124.3 KiB  src/store/task_store/in_memory/mod.rs
+       122.4 KiB  src/handler/messaging/tests.rs
+       114.9 KiB  src/handler/event_processing/sync_collector.rs
+  files an adopter does not need (tests/benches/fuzz/CI/...): 355
+    Cargo.toml.orig
+    benches/handler_bench.rs
+    src/audit/privacy/tests/cost.rs
+    src/audit/privacy/tests/erasure.rs
+    src/audit/privacy/tests/stores.rs
+    src/audit/tests/holds.rs
+    src/auth/jwt/tests/algorithms.rs
+    src/auth/jwt/tests/keys.rs
+  build.rs present; protos in tarball: ['proto/a2a_v1/a2a.proto', 'proto/a2a_v1/google/api/annotations.proto', 'proto/a2a_v1/google/api/client.proto', 'proto/a2a_v1/google/api/field_behavior.proto', 'proto/a2a_v1/google/api/http.proto']
+=== a2a-protocol-types-0.16.0: 157 files, 1508 KiB uncompressed
+  .cargo_vcs_info.json              1
+  Cargo.lock                        1
+  Cargo.toml                        1
+  Cargo.toml.orig                   1
+  README.md                         1
+  benches                           1
+  build.rs                          1
+  codegen.toml                      1
+  extensions                       20
+  proto                             5
+  src                              87
+  tests                            37
+  largest:
+        69.1 KiB  src/error.rs
+        62.0 KiB  tests/tck_wire_format.rs
+        50.9 KiB  src/signing.rs
+        41.9 KiB  src/message.rs
+        41.8 KiB  tests/proto_field_alias.rs
+        40.0 KiB  Cargo.lock
+  files an adopter does not need (tests/benches/fuzz/CI/...): 39
+    Cargo.toml.orig
+    benches/json_serde.rs
+    tests/card_signature_as_received.rs
+    tests/corpus_json.rs
+    tests/coverage_gap_tests.rs
+    tests/extension_vectors.rs
+    tests/fixtures/a2a_go/v2.5.0_agent_card_security.json
+    tests/generated_enums.rs
+  build.rs present; protos in tarball: ['proto/a2a_v1/a2a.proto', 'proto/a2a_v1/google/api/annotations.proto', 'proto/a2a_v1/google/api/client.proto', 'proto/a2a_v1/google/api/field_behavior.proto', 'proto/a2a_v1/google/api/http.proto']

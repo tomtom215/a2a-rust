@@ -28,15 +28,163 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 - **Action required if you build against the SDK (each breaking item has its migration in `book/src/reference/upgrading/0.15-to-0.16.md`):** `RequestContext.context_id` is a `ContextId`; forty wire structs (`Task`, `Message`, `Part`, `AgentCard`, the update events, the method parameters and responses, the security schemes and flows) are `#[non_exhaustive]`, built with `new` and `with_*`; `AgentCard::new` declares streaming; `a2a-protocol-server` enables `tls-rustls` by default; `sign_agent_card` is removed; configuration errors are `ServerError::Config`/`ClientError::Config`; internal error text is withheld from callers; `JwtValidator` checks `iss` and `aud`; the WebSocket listener refuses browsers unless allowed; `ServeReport` is `#[must_use]`; `tls::HttpsClient` is a struct; `Telemetry` is `#[must_use]` and `install_subscriber()` returns `()`; `OpenAiChatModel` answers a 429 with `ModelError::RateLimited`; every agent card declares the lineage extension.
 - **Action required if you deploy it:** loopback is never sent to a proxy (`A2A_PROXY_LOOPBACK=1` restores it); `Profile::Production` refuses an in-memory halt, lease, push-config or audit store over a shared task store (`allow_process_local_stores()` opts out); a wrong `OTEL_*` value is noted instead of stopping the process; an exporter named `zipkin` no longer takes a fleet down; the gRPC and WebSocket listeners now probe idle peers (`without_http2_keepalive()` and `without_idle_timeout()` restore 0.15); the shipped alert rules no longer count a caller's mistake, and a gRPC call the peer abandoned is `rpc_status_code="CANCELLED"`.
+- **Action required if a client or an agent relied on how the server answered a bad input** (each is under Behaviour Changes): a `ListTasks` page token the server did not issue is `InvalidParams`, not an empty page; a NUL character in any field of a `SendMessage` is `InvalidParams` on every store; and a tool-loop task whose final model reply has no text now fails (with a failure class and `error.type=empty_answer`) where it completed empty, while one cut off at the output limit still completes and carries `a2a-rust.com/finish-reason: length`.
 - **Several replicas on one PostgreSQL database need no session affinity:** each turn claims its task, a cancel reaches the executor on another replica within about a second, a dead replica's tasks are handed over, and a replica that stalls past its claim writes nothing more.
 - **Swarms and fleets:** task lineage and halting one job, a durable push outbox, an opt-in admission gate and load signal, live-log compaction, client load balancing and card discovery at fleet scale, the WebSocket binding on the HTTP port, certificate reload, and the swarm extensions as a published wire contract with schemas and vectors.
 - **Observability:** control-plane, process and runtime metrics, baggage and `OTEL_PROPAGATORS` on the A2A wire, JSON console logs with the trace context, alerts that watch the stack itself, and the stack on Kubernetes and in CI.
 - **A task's ending always reaches its webhooks, its log and its caller;** an executor that panics leaves the task `failed`; a blocking send over gRPC is no longer cut at the request timeout; credentials go only to the host the caller named; a private CA and mutual TLS reach every binding, the token provider included.
 - **Shipping:** a signed `deploy-agent` image on GHCR with build provenance, a card that reports its version, and retention of finished tasks; OpenTelemetry export through proxies with gzip, console and Prometheus exporters, resource detection and lost-export warnings; WebSocket connections that detect a dead peer.
 - **Serving and API shape:** every listener has one graceful `serve_with_shutdown` and takes `ServeConfig` (the axum router now runs on `Server`), `EventStream` is a `futures_core::Stream`, a one-shot agent answers with `complete_with_text`, and 23 names are deprecated (26 in the release, counting the ones under `### Deprecated` that this package did not add), to be removed no earlier than 0.17.0.
-- **Not in this release:** agent skills (ADR 0035) and steering (ADR 0036), the parts listed under Known Limitations, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
+- **Agent Skills in the tool loop** (`skills` feature, ADR 0035): a directory of `SKILL.md` becomes a catalog in the system prompt, `activate_skill` and a confined `read_skill_file`, and no script is ever run.
+- **Steering a running task** (ADR 0036, opt-in): a message to a `working` task goes into a bounded inbox the executor reads, across replicas through the claim store, with `Delegation::steer` and `steer_all` on the client.
+- **Not in this release:** the parts listed under Known Limitations, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
 
 ### Added
+
+- **`ToolLoop::with_max_calls_per_turn`** (default `DEFAULT_MAX_CALLS_PER_TURN`, 64; hostile campaign, wave 2, W2-LIVE-5): a model reply with
+  more tool calls than this runs the first ones, drops the rest and says so in the trace. With no bound a reply of 90,000 calls (7.6 MB, inside the
+  8 MiB response cap) took a loop from 21 MB to a 1.4 GB peak in 14 s; the dropped calls are not kept in the conversation. A model that wrote more
+  than 64 calls in one reply now sees only 64 results.
+- **A tool trace line is at most `TRACE_LINE_LIMIT` bytes** (16 KiB; W2-LIVE-4). The result still goes whole to the model, but the `tool-trace`
+  artifact had no bound: a result of 1 to 8 MiB went into every `GetTask` body, and at 16 or 20 MiB the finished run failed `-32603` (the event
+  exceeded the 16 MiB limit) and its answer was lost. A longer line is cut on a character boundary and ends `… [N more bytes]`.
+- **A run that fails after a tool ran sends its `tool-trace` first** (W2-LIVE-3). It was sent only on success, so a task that failed after a side
+  effect showed the caller nothing of it, and a retry ran the effect again under new idempotency keys; the empty-answer failure above made this
+  common (Gemma 4 E2B failed 11 of 20 runs of the idempotency prompt after the restart had run). Nothing is sent when no call ran.
+- **A cut-off answer carries its `finish_reason`** (audit M-1). `Answer` has `finish_reason`, the final
+  reply's own, and `truncated()`, true for `length` (`FINISH_REASON_LENGTH`; a `ToolModel` of your own
+  reports a cut-off reply with `ModelTurn::with_finish_reason("length")`). Under `ToolLoopExecutor`, a
+  reply that stopped at the limit still completes the task, with its text whole, and the `answer`
+  artifact's `metadata` and the `Completed` status message both carry
+  `{"a2a-rust.com/finish-reason": "length"}` (`FINISH_REASON_METADATA_KEY`); an answer that ended on its
+  own carries neither. `Answer` is `#[non_exhaustive]`, so the field is not a break.
+
+- **Steering a running task, opt-in** (ADR 0036; 2026-11-07).
+  `RequestHandlerBuilder::with_steering(SteeringConfig)` lets a client send a message to a
+  task that is `working`: a `SendMessage` that names the task and lists
+  `https://a2a-rust.com/extensions/steering/v1` is put in the running turn's bounded inbox
+  (default 16 messages of at most 64 KiB), which the executor reads with
+  `RequestContext::inbox()`. It passes the same interceptors, authorization, rate limit,
+  validation and halt checks as any send. A full inbox is `503` with `Retry-After` (never a
+  silent drop, never a wait), an oversize message is `413`, and an idempotency key makes a
+  retry answer `replayed`. On several replicas the message is stored through the turn-claim
+  store for the replica that holds the claim, which moves it into the inbox
+  (`SteeringConfig::with_notifications` adds `LISTEN`/`NOTIFY` on PostgreSQL). Peers that do
+  not declare the extension get exactly the refusal they always did, and an executor that
+  never reads its inbox is unaffected. The card declares the extension only when steering is
+  on. `ToolLoopExecutor::with_steering` reads the inbox between model steps;
+  `Delegation::steer`, `SteerHandle` and `steer_all` steer one or many delegated tasks (an
+  outcome per child, waits for all). Observability: counter `a2a.server.steering` by outcome,
+  a span event, and the audit record `task.steered`. Measured on two server processes and one
+  PostgreSQL 16 (`scripts/live/steering/`, one run each on a loaded machine): a message
+  handed to the other replica was read by the executor 0.85 to 1.04 s after it was sent (the
+  one-second look), 157 ms with notifications against 2.9 s without. The message is not
+  written to `Task.history`: the running turn saves the task whole and would overwrite it,
+  so the audit record is the record of who steered what, which departs from the ADR's first
+  draft. Book: "Steering a running task".
+  **For implementors of `TurnClaimStore` and `Metrics`:** `TurnClaimStore` gains four
+  defaulted methods (`hand_steering`, `peek_steering`, `ack_steering`, `steering_signals`; a
+  store overriding one of the first three should override all of them, and
+  `scripts/check_store_delta_forwarding.py` now checks it) and `Metrics` gains the defaulted
+  `on_steering`. A claim store that does not override them answers steering sent to another
+  replica's turn with a refusal that says why.
+
+- **A subscriber on another replica is woken by an append** (server; audit
+  E-F25 (b), ADR 0057; 2026-11-07). `TaskStore::watch_event_log(&TaskId) ->
+  Option<LogWatch>` is a new defaulted method (`None`: the stream polls on its
+  timer alone, as before; `AuditedTaskStore`, `TracedTaskStore` and
+  `EncryptedTaskStore` forward it). `PostgresTaskStore::with_log_notifications(LogListen)`
+  and the tenant-aware store's make each `append_event` run `pg_notify` in the
+  append's own statement (one statement: `statement_count` is still 8 and 11)
+  and start one listener, lazily, that wakes the streams waiting on the task;
+  `LogListen::Direct(url)` is the answer behind a pooler in transaction mode, as
+  for the halt store (not tested through PgBouncer). Off by default. The wait
+  stays as the fallback at `subscribe_reattach_max_interval`, and a wake never
+  makes a stream read faster than once per `subscribe_reattach_interval`. New
+  `Metrics::on_subscribe_wake(cause)` (`notification`, `resync`, `timeout`;
+  counter `a2a.server.subscribe.wakes`). **It shortens the time a stream on
+  another replica learns of an event, and does not reduce idle load:** measured
+  on two release-profile replicas and one PostgreSQL 16, 200 idle subscribers
+  cost 93 statements a second with and without it, because the timer stays as
+  the fallback; raising `subscribe_reattach_max_interval` on a fleet where every
+  replica opts in is the lever for that, and was not measured. An event written
+  on one replica ended another replica's stream during an 8 s wait in 260 ms.
+  The separate read pool the audit also proposed (E-F25 (c)) was measured and
+  not built: at 200 idle subscribers the foreground send latency was not
+  distinguishable from a run with none (ADR 0057 has the numbers and what was not
+  measured).
+
+- **Parked tasks may expire, by opt-in** (server; audit D-18, ADR 0056, amends
+  ADR 0011; 2026-11-07). `TaskStoreConfig::with_parked_task_ttl(Duration)` makes a
+  task parked in `input-required` or `auth-required` for that long evictable like
+  a finished one in the in-memory store (counted by
+  `InMemoryTaskStore::parked_evictions`). `RetentionPolicy::with_parked_max_age(Duration)`
+  makes `purge_expired` of all four SQL stores delete such a task, counted in the
+  new `PurgeReport::parked_tasks_deleted`: it deletes, it does not cancel (a
+  store-level purge cannot write the status event a stream replays, the push, the
+  audit record or the executor's cancel hook); a task with a live turn claim is
+  skipped; the idempotency-key age is raised to at least the parked age. Nothing
+  changes unless one is set.
+
+- **Agent Skills in the tool loop, without running their scripts** (ADR 0035;
+  the `skills` feature of the server and the SDK, off by default, implies
+  `tool-loop`, adds no dependency; 2026-11-07): `skills::SkillCatalog::discover`
+  reads directories of `SKILL.md` into a catalog and a list of
+  `SkillDiagnostic`s, leniently, and never panics or refuses to start; the
+  frontmatter is size-checked before an in-tree reader of the YAML subset the
+  specification's reference parser accepts reads it. `ToolLoopExecutor::with_skills`
+  puts the catalog at the end of the system prompt (descriptions on one line, at
+  most 400 characters, escaped) and gives the model `activate_skill` (its `name` a
+  JSON Schema enum of the valid names) and, when a skill bundles files,
+  `read_skill_file`, confined to `references/` and `assets/` (no `..`, absolute
+  path, NUL, backslash or link out; at most 64 KiB; UTF-8 only; checked again
+  after the open). `scripts/` are listed as present and never run;
+  `allowed-tools` is recorded and never acted on. A project directory is not
+  read until `SkillSource::project(..).with_trusted(true)` and never replaces an
+  operator's skill of the same name; `SkillCatalog::agent_skills()` gives opt-in
+  `AgentSkill` card entries. Bounds: 32 skills, a 400-character description in
+  the prompt, a 64 KiB body, a 64 KiB file, an 8 KiB frontmatter. Follows the
+  specification as read on 2026-11-07. The YAML reader is in-tree and not a
+  crate, which reads CONTRIBUTING's dependency rule against its letter (the
+  reasons and the way back to `saphyr-parser` are in the ADR): a decision the
+  maintainer may overrule. Book: "Agent Skills" under The Tool Loop.
+
+- **`ClientBuilder::with_blocking_over_stream`: a long blocking send behind a
+  load balancer** (client; audit B-11, option 2; 2026-11-07). Off by default.
+  With it on, `send_message` to an agent whose card declares streaming is sent
+  as `SendStreamingMessage`, read until the task is terminal or interrupted (or
+  the agent answers with one `Message`), and answered with the task as the agent
+  stores it: a `GetTask` with the send's `history_length`, repeated for about
+  three seconds while the store is one event behind the stream, and
+  `ClientError::InvalidAgentResponse` if it never reaches the state the stream
+  ended on. The stream's keep-alive comments (every 30 s by default) cross a
+  balancer that cuts a connection silent for 60 s; a blocking send's silence
+  does not. The answer is read back and not folded from the events because the
+  agent's own blocking answer applies rules (artifact chunks, history, a task
+  finished by another writer) that a second implementation in the client would
+  disagree with somewhere. A client with no card, a send with
+  `return_immediately`, and an agent whose card does not declare streaming are
+  sent as before; `with_send_timeout` bounds the whole send; interceptors,
+  spans and metrics see `SendStreamingMessage` and `GetTask`, not
+  `SendMessage`. Tested against this repository's server behind a proxy that
+  closes a connection after 600 ms of silence: the plain blocking send is cut on
+  JSON-RPC and HTTP+JSON and the carried one is not, and for a task that
+  completes, fails and is interrupted its answer equals a plain blocking send's
+  (`tests/blocking_over_stream_e2e.rs`). The book's "Behind a load balancer"
+  page has it as remedy 3.
+
+- **`AuthFailureThrottle::with_shared_counter`: the failed-authentication limit
+  across replicas** (server; audit E-F15; 2026-11-07). It takes the
+  `RateLimitCounter` the rate limiter takes (`PostgresRateLimitCounter` ships).
+  A failed credential is counted there under `authfail:<peer>` when its call
+  ends, and the throttle keeps the larger of its own count and the total the
+  counter reports. The counter is not read on a call's way in, so a call with a
+  valid credential costs no round trip; the price is that a replica learns the
+  fleet has reached the limit only when one of its own calls fails, so after
+  the limit is reached a peer gets at most one more failed call per replica that
+  has not yet failed, plus the calls in flight (a test pins the bound with two
+  replicas). A counter that fails leaves per-process throttling and logs a
+  warning. A peer beyond `max_peers` on a replica is not counted anywhere.
 
 - **An RFC requirements ledger and a CI gate for it** (`docs/compliance/rfc-ledger.json`,
   `scripts/check_rfc_ledger.py`; 2026-11-06). One row for each MUST, SHOULD and
@@ -76,8 +224,9 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `send_message` that outlasts a balancer's idle timeout (60 s on an AWS ALB
   and in nginx by default; the client waits up to ten minutes) is answered
   `504` while the task runs on, and the client never learns its id. The page
-  gives the three remedies (send with `return_immediately` and poll, stream,
-  raise the balancer's timeout), says why a long-lived HTTP/2 connection is
+  gives the four remedies (send with `return_immediately` and poll, stream,
+  let the client stream for you with `with_blocking_over_stream`, raise the
+  balancer's timeout), says why a long-lived HTTP/2 connection is
   pinned to one replica behind a layer-4 balancer, and what an HTTP/2 PING
   does and does not cross. Linked from the client builder and CLI pages.
 
@@ -814,6 +963,8 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   and `Server::with_config` are no longer `const fn`, and `TlsConfig` and
   `ClientConfig` are no longer `UnwindSafe` or `RefUnwindSafe` (the variant
   holds an `Arc<rustls::ClientConfig>`), as `cargo-semver-checks` reports.
+  `CardFetchOptions` (it keeps an `Arc<rustls::ClientConfig>` for the card fetch) and the server's `AuthFailureThrottle` (its optional shared counter is an
+  `Arc<dyn RateLimitCounter>`, audit E-F15) lose both auto traits for the same reason; only code that moves one across `catch_unwind` notices.
 - **`RequestContext.context_id` is a `ContextId`, not a `String`** (server;
   audit G-18; maintainer's decision of 2026-11-01). The task's id beside it
   was a `TaskId` and the types crate's policy is a newtype per identifier, so
@@ -864,6 +1015,35 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **`ModelError::RateLimited { retry_after, body }`** (audit H17): `OpenAiChatModel` answers a 429 with it instead of `ModelError::Status { status: 429, .. }`.
 
 ### Behaviour Changes
+
+- **A NUL character (U+0000) anywhere in a `SendMessage` request is now `InvalidParams` on every store** (hostile campaign, wave 2,
+  2026-11-08). PostgreSQL's `jsonb` cannot hold one, so the three PostgreSQL stores answered `-32603` (carrying the database's own message)
+  and created no task for a NUL in a text part, filename, URL, media type, metadata key or value, extension or `data` value, while the
+  in-memory, SQLite and encrypted-in-memory stores accepted the same request: nine of fourteen message fields disagreed. The handler now
+  refuses it once, before anything is stored, naming no value, the way ids already refuse every control character. A client that sent
+  a NUL to the stores that accepted it now gets an error; text that merely spells the escape (a backslash and `u0000`) is still accepted.
+- **`ListTasks` with a page token the server could not have issued is now `InvalidParams`** (adopter
+  walk-through decision 2, 2026-11-07; Google AIP-158: an invalid page token is an invalid
+  argument). All five stores (in-memory, SQLite, PostgreSQL and the two tenant-aware SQL
+  stores) answered an empty last page, which a client reads as the end of the listing and so never
+  learns that its cursor was wrong; the answer is now `-32602` on JSON-RPC and WebSocket, 400 on
+  HTTP+JSON and `INVALID_ARGUMENT` on gRPC, with a message that does not repeat the token. An empty
+  token is still no token. A token the store did issue still works after the task it names is
+  deleted. A caller that sent a hand-built token and relied on the empty page now gets an error.
+
+- **A tool-loop task whose final model reply has no text now fails, and one cut off at the output
+  limit says so** (audit M-1, found by the adopter walk-through, 2026-11-07). A reply that was empty
+  or only whitespace, which a reasoning model whose output limit goes on thinking sends, ended
+  `COMPLETED` with an empty `answer` artifact, and a reply cut at the limit
+  (`finish_reason: "length"`) ended `COMPLETED` with half a sentence and nothing to say so, though
+  `running.md` says a run that ends without an answer fails the task. `ToolLoop::run` now returns
+  `LoopError::EmptyAnswer { finish_reason }` for a final reply with no text, and the executor ends the
+  task `FAILED` with the failure class `budget-exhausted` when the reason was `length`,
+  `policy-refusal` for `content_filter`, and `internal` otherwise, with a message that names the cause
+  and never the provider's own words. The run's `error.type` is `empty_answer`
+  (`gen_ai.invoke_agent.duration`), where it was recorded as a run that answered. A caller that read
+  an empty answer from `run` as `Ok` now has an `Err` to handle (`LoopError` is `#[non_exhaustive]`).
+  A reply with text that stopped at the limit is still `COMPLETED`: see Added.
 
 - **`follow_task` reopens a cut subscription and goes on to the task's end**
   (client; audit D-11). A subscription cut by a reset connection or a proxy
@@ -1509,6 +1689,91 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A provider's, or a delegated child's, absurd token count left the task `working` for ever** (types and
+  server; found by the live-model campaign, 2026-11-08, by serving a scripted provider and a scripted peer
+  to a budgeted agent). `BudgetHandle::status()` is written onto every status update, and the server
+  refuses an event that holds a number past 2^53 (a gRPC `metadata` is a protobuf `Struct`, whose numbers
+  are doubles). A model reply that reported `usage` of 2^64 - 1 tokens, or a child whose final status
+  reported that much `spent`, put such a number in `spent`, so the status update that ends the task was
+  refused, and so was the failure written when the executor then returned its error: the task stayed
+  `working` (a blocking send returned that snapshot; a poll never saw it end; both reproduced against the
+  tool loop and against a coordinator delegating with `Delegation::start_budgeted`). The status now
+  reports no number past 2^53, "at least this much" at that largest value; the account itself still counts
+  the real spend. `a_status_never_carries_a_number_the_wire_cannot_hold` (types) and
+  `a_provider_reporting_an_absurd_token_count_still_ends_the_task` (server) fail without the change.
+
+- **A delegation could not start when its grant asked for a meter the parent's budget did not name, at
+  `u64::MAX`** (types; found by the live-model campaign, 2026-11-08, with `examples/live-model`'s coordinator
+  and a budget that named only a deadline). `BudgetHandle::grant` passes such a meter through unlimited, and
+  `u64::MAX` is "all there is" in the example; the child's server refuses a number past 2^53 in a message's
+  `metadata`, so `Delegation::start_budgeted` failed with `[-32602] message.metadata holds the integer
+  18446744073709551615` and the parent task failed with an opaque internal error. The grant now carries at
+  most 2^53 of such a meter. `a_meter_only_the_request_names_is_granted_at_most_what_the_wire_holds` fails
+  without the change.
+
+- **`activate_skill` listed the files of a directory outside the skill when `references/`, `assets/` or
+  `scripts/` was itself a symbolic link** (server, `skills`; found by the live-model campaign, 2026-11-08).
+  The listing skipped links among a resource directory's entries but followed the resource directory:
+  `references` linked to `/etc` told the model the names of 100 files there, and the tool-trace artifact
+  carried them to the caller. `read_skill_file` already refused every read through such a link, so no
+  content left; the names did. A resource directory that is a link is now not listed, and discovery says
+  so (a `SymlinkNotFollowed` warning on the skill's `SKILL.md`).
+
+- **A model provider's error body could forge log lines and send terminal escapes to the operator's log**
+  (server, `tool-loop`; found by the live-model campaign, 2026-11-08). The 512-byte body in
+  `ModelError::Status` and `RateLimited`, which reaches the operator's log and spans through `Display`, was the
+  provider's text with its control characters intact: a body of `x`, a newline and `2026-11-08T00:00:00Z ERROR
+  forged: ...` began a line of its own on standard error, and an ANSI sequence arrived raw. Providers
+  echo parts of the prompt in such bodies, so the text is not always the provider's own. Control characters are
+  now written as Rust writes them (`\n`, `\u{1b}`), and the 512-byte bound applies to what is shown.
+
+- **A page token with a separator and a timestamp no store wrote made PostgreSQL answer an internal
+  error that carried the database's own message** (found while closing the change above). The SQL stores'
+  cursor decoder checked only for the separator, so a token such as `x`, a newline and an id reached
+  the `::timestamp` cast of both PostgreSQL stores, and the caller got `-32603` with `invalid input
+  syntax for type timestamp: "x"` in the message (measured against PostgreSQL on 2026-11-07, with
+  the new check turned off). The decoder now requires the shape and the calendar date and time the
+  stores write (`YYYY-MM-DD HH:MM:SS`, up to six fractional digits), and a token that fails it is
+  `InvalidParams` like any other.
+  A second pass (hostile campaign, wave 2, 2026-11-08) found two more spellings of the same class and the decoder now refuses both: a
+  timestamp in year 0000, which this crate's own RFC 3339 parser reads and PostgreSQL's `timestamp` has no year for, and a NUL in the
+  id, which cannot be bound as text. A **status timestamp** in year 0000 (an executor can write one) is held as 0001-01-01 by the SQLite and
+  PostgreSQL stores: PostgreSQL answered a database error for it, then (in the first version of the fix) listed such a task as the newest and
+  answered an empty page for `statusTimestampAfter` of year 0000, where the in-memory and SQLite stores answer every task; SQLite issued a
+  page token for such a task that its own decoder then refused.
+
+- **The shared PostgreSQL rate-limit counter's sweep deleted another
+  component's live rows** (server, `postgres`; found while building E-F15,
+  2026-11-07). The sweep removed rows older than the previous window **as the
+  calling component numbered windows**, across the whole `a2a_rate_limit`
+  table, and the rate limiter (60 s by default) and `AuthFailureThrottle`
+  (300 s) share it. Measured in plain SQL with the module's own statements: a
+  60 s sweep deleted a 300 s row whose count was 3. Rows now record
+  `window_secs` (added to an existing table by a guarded statement at start-up;
+  a row from an earlier release records none and any sweep removes it, which
+  forgets a window or two of counts once), and a sweep removes its own width's
+  stale rows and leaves the others. Two replicas with different window widths
+  on one counter were affected in 0.15.0 as well. Six hand mutants of the SQL
+  (baseline first) are each killed by one of the new live-database tests.
+
+- **The stream of a streaming send whose executor panics ends with the `failed`
+  state** (server; audit D-03 d, F14). The panic already stored `failed`,
+  pushed it and logged it, but the stream a `SendStreamingMessage` client reads
+  is fed by the executor's queue, which the unwind closes with the task's last
+  state still `working`, and the stream just ended: also how a dropped
+  connection looks, so a client had to guess and call `GetTask`. Reproduced
+  first, on a current-thread and a multi-thread runtime, as the frames
+  `Task(submitted)`, `StatusUpdate(working)` and then nothing. When the queue
+  closes with no terminal state delivered and the last state not
+  `input-required` or `auth-required` (an executor that returns there ends its
+  stream rightly), the reader now asks the handler for the task's stored
+  terminal state, polling the store every 20 ms for `executor_drain_timeout`
+  plus `subscribe_replay_catchup` (7 s by default), and sends it as the last
+  frame; a task that is still not terminal then ends the stream as before.
+  Every binding hands the reader `on_send_message` returns to its own framing
+  (read from the code; the test drives the handler, not each binding).
+  `SubscribeToTask` is unchanged (it already reattaches).
+
 - **A `304` no longer makes a cached agent card forget its lifetime** (RFC 9111
   §4.3.4, §3.2). `CachingCardResolver` read a revalidated card's freshness from
   the `304`'s own headers alone, so an origin or proxy that left `Cache-Control`
@@ -1614,13 +1879,11 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   delegation share one deadline of that bound, so a journal that has stopped
   answering holds the delegation up for 5 s there and no longer. The tests run
   in paused time and pin each bound to the millisecond.
-- **`AuthFailureThrottle`'s per-replica budget is documented** (audit E-F15,
-  interim): the counts are per process, so N replicas behind a balancer give a
-  peer up to N times `max_failures` guesses a window. The throttling page and
-  the type's rustdoc say so and say to size `max_failures` for the fleet or
-  throttle in the proxy in front. A counter shared through the database, as
-  `RateLimitInterceptor` has, is not built: the `RateLimitCounter` trait has no
-  read without counting, which the throttle's check before the call needs.
+- **`AuthFailureThrottle`'s per-replica budget is documented, and can be
+  shared** (audit E-F15): without a shared counter the counts are per process,
+  so N replicas behind a balancer give a peer up to N times `max_failures`
+  guesses a window. The throttling page and the type's rustdoc say so; see
+  `AuthFailureThrottle::with_shared_counter` under Added for the fix.
 
 - **The audit log's per-chain locks no longer pile up** (server; audit
   D-19). The map of append locks gained an entry per distinct chain name and
@@ -2064,9 +2327,10 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `Failed` a panic stores is also recorded in the event log, which only the
   push had. `tests/executor_panic_terminal.rs` failed 31 of 40 runs before and
   0 of 40 after; the ordering is fixed deterministically in
-  `queue_close_tests` (four hand edits of the wait each fail a test). Open:
-  a `SendStreamingMessage` stream whose executor panics still closes without a
-  terminal frame (D-03 d).
+  `queue_close_tests` (four hand edits of the wait each fail a test). The
+  `SendStreamingMessage` stream of a task whose executor panics ended without
+  a terminal frame (D-03 d); it now ends with the `failed` state, see the entry
+  below.
 - **A cancel taken by another replica was never pushed or logged, and a
   blocking send could answer `working` for a task stored `canceled`** (server;
   audit E-F9, NEW-e-2). `CancelTask` on a replica that does not run the task
@@ -2573,6 +2837,38 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **Names that disagreed with the wire methods and the crate's conventions** (audit G-15, ADR 0053), same `since` and removal: `RequestHandler::on_resubscribe` for `on_subscribe_to_task`; `RequestHandler::on_set_push_config` for `on_create_push_config`; `A2aClient::set_push_config` for `create_push_config`; `RateLimitConfig::with_window_secs(u64)` for `with_window(Duration)`; `TenantLimitsBuilder::{max_concurrent_tasks, executor_timeout, event_queue_capacity, rate_limit_rps}` for the `with_` forms. Each old name calls the new one. The table is in `book/src/reference/upgrading/0.15-to-0.16.md`.
 
 ### Known Limitations
+
+- **Steering** (ADR 0036): a replica that has just died keeps its claim until the claim's time to live, and a steering message handed off in that window is accepted (`handed-off` means stored for the holder, not read) and never read; steering messages are not written to `Task.history`; the tests drive JSON-RPC and HTTP+JSON, and gRPC and WebSocket carry a steering message as any `SendMessage` without a test of their own; the two-process proof is Linux-only and not in CI.
+
+- **A status written with no event** (audit E-F25): a `CancelTask` of a parked task on one replica, and a task the claim reaper ends, write a status with no event in the log, so a subscriber on another replica learns of it at its next poll (up to `subscribe_reattach_max_interval`), also with `with_log_notifications`; measured: 2.0 s for a cancel at a 2 s ceiling.
+
+- **A cancel taken on another replica, then the owner's abrupt death** (hostile campaign W2-hostile-3, 2026-11-08): `CancelTask` on a replica
+  that does not run the turn stores `Canceled` and leaves the terminal event to the owner's own event processor. If the owner is killed
+  (`kill -9`, an out-of-memory kill, a `SIGTERM` nothing handles) before it ends the turn, the task is `Canceled` in the store with no terminal
+  event in its log, which webhooks, the audit trail and a resuming subscriber read, and its expired claim row stays, because the reaper's
+  query excludes terminal tasks. The owner left running, or shut down by `shutdown_with_timeout` (what `Server::serve_with_shutdown` runs on
+  `SIGTERM`), logs the event and frees the claim (`tests/turn_claims`, SQLite and PostgreSQL). Closing the gap needs the canceller to append
+  the ending itself and the processor to skip an ending already logged, so a decision on duplicate terminal events; not changed.
+
+- **Authentication runs after method dispatch, body parsing and version negotiation** (hostile campaign W2-hostile-5, 2026-11-08): with a bearer
+  interceptor and no credential, a call to a known method answers the reference `401`, but an unknown JSON-RPC method (`-32601`), invalid JSON
+  (`-32700`), an oversized body, an unsupported `A2A-Version`, and a REST route that does not exist or is called with the wrong verb answer their
+  own protocol errors, so an unauthenticated caller can tell which routes and methods exist without a credential (12 of 24 probes). No task
+  data crosses the boundary. Authenticating before parsing would also make every malformed request cost an authentication attempt, so it is a
+  design decision and is not changed.
+
+- **Tool-loop and model-provider edges found by running real models** (live-model campaign, wave 2, 2026-11-08; each reproduced by the agent, not all
+  re-run since): a provider's error body (at most 512 bytes, which can echo the prompt) reaches the `invoke_agent` span as span events and the
+  operator's log, where `book/src/deployment/observability/` says spans carry no content (W2-LIVE-8); `gen_ai.response.model`, a string the provider
+  chooses, labels five metrics, so 200 names made 1,000 series (W2-LIVE-9); a trusted project skill whose name is a Cyrillic look-alike of an
+  operator's skill is a second skill (W2-LIVE-11); `finish_reason: content_filter` with partial text completes the task unmarked, as only `length` is
+  marked (W2-LIVE-12); a tool call cut at `max_tokens` surfaces as the provider's HTTP 500 and fails the task `internal` (llama-server's own parse error,
+  W2-LIVE-13); a steering message sent during the answering turn is receipted `inbox` and never read (by design; the `unread` metric says so,
+  W2-LIVE-14).
+
+- **Parked-task expiry** (audit D-18): a parked task deleted by `parked_max_age` answers `TaskNotFound` afterwards, and a stream open on it ends without a terminal state; a continuation that read the task a moment before the sweep and takes its claim after it writes the task again, without its event log.
+
+- **Agent Skills** (ADR 0035): the catalog is a snapshot taken at start-up (no hot reload; build a new executor to pick up a change); scripts are never run; on a platform without Unix file identities (Windows) the reader's check after the open compares paths only, a hard link names any file its maker can read, and a file replaced by a FIFO between the check and the open holds one blocking-pool thread; not yet run against a live model, on Windows or on macOS.
 
 - **Exemplars** (audit C-05): the stack stores and links them, but the SDK records none until the pinned `opentelemetry_sdk` does; ROADMAP has a *Waiting on upstream* row.
 

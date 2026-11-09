@@ -25,6 +25,17 @@ pub const fn fetch_limit(page_size: u32) -> u32 {
     page_size + 1
 }
 
+/// What every store answers a `pageToken` it could not have issued: `InvalidParams`
+/// (Google AIP-158: an invalid page token is an invalid argument). Until
+/// 0.16.0 it was an empty page, which a client cannot tell from the end of the
+/// listing. The token is not repeated: it is the caller's own string, and the
+/// message is logged and returned.
+pub fn unrecognised_token() -> a2a_protocol_types::error::A2aError {
+    a2a_protocol_types::error::A2aError::invalid_params(
+        "pageToken is malformed: pass the previous page's nextPageToken unchanged",
+    )
+}
+
 /// Whether more rows exist beyond the current page.
 ///
 /// `fetched` is how many rows the store actually read (it asked for
@@ -39,7 +50,20 @@ pub const fn has_next_page(fetched: usize, page_size: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::has_next_page;
+    use super::{has_next_page, unrecognised_token};
+    use a2a_protocol_types::error::ErrorCode;
+
+    /// The refusal is `InvalidParams` and says what is wrong in words that
+    /// carry nothing of the caller's token.
+    #[test]
+    fn an_unrecognised_token_is_invalid_params() {
+        let err = unrecognised_token();
+        assert_eq!(err.code, ErrorCode::InvalidParams);
+        assert_eq!(
+            err.message,
+            "pageToken is malformed: pass the previous page's nextPageToken unchanged"
+        );
+    }
 
     #[cfg(any(feature = "sqlite", feature = "postgres"))]
     #[test]

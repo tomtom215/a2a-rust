@@ -54,7 +54,7 @@ let _client = ClientBuilder::new("http://localhost:3000").build()?;
 - **Wire types**: `Task`, `TaskState`, `Message`, `Part`, `AgentCard`, `AgentInterface`, `StreamResponse`, and the params and responses
 - **ID types**: `TaskId`, `ContextId`, `MessageId`, `ArtifactId`
 - **Client**: `A2aClient`, `ClientBuilder`, `EventStream`, `RetryPolicy`, the token providers
-- **Server**: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`, `EventEmitter`, `JsonRpcDispatcher`, `RestDispatcher`, `Server`, `serve`, `shutdown_signal`, the auth and rate-limit interceptors
+- **Server**: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`, `EventEmitter`, `JsonRpcDispatcher`, `RestDispatcher`, `Server`, `ServeConfig`, `shutdown_signal`, the auth and rate-limit interceptors
 - **Errors**: `A2aError`, `ClientError`, `ServerError`
 
 A summary: the `pub use` lines of `prelude` in `src/lib.rs` are the complete list.
@@ -82,6 +82,7 @@ all five.
 | `postgres` | No | `a2a-protocol-server` |
 | `axum` | No | `a2a-protocol-server` |
 | `tool-loop` | No | `a2a-protocol-server` |
+| `skills` | No | `a2a-protocol-server` (implies `tool-loop`) |
 | `auth-jwt` | No | `a2a-protocol-server` |
 | `encryption` | No | `a2a-protocol-server` |
 | `audit` | No | `a2a-protocol-types`, `a2a-protocol-server` |

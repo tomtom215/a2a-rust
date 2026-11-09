@@ -161,3 +161,80 @@ pub async fn a_replica_shut_down_releases_its_claims_at_once(db: &impl Db) {
         "once A has shut down the task is free, without waiting out A's time to live"
     );
 }
+
+/// A cancel taken by B just before A shuts down, with A's executor running:
+/// the task ends `Canceled`, its terminal event is in the log (a webhook, an
+/// audit consumer and a late subscriber all read the log), and no claim is
+/// left on it. The hostile campaign (wave 2, `W2-hostile-3`) saw ten tasks
+/// end `Canceled` with one logged event each, none of them terminal, and a
+/// claim row each that nothing ever removed.
+pub async fn a_cancel_taken_as_its_replica_shuts_down_still_logs_the_end_and_frees_the_task(
+    db: &impl Db,
+) {
+    a_cross_replica_cancel_logs_its_end(db, true).await;
+}
+
+/// The same cancel with A left running: A's executor hears of it at its next
+/// renewal and the turn ends the ordinary way. The control for the case
+/// above, which differs only in A shutting down at once.
+pub async fn a_cancel_taken_on_another_replica_logs_the_end(db: &impl Db) {
+    a_cross_replica_cancel_logs_its_end(db, false).await;
+}
+
+async fn a_cross_replica_cancel_logs_its_end(db: &impl Db, shut_a_down: bool) {
+    let probe = Arc::default();
+    let store = db.store().await;
+    let a = replica(db.store().await, &probe, Duration::from_secs(5));
+    let b = replica(db.store().await, &probe, Duration::from_secs(5));
+
+    let task = send(&a, params("hold", None, true)).await.expect("A opens");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let cancel: a2a_protocol_types::params::CancelTaskParams =
+        serde_json::from_value(serde_json::json!({ "id": task.id.0 })).expect("params");
+    let answer = b.on_cancel_task(cancel, None).await.expect("B cancels");
+    assert_eq!(answer.status.state, TaskState::Canceled);
+    if shut_a_down {
+        // Before A's next renewal could have heard of it, and by the path a
+        // `SIGTERM` takes (`Server::serve_with_shutdown`): cancel what runs,
+        // wait for its queues to drain, release the claims. Plain
+        // `shutdown()` does not wait for executors and says it cuts streams
+        // off without a terminal event.
+        let _ = a.shutdown_with_timeout(Duration::from_secs(5)).await;
+        let claims = store.turn_claims().expect("a SQL store has claims");
+        let free = claims
+            .claim(
+                "",
+                &task.id.0,
+                "probe",
+                "probe-late",
+                Duration::from_secs(3),
+            )
+            .await
+            .expect("claim");
+        assert!(
+            free,
+            "once A has shut down the task is free, a cancel taken on B or not"
+        );
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let log = store.read_events(&task.id, 0, 100).await.expect("log");
+        let ended = log.iter().any(|e| match &e.event {
+            a2a_protocol_types::events::StreamResponse::StatusUpdate(u) => {
+                u.status.state == TaskState::Canceled
+            }
+            _ => false,
+        });
+        if ended {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the cancelled task has no terminal event in the log: {:?}",
+            log.iter().map(|e| (e.seq, &e.event)).collect::<Vec<_>>()
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let _ = b.shutdown().await;
+    let _ = a.shutdown().await;
+}

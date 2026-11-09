@@ -1,0 +1,39 @@
+##### SIGINT during a stream (python spawns it with the default SIGINT disposition)
+exit: 1 (a death by SIGINT is -2; 130 is the shell's rendering)
+stdout: 
+stderr: error: could not fetch the agent card from http://127.0.0.1:3405: HTTP client error: client error (Connect): tcp connect error: Connection refused (os error 111)
+hint: pass --binding to skip discovery and use the URL directly
+##### SIGINT during a blocking send to a half-open peer
+exit: -2
+stderr: 
+##### a hard OTEL error: the README says exit 2 with one error line
+--- OTEL_EXPORTER_OTLP_PROTOCOL=carrier-pigeon
+exit 0 ; stdout 2026 bytes
+2026-11-07T12:23:44.321691Z  WARN a2a_protocol_server::otel::telemetry::subscriber: OTEL_EXPORTER_OTLP_PROTOCOL="carrier-pigeon" is not `grpc`, `http/protobuf` or `http/json`; `http/protobuf` is used
+
+--- OTEL_EXPORTER_OTLP_ENDPOINT=not-a-url
+exit 2 ; stdout 0 bytes
+error: the OTEL_* environment names a configuration Telemetry cannot use: OTEL_EXPORTER_OTLP_ENDPOINT="not-a-url": OTLP/HTTP needs a scheme: write `http://not-a-url` or `https://not-a-url`
+
+--- OTEL_EXPORTER_OTLP_TIMEOUT=abc
+exit 0 ; stdout 2026 bytes
+
+--- OTEL_EXPORTER_OTLP_HEADERS=broken
+exit 0 ; stdout 2026 bytes
+
+--- OTEL_SDK_DISABLED=maybe
+exit 0 ; stdout 2026 bytes
+2026-11-07T12:23:44.537273Z  WARN a2a_protocol_server::otel::telemetry::subscriber: OTEL_SDK_DISABLED="maybe" is not `true` or `false`, and only `true` disables the SDK; the SDK is not disabled
+
+##### 100 KB argument (under the 128 KiB single-argument limit) and above it
+100 KB: exit 0 ; stdout 100397 bytes
+200 KB: exit 126 ; scripts/live/adopter/04b-cli-followup.sh: line 66: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/target-adopter/debug/a2a: Argument list too long
+text '-' : exit 0 ; Echo: -
+##### the server's body limit: 20 MiB POSTed straight to the echo agent (REST and JSON-RPC)
+REST  : HTTP 413 in 0.006428s
+{"error":{"code":413,"message":"request body too large: 20971592 bytes exceeds 4194304 byte limit"}}
+JSONRPC: HTTP 200 in 0.007402s
+{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: request body too large: 20971592 bytes exceeds 4194304 byte limit"}}
+##### a stalled stream: how long until the CLI gives up? (library idle default: 5 min)
+scripts/live/adopter/04b-cli-followup.sh: line 77: syntax error near unexpected token `)'
+scripts/live/adopter/04b-cli-followup.sh: line 77: `y idle default: 5 min)"'

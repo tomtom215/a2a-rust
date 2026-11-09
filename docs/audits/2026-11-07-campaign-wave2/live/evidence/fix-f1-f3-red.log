@@ -1,0 +1,84 @@
+   Compiling a2a-protocol-server v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-a0d0167778a2b513b/crates/a2a-protocol-server)
+    Finished `test` profile [unoptimized] target(s) in 44.37s
+     Running unittests src/lib.rs (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/target-test/debug/deps/a2a_protocol_server-91827c05a1a93462)
+
+running 19 tests
+test skills::discover::tests::listing::a_skill_with_no_extra_files_lists_none_and_says_nothing ... ok
+test skills::discover::tests::listing::a_listing_goes_three_directories_deep_and_no_further ... ok
+test skills::discover::tests::listing::files_under_the_skill_are_listed_and_scripts_are_noted_as_not_run ... ok
+test skills::discover::tests::listing::links::a_followed_link_still_cannot_take_a_read_outside_the_skill ... ok
+test skills::discover::tests::listing::a_listing_stops_at_100_files_in_a_directory_and_says_so ... ok
+test skills::discover::tests::listing::links::a_link_to_a_skill_directory_is_not_followed_unless_the_source_says_so ... ok
+test skills::discover::tests::listing::each_of_the_three_directories_has_its_own_100 ... ok
+test skills::discover::tests::listing::links::links_that_lead_nowhere_or_nowhere_useful_are_said_or_ignored ... ok
+test skills::discover::tests::listing::the_catalog_shows_a_description_shortened_to_the_bound_and_says_so ... ok
+test skills::discover::tests::listing::links::a_link_inside_a_resource_directory_that_loops_does_not_hang_the_listing ... ok
+test tool_loop::openai::tests::a_base_url_that_cannot_work_is_refused_at_construction ... ok
+test tool_loop::openai::tests::an_error_body_is_cut_on_a_character_boundary ... ok
+test tool_loop::openai::tests::content_parts_and_missing_fields_are_read ... ok
+test tool_loop::openai::tests::the_api_key_is_not_in_debug_output ... ok
+test tool_loop::openai::tests::the_response_id_and_finish_reason_are_read ... ok
+test tool_loop::openai::tests::the_server_is_the_endpoints_host_and_port ... ok
+test tool_loop::openai::tests::an_error_body_carries_no_control_character ... FAILED
+test skills::discover::tests::listing::links::a_resource_directory_linked_to_a_directory_inside_the_skill_is_not_listed ... FAILED
+test skills::discover::tests::listing::links::a_resource_directory_that_is_itself_a_link_is_not_listed_and_is_said ... FAILED
+
+failures:
+
+---- tool_loop::openai::tests::an_error_body_carries_no_control_character stdout ----
+
+thread 'tool_loop::openai::tests::an_error_body_carries_no_control_character' (16551) panicked at crates/a2a-protocol-server/src/tool_loop/openai_tests.rs:26:5:
+assertion `left == right` failed
+  left: "a\nb\r\u{1b}[31mc\u{7}\0d\te"
+ right: "a\\nb\\r\\u{1b}[31mc\\u{7}\\u{0}d\\te"
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::assert_failed_inner
+   3: core::panicking::assert_failed::<alloc::string::String, &str>
+   4: a2a_protocol_server::tool_loop::openai::tests::an_error_body_carries_no_control_character
+   5: a2a_protocol_server::tool_loop::openai::tests::an_error_body_carries_no_control_character::{closure#0}
+   6: <a2a_protocol_server::tool_loop::openai::tests::an_error_body_carries_no_control_character::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- skills::discover::tests::listing::links::a_resource_directory_linked_to_a_directory_inside_the_skill_is_not_listed stdout ----
+
+thread 'skills::discover::tests::listing::links::a_resource_directory_linked_to_a_directory_inside_the_skill_is_not_listed' (16546) panicked at crates/a2a-protocol-server/src/skills/discover_tests/listing.rs:359:9:
+assertion `left == right` failed
+  left: ["references/guide.md"]
+ right: []
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::assert_failed_inner
+   3: core::panicking::assert_failed::<&[alloc::string::String], alloc::vec::Vec<alloc::string::String>>
+   4: a2a_protocol_server::skills::discover::tests::listing::links::a_resource_directory_linked_to_a_directory_inside_the_skill_is_not_listed
+   5: a2a_protocol_server::skills::discover::tests::listing::links::a_resource_directory_linked_to_a_directory_inside_the_skill_is_not_listed::{closure#0}
+   6: <a2a_protocol_server::skills::discover::tests::listing::links::a_resource_directory_linked_to_a_directory_inside_the_skill_is_not_listed::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- skills::discover::tests::listing::links::a_resource_directory_that_is_itself_a_link_is_not_listed_and_is_said stdout ----
+
+thread 'skills::discover::tests::listing::links::a_resource_directory_that_is_itself_a_link_is_not_listed_and_is_said' (16547) panicked at crates/a2a-protocol-server/src/skills/discover_tests/listing.rs:315:9:
+assertion `left == right` failed
+  left: ["references/name-of-a-file-outside.txt", "assets/logo.txt"]
+ right: ["assets/logo.txt"]
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::assert_failed_inner
+   3: core::panicking::assert_failed::<&[alloc::string::String], [&str; 1]>
+   4: a2a_protocol_server::skills::discover::tests::listing::links::a_resource_directory_that_is_itself_a_link_is_not_listed_and_is_said
+   5: a2a_protocol_server::skills::discover::tests::listing::links::a_resource_directory_that_is_itself_a_link_is_not_listed_and_is_said::{closure#0}
+   6: <a2a_protocol_server::skills::discover::tests::listing::links::a_resource_directory_that_is_itself_a_link_is_not_listed_and_is_said::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    skills::discover::tests::listing::links::a_resource_directory_linked_to_a_directory_inside_the_skill_is_not_listed
+    skills::discover::tests::listing::links::a_resource_directory_that_is_itself_a_link_is_not_listed_and_is_said
+    tool_loop::openai::tests::an_error_body_carries_no_control_character
+
+test result: FAILED. 16 passed; 3 failed; 0 ignored; 0 measured; 2440 filtered out; finished in 0.19s
+
+error: test failed, to rerun pass `-p a2a-protocol-server --lib`

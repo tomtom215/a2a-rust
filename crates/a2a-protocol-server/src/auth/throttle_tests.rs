@@ -43,7 +43,7 @@ fn unauthenticated() -> ServerError {
 }
 
 fn fail(throttle: &AuthFailureThrottle, ctx: &CallContext) {
-    throttle.count_if_unauthenticated(ctx, CallOutcome::Failed(&unauthenticated()));
+    throttle.record_failure(ctx, CallOutcome::Failed(&unauthenticated()));
 }
 
 fn refused(throttle: &AuthFailureThrottle, ctx: &CallContext) -> bool {
@@ -131,10 +131,10 @@ fn only_a_refused_credential_is_counted() {
         ServerError::InvalidParams("bad".into()),
     ];
     for _ in 0..3 {
-        throttle.count_if_unauthenticated(&peer, CallOutcome::Succeeded);
-        throttle.count_if_unauthenticated(&peer, CallOutcome::Cancelled);
+        throttle.record_failure(&peer, CallOutcome::Succeeded);
+        throttle.record_failure(&peer, CallOutcome::Cancelled);
         for error in &others {
-            throttle.count_if_unauthenticated(&peer, CallOutcome::Failed(error));
+            throttle.record_failure(&peer, CallOutcome::Failed(error));
         }
     }
     assert!(!refused(&throttle, &peer));

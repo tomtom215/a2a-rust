@@ -1,0 +1,52 @@
+   Compiling a2a-protocol-types v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-a0d0167778a2b513b/crates/a2a-protocol-types)
+   Compiling a2a-protocol-server v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-a0d0167778a2b513b/crates/a2a-protocol-server)
+    Finished `test` profile [unoptimized] target(s) in 15.75s
+     Running tests/tool_loop/main.rs (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/target-test/debug/deps/tool_loop-2f89e60c3cd44f4c)
+
+running 43 tests
+test answers::a_reply_cut_at_the_output_limit_completes_and_says_so ... ok
+test answers::a_cut_off_answer_streams_the_answer_then_completed ... ok
+test answers::the_mark_is_namespaced_like_the_other_extensions_keys ... ok
+test answers::an_answer_that_ended_by_itself_carries_no_mark ... ok
+test executor::a_fatal_tool_error_fails_the_task_as_internal_naming_the_tool ... ok
+test executor::a_message_without_text_is_refused_as_an_invalid_request ... ok
+test executor::a_provider_failure_fails_the_task_as_internal_with_the_status_and_not_the_body ... ok
+test answers::an_empty_answer_fails_the_task_with_a_class_for_its_cause ... ok
+test executor::a_provider_reporting_an_absurd_token_count_still_ends_the_task ... ok
+test executor::a_run_without_a_tool_has_no_trace_artifact ... ok
+test executor::a_transport_failure_does_not_tell_the_caller_where_the_provider_is ... ok
+test executor::a_run_with_a_tool_streams_working_the_answer_the_trace_and_completed ... ok
+test executor::a_tool_error_the_model_recovers_from_still_completes ... ok
+test executor::an_unavailable_provider_fails_the_task_as_transient ... ok
+test executor::a_spent_token_budget_fails_the_task_as_budget_exhausted ... ok
+test executor::cancelling_the_task_abandons_the_turn_and_ends_canceled ... ok
+test executor::the_turn_bound_fails_the_task_as_budget_exhausted ... ok
+test openai::a_chunked_body_over_the_cap_is_refused ... ok
+test openai::a_429_is_rate_limited_with_the_providers_delay ... ok
+test openai::a_body_over_the_cap_is_refused_and_one_under_it_read ... ok
+test openai::a_non_2xx_answer_is_the_status_and_at_most_512_bytes_of_body ... ok
+test openai::an_answer_that_is_not_a_completion_is_an_invalid_response ... ok
+test openai::a_loop_with_a_retry_policy_answers_after_a_429 ... ok
+test openai::an_error_body_is_not_read_past_what_is_kept ... ok
+test openai::an_assistant_turn_without_calls_is_sent_as_plain_text ... ok
+test openai::an_unreachable_server_is_a_transport_error ... ok
+test openai::no_tools_means_no_tools_field_and_no_preamble_no_system_message ... ok
+test openai::specs_passed_directly_are_sent ... ok
+test openai::the_provider_is_named_for_the_api_and_the_model_as_configured ... ok
+test openai::arguments_are_read_as_a_string_or_as_an_object ... ok
+test openai::the_request_carries_the_conversation_the_catalogue_and_the_extras ... ok
+test openai::usage_and_the_answering_model_are_read ... ok
+test skills::a_request_for_a_file_outside_the_skill_is_an_error_the_model_reads_and_the_task_completes ... ok
+test skills::a_skill_is_activated_and_one_of_its_files_read_in_one_task ... ok
+test streaming::a_server_that_answers_whole_is_read_whole ... ok
+test streaming::a_streamed_answer_of_exactly_the_cap_is_read ... ok
+test streaming::a_streamed_answer_past_the_cap_is_refused ... ok
+test streaming::a_streamed_completion_is_handed_on_as_it_arrives ... ok
+test streaming::with_drafts_each_turns_text_streams_before_the_answer ... ok
+test streaming::without_drafts_nothing_changes ... ok
+test streaming::turn_after_turn_against_a_server_that_closes_after_streaming ... ok
+test openai::the_default_cap_is_eight_mebibytes ... ok
+test openai::a_server_that_never_answers_times_out_at_the_bound ... ok
+
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+

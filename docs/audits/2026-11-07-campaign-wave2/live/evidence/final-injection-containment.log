@@ -1,0 +1,78 @@
+   Compiling syn v3.0.9
+   Compiling zerocopy v0.8.63
+   Compiling nom v7.1.3
+   Compiling axum-core v0.5.6
+   Compiling rusticata-macros v4.1.0
+   Compiling tokio-macros v2.7.2
+   Compiling tokio v1.54.1
+   Compiling futures-macro v0.3.34
+   Compiling futures-util v0.3.34
+   Compiling thiserror-impl v2.0.21
+   Compiling tokio-util v0.7.20
+   Compiling thiserror v2.0.21
+   Compiling opentelemetry v0.33.1
+   Compiling h2 v0.4.20
+   Compiling tower v0.5.3
+   Compiling async-trait v0.1.92
+   Compiling displaydoc v0.2.7
+   Compiling axum v0.8.9
+   Compiling hyper v1.12.0
+   Compiling hyper-util v0.1.21
+   Compiling asn1-rs v0.7.2
+   Compiling hyper-timeout v0.5.2
+   Compiling pin-project v1.1.13
+   Compiling tokio-stream v0.1.19
+   Compiling ppv-lite86 v0.2.21
+   Compiling prost v0.14.4
+   Compiling tonic v0.14.6
+   Compiling rand_chacha v0.9.0
+   Compiling serde v1.0.229
+   Compiling rand v0.9.5
+   Compiling der-parser v10.0.0
+   Compiling oid-registry v0.8.1
+   Compiling futures-executor v0.3.34
+   Compiling serde_derive v1.0.229
+   Compiling x509-parser v0.18.1
+   Compiling opentelemetry_sdk v0.33.1
+   Compiling serde_json v1.0.154
+   Compiling tonic-prost v0.14.6
+   Compiling tokio-rustls v0.26.6
+   Compiling prost-types v0.14.4
+   Compiling hyper-rustls v0.27.10
+   Compiling tonic-types v0.14.6
+   Compiling opentelemetry-proto v0.33.1
+   Compiling a2a-protocol-types v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-a0d0167778a2b513b/crates/a2a-protocol-types)
+   Compiling tracing-opentelemetry v0.34.0
+   Compiling opentelemetry-http v0.33.1
+   Compiling a2a-protocol-client v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-a0d0167778a2b513b/crates/a2a-protocol-client)
+   Compiling a2a-protocol-server v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-a0d0167778a2b513b/crates/a2a-protocol-server)
+   Compiling opentelemetry-otlp v0.33.1
+   Compiling opentelemetry-appender-tracing v0.33.1
+   Compiling a2a-protocol-sdk v0.16.0 (/home/user/a2a-rust/.claude/worktrees/agent-a0d0167778a2b513b/crates/a2a-protocol-sdk)
+    Finished `test` profile [unoptimized] target(s) in 40.05s
+     Running tests/injection_containment/main.rs (/tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/target-test/debug/deps/injection_containment-4b12402761255cb1)
+
+running 20 tests
+test operator::a_halt_stops_an_injected_run_and_refuses_new_work ... ok
+test peers::a_trusted_agent_that_is_compromised_is_still_obeyed ... ok
+test delegation::another_callers_task_cannot_be_read_on_an_injected_instruction ... ok
+test approval::an_agent_cannot_approve_the_action_it_requested ... ok
+test peers::an_impostors_answer_is_refused_before_the_model_reads_it ... ok
+test skills::a_project_directory_that_is_not_marked_trusted_is_not_read ... ok
+test peers::an_unsigned_answer_is_refused_when_signatures_are_required ... ok
+test peers::an_unsigned_answer_passes_when_signatures_are_not_required ... ok
+test skills::a_projects_skill_cannot_take_an_operators_name ... ok
+test skills::a_skill_cannot_give_itself_a_tool_through_allowed_tools ... ok
+test skills::a_repeated_payment_planted_in_a_trusted_projects_skill_runs_once ... ok
+test skills::a_skills_text_cannot_read_a_file_outside_it_or_return_a_script ... ok
+test skills::differing_payments_planted_in_a_trusted_projects_skill_run_until_the_turn_bound ... ok
+test steering::a_steering_message_to_an_executor_that_does_not_read_it_is_not_obeyed ... ok
+test steering::a_steering_message_cannot_cancel_the_task ... ok
+test tool_results::a_repeated_payment_planted_in_a_page_runs_once ... ok
+test steering::an_instruction_in_a_steering_message_is_obeyed ... ok
+test tool_results::differing_payments_run_until_the_turn_bound ... ok
+test tool_results::the_callers_token_budget_ends_the_run_sooner ... ok
+test delegation::fan_out_stops_when_the_parents_budget_is_reserved ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+

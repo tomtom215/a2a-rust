@@ -332,6 +332,7 @@ impl SqliteTaskStore {
         let mut report = super::retention::sqlite::purge(
             &self.pool,
             "tasks",
+            "''",
             &[journal::DELETE_ORPHANS_SQL, event_log::DELETE_ORPHANS_SQL],
             idempotency::EXPIRE_SQL,
             policy,
@@ -1117,10 +1118,11 @@ impl TaskStore for SqliteTaskStore {
             // Composite (updated_at, id) row-value cursor: resume strictly
             // before the last row of the previous page under the
             // status-timestamp-descending order (spec §3.1.4). A token not
-            // produced by us decodes to None → empty page (never a full scan).
+            // produced by us decodes to None → InvalidParams (never a full scan,
+            // and never an empty page a client reads as the end of the listing).
             if let Some(ref token) = params.page_token {
                 let Some((cursor_ua, cursor_id)) = super::cursor::decode(token) else {
-                    return Ok(TaskListResponse::new(Vec::new()));
+                    return Err(super::pagination::unrecognised_token());
                 };
                 let p = bind_values.len();
                 conditions.push(format!("(updated_at, id) < (?{}, ?{})", p + 1, p + 2));

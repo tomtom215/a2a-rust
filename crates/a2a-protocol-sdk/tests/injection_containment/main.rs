@@ -25,4 +25,7 @@ mod approval;
 mod delegation;
 mod operator;
 mod peers;
+#[cfg(feature = "skills")]
+mod skills;
+mod steering;
 mod tool_results;

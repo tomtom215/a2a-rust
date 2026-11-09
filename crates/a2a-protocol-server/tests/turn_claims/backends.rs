@@ -72,6 +72,20 @@ mod sqlite {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_a_cancel_taken_as_its_replica_shuts_down_still_logs_the_end_and_frees_the_task()
+    {
+        a_cancel_taken_as_its_replica_shuts_down_still_logs_the_end_and_frees_the_task(
+            &TempDb::new("cancel-down"),
+        )
+        .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_a_cancel_taken_on_another_replica_logs_the_end() {
+        a_cancel_taken_on_another_replica_logs_the_end(&TempDb::new("cancel-up")).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn sqlite_a_replica_shut_down_releases_its_claims_at_once() {
         a_replica_shut_down_releases_its_claims_at_once(&TempDb::new("shutdown")).await;
     }
@@ -125,6 +139,28 @@ mod sqlite {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn sqlite_a_replica_whose_claim_was_taken_over_writes_nothing_more() {
         a_replica_whose_claim_was_taken_over_writes_nothing_more(&TempDb::new("fence")).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_a_steering_message_reaches_the_executor_on_the_replica_that_holds_the_claim() {
+        a_steering_message_reaches_the_executor_on_the_replica_that_holds_the_claim(
+            &TempDb::new("steer"),
+            Duration::from_millis(100),
+            Duration::from_secs(10),
+            a2a_protocol_server::SteeringConfig::new(),
+        )
+        .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_with_the_claim_gone_a_steering_message_is_refused_not_lost() {
+        with_the_claim_gone_a_steering_message_is_refused_not_lost(&TempDb::new("steer-gone"))
+            .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_messages_to_the_other_replica_arrive_in_the_order_sent() {
+        messages_to_the_other_replica_arrive_in_the_order_sent(&TempDb::new("steer-order")).await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -225,6 +261,23 @@ pub(crate) mod postgres {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_cancel_taken_as_its_replica_shuts_down_still_logs_the_end_and_frees_the_task()
+     {
+        let db = TestDb::create("canceldown").await;
+        a_cancel_taken_as_its_replica_shuts_down_still_logs_the_end_and_frees_the_task(&db).await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_cancel_taken_on_another_replica_logs_the_end() {
+        let db = TestDb::create("cancelup").await;
+        a_cancel_taken_on_another_replica_logs_the_end(&db).await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
     async fn postgres_a_replica_shut_down_releases_its_claims_at_once() {
         let db = TestDb::create("shutdown").await;
         a_replica_shut_down_releases_its_claims_at_once(&db).await;
@@ -308,6 +361,54 @@ pub(crate) mod postgres {
     async fn postgres_a_replica_whose_claim_was_taken_over_writes_nothing_more() {
         let db = TestDb::create("fence").await;
         a_replica_whose_claim_was_taken_over_writes_nothing_more(&db).await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_steering_message_reaches_the_executor_on_the_replica_that_holds_the_claim()
+    {
+        let db = TestDb::create("steer").await;
+        a_steering_message_reaches_the_executor_on_the_replica_that_holds_the_claim(
+            &db,
+            Duration::from_millis(100),
+            Duration::from_secs(10),
+            a2a_protocol_server::SteeringConfig::new(),
+        )
+        .await;
+        db.drop_db().await;
+    }
+
+    /// With notifications on and a renewal interval of three seconds, a
+    /// message arrives in far less than the interval: it was announced, not
+    /// found by a poll.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_handed_over_message_is_announced_not_polled_for() {
+        let db = TestDb::create("steer_notify").await;
+        a_steering_message_reaches_the_executor_on_the_replica_that_holds_the_claim(
+            &db,
+            Duration::from_secs(3),
+            Duration::from_millis(1500),
+            a2a_protocol_server::SteeringConfig::new().with_notifications(true),
+        )
+        .await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_with_the_claim_gone_a_steering_message_is_refused_not_lost() {
+        let db = TestDb::create("steer_gone").await;
+        with_the_claim_gone_a_steering_message_is_refused_not_lost(&db).await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_messages_to_the_other_replica_arrive_in_the_order_sent() {
+        let db = TestDb::create("steer_order").await;
+        messages_to_the_other_replica_arrive_in_the_order_sent(&db).await;
         db.drop_db().await;
     }
 

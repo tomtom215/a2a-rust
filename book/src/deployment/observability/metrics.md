@@ -316,11 +316,11 @@ Their attributes:
 the HTTP status, `timeout`, `transport`, `invalid_response`,
 `response_too_large`, `configuration`, `_OTHER`); for a call, `unknown_tool`,
 `invalid_arguments`, `tool_error` or `tool_fatal`; for a run, the turn's type
-when the model failed, `tool_fatal`, `turn_limit` or `budget_exhausted`; and
-`cancelled` for any of them abandoned before it ended — its cancellation
-token fired, or the future running it was dropped, as an executor timeout
-does. `gen_ai.client.operation.duration` is not recorded: the conventions say
-it "SHOULD NOT be reported for inference operations".
+when the model failed, `tool_fatal`, `turn_limit`, `budget_exhausted` or
+`empty_answer`; and `cancelled` for any of them abandoned before it ended —
+its cancellation token fired, or the future running it was dropped, as an
+executor timeout does. `gen_ai.client.operation.duration` is not recorded: the
+conventions say it "SHOULD NOT be reported for inference operations".
 
 The metrics go to the global meter provider as it is when each is recorded,
 so `Telemetry` installed after the loop is built still receives them;
@@ -434,16 +434,20 @@ implements it; so can you, to count something of your own
 | `on_refusal(cause)` | A request is refused before any work: `stream_cap`, `tenant_cap`, `push_config_cap`, `idempotency_store`, `event_log`, `halt_store` | `a2a.server.refusals` |
 | `on_lease(event)` | A task lease event: `lapsed` | `a2a.server.lease.events` |
 | `on_halt(scope, action, stopped)` | A halt or resume is applied: scope `all` \| `tenant` \| `root` (a job), action `halt` \| `resume`, and the running tasks it stopped | `a2a.server.halts`, `a2a.server.halt.stopped_tasks` |
+| `on_steering(outcome)` | A steering message is decided about (ADR 0036): `delivered`, `handed_off`, `replayed`, `full`, `ended`, `too_large`, `halted`, `unread`, `received` | `a2a.server.steering` |
 | `on_claim(event)` | A turn-claim event: `reaped` (the reaper ended a task its replica left) | `a2a.server.claim.events` |
+| `on_subscribe_wake(cause)` | A cross-replica `SubscribeToTask` stream stops waiting to read the store again, on a store that can wake it (`with_log_notifications`): `notification`, `resync` (the listener reconnected), or `timeout` | `a2a.server.subscribe.wakes` |
 
 `RpcCall` carries `system`, `method` (`Option`), `duration`, `status_code`
 (`Option`), `error_type` (`Option`) and `tenant` (`Option`, the tenant the
 handler resolved), the values above. The label constants are public modules:
 `executor_outcome`, `persistence_operation`, `push_outcome`,
-`event_append_error`, `event_log_catchup_error`, `queue_handoff_error` and
-`control` (`refusal`, `lease`, `halt_scope`, `halt_action`, `claim`). The
-four control-plane hooks are new in 0.16.0 with empty default bodies, so an
-existing `Metrics` implementation compiles unchanged (audit H11).
+`event_append_error`, `event_log_catchup_error`, `queue_handoff_error`,
+`control` (`refusal`, `lease`, `halt_scope`, `halt_action`, `claim`) and
+`subscribe_wake` (`notification`, `resync`, `timeout`). The four
+control-plane hooks, and `on_subscribe_wake`, are new in 0.16.0 with empty
+default bodies, so an existing `Metrics` implementation compiles unchanged
+(audit H11, E-F25).
 
 ### Tenant and agent dimensions
 

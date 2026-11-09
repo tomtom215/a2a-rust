@@ -171,8 +171,34 @@ pub trait Metrics: Send + Sync + 'static {
     /// `stopped` how many running tasks a halt stopped (0 for a resume).
     fn on_halt(&self, _scope: &str, _action: &str, _stopped: usize) {}
 
+    /// Called once for each steering message (ADR 0036) the server decides
+    /// about, with how it ended: one of [`control::steering`].
+    ///
+    /// A steering message is a send that never reaches the executor's start,
+    /// so neither [`on_executor_run`](Metrics::on_executor_run) nor a task
+    /// state shows it; this is the one place a refused or lost one is
+    /// counted. Not overriding it costs exactly that: a full inbox, a turn
+    /// that ended before it read what was sent, and a handed-off message that
+    /// never arrived are then visible only in the logs (the call's own
+    /// [`on_error`](Metrics::on_error) still counts the refusals). The
+    /// bundled `OtelMetrics` exports it as `a2a.server.steering`.
+    fn on_steering(&self, _outcome: &str) {}
+
     /// Called on a turn-claim event: one of [`control::claim`].
     fn on_claim(&self, _event: &str) {}
+
+    /// Called when a `SubscribeToTask` stream that waits on a task's event
+    /// log (a stream on a replica that does not run the task) stops waiting
+    /// to read the store again: `cause` is one of [`subscribe_wake`].
+    ///
+    /// Reported only for a store that can wake a stream
+    /// ([`TaskStore::watch_event_log`](crate::store::TaskStore::watch_event_log)
+    /// returned a watch): its `notification` against its `timeout` is how
+    /// much of the waiting the store's notifications did, and a store that
+    /// cannot wake a stream reports nothing, as it wakes none. Not
+    /// overriding it loses that ratio, and with it the sign that the
+    /// notifications stopped arriving and every stream is back to polling.
+    fn on_subscribe_wake(&self, _cause: &str) {}
 }
 
 /// One finished inbound call, as [`Metrics::on_rpc_call`] reports it.
@@ -217,7 +243,7 @@ pub struct RpcCall<'a> {
 mod labels;
 pub use labels::{
     control, event_append_error, event_log_catchup_error, executor_outcome, persistence_operation,
-    queue_handoff_error,
+    queue_handoff_error, subscribe_wake,
 };
 pub mod push_outcome;
 
@@ -316,8 +342,16 @@ impl<T: Metrics + ?Sized> Metrics for Arc<T> {
         (**self).on_halt(scope, action, stopped);
     }
 
+    fn on_steering(&self, outcome: &str) {
+        (**self).on_steering(outcome);
+    }
+
     fn on_claim(&self, event: &str) {
         (**self).on_claim(event);
+    }
+
+    fn on_subscribe_wake(&self, cause: &str) {
+        (**self).on_subscribe_wake(cause);
     }
 }
 

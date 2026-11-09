@@ -1,0 +1,155 @@
+{
+  "case": "B",
+  "env": {
+    "C_EXTRA_BODY": "{\"max_tokens\":48}"
+  },
+  "finish_reasons": [
+    "{\"arrayValue\": {\"values\": [{\"stringValue\": \"error\"}]}}",
+    "{\"arrayValue\": {\"values\": [{\"stringValue\": \"length\"}]}}",
+    "{\"arrayValue\": {\"values\": [{\"stringValue\": \"stop\"}]}}",
+    "{\"arrayValue\": {\"values\": [{\"stringValue\": \"tool_calls\"}]}}"
+  ],
+  "header": {
+    "load_at_start": "2.47",
+    "model_file": "Qwen3.5-2B-Q4_K_M.gguf",
+    "time": "2026-11-08T00:22:41Z",
+    "title": "M-1 empty and cut-off final replies"
+  },
+  "invoke_agent_duration": [
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "1",
+      "error.type": null
+    },
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "1",
+      "error.type": null
+    },
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "1",
+      "error.type": null
+    },
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "1",
+      "error.type": null
+    },
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "1",
+      "error.type": null
+    },
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "1",
+      "error.type": null
+    },
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "2",
+      "error.type": null
+    },
+    {
+      "count": "1",
+      "error.type": "500"
+    },
+    {
+      "count": "2",
+      "error.type": null
+    }
+  ],
+  "prompt": "How is the billing service doing?",
+  "runs": {
+    "grpc": {
+      "answer_metadata": {
+        "a2a-rust.com/finish-reason": "length"
+      },
+      "answer_text": "The billing service, `payments-api`, is currently in a **degraded** state. It has been running for 1814400 seconds (which is 20 days) and is using version 4.2",
+      "failure": null,
+      "seconds": 13.2,
+      "state": "TASK_STATE_COMPLETED",
+      "status_message_metadata": {
+        "a2a-rust.com/finish-reason": "length"
+      },
+      "status_text": "The answer was cut off at the model's output limit and may be incomplete.",
+      "trace_lines": 2
+    },
+    "jsonrpc": {
+      "answer_metadata": null,
+      "answer_text": null,
+      "failure": "internal",
+      "http": 200,
+      "rpc_error": null,
+      "seconds": 10.0,
+      "state": "TASK_STATE_FAILED",
+      "status_message_metadata": {
+        "a2a-rust.com/failure": "internal"
+      },
+      "status_text": "the model provider answered HTTP 500",
+      "trace_lines": 0
+    },
+    "rest": {
+      "answer_metadata": {
+        "a2a-rust.com/finish-reason": "length"
+      },
+      "answer_text": "The billing service, `payments-api`, is currently in a **degraded** state. It has been running for approximately 20 days (1,814,400 seconds), and the version is 4.2",
+      "failure": null,
+      "http": 200,
+      "raw_error": null,
+      "seconds": 12.8,
+      "state": "TASK_STATE_COMPLETED",
+      "status_message_metadata": {
+        "a2a-rust.com/finish-reason": "length"
+      },
+      "status_text": "The answer was cut off at the model's output limit and may be incomplete.",
+      "trace_lines": 2
+    }
+  }
+}

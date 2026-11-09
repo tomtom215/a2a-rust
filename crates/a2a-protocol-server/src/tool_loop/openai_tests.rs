@@ -15,6 +15,35 @@ fn an_error_body_is_cut_on_a_character_boundary() {
     assert_eq!(truncated("aé".as_bytes(), 2), "a");
 }
 
+/// The body is the provider's text, and it reaches the operator's log through
+/// `ModelError`'s `Display`: a newline in it would start a log line the
+/// provider wrote, and an escape sequence would reach the operator's terminal
+/// raw (found by the live campaign, 2026-11-08). Control characters are
+/// written as the escapes Rust gives them, so the body is one printable line,
+/// and the bound is on what is shown.
+#[test]
+fn an_error_body_carries_no_control_character() {
+    assert_eq!(
+        truncated(b"a\nb\r\x1b[31mc\x07\x00d\te", 512),
+        r"a\nb\r\u{1b}[31mc\u{7}\u{0}d\te"
+    );
+    assert_eq!(
+        truncated(
+            b"ok\n2026-11-08T00:00:00Z ERROR forged: admin session opened",
+            512
+        ),
+        r"ok\n2026-11-08T00:00:00Z ERROR forged: admin session opened"
+    );
+    // C1 controls too (U+0085 NEL ends a line on some terminals), but not
+    // ordinary text, spaces or letters outside ASCII.
+    assert_eq!(truncated("a\u{85}b é ü".as_bytes(), 512), r"a\u{85}b é ü");
+    // The bound is on what is shown: 200 escapes of 6 bytes are cut at 512.
+    let shown = truncated(&[0x1b; 200], 512);
+    assert!(shown.len() <= 512, "{} bytes", shown.len());
+    assert!(shown.starts_with(r"\u{1b}\u{1b}"));
+    assert!(!shown.chars().any(char::is_control));
+}
+
 #[test]
 fn content_parts_and_missing_fields_are_read() {
     let turn = parse_completion(
@@ -36,6 +65,62 @@ fn content_parts_and_missing_fields_are_read() {
         parse_completion(b"<html>"),
         Err(ModelError::InvalidResponse(_))
     ));
+}
+
+/// The token counts are the provider's own report and only a budget reads
+/// them: a count that is not a whole non-negative number is no usage, and does
+/// not cost the completion (hostile campaign, wave 2, W2-LIVE-10: a float, a
+/// negative number or a string made a good answer "unreadable").
+#[test]
+fn a_malformed_token_count_is_no_usage_and_not_a_refused_completion() {
+    let with = |usage: &str| {
+        let body =
+            format!(r#"{{"choices":[{{"message":{{"content":"hello"}}}}],"usage":{usage}}}"#);
+        parse_completion(body.as_bytes()).expect("the completion is read")
+    };
+    let counts = |usage: &str| {
+        let turn = with(usage);
+        assert_eq!(turn.text, "hello", "{usage}");
+        turn.usage.map(|u| (u.input_tokens, u.output_tokens))
+    };
+    // Whole numbers, a float that is one, and the largest `u64`.
+    assert_eq!(
+        counts(r#"{"prompt_tokens":12,"completion_tokens":5}"#),
+        Some((Some(12), Some(5)))
+    );
+    assert_eq!(
+        counts(r#"{"prompt_tokens":12.0,"completion_tokens":0}"#),
+        Some((Some(12), Some(0)))
+    );
+    assert_eq!(
+        counts(r#"{"prompt_tokens":18446744073709551615}"#),
+        Some((Some(u64::MAX), None))
+    );
+    // The edge of what a float can say: the largest whole float below 2^64 is
+    // itself, and 2^64 is no count (the cast would have made it `u64::MAX`).
+    assert_eq!(
+        counts(r#"{"prompt_tokens":18446744073709549568.0}"#),
+        Some((Some(18_446_744_073_709_549_568), None))
+    );
+    assert_eq!(
+        counts(r#"{"prompt_tokens":18446744073709551616.0}"#),
+        Some((None, None))
+    );
+    assert_eq!(counts(r#"{"prompt_tokens":-0.0}"#), Some((Some(0), None)));
+    // Anything else is a missing count, the other count unaffected.
+    for bad in [
+        "1.5", "-3", "\"12\"", "null", "true", "[1]", "{}", "1e300", "-0.5",
+    ] {
+        assert_eq!(
+            counts(&format!(
+                r#"{{"prompt_tokens":{bad},"completion_tokens":7}}"#
+            )),
+            Some((None, Some(7))),
+            "prompt_tokens: {bad}"
+        );
+    }
+    // Not an object at all is still refused: that is not a usage.
+    assert!(parse_completion(br#"{"choices":[{"message":{"content":"x"}}],"usage":5}"#).is_err());
 }
 
 /// The completion's id and the first choice's finish reason, as the

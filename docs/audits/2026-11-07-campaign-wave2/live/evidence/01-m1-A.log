@@ -1,0 +1,17 @@
+== M-1 empty and cut-off final replies (load 1.97)
+-- case A: 'Explain in detail why monitoring matters for a production service.' env={'C_EXTRA_BODY': '{"max_tokens":24}'}
+   jsonrpc  {"seconds": 7.8, "http": 200, "state": "TASK_STATE_COMPLETED", "failure": null, "status_text": "The answer was cut off at the model's output limit and may be incomplete.", "status_message_metadata": {"a2a-rust.com/finish-reason": "length"}, "answer_metadata": {"a2a-rust.com/finish-reason": "length"}, "trace_lines": 0, "rpc_error": null}
+   jsonrpc  answer_text='Monitoring is critical for production services for several key reasons:\n\n1.  **Visibility and Alerting:** Production environments are'
+   rest     {"seconds": 3.1, "http": 200, "state": "TASK_STATE_COMPLETED", "failure": null, "status_text": "The answer was cut off at the model's output limit and may be incomplete.", "status_message_metadata": {"a2a-rust.com/finish-reason": "length"}, "answer_metadata": {"a2a-rust.com/finish-reason": "length"}, "trace_lines": 0, "raw_error": null}
+   rest     answer_text="Monitoring is essential for maintaining a production service's integrity, reliability, and security. Without effective monitoring, it becomes nearly impossible"
+   grpc     {"seconds": 3.5, "state": "TASK_STATE_COMPLETED", "failure": null, "status_text": "The answer was cut off at the model's output limit and may be incomplete.", "status_message_metadata": {"a2a-rust.com/finish-reason": "length"}, "answer_metadata": {"a2a-rust.com/finish-reason": "length"}, "trace_lines": 0}
+   grpc     answer_text='Monitoring is critical for a production service because it provides visibility into the state, performance, and health of the system in real'
+   gen_ai.invoke_agent.duration series: [{'error.type': None, 'count': '1'}, {'error.type': None, 'count': '1'}, {'error.type': None, 'count': '2'}, {'error.type': None, 'count': '2'}, {'error.type': None, 'count': '3'}]
+  ok    A jsonrpc: completed with the finish-reason marker on the answer artifact
+  ok    A jsonrpc: the Completed status message says the answer was cut off
+  ok    A rest: completed with the finish-reason marker on the answer artifact
+  ok    A rest: the Completed status message says the answer was cut off
+  ok    A grpc: completed with the finish-reason marker on the answer artifact
+  ok    A grpc: the Completed status message says the answer was cut off
+
+6 of 6 expectations held

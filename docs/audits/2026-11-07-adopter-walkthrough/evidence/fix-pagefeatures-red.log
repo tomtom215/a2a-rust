@@ -1,0 +1,11 @@
+book/src/building-agents/tool-loop/tools.md: a Rust block uses `tool_loop`, which needs the `tool-loop` feature, and the page never names it (a reader with the default features gets `unresolved import`)
+book/src/building-agents/tool-loop/models.md: a Rust block uses `tool_loop`, which needs the `tool-loop` feature, and the page never names it (a reader with the default features gets `unresolved import`)
+book/src/building-agents/tool-loop/running.md: a Rust block uses `tool_loop`, which needs the `tool-loop` feature, and the page never names it (a reader with the default features gets `unresolved import`)
+book/src/building-agents/dispatchers/websocket.md: a Rust block uses `WebSocketDispatcher`, which needs the `websocket` feature, and the page never names it (a reader with the default features gets `unresolved import`)
+book/src/building-agents/authentication/authorization.md: a Rust block uses `auth::jwt`, which needs the `auth-jwt` feature, and the page never names it (a reader with the default features gets `unresolved import`)
+book/src/building-agents/stores/custom.md: a Rust block uses `PostgresPushConfigStore`, which needs the `postgres` feature, and the page never names it (a reader with the default features gets `unresolved import`)
+book/src/deployment/horizontal-scaling/shared-stores.md: a Rust block uses `PostgresPushConfigStore`, which needs the `postgres` feature, and the page never names it (a reader with the default features gets `unresolved import`)
+book/src/deployment/horizontal-scaling/rate-limiting.md: a Rust block uses `PostgresRateLimitCounter`, which needs the `postgres` feature, and the page never names it (a reader with the default features gets `unresolved import`)
+book/src/deployment/horizontal-scaling/sustained-load.md: a Rust block uses `PostgresTaskStore`, which needs the `postgres` feature, and the page never names it (a reader with the default features gets `unresolved import`)
+check_feature_tables: 9 disagreement(s) with the manifests
+RED exit: 1

@@ -90,4 +90,7 @@ pub(super) enum Committed {
     /// An approval recorded toward a quorum that is still short (`quorum`):
     /// the task as saved, still waiting. Nothing runs.
     Waiting(Box<Task>),
+    /// A steering message put in a running turn's inbox (ADR 0036): the task
+    /// as it stands, with the receipt. Nothing is started.
+    Steered(Box<Task>),
 }

@@ -1,0 +1,13 @@
+2026-11-07T13:04:54.135443Z  INFO a2a_protocol_server::otel::telemetry::subscriber: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=console to print spans
+2026-11-07T13:04:54.311325Z  WARN a2a_protocol_server::builder: agent card warning=supportedInterfaces: GRPC at "127.0.0.1:45535" is not an absolute URL; a client cannot reach it from the card (a2a.proto AgentInterface.url)
+2026-11-07T13:04:54.311367Z  WARN a2a_protocol_server::builder: agent card warning=supportedInterfaces: the custom binding "WEBSOCKET" is not a URI (spec §5.8: it SHOULD be a URI)
+2026-11-07T13:04:54.311443Z  WARN a2a_protocol_server::builder: agent card warning=supportedInterfaces: GRPC at "127.0.0.1:45535" is not an absolute URL; a client cannot reach it from the card (a2a.proto AgentInterface.url)
+2026-11-07T13:04:54.311449Z  WARN a2a_protocol_server::builder: agent card warning=supportedInterfaces: the custom binding "WEBSOCKET" is not a URI (spec §5.8: it SHOULD be a URI)
+2026-11-07T13:04:54.325100Z  WARN a2a_protocol_server::handler::undeclared_binding: undeclared binding binding="https://a2a-rust.com/bindings/websocket/v1" reason=this listener serves https://a2a-rust.com/bindings/websocket/v1, but the agent card declares no interface with that protocolBinding, so a client reading the card cannot find it (spec §5.2: agents MUST declare all supported protocols in their AgentCard)
+2026-11-07T13:08:14.078177Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=connection closed before message completed
+2026-11-07T13:14:46.487753Z  WARN a2a_protocol_client::transport::jsonrpc: JSON-RPC error response method="CancelTask" code=-32002
+2026-11-07T13:14:46.491371Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=connection closed before message completed
+2026-11-07T13:14:51.495197Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=connection closed before message completed
+2026-11-07T13:14:51.497614Z  WARN a2a_protocol_server::handler::push_config: push config sends its token or credentials to a plaintext http:// webhook; spec §13.4 says credentials SHOULD travel only over encrypted connections (HttpPushSender::https_only refuses such configs) webhook=http://127.0.0.1:42747
+2026-11-07T13:15:21.516153Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=read header from client timeout
+2026-11-07T13:18:05.549018Z  WARN a2a_protocol_server::serve::graceful::connection: connection error error=connection closed before message completed

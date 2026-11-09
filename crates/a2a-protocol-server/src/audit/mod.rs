@@ -16,6 +16,7 @@
 //! | `run.started` | an executor starts a run of a task | task, context, message id, digests of the message and each part, actor, trace |
 //! | `task.event` | an event is written to the task's event log | its position, new state, digest, and the `run.started` it belongs to |
 //! | `task.cancel_requested` | `CancelTask` signals a running task | task, actor, trace |
+//! | `task.steered` | a message is accepted into a running task's inbox (ADR 0036) | task, message id, digest of the message, how it was delivered, actor, trace |
 //!
 //! Content is recorded by SHA-256 digest of its RFC 8785 canonical JSON, not
 //! verbatim, so the chain proves what was said without holding it. The
@@ -132,6 +133,31 @@ pub(crate) async fn record_cancel_requested(
     r.chain = TenantContext::current();
     r.task_id = Some(task_id.0.clone());
     r.context_id = Some(context_id.0.clone());
+    let _ = interceptor::append_or_report(log, metrics, r).await;
+}
+
+/// Records that the caller of `call` sent `message` to the running `task`,
+/// and where it went: who steered what, by digest, when the server accepted
+/// it (ADR 0036). Not written for a refused message, nor for a retry the
+/// idempotency key answered, which delivered nothing.
+pub(crate) async fn record_steered(
+    log: &AuditLog,
+    metrics: &dyn Metrics,
+    call: &CallContext,
+    task: &a2a_protocol_types::task::Task,
+    message: &a2a_protocol_types::message::Message,
+    delivery: a2a_protocol_types::steering::Delivery,
+) {
+    let mut r = interceptor::record_for(call, kind::STEERED);
+    r.chain = TenantContext::current();
+    r.task_id = Some(task.id.0.clone());
+    r.context_id = Some(task.context_id.0.clone());
+    r.message_id = Some(message.id.0.clone());
+    if let Ok(d) = digest_of(message) {
+        r.digests.insert("message".to_owned(), d);
+    }
+    r.detail
+        .insert("delivery".to_owned(), delivery.as_str().into());
     let _ = interceptor::append_or_report(log, metrics, r).await;
 }
 

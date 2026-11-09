@@ -1,0 +1,7 @@
+[types] baseline: exit 0 ['test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 471 filtered out; finished in 0.00s']
+  CAUGHT    status: spent is not clamped (exit 101, compiled: True, file restored: True) ['test result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measured; 471 filtered o
+  CAUGHT    status: remaining is not clamped (exit 101, compiled: True, file restored: True) ['test result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measured; 471 filter
+  CAUGHT    grant: a named-by-request meter is not clamped (exit 101, compiled: True, file restored: True) ['test result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measur
+  CAUGHT    bound is 2^52 (exit 101, compiled: True, file restored: True) ['test result: FAILED. 20 passed; 2 failed; 0 ignored; 0 measured; 471 filtered out; finished in
+  CAUGHT    bound is 2^53 + 1 (exit 101, compiled: True, file restored: True) ['test result: FAILED. 20 passed; 2 failed; 0 ignored; 0 measured; 471 filtered out; finishe
+  CAUGHT    bound is 2^53 - 1 (exit 101, compiled: True, file restored: True) ['test result: FAILED. 20 passed; 2 failed; 0 ignored; 0 measured; 471 filtered out; finishe

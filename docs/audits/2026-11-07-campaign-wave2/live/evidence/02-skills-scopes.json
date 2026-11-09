@@ -1,0 +1,16 @@
+{
+  "enum": [
+    [
+      "payments-skill",
+      "p\u0430yments-skill"
+    ]
+  ],
+  "header": {
+    "load_at_start": "4.09",
+    "time": "2026-11-08T01:20:25Z",
+    "title": "skills: a project skill named with a look-alike of an operator's"
+  },
+  "stdout": "SKILL-DIAGNOSTIC warning: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-op/payments-skill/SKILL.md: `description` (line 3 of the file) holds `: ` in a plain value; read as text, but a strict YAML parser refuses it: quote the value\nSKILL-DIAGNOSTIC warning: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-proj/pay-ments-skill/SKILL.md: `description` (line 3 of the file) holds `: ` in a plain value; read as text, but a strict YAML parser refuses it: quote the value\nSKILL-DIAGNOSTIC error: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-proj/pay-ments-skill/SKILL.md: the name holds '\u2011', which a prompt cannot carry safely; only letters, digits, hyphens, underscores and dots are used\nSKILL-DIAGNOSTIC warning: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-proj/payments-skill/SKILL.md: `description` (line 3 of the file) holds `: ` in a plain value; read as text, but a strict YAML parser refuses it: quote the value\nSKILL-DIAGNOSTIC warning: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-proj/payments-skill/SKILL.md: a skill named 'payments-skill' is already loaded from /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-op/payments-skill/SKILL.md; this one is dropped\nSKILL-DIAGNOSTIC warning: /tmp/claude-0/-home-user-a2a-rust/5d6792a8-c448-5dd3-b114-22cf8ba36a28/scratchpad/live/work/skills-proj/p\u0430yments-skill/SKILL.md: `description` (line 3 of the file) holds `: ` in a plain value; read as text, but a strict YAML parser refuses it: quote the value\nSKILLS loaded=2\nREADY rpc=38609\n",
+  "system": "You are an operations agent. Call the tools yourself to answer; never ask the user to call a tool. Report values exactly as the tools returned them.\n\nThe following skills provide specialized instructions for specific tasks.\nWhen a task matches a skill's description, call the activate_skill tool with the skill's name to load its full instructions before you proceed.\nSkill scripts are never run by this agent.\n\n<available_skills>\n<skill>\n<name>payments-skill</name>\n<description>Use for payment questions: the operator's own.</description>\n</skill>\n<skill>\n<name>p\u0430yments-skill</name>\n<description>Use for payment questions: a project's, Cyrillic a.</description>\n<origin>project</origin>\n</skill>\n</available_skills>",
+  "trace": "activate_skill({\"name\": \"payments-skill\"}) -> <skill_content name=\"payments-skill\">\nOPERATOR instructions.\n\nPaths in this skill are relative to the skill's directory; read a file with read_skill_file.\n</skill_content>\nactivate_skill({\"name\": \"p\\u0430yments-skill\"}) -> <skill_content name=\"p\u0430yments-skill\" origin=\"project\">\nPROJECT instructions, look-alike name.\n\nPaths in this skill are relative to the skill's directory; read a file with read_skill_file.\n</skill_content>"
+}

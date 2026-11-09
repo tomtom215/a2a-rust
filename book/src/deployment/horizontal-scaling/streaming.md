@@ -25,6 +25,12 @@ both SQL stores keep one. That client:
   ceiling equal to the interval to keep every frame within one interval and pay
   the load, or raise it to pay less.
 
+  **With the PostgreSQL stores, that wait can be cut short** (since 0.16.0, audit
+  E-F25 (b), ADR 0057): build the store with `with_log_notifications` and every
+  append to a task's log also runs `pg_notify`, in the append's own statement,
+  and a listener on each replica wakes the streams waiting on that task at once.
+  Off by default; see [Waking a waiting stream](#waking-a-waiting-stream) below.
+
 The stream starts from a snapshot of the task and replays the log after the
 position that snapshot reflects. Every shipped store returns the task together
 with that position, in one read (`TaskStore::get_with_position`), so an event
@@ -40,6 +46,66 @@ reads
 ([The log position a stored task reflects](../../building-agents/stores/replicas.md#the-log-position-a-stored-task-reflects)).
 And a store without an event log has nothing to replay: its subscribers get
 the ending and not the middle.
+
+## Waking a waiting stream
+
+> **Cargo feature.** `PostgresTaskStore` and `LogListen` need the `postgres` feature: `a2a-protocol-sdk = { version = "0.16", features = ["postgres"] }`, or `a2a-protocol-server = { version = "0.16", features = ["postgres"] }` on its own.
+
+```rust,no_run
+use a2a_protocol_server::store::{LogListen, PostgresTaskStore};
+
+async fn store(url: &str) -> Result<PostgresTaskStore, Box<dyn std::error::Error>> {
+    // On every replica. `Pool` for a pool that reaches PostgreSQL directly.
+    Ok(PostgresTaskStore::new(url)
+        .await?
+        .with_log_notifications(LogListen::Pool))
+}
+```
+
+What it changes: an event another replica appends reaches a waiting stream in
+about a notification's round trip instead of at the end of its wait, which can
+be 4 s into an idle task.
+
+What it does not change: the load of an idle stream. The timer stays as the
+fallback, so a notification that never arrives costs one wait, and an idle
+stream still reads the store every `subscribe_reattach_max_interval` (measured:
+200 idle subscribers cost 93 statements a second, with the option or without
+it). On a fleet where every replica has the option, raise that ceiling to cut
+the load in proportion. A stream also never reads faster than once per
+`subscribe_reattach_interval`, so a task that streams quickly costs a subscriber
+what polling did, not more (two events a few milliseconds apart reach it up to
+one interval apart).
+
+What it does not wake: a task made terminal, or cancelled, with **no event in
+the log**, such as a `CancelTask` of a parked task on another replica, or one
+the claim reaper ends. Those reach a waiting stream at its next poll, up to the
+ceiling later, as they did before. Measured on a local database (ADR 0057): an
+event written on one replica ended a stream's 8 s wait on the other in 260 ms; a
+cancel of a parked task took the whole 2 s of a 2 s ceiling.
+
+The channel is `a2a_task_log`, and its payload names a task and its tenant
+partition, so it is worth keeping out of the way of other consumers of the
+database's notifications. Three things to know before turning it on:
+
+* **Behind PgBouncer in transaction mode, use `LogListen::Direct(url)`** with the
+  URL of PostgreSQL itself, as for the halt store ([Behind
+  PgBouncer](./shared-stores.md#behind-pgbouncer)). `LISTEN` belongs to a session,
+  and a pooler lends the session to another client, whose next statement then
+  fails with `unexpected message: NotificationResponse`. A store built without
+  `with_log_notifications` listens to nothing.
+* **It holds one connection per replica**: one from the store's pool with
+  `Pool` (make the pool one larger), or one of its own with `Direct`. The
+  listener starts with the first stream that waits, so a replica serving no
+  cross-replica stream holds none. A pool you build and pass to `from_pool` is
+  unchanged.
+* **Set it on every replica.** A replica without it neither announces its
+  appends nor hears others': its events reach the others' streams by polling.
+  A rolling upgrade is safe either way, since a wake is only a hint to read.
+
+SQLite and the in-memory stores have no listener and are unchanged: their
+streams poll, as the rest of this page says. `NOTIFY` is not free at very high
+append rates: PostgreSQL serialises the commit of every transaction that
+notifies, which is why this is opt-in; the measurement is in ADR 0057.
 
 Where a poll's latency matters, or the store keeps no log, three ways to live
 with it, in the order most deployments should consider them:

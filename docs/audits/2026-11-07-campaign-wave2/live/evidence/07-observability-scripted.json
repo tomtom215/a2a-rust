@@ -1,0 +1,50 @@
+{
+  "header": {
+    "load_at_start": "3.59",
+    "time": "2026-11-08T00:47:57Z",
+    "title": "observability canaries: scripted"
+  },
+  "log_count": 1,
+  "log_hits": [],
+  "runs": {
+    "scripted": {
+      "bearer": {},
+      "errbody": {},
+      "exportkey": {
+        "logs:request-header": 1,
+        "metrics:request-header": 1,
+        "traces:request-header": 1
+      },
+      "header": {},
+      "meta": {},
+      "prompt": {},
+      "reply": {
+        "task-json": 1
+      },
+      "skillbody": {
+        "task-json": 1
+      },
+      "skillref": {
+        "task-json": 1
+      },
+      "steer": {},
+      "toolarg": {
+        "task-json": 1
+      },
+      "toolresult": {
+        "task-json": 1
+      }
+    }
+  },
+  "span_count": 9,
+  "span_hits": [],
+  "span_names": [
+    "chat qwen3:1.7b",
+    "execute_tool activate_skill",
+    "execute_tool echo",
+    "execute_tool fetch_page",
+    "execute_tool read_skill_file",
+    "invoke_agent",
+    "lf.a2a.v1.A2AService/SendMessage"
+  ]
+}

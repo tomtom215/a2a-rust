@@ -63,7 +63,7 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 | `max_parts_per_artifact` | `usize` | 10,000 | Maximum parts a single artifact may accumulate |
 | `max_total_push_configs` | `usize` | 100,000 | Global push-config ceiling across all tasks |
 | `subscribe_reattach_interval` | `Duration` | 250ms | The first wait of a `SubscribeToTask` stream between turns before it checks the store: for the task finishing, the next turn's queue, or events logged meanwhile, which it replays. It doubles while nothing changes, up to the next row, and starts over at any change |
-| `subscribe_reattach_max_interval` | `Duration` | 4s | The longest wait between two checks of an idle `SubscribeToTask` stream (audit E-F25); below the interval, no back-off. The first frame after a long quiet can be this late. `subscribe_max_idle`, when set, is still met at its own time |
+| `subscribe_reattach_max_interval` | `Duration` | 4s | The longest wait between two checks of an idle `SubscribeToTask` stream (audit E-F25); below the interval, no back-off. The first frame after a long quiet can be this late, unless the store wakes the stream (`with_log_notifications`, PostgreSQL only: the interval is then the least between two checks, and this ceiling the fallback if a notification is lost). `subscribe_max_idle`, when set, is still met at its own time |
 | `subscribe_max_idle` | `Option<Duration>` | none | If set, how long a `SubscribeToTask` stream waits on a parked task before ending without a terminal state; the client resubscribes. Unset, the stream ends at the terminal state or when the client goes (§3.1.6) |
 | `max_subscribers_per_task` | `usize` | 256 | The most `SubscribeToTask` streams open on one task; one more is refused before any work as overloaded, with a retry delay on every binding (audit H5, ADR 0044) |
 | `max_subscribers` | `usize` | 10,000 | The most `SubscribeToTask` streams open on the handler, over all tasks, refused the same way; nothing else bounds them unless the server's `max_connections` is set |
@@ -85,8 +85,9 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `max_capacity` | `Option<usize>` | 10,000 | Maximum stored tasks; oldest terminal tasks are evicted on overflow, then, as a last resort, the oldest *working* ones (counted: `InMemoryTaskStore::live_evictions`); a task waiting for input or authorization is never evicted, and a full store of them refuses a new task with `503` (size it above your concurrent in-flight and parked task count) |
+| `max_capacity` | `Option<usize>` | 10,000 | Maximum stored tasks; oldest terminal tasks are evicted on overflow, then, as a last resort, the oldest *working* ones (counted: `InMemoryTaskStore::live_evictions`); a task waiting for input or authorization is not evicted unless `parked_task_ttl` is set, and a full store of them refuses a new task with `503` (size it above your concurrent in-flight and parked task count) |
 | `task_ttl` | `Option<Duration>` | 1 hour | TTL for completed/failed tasks |
+| `parked_task_ttl` | `Option<Duration>` | `None` | How long a task may sit waiting for input or authorization before it is evicted like a finished one (`with_parked_task_ttl(Duration)`). Unset: nothing parked expires. A task that expires is gone, not cancelled (counted: `InMemoryTaskStore::parked_evictions`); see ADR 0056 |
 | `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps |
 | `max_page_size` | `u32` | 1,000 | Cap a store applies to the page size of a `list` call. The `ListTasks` method itself refuses a `pageSize` outside 1 to 100 (`InvalidParams`) and lists 50 when none is given, so this matters for direct `TaskStore::list` callers and when set below 100 |
 | `max_events_per_task` | `Option<usize>` | 512 | Events one task's log keeps for `Last-Event-ID` resumption; `None` removes the bound. An attached stream that still owes older events holds them past it (spec §3.5.2) |
@@ -106,6 +107,7 @@ deletes nothing unless asked.
 | `terminal_max_age` | `Duration` | — | Terminal tasks whose last update is older than this are deleted; required by `new` |
 | `batch_size` | `u32` | 1,000 | Rows per `DELETE`; zero is taken as one |
 | `idempotency_key_max_age` | `Option<Duration>` | 24 hours | Idempotency keys older than this are deleted, never below `terminal_max_age`; `None` keeps them |
+| `parked_max_age` | `Option<Duration>` | `None` | Tasks parked in `input-required` or `auth-required` whose last update is older than this are deleted, not cancelled, and a task with a live turn claim is skipped; `None` never deletes one. The idempotency-key age is raised to at least this; see ADR 0056 |
 | `max_batches` | `Option<u32>` | `None` | Stop a sweep after this many batches; `None` runs until nothing is left |
 | `max_events_per_live_task` | `Option<u64>` | `None` | Compact each live task's event log to its newest this many events, dropping only events the stored task already reflects; a reader resuming from before the cut is answered with the snapshot. `0` is taken as `1`. `None` lets a live task's log grow for as long as it runs (ADR 0047) |
 
@@ -342,6 +344,7 @@ How a client spreads calls over the endpoints of an `EndpointSource`
 | `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Off | Axum framework integration (`RestRouter`) |
 | `tool-loop` | Off | Tool calling inside a task: `tool_loop::ToolLoop`, `ToolLoopExecutor`, `OpenAiChatModel` |
+| `skills` | Off | Agent Skills in the tool loop, scripts never run: `skills::SkillCatalog`, `ToolLoopExecutor::with_skills` (ADR 0035; implies `tool-loop`) |
 | `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
 | `encryption` | Off | Encryption at rest for task content (`EncryptedTaskStore`) |
 | `audit` | Off | Tamper-evident audit trail (`RequestHandlerBuilder::with_audit`, ADR 0015): calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, signed checkpoints, legal holds, a six-month retention floor; SQLite/PostgreSQL audit stores with those features |
@@ -386,6 +389,7 @@ How a client spreads calls over the endpoints of an `EndpointSource`
 | `otel-prometheus` | Off | Enables the server's `otel-prometheus`: `OTEL_METRICS_EXPORTER=prometheus` serves `/metrics` (off by default; implies `otlp`) |
 | `axum` | Off | Enables `axum` in the server |
 | `tool-loop` | Off | Enables `tool-loop` in the server |
+| `skills` | Off | Enables `skills` in the server (implies `tool-loop`) |
 | `auth-jwt` | Off | Enables `auth-jwt` in the server |
 | `encryption` | Off | Enables `encryption` in the server |
 | `audit` | Off | Enables `audit` in the server and in `a2a-protocol-types` |

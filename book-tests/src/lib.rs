@@ -35,9 +35,8 @@
 //! An untagged block is treated as Rust by rustdoc, which is how 24 ASCII
 //! diagrams and terminal transcripts came to be compiled as Rust.
 
-// The pages are documentation, not API docs: they link to each other with
-// relative markdown paths and embed bare URLs, neither of which rustdoc can
-// resolve as intra-doc links.
+// The pages are documentation, not API docs: they link to each other with relative markdown
+// paths and embed bare URLs, neither of which rustdoc can resolve as intra-doc links.
 #![allow(rustdoc::broken_intra_doc_links)]
 #![allow(rustdoc::bare_urls)]
 #![allow(rustdoc::invalid_html_tags)]
@@ -446,6 +445,8 @@ pub mod page_building_agents_tool_loop {}
 #[doc = include_str!("../../book/src/building-agents/tool-loop/models.md")]
 #[doc = include_str!("../../book/src/building-agents/tool-loop/running.md")]
 #[doc = include_str!("../../book/src/building-agents/tool-loop/telemetry.md")]
+#[doc = include_str!("../../book/src/building-agents/tool-loop/skills.md")]
+#[doc = include_str!("../../book/src/building-agents/steering.md")]
 pub mod pages_building_agents_tool_loop {}
 
 #[doc = include_str!("../../book/src/building-agents/handler/configuration.md")]

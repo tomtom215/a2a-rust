@@ -436,8 +436,16 @@ impl Metrics for OtelMetrics {
         self.control.halt(&self.dims, scope, action, stopped);
     }
 
+    fn on_steering(&self, outcome: &str) {
+        self.control.steering(&self.dims, outcome);
+    }
+
     fn on_claim(&self, event: &str) {
         self.control.claim(&self.dims, event);
+    }
+
+    fn on_subscribe_wake(&self, cause: &str) {
+        self.control.subscribe_wake(&self.dims, cause);
     }
 }
 

@@ -7,6 +7,8 @@ The one change that makes several replicas possible: every replica uses the
 same PostgreSQL database. This page covers setting it up, what the stores do
 when a connection to the database drops, and running through PgBouncer.
 
+> **Cargo feature.** The PostgreSQL stores on this page need the `postgres` feature: `a2a-protocol-sdk = { version = "0.16", features = ["postgres"] }`, or `a2a-protocol-server = { version = "0.16", features = ["postgres"] }` on its own.
+
 Nothing works across replicas without this. Point every replica at the same
 PostgreSQL instance:
 
@@ -182,6 +184,13 @@ on a connection straight to PostgreSQL, or
 `PostgresHaltStore::from_pool_without_listener(pool)`, the handlers then
 learning of other replicas' halts and cancels at their next poll
 (`with_halt_poll_interval`). `from_pool` is for a pool that reaches
+PostgreSQL directly.
+
+The task stores' log notifications (`with_log_notifications`, off by default;
+[Streaming across replicas](./streaming.md)) have the same failure, for the
+same reason, and the same answer: pass `LogListen::Direct(url)` with the URL of
+PostgreSQL itself, so the listener has a session of its own, or leave the
+option off and the streams poll. `LogListen::Pool` is for a pool that reaches
 PostgreSQL directly.
 
 On 2026-10-30 every PostgreSQL test in the server crate ran through

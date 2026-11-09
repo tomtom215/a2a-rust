@@ -59,6 +59,7 @@ are rustdoc's job.
 | `security` | Security scheme types for A2A agent authentication |
 | `serde_helpers` | Serialization helpers for reducing allocation overhead |
 | `signing` | Agent card signing and verification (spec §8.4) (`signing` feature) |
+| `steering` | The steering extension: `declare` marks a message as a message to a running task, `Receipt` and `Delivery` say where the server put it (ADR 0036) |
 | `task` | Task types for the A2A protocol |
 | `trace_context` | W3C `traceparent` / `tracestate`: parse, validate, derive a child |
 
@@ -367,7 +368,9 @@ are rustdoc's job.
 | `rate_limit` | Fixed-window rate limiter as a `ServerInterceptor` |
 | `request_context` | Request context passed to the `AgentExecutor` |
 | `serve` | `Server`, `ServeConfig`, `ServeReport`, `Dispatcher`, `shutdown_signal` (and the deprecated `serve()`, `serve_with_addr`) |
+| `steering` | Steering a running task (ADR 0036): `SteeringConfig`, set with `RequestHandlerBuilder::with_steering`, bounds the inbox and the message size; `Inbox` is what `RequestContext::inbox` gives an executor, and `Steered` a message in it |
 | `store` | Task storage backend |
+| `skills` | Agent Skills in the tool loop: `SkillCatalog`, `SkillsConfig`, `SkillSource` and the two tools; scripts are never run (`skills` feature, ADR 0035) |
 | `streaming` | Streaming infrastructure for SSE responses and event queues |
 | `tenant_config` | Per-tenant resource limits for multi-tenant A2A servers |
 | `tenant_resolver` | Tenant resolution for multi-tenant A2A servers |
@@ -392,6 +395,9 @@ are rustdoc's job.
 | `RequestContext` | Per-execution context (task ID, message, etc.) |
 | `CancellationToken` | The type of `RequestContext::cancellation_token`, re-exported so an executor need not depend on `tokio-util` to name it |
 | `CallContext` | Per-request metadata (request ID, headers, tenant) |
+| `SteeringConfig` | Turns steering on and bounds it: the inbox's capacity (16), the message size (64 KiB), and whether a handed-off message is announced with PostgreSQL notifications |
+| `Inbox` | The messages sent to a running turn, oldest first, bounded: `try_recv`, `recv().await`, `len`, `close`; `RequestContext::inbox` is `None` unless steering is on |
+| `Steered` | A steering message as the executor receives it: the `message` and who sent it (`from`) |
 | `HandlerLimits` | Configurable validation limits |
 | `InboundTracePolicy` | What this handler does with a `traceparent` an as-yet unauthenticated peer sent (W3C Trace Context §7.2) |
 | `MIN_MESSAGE_ID_LENGTH` | The floor `message.id`'s length bound is never taken below: 36, a hyphenated UUID |
@@ -426,7 +432,7 @@ are rustdoc's job.
 | `ServerInterceptor` | Server-side middleware |
 | `AgentCardProducer` | Dynamic agent card generation |
 | `ExtendedCardProvider` | Chooses each caller's extended agent card (§13.3; `with_extended_card_provider`) |
-| `Dispatcher` | HTTP dispatch trait (for `serve()`) |
+| `Dispatcher` | HTTP dispatch trait (what `Server::serve_with_shutdown` serves) |
 | `Metrics` | Pluggable metrics observer (requests, latency, errors) |
 | `TenantResolver` | Extracts tenant from request context |
 | `RateLimitCounter` | A request counter every replica shares |
@@ -482,6 +488,22 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `InferenceLimit` | At most `max` model turns in flight at one provider, shared by every loop holding a clone; `max()` and `available()` (ADR 0048) |
 | `LimitedModel` | A `ToolModel` that holds a slot of an `InferenceLimit` for each turn, streamed or not, and gives it back however the turn ends |
 | `ModelRetry` | `ToolLoop::with_model_retry`'s policy for a rate-limited turn (`ModelError::RateLimited`): 3 retries, 0.5 s doubling to 30 s with half jitter, or the provider's `Retry-After` spread by up to a quarter; never past `max_delay` or the budget's remaining time (ADR 0048) |
+
+### Agent Skills
+
+All behind the `skills` feature (it implies `tool-loop`), at `skills::`.
+
+| Type | Description |
+|------|-------------|
+| `SkillCatalog` | The skills `discover` found in the configured directories and a list of `SkillDiagnostic`s; never fails. `prompt()` is the catalog for the system prompt, `tools()` the tools that serve it, `agent_skills()` the entries for an agent card (off unless called) |
+| `SkillsConfig` | What to scan and the bounds: 32 skills, a 400-character description in the prompt, a 64 KiB body, a 64 KiB file read, each set with a `with_max_*` |
+| `SkillSource` | One directory of skills: `operator(path)` is trusted, `project(path)` is not read until `with_trusted(true)`; `with_follow_symlinks(true)` follows a link to a skill directory |
+| `Skill` | One skill: `name`, `description`, `body`, `location`, `scope`, and the optional fields the file had, with `allowed_tools` recorded and never used |
+| `SkillDiagnostic` | What discovery noticed: a `Severity`, a `DiagnosticKind` to match on, a path and a message |
+| `ActivateSkillTool` | `activate_skill`: its `name` is an enum of the catalog's names; returns the instructions, the files the skill bundles and the scripts that are not run |
+| `ReadSkillFileTool` | `read_skill_file`: the text of a file under a skill's `references/` or `assets/`, through the confined reader |
+
+`ToolLoopExecutor::with_skills` puts the catalog's prompt after the loop's preamble and adds the tools.
 
 ### Built-in Implementations
 

@@ -15,10 +15,15 @@ pub mod encrypted;
 pub mod halt;
 pub mod holds;
 pub mod lease;
+#[cfg(feature = "postgres")]
+mod log_notify;
+pub(crate) mod log_wake;
 pub mod retention;
 pub mod task_store;
 pub mod tenant;
 pub mod terminal;
+#[cfg(test)]
+pub(crate) mod tests;
 #[cfg(feature = "tracing")]
 pub(crate) mod traced;
 
@@ -64,11 +69,16 @@ mod event_log_sql;
 mod tenant_event_log;
 
 pub use applied::AppliedPosition;
-pub use claim::{ClaimLost, HeldClaim, InMemoryTurnClaims, TurnClaimStore};
+pub use claim::{
+    ClaimLost, Handed, HeldClaim, InMemoryTurnClaims, PendingSteering, TurnClaimStore,
+};
 pub use database::StoreDatabase;
 pub use halt::{HaltSignal, HaltStore, InMemoryHaltStore, StoredHalt};
 pub use holds::{DEFAULT_MAX_HELD_EVENTS_FACTOR, EventHold, EventHolds};
 pub use lease::{InMemoryLeaseStore, LeaseStore};
+#[cfg(feature = "postgres")]
+pub use log_notify::{CHANNEL as LOG_NOTIFY_CHANNEL, LogListen};
+pub use log_wake::{LogWake, LogWatch};
 pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 // `IdempotencyClaim` is the return type of a `TaskStore` method, so an
 // out-of-tree store has to name it. It was reachable only at
@@ -94,23 +104,50 @@ pub use terminal::{TERMINAL_STATE_CONFLICT_MARKER, TerminalStateConflict, refuse
 ///
 /// `SQLite` compares `updated_at` lexicographically, so the value must match
 /// the column's `strftime('%Y-%m-%d %H:%M:%f')` shape exactly
-/// (`YYYY-MM-DD HH:MM:SS.mmm`, UTC).
+/// (`YYYY-MM-DD HH:MM:SS.mmm`, UTC). An instant before year 0001 is held as
+/// 0001-01-01, as [`status_timestamp_rfc3339`] holds it, so every store lists
+/// it in the same place and no store writes a value the page-token decoder
+/// refuses.
 #[cfg(feature = "sqlite")]
 pub(crate) fn status_timestamp_sqlite(ts: Option<&str>) -> Option<String> {
-    let millis = ts.and_then(a2a_protocol_types::parse_iso8601_to_unix_millis)?;
+    let millis = status_millis(ts)?;
     let iso = a2a_protocol_types::unix_millis_to_iso8601(millis);
     // "YYYY-MM-DDTHH:MM:SS.mmmZ" → "YYYY-MM-DD HH:MM:SS.mmm"
     Some(format!("{} {}", &iso[..10], &iso[11..23]))
 }
 
+/// The first instant `PostgreSQL`'s `timestamp` and `timestamptz` hold,
+/// 0001-01-01T00:00:00Z, in Unix milliseconds. This crate's own RFC 3339
+/// parser reads back to year 0000, the first year the calendar can name, so
+/// there is one year of instants (and of nonsense a peer can send) that it
+/// accepts and `PostgreSQL` answers with a database error.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+const FIRST_POSTGRES_MILLIS: i64 = -62_135_596_800_000;
+
+/// `ts` as Unix milliseconds, none before year 0001; `None` when missing or
+/// unparseable. Every store uses this, so that one status timestamp lists,
+/// pages and filters the same way on all of them: a year-0000 instant is held
+/// as 0001-01-01, which `statusTimestampAfter` ("greater than or equal to")
+/// still treats as before everything.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+fn status_millis(ts: Option<&str>) -> Option<i64> {
+    Some(
+        ts.and_then(a2a_protocol_types::parse_iso8601_to_unix_millis)?
+            .max(FIRST_POSTGRES_MILLIS),
+    )
+}
+
 /// Normalizes a status timestamp to canonical RFC 3339 UTC for binding into
 /// `Postgres` `::timestamptz` casts, or `None` when missing/unparseable (the
 /// SQL then falls back to the write wall-clock). Same ordering rationale as
-/// [`status_timestamp_sqlite`].
+/// [`status_timestamp_sqlite`]; an instant before year 0001, which
+/// `timestamptz` cannot hold, is held as 0001-01-01 (hostile campaign, wave
+/// 2, `W2-hostile-1`: it reached the cast and answered a database error).
 #[cfg(feature = "postgres")]
 pub(crate) fn status_timestamp_rfc3339(ts: Option<&str>) -> Option<String> {
-    let millis = ts.and_then(a2a_protocol_types::parse_iso8601_to_unix_millis)?;
-    Some(a2a_protocol_types::unix_millis_to_iso8601(millis))
+    Some(a2a_protocol_types::unix_millis_to_iso8601(status_millis(
+        ts,
+    )?))
 }
 
 #[cfg(feature = "sqlite")]
@@ -212,5 +249,72 @@ mod status_timestamp_tests {
         );
         assert_eq!(super::status_timestamp_rfc3339(None), None);
         assert_eq!(super::status_timestamp_rfc3339(Some("nope")), None);
+    }
+
+    /// Year 0000 is a real instant to this crate's own RFC 3339 parser (the
+    /// first year the proleptic Gregorian calendar can name), but `Postgres`'s
+    /// `timestamptz` has no year 0000 and answers `::timestamptz` with a
+    /// database error (hostile campaign, wave 2). It is held as the first
+    /// instant `Postgres` can hold, not refused: a refusal made `ListTasks`
+    /// answer an empty page for `statusTimestampAfter=0000-01-01T00:00:00Z`,
+    /// where the in-memory and `SQLite` stores answer every task.
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn rfc3339_holds_a_year_postgres_timestamptz_cannot_hold_at_year_one() {
+        for (input, why) in [
+            ("0000-01-01T00:00:00Z", "the exact boundary"),
+            ("0000-12-31T23:59:59.999Z", "the last instant of year 0000"),
+            (
+                "0001-01-01T00:00:00+01:00",
+                "a positive offset moves it into 0000",
+            ),
+        ] {
+            assert_eq!(
+                super::status_timestamp_rfc3339(Some(input)).as_deref(),
+                Some("0001-01-01T00:00:00.000Z"),
+                "{input} ({why})"
+            );
+        }
+        // The first instant `Postgres` holds, and one millisecond after it,
+        // are kept as they are.
+        for kept in ["0001-01-01T00:00:00Z", "0001-01-01T00:00:00.001Z"] {
+            assert_eq!(
+                super::status_timestamp_rfc3339(Some(kept)).as_deref(),
+                Some(a2a_protocol_types::unix_millis_to_iso8601(
+                    a2a_protocol_types::parse_iso8601_to_unix_millis(kept).unwrap()
+                ))
+                .as_deref(),
+                "{kept}"
+            );
+        }
+    }
+
+    /// The same instants on `SQLite`: held at 0001-01-01, so that a page token
+    /// for such a task is one the cursor decoder accepts.
+    #[cfg(feature = "sqlite")]
+    #[test]
+    fn sqlite_holds_a_year_zero_instant_at_year_one() {
+        for input in ["0000-01-01T00:00:00Z", "0000-12-31T23:59:59.999Z"] {
+            assert_eq!(
+                super::status_timestamp_sqlite(Some(input)).as_deref(),
+                Some("0001-01-01 00:00:00.000"),
+                "{input}"
+            );
+        }
+        assert_eq!(
+            super::status_timestamp_sqlite(Some("0001-01-01T00:00:00.001Z")).as_deref(),
+            Some("0001-01-01 00:00:00.001")
+        );
+    }
+
+    /// The constant is 0001-01-01T00:00:00Z: 719,162 days before the epoch.
+    #[cfg(any(feature = "sqlite", feature = "postgres"))]
+    #[test]
+    fn the_first_instant_postgres_holds_is_year_one() {
+        assert_eq!(super::FIRST_POSTGRES_MILLIS, -719_162 * 86_400 * 1000);
+        assert_eq!(
+            a2a_protocol_types::unix_millis_to_iso8601(super::FIRST_POSTGRES_MILLIS),
+            "0001-01-01T00:00:00.000Z"
+        );
     }
 }

@@ -1,0 +1,7 @@
+== a grant that asks for u64::MAX tokens of a deadline-only budget (load 0.81)
+-- TASK_STATE_COMPLETED; ''; answer 'worker task a120d929-75dc-46fb-a228-f58b2be588a4: OK.'
+     coord: t=1794106759652 DELEGATION grant=Budget { remaining_ms: Some(56988), meters: {"tokens": 9007199254740992} }
+     coord: t=1794106762098 DELEGATION ended after 2.4s task=Some("a120d929-75dc-46fb-a228-f58b2be588a4") outcome=Completed
+  ok    the delegation with a deadline-only budget completes (TASK_STATE_COMPLETED)
+
+1 of 1 expectations held
