@@ -123,7 +123,11 @@ pub struct Held {
 /// that stops mid-delivery leaves its rows to the next claim after their
 /// leases.
 pub trait PushOutbox: Send + Sync + 'static {
-    /// Records `deliveries`, in order. At most `per_webhook` rows wait for one
+    /// Records `deliveries`, in order. A delivery whose `delivery_id` is already
+    /// in the outbox is left as it is (recording the same delivery twice keeps
+    /// one row, so a caller can record again what it is unsure was recorded);
+    /// one that was delivered and removed is recorded again, and delivered again
+    /// under the same id, which a receiver sees as a retry. At most `per_webhook` rows wait for one
     /// webhook of one task: past that, recording one drops the oldest of them
     /// that is not claimed and does not end a turn, or, when there is none,
     /// the new one unless it ends a turn (kept past the bound). Returns how
@@ -152,6 +156,30 @@ pub trait PushOutbox: Send + Sync + 'static {
 
     /// How many rows wait, claimed or not, reserved or not: for a gauge.
     fn pending(&self) -> OutboxFuture<'_, usize>;
+
+    /// Whether this outbox renews leases ([`renew`](Self::renew)). With renewal a
+    /// worker claims for a short lease and renews it while it works, so the
+    /// rows of a worker that died are free after one short lease, not after the
+    /// longest a delivery can take; without it (the default) the worker takes
+    /// the long lease.
+    fn supports_renewal(&self) -> bool {
+        false
+    }
+
+    /// Extends to `lease` from now every unexpired lease `owner` holds: the
+    /// worker's heartbeat. Returns how many rows it renewed.
+    ///
+    /// # Errors
+    ///
+    /// The outbox cannot be written, or does not renew.
+    fn renew<'a>(&'a self, owner: &'a str, lease: Duration) -> OutboxFuture<'a, usize> {
+        let _ = (owner, lease);
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                "this push outbox does not renew leases",
+            ))
+        })
+    }
 
     /// Whether this outbox keeps reservations ([`reserve`](Self::reserve)).
     /// One that does not (the default) is recorded in only after an event is
@@ -223,6 +251,28 @@ pub trait PushOutbox: Send + Sync + 'static {
     /// The outbox cannot be written, or keeps no reservations.
     fn release<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, ()> {
         let _ = reservation;
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                "this push outbox keeps no reservations",
+            ))
+        })
+    }
+
+    /// Every reservation of one task that is not armed, whether or not its hold
+    /// has run out: for a caller that knows the reserver can write no more, such
+    /// as the reaper once it holds the task's turn claim (a store refuses a
+    /// writer whose claim was taken over, so what the task store holds is final).
+    ///
+    /// # Errors
+    ///
+    /// The outbox cannot be read, or keeps no reservations.
+    fn held_for_task<'a>(
+        &'a self,
+        tenant: &'a str,
+        caller: Option<&'a str>,
+        task_id: &'a str,
+    ) -> OutboxFuture<'a, Vec<Held>> {
+        let _ = (tenant, caller, task_id);
         Box::pin(async {
             Err(a2a_protocol_types::error::A2aError::unsupported_operation(
                 "this push outbox keeps no reservations",

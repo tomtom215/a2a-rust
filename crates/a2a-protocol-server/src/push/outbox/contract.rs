@@ -407,6 +407,131 @@ pub async fn the_bound_never_drops_a_reserved_row(outbox: &dyn PushOutbox) {
     );
 }
 
+/// Recording a delivery id twice keeps one row; once the row is delivered and
+/// gone, recording it again brings it back under the same id.
+pub async fn a_delivery_id_is_recorded_once(outbox: &dyn PushOutbox) {
+    let row = delivery("", "a", TaskState::Working);
+    let id = row.delivery_id.clone();
+    assert_eq!(outbox.record(vec![row.clone()], 10).await.unwrap(), 0);
+    assert_eq!(outbox.record(vec![row.clone()], 10).await.unwrap(), 0);
+    assert_eq!(outbox.pending().await.unwrap(), 1, "one row, not two");
+    assert_eq!(
+        outbox
+            .reserve("r", 3, vec![row.clone()], 10, HOUR)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        outbox.pending().await.unwrap(),
+        1,
+        "a reservation does not duplicate it"
+    );
+
+    let claimed = outbox.claim("me", 10, HOUR).await.unwrap();
+    assert_eq!(ids(&claimed), [id.clone()]);
+    outbox.complete(claimed[0].seq).await.unwrap();
+    outbox.record(vec![row], 10).await.unwrap();
+    assert_eq!(ids(&outbox.claim("me", 10, HOUR).await.unwrap()), [id]);
+}
+
+/// `held_for_task` lists the unarmed reservations of one task, in one tenant
+/// and caller, held or not.
+pub async fn held_for_task_lists_that_tasks_unarmed_reservations(outbox: &dyn PushOutbox) {
+    let mut other_task = delivery("", "a", TaskState::Working);
+    other_task.task_id = "t2".to_owned();
+    let mut other_caller = delivery("", "a", TaskState::Working);
+    other_caller.caller = Some("bob".to_owned());
+    outbox
+        .reserve(
+            "mine",
+            5,
+            vec![delivery("", "a", TaskState::Working)],
+            10,
+            HOUR,
+        )
+        .await
+        .unwrap();
+    outbox
+        .reserve("t2", 6, vec![other_task], 10, HOUR)
+        .await
+        .unwrap();
+    outbox
+        .reserve("bob", 7, vec![other_caller], 10, HOUR)
+        .await
+        .unwrap();
+    outbox
+        .reserve(
+            "armed",
+            8,
+            vec![delivery("", "b", TaskState::Working)],
+            10,
+            HOUR,
+        )
+        .await
+        .unwrap();
+    outbox.arm("armed").await.unwrap();
+
+    let held = outbox.held_for_task("", None, "t1").await.unwrap();
+    let names: Vec<&str> = held.iter().map(|h| h.reservation.as_str()).collect();
+    assert_eq!(
+        names,
+        ["mine"],
+        "its hold has not run out, and it is listed"
+    );
+    assert_eq!(held[0].log_seq, 5);
+    assert!(
+        outbox
+            .held_for_task("other", None, "t1")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        outbox
+            .held_for_task("", Some("bob"), "t1")
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+/// `renew` gives its owner's live leases the lease asked for, and touches no
+/// one else's, and none that ran out.
+pub async fn renew_applies_to_the_owners_live_leases_only(outbox: &dyn PushOutbox) {
+    assert!(outbox.supports_renewal());
+    outbox
+        .record(
+            vec![
+                delivery("", "a", TaskState::Working),
+                delivery("", "b", TaskState::Working),
+            ],
+            10,
+        )
+        .await
+        .unwrap();
+    let claimed = outbox.claim("me", 1, HOUR).await.unwrap();
+    assert_eq!(claimed.len(), 1);
+    let other = outbox.claim("them", 1, Duration::ZERO).await.unwrap();
+    assert_eq!(other.len(), 1);
+
+    assert_eq!(outbox.renew("not-me", HOUR).await.unwrap(), 0);
+    assert_eq!(
+        outbox.renew("them", HOUR).await.unwrap(),
+        0,
+        "a lease that ran out is not renewed"
+    );
+    assert_eq!(outbox.renew("me", HOUR).await.unwrap(), 1);
+    // The lease asked for is the one the row has: a lease of nothing ends it.
+    assert_eq!(outbox.renew("me", Duration::ZERO).await.unwrap(), 1);
+    assert_eq!(
+        ids(&outbox.claim("next", 10, HOUR).await.unwrap()).len(),
+        2,
+        "both rows are free again"
+    );
+}
+
 /// Every rule, on a fresh outbox each: `fresh` makes one.
 pub async fn run_all<F, Fut, O>(fresh: F)
 where
@@ -428,4 +553,7 @@ where
     held_lists_lapsed_unarmed_reservations_once(&fresh().await).await;
     held_is_oldest_first_and_limited(&fresh().await).await;
     the_bound_never_drops_a_reserved_row(&fresh().await).await;
+    a_delivery_id_is_recorded_once(&fresh().await).await;
+    held_for_task_lists_that_tasks_unarmed_reservations(&fresh().await).await;
+    renew_applies_to_the_owners_live_leases_only(&fresh().await).await;
 }

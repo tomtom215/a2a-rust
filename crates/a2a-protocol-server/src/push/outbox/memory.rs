@@ -136,6 +136,14 @@ impl InMemoryPushOutbox {
         let mut state = self.lock();
         let mut dropped = 0;
         for delivery in deliveries {
+            // Recorded already (an id is a row's identity): left as it is.
+            if state
+                .rows
+                .values()
+                .any(|row| row.delivery.delivery_id == delivery.delivery_id)
+            {
+                continue;
+            }
             let (keep, made_room) =
                 state.make_room(&webhook(&delivery), delivery.ends_turn, per_webhook, now);
             dropped += made_room;
@@ -216,6 +224,65 @@ impl PushOutbox for InMemoryPushOutbox {
                     .is_none_or(|held| held.armed || held.id != reservation)
             });
             Ok(())
+        })
+    }
+
+    fn held_for_task<'a>(
+        &'a self,
+        tenant: &'a str,
+        caller: Option<&'a str>,
+        task_id: &'a str,
+    ) -> OutboxFuture<'a, Vec<Held>> {
+        Box::pin(async move {
+            let state = self.lock();
+            let mut seen = HashSet::new();
+            let mut held = Vec::new();
+            for row in state.rows.values() {
+                let Some(reserved) = row.reservation.as_ref().filter(|r| !r.armed) else {
+                    continue;
+                };
+                let d = &row.delivery;
+                if d.tenant == tenant
+                    && d.caller.as_deref() == caller
+                    && d.task_id == task_id
+                    && seen.insert(reserved.id.clone())
+                {
+                    held.push(Held {
+                        reservation: reserved.id.clone(),
+                        tenant: d.tenant.clone(),
+                        caller: d.caller.clone(),
+                        task_id: d.task_id.clone(),
+                        log_seq: reserved.log_seq,
+                        event: d.event.clone(),
+                    });
+                }
+            }
+            drop(state);
+            Ok(held)
+        })
+    }
+
+    fn supports_renewal(&self) -> bool {
+        true
+    }
+
+    fn renew<'a>(&'a self, owner: &'a str, lease: Duration) -> OutboxFuture<'a, usize> {
+        Box::pin(async move {
+            let now = Instant::now();
+            let until = now.checked_add(lease).unwrap_or(now);
+            let mut state = self.lock();
+            let mut renewed = 0;
+            for row in state.rows.values_mut() {
+                if row.leased(now)
+                    && let Some((held, end)) = row.lease.as_mut()
+                    && held == owner
+                {
+                    *end = until;
+                    renewed += 1;
+                }
+            }
+            drop(state);
+            Ok(renewed)
         })
     }
 

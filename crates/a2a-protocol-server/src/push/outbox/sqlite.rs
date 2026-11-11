@@ -200,6 +200,15 @@ impl SqlitePushOutbox {
         per_webhook: usize,
         reserve: Option<&Reserve<'_>>,
     ) -> Result<usize, sqlx::Error> {
+        // Recorded already (an id is a row's identity): left as it is.
+        let present: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM a2a_push_outbox WHERE delivery_id = ?1")
+                .bind(&d.delivery_id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if present > 0 {
+            return Ok(0);
+        }
         let Some(dropped) = Self::make_room(tx, d, per_webhook).await? else {
             return Ok(1);
         };
@@ -214,7 +223,7 @@ impl SqlitePushOutbox {
             now_ms!(),
             ", ",
             now_ms!(),
-            ")"
+            ") ON CONFLICT (delivery_id) DO NOTHING"
         ))
         .bind(&d.delivery_id)
         .bind(&d.tenant)
@@ -230,6 +239,37 @@ impl SqlitePushOutbox {
         .execute(&mut *tx)
         .await?;
         Ok(dropped)
+    }
+
+    /// The reservations `rows` name, their events opened; one that does not open
+    /// is left in place and said so.
+    async fn read_held(&self, rows: &[sqlx::sqlite::SqliteRow]) -> Vec<Held> {
+        let mut held = Vec::with_capacity(rows.len());
+        for row in rows {
+            let (tenant, caller, task_id, delivery_id): (String, Option<String>, String, String) = (
+                row.get("tenant"),
+                row.get("caller"),
+                row.get("task_id"),
+                row.get("delivery_id"),
+            );
+            let ctx = context(&tenant, caller.as_deref(), &task_id, &delivery_id);
+            let Ok(event) = self.body.decode(row.get::<&str, _>("event"), &ctx).await else {
+                trace_warn!(
+                    task_id = %task_id,
+                    "push outbox: a reserved row's event could not be read; it is left"
+                );
+                continue;
+            };
+            held.push(Held {
+                reservation: row.get("reservation"),
+                tenant,
+                caller,
+                task_id,
+                log_seq: u64::try_from(row.get::<i64, _>("log_seq")).unwrap_or(0),
+                event,
+            });
+        }
+        held
     }
 
     /// One claimed row, read; `None`, said so, for a row whose event does
@@ -368,37 +408,55 @@ impl PushOutbox for SqlitePushOutbox {
             .fetch_all(&self.pool)
             .await
             .map_err(|e| to_a2a_error(&e))?;
-            let mut held = Vec::with_capacity(rows.len());
-            for row in &rows {
-                let (tenant, caller, task_id, delivery_id): (
-                    String,
-                    Option<String>,
-                    String,
-                    String,
-                ) = (
-                    row.get("tenant"),
-                    row.get("caller"),
-                    row.get("task_id"),
-                    row.get("delivery_id"),
-                );
-                let ctx = context(&tenant, caller.as_deref(), &task_id, &delivery_id);
-                let Ok(event) = self.body.decode(row.get::<&str, _>("event"), &ctx).await else {
-                    trace_warn!(
-                        task_id = %task_id,
-                        "push outbox: a reserved row's event could not be read; it is left"
-                    );
-                    continue;
-                };
-                held.push(Held {
-                    reservation: row.get("reservation"),
-                    tenant,
-                    caller,
-                    task_id,
-                    log_seq: u64::try_from(row.get::<i64, _>("log_seq")).unwrap_or(0),
-                    event,
-                });
-            }
-            Ok(held)
+            Ok(self.read_held(&rows).await)
+        })
+    }
+
+    fn held_for_task<'a>(
+        &'a self,
+        tenant: &'a str,
+        caller: Option<&'a str>,
+        task_id: &'a str,
+    ) -> OutboxFuture<'a, Vec<Held>> {
+        Box::pin(async move {
+            let rows = sqlx::query(
+                "SELECT delivery_id, tenant, caller, task_id, event, log_seq, reservation
+                 FROM a2a_push_outbox
+                 WHERE seq IN (
+                    SELECT MIN(seq) FROM a2a_push_outbox
+                    WHERE armed = 0 AND tenant = ?1 AND caller IS ?2 AND task_id = ?3
+                    GROUP BY reservation)
+                 ORDER BY seq",
+            )
+            .bind(tenant)
+            .bind(caller)
+            .bind(task_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
+            Ok(self.read_held(&rows).await)
+        })
+    }
+
+    fn supports_renewal(&self) -> bool {
+        true
+    }
+
+    fn renew<'a>(&'a self, owner: &'a str, lease: Duration) -> OutboxFuture<'a, usize> {
+        Box::pin(async move {
+            let renewed = sqlx::query(concat!(
+                "UPDATE a2a_push_outbox SET lease_ms = ",
+                now_ms!(),
+                " + ?2 WHERE owner = ?1 AND lease_ms > ",
+                now_ms!()
+            ))
+            .bind(owner)
+            .bind(millis(lease))
+            .execute(&self.pool)
+            .await
+            .map_err(|e| to_a2a_error(&e))?
+            .rows_affected();
+            Ok(usize::try_from(renewed).unwrap_or(usize::MAX))
         })
     }
 

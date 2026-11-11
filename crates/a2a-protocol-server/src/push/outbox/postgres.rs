@@ -151,6 +151,15 @@ impl PostgresPushOutbox {
     ) -> Result<usize, sqlx::Error> {
         let mut dropped = 0;
         for (d, event) in deliveries.iter().zip(bodies) {
+            // Recorded already (an id is a row's identity): left as it is.
+            let present: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM a2a_push_outbox WHERE delivery_id = $1")
+                    .bind(&d.delivery_id)
+                    .fetch_one(&mut *tx)
+                    .await?;
+            if present > 0 {
+                continue;
+            }
             let waiting: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM a2a_push_outbox
                  WHERE tenant = $1 AND caller IS NOT DISTINCT FROM $2
@@ -190,7 +199,8 @@ impl PostgresPushOutbox {
                      armed, reservation, log_seq, hold_until)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                          CASE WHEN $11::float8 IS NULL THEN NULL
-                              ELSE now() + make_interval(secs => $11::float8) END)",
+                              ELSE now() + make_interval(secs => $11::float8) END)
+                 ON CONFLICT (delivery_id) DO NOTHING",
             )
             .bind(&d.delivery_id)
             .bind(&d.tenant)
@@ -207,6 +217,37 @@ impl PostgresPushOutbox {
             .await?;
         }
         Ok(dropped)
+    }
+
+    /// The reservations `rows` name, their events opened; one that does not open
+    /// is left in place and said so.
+    async fn read_held(&self, rows: &[sqlx::postgres::PgRow]) -> Vec<Held> {
+        let mut held = Vec::with_capacity(rows.len());
+        for row in rows {
+            let (tenant, caller, task_id, delivery_id): (String, Option<String>, String, String) = (
+                row.get("tenant"),
+                row.get("caller"),
+                row.get("task_id"),
+                row.get("delivery_id"),
+            );
+            let ctx = context(&tenant, caller.as_deref(), &task_id, &delivery_id);
+            let Ok(event) = self.body.decode(row.get::<&str, _>("event"), &ctx).await else {
+                trace_warn!(
+                    task_id = %task_id,
+                    "push outbox: a reserved row's event could not be read; it is left"
+                );
+                continue;
+            };
+            held.push(Held {
+                reservation: row.get("reservation"),
+                tenant,
+                caller,
+                task_id,
+                log_seq: u64::try_from(row.get::<i64, _>("log_seq")).unwrap_or(0),
+                event,
+            });
+        }
+        held
     }
 
     /// One claimed row, read; `None`, said so, for a row whose event does
@@ -351,37 +392,60 @@ impl PushOutbox for PostgresPushOutbox {
             })
             .await
             .map_err(|e| to_a2a_error(&e))?;
-            let mut held = Vec::with_capacity(rows.len());
-            for row in &rows {
-                let (tenant, caller, task_id, delivery_id): (
-                    String,
-                    Option<String>,
-                    String,
-                    String,
-                ) = (
-                    row.get("tenant"),
-                    row.get("caller"),
-                    row.get("task_id"),
-                    row.get("delivery_id"),
-                );
-                let ctx = context(&tenant, caller.as_deref(), &task_id, &delivery_id);
-                let Ok(event) = self.body.decode(row.get::<&str, _>("event"), &ctx).await else {
-                    trace_warn!(
-                        task_id = %task_id,
-                        "push outbox: a reserved row's event could not be read; it is left"
-                    );
-                    continue;
-                };
-                held.push(Held {
-                    reservation: row.get("reservation"),
-                    tenant,
-                    caller,
-                    task_id,
-                    log_seq: u64::try_from(row.get::<i64, _>("log_seq")).unwrap_or(0),
-                    event,
-                });
-            }
-            Ok(held)
+            Ok(self.read_held(&rows).await)
+        })
+    }
+
+    fn held_for_task<'a>(
+        &'a self,
+        tenant: &'a str,
+        caller: Option<&'a str>,
+        task_id: &'a str,
+    ) -> OutboxFuture<'a, Vec<Held>> {
+        Box::pin(async move {
+            let rows = pg_retry::retry(self.metrics.as_ref(), || {
+                sqlx::query(
+                    "SELECT delivery_id, tenant, caller, task_id, event, log_seq, reservation
+                     FROM a2a_push_outbox
+                     WHERE seq IN (
+                        SELECT MIN(seq) FROM a2a_push_outbox
+                        WHERE NOT armed AND tenant = $1
+                          AND caller IS NOT DISTINCT FROM $2 AND task_id = $3
+                        GROUP BY reservation)
+                     ORDER BY seq",
+                )
+                .bind(tenant)
+                .bind(caller)
+                .bind(task_id)
+                .fetch_all(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
+            Ok(self.read_held(&rows).await)
+        })
+    }
+
+    fn supports_renewal(&self) -> bool {
+        true
+    }
+
+    fn renew<'a>(&'a self, owner: &'a str, lease: Duration) -> OutboxFuture<'a, usize> {
+        Box::pin(async move {
+            // Idempotent: a second run sets the same end.
+            let renewed = pg_retry::retry(self.metrics.as_ref(), || {
+                sqlx::query(
+                    "UPDATE a2a_push_outbox
+                     SET lease_until = now() + make_interval(secs => $2)
+                     WHERE owner = $1 AND lease_until > now()",
+                )
+                .bind(owner)
+                .bind(seconds(lease))
+                .execute(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?
+            .rows_affected();
+            Ok(usize::try_from(renewed).unwrap_or(usize::MAX))
         })
     }
 
