@@ -405,20 +405,53 @@ async fn tenant_aware_sqlite_the_reaper_completes_the_ending_of_a_finished_task(
     super::remove_sqlite(&path);
 }
 
-/// Both scopes, one after the other: the reaper looks at every scope's claims,
-/// so two of these running at once would finish each other's tasks.
+/// A schema of its own for one run: the reaper looks at every claim in the
+/// tables it can see, so a reaper from another test in the same database
+/// would take this run's stale claims (and the run would take theirs).
+/// Returns the URL that opens it and its name.
+#[cfg(feature = "postgres")]
+async fn own_schema(url: &str) -> (String, String) {
+    let schema = format!("a2a_finish_{}", uuid::Uuid::new_v4().simple());
+    let admin = sqlx::PgPool::connect(url).await.unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE SCHEMA {schema}")))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let sep = if url.contains('?') { '&' } else { '?' };
+    (
+        format!("{url}{sep}options=-c%20search_path%3D{schema}"),
+        schema,
+    )
+}
+
+#[cfg(feature = "postgres")]
+async fn drop_schema(url: &str, schema: &str) {
+    let admin = sqlx::PgPool::connect(url).await.unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
+        .execute(&admin)
+        .await
+        .unwrap();
+}
+
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
 async fn postgres_the_reaper_completes_the_ending_of_a_finished_task() {
-    let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+    let admin_url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+
+    let (url, schema) = own_schema(&admin_url).await;
     let plain = Arc::new(crate::store::PostgresTaskStore::new(&url).await.unwrap());
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
-    the_reaper_completes_the_ending_of_a_finished_task(plain, "", pg_rows(pool.clone())).await;
+    the_reaper_completes_the_ending_of_a_finished_task(plain, "", pg_rows(pool)).await;
+    drop_schema(&admin_url, &schema).await;
+
+    let (url, schema) = own_schema(&admin_url).await;
     let tenant = Arc::new(
         crate::store::TenantAwarePostgresTaskStore::new(&url)
             .await
             .unwrap(),
     );
+    let pool = sqlx::PgPool::connect(&url).await.unwrap();
     the_reaper_completes_the_ending_of_a_finished_task(tenant, "acme", pg_rows(pool)).await;
+    drop_schema(&admin_url, &schema).await;
 }
