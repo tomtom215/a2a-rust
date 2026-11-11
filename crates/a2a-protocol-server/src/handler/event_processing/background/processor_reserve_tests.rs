@@ -550,9 +550,9 @@ async fn a_verdict_is_recorded_before_it_is_logged() {
 /// A replica lost with many tasks in flight leaves as many reservations; one
 /// look of the worker settles them all, not a batch of 32 every ten seconds.
 #[tokio::test(start_paused = true)]
-async fn a_hundred_stale_reservations_are_settled_in_one_look() {
+async fn four_hundred_stale_reservations_are_settled_in_one_look() {
     let rig = Rig::new(TaskState::Working).await;
-    for n in 0..100u64 {
+    for n in 0..400u64 {
         let delivery = crate::push::outbox::NewDelivery {
             delivery_id: format!("d{n}"),
             tenant: String::new(),
@@ -574,11 +574,12 @@ async fn a_hundred_stale_reservations_are_settled_in_one_look() {
             .await
             .unwrap();
     }
-    assert_eq!(rig.rows().await, 100);
-    // One look (ten seconds apart), not four.
+    assert_eq!(rig.rows().await, 400);
+    // One look (ten seconds apart), not several: two workers settle 32 a round,
+    // at the start and again ten seconds on, which is 128 of the 400.
     rig.wait(Duration::from_secs(12)).await;
     assert_eq!(rig.rows().await, 0, "all released in the first look");
-    assert_eq!(rig.metrics.count(push_outcome::RESERVATION_SETTLED), 100);
+    assert_eq!(rig.metrics.count(push_outcome::RESERVATION_SETTLED), 400);
 }
 
 /// Reservations that cannot be settled because the task store cannot be read
