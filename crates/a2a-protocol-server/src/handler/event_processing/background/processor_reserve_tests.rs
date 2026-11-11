@@ -516,3 +516,33 @@ async fn an_ending_is_recorded_before_it_is_logged() {
     );
     rig.kill_a(running).await;
 }
+
+/// The same for a verdict from another writer: a terminal event refused
+/// because the task is already cancelled is answered with the stored state,
+/// which is recorded in the outbox before it is written to the log.
+#[tokio::test(start_paused = true)]
+async fn a_verdict_is_recorded_before_it_is_logged() {
+    let mut rig = Rig::new(TaskState::Canceled).await;
+    rig.store.park_next_append();
+    let running = rig.run_on_a(status(1, TaskState::Completed));
+    parked(&rig).await;
+
+    assert_eq!(
+        next(&mut rig.a_seen).await,
+        Seen {
+            replica: "a",
+            state: Some(TaskState::Canceled)
+        },
+        "the stored state, delivered while its log write has not happened"
+    );
+    assert!(
+        rig.store
+            .inner
+            .read_events(&TaskId::new("t"), 0, 10)
+            .await
+            .unwrap()
+            .is_empty(),
+        "the log does not have it yet"
+    );
+    rig.kill_a(running).await;
+}
