@@ -322,9 +322,11 @@ async fn a_stored_event_is_delivered_once_from_its_reservation() {
             state: Some(TaskState::Working)
         }
     );
+    // Armed, and the worker woken, when the event was stored: no timer ran. A
+    // worker left to its poll (a second) or to the hold (minutes) takes longer.
     assert!(
-        started.elapsed() < Duration::from_secs(5),
-        "armed when the event was stored ({:?}), not settled after the hold ({:?})",
+        started.elapsed() < Duration::from_millis(100),
+        "delivered {:?} after the event was stored (the hold is {:?})",
         started.elapsed(),
         hold(&rig)
     );
