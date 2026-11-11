@@ -1712,7 +1712,7 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   reservations (all three here do); otherwise nothing changes. Not one transaction: ADR 0037, amendment 2026-11-11, says why not. Checked: the
   contract on all three outboxes (PostgreSQL live; two replicas settling one reservation; a table from an earlier build upgraded in place), a unit test
   for each row of the settlement's decision table, tests that abort a task at a chosen point of its store write with two replicas over one outbox
-  (before the write, after it, a terminal event between its save and its log write, stalled past the hold), the same on the blocking path, and 65 hand
+  (before the write, after it, a terminal event between its save and its log write, stalled past the hold), the same on the blocking path, and 64 hand
   mutants of each rule, all caught (`scripts/mutants/push-outbox-h14/run.sh`; `scripts/live/outbox_live.py`'s run is below). Live, two replicas on one PostgreSQL database and a webhook
   receiver, replica A sent itself `SIGKILL` after it stored an artifact and before it armed the row: the receiver saw `working`, then the artifact
   once, 71 s after the kill and from the survivor, then the reaper's `failed`, the outbox empty; killed after reserving and before storing, the event

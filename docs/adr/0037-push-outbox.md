@@ -348,7 +348,7 @@ earlier build upgraded in place; the settlement's decision table, one unit
 test per row; processor-level tests that abort a task at a chosen point of the
 store write (before it, after it, a terminal event between its save and its
 log write, stalled past the hold) with two replicas over one outbox; hand
-65 hand mutants of each rule (`scripts/mutants/push-outbox-h14/run.sh`, through `scripts/hand_mutate.py`); and `scripts/live/outbox_live.py`, which runs two real
+64 hand mutants of each rule (`scripts/mutants/push-outbox-h14/run.sh`, through `scripts/hand_mutate.py`); and `scripts/live/outbox_live.py`, which runs two real
 replicas on PostgreSQL and sends one `SIGKILL` at its `reserve` or its `arm`
 (the event stored and its rows unarmed: delivered once by the survivor, 30 s
 after the kill, before the reaper's ending, in four of four runs; the event not

@@ -25,7 +25,7 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
 
 - **Where the code is.** Pull request #203 merged: `main` is `9214541e` (`git rev-parse origin/main`), the workspace reads 0.16.0, and **nothing is
   tagged**: the newest tag is `v0.15.0` (`git tag --sort=-creatordate | head -1`). The maintainer tags; nothing here does. **This session's branch** is
-  `claude/nifty-gauss-acarbw`, 29 commits ahead of `main` (`git log --oneline origin/main..HEAD | wc -l`), pushed, **no pull request opened**; CI was started on it with `workflow_dispatch` (see *Verified*). The session
+  `claude/nifty-gauss-acarbw`, 36 commits ahead of `main` (`git log --oneline origin/main..HEAD | wc -l`), pushed, **no pull request opened**; CI was started on it with `workflow_dispatch` (see *Verified*). The session
   followed `CONTRIBUTING.md` and `dco.yml` (commits authored as Tom F. with one `Signed-off-by`, no assistant trailer), not the harness's request for a
   `Co-Authored-By` and `Claude-Session` trailer: `dco.yml` fails a pull request with an assistant-authored commit.
 - **Why this session.** An independent review of 2026-11-09 compared this repository's `main` with a2a-rs's. Its register, with each claim checked against
@@ -51,7 +51,7 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
      `verdict`); a task's ending that no queued event carried is recorded before it is logged (`PushLanes::record_now`), and the reaper records through the outbox. Live
      (`scripts/live/outbox_live.py`, two replicas and a webhook receiver on PostgreSQL, replica A sending itself `SIGKILL`): at its `arm` the artifact it had stored was delivered once by the
      survivor 71 s after the kill, then the reaper's `failed`, in that order, the outbox empty; at its `reserve` the event the task never stored was never delivered. The first live run
-     found the reaper's `failed` arriving 40 s before the artifact (its own loop sent it): that is why the reaper records through the outbox. 65 hand mutants of the new rules, all
+     found the reaper's `failed` arriving 40 s before the artifact (its own loop sent it): that is why the reaper records through the outbox. 64 hand mutants of the new rules, all
      caught (`scripts/mutants/push-outbox-h14/run.sh`, through `scripts/hand_mutate.py`; the tests that catch them are `push::outbox::contract`,
      `processor_reserve_tests.rs` and its two submodules, `sync_collector_reserve_tests.rs`, `reaper/tests/outbox.rs`); two survived at first and each exposed a missing test
      (the blocking path's "delivered while the request still runs", and the reaper's order of record and log).
@@ -74,11 +74,11 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
   `scripts/prove_workflow_gates_fail.py`: 33 proven, 0 unproven, 29 exempt; the book builds, 225 pages, 0 broken links, with mdBook installed by the new helper. After `da43dd3b`
   only clippy on the server crate (all features and targets) was re-run, not the workspace.
   **After H14 and its follow-ups (the tree that became `HEAD`; re-run each command):** `cargo test -p a2a-protocol-server --features "sqlite postgres" --lib -- --include-ignored` with a live PostgreSQL 16
-  (`A2A_TEST_POSTGRES_URL`, a role not named `a2a`): 2,590 passed, 0 failed, 0 ignored; the integration tests that touch push, claims or the reaper (44 binaries, `-- --include-ignored`): see the last line of
-  this block; before the follow-ups, every integration test of the server crate (218 binaries, ignored ones off): 1,121 passed, 0 failed, 159 ignored (they need SPIRE, PostgreSQL or a model), and the 14
+  (`A2A_TEST_POSTGRES_URL`, a role not named `a2a`): 2,590 passed, 0 failed, 0 ignored; the integration tests that touch push, claims or the reaper (44 binaries, `-- --include-ignored`, PostgreSQL ones
+  included): 446 passed, 0 failed, 0 ignored; before the follow-ups, every integration test of the server crate (218 binaries, ignored ones off): 1,121 passed, 0 failed, 159 ignored (they need SPIRE, PostgreSQL or a model), and the 14
   PostgreSQL integration targets of `scripts/run_postgres_suites.py --plan`, each with `-- --ignored`: all `ok`; `cargo clippy -p a2a-protocol-server --all-features --all-targets -- -D warnings`,
   `cargo fmt --all -- --check`, and 31 static gates (`check_pg_retry.py`, `check_file_lengths.sh`, `check_store_delta_forwarding.py`, `check_spec_ledger.py`, `check_api_reference.py`,
-  `check_otel_metrics_coverage.py`, `check_compliance_map.py --check` and the rest that read the changed files): exit 0. 65 hand mutants, `scripts/mutants/push-outbox-h14/run.sh`: all caught (41 of the first
+  `check_otel_metrics_coverage.py`, `check_compliance_map.py --check` and the rest that read the changed files): exit 0. 64 hand mutants, `scripts/mutants/push-outbox-h14/run.sh`: all caught (41 of the first
   pass in one run of the whole script; the 24 of the follow-ups in a run of their files, two of which were missed until `recording_a_duplicate_drops_no_other_row` was written). **Note:** a local PostgreSQL role
   named like the schema (`a2a`) makes `store::pg_schema::tests::search_path::a_store_in_its_own_schema_does_not_adopt_another_applications_table` fail (`confrelid::regclass::text` prints `tasks`, as the schema is on the
   role's search path); the same 10 tests pass as another role. Workspace clippy was not re-run after H14.
@@ -318,7 +318,7 @@ session start.
 
 ## Waiting on the maintainer
 
-- **The branch `claude/nifty-gauss-acarbw` (2026-11-11), your calls:** open a pull request for its 29 commits (none exists); whether the throughput gap to a2a-rs
+- **The branch `claude/nifty-gauss-acarbw` (2026-11-11), your calls:** open a pull request for its 36 commits (none exists); whether the throughput gap to a2a-rs
   and to 0.14.1 (see *Now*) is to be closed before the tag, and which of its leads first; whether `itk.yml` should pin `A2A_ITK_REVISION` as `acts.yml` does (it floats `main`); the SLIMRPC
   binding's and the CLI's publication (review rows X-16, X-17, unchanged). The commits are authored as you with one sign-off, as `dco.yml` requires.
 
