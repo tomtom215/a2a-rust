@@ -1,0 +1,22 @@
+[
+  {
+    "name": "postgres claim ignores unarmed",
+    "old": "WHERE o.due_at <= now() AND o.armed",
+    "new": "WHERE o.due_at <= now()"
+  },
+  {
+    "name": "postgres release deletes armed",
+    "old": "WHERE reservation = $1 AND NOT armed",
+    "new": "WHERE reservation = $1"
+  },
+  {
+    "name": "postgres held ignores the hold",
+    "old": "WHERE NOT armed AND hold_until <= now()",
+    "new": "WHERE NOT armed AND hold_until >= now()"
+  },
+  {
+    "name": "postgres bound drops unarmed",
+    "old": "AND armed AND (lease_until",
+    "new": "AND (lease_until"
+  }
+]

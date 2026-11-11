@@ -1,0 +1,12 @@
+[
+  {
+    "name": "reaper logs before it records",
+    "old": "        let recorded = self.push_lanes.record_now(&id, &event).await;\n        crate::handler::event_processing::append_ending(\n            &*self.task_store,\n            &id,\n            &event,\n            &*self.metrics,\n            self.limits.store_write_retry,\n        )\n        .await;\n        trace_warn!(\n            task_id,\n            state = %task.status.state,",
+    "new": "        crate::handler::event_processing::append_ending(\n            &*self.task_store,\n            &id,\n            &event,\n            &*self.metrics,\n            self.limits.store_write_retry,\n        )\n        .await;\n        let recorded = self.push_lanes.record_now(&id, &event).await;\n        trace_warn!(\n            task_id,\n            state = %task.status.state,"
+  },
+  {
+    "name": "reaper fail logs before it records",
+    "old": "        let recorded = self.push_lanes.record_now(&id, &event).await;\n        crate::handler::event_processing::append_ending(\n            &*self.task_store,\n            &id,\n            &event,\n            &*self.metrics,\n            self.limits.store_write_retry,\n        )\n        .await;\n        if !recorded {",
+    "new": "        crate::handler::event_processing::append_ending(\n            &*self.task_store,\n            &id,\n            &event,\n            &*self.metrics,\n            self.limits.store_write_retry,\n        )\n        .await;\n        let recorded = self.push_lanes.record_now(&id, &event).await;\n        if !recorded {"
+  }
+]

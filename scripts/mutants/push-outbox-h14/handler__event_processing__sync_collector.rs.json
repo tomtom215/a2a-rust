@@ -1,0 +1,17 @@
+[
+  {
+    "name": "collector buffers reserved events too",
+    "old": "if has_sender && !super::background::push_requested() {",
+    "new": "if has_sender {"
+  },
+  {
+    "name": "collector never reserves",
+    "old": "(Ok(queued), Some(_)) => self.push_lanes.reserve(task_id, seq, &queued.event).await,",
+    "new": "(Ok(queued), Some(_)) if queued.seq.is_none() => self.push_lanes.reserve(task_id, seq, &queued.event).await,"
+  },
+  {
+    "name": "collector never settles",
+    "old": "reservation.settle().await;",
+    "new": ""
+  }
+]

@@ -1,0 +1,27 @@
+[
+  {
+    "name": "processor never settles",
+    "old": "reservation.settle().await;",
+    "new": ""
+  },
+  {
+    "name": "processor never reserves",
+    "old": "(Ok(queued), Some(_)) => {",
+    "new": "(Ok(queued), Some(_)) if false => {"
+  },
+  {
+    "name": "announce logs before it records",
+    "old": "let recorded =\n            !self.pushed_terminal && self.deps.push.record_now(self.task_id, &event).await;\n        super::super::append_ending(",
+    "new": "let recorded = false;\n        super::super::append_ending("
+  },
+  {
+    "name": "supersede logs before it records",
+    "old": "let recorded =\n            !self.pushed_terminal && self.deps.push.record_now(self.task_id, &verdict).await;",
+    "new": "let recorded = false;"
+  },
+  {
+    "name": "announce never records",
+    "old": "!self.pushed_terminal && self.deps.push.record_now(self.task_id, &event).await;",
+    "new": "false;"
+  }
+]

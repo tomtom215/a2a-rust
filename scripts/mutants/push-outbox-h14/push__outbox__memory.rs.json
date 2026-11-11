@@ -1,0 +1,27 @@
+[
+  {
+    "name": "memory claim ignores unarmed",
+    "old": "if row.due > now || row.leased(now) || row.unarmed() {",
+    "new": "if row.due > now || row.leased(now) {"
+  },
+  {
+    "name": "memory bound drops unarmed",
+    "old": "!row.delivery.ends_turn && !row.leased(now) && !row.unarmed()",
+    "new": "!row.delivery.ends_turn && !row.leased(now)"
+  },
+  {
+    "name": "memory held ignores the hold",
+    "old": "reserved.hold_until > now",
+    "new": "false"
+  },
+  {
+    "name": "memory release deletes armed",
+    "old": ".is_none_or(|held| held.armed || held.id != reservation)",
+    "new": ".is_none_or(|held| held.id != reservation)"
+  },
+  {
+    "name": "memory arm does not arm",
+    "old": "held.armed = true;",
+    "new": ""
+  }
+]

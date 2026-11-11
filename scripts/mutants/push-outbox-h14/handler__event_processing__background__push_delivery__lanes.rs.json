@@ -1,0 +1,7 @@
+[
+  {
+    "name": "record_now does nothing",
+    "old": "outbox_worker::record(lanes, outboxed, task_id, std::slice::from_ref(event)).await;\n        true",
+    "new": "true"
+  }
+]

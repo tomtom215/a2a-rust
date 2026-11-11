@@ -1,0 +1,27 @@
+[
+  {
+    "name": "sqlite claim ignores unarmed",
+    "old": "AND o.armed = 1\n",
+    "new": "\n"
+  },
+  {
+    "name": "sqlite release deletes armed",
+    "old": "WHERE reservation = ?1 AND armed = 0",
+    "new": "WHERE reservation = ?1"
+  },
+  {
+    "name": "sqlite held ignores the hold",
+    "old": "WHERE armed = 0 AND hold_ms <= ",
+    "new": "WHERE armed = 0 AND hold_ms >= "
+  },
+  {
+    "name": "sqlite bound drops unarmed",
+    "old": "AND ends_turn = 0 AND armed = 1 AND (lease_ms",
+    "new": "AND ends_turn = 0 AND (lease_ms"
+  },
+  {
+    "name": "sqlite insert is armed when reserved",
+    "old": ".bind(reserve.is_none())",
+    "new": ".bind(true)"
+  }
+]

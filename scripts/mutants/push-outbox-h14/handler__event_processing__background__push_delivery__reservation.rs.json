@@ -1,0 +1,57 @@
+[
+  {
+    "name": "reserve never reserves",
+    "old": "let (seq, tasks) = (seq?, lanes.tasks.as_ref()?);",
+    "new": "let (seq, tasks) = (seq?, lanes.tasks.as_ref()?);\n        if seq > 0 { return None; }"
+  },
+  {
+    "name": "settle always releases",
+    "old": "if !self.wanted.load(Ordering::SeqCst) {",
+    "new": "if true {"
+  },
+  {
+    "name": "settle always arms",
+    "old": "if !self.wanted.load(Ordering::SeqCst) {",
+    "new": "if false {"
+  },
+  {
+    "name": "settle never records afresh",
+    "old": "PushLanes(Some(Arc::clone(&self.lanes)))\n                    .push_after_store(&self.task_id, &self.event);",
+    "new": "let _ = &self.event;"
+  },
+  {
+    "name": "settle does not wake the worker",
+    "old": "Ok(_) => outboxed.wake.notify_one(),",
+    "new": "Ok(_) => {}"
+  },
+  {
+    "name": "verdict: <= for <",
+    "old": "stored < log_seq",
+    "new": "stored <= log_seq"
+  },
+  {
+    "name": "verdict: position never releases",
+    "old": "position.is_none_or(|stored| stored < log_seq)",
+    "new": "position.is_none()"
+  },
+  {
+    "name": "verdict: a different logged event arms",
+    "old": "Some(other) if serde_json::to_value(other).ok() != serde_json::to_value(reserved).ok()",
+    "new": "Some(other) if serde_json::to_value(other).ok() == serde_json::to_value(reserved).ok()"
+  },
+  {
+    "name": "requested() is never true",
+    "old": ".try_with(|wanted| wanted.store(true, Ordering::SeqCst))\n        .is_ok()",
+    "new": ".try_with(|wanted| wanted.store(true, Ordering::SeqCst))\n        .is_err()"
+  },
+  {
+    "name": "may_push drops artifacts",
+    "old": "StreamResponse::StatusUpdate(_) | StreamResponse::ArtifactUpdate(_)",
+    "new": "StreamResponse::StatusUpdate(_)"
+  },
+  {
+    "name": "may_push includes snapshots",
+    "old": "StreamResponse::StatusUpdate(_) | StreamResponse::ArtifactUpdate(_)",
+    "new": "StreamResponse::StatusUpdate(_) | StreamResponse::ArtifactUpdate(_) | StreamResponse::Task(_)"
+  }
+]
