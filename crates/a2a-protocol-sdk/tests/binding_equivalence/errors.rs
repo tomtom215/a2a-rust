@@ -236,3 +236,86 @@ async fn card_ext_002_a_declared_but_unconfigured_extended_card_is_refused_on_ev
     let (_, answer) = raw(agent.url(Binding::JsonRpc), "POST", Some(rpc), Some("1.0")).await;
     assert_eq!(answer["error"]["code"], -32007, "{answer}");
 }
+
+/// What an invalid `Part` is refused with on each JSON binding, and what a
+/// valid one that looks alike is answered with.
+///
+/// `a2a.proto` declares a `Part`'s content as a `oneof`: exactly one of text,
+/// raw, url, data. A reader that maps a missing member to an empty text part
+/// (as another Rust SDK's protobuf converter did until a review found it, on
+/// its `main` of 2026-11-09) accepts a frame no conforming sender writes, and
+/// the agent then works on a message that says nothing. Here a part with no
+/// member, with only metadata, and with two members is `InvalidParams` on
+/// JSON-RPC (`-32602`) and HTTP+JSON (`400`, `INVALID_ARGUMENT`), creates no
+/// task, and an empty `text` (a member that is set) is still accepted: the
+/// refusal is of the missing member, not of emptiness. gRPC is pinned by
+/// `dispatch/grpc/part_content_tests.rs` in the server crate, which drives
+/// the generated service's own method with a protobuf `Part` whose oneof is
+/// unset.
+#[tokio::test]
+async fn a_part_with_no_content_or_two_is_refused_and_creates_no_task() {
+    let agent = serve(false, true).await;
+    let client = agent.client(Binding::JsonRpc, None).await;
+    let tasks_before = client
+        .list_tasks(a2a_protocol_types::params::ListTasksParams::default())
+        .await
+        .expect("list")
+        .tasks
+        .len();
+
+    let invalid = [
+        ("no member", json!({})),
+        ("metadata only", json!({"metadata": {"k": "v"}})),
+        ("filename only", json!({"filename": "a.txt"})),
+        (
+            "text and url",
+            json!({"text": "a", "url": "https://example.com/x"}),
+        ),
+        ("raw and data", json!({"raw": "aGk=", "data": {"k": 1}})),
+    ];
+    for (label, part) in invalid {
+        let message =
+            json!({"messageId": format!("bad-{label}"), "role": "ROLE_USER", "parts": [part]});
+
+        let rpc = json!({"jsonrpc": "2.0", "id": 1, "method": "SendMessage", "params": {"message": message}});
+        let (_, answer) = raw(agent.url(Binding::JsonRpc), "POST", Some(rpc), Some("1.0")).await;
+        assert_eq!(
+            answer["error"]["code"].as_i64(),
+            Some(i64::from(ErrorCode::InvalidParams.as_i32())),
+            "JSON-RPC, {label}: {answer}"
+        );
+
+        let url = format!("{}/message:send", agent.url(Binding::HttpJson));
+        let (status, answer) =
+            raw(url, "POST", Some(json!({"message": message})), Some("1.0")).await;
+        assert_eq!(status, 400, "HTTP+JSON, {label}: {answer}");
+        assert_eq!(
+            answer["error"]["status"], "INVALID_ARGUMENT",
+            "HTTP+JSON, {label}: {answer}"
+        );
+    }
+
+    // The control: a member that is set and empty is a valid part.
+    let message =
+        json!({"messageId": "ok-empty-text", "role": "ROLE_USER", "parts": [{"text": ""}]});
+    let rpc =
+        json!({"jsonrpc": "2.0", "id": 1, "method": "SendMessage", "params": {"message": message}});
+    let (_, answer) = raw(agent.url(Binding::JsonRpc), "POST", Some(rpc), Some("1.0")).await;
+    assert!(
+        answer["error"].is_null(),
+        "an empty text part is valid: {answer}"
+    );
+
+    let tasks_after = client
+        .list_tasks(a2a_protocol_types::params::ListTasksParams::default())
+        .await
+        .expect("list")
+        .tasks
+        .len();
+    assert_eq!(
+        tasks_after,
+        tasks_before + 1,
+        "only the control's task exists; the {} invalid sends created none",
+        5
+    );
+}

@@ -65,6 +65,8 @@ mod details;
 mod dispatcher;
 mod helpers;
 mod native;
+#[cfg(test)]
+mod part_content_tests;
 mod serve_config;
 mod serving;
 mod shutdown;
