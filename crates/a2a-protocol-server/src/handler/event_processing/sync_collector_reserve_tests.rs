@@ -175,7 +175,7 @@ impl Metrics for MetricsOf {
 }
 
 async fn next(rx: &mut mpsc::UnboundedReceiver<Seen>) -> Seen {
-    tokio::time::timeout(Duration::from_secs(900), rx.recv())
+    tokio::time::timeout(Duration::from_mins(15), rx.recv())
         .await
         .expect("no delivery within 15 minutes of (paused) time")
         .expect("the sender is gone")
@@ -224,7 +224,7 @@ async fn a_replica_lost_mid_request_has_its_stored_event_delivered_by_another() 
     let mut rig = Rig::new().await;
     rig.store.stop(Stop::After);
     let running = rig.blocking_request(vec![artifact()]);
-    tokio::time::timeout(Duration::from_secs(900), rig.store.parked.notified())
+    tokio::time::timeout(Duration::from_mins(15), rig.store.parked.notified())
         .await
         .expect("the write never reached its stop");
     rig.kill_a(running).await;
@@ -259,7 +259,7 @@ async fn an_event_is_delivered_while_the_request_is_still_running() {
     let mut rig = Rig::new().await;
     rig.store.stop_after(1, Stop::Before);
     let running = rig.blocking_request(vec![status(TaskState::Working), artifact()]);
-    tokio::time::timeout(Duration::from_secs(900), rig.store.parked.notified())
+    tokio::time::timeout(Duration::from_mins(15), rig.store.parked.notified())
         .await
         .expect("the second write never reached its stop");
 

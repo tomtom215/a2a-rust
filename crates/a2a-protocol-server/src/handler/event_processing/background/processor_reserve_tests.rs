@@ -128,7 +128,7 @@ impl Rig {
 /// comes would otherwise be waited for for ever, with the workers' polls
 /// advancing the clock: bounded, it fails.
 async fn next(rx: &mut mpsc::UnboundedReceiver<Seen>) -> Seen {
-    tokio::time::timeout(Duration::from_secs(900), rx.recv())
+    tokio::time::timeout(Duration::from_mins(15), rx.recv())
         .await
         .expect("no delivery within 15 minutes of (paused) time")
         .expect("the sender is gone")
@@ -136,7 +136,7 @@ async fn next(rx: &mut mpsc::UnboundedReceiver<Seen>) -> Seen {
 
 /// The write that is to stop has reached its stop.
 async fn parked(rig: &Rig) {
-    tokio::time::timeout(Duration::from_secs(900), rig.store.parked.notified())
+    tokio::time::timeout(Duration::from_mins(15), rig.store.parked.notified())
         .await
         .expect("the write never reached its stop");
 }
@@ -351,7 +351,7 @@ async fn a_processor_stalled_past_its_hold_records_afresh_and_the_webhook_hears_
     rig.store.resume.notify_one();
     running.await.unwrap();
     // One of the two replicas' workers delivers the fresh row.
-    let first = tokio::time::timeout(Duration::from_secs(900), async {
+    let first = tokio::time::timeout(Duration::from_mins(15), async {
         tokio::select! {
             seen = rig.a_seen.recv() => seen.unwrap(),
             seen = rig.b_seen.recv() => seen.unwrap(),
@@ -402,7 +402,7 @@ async fn without_a_task_store_the_lane_records_after_the_event_is_stored() {
     );
     lanes.push(&TaskId::new("t"), &status(1, TaskState::Working).event);
     assert_eq!(
-        tokio::time::timeout(Duration::from_secs(900), rx.recv())
+        tokio::time::timeout(Duration::from_mins(15), rx.recv())
             .await
             .expect("no delivery")
             .unwrap()

@@ -92,10 +92,11 @@ pub struct ClaimedDelivery {
     pub age: Duration,
 }
 
-/// A reservation whose hold has run out: the deliveries of one event that
-/// were reserved before the event was stored and never armed or released.
-/// The replica that reserved them stopped, or is stalled, so something else
-/// has to decide whether the event was stored (see
+/// A reservation whose hold has run out.
+///
+/// The deliveries of one event were reserved before the event was stored and
+/// never armed or released. The replica that reserved them stopped, or is
+/// stalled, so something else has to decide whether the event was stored (see
 /// [`PushOutbox::reserve`]).
 #[derive(Debug, Clone)]
 pub struct Held {

@@ -145,15 +145,14 @@ impl SqlitePushOutbox {
         self
     }
 
-    /// Records one delivery inside `tx`, reserved when `reserve` is given;
-    /// whether a row was dropped.
-    async fn record_one(
+    /// Makes room under `per_webhook` for one more row of `d`'s webhook: how
+    /// many rows it dropped, or `None` when there is nothing to drop and `d`
+    /// does not end a turn, so `d` is the row not kept.
+    async fn make_room(
         tx: &mut sqlx::SqliteConnection,
         d: &NewDelivery,
-        event: &str,
         per_webhook: usize,
-        reserve: Option<&Reserve<'_>>,
-    ) -> Result<usize, sqlx::Error> {
+    ) -> Result<Option<usize>, sqlx::Error> {
         let waiting: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM a2a_push_outbox
              WHERE tenant = ?1 AND caller IS ?2 AND task_id = ?3 AND config_id = ?4",
@@ -164,29 +163,42 @@ impl SqlitePushOutbox {
         .bind(&d.config_id)
         .fetch_one(&mut *tx)
         .await?;
-        let dropped = if usize::try_from(waiting).unwrap_or(usize::MAX) >= per_webhook.max(1) {
-            let removed = sqlx::query(concat!(
-                "DELETE FROM a2a_push_outbox WHERE seq = (
-                    SELECT seq FROM a2a_push_outbox
-                    WHERE tenant = ?1 AND caller IS ?2 AND task_id = ?3 AND config_id = ?4
-                      AND ends_turn = 0 AND armed = 1 AND (lease_ms IS NULL OR lease_ms <= ",
-                now_ms!(),
-                ")
-                    ORDER BY seq LIMIT 1)"
-            ))
-            .bind(&d.tenant)
-            .bind(&d.caller)
-            .bind(&d.task_id)
-            .bind(&d.config_id)
-            .execute(&mut *tx)
-            .await?
-            .rows_affected();
-            if removed == 0 && !d.ends_turn {
-                return Ok(1);
-            }
-            usize::try_from(removed).unwrap_or(0)
-        } else {
-            0
+        if usize::try_from(waiting).unwrap_or(usize::MAX) < per_webhook.max(1) {
+            return Ok(Some(0));
+        }
+        let removed = sqlx::query(concat!(
+            "DELETE FROM a2a_push_outbox WHERE seq = (
+                SELECT seq FROM a2a_push_outbox
+                WHERE tenant = ?1 AND caller IS ?2 AND task_id = ?3 AND config_id = ?4
+                  AND ends_turn = 0 AND armed = 1 AND (lease_ms IS NULL OR lease_ms <= ",
+            now_ms!(),
+            ")
+                ORDER BY seq LIMIT 1)"
+        ))
+        .bind(&d.tenant)
+        .bind(&d.caller)
+        .bind(&d.task_id)
+        .bind(&d.config_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+        if removed == 0 && !d.ends_turn {
+            return Ok(None);
+        }
+        Ok(Some(usize::try_from(removed).unwrap_or(0)))
+    }
+
+    /// Records one delivery inside `tx`, reserved when `reserve` is given;
+    /// whether a row was dropped.
+    async fn record_one(
+        tx: &mut sqlx::SqliteConnection,
+        d: &NewDelivery,
+        event: &str,
+        per_webhook: usize,
+        reserve: Option<&Reserve<'_>>,
+    ) -> Result<usize, sqlx::Error> {
+        let Some(dropped) = Self::make_room(tx, d, per_webhook).await? else {
+            return Ok(1);
         };
         sqlx::query(concat!(
             "INSERT INTO a2a_push_outbox

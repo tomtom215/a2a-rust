@@ -27,16 +27,10 @@ async fn emptied(url: &str) -> PostgresPushOutbox {
     outbox
 }
 
-#[tokio::test]
-#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
-async fn the_postgres_outbox_keeps_the_contract_across_replicas_and_restarts() {
-    let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
-
-    contract::run_all(|| emptied(&url)).await;
-
+async fn two_replicas_claim_at_once(url: &str) {
     // Two replicas claim at once: every row is claimed by exactly one.
-    let a = emptied(&url).await;
-    let b = PostgresPushOutbox::new(&url).await.expect("outbox");
+    let a = emptied(url).await;
+    let b = PostgresPushOutbox::new(url).await.expect("outbox");
     let rows: Vec<_> = (0..40)
         .map(|i| delivery("", &format!("c{i}"), TaskState::Working))
         .collect();
@@ -49,10 +43,14 @@ async fn the_postgres_outbox_keeps_the_contract_across_replicas_and_restarts() {
     seqs.dedup();
     assert_eq!(seqs.len(), 40, "every row claimed once");
     assert_eq!(mine.len() + theirs.len(), 40, "and no row twice");
+}
 
+async fn a_later_row_waits_for_the_other_replicas_claim(url: &str) {
+    let lease = Duration::from_secs(60);
     // A webhook's later row is not claimable while its earlier one is
     // claimed by the other replica.
-    let a = emptied(&url).await;
+    let a = emptied(url).await;
+    let b = PostgresPushOutbox::new(url).await.expect("outbox");
     a.record(
         vec![
             delivery("", "w", TaskState::Working),
@@ -64,32 +62,38 @@ async fn the_postgres_outbox_keeps_the_contract_across_replicas_and_restarts() {
     .unwrap();
     assert_eq!(a.claim("a", 10, lease).await.unwrap().len(), 1);
     assert!(b.claim("b", 10, lease).await.unwrap().is_empty());
+}
 
+async fn rows_outlive_the_pool_that_recorded_them(url: &str) {
+    let lease = Duration::from_secs(60);
     // What one pool recorded, a new pool claims once the lease is gone.
-    let a = emptied(&url).await;
+    let a = emptied(url).await;
     let row = delivery("t", "a", TaskState::Completed);
     let id = row.delivery_id.clone();
     a.record(vec![row], 10).await.unwrap();
     a.claim("gone", 10, Duration::ZERO).await.unwrap();
     a.pool.close().await;
-    let later = PostgresPushOutbox::new(&url).await.expect("outbox");
+    let later = PostgresPushOutbox::new(url).await.expect("outbox");
     let claimed = later.claim("next", 10, lease).await.unwrap();
     assert_eq!(claimed.len(), 1);
     assert_eq!(claimed[0].delivery.delivery_id, id);
     assert!(claimed[0].age < Duration::from_secs(60));
     assert!(format!("{later:?}").starts_with("PostgresPushOutbox"));
+}
 
+async fn another_replica_settles_a_stopped_replicas_reservation(url: &str) {
+    let lease = Duration::from_secs(60);
     // A replica reserves, then stops: another replica, not the one that
     // reserved, finds the reservation held, arms it, and claims the row, with
     // the delivery id the first replica gave it (audit H14).
-    let a = emptied(&url).await;
+    let a = emptied(url).await;
     let row = delivery("t", "a", TaskState::Working);
     let id = row.delivery_id.clone();
     a.reserve("r1", 5, vec![row], 10, Duration::ZERO)
         .await
         .unwrap();
     a.pool.close().await;
-    let b = PostgresPushOutbox::new(&url).await.expect("outbox");
+    let b = PostgresPushOutbox::new(url).await.expect("outbox");
     assert!(b.claim("b", 10, lease).await.unwrap().is_empty());
     let held = b.held(10).await.unwrap();
     assert_eq!((held[0].reservation.as_str(), held[0].log_seq), ("r1", 5));
@@ -100,11 +104,13 @@ async fn the_postgres_outbox_keeps_the_contract_across_replicas_and_restarts() {
             .delivery_id,
         id
     );
+}
 
+async fn two_replicas_settle_one_reservation(url: &str) {
     // Two replicas settle one reservation at once: arming is idempotent and
     // releasing leaves what is armed.
-    let a = emptied(&url).await;
-    let b = PostgresPushOutbox::new(&url).await.expect("outbox");
+    let a = emptied(url).await;
+    let b = PostgresPushOutbox::new(url).await.expect("outbox");
     a.reserve(
         "r2",
         6,
@@ -118,10 +124,13 @@ async fn the_postgres_outbox_keeps_the_contract_across_replicas_and_restarts() {
     assert_eq!((armed_a.unwrap(), armed_b.unwrap()), (1, 1));
     b.release("r2").await.unwrap();
     assert_eq!(a.pending().await.unwrap(), 1, "armed rows are not released");
+}
 
+async fn an_older_table_is_upgraded(url: &str) {
+    let lease = Duration::from_secs(60);
     // A table an earlier build created, without the two-phase columns, is
     // upgraded in place and its rows are armed.
-    let a = emptied(&url).await;
+    let a = emptied(url).await;
     let old = delivery("t", "a", TaskState::Working);
     for column in ["armed", "reservation", "log_seq", "hold_until"] {
         let drop_column = format!("ALTER TABLE a2a_push_outbox DROP COLUMN {column}");
@@ -139,7 +148,21 @@ async fn the_postgres_outbox_keeps_the_contract_across_replicas_and_restarts() {
     .execute(&a.pool)
     .await
     .unwrap();
-    let upgraded = PostgresPushOutbox::new(&url).await.expect("outbox");
+    let upgraded = PostgresPushOutbox::new(url).await.expect("outbox");
     assert_eq!(upgraded.claim("u", 10, lease).await.unwrap().len(), 1);
     assert!(upgraded.held(10).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
+async fn the_postgres_outbox_keeps_the_contract_across_replicas_and_restarts() {
+    let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+
+    contract::run_all(|| emptied(&url)).await;
+    two_replicas_claim_at_once(&url).await;
+    a_later_row_waits_for_the_other_replicas_claim(&url).await;
+    rows_outlive_the_pool_that_recorded_them(&url).await;
+    another_replica_settles_a_stopped_replicas_reservation(&url).await;
+    two_replicas_settle_one_reservation(&url).await;
+    an_older_table_is_upgraded(&url).await;
 }

@@ -155,7 +155,10 @@ impl PushLanes {
 
 impl Reservation {
     /// Runs `fold`, the event's whole processing, noting whether it pushes.
-    pub fn scope<F: Future>(&self, fold: F) -> impl Future<Output = F::Output> + use<F> {
+    pub(in crate::handler::event_processing) fn scope<F: Future>(
+        &self,
+        fold: F,
+    ) -> impl Future<Output = F::Output> + use<F> {
         WANTED.scope(Arc::clone(&self.wanted), fold)
     }
 
@@ -165,7 +168,7 @@ impl Reservation {
     /// settling, which reaches the same answer from the store; a reservation
     /// that settling already removed (the fold outlasted the hold, and the
     /// store did not yet show the event) is recorded afresh.
-    pub async fn settle(self) {
+    pub(in crate::handler::event_processing) async fn settle(self) {
         let Some(outboxed) = self.lanes.outbox.as_ref() else {
             return;
         };

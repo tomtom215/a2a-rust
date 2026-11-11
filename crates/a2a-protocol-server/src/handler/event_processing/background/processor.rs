@@ -269,6 +269,18 @@ impl<'a> Processor<'a> {
             None => folded.await,
         };
 
+        self.conclude(outcome, seq, terminal, pushes_terminal).await;
+    }
+
+    /// What the fold's outcome means for the run: another writer's verdict,
+    /// a lost claim, or an event stored (or not) and, if terminal, ended.
+    async fn conclude(
+        &mut self,
+        outcome: Outcome,
+        seq: Option<u64>,
+        terminal: Option<StreamResponse>,
+        pushes_terminal: bool,
+    ) {
         match outcome {
             Outcome::Refused(conflict) => self.supersede(&conflict, seq, terminal.is_some()).await,
             Outcome::ClaimLost => self.lose_claim(seq, terminal.is_some()).await,
@@ -279,7 +291,7 @@ impl<'a> Processor<'a> {
                 if let Some(event) = terminal {
                     // Idempotent: a ticket `on_persisted` already answered is
                     // gone, and resolving it again does nothing.
-                    release(&event);
+                    self.answer(seq, event.clone());
                     self.record(seq, event).await;
                     self.ended = true;
                 }
