@@ -21,7 +21,8 @@ mod outbox_worker;
 mod reservation;
 pub use lanes::{PushLanes, ends_turn};
 #[cfg(test)]
-pub(super) use outbox_worker::hold as reservation_hold;
+pub(in crate::handler::event_processing) use outbox_worker::hold as reservation_hold;
+pub(in crate::handler::event_processing) use reservation::requested as push_requested;
 
 /// Which timeout label a cut-off delivery deserves.
 ///

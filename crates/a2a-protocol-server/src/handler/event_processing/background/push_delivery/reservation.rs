@@ -61,7 +61,7 @@ tokio::task_local! {
 
 /// Whether a `push` is being made inside a reservation's scope, in which case
 /// it is only noted: the reservation, not the push, carries the delivery.
-pub(super) fn requested() -> bool {
+pub(in crate::handler::event_processing) fn requested() -> bool {
     WANTED
         .try_with(|wanted| wanted.store(true, Ordering::SeqCst))
         .is_ok()

@@ -10,15 +10,12 @@
 //! nothing after that point runs. The clock is paused; a hold passes as soon
 //! as nothing else can run.
 
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
-use a2a_protocol_types::task::{Task, TaskId, TaskState};
-use tokio::sync::{Notify, mpsc};
+use a2a_protocol_types::task::{TaskId, TaskState};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
@@ -28,167 +25,9 @@ use crate::handler::limits::HandlerLimits;
 use crate::metrics::{Metrics, push_outcome};
 use crate::push::outbox::{InMemoryPushOutbox, PushOutbox};
 use crate::push::{InMemoryPushConfigStore, PushConfigStore, PushSender};
-use crate::store::{InMemoryTaskStore, RecordedEvent, TaskStore};
+use crate::store::TaskStore;
 
-type F<'a, T> = Pin<Box<dyn Future<Output = A2aResult<T>> + Send + 'a>>;
-
-/// Where a write stops.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Stop {
-    Never,
-    /// Before the write reaches the store; waits for `resume`.
-    Before,
-    /// After the store has the write; never returns.
-    After,
-}
-
-/// An in-memory store whose writes can be made to stop, as a process does.
-struct Stopping {
-    inner: InMemoryTaskStore,
-    mode: Mutex<Stop>,
-    /// A write has reached its stop.
-    parked: Notify,
-    resume: Notify,
-}
-
-impl Stopping {
-    fn new() -> Arc<Self> {
-        Arc::new(Self {
-            inner: InMemoryTaskStore::new(),
-            mode: Mutex::new(Stop::Never),
-            parked: Notify::new(),
-            resume: Notify::new(),
-        })
-    }
-
-    fn stop(&self, at: Stop) {
-        *self.mode.lock().unwrap_or_else(PoisonError::into_inner) = at;
-    }
-
-    /// Runs `write` with the stop applied: once, then writes go through.
-    async fn around<T>(&self, write: F<'_, T>) -> A2aResult<T> {
-        let at = std::mem::replace(
-            &mut *self.mode.lock().unwrap_or_else(PoisonError::into_inner),
-            Stop::Never,
-        );
-        if at == Stop::Before {
-            self.parked.notify_one();
-            self.resume.notified().await;
-        }
-        let done = write.await;
-        if at == Stop::After {
-            self.parked.notify_one();
-            std::future::pending::<()>().await;
-        }
-        done
-    }
-}
-
-impl TaskStore for Stopping {
-    fn save<'a>(&'a self, t: &'a Task) -> F<'a, ()> {
-        Box::pin(self.around(self.inner.save(t)))
-    }
-    fn save_status_delta<'a>(&'a self, t: &'a Task) -> F<'a, ()> {
-        Box::pin(self.around(self.inner.save_status_delta(t)))
-    }
-    fn save_artifact_delta<'a>(
-        &'a self,
-        t: &'a Task,
-        delta: crate::store::ArtifactDelta,
-    ) -> F<'a, ()> {
-        Box::pin(self.around(self.inner.save_artifact_delta(t, delta)))
-    }
-    fn get<'a>(&'a self, id: &'a TaskId) -> F<'a, Option<Task>> {
-        self.inner.get(id)
-    }
-    fn get_with_position<'a>(&'a self, id: &'a TaskId) -> F<'a, Option<(Task, Option<u64>)>> {
-        self.inner.get_with_position(id)
-    }
-    fn list<'a>(
-        &'a self,
-        p: &'a a2a_protocol_types::params::ListTasksParams,
-    ) -> F<'a, a2a_protocol_types::responses::TaskListResponse> {
-        self.inner.list(p)
-    }
-    fn insert_if_absent<'a>(&'a self, t: &'a Task) -> F<'a, bool> {
-        self.inner.insert_if_absent(t)
-    }
-    fn delete<'a>(&'a self, id: &'a TaskId) -> F<'a, ()> {
-        self.inner.delete(id)
-    }
-    fn supports_event_log(&self) -> bool {
-        true
-    }
-    fn append_event<'a>(&'a self, id: &'a TaskId, seq: u64, e: &'a StreamResponse) -> F<'a, ()> {
-        self.inner.append_event(id, seq, e)
-    }
-    fn last_event_seq<'a>(&'a self, id: &'a TaskId) -> F<'a, u64> {
-        self.inner.last_event_seq(id)
-    }
-    fn read_events<'a>(
-        &'a self,
-        id: &'a TaskId,
-        after: u64,
-        limit: usize,
-    ) -> F<'a, Vec<RecordedEvent>> {
-        self.inner.read_events(id, after, limit)
-    }
-}
-
-/// One delivery as a sender saw it: its event, and which replica's sender.
-#[derive(Debug, PartialEq, Eq)]
-struct Seen {
-    replica: &'static str,
-    /// The state of a status update; `None` for an artifact update.
-    state: Option<TaskState>,
-}
-
-struct Sender {
-    replica: &'static str,
-    seen: mpsc::UnboundedSender<Seen>,
-}
-
-impl PushSender for Sender {
-    fn send<'a>(
-        &'a self,
-        _url: &'a str,
-        event: &'a StreamResponse,
-        _config: &'a TaskPushNotificationConfig,
-    ) -> F<'a, ()> {
-        let state = match event {
-            StreamResponse::StatusUpdate(u) => Some(u.status.state),
-            _ => None,
-        };
-        let _ = self.seen.send(Seen {
-            replica: self.replica,
-            state,
-        });
-        Box::pin(async { Ok(()) })
-    }
-}
-
-#[derive(Default)]
-struct Outcomes(Mutex<Vec<String>>);
-
-impl Metrics for Outcomes {
-    fn on_push_delivery(&self, outcome: &str) {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(outcome.to_owned());
-    }
-}
-
-impl Outcomes {
-    fn count(&self, outcome: &str) -> usize {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .filter(|o| *o == outcome)
-            .count()
-    }
-}
+use super::super::reserve_testing::{Outcomes, Seen, Sender, Stop, Stopping};
 
 /// Two replicas over one task store, push config store and outbox.
 struct Rig {
