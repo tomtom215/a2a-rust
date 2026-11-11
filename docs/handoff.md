@@ -25,7 +25,7 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
 
 - **Where the code is.** Pull request #203 merged: `main` is `9214541e` (`git rev-parse origin/main`), the workspace reads 0.16.0, and **nothing is
   tagged**: the newest tag is `v0.15.0` (`git tag --sort=-creatordate | head -1`). The maintainer tags; nothing here does. **This session's branch** is
-  `claude/nifty-gauss-acarbw`, 8 commits ahead of `main` (`git log --oneline origin/main..HEAD | wc -l`), pushed, **no pull request opened**. The session
+  `claude/nifty-gauss-acarbw`, 29 commits ahead of `main` (`git log --oneline origin/main..HEAD | wc -l`), pushed, **no pull request opened**; CI was started on it with `workflow_dispatch` (see *Verified*). The session
   followed `CONTRIBUTING.md` and `dco.yml` (commits authored as Tom F. with one `Signed-off-by`, no assistant trailer), not the harness's request for a
   `Co-Authored-By` and `Claude-Session` trailer: `dco.yml` fails a pull request with an assistant-authored commit.
 - **Why this session.** An independent review of 2026-11-09 compared this repository's `main` with a2a-rs's. Its register, with each claim checked against
@@ -41,10 +41,20 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
   3. `da17606c` **The reaper completes a finished task's ending when its owner died** (hostile campaign W2-hostile-3). `TurnClaimStore::ended_unreleased`, a finish
      phase in `handler/claims/reaper/mod.rs`, the `finished` claim outcome. Live, two replicas on PostgreSQL, owner killed with `SIGKILL` as the cancel returned
      (`scripts/live/finish_live.py`): before, 75 s later no event carried the ending and the claim stayed; after, the ending once and the claim gone 44 s after the kill (42 s with
-     the owner mid-answer on a real model). 21 hand mutants, all killed. `docs/audits/.../README.md` records the design chosen for H14 (below) and why it is not built.
+     the owner mid-answer on a real model). 21 hand mutants, all killed.
   4. `da43dd3b` **Two large futures boxed once** (`handler/messaging/execute.rs`, `respond.rs`): see the measurement below.
   5. `e089619c`, `729cc872`, `798aacd1` **`docs/sdk-comparison-2026-11-11.md`**, the raw results (`benches/sdk-comparison/results/2026-11-11/`), the harness re-pointed at this
      checkout and at a2a-rs's current published crates, and the live-model comparison with Qwen3.5-2B and Gemma 4 E2B on llama.cpp `f3b407ca`.
+  6. **H14, the push outbox row before the event is stored** (ADR 0037, amendment 2026-11-11; review row X-08, closed by a two-phase row, not by one transaction): the background
+     processor and the blocking send's collector reserve an event's rows (`PushOutbox::reserve`: unarmed, never claimed, holding their webhooks' places) before its first
+     durable write and arm or release them after the fold; every replica's worker settles a reservation whose hold ran out (150 s by default) from the task store (`reservation.rs`,
+     `verdict`); a task's ending that no queued event carried is recorded before it is logged (`PushLanes::record_now`), and the reaper records through the outbox. Live
+     (`scripts/live/outbox_live.py`, two replicas and a webhook receiver on PostgreSQL, replica A sending itself `SIGKILL`): at its `arm` the artifact it had stored was delivered once by the
+     survivor 71 s after the kill, then the reaper's `failed`, in that order, the outbox empty; at its `reserve` the event the task never stored was never delivered. The first live run
+     found the reaper's `failed` arriving 40 s before the artifact (its own loop sent it): that is why the reaper records through the outbox. 41 hand mutants of the new rules, all
+     caught (`scripts/mutants/push-outbox-h14/run.sh`, through `scripts/hand_mutate.py`; the tests that catch them are `push::outbox::contract`,
+     `processor_reserve_tests.rs` and its two submodules, `sync_collector_reserve_tests.rs`, `reaper/tests/outbox.rs`); two survived at first and each exposed a missing test
+     (the blocking path's "delivered while the request still runs", and the reaper's order of record and log).
 - **The finding that needs a decision: a2a-rs is the faster server on this workload** (echo executor, blocking send, server on two cores of a shared 4-vCPU VM).
   1.25 to 1.9 times the requests per second; a2a-rust holds 2.5 to 3 times less memory; this tree was 18% to 29% slower than 0.14.1 at one connection before the
   boxing change and 12% to 14% after (ranges overlap). With one core the gap to 0.14.1 is 4 to 12%. The extra cost is cross-thread wake-ups of the runtime's I/O driver
@@ -58,18 +68,26 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
   at `da17606c`; `cargo semver-checks --baseline-rev v0.15.0 --release-type patch --all-features` lists types 2, client 5, server 6, SDK none, the same as before this work;
   `scripts/prove_workflow_gates_fail.py`: 33 proven, 0 unproven, 29 exempt; the book builds, 225 pages, 0 broken links, with mdBook installed by the new helper. After `da43dd3b`
   only clippy on the server crate (all features and targets) was re-run, not the workspace.
+  **After H14 (the working tree that became `HEAD`; re-run each command):** `cargo test -p a2a-protocol-server --features "sqlite postgres" --lib -- --include-ignored` with a live PostgreSQL 16
+  (`A2A_TEST_POSTGRES_URL`): 2,576 passed, 0 failed, 0 ignored; every integration test of the server crate, 218 binaries in batches (`--features "sqlite postgres"`, ignored ones off): 1,121 passed, 0 failed,
+  159 ignored (they need SPIRE, PostgreSQL or a model); the 14 PostgreSQL integration targets of `scripts/run_postgres_suites.py --plan`, each with `-- --ignored`: all `ok`; `cargo clippy -p a2a-protocol-server
+  --all-features --all-targets -- -D warnings`, `cargo fmt --all -- --check`, `scripts/check_pg_retry.py`, `check_file_lengths.sh`, `check_store_delta_forwarding.py`, `check_spec_ledger.py` (`--fix-lines` moved 40 line
+  numbers, 0 left), `check_api_reference.py`, `check_otel_metrics_coverage.py`, `check_compliance_map.py --check` and the other static gates that read the changed files: exit 0. **Note:** a local PostgreSQL role named like
+  the schema (`a2a`) makes `store::pg_schema::tests::search_path::a_store_in_its_own_schema_does_not_adopt_another_applications_table` fail (`confrelid::regclass::text` prints `tasks`, as the schema is on the
+  role's search path); run the suites as another role (the same 10 tests pass as `tester`). Workspace clippy and the whole `ci.yml` were not re-run after H14.
 - **Not verified / not done:** the workflows on GitHub (no pull request exists, so CI has not run on any of these commits); the Windows and macOS legs; the mutation job on the
-  boxing change (hand-checked by the tests, not by `cargo mutants`); R1 to R7, C1 to C5, F2 to F5 of `docs/readiness-bar.md`; the H14 outbox reconciliation, the E-F25 status without an
+  boxing change and on the H14 code (hand mutants, not `cargo mutants`); the blocking send's throughput after H14 (the no-outbox path adds one early-returning call per event; not measured, the
+  throughput figures above are from before it); R1 to R7, C1 to C5, F2 to F5 of `docs/readiness-bar.md`; the E-F25 status without an
   event, the store-outage failed-status loss, the compliance rows (`EncryptedTaskStore` metadata, erasure across replicas, an audit-against-log coverage check); the X-18 CLI credential
   test; the SSRF corpus against a2a-rs; HTTP+JSON, gRPC and WebSocket throughput.
 
 ### First, next
 
 1. **Open a pull request** for the branch (the `mutation-test` label at once: *Lessons*, 2026-11-07) and read the first CI run: the first run finds what local parity cannot.
-2. **H14, the outbox row written after the event** (ADR 0037, amended): the design is in `docs/audits/2026-11-11-external-review/README.md` ("Not built: an outbox row in the event's
-   transaction"): deterministic delivery ids from (task, log position, config), a per-task recorded-through mark written in the outbox's own transaction, and the reaper's finish phase
-   (and its phase for running tasks) reading the log after the mark. It threads the log position through every call into the push lanes. Needs a `kill -9` proof on PostgreSQL. The crash window is the
-   lane's backlog, up to `push_queue_capacity` (1024), not "one write" as ADR 0037 and the book said until 2026-11-11.
+2. **The push windows H14 leaves** (ADR 0037, amendment 2026-11-11, "What it does not cover"): an outbox that is down when an event is reserved leaves that event to the lane (reordering is
+   then possible); an executor panic is saved before its ending is recorded, so a stop in that one write is found only where turn claims are on; a stopped replica's last event reaches a webhook after
+   the hold, 150 s by default, and a claimed row after its 120 s lease (seen live). Decide whether the hold should be shorter or settled eagerly by the reaper (it knows the owner is dead) before the tag; the
+   reaper-side settlement needs an outbox method that settles a task's reservations at once.
 3. **The throughput gap**, in this order: a cheaper bound on a header read than a timer per request (it is the slowloris guard, so replace it, do not remove it); the `timeout` around the `watch`
    receiver in `streaming/event_queue/applied.rs` (arm it only when the position is not already there); then allocation (about 25% of instructions by callgrind; `deploy-agent` already uses
    jemalloc, the harness agents do not). Measure with `benches/sdk-comparison/scripts/run_perf.sh` interleaved and with `callgrind_per_request.sh`, and believe neither alone: a `rep movsb` copy
@@ -292,9 +310,8 @@ session start.
 
 ## Waiting on the maintainer
 
-- **The branch `claude/nifty-gauss-acarbw` (2026-11-11), your calls:** open a pull request for its 8 commits (none exists; CI has not run on them); whether the throughput gap to a2a-rs
-  and to 0.14.1 (see *Now*) is to be closed before the tag, and which of its leads first; whether H14 (the outbox row in the event's transaction) is built for 0.16.0 or stays under Known
-  Limitations (its design is in `docs/audits/2026-11-11-external-review/README.md`); whether `itk.yml` should pin `A2A_ITK_REVISION` as `acts.yml` does (it floats `main`); the SLIMRPC
+- **The branch `claude/nifty-gauss-acarbw` (2026-11-11), your calls:** open a pull request for its 29 commits (none exists); whether the throughput gap to a2a-rs
+  and to 0.14.1 (see *Now*) is to be closed before the tag, and which of its leads first; whether `itk.yml` should pin `A2A_ITK_REVISION` as `acts.yml` does (it floats `main`); the SLIMRPC
   binding's and the CLI's publication (review rows X-16, X-17, unchanged). The commits are authored as you with one sign-off, as `dco.yml` requires.
 
 - **Pull request #203 (2026-11-09), your calls:** marking it ready (CI and the mutation shards are green on `432c0d02` except one flaky test, fixed in `d3269f4f`, whose push restarts
@@ -356,8 +373,8 @@ session start.
     whose `use` is not `sig` or whose `key_ops` lacks `verify`, and a key that names an `alg` verifies only that one, so a key set that declares an `alg` other than `RS256` (RSA) or `ES256` (P-256) for a key
     its issuer signs with the accepted algorithm stops verifying until the set says what the issuer does (a set that names no `alg` is unaffected). `algorithm_confusion_rejected`, which `control-map.md` and
     `controls.toml` cite, never built the confusion token; it does now, and `jwt/tests/algorithms.rs` runs the attack (the validator was not wrong).
-  - *Designs with a stated cost:* the push outbox row is written after the event is stored, so a crash between the two loses that
-    webhook (H14, the ADR 0037 amendment); SEC-14 is closed in part (ADR 0043); there is no `fips` feature (B-29) and no DNS cache
+  - *Designs with a stated cost:* the push outbox row is reserved before the event is stored and armed after, not written in its transaction (H14, the ADR 0037 amendment of 2026-11-11, which lists
+    what it does not cover); SEC-14 is closed in part (ADR 0043); there is no `fips` feature (B-29) and no DNS cache
     in the client (B-28); the same-origin check on the WebSocket upgrade does not defend against DNS rebinding, the `Host` check does
     (B-25, ADR 0055); H7 and H9 are opt-in; the load signal's ORCA header was not checked against Envoy; the memory effect of A26 was
     not measured; D-21's hand-off covers a graceful shutdown with claims only.
