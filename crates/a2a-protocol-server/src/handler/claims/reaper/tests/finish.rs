@@ -308,7 +308,25 @@ pub(super) async fn the_reaper_completes_the_ending_of_a_finished_task(
     reaper.look().await;
     assert_eq!(log(cancelled.clone()).await.len(), 1, "no second ending");
     assert_eq!(sender.0.lock().unwrap().len(), 1, "no second delivery");
-    assert_eq!(count(), first, "a second look finishes nothing new");
+    for (id, _) in &logged {
+        assert_eq!(
+            log(id.clone()).await.len(),
+            1,
+            "{id}: not ended again by the second look"
+        );
+    }
+    // `recent` expired inside the margin when the first look ran. Whether it has
+    // aged out of it by now depends on how long the first look and its checks
+    // took, which on a loaded runner is longer than the margin (CI saw a second
+    // look finish it): both are right, and the count must say which. The second
+    // look finishes nothing but `recent`, and only if it went stale meanwhile.
+    let recent_ended = log(recent.clone()).await.len();
+    assert!(recent_ended <= 1, "{recent}: ended at most once");
+    assert_eq!(
+        count(),
+        first + recent_ended,
+        "a second look finishes nothing new, except `recent` if it went stale"
+    );
     assert!(log(mine.clone()).await.is_empty(), "still held");
     claims.held().remove("mine");
     tokio::time::sleep(ttl + Duration::from_millis(300)).await;
