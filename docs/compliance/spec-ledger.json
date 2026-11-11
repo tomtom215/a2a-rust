@@ -44,7 +44,7 @@
     "tools/a2a-codegen/src/config.rs:165 Config::validate",
     "tools/a2a-codegen/src/shadow.rs:67 find",
     "crates/a2a-protocol-types/codegen.toml:4 \"How tools/a2a-codegen turns proto/a2a_v1/a2a.proto\"",
-    ".github/workflows/ci.yml:96 \"Generated types match the proto\"",
+    ".github/workflows/ci.yml:99 \"Generated types match the proto\"",
     "crates/a2a-protocol-types/src/generated/task.rs:68 Task",
     "crates/a2a-protocol-types/src/generated/responses.rs:12 TaskListResponse",
     "crates/a2a-protocol-types/src/generated/security.rs:180 OAuthFlows"
