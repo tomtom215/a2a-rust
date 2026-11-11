@@ -22,12 +22,12 @@ use sqlx::Row as _;
 use sqlx::postgres::PgPool;
 
 use super::body::{Body, context};
-use super::{ClaimedDelivery, NewDelivery, OutboxFuture, PushOutbox};
+use super::{ClaimedDelivery, Held, NewDelivery, OutboxFuture, PushOutbox};
 use crate::metrics::{Metrics, NoopMetrics};
 use crate::push::PushConfigCipher;
 use crate::store::pg_retry;
 
-const SCHEMA: [&str; 3] = [
+const SCHEMA: [&str; 8] = [
     "CREATE TABLE IF NOT EXISTS a2a_push_outbox (
         seq         BIGSERIAL   PRIMARY KEY,
         delivery_id TEXT        NOT NULL UNIQUE,
@@ -41,12 +41,31 @@ const SCHEMA: [&str; 3] = [
         recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         due_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
         owner       TEXT,
-        lease_until TIMESTAMPTZ
+        lease_until TIMESTAMPTZ,
+        armed       BOOLEAN     NOT NULL DEFAULT TRUE,
+        reservation TEXT,
+        log_seq     BIGINT,
+        hold_until  TIMESTAMPTZ
     )",
+    // A table an earlier build created has none of the two-phase columns
+    // (audit H14); rows it holds are armed.
+    "ALTER TABLE a2a_push_outbox ADD COLUMN IF NOT EXISTS armed BOOLEAN NOT NULL DEFAULT TRUE",
+    "ALTER TABLE a2a_push_outbox ADD COLUMN IF NOT EXISTS reservation TEXT",
+    "ALTER TABLE a2a_push_outbox ADD COLUMN IF NOT EXISTS log_seq BIGINT",
+    "ALTER TABLE a2a_push_outbox ADD COLUMN IF NOT EXISTS hold_until TIMESTAMPTZ",
+    "CREATE INDEX IF NOT EXISTS a2a_push_outbox_reservation
+        ON a2a_push_outbox (reservation) WHERE reservation IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS a2a_push_outbox_webhook
         ON a2a_push_outbox (tenant, caller, task_id, config_id, seq)",
     "CREATE INDEX IF NOT EXISTS a2a_push_outbox_due ON a2a_push_outbox (due_at)",
 ];
+
+/// How a row being inserted was reserved, when it was.
+struct Reserve<'a> {
+    id: &'a str,
+    log_seq: i64,
+    hold_secs: f64,
+}
 
 /// A [`PushOutbox`] in a PostgreSQL database; see the module documentation.
 #[derive(Clone)]
@@ -125,6 +144,7 @@ impl PostgresPushOutbox {
         deliveries: &[NewDelivery],
         bodies: &[String],
         per_webhook: usize,
+        reserve: Option<&Reserve<'_>>,
     ) -> Result<usize, sqlx::Error> {
         let mut dropped = 0;
         for (d, event) in deliveries.iter().zip(bodies) {
@@ -145,7 +165,7 @@ impl PostgresPushOutbox {
                         SELECT seq FROM a2a_push_outbox
                         WHERE tenant = $1 AND caller IS NOT DISTINCT FROM $2
                           AND task_id = $3 AND config_id = $4 AND NOT ends_turn
-                          AND (lease_until IS NULL OR lease_until <= now())
+                          AND armed AND (lease_until IS NULL OR lease_until <= now())
                         ORDER BY seq LIMIT 1)",
                 )
                 .bind(&d.tenant)
@@ -163,8 +183,11 @@ impl PostgresPushOutbox {
             }
             sqlx::query(
                 "INSERT INTO a2a_push_outbox
-                    (delivery_id, tenant, caller, task_id, config_id, event, ends_turn)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                    (delivery_id, tenant, caller, task_id, config_id, event, ends_turn,
+                     armed, reservation, log_seq, hold_until)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                         CASE WHEN $11::float8 IS NULL THEN NULL
+                              ELSE now() + make_interval(secs => $11::float8) END)",
             )
             .bind(&d.delivery_id)
             .bind(&d.tenant)
@@ -173,6 +196,10 @@ impl PostgresPushOutbox {
             .bind(&d.config_id)
             .bind(event)
             .bind(d.ends_turn)
+            .bind(reserve.is_none())
+            .bind(reserve.map(|r| r.id))
+            .bind(reserve.map(|r| r.log_seq))
+            .bind(reserve.map(|r| r.hold_secs))
             .execute(&mut *tx)
             .await?;
         }
@@ -221,22 +248,137 @@ impl PostgresPushOutbox {
     }
 }
 
+impl PostgresPushOutbox {
+    /// Records `deliveries` in one transaction, reserved when `reserve` is
+    /// given; how many were dropped for the bound.
+    async fn insert(
+        &self,
+        deliveries: Vec<NewDelivery>,
+        per_webhook: usize,
+        reserve: Option<Reserve<'_>>,
+    ) -> a2a_protocol_types::error::A2aResult<usize> {
+        let mut bodies = Vec::with_capacity(deliveries.len());
+        for d in &deliveries {
+            let ctx = context(&d.tenant, d.caller.as_deref(), &d.task_id, &d.delivery_id);
+            bodies.push(self.body.encode(&d.event, &ctx).await?);
+        }
+        pg_retry::checked(async {
+            let mut tx = self.pool.begin().await?;
+            let dropped =
+                Self::record_in(&mut tx, &deliveries, &bodies, per_webhook, reserve.as_ref())
+                    .await?;
+            tx.commit().await?;
+            Ok::<_, sqlx::Error>(dropped)
+        })
+        .await
+        .map_err(|e| to_a2a_error(&e))
+    }
+}
+
 impl PushOutbox for PostgresPushOutbox {
     fn record(&self, deliveries: Vec<NewDelivery>, per_webhook: usize) -> OutboxFuture<'_, usize> {
+        Box::pin(self.insert(deliveries, per_webhook, None))
+    }
+
+    fn supports_reservations(&self) -> bool {
+        true
+    }
+
+    fn reserve<'a>(
+        &'a self,
+        reservation: &'a str,
+        log_seq: u64,
+        deliveries: Vec<NewDelivery>,
+        per_webhook: usize,
+        hold: Duration,
+    ) -> OutboxFuture<'a, usize> {
+        Box::pin(self.insert(
+            deliveries,
+            per_webhook,
+            Some(Reserve {
+                id: reservation,
+                log_seq: i64::try_from(log_seq).unwrap_or(i64::MAX),
+                hold_secs: seconds(hold),
+            }),
+        ))
+    }
+
+    fn arm<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, usize> {
         Box::pin(async move {
-            let mut bodies = Vec::with_capacity(deliveries.len());
-            for d in &deliveries {
-                let ctx = context(&d.tenant, d.caller.as_deref(), &d.task_id, &d.delivery_id);
-                bodies.push(self.body.encode(&d.event, &ctx).await?);
-            }
-            pg_retry::checked(async {
-                let mut tx = self.pool.begin().await?;
-                let dropped = Self::record_in(&mut tx, &deliveries, &bodies, per_webhook).await?;
-                tx.commit().await?;
-                Ok::<_, sqlx::Error>(dropped)
+            // Idempotent: a second run matches the same rows.
+            let armed = pg_retry::retry(self.metrics.as_ref(), || {
+                sqlx::query("UPDATE a2a_push_outbox SET armed = TRUE WHERE reservation = $1")
+                    .bind(reservation)
+                    .execute(&self.pool)
             })
             .await
-            .map_err(|e| to_a2a_error(&e))
+            .map_err(|e| to_a2a_error(&e))?
+            .rows_affected();
+            Ok(usize::try_from(armed).unwrap_or(usize::MAX))
+        })
+    }
+
+    fn release<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, ()> {
+        Box::pin(async move {
+            pg_retry::retry(self.metrics.as_ref(), || {
+                sqlx::query("DELETE FROM a2a_push_outbox WHERE reservation = $1 AND NOT armed")
+                    .bind(reservation)
+                    .execute(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
+            Ok(())
+        })
+    }
+
+    fn held(&self, limit: usize) -> OutboxFuture<'_, Vec<Held>> {
+        Box::pin(async move {
+            let rows = pg_retry::retry(self.metrics.as_ref(), || {
+                sqlx::query(
+                    "SELECT delivery_id, tenant, caller, task_id, event, log_seq, reservation
+                     FROM a2a_push_outbox
+                     WHERE seq IN (
+                        SELECT MIN(seq) FROM a2a_push_outbox
+                        WHERE NOT armed AND hold_until <= now()
+                        GROUP BY reservation ORDER BY MIN(seq) LIMIT $1)
+                     ORDER BY seq",
+                )
+                .bind(i64::try_from(limit).unwrap_or(i64::MAX))
+                .fetch_all(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
+            let mut held = Vec::with_capacity(rows.len());
+            for row in &rows {
+                let (tenant, caller, task_id, delivery_id): (
+                    String,
+                    Option<String>,
+                    String,
+                    String,
+                ) = (
+                    row.get("tenant"),
+                    row.get("caller"),
+                    row.get("task_id"),
+                    row.get("delivery_id"),
+                );
+                let ctx = context(&tenant, caller.as_deref(), &task_id, &delivery_id);
+                let Ok(event) = self.body.decode(row.get::<&str, _>("event"), &ctx).await else {
+                    trace_warn!(
+                        task_id = %task_id,
+                        "push outbox: a reserved row's event could not be read; it is left"
+                    );
+                    continue;
+                };
+                held.push(Held {
+                    reservation: row.get("reservation"),
+                    tenant,
+                    caller,
+                    task_id,
+                    log_seq: u64::try_from(row.get::<i64, _>("log_seq")).unwrap_or(0),
+                    event,
+                });
+            }
+            Ok(held)
         })
     }
 
@@ -253,7 +395,7 @@ impl PushOutbox for PostgresPushOutbox {
                      SET owner = $1, lease_until = now() + make_interval(secs => $2)
                      WHERE seq IN (
                         SELECT seq FROM a2a_push_outbox o
-                        WHERE o.due_at <= now()
+                        WHERE o.due_at <= now() AND o.armed
                           AND (o.lease_until IS NULL OR o.lease_until <= now())
                           AND NOT EXISTS (
                             SELECT 1 FROM a2a_push_outbox e

@@ -92,6 +92,28 @@ pub struct ClaimedDelivery {
     pub age: Duration,
 }
 
+/// A reservation whose hold has run out: the deliveries of one event that
+/// were reserved before the event was stored and never armed or released.
+/// The replica that reserved them stopped, or is stalled, so something else
+/// has to decide whether the event was stored (see
+/// [`PushOutbox::reserve`]).
+#[derive(Debug, Clone)]
+pub struct Held {
+    /// The reservation's id: what [`PushOutbox::arm`] and
+    /// [`PushOutbox::release`] name it by.
+    pub reservation: String,
+    /// The tenant the deliveries run as.
+    pub tenant: String,
+    /// The caller they run as, where callers are isolated.
+    pub caller: Option<String>,
+    /// The task the event belongs to.
+    pub task_id: String,
+    /// The event's position in its task's log.
+    pub log_seq: u64,
+    /// The event.
+    pub event: StreamResponse,
+}
+
 /// Where webhook deliveries wait until they are delivered; see the module
 /// documentation.
 ///
@@ -127,8 +149,101 @@ pub trait PushOutbox: Send + Sync + 'static {
     fn retry_after<'a>(&'a self, seq: i64, owner: &'a str, after: Duration)
     -> OutboxFuture<'a, ()>;
 
-    /// How many rows wait, claimed or not: for a gauge.
+    /// How many rows wait, claimed or not, reserved or not: for a gauge.
     fn pending(&self) -> OutboxFuture<'_, usize>;
+
+    /// Whether this outbox keeps reservations ([`reserve`](Self::reserve)).
+    /// One that does not (the default) is recorded in only after an event is
+    /// stored, and a crash between the two loses that event's deliveries.
+    fn supports_reservations(&self) -> bool {
+        false
+    }
+
+    /// Phase one of recording an event's deliveries *before* the event is
+    /// stored (audit H14): `deliveries`, all of one event at position
+    /// `log_seq` of its task's log, are written **unarmed**.
+    ///
+    /// An unarmed row is not claimed, but it holds its webhook's place: no
+    /// later row of the same webhook is claimed past it, so the order of a
+    /// webhook's deliveries is the order of the events whether or not they
+    /// have been stored yet. It is never dropped to make room for another
+    /// row. The caller then either [`arm`](Self::arm)s the reservation once
+    /// the event is stored, or [`release`](Self::release)s it if it was not.
+    ///
+    /// If the caller stops between the two, the rows are left with a `hold`
+    /// that runs out; [`held`](Self::held) then lists the reservation, and
+    /// whoever settles it decides from the task store whether the event was
+    /// stored. Like [`record`](Self::record), returns how many rows were
+    /// dropped for the `per_webhook` bound.
+    ///
+    /// # Errors
+    ///
+    /// The outbox cannot be written, or keeps no reservations.
+    fn reserve<'a>(
+        &'a self,
+        reservation: &'a str,
+        log_seq: u64,
+        deliveries: Vec<NewDelivery>,
+        per_webhook: usize,
+        hold: Duration,
+    ) -> OutboxFuture<'a, usize> {
+        let _ = (reservation, log_seq, deliveries, per_webhook, hold);
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                "this push outbox keeps no reservations",
+            ))
+        })
+    }
+
+    /// Phase two, the event was stored: the rows of `reservation` become
+    /// claimable. Returns how many rows the reservation has, armed by this
+    /// call or already; `0` means there is nothing of it left (it was
+    /// released, or settled by another replica as not stored, or already
+    /// delivered), and the caller records the deliveries afresh.
+    ///
+    /// # Errors
+    ///
+    /// The outbox cannot be written, or keeps no reservations.
+    fn arm<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, usize> {
+        let _ = reservation;
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                "this push outbox keeps no reservations",
+            ))
+        })
+    }
+
+    /// The event was not stored: removes the rows of `reservation` that are
+    /// not armed. Armed rows, and a reservation that is gone, are left
+    /// alone.
+    ///
+    /// # Errors
+    ///
+    /// The outbox cannot be written, or keeps no reservations.
+    fn release<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, ()> {
+        let _ = reservation;
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                "this push outbox keeps no reservations",
+            ))
+        })
+    }
+
+    /// Up to `limit` reservations that are not armed and whose hold has run
+    /// out, oldest first, one entry each however many webhooks it has rows
+    /// for.
+    ///
+    /// # Errors
+    ///
+    /// The outbox cannot be read, or keeps no reservations.
+    fn held(&self, limit: usize) -> OutboxFuture<'_, Vec<Held>> {
+        let _ = limit;
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                "this push outbox keeps no reservations",
+            ))
+        })
+    }
 }
 
 /// The denominator of a jitter: [`jitter`] is a fraction of it.

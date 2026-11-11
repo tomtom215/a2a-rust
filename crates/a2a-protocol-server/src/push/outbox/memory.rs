@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
-use super::{ClaimedDelivery, NewDelivery, OutboxFuture, PushOutbox};
+use super::{ClaimedDelivery, Held, NewDelivery, OutboxFuture, PushOutbox};
 
 /// The webhook of a task a row is for: its rows are delivered in order.
 type Webhook = (String, Option<String>, String, String);
@@ -31,11 +31,28 @@ struct Row {
     attempts: u32,
     /// The owner and the end of its lease, while claimed.
     lease: Option<(String, Instant)>,
+    /// Reserved before its event was stored; armed once it was.
+    reservation: Option<Reserved>,
+}
+
+/// What a row remembers of its reservation.
+struct Reserved {
+    id: String,
+    log_seq: u64,
+    /// After this the reserver is presumed stopped.
+    hold_until: Instant,
+    /// The event was stored: the row can be claimed.
+    armed: bool,
 }
 
 impl Row {
     fn leased(&self, now: Instant) -> bool {
         self.lease.as_ref().is_some_and(|(_, until)| *until > now)
+    }
+
+    /// Reserved and not armed yet.
+    fn unarmed(&self) -> bool {
+        self.reservation.as_ref().is_some_and(|r| !r.armed)
     }
 }
 
@@ -93,7 +110,7 @@ impl State {
         let oldest = waiting.into_iter().find(|seq| {
             self.rows
                 .get(seq)
-                .is_some_and(|row| !row.delivery.ends_turn && !row.leased(now))
+                .is_some_and(|row| !row.delivery.ends_turn && !row.leased(now) && !row.unarmed())
         });
         match oldest {
             Some(seq) => {
@@ -106,33 +123,128 @@ impl State {
     }
 }
 
+impl InMemoryPushOutbox {
+    /// Inserts `deliveries` in order, each `reserved` as given; how many
+    /// were dropped for the bound.
+    fn insert(
+        &self,
+        deliveries: Vec<NewDelivery>,
+        per_webhook: usize,
+        reserved: impl Fn() -> Option<Reserved>,
+    ) -> usize {
+        let now = Instant::now();
+        let mut state = self.lock();
+        let mut dropped = 0;
+        for delivery in deliveries {
+            let (keep, made_room) =
+                state.make_room(&webhook(&delivery), delivery.ends_turn, per_webhook, now);
+            dropped += made_room;
+            if keep {
+                state.next += 1;
+                let seq = state.next;
+                state.rows.insert(
+                    seq,
+                    Row {
+                        delivery,
+                        recorded: now,
+                        due: now,
+                        attempts: 0,
+                        lease: None,
+                        reservation: reserved(),
+                    },
+                );
+            }
+        }
+        drop(state);
+        dropped
+    }
+}
+
 impl PushOutbox for InMemoryPushOutbox {
     fn record(&self, deliveries: Vec<NewDelivery>, per_webhook: usize) -> OutboxFuture<'_, usize> {
+        Box::pin(async move { Ok(self.insert(deliveries, per_webhook, || None)) })
+    }
+
+    fn supports_reservations(&self) -> bool {
+        true
+    }
+
+    fn reserve<'a>(
+        &'a self,
+        reservation: &'a str,
+        log_seq: u64,
+        deliveries: Vec<NewDelivery>,
+        per_webhook: usize,
+        hold: Duration,
+    ) -> OutboxFuture<'a, usize> {
         Box::pin(async move {
             let now = Instant::now();
+            let hold_until = now.checked_add(hold).unwrap_or(now);
+            Ok(self.insert(deliveries, per_webhook, || {
+                Some(Reserved {
+                    id: reservation.to_owned(),
+                    log_seq,
+                    hold_until,
+                    armed: false,
+                })
+            }))
+        })
+    }
+
+    fn arm<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, usize> {
+        Box::pin(async move {
             let mut state = self.lock();
-            let mut dropped = 0;
-            for delivery in deliveries {
-                let (keep, made_room) =
-                    state.make_room(&webhook(&delivery), delivery.ends_turn, per_webhook, now);
-                dropped += made_room;
-                if keep {
-                    state.next += 1;
-                    let seq = state.next;
-                    state.rows.insert(
-                        seq,
-                        Row {
-                            delivery,
-                            recorded: now,
-                            due: now,
-                            attempts: 0,
-                            lease: None,
-                        },
-                    );
+            let mut found = 0;
+            for row in state.rows.values_mut() {
+                if let Some(held) = row.reservation.as_mut()
+                    && held.id == reservation
+                {
+                    held.armed = true;
+                    found += 1;
                 }
             }
             drop(state);
-            Ok(dropped)
+            Ok(found)
+        })
+    }
+
+    fn release<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, ()> {
+        Box::pin(async move {
+            self.lock().rows.retain(|_, row| {
+                row.reservation
+                    .as_ref()
+                    .is_none_or(|held| held.armed || held.id != reservation)
+            });
+            Ok(())
+        })
+    }
+
+    fn held(&self, limit: usize) -> OutboxFuture<'_, Vec<Held>> {
+        Box::pin(async move {
+            let now = Instant::now();
+            let state = self.lock();
+            let mut seen = HashSet::new();
+            let mut held = Vec::new();
+            for row in state.rows.values() {
+                let Some(reserved) = row.reservation.as_ref().filter(|r| !r.armed) else {
+                    continue;
+                };
+                if held.len() >= limit || reserved.hold_until > now {
+                    continue;
+                }
+                if seen.insert(reserved.id.clone()) {
+                    held.push(Held {
+                        reservation: reserved.id.clone(),
+                        tenant: row.delivery.tenant.clone(),
+                        caller: row.delivery.caller.clone(),
+                        task_id: row.delivery.task_id.clone(),
+                        log_seq: reserved.log_seq,
+                        event: row.delivery.event.clone(),
+                    });
+                }
+            }
+            drop(state);
+            Ok(held)
         })
     }
 
@@ -157,7 +269,8 @@ impl PushOutbox for InMemoryPushOutbox {
                 if !earlier.insert(webhook(&row.delivery)) {
                     continue;
                 }
-                if row.due > now || row.leased(now) {
+                // A reserved row holds the place and is not claimed.
+                if row.due > now || row.leased(now) || row.unarmed() {
                     continue;
                 }
                 row.lease = Some((owner.to_owned(), until));

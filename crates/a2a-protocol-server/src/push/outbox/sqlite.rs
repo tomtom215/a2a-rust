@@ -16,7 +16,7 @@ use sqlx::Row as _;
 use sqlx::sqlite::SqlitePool;
 
 use super::body::{Body, context};
-use super::{ClaimedDelivery, NewDelivery, OutboxFuture, PushOutbox};
+use super::{ClaimedDelivery, Held, NewDelivery, OutboxFuture, PushOutbox};
 use crate::push::PushConfigCipher;
 
 /// Now, in milliseconds since the Unix epoch, by the database's clock: a
@@ -28,7 +28,7 @@ macro_rules! now_ms {
     };
 }
 
-const SCHEMA: [&str; 2] = [
+const SCHEMA: [&str; 3] = [
     "CREATE TABLE IF NOT EXISTS a2a_push_outbox (
         seq         INTEGER PRIMARY KEY AUTOINCREMENT,
         delivery_id TEXT    NOT NULL UNIQUE,
@@ -42,11 +42,46 @@ const SCHEMA: [&str; 2] = [
         recorded_ms INTEGER NOT NULL,
         due_ms      INTEGER NOT NULL,
         owner       TEXT,
-        lease_ms    INTEGER
+        lease_ms    INTEGER,
+        armed       INTEGER NOT NULL DEFAULT 1,
+        reservation TEXT,
+        log_seq     INTEGER,
+        hold_ms     INTEGER
     )",
     "CREATE INDEX IF NOT EXISTS a2a_push_outbox_webhook
         ON a2a_push_outbox (tenant, caller, task_id, config_id, seq)",
+    "CREATE INDEX IF NOT EXISTS a2a_push_outbox_reservation
+        ON a2a_push_outbox (reservation) WHERE reservation IS NOT NULL",
 ];
+
+/// The columns of the two-phase record (audit H14), added to a table an
+/// earlier build of this outbox created without them. `SQLite` has no
+/// `ADD COLUMN IF NOT EXISTS`, so each is looked for first.
+const TWO_PHASE_COLUMNS: [(&str, &str); 4] = [
+    (
+        "armed",
+        "ALTER TABLE a2a_push_outbox ADD COLUMN armed INTEGER NOT NULL DEFAULT 1",
+    ),
+    (
+        "reservation",
+        "ALTER TABLE a2a_push_outbox ADD COLUMN reservation TEXT",
+    ),
+    (
+        "log_seq",
+        "ALTER TABLE a2a_push_outbox ADD COLUMN log_seq INTEGER",
+    ),
+    (
+        "hold_ms",
+        "ALTER TABLE a2a_push_outbox ADD COLUMN hold_ms INTEGER",
+    ),
+];
+
+/// How a row being inserted was reserved, when it was.
+struct Reserve<'a> {
+    id: &'a str,
+    log_seq: i64,
+    hold_ms: i64,
+}
 
 /// A [`PushOutbox`] in an SQLite database; see the module documentation.
 #[derive(Debug, Clone)]
@@ -80,7 +115,19 @@ impl SqlitePushOutbox {
     ///
     /// The table cannot be created.
     pub async fn from_pool(pool: SqlitePool) -> Result<Self, sqlx::Error> {
-        for statement in SCHEMA {
+        sqlx::query(SCHEMA[0]).execute(&pool).await?;
+        for (column, alter) in TWO_PHASE_COLUMNS {
+            let present: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM pragma_table_info('a2a_push_outbox') WHERE name = ?1",
+            )
+            .bind(column)
+            .fetch_one(&pool)
+            .await?;
+            if present == 0 {
+                sqlx::query(alter).execute(&pool).await?;
+            }
+        }
+        for statement in SCHEMA.iter().skip(1).copied() {
             sqlx::query(statement).execute(&pool).await?;
         }
         Ok(Self {
@@ -98,12 +145,14 @@ impl SqlitePushOutbox {
         self
     }
 
-    /// Records one delivery inside `tx`; whether a row was dropped.
+    /// Records one delivery inside `tx`, reserved when `reserve` is given;
+    /// whether a row was dropped.
     async fn record_one(
         tx: &mut sqlx::SqliteConnection,
         d: &NewDelivery,
         event: &str,
         per_webhook: usize,
+        reserve: Option<&Reserve<'_>>,
     ) -> Result<usize, sqlx::Error> {
         let waiting: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM a2a_push_outbox
@@ -120,7 +169,7 @@ impl SqlitePushOutbox {
                 "DELETE FROM a2a_push_outbox WHERE seq = (
                     SELECT seq FROM a2a_push_outbox
                     WHERE tenant = ?1 AND caller IS ?2 AND task_id = ?3 AND config_id = ?4
-                      AND ends_turn = 0 AND (lease_ms IS NULL OR lease_ms <= ",
+                      AND ends_turn = 0 AND armed = 1 AND (lease_ms IS NULL OR lease_ms <= ",
                 now_ms!(),
                 ")
                     ORDER BY seq LIMIT 1)"
@@ -142,8 +191,11 @@ impl SqlitePushOutbox {
         sqlx::query(concat!(
             "INSERT INTO a2a_push_outbox
                 (delivery_id, tenant, caller, task_id, config_id, event, ends_turn,
-                 recorded_ms, due_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ",
+                 armed, reservation, log_seq, hold_ms, recorded_ms, due_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                     CASE WHEN ?11 IS NULL THEN NULL ELSE ",
+            now_ms!(),
+            " + ?11 END, ",
             now_ms!(),
             ", ",
             now_ms!(),
@@ -156,6 +208,10 @@ impl SqlitePushOutbox {
         .bind(&d.config_id)
         .bind(event)
         .bind(d.ends_turn)
+        .bind(reserve.is_none())
+        .bind(reserve.map(|r| r.id))
+        .bind(reserve.map(|r| r.log_seq))
+        .bind(reserve.map(|r| r.hold_ms))
         .execute(&mut *tx)
         .await?;
         Ok(dropped)
@@ -203,23 +259,131 @@ impl SqlitePushOutbox {
     }
 }
 
+impl SqlitePushOutbox {
+    /// Records `deliveries` in one transaction, reserved when `reserve` is
+    /// given; how many were dropped for the bound.
+    async fn insert(
+        &self,
+        deliveries: Vec<NewDelivery>,
+        per_webhook: usize,
+        reserve: Option<Reserve<'_>>,
+    ) -> a2a_protocol_types::error::A2aResult<usize> {
+        let mut bodies = Vec::with_capacity(deliveries.len());
+        for d in &deliveries {
+            let ctx = context(&d.tenant, d.caller.as_deref(), &d.task_id, &d.delivery_id);
+            bodies.push(self.body.encode(&d.event, &ctx).await?);
+        }
+        let mut tx = self.pool.begin().await.map_err(|e| to_a2a_error(&e))?;
+        let mut dropped = 0;
+        for (d, event) in deliveries.iter().zip(&bodies) {
+            dropped += Self::record_one(&mut tx, d, event, per_webhook, reserve.as_ref())
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+        }
+        tx.commit().await.map_err(|e| to_a2a_error(&e))?;
+        Ok(dropped)
+    }
+}
+
 impl PushOutbox for SqlitePushOutbox {
     fn record(&self, deliveries: Vec<NewDelivery>, per_webhook: usize) -> OutboxFuture<'_, usize> {
+        Box::pin(self.insert(deliveries, per_webhook, None))
+    }
+
+    fn supports_reservations(&self) -> bool {
+        true
+    }
+
+    fn reserve<'a>(
+        &'a self,
+        reservation: &'a str,
+        log_seq: u64,
+        deliveries: Vec<NewDelivery>,
+        per_webhook: usize,
+        hold: Duration,
+    ) -> OutboxFuture<'a, usize> {
+        Box::pin(self.insert(
+            deliveries,
+            per_webhook,
+            Some(Reserve {
+                id: reservation,
+                log_seq: i64::try_from(log_seq).unwrap_or(i64::MAX),
+                hold_ms: millis(hold),
+            }),
+        ))
+    }
+
+    fn arm<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, usize> {
         Box::pin(async move {
-            let mut bodies = Vec::with_capacity(deliveries.len());
-            for d in &deliveries {
-                let ctx = context(&d.tenant, d.caller.as_deref(), &d.task_id, &d.delivery_id);
-                bodies.push(self.body.encode(&d.event, &ctx).await?);
+            let armed = sqlx::query("UPDATE a2a_push_outbox SET armed = 1 WHERE reservation = ?1")
+                .bind(reservation)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?
+                .rows_affected();
+            Ok(usize::try_from(armed).unwrap_or(usize::MAX))
+        })
+    }
+
+    fn release<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, ()> {
+        Box::pin(async move {
+            sqlx::query("DELETE FROM a2a_push_outbox WHERE reservation = ?1 AND armed = 0")
+                .bind(reservation)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+            Ok(())
+        })
+    }
+
+    fn held(&self, limit: usize) -> OutboxFuture<'_, Vec<Held>> {
+        Box::pin(async move {
+            let rows = sqlx::query(concat!(
+                "SELECT delivery_id, tenant, caller, task_id, event, log_seq, reservation
+                 FROM a2a_push_outbox
+                 WHERE seq IN (
+                    SELECT MIN(seq) FROM a2a_push_outbox
+                    WHERE armed = 0 AND hold_ms <= ",
+                now_ms!(),
+                "
+                    GROUP BY reservation ORDER BY MIN(seq) LIMIT ?1)
+                 ORDER BY seq"
+            ))
+            .bind(i64::try_from(limit).unwrap_or(i64::MAX))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
+            let mut held = Vec::with_capacity(rows.len());
+            for row in &rows {
+                let (tenant, caller, task_id, delivery_id): (
+                    String,
+                    Option<String>,
+                    String,
+                    String,
+                ) = (
+                    row.get("tenant"),
+                    row.get("caller"),
+                    row.get("task_id"),
+                    row.get("delivery_id"),
+                );
+                let ctx = context(&tenant, caller.as_deref(), &task_id, &delivery_id);
+                let Ok(event) = self.body.decode(row.get::<&str, _>("event"), &ctx).await else {
+                    trace_warn!(
+                        task_id = %task_id,
+                        "push outbox: a reserved row's event could not be read; it is left"
+                    );
+                    continue;
+                };
+                held.push(Held {
+                    reservation: row.get("reservation"),
+                    tenant,
+                    caller,
+                    task_id,
+                    log_seq: u64::try_from(row.get::<i64, _>("log_seq")).unwrap_or(0),
+                    event,
+                });
             }
-            let mut tx = self.pool.begin().await.map_err(|e| to_a2a_error(&e))?;
-            let mut dropped = 0;
-            for (d, event) in deliveries.iter().zip(&bodies) {
-                dropped += Self::record_one(&mut tx, d, event, per_webhook)
-                    .await
-                    .map_err(|e| to_a2a_error(&e))?;
-            }
-            tx.commit().await.map_err(|e| to_a2a_error(&e))?;
-            Ok(dropped)
+            Ok(held)
         })
     }
 
@@ -239,6 +403,7 @@ impl PushOutbox for SqlitePushOutbox {
                     WHERE o.due_ms <= ",
                 now_ms!(),
                 "
+                      AND o.armed = 1
                       AND (o.lease_ms IS NULL OR o.lease_ms <= ",
                 now_ms!(),
                 ")

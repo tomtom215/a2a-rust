@@ -78,4 +78,68 @@ async fn the_postgres_outbox_keeps_the_contract_across_replicas_and_restarts() {
     assert_eq!(claimed[0].delivery.delivery_id, id);
     assert!(claimed[0].age < Duration::from_secs(60));
     assert!(format!("{later:?}").starts_with("PostgresPushOutbox"));
+
+    // A replica reserves, then stops: another replica, not the one that
+    // reserved, finds the reservation held, arms it, and claims the row, with
+    // the delivery id the first replica gave it (audit H14).
+    let a = emptied(&url).await;
+    let row = delivery("t", "a", TaskState::Working);
+    let id = row.delivery_id.clone();
+    a.reserve("r1", 5, vec![row], 10, Duration::ZERO)
+        .await
+        .unwrap();
+    a.pool.close().await;
+    let b = PostgresPushOutbox::new(&url).await.expect("outbox");
+    assert!(b.claim("b", 10, lease).await.unwrap().is_empty());
+    let held = b.held(10).await.unwrap();
+    assert_eq!((held[0].reservation.as_str(), held[0].log_seq), ("r1", 5));
+    assert_eq!(b.arm("r1").await.unwrap(), 1);
+    assert_eq!(
+        b.claim("b", 10, lease).await.unwrap()[0]
+            .delivery
+            .delivery_id,
+        id
+    );
+
+    // Two replicas settle one reservation at once: arming is idempotent and
+    // releasing leaves what is armed.
+    let a = emptied(&url).await;
+    let b = PostgresPushOutbox::new(&url).await.expect("outbox");
+    a.reserve(
+        "r2",
+        6,
+        vec![delivery("", "a", TaskState::Working)],
+        10,
+        Duration::ZERO,
+    )
+    .await
+    .unwrap();
+    let (armed_a, armed_b) = tokio::join!(a.arm("r2"), b.arm("r2"));
+    assert_eq!((armed_a.unwrap(), armed_b.unwrap()), (1, 1));
+    b.release("r2").await.unwrap();
+    assert_eq!(a.pending().await.unwrap(), 1, "armed rows are not released");
+
+    // A table an earlier build created, without the two-phase columns, is
+    // upgraded in place and its rows are armed.
+    let a = emptied(&url).await;
+    let old = delivery("t", "a", TaskState::Working);
+    for column in ["armed", "reservation", "log_seq", "hold_until"] {
+        let drop_column = format!("ALTER TABLE a2a_push_outbox DROP COLUMN {column}");
+        sqlx::query(sqlx::AssertSqlSafe(drop_column))
+            .execute(&a.pool)
+            .await
+            .unwrap();
+    }
+    sqlx::query(
+        "INSERT INTO a2a_push_outbox (delivery_id, tenant, task_id, config_id, event, ends_turn)
+         VALUES ($1, 't', 't1', 'a', $2, FALSE)",
+    )
+    .bind(&old.delivery_id)
+    .bind(serde_json::to_string(&old.event).unwrap())
+    .execute(&a.pool)
+    .await
+    .unwrap();
+    let upgraded = PostgresPushOutbox::new(&url).await.expect("outbox");
+    assert_eq!(upgraded.claim("u", 10, lease).await.unwrap().len(), 1);
+    assert!(upgraded.held(10).await.unwrap().is_empty());
 }

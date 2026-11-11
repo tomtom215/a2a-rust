@@ -16,6 +16,8 @@ use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
 use super::{NewDelivery, PushOutbox};
 
+const NOW: Duration = Duration::ZERO;
+
 const HOUR: Duration = Duration::from_secs(3600);
 
 fn event(state: TaskState) -> StreamResponse {
@@ -212,6 +214,199 @@ pub async fn completing_twice_is_harmless(outbox: &dyn PushOutbox) {
     assert_eq!(outbox.pending().await.unwrap(), 0);
 }
 
+/// A reserved row is not claimable until it is armed, and arming it makes it
+/// claimable like any other.
+pub async fn a_reserved_row_is_claimed_only_once_armed(outbox: &dyn PushOutbox) {
+    assert!(outbox.supports_reservations());
+    let row = delivery("", "a", TaskState::Working);
+    let id = row.delivery_id.clone();
+    assert_eq!(
+        outbox.reserve("r1", 7, vec![row], 10, HOUR).await.unwrap(),
+        0
+    );
+    assert_eq!(
+        outbox.pending().await.unwrap(),
+        1,
+        "reserved rows are pending"
+    );
+    assert!(
+        outbox.claim("me", 10, HOUR).await.unwrap().is_empty(),
+        "not armed, so not claimed"
+    );
+    assert_eq!(outbox.arm("r1").await.unwrap(), 1);
+    assert_eq!(ids(&outbox.claim("me", 10, HOUR).await.unwrap()), [id]);
+    assert_eq!(
+        outbox.arm("r1").await.unwrap(),
+        1,
+        "arming again finds the row, armed"
+    );
+}
+
+/// An unarmed row holds its webhook's place: a later row of the same webhook
+/// is not claimed past it, another webhook's is.
+pub async fn an_unarmed_row_holds_its_webhooks_place(outbox: &dyn PushOutbox) {
+    let reserved = delivery("", "a", TaskState::Working);
+    let (later, other) = (
+        delivery("", "a", TaskState::Completed),
+        delivery("", "b", TaskState::Working),
+    );
+    let (reserved_id, _later_id, other_id) = (
+        reserved.delivery_id.clone(),
+        later.delivery_id.clone(),
+        other.delivery_id.clone(),
+    );
+    outbox
+        .reserve("r1", 1, vec![reserved], 10, HOUR)
+        .await
+        .unwrap();
+    outbox.record(vec![later, other], 10).await.unwrap();
+    assert_eq!(
+        ids(&outbox.claim("me", 10, HOUR).await.unwrap()),
+        [other_id],
+        "`a`'s later row waits for the reserved one"
+    );
+    outbox.arm("r1").await.unwrap();
+    assert_eq!(
+        ids(&outbox.claim("me", 10, HOUR).await.unwrap()),
+        [reserved_id]
+    );
+    assert!(outbox.claim("me", 10, HOUR).await.unwrap().is_empty());
+}
+
+/// Releasing removes the unarmed rows of a reservation, and only those.
+pub async fn release_removes_unarmed_rows_only(outbox: &dyn PushOutbox) {
+    outbox
+        .reserve(
+            "gone",
+            1,
+            vec![
+                delivery("", "a", TaskState::Working),
+                delivery("", "b", TaskState::Working),
+            ],
+            10,
+            HOUR,
+        )
+        .await
+        .unwrap();
+    outbox
+        .reserve(
+            "kept",
+            2,
+            vec![delivery("", "c", TaskState::Working)],
+            10,
+            HOUR,
+        )
+        .await
+        .unwrap();
+    outbox.arm("kept").await.unwrap();
+    outbox.release("gone").await.unwrap();
+    outbox.release("kept").await.unwrap();
+    outbox.release("never-existed").await.unwrap();
+    assert_eq!(
+        outbox.pending().await.unwrap(),
+        1,
+        "only the armed row is left"
+    );
+    assert_eq!(outbox.claim("me", 10, HOUR).await.unwrap().len(), 1);
+    assert_eq!(
+        outbox.arm("gone").await.unwrap(),
+        0,
+        "released: nothing to arm"
+    );
+}
+
+/// `held` lists a reservation once, however many rows it has, only when it is
+/// not armed and its hold has run out; it names where the event belongs.
+pub async fn held_lists_lapsed_unarmed_reservations_once(outbox: &dyn PushOutbox) {
+    let mut isolated = delivery("t", "a", TaskState::Completed);
+    isolated.caller = Some("alice".to_owned());
+    let mut second = isolated.clone();
+    second.config_id = "b".to_owned();
+    second.delivery_id = uuid::Uuid::new_v4().to_string();
+    outbox
+        .reserve("lapsed", 42, vec![isolated, second], 10, NOW)
+        .await
+        .unwrap();
+    outbox
+        .reserve(
+            "fresh",
+            43,
+            vec![delivery("", "a", TaskState::Working)],
+            10,
+            HOUR,
+        )
+        .await
+        .unwrap();
+    outbox
+        .reserve(
+            "armed",
+            44,
+            vec![delivery("", "z", TaskState::Working)],
+            10,
+            NOW,
+        )
+        .await
+        .unwrap();
+    outbox.arm("armed").await.unwrap();
+
+    let held = outbox.held(10).await.unwrap();
+    assert_eq!(held.len(), 1, "{held:?}");
+    let h = &held[0];
+    assert_eq!(h.reservation, "lapsed");
+    assert_eq!(
+        (h.tenant.as_str(), h.caller.as_deref()),
+        ("t", Some("alice"))
+    );
+    assert_eq!((h.task_id.as_str(), h.log_seq), ("t1", 42));
+    assert_eq!(json(&h.event), json(&event(TaskState::Completed)));
+    assert_eq!(outbox.held(0).await.unwrap().len(), 0, "limit 0");
+}
+
+/// `held` is oldest first and takes at most `limit`.
+pub async fn held_is_oldest_first_and_limited(outbox: &dyn PushOutbox) {
+    for (n, config) in ["a", "b", "c"].into_iter().enumerate() {
+        outbox
+            .reserve(
+                &format!("r{n}"),
+                n as u64 + 1,
+                vec![delivery("", config, TaskState::Working)],
+                10,
+                NOW,
+            )
+            .await
+            .unwrap();
+    }
+    let held = outbox.held(2).await.unwrap();
+    let names: Vec<&str> = held.iter().map(|h| h.reservation.as_str()).collect();
+    assert_eq!(names, ["r0", "r1"]);
+}
+
+/// An unarmed row is never the one dropped to make room: with nothing else to
+/// drop, a new row that does not end a turn is the one dropped.
+pub async fn the_bound_never_drops_a_reserved_row(outbox: &dyn PushOutbox) {
+    outbox
+        .reserve(
+            "r1",
+            1,
+            vec![delivery("", "a", TaskState::Working)],
+            1,
+            HOUR,
+        )
+        .await
+        .unwrap();
+    let dropped = outbox
+        .record(vec![delivery("", "a", TaskState::Working)], 1)
+        .await
+        .unwrap();
+    assert_eq!(dropped, 1, "the new row, not the reserved one");
+    assert_eq!(outbox.pending().await.unwrap(), 1);
+    assert_eq!(
+        outbox.arm("r1").await.unwrap(),
+        1,
+        "the reserved row is intact"
+    );
+}
+
 /// Every rule, on a fresh outbox each: `fresh` makes one.
 pub async fn run_all<F, Fut, O>(fresh: F)
 where
@@ -227,4 +422,10 @@ where
     the_bound_drops_what_the_lanes_drop(&fresh().await).await;
     tenants_and_callers_are_separate_webhooks(&fresh().await).await;
     completing_twice_is_harmless(&fresh().await).await;
+    a_reserved_row_is_claimed_only_once_armed(&fresh().await).await;
+    an_unarmed_row_holds_its_webhooks_place(&fresh().await).await;
+    release_removes_unarmed_rows_only(&fresh().await).await;
+    held_lists_lapsed_unarmed_reservations_once(&fresh().await).await;
+    held_is_oldest_first_and_limited(&fresh().await).await;
+    the_bound_never_drops_a_reserved_row(&fresh().await).await;
 }
