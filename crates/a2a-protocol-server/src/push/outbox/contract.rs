@@ -532,6 +532,30 @@ pub async fn renew_applies_to_the_owners_live_leases_only(outbox: &dyn PushOutbo
     );
 }
 
+/// A duplicate of a row that is already there, recorded into a webhook that is
+/// at its bound, drops nothing: it is not a new row, so it needs no room.
+pub async fn recording_a_duplicate_drops_no_other_row(outbox: &dyn PushOutbox) {
+    let (first, second) = (
+        delivery("", "a", TaskState::Working),
+        delivery("", "a", TaskState::Working),
+    );
+    let (first_id, second_id) = (first.delivery_id.clone(), second.delivery_id.clone());
+    outbox.record(vec![first, second.clone()], 2).await.unwrap();
+    assert_eq!(
+        outbox.record(vec![second], 2).await.unwrap(),
+        0,
+        "nothing dropped for a row that is already recorded"
+    );
+    assert_eq!(outbox.pending().await.unwrap(), 2);
+    let one = outbox.claim("me", 10, HOUR).await.unwrap();
+    assert_eq!(ids(&one), [first_id]);
+    outbox.complete(one[0].seq).await.unwrap();
+    assert_eq!(
+        ids(&outbox.claim("me", 10, HOUR).await.unwrap()),
+        [second_id]
+    );
+}
+
 /// Every rule, on a fresh outbox each: `fresh` makes one.
 pub async fn run_all<F, Fut, O>(fresh: F)
 where
@@ -554,6 +578,7 @@ where
     held_is_oldest_first_and_limited(&fresh().await).await;
     the_bound_never_drops_a_reserved_row(&fresh().await).await;
     a_delivery_id_is_recorded_once(&fresh().await).await;
+    recording_a_duplicate_drops_no_other_row(&fresh().await).await;
     held_for_task_lists_that_tasks_unarmed_reservations(&fresh().await).await;
     renew_applies_to_the_owners_live_leases_only(&fresh().await).await;
 }
