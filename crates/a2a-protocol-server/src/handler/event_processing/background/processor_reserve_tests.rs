@@ -40,7 +40,7 @@ struct Rig {
     a_stops: CancellationToken,
     a_seen: mpsc::UnboundedReceiver<Seen>,
     /// The replica that takes over.
-    _b: crate::handler::PushLanes,
+    b: crate::handler::PushLanes,
     b_seen: mpsc::UnboundedReceiver<Seen>,
 }
 
@@ -80,7 +80,7 @@ impl Rig {
             a,
             a_stops,
             a_seen,
-            _b: b,
+            b,
             b_seen,
         }
     }
@@ -411,4 +411,56 @@ async fn without_a_task_store_the_lane_records_after_the_event_is_stored() {
     );
     rig.wait(Duration::from_secs(30)).await;
     assert!(rx.try_recv().is_err());
+}
+
+/// A task ended on another replica (the reaper's ending) is recorded behind
+/// the rows a stopped replica still has reserved for it, so a webhook sees the
+/// event the dead replica had stored before the ending, not after it. A live
+/// run (`scripts/live/outbox_live.py`) delivered `failed` 40 s before the
+/// artifact when the reaper sent its ending from its own loop.
+#[tokio::test(start_paused = true)]
+async fn an_ending_recorded_after_a_crash_is_delivered_behind_the_reserved_event() {
+    let mut rig = Rig::new(TaskState::Working).await;
+    rig.store.stop(Stop::After);
+    let running = rig.run_on_a(artifact(1));
+    parked(&rig).await;
+    rig.kill_a(running).await;
+
+    assert!(
+        rig.b
+            .push_recorded(&TaskId::new("t"), &status(2, TaskState::Failed).event),
+        "the handler has an outbox"
+    );
+    rig.wait(Duration::from_secs(30)).await;
+    assert!(
+        rig.b_seen.try_recv().is_err(),
+        "the ending waits behind the reserved artifact"
+    );
+
+    rig.wait(hold(&rig) + Duration::from_secs(30)).await;
+    assert_eq!(
+        next(&mut rig.b_seen).await,
+        Seen {
+            replica: "b",
+            state: None
+        },
+        "the stored artifact first"
+    );
+    assert_eq!(
+        next(&mut rig.b_seen).await,
+        Seen {
+            replica: "b",
+            state: Some(TaskState::Failed)
+        },
+        "then the ending"
+    );
+}
+
+/// Without an outbox there is nothing to record in: the caller sends it.
+#[test]
+fn without_an_outbox_nothing_is_recorded() {
+    assert!(
+        !crate::handler::PushLanes::default()
+            .push_recorded(&TaskId::new("t"), &status(1, TaskState::Failed).event)
+    );
 }

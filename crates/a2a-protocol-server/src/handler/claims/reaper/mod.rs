@@ -85,6 +85,11 @@ pub struct Reaper {
     pub task_store: Arc<dyn TaskStore>,
     pub push_config_store: Arc<dyn PushConfigStore>,
     pub push_sender: Option<Arc<dyn PushSender>>,
+    /// Where an ending is recorded when the handler has a push outbox: behind
+    /// the rows another event of the task still has reserved, so a webhook
+    /// sees the ending after the events its dead replica had stored, and
+    /// durably.
+    pub push_lanes: crate::handler::PushLanes,
     /// The handler's lease store, when it grants leases: a task ended here
     /// had a lease its dead replica's watcher would have released.
     pub leases: Option<Arc<dyn LeaseStore>>,
@@ -237,15 +242,17 @@ impl Reaper {
         );
         self.metrics
             .on_claim(crate::metrics::control::claim::FINISHED);
-        crate::handler::event_processing::deliver_push_bg(
-            &id,
-            &event,
-            &*self.push_config_store,
-            self.push_sender.as_deref(),
-            &self.limits,
-            &*self.metrics,
-        )
-        .await;
+        if !self.push_lanes.push_recorded(&id, &event) {
+            crate::handler::event_processing::deliver_push_bg(
+                &id,
+                &event,
+                &*self.push_config_store,
+                self.push_sender.as_deref(),
+                &self.limits,
+                &*self.metrics,
+            )
+            .await;
+        }
     }
 
     /// Whether the task's log ends with a status update to `state`; `None`
@@ -338,15 +345,17 @@ impl Reaper {
             self.limits.store_write_retry,
         )
         .await;
-        crate::handler::event_processing::deliver_push_bg(
-            &id,
-            &event,
-            &*self.push_config_store,
-            self.push_sender.as_deref(),
-            &self.limits,
-            &*self.metrics,
-        )
-        .await;
+        if !self.push_lanes.push_recorded(&id, &event) {
+            crate::handler::event_processing::deliver_push_bg(
+                &id,
+                &event,
+                &*self.push_config_store,
+                self.push_sender.as_deref(),
+                &self.limits,
+                &*self.metrics,
+            )
+            .await;
+        }
         true
     }
 }

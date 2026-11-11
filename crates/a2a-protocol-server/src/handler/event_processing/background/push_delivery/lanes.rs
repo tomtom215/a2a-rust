@@ -221,6 +221,19 @@ impl PushLanes {
         self.push_after_store(task_id, event);
     }
 
+    /// Records `event`'s deliveries in the outbox, behind every row of the
+    /// task that is reserved or waiting (a webhook sees events in the order
+    /// they were stored), and returns `true`; `false`, having done nothing,
+    /// when the handler has no outbox. For an ending the processor did not
+    /// receive as an event (the reaper's), which is stored first.
+    pub fn push_recorded(&self, task_id: &TaskId, event: &StreamResponse) -> bool {
+        if !self.0.as_ref().is_some_and(|lanes| lanes.outbox.is_some()) {
+            return false;
+        }
+        self.push_after_store(task_id, event);
+        true
+    }
+
     /// [`push`](Self::push) for an event that is stored and has no
     /// reservation: its rows are recorded now, by the task's lane.
     pub(super) fn push_after_store(&self, task_id: &TaskId, event: &StreamResponse) {
