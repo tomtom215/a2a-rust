@@ -30,9 +30,11 @@ use crate::store::{InMemoryLeaseStore, LeaseStore, TaskStore};
 
 use super::super::Held;
 
+mod finish;
+
 /// Records what it was asked to deliver.
 #[derive(Default)]
-struct Recorder(Mutex<Vec<(String, StreamResponse)>>);
+pub(super) struct Recorder(pub(super) Mutex<Vec<(String, StreamResponse)>>);
 
 impl PushSender for Recorder {
     fn send<'a>(

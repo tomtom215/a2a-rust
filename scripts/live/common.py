@@ -27,10 +27,25 @@ CONTAINER = os.environ.get("A2A_LIVE_CONTAINER", "pg")
 OUT = pathlib.Path(os.environ.get("A2A_LIVE_OUT", ROOT / "target" / "live"))
 OUT.mkdir(parents=True, exist_ok=True)
 _USER = PG.split("://", 1)[1].split(":", 1)[0]
+# `A2A_LIVE_LOCAL=1` runs `psql` on this machine against `$A2A_LIVE_PG` instead of
+# inside the container, for a host that has PostgreSQL installed and no Docker.
+LOCAL = os.environ.get("A2A_LIVE_LOCAL") == "1"
+
+
+def _local_psql(sql: str, db: str) -> str:
+    rest = PG.split("://", 1)[1]
+    creds, hostport = rest.rsplit("@", 1)
+    password = creds.split(":", 1)[1] if ":" in creds else ""
+    host, _, port = hostport.partition(":")
+    cmd = ["psql", "-h", host, "-p", port or "5432", "-U", _USER, "-tAq", "-d", db, "-c", sql]
+    env = dict(os.environ, PGPASSWORD=password)
+    return subprocess.run(cmd, capture_output=True, text=True, env=env).stdout.strip()
 
 
 def psql(sql: str, db: str) -> str:
     """Runs `sql` in database `db` inside the container; returns its output."""
+    if LOCAL:
+        return _local_psql(sql, db)
     cmd = ["docker", "exec", "-i", CONTAINER, "psql", "-U", _USER, "-tAq", "-d", db, "-c", sql]
     return subprocess.run(cmd, capture_output=True, text=True).stdout.strip()
 
@@ -44,6 +59,8 @@ def fresh_db(db: str) -> str:
 
 def wait_ready() -> None:
     """Waits for the server in the container to accept connections."""
+    if LOCAL:
+        return
     for _ in range(200):
         if subprocess.run(["docker", "exec", CONTAINER, "pg_isready", "-U", _USER],
                           capture_output=True).returncode == 0:

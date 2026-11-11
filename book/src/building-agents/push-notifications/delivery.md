@@ -144,9 +144,13 @@ keeps them in a store instead (ADR 0037): open one, for example
   the config, not its credentials, so a config that is deleted, or removed
   after a `410`, ends its rows. The event body is in the row; `with_cipher`
   seals it with the push configs' `PushConfigCipher`. The write is not in the
-  event's own transaction: a crash between the two writes loses that event's
-  deliveries, one write's window where without the outbox it is everything
-  queued.
+  event's own transaction, so a crash between the event's storage and its row
+  loses that event's deliveries. The window is the task's lane: the event
+  waits there, in memory, behind the rows queued before it (at most
+  `push_queue_capacity`, 1024 by default, and none for more than the time a
+  row's write takes while the database answers) and the one being written. A
+  slow or unavailable outbox database widens it. Without the outbox every
+  queued delivery and every retry is lost with the process.
 - **Who delivers.** A worker per handler claims rows that are due, under a
   lease (three times `push_delivery_timeout` plus 30 s), from whichever
   replica: PostgreSQL's claim is `FOR UPDATE SKIP LOCKED`, so replicas never

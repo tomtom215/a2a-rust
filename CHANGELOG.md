@@ -41,6 +41,9 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`TurnClaimStore::ended_unreleased`** (a provided method; the default lists none, so a claim store of your own keeps working) and the
+  `finished` outcome of the claim-events metric (`Metrics::on_claim`), for the reaper's completion of a finished task's ending (see Fixed, W2-hostile-3).
+
 - **`ToolLoop::with_max_calls_per_turn`** (default `DEFAULT_MAX_CALLS_PER_TURN`, 64; hostile campaign, wave 2, W2-LIVE-5): a model reply with
   more tool calls than this runs the first ones, drops the rest and says so in the trace. With no bound a reply of 90,000 calls (7.6 MB, inside the
   8 MiB response cap) took a loop from 21 MB to a 1.4 GB peak in 14 s; the dropped calls are not kept in the conversation. A model that wrote more
@@ -1689,6 +1692,19 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A task canceled on another replica, whose owner then died, stayed `canceled` with no ending in its log and no webhook for it** (hostile
+  campaign W2-hostile-3, 2026-11-08; raised again by the external review of 2026-11-09). `CancelTask` on a replica that does not run the turn
+  stores `canceled` and leaves the ending to the owner's own event processor; an owner killed before it ended the turn left a terminal task whose
+  log stopped short, whose webhooks and audit trail never heard, and whose claim row stayed, because the reaper looked only at running tasks.
+  Each look of the reaper now also takes over a claim left behind a terminal task, expired for longer than the claim's time to live
+  (`TurnClaimStore::ended_unreleased`), reads the log's last event, and, when it is not the task's ending, appends the ending and sends it to the
+  webhooks once; when the log already ends the task it only releases the claim. A claim that is live, one that expired inside the margin and one
+  the handler holds itself are left alone, and a task that is not finished gets no ending. Reproduced and checked live, two replicas on one
+  PostgreSQL database, the owner killed with `SIGKILL` as the cancel returned: before, 75 s later the stored state was `canceled`, no event carried
+  the ending and the claim was still there; after, the log carries the ending once and the claim is gone 44 s after the kill (42 s with the owner
+  killed in the middle of a real model's answer, llama.cpp `llama-server` f3b407ca with Qwen3.5-2B Q4_K_M). Tests: SQLite and PostgreSQL, plain and
+  tenant-aware, 21 hand mutants of the new code and SQL all killed (`handler/claims/reaper/tests/finish.rs`).
+
 - **A provider's, or a delegated child's, absurd token count left the task `working` for ever** (types and
   server; found by the live-model campaign, 2026-11-08, by serving a scripted provider and a scripted peer
   to a budgeted agent). `BudgetHandle::status()` is written onto every status update, and the server
@@ -2842,13 +2858,10 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 - **A status written with no event** (audit E-F25): a `CancelTask` of a parked task on one replica, and a task the claim reaper ends, write a status with no event in the log, so a subscriber on another replica learns of it at its next poll (up to `subscribe_reattach_max_interval`), also with `with_log_notifications`; measured: 2.0 s for a cancel at a 2 s ceiling.
 
-- **A cancel taken on another replica, then the owner's abrupt death** (hostile campaign W2-hostile-3, 2026-11-08): `CancelTask` on a replica
-  that does not run the turn stores `Canceled` and leaves the terminal event to the owner's own event processor. If the owner is killed
-  (`kill -9`, an out-of-memory kill, a `SIGTERM` nothing handles) before it ends the turn, the task is `Canceled` in the store with no terminal
-  event in its log, which webhooks, the audit trail and a resuming subscriber read, and its expired claim row stays, because the reaper's
-  query excludes terminal tasks. The owner left running, or shut down by `shutdown_with_timeout` (what `Server::serve_with_shutdown` runs on
-  `SIGTERM`), logs the event and frees the claim (`tests/turn_claims`, SQLite and PostgreSQL). Closing the gap needs the canceller to append
-  the ending itself and the processor to skip an ending already logged, so a decision on duplicate terminal events; not changed.
+- **A finished task whose owner died is completed after about three claim lifetimes** (hostile campaign W2-hostile-3, 2026-11-08; the reaper's
+  completion is under Fixed): measured at 42 to 44 s with the default 15 s time to live (the claim expires, stays 15 s more before it is stale, and the
+  survivor's reaper looks every 15 s). A handler without turn claims (a process-local store) has no claim to find, and the ending is sent to the
+  webhooks by the reaper's in-process delivery, not through the push outbox.
 
 - **Authentication runs after method dispatch, body parsing and version negotiation** (hostile campaign W2-hostile-5, 2026-11-08): with a bearer
   interceptor and no credential, a call to a known method answers the reference `401`, but an unknown JSON-RPC method (`-32601`), invalid JSON
@@ -2880,7 +2893,7 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 - **Load and admission** (audit H7, H9, H17): ORCA over gRPC trailers, a queue-cap gauge, priority from the request, preemption, fleet-wide admission, a tool-loop limit across processes and retrying a turn that failed mid-stream are not built (ADRs 0045 to 0048). The ORCA header format was not checked against Envoy.
 
-- **Push** (audit H14, SEC-14): the outbox row is written after the event is stored, so a crash between the two loses that event's deliveries; per-destination rate limits, the verification handshake and a per-caller configuration quota are not built (ADR 0043, ADR 0037).
+- **Push** (audit H14, SEC-14): the outbox row is written after the event is stored, by the task's lane, so a crash loses the deliveries of the events still waiting in that lane (up to `push_queue_capacity`, 1024 by default, and normally none for more than a row's write) and of the one being written; per-destination rate limits, the verification handshake and a per-caller configuration quota are not built (ADR 0043, ADR 0037).
 
 - **Network** (audit B-25, B-28, B-29): the WebSocket upgrade's same-origin check does not defend against DNS rebinding (the HTTP endpoints have no Host or Origin check either); there is no DNS cache; there is no `fips` feature and no CRL or OCSP helper (ADR 0041).
 

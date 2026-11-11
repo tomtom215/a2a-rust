@@ -17,8 +17,9 @@ name = "a2a-live-replica"
 path = "src/main.rs"
 
 [dependencies]
-a2a-protocol-server = { path = "../../../crates/a2a-protocol-server", features = ["postgres"] }
+a2a-protocol-server = { path = "../../../crates/a2a-protocol-server", features = ["postgres", "tool-loop"] }
 a2a-protocol-types = { path = "../../../crates/a2a-protocol-types" }
 tokio = { version = "1", features = ["full"] }
+serde_json = "1"
 
 [workspace]

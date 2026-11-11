@@ -435,7 +435,7 @@ implements it; so can you, to count something of your own
 | `on_lease(event)` | A task lease event: `lapsed` | `a2a.server.lease.events` |
 | `on_halt(scope, action, stopped)` | A halt or resume is applied: scope `all` \| `tenant` \| `root` (a job), action `halt` \| `resume`, and the running tasks it stopped | `a2a.server.halts`, `a2a.server.halt.stopped_tasks` |
 | `on_steering(outcome)` | A steering message is decided about (ADR 0036): `delivered`, `handed_off`, `replayed`, `full`, `ended`, `too_large`, `halted`, `unread`, `received` | `a2a.server.steering` |
-| `on_claim(event)` | A turn-claim event: `reaped` (the reaper ended a task its replica left) | `a2a.server.claim.events` |
+| `on_claim(event)` | A turn-claim event: `reaped` (the reaper ended a task its replica left), `finished` (the reaper logged and pushed the ending of a task that was terminal in the store when its replica stopped) | `a2a.server.claim.events` |
 | `on_subscribe_wake(cause)` | A cross-replica `SubscribeToTask` stream stops waiting to read the store again, on a store that can wake it (`with_log_notifications`): `notification`, `resync` (the listener reconnected), or `timeout` | `a2a.server.subscribe.wakes` |
 
 `RpcCall` carries `system`, `method` (`Option`), `duration`, `status_code`

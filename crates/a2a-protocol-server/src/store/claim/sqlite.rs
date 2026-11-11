@@ -75,6 +75,23 @@ const ABANDONED_TENANT_SQL: &str = "SELECT t.tenant_id, t.id FROM tenant_tasks t
                        AND t.updated_at > strftime('%Y-%m-%d %H:%M:%f', 'now', ?4), 0)
     ORDER BY t.updated_at LIMIT ?3";
 
+/// Finished tasks whose claim is still there and expired before `?1` (a time
+/// in milliseconds): a turn whose replica stopped before it released the claim
+/// (see `TurnClaimStore::ended_unreleased`).
+const ENDED_UNRELEASED_PLAIN_SQL: &str = "SELECT c.scope, c.task_id FROM a2a_task_claims c
+    JOIN tasks t ON c.scope = '' AND t.id = c.task_id
+    WHERE t.state IN ('TASK_STATE_COMPLETED', 'TASK_STATE_FAILED',
+                      'TASK_STATE_CANCELED', 'TASK_STATE_REJECTED')
+      AND c.expires_at_ms < ?1
+    ORDER BY c.expires_at_ms LIMIT ?2";
+
+const ENDED_UNRELEASED_TENANT_SQL: &str = "SELECT c.scope, c.task_id FROM a2a_task_claims c
+    JOIN tenant_tasks t ON t.tenant_id = c.scope AND t.id = c.task_id
+    WHERE t.state IN ('TASK_STATE_COMPLETED', 'TASK_STATE_FAILED',
+                      'TASK_STATE_CANCELED', 'TASK_STATE_REJECTED')
+      AND c.expires_at_ms < ?1
+    ORDER BY c.expires_at_ms LIMIT ?2";
+
 /// Turn claims in a SQLite table, `a2a_task_claims`.
 #[derive(Debug, Clone)]
 pub struct SqliteTurnClaims {
@@ -298,6 +315,25 @@ impl TurnClaimStore for SqliteTurnClaims {
 
     fn ack_steering<'a>(&'a self, seqs: &'a [i64]) -> Fut<'a, ()> {
         Box::pin(async move { steering::ack(&self.pool, seqs).await })
+    }
+
+    fn ended_unreleased(&self, quiet: Duration, limit: usize) -> Fut<'_, Vec<(String, String)>> {
+        Box::pin(async move {
+            let Some(tasks) = self.tasks else {
+                return Ok(Vec::new());
+            };
+            let sql = match tasks {
+                super::ClaimedTasks::Plain => ENDED_UNRELEASED_PLAIN_SQL,
+                super::ClaimedTasks::Tenant => ENDED_UNRELEASED_TENANT_SQL,
+            };
+            let quiet_ms = i64::try_from(quiet.as_millis()).unwrap_or(i64::MAX);
+            sqlx::query_as::<_, (String, String)>(sql)
+                .bind(now_ms().saturating_sub(quiet_ms))
+                .bind(i64::try_from(limit).unwrap_or(i64::MAX))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| failed("ended_unreleased", &e))
+        })
     }
 
     fn abandoned(&self, quiet: Duration, limit: usize) -> Fut<'_, Vec<(String, String)>> {

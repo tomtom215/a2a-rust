@@ -157,8 +157,11 @@ changes: the lanes deliver from memory as before.
    which the handler composes but cannot enlist in one transaction without
    a cross-store API every `TaskStore` would have to implement. The record
    is written by the task's lane, in order, as soon as the event is stored:
-   a crash between the two writes loses that event's deliveries, a window
-   of one write, where before it was every queued delivery and every retry.
+   a crash between the two writes loses that event's deliveries. The window
+   is the lane, not one write (corrected 2026-11-11: this said "one write"):
+   the event waits in memory behind the rows queued before it, up to
+   `push_queue_capacity`, and a slow outbox database widens it. Before the
+   outbox it was every queued delivery and every retry.
 3. **The event body is in the row** (departs from decision 1). Reading it
    back from the log by position would tie the outbox's life to the log's
    retention and to an API of every task store. The body is sealed with the

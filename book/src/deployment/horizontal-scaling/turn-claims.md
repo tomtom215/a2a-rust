@@ -170,6 +170,50 @@ nothing), and against PostgreSQL for the pool (`postgres_renews_while_the_task_p
 The live partition run above has not been repeated through toxiproxy since the
 change, so the timings in this page are the 2026-10-28 ones, not these.
 
+### A finished task whose owner died before it finished the ending
+
+A turn that ends releases its claim. A claim that is still there behind a task in
+a **terminal** state means the replica that held it stopped after the state
+reached the store and before it finished what follows: the ending in the event
+log, the webhooks, the audit record. The state can reach the store without the
+owner. A `CancelTask` that lands on a replica not running the turn stores
+`canceled` and leaves the ending to the owner's own event processor; an owner
+killed in between left a task that `GetTask` reported `canceled` while its log
+stopped short and its webhooks never heard (hostile campaign W2-hostile-3).
+
+Every look of the reaper now also takes over such a claim, once it has been
+expired for longer than the claim's time to live, and reads the log's last
+event. If the log does not end with the task's terminal status, the reaper
+appends it at the next position and sends it to the task's webhooks, once. If it
+does, the owner got that far and nothing provable is missing, so the reaper only
+releases the claim. A claim this replica holds itself, one that is live and one
+that expired a moment ago (a slow owner, not a dead one) are left alone. The
+`finished` outcome of the claim-events metric counts the endings completed.
+
+Measured (PostgreSQL 16.15 on a 4-vCPU shared virtual machine, 2026-11-11, the
+reaper's query run by hand with `EXPLAIN ANALYZE`): with 1,000,000 claims and 20
+finished tasks among them, 0.45 ms and 121 buffers, the planner reading the task
+table's state index and probing the claims by key; with 1,000,000 retained
+finished tasks, 20,000 live claims and 20 stale ones, 3.7 ms and 288 buffers,
+the planner reading the claims and probing the tasks by key. The cost follows the
+smaller side, not the retained tasks, and the claims table gets no new index (an
+index on `expires_at` would be written by every renewal, the hottest statement).
+
+Run live (`scripts/live/finish_live.py`, two replicas on one PostgreSQL database,
+the default 15 s claim time to live): a task held on replica A, `CancelTask` sent
+to B, A killed with `SIGKILL` as the cancel returned. Before the change the stored
+state was `canceled`, no event in the log carried the ending and the claim row
+was still there 75 s later. After it, 44 s after the kill the log carries the
+ending once and the claim is gone (the claim expires after 15 s, is stale after 15
+more, and the survivor's reaper looks every 15 s); the same run with the owner in the
+middle of a real model's answer (llama.cpp `llama-server` f3b407ca, Qwen3.5-2B
+Q4_K_M, a slot processing when the cancel landed) took 42 s.
+
+What this does not do: a replica without turn claims (a process-local store) has
+no claim to find, and the webhooks of a store with no event log are not sent an
+ending, because there is nothing to prove one missing by. A push the owner had
+queued and lost with it is the outbox's matter (ADR 0037), not this one's.
+
 ### A known window: a killed owner and event positions
 
 An event is numbered when it enters the owner's queue and is broadcast to the

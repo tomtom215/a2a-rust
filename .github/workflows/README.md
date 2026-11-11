@@ -120,6 +120,30 @@ The CI workflow tests across multiple configurations:
 - **Checks**: `cargo fmt`, `cargo clippy`, `cargo test`, `cargo doc`,
   `cargo deny`, `cargo semver-checks`, `cargo package`
 
+## Downloads in a workflow
+
+A step that fetches something from the network does not use a bare `curl`. On
+2026-11-09 two workflows on `main` failed on a download, not on the code:
+`curl -sSL <mdBook> | tar -xz` ("not in gzip format", so every later gate of the
+job never ran) and an HTTP 504 fetching promtool. The rules, enforced by
+`scripts/check_workflow_downloads.py` (a `static-checks` step, proved able to fail by
+`scripts/prove_gates_fail.sh`):
+
+- **D1.** A tool or archive is fetched with `scripts/ci/fetch_verified.sh URL SHA256 DEST`
+  (HTTPS only, `--fail`, retried on a failed transfer and on a wrong digest, nothing at
+  `DEST` unless the digest matches), or through a script that calls it
+  (`scripts/ci/install_mdbook.sh`, `deploy/observability/scripts/install_tools.sh`). `curl`
+  stays only for a readiness probe of a loopback server. A pin is the SHA-256 of the file
+  as downloaded over TLS, checked twice, with the date in the comment beside it; the
+  release publishes no checksum file for mdBook or SPIRE.
+- **D2.** A `git clone`, or a fetch from an HTTPS remote added by the step, runs under
+  `scripts/ci/retry.sh COUNT -- command`.
+- **D3.** `cargo install` carries `--locked` and `--version`, and a workflow that runs one
+  sets `CARGO_NET_RETRY: 10`.
+
+`scripts/ci/test_fetch_verified.py` and `scripts/ci/test_retry.py` serve a 504, an error page
+with status 200 and a wrong digest to the two helpers and check what they leave behind.
+
 ## Running Locally
 
 CI sets `RUSTFLAGS` and `RUSTDOCFLAGS` to `-D warnings` for every job, so a

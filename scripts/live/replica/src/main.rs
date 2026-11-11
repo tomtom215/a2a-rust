@@ -12,6 +12,11 @@
 //!   completed; stops when cancelled.
 //! * `burst`, `burst6k`: 2,000 or 6,000 parts of `tick`, 50 at a time with
 //!   50 ms between, then completed; logs how many writes failed.
+//! * `ask <question>`: a real model answers, through the SDK's tool loop (no
+//!   tools), from the OpenAI-compatible server at `$C_MODEL_URL` (default
+//!   `http://127.0.0.1:11434/v1`) as `$C_MODEL` (default `qwen3.5:2b`), thinking
+//!   off and 400 tokens at most. The answer takes seconds to minutes on a CPU,
+//!   which is what a kill-the-owner script needs.
 //! * anything else: completed at once.
 
 use std::sync::Arc;
@@ -21,6 +26,7 @@ use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::serve::Server;
+use a2a_protocol_server::tool_loop::{OpenAiChatModel, ToolLoop, ToolLoopExecutor, ToolSet};
 use a2a_protocol_server::store::{LogListen, PostgresTaskStore};
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_server::{EventEmitter, RequestHandlerBuilder};
@@ -30,13 +36,16 @@ use a2a_protocol_types::task::TaskState;
 
 type Fut<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>>;
 
-struct Exec(&'static str);
+struct Exec(&'static str, ToolLoopExecutor);
 
 impl AgentExecutor for Exec {
     fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Fut<'a> {
         Box::pin(async move {
-            let emit = EventEmitter::new(ctx, queue);
             let text = ctx.message.text().unwrap_or_default().to_owned();
+            if text.starts_with("ask ") {
+                return self.1.execute(ctx, queue).await;
+            }
+            let emit = EventEmitter::new(ctx, queue);
             emit.status(TaskState::Working).await?;
             match text.as_str() {
                 "hold" => {
@@ -126,8 +135,23 @@ async fn main() {
         Ok("direct") => store.with_log_notifications(LogListen::Direct(url.clone())),
         _ => store,
     };
+    let base = std::env::var("C_MODEL_URL").unwrap_or_else(|_| "http://127.0.0.1:11434/v1".into());
+    let model_name = std::env::var("C_MODEL").unwrap_or_else(|_| "qwen3.5:2b".into());
+    let mut extra = serde_json::Map::new();
+    extra.insert(
+        "chat_template_kwargs".to_owned(),
+        serde_json::json!({"enable_thinking": false}),
+    );
+    extra.insert("max_tokens".to_owned(), serde_json::json!(400));
+    let model = OpenAiChatModel::new(&base, model_name)
+        .expect("model")
+        .with_extra_body(extra);
+    let asker = ToolLoopExecutor::new(
+        ToolLoop::new(model, ToolSet::new())
+            .with_preamble("Answer the question in about three hundred words."),
+    );
     let handler = Arc::new(
-        RequestHandlerBuilder::new(Exec(name))
+        RequestHandlerBuilder::new(Exec(name, asker))
             .without_agent_card()
             .with_task_store(store)
             .build()
