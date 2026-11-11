@@ -285,6 +285,23 @@ impl Rig {
     }
 }
 
+/// The next delivery on `rx`. The clock is paused, so a delivery that never
+/// comes would otherwise be waited for for ever, with the workers' polls
+/// advancing the clock: bounded, it fails.
+async fn next(rx: &mut mpsc::UnboundedReceiver<Seen>) -> Seen {
+    tokio::time::timeout(Duration::from_secs(900), rx.recv())
+        .await
+        .expect("no delivery within 15 minutes of (paused) time")
+        .expect("the sender is gone")
+}
+
+/// The write that is to stop has reached its stop.
+async fn parked(rig: &Rig) {
+    tokio::time::timeout(Duration::from_secs(900), rig.store.parked.notified())
+        .await
+        .expect("the write never reached its stop");
+}
+
 /// The hold the rig's limits give a reservation.
 fn hold(rig: &Rig) -> Duration {
     super::super::push_delivery::reservation_hold(&rig.limits)
@@ -299,7 +316,7 @@ async fn a_stored_event_is_delivered_once_from_its_reservation() {
     rig.run_on_a(status(1, TaskState::Working)).await.unwrap();
 
     assert_eq!(
-        rig.a_seen.recv().await.unwrap(),
+        next(&mut rig.a_seen).await,
         Seen {
             replica: "a",
             state: Some(TaskState::Working)
@@ -326,7 +343,7 @@ async fn an_event_the_store_refused_leaves_no_row_of_its_own() {
     rig.run_on_a(artifact(1)).await.unwrap();
 
     assert_eq!(
-        rig.a_seen.recv().await.unwrap(),
+        next(&mut rig.a_seen).await,
         Seen {
             replica: "a",
             state: Some(TaskState::Canceled)
@@ -355,7 +372,7 @@ async fn a_stop_after_the_store_write_is_settled_by_another_replica_and_delivere
     let mut rig = Rig::new(TaskState::Working).await;
     rig.store.stop(Stop::After);
     let running = rig.run_on_a(status(1, TaskState::Working));
-    rig.store.parked.notified().await;
+    parked(&rig).await;
     rig.kill_a(running).await;
 
     assert_eq!(rig.rows().await, 1, "the reservation outlived its replica");
@@ -364,7 +381,7 @@ async fn a_stop_after_the_store_write_is_settled_by_another_replica_and_delivere
 
     rig.wait(hold(&rig) + Duration::from_secs(30)).await;
     assert_eq!(
-        rig.b_seen.recv().await.unwrap(),
+        next(&mut rig.b_seen).await,
         Seen {
             replica: "b",
             state: Some(TaskState::Working)
@@ -387,7 +404,7 @@ async fn a_stop_before_the_store_write_is_settled_as_not_stored_and_tells_nobody
     let mut rig = Rig::new(TaskState::Working).await;
     rig.store.stop(Stop::Before);
     let running = rig.run_on_a(status(1, TaskState::Working));
-    rig.store.parked.notified().await;
+    parked(&rig).await;
     rig.kill_a(running).await;
     let id = TaskId::new("t");
     assert_eq!(
@@ -410,13 +427,13 @@ async fn an_artifact_update_is_reserved_too() {
     let mut rig = Rig::new(TaskState::Working).await;
     rig.store.stop(Stop::After);
     let running = rig.run_on_a(artifact(1));
-    rig.store.parked.notified().await;
+    parked(&rig).await;
     rig.kill_a(running).await;
     assert_eq!(rig.rows().await, 1);
 
     rig.wait(hold(&rig) + Duration::from_secs(30)).await;
     assert_eq!(
-        rig.b_seen.recv().await.unwrap(),
+        next(&mut rig.b_seen).await,
         Seen {
             replica: "b",
             state: None
@@ -452,7 +469,7 @@ async fn a_stop_between_a_terminal_save_and_its_log_write_still_delivers_the_end
     let mut rig = Rig::new(TaskState::Working).await;
     rig.store.stop(Stop::After);
     let running = rig.run_on_a(status(1, TaskState::Completed));
-    rig.store.parked.notified().await;
+    parked(&rig).await;
     rig.kill_a(running).await;
     let id = TaskId::new("t");
     assert!(
@@ -467,7 +484,7 @@ async fn a_stop_between_a_terminal_save_and_its_log_write_still_delivers_the_end
 
     rig.wait(hold(&rig) + Duration::from_secs(30)).await;
     assert_eq!(
-        rig.b_seen.recv().await.unwrap(),
+        next(&mut rig.b_seen).await,
         Seen {
             replica: "b",
             state: Some(TaskState::Completed)
@@ -485,7 +502,7 @@ async fn a_processor_stalled_past_its_hold_records_afresh_and_the_webhook_hears_
     let mut rig = Rig::new(TaskState::Working).await;
     rig.store.stop(Stop::Before);
     let running = rig.run_on_a(status(1, TaskState::Working));
-    rig.store.parked.notified().await;
+    parked(&rig).await;
 
     rig.wait(hold(&rig) + Duration::from_secs(30)).await;
     assert_eq!(rig.rows().await, 0, "settled as not stored while it waited");
@@ -493,10 +510,14 @@ async fn a_processor_stalled_past_its_hold_records_afresh_and_the_webhook_hears_
     rig.store.resume.notify_one();
     running.await.unwrap();
     // One of the two replicas' workers delivers the fresh row.
-    let first = tokio::select! {
-        seen = rig.a_seen.recv() => seen.unwrap(),
-        seen = rig.b_seen.recv() => seen.unwrap(),
-    };
+    let first = tokio::time::timeout(Duration::from_secs(900), async {
+        tokio::select! {
+            seen = rig.a_seen.recv() => seen.unwrap(),
+            seen = rig.b_seen.recv() => seen.unwrap(),
+        }
+    })
+    .await
+    .expect("no delivery within 15 minutes of (paused) time");
     assert_eq!(first.state, Some(TaskState::Working));
     rig.wait(Duration::from_secs(30)).await;
     assert!(rig.a_seen.try_recv().is_err() && rig.b_seen.try_recv().is_err());
@@ -539,7 +560,14 @@ async fn without_a_task_store_the_lane_records_after_the_event_is_stored() {
             .is_none()
     );
     lanes.push(&TaskId::new("t"), &status(1, TaskState::Working).event);
-    assert_eq!(rx.recv().await.unwrap().state, Some(TaskState::Working));
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(900), rx.recv())
+            .await
+            .expect("no delivery")
+            .unwrap()
+            .state,
+        Some(TaskState::Working)
+    );
     rig.wait(Duration::from_secs(30)).await;
     assert!(rx.try_recv().is_err());
 }
