@@ -129,6 +129,39 @@ struct Rig {
     path: std::path::PathBuf,
 }
 
+/// A config for `id`, a sender that notes each delivery, and the push lanes of a
+/// handler with an in-memory outbox that settles from `store`.
+async fn lanes(
+    id: &str,
+    store: &Arc<ParksAppend>,
+) -> (
+    Arc<InMemoryPushConfigStore>,
+    Arc<Ids>,
+    crate::handler::limits::HandlerLimits,
+    crate::handler::PushLanes,
+) {
+    let configs = Arc::new(InMemoryPushConfigStore::new());
+    configs
+        .set(TaskPushNotificationConfig::new(id, "http://127.0.0.1:9/hook").with_id("hook"))
+        .await
+        .unwrap();
+    let sender = Arc::new(Ids::default());
+    let limits = crate::handler::limits::HandlerLimits::default();
+    let lanes = crate::handler::PushLanes::with_reservations(
+        Arc::clone(&configs) as Arc<dyn PushConfigStore>,
+        Some(Arc::clone(&sender) as Arc<dyn PushSender>),
+        limits.clone(),
+        Arc::new(crate::metrics::NoopMetrics),
+        TaskTracker::new(),
+        Some((
+            Arc::new(InMemoryPushOutbox::new()) as Arc<dyn PushOutbox>,
+            CancellationToken::new(),
+        )),
+        Some(Arc::clone(store) as Arc<dyn TaskStore>),
+    );
+    (configs, sender, limits, lanes)
+}
+
 /// `state`: what the orphaned task is stored as. A finished one (its owner
 /// killed after it was cancelled elsewhere) is found by the finish phase when
 /// its claim is a second old; a running one by the abandoned phase.
@@ -165,25 +198,7 @@ async fn rig(state: TaskState) -> Rig {
     })
     .await;
 
-    let configs = Arc::new(InMemoryPushConfigStore::new());
-    configs
-        .set(TaskPushNotificationConfig::new(&id, "http://127.0.0.1:9/hook").with_id("hook"))
-        .await
-        .unwrap();
-    let sender = Arc::new(Ids::default());
-    let limits = crate::handler::limits::HandlerLimits::default();
-    let lanes = crate::handler::PushLanes::with_reservations(
-        Arc::clone(&configs) as Arc<dyn PushConfigStore>,
-        Some(Arc::clone(&sender) as Arc<dyn PushSender>),
-        limits.clone(),
-        Arc::new(crate::metrics::NoopMetrics),
-        TaskTracker::new(),
-        Some((
-            Arc::new(InMemoryPushOutbox::new()) as Arc<dyn PushOutbox>,
-            CancellationToken::new(),
-        )),
-        Some(Arc::clone(&store) as Arc<dyn TaskStore>),
-    );
+    let (configs, sender, limits, lanes) = lanes(&id, &store).await;
     let claims = Arc::new(super::super::super::TurnClaims::new(
         claims_store,
         Some("reaper".into()),

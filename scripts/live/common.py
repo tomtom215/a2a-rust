@@ -83,9 +83,11 @@ def rpc(port: int, method: str, params: dict, timeout: float = 40) -> dict:
 
 
 def start(binary: str, name: str, port: int, url: str, log: pathlib.Path | None = None,
-          rust_log: str | None = None) -> subprocess.Popen:
-    """Starts a replica (scripts/live/replica) and waits until it answers."""
+          rust_log: str | None = None, extra_env: dict | None = None) -> subprocess.Popen:
+    """Starts a replica (scripts/live/replica) and waits until it answers.
+    `extra_env` is added to its environment (see replica/src/main.rs)."""
     env = {"PATH": os.environ["PATH"], "PORT": str(port), "NAME": name, "DATABASE_URL": url}
+    env.update(extra_env or {})
     if rust_log:
         env["RUST_LOG"] = rust_log
     sink = open(log, "w") if log else subprocess.DEVNULL

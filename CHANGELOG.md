@@ -41,6 +41,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`PushOutbox::reserve`, `arm`, `release` and `held`**, `PushOutbox::supports_reservations` (false by default, so an outbox of your own keeps working
+  and keeps recording after the event is stored), the `Held` type, and the push outcome `reservation_settled` (`push_outcome::RESERVATION_SETTLED`; the
+  metric and its label are in the book). `InMemoryPushOutbox`, `SqlitePushOutbox` and `PostgresPushOutbox` implement them; the table
+  `a2a_push_outbox` gains `armed`, `reservation`, `log_seq` and `hold_ms` / `hold_until`, added in place to a table an earlier build created. See Fixed,
+  audit H14.
+
 - **`TurnClaimStore::ended_unreleased`** (a provided method; the default lists none, so a claim store of your own keeps working) and the
   `finished` outcome of the claim-events metric (`Metrics::on_claim`), for the reaper's completion of a finished task's ending (see Fixed, W2-hostile-3).
 
@@ -1692,6 +1698,28 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A replica lost between storing an event and recording its push rows lost that event's deliveries** (audit H14; independent review of 2026-11-11,
+  X-08). The outbox row was written after the event was stored, by the task's lane, so the window was the lane's backlog (up to `push_queue_capacity`,
+  1,024 by default, longer behind a slow outbox database), not one write, and the blocking send recorded every event of a request only when the request
+  ended. The background processor and the blocking send's collector now **reserve** an event's rows before its first durable write (unarmed: never
+  claimed, holding their webhooks' places so the order of a webhook's deliveries is the order of the events), run the fold, and **arm** the rows if
+  the state machine announced the event or **release** them if not. Every replica's worker settles a reservation whose hold (three
+  `store_write_retry` plus a minute: 150 s by default) ran out, from the task store: the event was stored if the stored task has reached its log
+  position and the log holds no different event there; stored, it is delivered with the delivery id its replica gave it, otherwise removed and no
+  webhook is told of an event the task does not have (counted `reservation_settled`). A task's ending that no queued event carried (the reaper's, an
+  executor's panic, a verdict from another writer) is recorded before it is written to the log, because the reaper skips an ending the log already
+  holds; the reaper records through the outbox, behind a dead replica's reserved rows. Needs a task store with an event log and an outbox that keeps
+  reservations (all three here do); otherwise nothing changes. Not one transaction: ADR 0037, amendment 2026-11-11, says why not. Checked: the
+  contract on all three outboxes (PostgreSQL live; two replicas settling one reservation; a table from an earlier build upgraded in place), a unit test
+  for each row of the settlement's decision table, tests that abort a task at a chosen point of its store write with two replicas over one outbox
+  (before the write, after it, a terminal event between its save and its log write, stalled past the hold), the same on the blocking path, and hand
+  mutants of each rule (all killed; `scripts/live/outbox_live.py`'s run is below). Live, two replicas on one PostgreSQL database and a webhook
+  receiver, replica A sent itself `SIGKILL` after it stored an artifact and before it armed the row: the receiver saw `working`, then the artifact
+  once, 71 s after the kill and from the survivor, then the reaper's `failed`, the outbox empty; killed after reserving and before storing, the event
+  the task never had was never delivered. The first live run found the reaper sending its `failed` from its own loop 40 s before that artifact, which is
+  why it now records through the outbox. Not covered, and under Known Limitations: a store without an event log, an outbox that is down when an event
+  is reserved, an executor panic's one write where turn claims are off.
+
 - **Every blocking send copied two 36,000-byte futures four times each** (found by measuring this tree against a2a-rs and against 0.14.1
   on one host, `docs/sdk-comparison-2026-11-11.md`). The executor's `async` block and the blocking send's collector block each hold the request
   context, the stored task and every `await` of the run, and `TenantContext::scope`, the span wrapper, the task tracker and `tokio::spawn` each
@@ -2878,8 +2906,9 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 - **A finished task whose owner died is completed after about three claim lifetimes** (hostile campaign W2-hostile-3, 2026-11-08; the reaper's
   completion is under Fixed): measured at 42 to 44 s with the default 15 s time to live (the claim expires, stays 15 s more before it is stale, and the
-  survivor's reaper looks every 15 s). A handler without turn claims (a process-local store) has no claim to find, and the ending is sent to the
-  webhooks by the reaper's in-process delivery, not through the push outbox.
+  survivor's reaper looks every 15 s). A handler without turn claims (a process-local store) has no claim to find. With a push outbox the reaper records
+  the ending there (behind a dead replica's reserved rows, so a stopped replica's last event reaches a webhook before the ending); without one it sends it
+  from its own loop.
 
 - **Authentication runs after method dispatch, body parsing and version negotiation** (hostile campaign W2-hostile-5, 2026-11-08): with a bearer
   interceptor and no credential, a call to a known method answers the reference `401`, but an unknown JSON-RPC method (`-32601`), invalid JSON
@@ -2911,7 +2940,7 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 - **Load and admission** (audit H7, H9, H17): ORCA over gRPC trailers, a queue-cap gauge, priority from the request, preemption, fleet-wide admission, a tool-loop limit across processes and retrying a turn that failed mid-stream are not built (ADRs 0045 to 0048). The ORCA header format was not checked against Envoy.
 
-- **Push** (audit H14, SEC-14): the outbox row is written after the event is stored, by the task's lane, so a crash loses the deliveries of the events still waiting in that lane (up to `push_queue_capacity`, 1024 by default, and normally none for more than a row's write) and of the one being written; per-destination rate limits, the verification handshake and a per-caller configuration quota are not built (ADR 0043, ADR 0037).
+- **Push** (audit H14, SEC-14): the outbox reserves an event's rows before it is stored (see Fixed), which needs a task store with an event log and an outbox that keeps reservations; with either missing the row is written after the event is stored, by the task's lane, and a crash loses the deliveries of the events still waiting in that lane (up to `push_queue_capacity`, 1024 by default). With both, what is not covered: an outbox that is down when an event is reserved (that event is recorded after it is stored, and a webhook can see it after a later one); a task ended by an executor's panic, saved before its ending is recorded, where turn claims are off (nothing finds it); a stopped replica's last event reaches a webhook after the reservation's hold (150 s by default), and a reaper's ending behind it; a processor stalled past the hold records an event afresh under a second delivery id (at least once); per-destination rate limits, the verification handshake and a per-caller configuration quota are not built (ADR 0043, ADR 0037).
 
 - **Network** (audit B-25, B-28, B-29): the WebSocket upgrade's same-origin check does not defend against DNS rebinding (the HTTP endpoints have no Host or Origin check either); there is no DNS cache; there is no `fips` feature and no CRL or OCSP helper (ADR 0041).
 

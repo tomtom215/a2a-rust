@@ -59,9 +59,9 @@
     "id": "X-08",
     "section": "3,6",
     "claim": "event commit and outbox insertion are not atomic (H14)",
-    "status": "CONFIRMED, OPEN",
-    "evidence": "ADR 0037 amendment 2; CHANGELOG Known Limitations (Push). The loss window is the lane's backlog, not one write: the lane records rows after the event is stored.",
-    "action": "design chosen (see README): per-task recorded-through mark in the outbox, deterministic delivery ids, reconcile from the log by the reaper; not built in this change; the book and ADR 0037 said the window was 'one write': corrected to the lane's backlog (up to push_queue_capacity, 1024 by default)"
+    "status": "CONFIRMED, FIXED by a two-phase row, not by one transaction",
+    "evidence": "ADR 0037 amendment 2026-11-11; push::outbox::contract (memory, SQLite, live PostgreSQL), handler/event_processing/background/processor_reserve_tests.rs, sync_collector_reserve_tests.rs, handler/claims/reaper/tests/outbox.rs; scripts/live/outbox_live.py. Until now the loss window was the lane's backlog (up to push_queue_capacity), not one write.",
+    "action": "built: reserve before the first durable write, arm or release after the fold, settle a stopped replica's reservation from the task store; endings recorded before they are logged; the reaper records through the outbox. Not covered: a store with no event log, an outbox down at reserve, an executor panic's one write where turn claims are off"
   },
   {
     "id": "X-09",

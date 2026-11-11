@@ -37,7 +37,7 @@ fail with the defect put in by hand.
 | X-05 | a2a-rs drops typed error details on gRPC; is a2a-rust affected? | NOT AFFECTED | crates/a2a-protocol-server/src/dispatch/grpc/details.rs encodes BadRequest and Struct details; unit tests in the same file; a stream error keeps its streamLagged marker (native.rs test). |
 | X-06 | a2a-rs awaits webhook delivery before publishing to live subscribers; is a2a-rust affected? | NOT AFFECTED, now measured | push_hang_live_subscriber.rs: real TCP peer that reads the webhook request and never answers; a streaming send ends in 0.23 s (executor pacing 0.2 s). With push submission run inline (block_in_place) the same test fails: 'the stream did not end while the webhook hung' (10 s guard). |
 | X-07 | SSRF corpus never run against both SDKs | OPEN (evidence only) | a2a-rust's own corpus is pinned by tests: decimal/hex/octal/packed IPv4, IPv6 loopback and link-local, IPv4-mapped/compatible/NAT64, CGNAT, DNS pinning, redirects not followed, proxy answers still refused (server/src/push/sender.rs tests, tests/push_sender_*.rs). |
-| X-08 | event commit and outbox insertion are not atomic (H14) | CONFIRMED, OPEN | ADR 0037 amendment 2; CHANGELOG Known Limitations (Push). The loss window is the lane's backlog, not one write: the lane records rows after the event is stored. |
+| X-08 | event commit and outbox insertion are not atomic (H14) | CONFIRMED, FIXED by a two-phase row, not by one transaction | ADR 0037 amendment 2026-11-11; `push::outbox::contract`, `processor_reserve_tests.rs`, `sync_collector_reserve_tests.rs`, `reaper/tests/outbox.rs`; `scripts/live/outbox_live.py`. Until now the loss window was the lane's backlog (up to `push_queue_capacity`), not one write. |
 | X-09 | crash-consistency issues of the earlier review still apply | PARTLY FIXED | W2-hostile-3 reproduced live (scripts/live/finish_live.py, two replicas on PostgreSQL, owner killed with SIGKILL as the cancel returned): 75 s later the stored state was canceled, 0 events carried the ending, the claim row was still there. |
 | X-10 | an outage longer than the write retry loses the event and can drop the failed status | CONFIRMED, OPEN | handoff 'Open engineering': 'Not solved: an outage longer than the retry loses the event being written'. With turn claims the reaper ends a task left working after the claim lapses; without claims nothing does. |
 | X-11 | a status written with no event (E-F25) | CONFIRMED, OPEN | CHANGELOG Known Limitations; measured 2.0 s for a cancel at a 2 s ceiling. |
@@ -77,21 +77,30 @@ ending in the log once and the claim gone 44 s after the kill; 42 s with the own
 the middle of a real model's answer (a `llama-server` slot processing at the moment of
 the cancel). 21 hand mutants of the new code and SQL, all killed.
 
-**Not built: an outbox row in the event's transaction (X-08).** ADR 0037's
-first decision asked for it and its amendment recorded why it was not built:
-the event log and the outbox are written through different stores, and a
-cross-store transaction would be an API every `TaskStore` (and each of its
-decorators: traced, encrypted, tenant, audit) would implement. The design that
-closes the gap without that API, recorded here so it is not re-derived: each
-delivery id becomes a function of (task, log position, config), so recording a
-row twice is harmless and a receiver sees the same id; the outbox keeps, per
-task, the highest log position whose deliveries it has recorded, updated in the
-same transaction as the rows; and the reaper's finish phase, and its existing
-phase for running tasks, read the log after that mark and record what is
-missing. The loss window then is a crashed owner's, found within one claim time
-to live, instead of silent. It touches the outbox trait and its three stores,
-every call that hands an event to the push lanes (it must carry the log
-position), and needs a kill-9 test on PostgreSQL to be believed.
+**Built: the outbox row before the event is stored (X-08).** ADR 0037's first
+decision asked for the row in the event's transaction. The event log and the
+outbox are written through different stores, and the log is appended before the
+fold for every event but a terminal one, so a row tied to the append would queue
+events the fold refuses; a transaction across the stores would be an API every
+`TaskStore` and each of its decorators would implement. What was built instead
+(ADR 0037, amendment 2026-11-11) is a two-phase row: the processor, and the
+blocking send's collector, **reserve** an event's rows (unarmed, never claimed,
+holding their webhooks' places) before the event's first durable write, then
+**arm** them if the state machine announced the event or **release** them if not.
+A reservation whose hold runs out belonged to a stopped replica; every replica's
+worker settles it from the task store (the stored task has reached the event's
+log position and the log holds no different event there: armed, else removed).
+A task's ending that no queued event carried is recorded before it is logged,
+and the reaper records through the outbox. Proof: the contract suite on three
+outboxes (PostgreSQL live), the settlement's decision table, tests that abort a
+task at a chosen point of the store write with two replicas over one outbox, 40
+hand mutants of the new code, and `scripts/live/outbox_live.py` (two replicas on
+PostgreSQL, one killed with `SIGKILL` at its `arm`: the event delivered once by
+the survivor, in order, before the reaper's ending; at its `reserve`: the event
+the task never stored not delivered). Not covered, and written down in the ADR,
+the book and the CHANGELOG: a store with no event log; an outbox that is down
+when an event is reserved; an executor panic's one write between its save and
+its record where turn claims are off.
 
 ## Measurement (done in this change: see `docs/sdk-comparison-2026-11-11.md`)
 

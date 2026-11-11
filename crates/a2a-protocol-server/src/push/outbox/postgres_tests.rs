@@ -134,18 +134,23 @@ async fn an_older_table_is_upgraded(url: &str) {
     let old = delivery("t", "a", TaskState::Working);
     for column in ["armed", "reservation", "log_seq", "hold_until"] {
         let drop_column = format!("ALTER TABLE a2a_push_outbox DROP COLUMN {column}");
-        sqlx::query(sqlx::AssertSqlSafe(drop_column))
-            .execute(&a.pool)
-            .await
-            .unwrap();
+        crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
+            sqlx::query(sqlx::AssertSqlSafe(drop_column.clone())).execute(&a.pool)
+        })
+        .await
+        .unwrap();
     }
-    sqlx::query(
-        "INSERT INTO a2a_push_outbox (delivery_id, tenant, task_id, config_id, event, ends_turn)
-         VALUES ($1, 't', 't1', 'a', $2, FALSE)",
-    )
-    .bind(&old.delivery_id)
-    .bind(serde_json::to_string(&old.event).unwrap())
-    .execute(&a.pool)
+    let body = serde_json::to_string(&old.event).unwrap();
+    crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
+        sqlx::query(
+            "INSERT INTO a2a_push_outbox
+                (delivery_id, tenant, task_id, config_id, event, ends_turn)
+             VALUES ($1, 't', 't1', 'a', $2, FALSE)",
+        )
+        .bind(&old.delivery_id)
+        .bind(&body)
+        .execute(&a.pool)
+    })
     .await
     .unwrap();
     let upgraded = PostgresPushOutbox::new(url).await.expect("outbox");

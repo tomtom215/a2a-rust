@@ -18,11 +18,23 @@
 //!   off and 400 tokens at most. The answer takes seconds to minutes on a CPU,
 //!   which is what a kill-the-owner script needs.
 //! * anything else: completed at once.
+//!
+//! `A2A_OUTBOX=1` gives the replica the durable push outbox in the same
+//! database, push configs in that database too (so another replica can
+//! deliver what this one queued), a sender that allows loopback webhooks, and
+//! a store-write retry of 1 s (a reservation's hold is then about 63 s).
+//! `A2A_KILL_AT=reserve|arm` (with `A2A_KILL_NTH`, default 1) makes the
+//! replica send itself SIGKILL at the Nth outbox `reserve` (after the rows are
+//! reserved, before the event is stored) or `arm` (after the event is stored,
+//! before its rows are armed): the two ends of the window audit H14 closes.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
+use a2a_protocol_server::push::outbox::{ClaimedDelivery, Held, NewDelivery, OutboxFuture};
+use a2a_protocol_server::push::{HttpPushSender, PostgresPushOutbox, PushOutbox};
+use a2a_protocol_server::PostgresPushConfigStore;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::serve::Server;
@@ -116,6 +128,98 @@ impl AgentExecutor for Exec {
     }
 }
 
+/// The PostgreSQL outbox, which sends its own process SIGKILL at one call:
+/// no destructor, no flush, the way a replica is lost.
+struct Killing {
+    inner: PostgresPushOutbox,
+    name: &'static str,
+    at: String,
+    nth: usize,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl Killing {
+    /// Whether this is the call to die at.
+    fn dies_at(&self, call: &str) -> bool {
+        self.at == call
+            && self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1 == self.nth
+    }
+
+    fn die(&self, call: &str) -> ! {
+        eprintln!("[{}] SIGKILL at {call} #{}", self.name, self.nth);
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &std::process::id().to_string()])
+            .status();
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+}
+
+impl PushOutbox for Killing {
+    fn record(&self, deliveries: Vec<NewDelivery>, per_webhook: usize) -> OutboxFuture<'_, usize> {
+        self.inner.record(deliveries, per_webhook)
+    }
+    fn claim<'a>(
+        &'a self,
+        owner: &'a str,
+        max: usize,
+        lease: Duration,
+    ) -> OutboxFuture<'a, Vec<ClaimedDelivery>> {
+        self.inner.claim(owner, max, lease)
+    }
+    fn complete(&self, seq: i64) -> OutboxFuture<'_, ()> {
+        self.inner.complete(seq)
+    }
+    fn retry_after<'a>(
+        &'a self,
+        seq: i64,
+        owner: &'a str,
+        after: Duration,
+    ) -> OutboxFuture<'a, ()> {
+        self.inner.retry_after(seq, owner, after)
+    }
+    fn pending(&self) -> OutboxFuture<'_, usize> {
+        self.inner.pending()
+    }
+    fn supports_reservations(&self) -> bool {
+        true
+    }
+    fn reserve<'a>(
+        &'a self,
+        reservation: &'a str,
+        log_seq: u64,
+        deliveries: Vec<NewDelivery>,
+        per_webhook: usize,
+        hold: Duration,
+    ) -> OutboxFuture<'a, usize> {
+        Box::pin(async move {
+            let reserved = self
+                .inner
+                .reserve(reservation, log_seq, deliveries, per_webhook, hold)
+                .await;
+            if self.dies_at("reserve") {
+                self.die("reserve");
+            }
+            reserved
+        })
+    }
+    fn arm<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, usize> {
+        Box::pin(async move {
+            if self.dies_at("arm") {
+                self.die("arm");
+            }
+            self.inner.arm(reservation).await
+        })
+    }
+    fn release<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, ()> {
+        self.inner.release(reservation)
+    }
+    fn held(&self, limit: usize) -> OutboxFuture<'_, Vec<Held>> {
+        self.inner.held(limit)
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let name: &'static str = Box::leak(std::env::var("NAME").unwrap_or_default().into_boxed_str());
@@ -150,13 +254,34 @@ async fn main() {
         ToolLoop::new(model, ToolSet::new())
             .with_preamble("Answer the question in about three hundred words."),
     );
-    let handler = Arc::new(
-        RequestHandlerBuilder::new(Exec(name, asker))
-            .without_agent_card()
-            .with_task_store(store)
-            .build()
-            .expect("handler"),
-    );
+    let mut builder = RequestHandlerBuilder::new(Exec(name, asker))
+        .without_agent_card()
+        .with_task_store(store);
+    if std::env::var("A2A_OUTBOX").as_deref() == Ok("1") {
+        let outbox = PostgresPushOutbox::new(&url).await.expect("outbox");
+        let outbox: Arc<dyn PushOutbox> = match std::env::var("A2A_KILL_AT") {
+            Ok(at) => Arc::new(Killing {
+                inner: outbox,
+                name,
+                at,
+                nth: std::env::var("A2A_KILL_NTH")
+                    .ok()
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(1),
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            }),
+            Err(_) => Arc::new(outbox),
+        };
+        builder = builder
+            .with_push_config_store(PostgresPushConfigStore::new(&url).await.expect("configs"))
+            .with_push_sender(HttpPushSender::new().allow_private_urls())
+            .with_push_outbox(outbox)
+            .with_handler_limits(
+                a2a_protocol_server::HandlerLimits::default()
+                    .with_store_write_retry(Duration::from_secs(1)),
+            );
+    }
+    let handler = Arc::new(builder.build().expect("handler"));
     let port = std::env::var("PORT").expect("PORT");
     let server = Server::bind(&format!("127.0.0.1:{port}"))
         .await
