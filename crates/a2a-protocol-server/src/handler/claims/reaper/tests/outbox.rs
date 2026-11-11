@@ -129,7 +129,10 @@ struct Rig {
     path: std::path::PathBuf,
 }
 
-async fn rig() -> Rig {
+/// `state`: what the orphaned task is stored as. A finished one (its owner
+/// killed after it was cancelled elsewhere) is found by the finish phase when
+/// its claim is a second old; a running one by the abandoned phase.
+async fn rig(state: TaskState) -> Rig {
     let (url, path) = sqlite_url();
     let sqlite = Arc::new(SqliteTaskStore::new(&url).await.unwrap());
     let age = sqlite_age(sqlx::SqlitePool::connect(&url).await.unwrap(), "tasks");
@@ -141,7 +144,7 @@ async fn rig() -> Rig {
     });
     let id = format!("orphan-{}", uuid::Uuid::new_v4());
     // Killed mid-turn: working, its claim expired long ago.
-    store.save(&task(&id, TaskState::Working)).await.unwrap();
+    store.save(&task(&id, state)).await.unwrap();
     age(id.clone()).await;
     assert!(
         claims_store
@@ -149,7 +152,18 @@ async fn rig() -> Rig {
             .await
             .unwrap()
     );
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    // A finished task's claim has to be older than the reaper's time to live.
+    let ttl = if state.is_terminal() {
+        Duration::from_secs(1)
+    } else {
+        Duration::from_secs(600)
+    };
+    tokio::time::sleep(if state.is_terminal() {
+        ttl + Duration::from_millis(300)
+    } else {
+        Duration::from_millis(20)
+    })
+    .await;
 
     let configs = Arc::new(InMemoryPushConfigStore::new());
     configs
@@ -173,7 +187,7 @@ async fn rig() -> Rig {
     let claims = Arc::new(super::super::super::TurnClaims::new(
         claims_store,
         Some("reaper".into()),
-        Duration::from_secs(600),
+        ttl,
         Duration::from_secs(1),
     ));
     let reaper = Arc::new(super::super::Reaper {
@@ -212,7 +226,7 @@ async fn delivered(sender: &Ids) -> Vec<(StreamResponse, Option<String>)> {
 
 #[tokio::test]
 async fn the_reaper_records_its_ending_in_the_outbox_when_the_handler_has_one() {
-    let rig = rig().await;
+    let rig = rig(TaskState::Working).await;
     assert!(rig.reaper.look().await.is_some_and(|ended| ended >= 1));
 
     let sent = delivered(&rig.sender).await;
@@ -233,7 +247,7 @@ async fn the_reaper_records_its_ending_in_the_outbox_when_the_handler_has_one() 
 /// which is what the next reaper looks for.
 #[tokio::test]
 async fn the_reaper_records_its_ending_before_it_logs_it() {
-    let rig = rig().await;
+    let rig = rig(TaskState::Working).await;
     rig.store
         .park
         .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -249,6 +263,40 @@ async fn the_reaper_records_its_ending_before_it_logs_it() {
     assert!(matches!(
         &sent[0].0,
         StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Failed
+    ));
+    assert!(
+        rig.store
+            .inner
+            .read_events(&TaskId::new(&*rig.id), 0, 10)
+            .await
+            .unwrap()
+            .is_empty(),
+        "the log does not have the ending"
+    );
+    looking.abort();
+    remove_sqlite(&rig.path);
+}
+
+/// The same for a task that finished (cancelled on another replica) while its
+/// owner was killed: the finish phase records the ending before it logs it.
+#[tokio::test]
+async fn the_reaper_records_a_finished_tasks_ending_before_it_logs_it() {
+    let rig = rig(TaskState::Canceled).await;
+    rig.store
+        .park
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let looking = {
+        let reaper = Arc::clone(&rig.reaper);
+        tokio::spawn(async move { reaper.look().await })
+    };
+    tokio::time::timeout(Duration::from_secs(10), rig.store.parked.notified())
+        .await
+        .expect("the reaper never reached its log write");
+
+    let sent = delivered(&rig.sender).await;
+    assert!(matches!(
+        &sent[0].0,
+        StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Canceled
     ));
     assert!(
         rig.store
