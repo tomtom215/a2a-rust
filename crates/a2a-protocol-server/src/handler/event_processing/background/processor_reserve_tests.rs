@@ -97,7 +97,20 @@ impl Rig {
 
     /// Replica `a` handles `event`, on a task of its own so it can be stopped.
     fn run_on_a(&self, event: StreamEvent) -> tokio::task::JoinHandle<()> {
-        let (store, lanes, limits) = (Arc::clone(&self.store), self.a.clone(), self.limits.clone());
+        self.run_on(self.a.clone(), event)
+    }
+
+    /// Replica `b`, which takes the task over, handles `event`.
+    fn run_on_b(&self, event: StreamEvent) -> tokio::task::JoinHandle<()> {
+        self.run_on(self.b.clone(), event)
+    }
+
+    fn run_on(
+        &self,
+        lanes: crate::handler::PushLanes,
+        event: StreamEvent,
+    ) -> tokio::task::JoinHandle<()> {
+        let (store, limits) = (Arc::clone(&self.store), self.limits.clone());
         tokio::spawn(async move {
             let id = TaskId::new("t");
             let mut run = Processor::new(
