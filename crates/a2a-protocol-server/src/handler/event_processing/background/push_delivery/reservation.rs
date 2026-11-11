@@ -228,7 +228,7 @@ impl PushLanes {
         };
         let mut settled = 0;
         for held in held {
-            if outbox_worker::settle_one(lanes, outboxed, tasks.as_ref(), held).await {
+            if super::settling::settle_one(lanes, outboxed, tasks.as_ref(), held).await {
                 settled += 1;
             }
         }

@@ -1,0 +1,27 @@
+[
+  {
+    "name": "an ending is settled by position",
+    "old": "if held.log_seq == super::reservation::ENDING {",
+    "new": "if false {"
+  },
+  {
+    "name": "worker swaps arm and release",
+    "old": "        Verdict::Arm => outboxed.outbox.arm(&held.reservation).await.map(|_| ()),\n        Verdict::Release => outboxed.outbox.release(&held.reservation).await,",
+    "new": "        Verdict::Arm => outboxed.outbox.release(&held.reservation).await,\n        Verdict::Release => outboxed.outbox.arm(&held.reservation).await.map(|_| ()),"
+  },
+  {
+    "name": "worker does not count settled",
+    "old": ".on_push_delivery(push_outcome::RESERVATION_SETTLED);",
+    "new": ".on_push_delivery(push_outcome::DROPPED);"
+  },
+  {
+    "name": "settle looks once",
+    "old": "for _ in 0..MAX_ROUNDS {",
+    "new": "for _ in 0..1 {"
+  },
+  {
+    "name": "settle repeats a round that settled nothing",
+    "old": "if listed < BATCH || settled == 0 {",
+    "new": "if listed < BATCH {"
+  }
+]

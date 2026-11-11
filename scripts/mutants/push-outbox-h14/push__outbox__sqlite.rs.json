@@ -1,5 +1,15 @@
 [
   {
+    "name": "sqlite held_for_task wrong task",
+    "old": "AND tenant = ?1 AND caller IS ?2 AND task_id = ?3",
+    "new": "AND tenant = ?1 AND caller IS ?2 AND task_id != ?3"
+  },
+  {
+    "name": "sqlite renew ignores the owner",
+    "old": "WHERE owner = ?1 AND lease_ms > ",
+    "new": "WHERE owner != ?1 AND lease_ms > "
+  },
+  {
     "name": "sqlite claim ignores unarmed",
     "old": "AND o.armed = 1\n",
     "new": "\n"
@@ -13,15 +23,5 @@
     "name": "sqlite held ignores the hold",
     "old": "WHERE armed = 0 AND hold_ms <= ",
     "new": "WHERE armed = 0 AND hold_ms >= "
-  },
-  {
-    "name": "sqlite bound drops unarmed",
-    "old": "AND ends_turn = 0 AND armed = 1 AND (lease_ms",
-    "new": "AND ends_turn = 0 AND (lease_ms"
-  },
-  {
-    "name": "sqlite insert is armed when reserved",
-    "old": ".bind(reserve.is_none())",
-    "new": ".bind(true)"
   }
 ]

@@ -1,0 +1,17 @@
+[
+  {
+    "name": "sqlite records an existing delivery id again",
+    "old": "if present > 0 {",
+    "new": "if present > 1_000_000 {"
+  },
+  {
+    "name": "sqlite bound drops unarmed",
+    "old": "AND ends_turn = 0 AND armed = 1 AND (lease_ms",
+    "new": "AND ends_turn = 0 AND (lease_ms"
+  },
+  {
+    "name": "sqlite insert is armed when reserved",
+    "old": ".bind(reserve.is_none())",
+    "new": ".bind(true)"
+  }
+]

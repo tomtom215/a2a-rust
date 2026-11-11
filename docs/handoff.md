@@ -51,10 +51,15 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
      `verdict`); a task's ending that no queued event carried is recorded before it is logged (`PushLanes::record_now`), and the reaper records through the outbox. Live
      (`scripts/live/outbox_live.py`, two replicas and a webhook receiver on PostgreSQL, replica A sending itself `SIGKILL`): at its `arm` the artifact it had stored was delivered once by the
      survivor 71 s after the kill, then the reaper's `failed`, in that order, the outbox empty; at its `reserve` the event the task never stored was never delivered. The first live run
-     found the reaper's `failed` arriving 40 s before the artifact (its own loop sent it): that is why the reaper records through the outbox. 41 hand mutants of the new rules, all
+     found the reaper's `failed` arriving 40 s before the artifact (its own loop sent it): that is why the reaper records through the outbox. 65 hand mutants of the new rules, all
      caught (`scripts/mutants/push-outbox-h14/run.sh`, through `scripts/hand_mutate.py`; the tests that catch them are `push::outbox::contract`,
      `processor_reserve_tests.rs` and its two submodules, `sync_collector_reserve_tests.rs`, `reaper/tests/outbox.rs`); two survived at first and each exposed a missing test
      (the blocking path's "delivered while the request still runs", and the reaper's order of record and log).
+     **The five points the first report left open are closed** (same ADR, items 6 to 10): the reaper settles a dead replica's reservations as soon as it takes the claim (live, four of four runs: the stored
+     artifact and the reaper's `failed` 30.2 to 30.3 s after the start, in order, no duplicate; it was 71 s), leases are 30 s renewed every 10 s (`PushOutbox::renew`), recording is idempotent on a delivery id and
+     a settled-early reservation is recorded again under its ids, an outbox that is down at reserve no longer reorders, and a panic's ending is reserved before it is saved. The hold is **unchanged on purpose**
+     (150 s: it must exceed two retried writes; it now only backs up deployments with no reaper). **Not seen live:** a worker killed mid-delivery freeing its row after the 30 s lease (four live runs did not hit that
+     timing; two unit tests with a paused clock do, `push_delivery/tests/outbox/lease.rs`).
 - **The finding that needs a decision: a2a-rs is the faster server on this workload** (echo executor, blocking send, server on two cores of a shared 4-vCPU VM).
   1.25 to 1.9 times the requests per second; a2a-rust holds 2.5 to 3 times less memory; this tree was 18% to 29% slower than 0.14.1 at one connection before the
   boxing change and 12% to 14% after (ranges overlap). With one core the gap to 0.14.1 is 4 to 12%. The extra cost is cross-thread wake-ups of the runtime's I/O driver
@@ -68,15 +73,17 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
   at `da17606c`; `cargo semver-checks --baseline-rev v0.15.0 --release-type patch --all-features` lists types 2, client 5, server 6, SDK none, the same as before this work;
   `scripts/prove_workflow_gates_fail.py`: 33 proven, 0 unproven, 29 exempt; the book builds, 225 pages, 0 broken links, with mdBook installed by the new helper. After `da43dd3b`
   only clippy on the server crate (all features and targets) was re-run, not the workspace.
-  **After H14 (the working tree that became `HEAD`; re-run each command):** `cargo test -p a2a-protocol-server --features "sqlite postgres" --lib -- --include-ignored` with a live PostgreSQL 16
-  (`A2A_TEST_POSTGRES_URL`): 2,576 passed, 0 failed, 0 ignored; every integration test of the server crate, 218 binaries in batches (`--features "sqlite postgres"`, ignored ones off): 1,121 passed, 0 failed,
-  159 ignored (they need SPIRE, PostgreSQL or a model); the 14 PostgreSQL integration targets of `scripts/run_postgres_suites.py --plan`, each with `-- --ignored`: all `ok`; `cargo clippy -p a2a-protocol-server
-  --all-features --all-targets -- -D warnings`, `cargo fmt --all -- --check`, `scripts/check_pg_retry.py`, `check_file_lengths.sh`, `check_store_delta_forwarding.py`, `check_spec_ledger.py` (`--fix-lines` moved 40 line
-  numbers, 0 left), `check_api_reference.py`, `check_otel_metrics_coverage.py`, `check_compliance_map.py --check` and the other static gates that read the changed files: exit 0. **Note:** a local PostgreSQL role named like
-  the schema (`a2a`) makes `store::pg_schema::tests::search_path::a_store_in_its_own_schema_does_not_adopt_another_applications_table` fail (`confrelid::regclass::text` prints `tasks`, as the schema is on the
-  role's search path); run the suites as another role (the same 10 tests pass as `tester`). Workspace clippy and the whole `ci.yml` were not re-run after H14.
+  **After H14 and its follow-ups (the tree that became `HEAD`; re-run each command):** `cargo test -p a2a-protocol-server --features "sqlite postgres" --lib -- --include-ignored` with a live PostgreSQL 16
+  (`A2A_TEST_POSTGRES_URL`, a role not named `a2a`): 2,590 passed, 0 failed, 0 ignored; the integration tests that touch push, claims or the reaper (44 binaries, `-- --include-ignored`): see the last line of
+  this block; before the follow-ups, every integration test of the server crate (218 binaries, ignored ones off): 1,121 passed, 0 failed, 159 ignored (they need SPIRE, PostgreSQL or a model), and the 14
+  PostgreSQL integration targets of `scripts/run_postgres_suites.py --plan`, each with `-- --ignored`: all `ok`; `cargo clippy -p a2a-protocol-server --all-features --all-targets -- -D warnings`,
+  `cargo fmt --all -- --check`, and 31 static gates (`check_pg_retry.py`, `check_file_lengths.sh`, `check_store_delta_forwarding.py`, `check_spec_ledger.py`, `check_api_reference.py`,
+  `check_otel_metrics_coverage.py`, `check_compliance_map.py --check` and the rest that read the changed files): exit 0. 65 hand mutants, `scripts/mutants/push-outbox-h14/run.sh`: all caught (41 of the first
+  pass in one run of the whole script; the 24 of the follow-ups in a run of their files, two of which were missed until `recording_a_duplicate_drops_no_other_row` was written). **Note:** a local PostgreSQL role
+  named like the schema (`a2a`) makes `store::pg_schema::tests::search_path::a_store_in_its_own_schema_does_not_adopt_another_applications_table` fail (`confrelid::regclass::text` prints `tasks`, as the schema is on the
+  role's search path); the same 10 tests pass as another role. Workspace clippy was not re-run after H14.
 - **Not verified / not done:** the workflows on GitHub (no pull request exists, so CI has not run on any of these commits); the Windows and macOS legs; the mutation job on the
-  boxing change and on the H14 code (hand mutants, not `cargo mutants`); the blocking send's throughput after H14 (the no-outbox path adds one early-returning call per event; not measured, the
+  boxing change and on the H14 code (hand mutants, not `cargo mutants`); the OS test jobs of CI run 43042602728 (running when last read); the blocking send's throughput after H14 (the no-outbox path adds one early-returning call per event; not measured, the
   throughput figures above are from before it); R1 to R7, C1 to C5, F2 to F5 of `docs/readiness-bar.md`; the E-F25 status without an
   event, the store-outage failed-status loss, the compliance rows (`EncryptedTaskStore` metadata, erasure across replicas, an audit-against-log coverage check); the X-18 CLI credential
   test; the SSRF corpus against a2a-rs; HTTP+JSON, gRPC and WebSocket throughput.
@@ -84,10 +91,11 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
 ### First, next
 
 1. **Open a pull request** for the branch (the `mutation-test` label at once: *Lessons*, 2026-11-07) and read the first CI run: the first run finds what local parity cannot.
-2. **The push windows H14 leaves** (ADR 0037, amendment 2026-11-11, "What it does not cover"): an outbox that is down when an event is reserved leaves that event to the lane (reordering is
-   then possible); an executor panic is saved before its ending is recorded, so a stop in that one write is found only where turn claims are on; a stopped replica's last event reaches a webhook after
-   the hold, 150 s by default, and a claimed row after its 120 s lease (seen live). Decide whether the hold should be shorter or settled eagerly by the reaper (it knows the owner is dead) before the tag; the
-   reaper-side settlement needs an outbox method that settles a task's reservations at once.
+2. **CI run 43042602728** (`ci.yml` by `workflow_dispatch` on the branch, started at `e9295cf0`, before the H14 follow-ups): 13 of 22 jobs passed (Static checks, Clippy on ubuntu, windows and macos, the
+   PostgreSQL integration suite, Package, Documentation, cargo-semver-checks, Go interop, the feature matrix, the example-surface jobs, SDK dogfood); the OS test jobs were still running; **three failed and none is
+   from this branch**: `cargo-deny` on the workspace and on the SLIMRPC binding (advisories published after the lockfiles were set: `rmcp` 3.7.0, fixed in this branch's lockfile at 3.9.0;
+   `libsqlite3-sys` RUSTSEC-2026-0459 needs 0.39, `sqlx` 0.9.0 pins 0.37 and is the latest, so **a decision of yours**: wait for sqlx, or record an ignore with a reason in `deny.toml` and the binding's),
+   and the informational nightly Clippy (not read: look at its log first). Dispatch CI again on the new head and read it before a tag.
 3. **The throughput gap**, in this order: a cheaper bound on a header read than a timer per request (it is the slowloris guard, so replace it, do not remove it); the `timeout` around the `watch`
    receiver in `streaming/event_queue/applied.rs` (arm it only when the position is not already there); then allocation (about 25% of instructions by callgrind; `deploy-agent` already uses
    jemalloc, the harness agents do not). Measure with `benches/sdk-comparison/scripts/run_perf.sh` interleaved and with `callgrind_per_request.sh`, and believe neither alone: a `rep movsb` copy

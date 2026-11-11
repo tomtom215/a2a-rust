@@ -1,23 +1,48 @@
 [
   {
+    "name": "an outbox that is down leaves no reservation",
+    "old": "(None, Vec::new())",
+    "new": "return None"
+  },
+  {
+    "name": "re-recording takes fresh ids",
+    "old": "                    &self.ids,\n",
+    "new": "                    &[],\n"
+  },
+  {
+    "name": "an ending is never reserved",
+    "old": "self.reserve_at(task_id, ENDING, event).await",
+    "new": "None"
+  },
+  {
+    "name": "an ending is armed by any terminal state",
+    "old": "if state.is_terminal() && update.status.state == state",
+    "new": "if state.is_terminal()"
+  },
+  {
+    "name": "settle_task settles nothing",
+    "old": "for held in held {",
+    "new": "for held in held.into_iter().take(0) {"
+  },
+  {
     "name": "reserve never reserves",
     "old": "let (seq, tasks) = (seq?, lanes.tasks.as_ref()?);",
     "new": "let (seq, tasks) = (seq?, lanes.tasks.as_ref()?);\n        if seq > 0 { return None; }"
   },
   {
     "name": "settle always releases",
-    "old": "if !self.wanted.load(Ordering::SeqCst) {",
-    "new": "if true {"
-  },
-  {
-    "name": "settle always arms",
-    "old": "if !self.wanted.load(Ordering::SeqCst) {",
+    "old": "if self.wanted.load(Ordering::SeqCst) {",
     "new": "if false {"
   },
   {
+    "name": "settle always arms",
+    "old": "if self.wanted.load(Ordering::SeqCst) {",
+    "new": "if true {"
+  },
+  {
     "name": "settle never records afresh",
-    "old": "PushLanes(Some(Arc::clone(&self.lanes)))\n                    .push_after_store(&self.task_id, &self.event);",
-    "new": "let _ = &self.event;"
+    "old": "                outbox_worker::record_again(\n                    &self.lanes,\n                    outboxed,\n                    &self.task_id,\n                    &self.event,\n                    &self.ids,\n                )\n                .await;",
+    "new": "                let _ = &self.ids;"
   },
   {
     "name": "settle does not wake the worker",

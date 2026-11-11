@@ -61,7 +61,7 @@
     "claim": "event commit and outbox insertion are not atomic (H14)",
     "status": "CONFIRMED, FIXED by a two-phase row, not by one transaction",
     "evidence": "ADR 0037 amendment 2026-11-11; push::outbox::contract (memory, SQLite, live PostgreSQL), handler/event_processing/background/processor_reserve_tests.rs, sync_collector_reserve_tests.rs, handler/claims/reaper/tests/outbox.rs; scripts/live/outbox_live.py. Until now the loss window was the lane's backlog (up to push_queue_capacity), not one write.",
-    "action": "built: reserve before the first durable write, arm or release after the fold, settle a stopped replica's reservation from the task store; endings recorded before they are logged; the reaper records through the outbox. Not covered: a store with no event log, an outbox down at reserve, an executor panic's one write where turn claims are off"
+    "action": "built: reserve before the first durable write, arm or release after the fold, settle a stopped replica's reservation from the task store (at once by the reaper under its claim fence, else after the hold); endings recorded before they are logged and an executor panic's ending reserved; leases renewed; delivery ids stable. Not covered: a store with no event log, a deployment with no turn claims, the outbox being down (nothing durable; order kept)"
   },
   {
     "id": "X-09",

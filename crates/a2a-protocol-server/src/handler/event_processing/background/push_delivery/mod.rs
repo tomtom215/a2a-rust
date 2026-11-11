@@ -19,6 +19,7 @@ use crate::push::{PushConfigStore, PushSender};
 mod lanes;
 mod outbox_worker;
 mod reservation;
+mod settling;
 pub use lanes::{PushLanes, ends_turn};
 #[cfg(test)]
 pub(in crate::handler::event_processing) use outbox_worker::hold as reservation_hold;

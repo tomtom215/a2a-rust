@@ -41,9 +41,9 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
-- **`PushOutbox::reserve`, `arm`, `release` and `held`**, `PushOutbox::supports_reservations` (false by default, so an outbox of your own keeps working
+- **`PushOutbox::reserve`, `arm`, `release`, `held` and `held_for_task`, `supports_renewal` and `renew`**, `PushOutbox::supports_reservations` (false by default, so an outbox of your own keeps working
   and keeps recording after the event is stored), the `Held` type, and the push outcome `reservation_settled` (`push_outcome::RESERVATION_SETTLED`; the
-  metric and its label are in the book). `InMemoryPushOutbox`, `SqlitePushOutbox` and `PostgresPushOutbox` implement them; the table
+  metric and its label are in the book). `InMemoryPushOutbox`, `SqlitePushOutbox` and `PostgresPushOutbox` implement them (an outbox that wraps another has to forward each, or the handler uses the trait's default for it); `record` and `reserve` now leave a delivery id that is already in the outbox as it is; the table
   `a2a_push_outbox` gains `armed`, `reservation`, `log_seq` and `hold_ms` / `hold_until`, added in place to a table an earlier build created. See Fixed,
   audit H14.
 
@@ -1712,13 +1712,27 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   reservations (all three here do); otherwise nothing changes. Not one transaction: ADR 0037, amendment 2026-11-11, says why not. Checked: the
   contract on all three outboxes (PostgreSQL live; two replicas settling one reservation; a table from an earlier build upgraded in place), a unit test
   for each row of the settlement's decision table, tests that abort a task at a chosen point of its store write with two replicas over one outbox
-  (before the write, after it, a terminal event between its save and its log write, stalled past the hold), the same on the blocking path, and 41 hand
+  (before the write, after it, a terminal event between its save and its log write, stalled past the hold), the same on the blocking path, and 65 hand
   mutants of each rule, all caught (`scripts/mutants/push-outbox-h14/run.sh`; `scripts/live/outbox_live.py`'s run is below). Live, two replicas on one PostgreSQL database and a webhook
   receiver, replica A sent itself `SIGKILL` after it stored an artifact and before it armed the row: the receiver saw `working`, then the artifact
   once, 71 s after the kill and from the survivor, then the reaper's `failed`, the outbox empty; killed after reserving and before storing, the event
-  the task never had was never delivered. The first live run found the reaper sending its `failed` from its own loop 40 s before that artifact, which is
+  the task never had was never delivered. (Those first runs delivered the stored artifact 71 s after the kill; see the follow-ups below.) The first live run found the reaper sending its `failed` from its own loop 40 s before that artifact, which is
   why it now records through the outbox. Not covered, and under Known Limitations: a store without an event log, an outbox that is down when an event
   is reserved, an executor panic's one write where turn claims are off.
+
+  Follow-ups to that, each found open by the first report and closed with its own tests and hand mutants: (1) **the reaper settles a dead replica's
+  reservations as soon as it takes the task's claim**, which fences the dead replica off, so the store's answer is final and nothing waits for the
+  reservation's hold (`PushOutbox::held_for_task`, `PushLanes::settle_task`): live, four of four runs delivered the stored artifact and then the
+  reaper's `failed` 30.2 to 30.3 s after the start (the claim's time to live), in that order, with no duplicate, where the hold had made it 71 s; the hold
+  itself is unchanged (three `store_write_retry` plus a minute, 150 s by default) because it must exceed two retried writes and now only backs up
+  deployments with no reaper; (2) **a worker claims rows for 30 s and renews every 10 s** (`PushOutbox::renew`), so a killed worker's rows are free after
+  30 s, not 120 s, and a delivery that outlasts the lease is not taken from a live worker; an outbox that cannot renew keeps the long lease; (3) **a
+  delivery id is the row's identity**: recording is idempotent on it, and a reservation settled before its event was stored is recorded again under the
+  ids it had, so a repeat is a retry the receiver can recognise; (4) **an outbox that is down when an event is reserved no longer reorders**: the event
+  is recorded in the processor, awaited, before the next event's reservation, not queued behind it in the lane; (5) **an executor panic's ending is
+  reserved before it is saved** and settled by the state the task is stored in. The live harness found a defect in itself that is worth a user's
+  attention: its outbox wrapper did not forward `renew` and `held_for_task`, and the handler silently used the defaults (a 120 s lease and no settling by
+  task); a wrapping outbox has to forward every provided method.
 
 - **Every blocking send copied two 36,000-byte futures four times each** (found by measuring this tree against a2a-rs and against 0.14.1
   on one host, `docs/sdk-comparison-2026-11-11.md`). The executor's `async` block and the blocking send's collector block each hold the request
@@ -2940,7 +2954,9 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 - **Load and admission** (audit H7, H9, H17): ORCA over gRPC trailers, a queue-cap gauge, priority from the request, preemption, fleet-wide admission, a tool-loop limit across processes and retrying a turn that failed mid-stream are not built (ADRs 0045 to 0048). The ORCA header format was not checked against Envoy.
 
-- **Push** (audit H14, SEC-14): the outbox reserves an event's rows before it is stored (see Fixed), which needs a task store with an event log and an outbox that keeps reservations; with either missing the row is written after the event is stored, by the task's lane, and a crash loses the deliveries of the events still waiting in that lane (up to `push_queue_capacity`, 1024 by default). With both, what is not covered: an outbox that is down when an event is reserved (that event is recorded after it is stored, and a webhook can see it after a later one); a task ended by an executor's panic, saved before its ending is recorded, where turn claims are off (nothing finds it); a stopped replica's last event reaches a webhook after the reservation's hold (150 s by default), and a reaper's ending behind it; a processor stalled past the hold records an event afresh under a second delivery id (at least once); per-destination rate limits, the verification handshake and a per-caller configuration quota are not built (ADR 0043, ADR 0037).
+- **Push** (audit H14, SEC-14): the outbox reserves an event's rows before it is stored (see Fixed), which needs a task store with an event log and an outbox that keeps reservations; with either missing the row is written after the event is stored, by the task's lane, and a crash loses the deliveries of the events still waiting in that lane (up to `push_queue_capacity`, 1024 by default). With both, what is not covered: a deployment without turn claims has no reaper, so a stopped replica's reservations wait for the hold (150 s by default); while the outbox is down nothing is durable (a process that stops then loses what it held in memory, and the order is kept); a processor stalled past the hold records an event again under the same delivery id (a retry, at least once); a reservation's position reused by another turn after its reserver stopped before logging is told apart by comparing events, so a log write that also failed lets it be armed; per-destination rate limits, the verification handshake and a per-caller configuration quota are not built (ADR 0043, ADR 0037).
+
+- **Dependencies** (cargo-deny, run 43042602728 of 2026-11-11): RUSTSEC-2026-0459 (`libsqlite3-sys`, the bundled C SQLite) needs `libsqlite3-sys` 0.39 or newer, and `sqlx` 0.9.0, the latest release, pins 0.37: the workspace and the SLIMRPC binding fail `cargo deny check advisories` on it until sqlx allows the fixed version or the project records an ignore with a reason. RUSTSEC-2026-0462 (`rmcp` 3.7.0, the two MCP examples) is fixed by the lockfile at 3.9.0.
 
 - **Network** (audit B-25, B-28, B-29): the WebSocket upgrade's same-origin check does not defend against DNS rebinding (the HTTP endpoints have no Host or Origin check either); there is no DNS cache; there is no `fips` feature and no CRL or OCSP helper (ADR 0041).
 

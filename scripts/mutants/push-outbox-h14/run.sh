@@ -18,20 +18,16 @@ run() {  # FILE MUTANTS TEST_FILTERS [EXTRA_TEST_ARGS]
   python3 scripts/hand_mutate.py "$1" "$here/$2" \
     "cargo test -p a2a-protocol-server --features 'sqlite postgres' --lib -- $3 $4" --timeout 600 || status=1
 }
-run crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/reservation.rs handler__event_processing__background__push_delivery__reservation.rs.json "reserve_tests reservation::tests reaper::tests::outbox" ""   # 11
-run crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/outbox_worker.rs handler__event_processing__background__push_delivery__outbox_worker.rs.json "reserve_tests reservation::tests reaper::tests::outbox" ""   # 5
-run crates/a2a-protocol-server/src/handler/event_processing/background/processor.rs handler__event_processing__background__processor.rs.json "reserve_tests reservation::tests reaper::tests::outbox" ""   # 5
+run crates/a2a-protocol-server/src/handler/claims/reaper/mod.rs handler__claims__reaper__mod.rs.json "reserve_tests reservation::tests tests::outbox::lease reaper::tests::outbox" ""   # 4
+run crates/a2a-protocol-server/src/handler/event_processing/background/processor.rs handler__event_processing__background__processor.rs.json "reserve_tests reservation::tests tests::outbox::lease reaper::tests::outbox" ""   # 7
+run crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/lanes.rs handler__event_processing__background__push_delivery__lanes.rs.json "reserve_tests reservation::tests tests::outbox::lease reaper::tests::outbox" ""   # 1
+run crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/outbox_worker.rs handler__event_processing__background__push_delivery__outbox_worker.rs.json "reserve_tests reservation::tests tests::outbox::lease reaper::tests::outbox" ""   # 5
+run crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/settling.rs handler__event_processing__background__push_delivery__settling.rs.json "reserve_tests reservation::tests tests::outbox::lease reaper::tests::outbox" ""   # 5
+run crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/reservation.rs handler__event_processing__background__push_delivery__reservation.rs.json "reserve_tests reservation::tests tests::outbox::lease reaper::tests::outbox" ""   # 16
 run crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs handler__event_processing__sync_collector.rs.json "sync_collector::reserve_tests" ""   # 3
-run crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/lanes.rs handler__event_processing__background__push_delivery__lanes.rs.json "reserve_tests reservation::tests reaper::tests::outbox" ""   # 1
-run crates/a2a-protocol-server/src/handler/claims/reaper/mod.rs handler__claims__reaper__mod.rs.json "reserve_tests reservation::tests reaper::tests::outbox" ""   # 2
-run crates/a2a-protocol-server/src/push/outbox/memory.rs push__outbox__memory.rs.json "push::outbox::tests::the_in_memory_outbox_keeps_the_contract" ""   # 5
+run crates/a2a-protocol-server/src/push/outbox/memory.rs push__outbox__memory.rs.json "push::outbox::tests::the_in_memory_outbox_keeps_the_contract" ""   # 8
+run crates/a2a-protocol-server/src/push/outbox/postgres/record.rs push__outbox__postgres__record.rs.json "push::outbox::postgres_tests" "--include-ignored"   # 2
+run crates/a2a-protocol-server/src/push/outbox/postgres.rs push__outbox__postgres.rs.json "push::outbox::postgres_tests" "--include-ignored"   # 5
+run crates/a2a-protocol-server/src/push/outbox/sqlite/record.rs push__outbox__sqlite__record.rs.json "push::outbox::sqlite_tests" ""   # 3
 run crates/a2a-protocol-server/src/push/outbox/sqlite.rs push__outbox__sqlite.rs.json "push::outbox::sqlite_tests" ""   # 5
-run crates/a2a-protocol-server/src/push/outbox/postgres.rs push__outbox__postgres.rs.json "push::outbox::postgres_tests" "--include-ignored"   # 4
-run crates/a2a-protocol-server/src/push/outbox/memory.rs push__outbox__memory.rs.followups.json "push::outbox::tests::the_in_memory_outbox_keeps_the_contract" ""   # 3 (follow-ups)
-run crates/a2a-protocol-server/src/push/outbox/sqlite.rs push__outbox__sqlite.rs.followups.json "push::outbox::sqlite_tests" ""   # 3 (follow-ups)
-run crates/a2a-protocol-server/src/push/outbox/postgres.rs push__outbox__postgres.rs.followups.json "push::outbox::postgres_tests" "--include-ignored"   # 3 (follow-ups)
-run crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/reservation.rs handler__event_processing__background__push_delivery__reservation.rs.followups.json "reserve_tests reservation::tests tests::outbox::lease reaper::tests::outbox" ""   # 5 (follow-ups)
-run crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/outbox_worker.rs handler__event_processing__background__push_delivery__outbox_worker.rs.followups.json "reserve_tests reservation::tests tests::outbox::lease reaper::tests::outbox" ""   # 5 (follow-ups)
-run crates/a2a-protocol-server/src/handler/event_processing/background/processor.rs handler__event_processing__background__processor.rs.followups.json "reserve_tests reservation::tests tests::outbox::lease reaper::tests::outbox" ""   # 3 (follow-ups)
-run crates/a2a-protocol-server/src/handler/claims/reaper/mod.rs handler__claims__reaper__mod.rs.followups.json "reaper::tests::outbox" ""   # 2 (follow-ups)
 exit $status

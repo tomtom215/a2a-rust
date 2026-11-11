@@ -93,14 +93,12 @@ log position and the log holds no different event there: armed, else removed).
 A task's ending that no queued event carried is recorded before it is logged,
 and the reaper records through the outbox. Proof: the contract suite on three
 outboxes (PostgreSQL live), the settlement's decision table, tests that abort a
-task at a chosen point of the store write with two replicas over one outbox, 41
+task at a chosen point of the store write with two replicas over one outbox, 65
 hand mutants of the new code (`scripts/mutants/push-outbox-h14/run.sh`), and `scripts/live/outbox_live.py` (two replicas on
 PostgreSQL, one killed with `SIGKILL` at its `arm`: the event delivered once by
-the survivor, in order, before the reaper's ending; at its `reserve`: the event
+the survivor, in order, before the reaper's ending, 30 s after the kill; at its `reserve`: the event
 the task never stored not delivered). Not covered, and written down in the ADR,
-the book and the CHANGELOG: a store with no event log; an outbox that is down
-when an event is reserved; an executor panic's one write between its save and
-its record where turn claims are off.
+the book and the CHANGELOG: a store with no event log; a deployment with no turn claims (no reaper to settle early); the outbox being down (nothing is durable then; the order is kept).
 
 ## Measurement (done in this change: see `docs/sdk-comparison-2026-11-11.md`)
 
