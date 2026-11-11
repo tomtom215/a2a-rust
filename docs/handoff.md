@@ -25,7 +25,7 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
 
 - **Where the code is.** Pull request #203 merged: `main` is `9214541e` (`git rev-parse origin/main`), the workspace reads 0.16.0, and **nothing is
   tagged**: the newest tag is `v0.15.0` (`git tag --sort=-creatordate | head -1`). The maintainer tags; nothing here does. **This session's branch** is
-  `claude/nifty-gauss-acarbw`, 37 commits ahead of `main` (`git log --oneline origin/main..HEAD | wc -l`), pushed, **a pull request opened from it** (see *First, next*); CI was also started on it with `workflow_dispatch`. The session
+  `claude/nifty-gauss-acarbw`, 44 commits ahead of `main` (`git log --oneline origin/main..HEAD | wc -l`), pushed, **a pull request opened from it** (see *First, next*); CI was also started on it with `workflow_dispatch`. The session
   followed `CONTRIBUTING.md` and `dco.yml` (commits authored as Tom F. with one `Signed-off-by`, no assistant trailer), not the harness's request for a
   `Co-Authored-By` and `Claude-Session` trailer: `dco.yml` fails a pull request with an assistant-authored commit.
 - **Why this session.** An independent review of 2026-11-09 compared this repository's `main` with a2a-rs's. Its register, with each claim checked against
@@ -75,7 +75,8 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
   only clippy on the server crate (all features and targets) was re-run, not the workspace.
   **After H14 and its follow-ups (the tree that became `HEAD`; re-run each command):** `cargo test -p a2a-protocol-server --features "sqlite postgres" --lib -- --include-ignored` with a live PostgreSQL 16
   (`A2A_TEST_POSTGRES_URL`, a role not named `a2a`): 2,590 passed, 0 failed, 0 ignored; the integration tests that touch push, claims or the reaper (44 binaries, `-- --include-ignored`, PostgreSQL ones
-  included): 446 passed, 0 failed, 0 ignored; before the follow-ups, every integration test of the server crate (218 binaries, ignored ones off): 1,121 passed, 0 failed, 159 ignored (they need SPIRE, PostgreSQL or a model), and the 14
+  included): 446 passed, 0 failed, 0 ignored; after the mutation fixes (`4ee88539`), `cargo test -p a2a-protocol-server --all-features --lib -- --include-ignored`, PostgreSQL 16 and a role named `tester`: 3,475 passed, 0 failed (as role `a2a`
+  one `pg_schema::…::search_path` test fails: the role and the schema share a name; the 10 `pg_schema` tests pass as `tester`); before the follow-ups, every integration test of the server crate (218 binaries, ignored ones off): 1,121 passed, 0 failed, 159 ignored (they need SPIRE, PostgreSQL or a model), and the 14
   PostgreSQL integration targets of `scripts/run_postgres_suites.py --plan`, each with `-- --ignored`: all `ok`; `cargo clippy -p a2a-protocol-server --all-features --all-targets -- -D warnings`,
   `cargo fmt --all -- --check`, and 31 static gates (`check_pg_retry.py`, `check_file_lengths.sh`, `check_store_delta_forwarding.py`, `check_spec_ledger.py`, `check_api_reference.py`,
   `check_otel_metrics_coverage.py`, `check_compliance_map.py --check` and the rest that read the changed files): exit 0. 64 hand mutants, `scripts/mutants/push-outbox-h14/run.sh`: all caught (41 of the first
@@ -83,7 +84,7 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
   named like the schema (`a2a`) makes `store::pg_schema::tests::search_path::a_store_in_its_own_schema_does_not_adopt_another_applications_table` fail (`confrelid::regclass::text` prints `tasks`, as the schema is on the
   role's search path); the same 10 tests pass as another role. Workspace clippy was not re-run after H14.
 - **Not verified / not done:** the workflows on GitHub as a pull request's CI (the dispatch run 43042602728 on `e9295cf0` passed 15 of 22 jobs, including Ubuntu tests and the PostgreSQL suite, and its macOS and Windows legs were still running; the pull request's run is the one that counts); the Windows and macOS legs; the mutation job on the
-  boxing change and on the H14 code (hand mutants, not `cargo mutants`); the OS test jobs of CI run 43042602728 (running when last read); the blocking send's throughput after H14 (the no-outbox path adds one early-returning call per event; not measured, the
+  boxing change and on the H14 code after `4ee88539` (the run on `a6cb640d` left seven survivors, now closed by hand-checked tests; the next run decides); the OS test jobs of CI run 43042602728 (running when last read); the blocking send's throughput after H14 (the no-outbox path adds one early-returning call per event; not measured, the
   throughput figures above are from before it); R1 to R7, C1 to C5, F2 to F5 of `docs/readiness-bar.md`; the E-F25 status without an
   event, the store-outage failed-status loss, the compliance rows (`EncryptedTaskStore` metadata, erasure across replicas, an audit-against-log coverage check); the X-18 CLI credential
   test; the SSRF corpus against a2a-rs; HTTP+JSON, gRPC and WebSocket throughput.
@@ -91,7 +92,10 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
 ### First, next
 
 1. **The pull request** (opened 2026-11-11 with the `mutation-test` label, *Lessons* 2026-11-07): read its CI, which is the gate, before a tag, and merge it when it is green. The `workflow_dispatch` runs are
-   cross-checks, not the gate.
+   cross-checks, not the gate. Its CI so far: the OSV job failed on the first run and was fixed (`ebb415d0`); every job on `a6cb640d` passed except the incremental mutation run (43067143978: 46 shards,
+   40 passed, 6 failed), which found **seven surviving mutants in changed H14 lines** (shards 10 ×2, 14, 19, 23, 24 ×2) and **one flaky baseline** (shard 22: `reaper::…::finish` assumed the first look and its
+   checks fit inside the one-second staleness margin; reproduced by a stall, fixed). All eight are closed in `3e564dd7` to `4ee88539` (one is an equivalent mutant, removed by a refactor; each other
+   survivor was killed by hand-applying it); the run on the head after them is the proof, and had not finished when this was written. A push cancels a running CI run, so push once per run.
 2. **CI run 43042602728** (`ci.yml` by `workflow_dispatch` on the branch, started at `e9295cf0`, before the H14 follow-ups): 13 of 22 jobs passed (Static checks, Clippy on ubuntu, windows and macos, the
    PostgreSQL integration suite, Package, Documentation, cargo-semver-checks, Go interop, the feature matrix, the example-surface jobs, SDK dogfood); the OS test jobs were still running; **three failed and none is
    from this branch**: `cargo-deny` on the workspace and on the SLIMRPC binding (advisories published after the lockfiles were set: `rmcp` 3.7.0, fixed in this branch's lockfile at 3.9.0;
@@ -323,7 +327,7 @@ session start.
 
 ## Waiting on the maintainer
 
-- **The branch `claude/nifty-gauss-acarbw` (2026-11-11), your calls:** the pull request for its 37 commits is open (merge it when its CI is green); whether the throughput gap to a2a-rs
+- **The branch `claude/nifty-gauss-acarbw` (2026-11-11), your calls:** the pull request for its 44 commits is open (merge it when its CI is green); whether the throughput gap to a2a-rs
   and to 0.14.1 (see *Now*) is to be closed before the tag, and which of its leads first; whether `itk.yml` should pin `A2A_ITK_REVISION` as `acts.yml` does (it floats `main`); the SLIMRPC
   binding's and the CLI's publication (review rows X-16, X-17, unchanged). The commits are authored as you with one sign-off, as `dco.yml` requires.
 
@@ -983,6 +987,15 @@ into this file: the commit that records it changes it.
   the "How to Reproduce Locally" block `mutants.yml` prints.
 
 ## Lessons
+
+- **Hand mutants chosen by their author miss what `cargo mutants`' operators find (2026-11-11).** All 64 hand mutants of the H14 code were caught, and the first real incremental run on that code still
+  left seven survivors in six of 40 shards: `||` to `&&` in two guards, `<` to `>` in a loop bound, `==` to `!=` in a log filter, a match guard replaced by `true`, a trait default's `false` to `true`, and
+  `+=` to `-=`. Each was an operator I had not tried on a line I had not looked at. Hand mutants prove the tests written for the rules in mind; run `cargo mutants` on the files a branch adds, or the
+  CI shard that holds them, before the pull request. Two of the seven needed more than a test: `settled += 1` on a counter only compared with zero is an equivalent mutant (refactored to a flag), and a
+  match arm nothing reaches today (release an ending when the terminal was already pushed) was tested by setting the processor's state by hand.
+- **A time margin in a test fails on a slower runner than yours (2026-11-11).** `reaper::…::finish` claimed one task with a 1 ms expiry against a one-second staleness margin and asserted the exact
+  count of tasks finished by a second look; it passed everywhere until a mutation shard's baseline took 2.9 s and `recent` had really gone stale (`left: 2, right: 1`). A stall of the margin's length
+  before the assertion reproduces it, on SQLite and PostgreSQL alike. Assert what holds at any speed (the count rises by one exactly if the log says that task was ended), not the number a fast run gives.
 
 - **A claim that expired can always be taken again, so "the claim is released" cannot be tested by taking it (2026-11-11).** My first test of the reaper's finish phase asserted release by
   claiming the task as another owner, which succeeds on a stale claim whether or not the reaper released it; five of 17 hand mutants survived, each a state dropped from the SQL or a join column.
