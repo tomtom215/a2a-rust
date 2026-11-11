@@ -18,7 +18,10 @@ use crate::push::{PushConfigStore, PushSender};
 
 mod lanes;
 mod outbox_worker;
+mod reservation;
 pub use lanes::{PushLanes, ends_turn};
+#[cfg(test)]
+pub(super) use outbox_worker::hold as reservation_hold;
 
 /// Which timeout label a cut-off delivery deserves.
 ///

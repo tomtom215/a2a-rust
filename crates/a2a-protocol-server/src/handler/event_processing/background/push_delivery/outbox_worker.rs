@@ -25,8 +25,9 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use super::lanes::{Lanes, ends_turn};
+use super::reservation::Verdict;
 use crate::metrics::push_outcome;
-use crate::push::outbox::{self, ClaimedDelivery, NewDelivery, PushOutbox};
+use crate::push::outbox::{self, ClaimedDelivery, Held, NewDelivery, PushOutbox};
 use crate::store::tenant::TenantContext;
 
 /// The most rows one claim takes.
@@ -63,6 +64,20 @@ pub const fn lease(push_delivery_timeout: Duration) -> Duration {
         .saturating_mul(3)
         .saturating_add(Duration::from_secs(30))
 }
+
+/// How long a reservation is held before the worker settles it: longer than
+/// a fold can take, however long the task store makes it retry (the log
+/// write, then the save, each for up to `store_write_retry`), so that a hold
+/// that runs out belonged to a replica that stopped.
+pub const fn hold(limits: &crate::handler::limits::HandlerLimits) -> Duration {
+    limits
+        .store_write_retry
+        .saturating_mul(3)
+        .saturating_add(Duration::from_secs(60))
+}
+
+/// How often the worker looks for reservations to settle.
+pub const SETTLE_EVERY: Duration = Duration::from_secs(10);
 
 /// Records `events`' deliveries to every config of `task_id`, in the caller's
 /// tenant. A store that will not take them costs nothing more than the lanes
@@ -118,7 +133,7 @@ pub async fn record(
 }
 
 /// One row per event and config, in order, in the caller's tenant and caller.
-fn rows(
+pub(super) fn rows(
     task_id: &TaskId,
     configs: &[a2a_protocol_types::push::TaskPushNotificationConfig],
     events: &[StreamResponse],
@@ -145,6 +160,7 @@ fn rows(
 /// Delivers what the outbox holds until `shutdown`, or until the lanes are
 /// gone.
 pub async fn run(lanes: Weak<Lanes>, shutdown: CancellationToken) {
+    let mut next_settle = tokio::time::Instant::now();
     loop {
         let Some(strong) = lanes.upgrade() else {
             return;
@@ -152,6 +168,13 @@ pub async fn run(lanes: Weak<Lanes>, shutdown: CancellationToken) {
         let Some(outboxed) = strong.outbox.as_ref() else {
             return;
         };
+        if tokio::time::Instant::now() >= next_settle {
+            next_settle = tokio::time::Instant::now() + SETTLE_EVERY;
+            tokio::select! {
+                () = shutdown.cancelled() => return,
+                () = settle_held(&strong, outboxed) => {}
+            }
+        }
         let lease = lease(strong.limits.push_delivery_timeout);
         let claimed = tokio::select! {
             () = shutdown.cancelled() => return,
@@ -171,6 +194,98 @@ pub async fn run(lanes: Weak<Lanes>, shutdown: CancellationToken) {
         }
         if !deliver_batch(&strong, outboxed, claimed, &shutdown).await {
             return;
+        }
+    }
+}
+
+/// Settles the reservations whose hold has run out: their reserver stopped (or
+/// is stalled past any fold), so the task store says whether the event was
+/// stored (`reservation::verdict`), and the rows are armed or removed. Every
+/// replica does this; arming and releasing are idempotent, and a reservation
+/// another replica settled first is simply gone.
+async fn settle_held(lanes: &Lanes, outboxed: &Outboxed) {
+    let (Some(tasks), true) = (
+        lanes.tasks.as_ref(),
+        outboxed.outbox.supports_reservations(),
+    ) else {
+        return;
+    };
+    let held = match outboxed.outbox.held(BATCH).await {
+        Ok(held) => held,
+        Err(_err) => {
+            trace_warn!(error = %_err, "the push outbox's reservations could not be read; trying again");
+            return;
+        }
+    };
+    for held in held {
+        let tenant = held.tenant.clone();
+        let caller = held.caller.clone();
+        let settle = async {
+            if let Some(caller) = caller {
+                // A fresh request scope, so this cannot conflict.
+                let _ = TenantContext::set_caller(&caller);
+            }
+            settle_one(lanes, outboxed, tasks.as_ref(), held).await;
+        };
+        TenantContext::scope_request(tenant, settle).await;
+    }
+}
+
+/// One held reservation, settled by what the task store holds. A store that
+/// cannot be read leaves it for the next round.
+async fn settle_one(
+    lanes: &Lanes,
+    outboxed: &Outboxed,
+    tasks: &dyn crate::store::TaskStore,
+    held: Held,
+) {
+    let task_id = TaskId::new(held.task_id.clone());
+    let position = match tasks.get_with_position(&task_id).await {
+        Ok(found) => found.and_then(|(_, position)| position),
+        Err(_err) => {
+            trace_warn!(task_id = %task_id, error = %_err, "a held push reservation could not be checked against its task; trying again");
+            return;
+        }
+    };
+    // The log is read only when the task reflects the position: a task that
+    // has not reached it did not store the event, whatever the log holds.
+    let logged = if position.is_some_and(|stored| stored >= held.log_seq) {
+        match tasks
+            .read_events(&task_id, held.log_seq.saturating_sub(1), 1)
+            .await
+        {
+            Ok(events) => events
+                .into_iter()
+                .next()
+                .filter(|recorded| recorded.seq == held.log_seq)
+                .map(|recorded| recorded.event),
+            Err(_err) => {
+                trace_warn!(task_id = %task_id, error = %_err, "a held push reservation's event could not be looked up in its log; trying again");
+                return;
+            }
+        }
+    } else {
+        None
+    };
+    let settled =
+        match super::reservation::verdict(&held.event, held.log_seq, position, logged.as_ref()) {
+            Verdict::Arm => outboxed.outbox.arm(&held.reservation).await.map(|_| ()),
+            Verdict::Release => outboxed.outbox.release(&held.reservation).await,
+        };
+    match settled {
+        Ok(()) => {
+            trace_warn!(
+                task_id = %task_id,
+                log_seq = held.log_seq,
+                "settled a push reservation its replica left behind"
+            );
+            lanes
+                .metrics
+                .on_push_delivery(push_outcome::RESERVATION_SETTLED);
+            outboxed.wake.notify_one();
+        }
+        Err(_err) => {
+            trace_warn!(task_id = %task_id, error = %_err, "a held push reservation could not be settled; trying again");
         }
     }
 }

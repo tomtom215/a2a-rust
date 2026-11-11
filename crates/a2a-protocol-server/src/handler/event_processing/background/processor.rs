@@ -211,6 +211,20 @@ impl<'a> Processor<'a> {
             return;
         }
 
+        // The event's push rows are reserved in the outbox before anything of
+        // the event is written, so a stop at any later point leaves rows the
+        // worker settles from the store, rather than a stored event with no
+        // delivery (audit H14).
+        let reservation = match (&event, seq) {
+            (Ok(queued), Some(_)) => {
+                self.deps
+                    .push
+                    .reserve(self.task_id, seq, &queued.event)
+                    .await
+            }
+            _ => None,
+        };
+
         // A terminal event is recorded *after* the store rules on it, so the
         // log holds the verdict; everything else is recorded first, as it
         // always was (see `record_event`).
@@ -243,7 +257,17 @@ impl<'a> Processor<'a> {
         // The store records `seq` with each write the fold makes, so a
         // subscriber elsewhere knows which events the stored task reflects
         // (`TaskStore::get_with_position`, audit register R69).
-        let outcome = crate::store::applied::scope_if(seq, fold).await;
+        let folded = crate::store::applied::scope_if(seq, fold);
+        let outcome = match reservation {
+            // Boxed: the scope would otherwise hold the whole fold inline, in
+            // a future that is moved at every poll wrapper above it.
+            Some(reservation) => {
+                let outcome = Box::pin(reservation.scope(folded)).await;
+                reservation.settle().await;
+                outcome
+            }
+            None => folded.await,
+        };
 
         match outcome {
             Outcome::Refused(conflict) => self.supersede(&conflict, seq, terminal.is_some()).await,
@@ -365,3 +389,7 @@ mod tests;
 #[cfg(test)]
 #[path = "close_out_tests.rs"]
 mod close_out_tests;
+
+#[cfg(test)]
+#[path = "processor_reserve_tests.rs"]
+mod reserve_tests;
