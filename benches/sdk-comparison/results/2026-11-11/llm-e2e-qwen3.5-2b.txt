@@ -1,0 +1,11 @@
+llm_e2e.py 2 (5 prompts x 2 rounds, interleaved direct / a2a-rs / a2a-rust in rotating order), 2026-11-11
+model: Qwen3.5-2B-Q4_K_M.gguf (unsloth, sha256 aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223)
+server: llama.cpp llama-server f3b407ca, --jinja -c 4096 -np 1 -t 4; temperature 0, seed 42, max_tokens 64, thinking off
+a2a-rust: this checkout at e089619c's code (boxed); a2a-rs: a2a-lf 0.4.2 / a2a-server-lf 0.5.3 with NODELAY=1
+
+who        n  ttft_med_ms ttft_p90_ms total_med_ms  text==direct  completed
+direct     10       197.4       291.0       4219.9     10/10     10/10
+a2a-rs     10       198.1       358.9       4200.0     10/10     10/10
+a2a-rust   10       212.3       324.3       4382.1     10/10     10/10
+a2a-rs    paired TTFT overhead ms: median -3.67 [min -140.61, max 272.50]; total overhead median 201.93
+a2a-rust  paired TTFT overhead ms: median 17.10 [min -228.68, max 226.93]; total overhead median -8.35

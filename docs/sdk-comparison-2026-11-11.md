@@ -190,6 +190,25 @@ load generator on 2 and 3, 3 s warm-up and 10 s measured.
 | 16 | boxed | 7896 [7089–8367] | 1978 | 3259 | 216 |
 | 16 | unboxed | 7523 [6015–7814] | 2070 | 3494 | 229 |
 
+## 5. With a real model
+
+`scripts/llm_e2e.py`: each SDK's agent streams a real model's answer over `SendStreamingMessage`, and the
+text is compared with calling the model directly. llama.cpp `llama-server` f3b407ca with Qwen3.5-2B
+(Q4_K_M, thinking off, temperature 0, seed 42, 64 tokens, one slot so batching cannot change the logits),
+five prompts, two rounds, the three targets interleaved in rotating order, this tree at the boxed build:
+
+| target | samples | time to first token, median / p90 ms | whole answer, median ms | text identical to direct | task completed |
+|---|---:|---:|---:|---:|---:|
+| direct to the model | 10 | 197 / 291 | 4220 | 10 of 10 | 10 of 10 |
+| a2a-rs | 10 | 198 / 359 | 4200 | 10 of 10 | 10 of 10 |
+| a2a-rust | 10 | 212 / 324 | 4382 | 10 of 10 | 10 of 10 |
+
+The paired first-token overhead was -3.7 ms (a2a-rs) and +17 ms (a2a-rust) at the median, with ranges of
+about ±200 ms: **a sample of ten cannot separate either SDK from the model's own variance, and with a
+model in the loop the echo benchmark's gap is not what a user would see.** What the run does show is that the
+streaming path (executor, event queue, SSE) delivers a real model's answer byte for byte on this tree. Raw:
+`results/2026-11-11/llm-e2e-qwen3.5-2b.txt`.
+
 ## What was changed
 
 `RequestHandler::executor_future` and `respond_blocking` box their large inner future once,
