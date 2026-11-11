@@ -614,9 +614,11 @@ async fn an_unreadable_task_store_leaves_the_reservations_and_does_not_spin() {
     rig.wait(Duration::from_secs(35)).await;
     assert_eq!(rig.rows().await, 40, "left for when the store can be read");
     let reads = rig.store.reads.load(std::sync::atomic::Ordering::SeqCst);
+    // Two replicas, a look every ten seconds from the start (four in this
+    // time), one round of 32 each: a round that settled nothing is not repeated.
     assert!(
-        reads <= 4 * 32,
-        "{reads} reads in about three looks: a round that settled nothing is not repeated"
+        reads <= 2 * 4 * 32,
+        "{reads} reads: a round that settled nothing is repeated"
     );
     assert_eq!(rig.metrics.count(push_outcome::RESERVATION_SETTLED), 0);
 
