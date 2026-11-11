@@ -8,23 +8,31 @@
 # mirror of a `deny.toml` ignore, with the evidence and a date on which the
 # entry stops applying and must be re-examined (`osv.yml`).
 #
-# Before GHSA-qwgh-2vcv-g2f7 below, no active waivers since 2026-10-23. The last, RUSTSEC-2023-0071 (`rsa`,
-# Marvin timing side channel, no fixed release), covered rsa 0.9.10, which
-# the lockfile carried only for sqlx-mysql 0.8, a driver no feature enables.
-# With sqlx 0.9 (0.15.0) `rsa` is in none of the repository's nine
-# Cargo.lock files.
+# One active waiver, RUSTSEC-2026-0459 below, since 2026-11-11: the mirror of
+# the `deny.toml` ignore of the same id, which carries the full note.
+#
+# History: GHSA-qwgh-2vcv-g2f7 (block-buffer 0.10.4) was waived on 2026-10-29
+# and removed on 2026-11-11. OSV narrowed that advisory on 2026-10-30 to
+# block_buffer 0.11.0 up to, not including, 0.12.1, so 0.10.4 is outside it;
+# the lockfiles here hold 0.10.4 and 0.12.1, and osv-scanner 2.7.0 reported
+# the waiver as unused in all four files that carried it. The Miri check that
+# found the mechanism absent from 0.10.4 stands in the git history of this file.
+#
+# Before GHSA-qwgh-2vcv-g2f7, no active waivers since 2026-10-23. The last,
+# RUSTSEC-2023-0071 (`rsa`, Marvin timing side channel, no fixed release),
+# covered rsa 0.9.10, which the lockfile carried only for sqlx-mysql 0.8, a
+# driver no feature enables. With sqlx 0.9 (0.15.0) `rsa` is in none of the
+# repository's nine Cargo.lock files.
 
-# GHSA-qwgh-2vcv-g2f7 (block-buffer, "panic corrupts inline buffer
-# position"; OSV range: every version before 0.12.1). Locked here is 0.10.4,
-# through digest 0.10 and sha2 0.10, with no 0.10.x release carrying a fix.
-# The advisory's mechanism is absent from 0.10.4: the cursor the advisory
-# corrupts is stored inside the block in the 0.11 and 0.12 releases, but in
-# 0.10.4 it is a separate `pos: u8` field (src/lib.rs:62), written only after
-# the callback returns and never handed to it, and 0.10 has no `ReadBuffer`.
-# Checked 2026-10-29 under Miri (nightly 2026-10-28): the advisory's PoC
-# ported to 0.10.4 runs clean and the position stays 2; the same PoC on
-# 0.11.0 trips the crate's own invariant check in `get_pos`.
+# RUSTSEC-2026-0459 (CVE-2026-119375; libsqlite3-sys 0.6.0 to 0.38.2 bundle
+# SQLite before 3.54.0, which can return uninitialised page-cache memory when a
+# process opens a database file together with a sibling `-wal` file whose page
+# size differs). Locked here: libsqlite3-sys 0.37.0, required by sqlx-sqlite
+# 0.9.0. Checked 2026-11-11 against crates.io: sqlx and sqlx-sqlite 0.9.0 are
+# the latest releases, and the fix is libsqlite3-sys 0.39.0 or newer. Exposure:
+# only builds that enable the opt-in `sqlite` feature of a2a-protocol-server,
+# and only where the database file and its `-wal` are not the operator's own.
 [[IgnoredVulns]]
-id = "GHSA-qwgh-2vcv-g2f7"
-ignoreUntil = 2027-01-29
-reason = "block-buffer 0.10.4 (via digest/sha2 0.10, no fixed 0.10.x) keeps its cursor in a separate field, not in the block the advisory corrupts; the advisory's PoC runs clean under Miri on 0.10.4 (2026-10-29). Remove when the lock moves to digest 0.11 / block-buffer >= 0.12.1."
+id = "RUSTSEC-2026-0459"
+ignoreUntil = 2027-02-11
+reason = "libsqlite3-sys 0.37 is pinned by sqlx-sqlite 0.9.0, the latest sqlx (checked 2026-11-11); local attack through a crafted database and -wal pair; opt-in `sqlite` feature only; mirrors the deny.toml ignore. Remove when sqlx allows libsqlite3-sys >= 0.39."
