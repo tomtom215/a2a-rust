@@ -4,9 +4,9 @@ version = 4
 
 [[package]]
 name = "a2a-client-lf"
-version = "0.2.7"
+version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce0a91ba20a4c3406fd7161afb9aa9c29b9b2541ebf0a9d571368354b4059daf"
+checksum = "bd39a97ef9acc3fe4fa34169992117237046104ae479d0898d248ef70fcaa4fc"
 dependencies = [
  "a2a-lf",
  "a2a-pb",
@@ -28,9 +28,9 @@ dependencies = [
 
 [[package]]
 name = "a2a-lf"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7f132f3efbe23ffda546c5b24d065e7743981a28698f50a1803086b27ad9f9f"
+checksum = "c9bdc39f79399c01ec4df5da3b653e31b3bac52214ca3d8331d6f059c273b5b8"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -42,9 +42,9 @@ dependencies = [
 
 [[package]]
 name = "a2a-pb"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88dce304b61df41018fbdf3f6e46d6b0832c09c2c422cd40d812eb2e07e68185"
+checksum = "24091234b0c532f1ae1f5bba21e8840d542b6636b469fedcbad3a1167aae051e"
 dependencies = [
  "a2a-lf",
  "chrono",
@@ -63,9 +63,9 @@ dependencies = [
 
 [[package]]
 name = "a2a-server-lf"
-version = "0.5.1"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8785556fe5031fcaa08ade5863265824164270b297810a57c10d6729ff5e26d3"
+checksum = "5d98a2aa231797557d88f858a6a4975235dbf7fc5e1b6b8b6b644da47de99bcf"
 dependencies = [
  "a2a-lf",
  "a2a-pb",

@@ -1692,6 +1692,16 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **Every blocking send copied two 36,000-byte futures four times each** (found by measuring this tree against a2a-rs and against 0.14.1
+  on one host, `docs/sdk-comparison-2026-11-11.md`). The executor's `async` block and the blocking send's collector block each hold the request
+  context, the stored task and every `await` of the run, and `TenantContext::scope`, the span wrapper, the task tracker and `tokio::spawn` each
+  moved the whole future by value. callgrind: 604,000 instructions per blocking send over HTTP against 320,000 for 0.14.1, 261,000 of the added 284,000
+  in `memcpy` called from those layers; each future is now boxed once before its wrappers (277,000). The instruction count over-states the
+  gain (a copy counts per byte): six interleaved repetitions of the unmodified and the changed tree measured 4.4k to 4.7k requests/s and 232 to 216 µs
+  of server CPU at one connection, 7.5k to 7.9k and 229 to 216 µs at sixteen, in the same direction in all four comparisons with overlapping ranges.
+  Behaviour is unchanged; the server's 5,045 tests pass with it. Not fixed, and recorded under Known Limitations: this tree is still slower than 0.14.1 and
+  than a2a-rs at the same blocking send.
+
 - **A task canceled on another replica, whose owner then died, stayed `canceled` with no ending in its log and no webhook for it** (hostile
   campaign W2-hostile-3, 2026-11-08; raised again by the external review of 2026-11-09). `CancelTask` on a replica that does not run the turn
   stores `canceled` and leaves the ending to the owner's own event processor; an owner killed before it ended the turn left a terminal task whose
@@ -2857,6 +2867,14 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **Steering** (ADR 0036): a replica that has just died keeps its claim until the claim's time to live, and a steering message handed off in that window is accepted (`handed-off` means stored for the holder, not read) and never read; steering messages are not written to `Task.history`; the tests drive JSON-RPC and HTTP+JSON, and gRPC and WebSocket carry a steering message as any `SendMessage` without a test of their own; the two-process proof is Linux-only and not in CI.
 
 - **A status written with no event** (audit E-F25): a `CancelTask` of a parked task on one replica, and a task the claim reaper ends, write a status with no event in the log, so a subscriber on another replica learns of it at its next poll (up to `subscribe_reattach_max_interval`), also with `with_log_notifications`; measured: 2.0 s for a cancel at a 2 s ceiling.
+
+- **Throughput against a2a-rs and against 0.14.1** (measured 2026-11-11, `docs/sdk-comparison-2026-11-11.md`; echo executor, blocking `SendMessage` over
+  JSON-RPC, 4 shared vCPUs, server on two): a2a-rs serves 1.25 to 1.9 times the requests per second (7.8k against 4.3k at one connection before the change, 4.9k
+  after), and a2a-rust holds 2.5 to 3 times less resident memory. Against its own 0.14.1 this tree was 18% to 29% slower at one connection before the change
+  (4.4k against 5.4k, and 4.3k against 6.1k, in two runs) and is 12% to 14% slower after (4.7k against 5.4k, 4.9k against 5.7k; ranges overlapping). The two-core gap is mostly cross-thread wake-ups of the
+  runtime's I/O driver (2.2 `write` calls per request against 0.1), from timers armed on every request (hyper's connection, a `timeout` around a `watch`
+  receiver) and from the scheduler; with one worker the gap to 0.14.1 is 4 to 12%. Not closed. The in-process benchmark in `docs/readiness-bar.md`
+  ("not slower than 0.14.1") does not see it.
 
 - **A finished task whose owner died is completed after about three claim lifetimes** (hostile campaign W2-hostile-3, 2026-11-08; the reaper's
   completion is under Fixed): measured at 42 to 44 s with the default 15 s time to live (the claim expires, stays 15 s more before it is stale, and the

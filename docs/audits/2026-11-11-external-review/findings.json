@@ -107,17 +107,17 @@
     "id": "X-14",
     "section": "7",
     "claim": "no current head-to-head benchmark; the history shows a2a-rs faster in places",
-    "status": "CONFIRMED, OPEN",
-    "evidence": "benches/sdk-comparison/harness/agent-a2a-rust is pinned =0.14.1 and the results were measured at 0.14.1 (docs/handoff.md, item 6).",
-    "action": "see README, Measurement"
+    "status": "CONFIRMED, MEASURED; a2a-rs is faster here; partly improved, gap open",
+    "evidence": "benches/sdk-comparison was pinned at 0.14.1. Re-run on one host against a2a-rs's current published crates: a2a-rs serves 1.25 to 1.9x the blocking-send requests/s of this tree, a2a-rust uses 2.5 to 3x less memory; this tree was 18% to 29% slower than 0.14.1 at one connection (docs/sdk-comparison-2026-11-11.md).",
+    "action": "two large futures boxed once (5,044 of 5,045 server tests pass; small gain, direction consistent, ranges overlap); wake-ups attributed by strace -k to per-request timers and the scheduler; not closed. Next: a cheaper header-read bound, and the `timeout` around the `watch` receiver in streaming"
   },
   {
     "id": "X-15",
     "section": "7",
     "claim": "the production-readiness measurement matrix is incomplete",
-    "status": "CONFIRMED, OPEN",
+    "status": "CONFIRMED, one row measured (F1); the rest open",
     "evidence": "docs/readiness-bar.md: 'No row above (R1 to R7, C1 to C5, F1 to F5) has been measured'.",
-    "action": "see README, Measurement"
+    "action": "F1 measured (hung webhook: stream ends in 0.23 s; inline push fails the test). R1-R7, C1-C5, F2-F5 not measured (docs/readiness-bar.md, 2026-11-11)"
   },
   {
     "id": "X-16",
@@ -148,8 +148,8 @@
     "section": "10",
     "claim": "crash-time audit consistency, cross-replica erasure, metadata encryption and onward propagation need resolution for regulated use",
     "status": "CONFIRMED, OPEN",
-    "evidence": "docs/compliance/controls.toml rows CRA-AI-I-2e (partial), GDPR-5-2 (partial), GDPR-17-2-19 (integrator); EncryptedTaskStore leaves ids, states, timestamps, metadata and order in the clear.",
-    "action": "not built; each is a format or protocol change"
+    "evidence": "docs/compliance/controls.toml rows CRA-AI-I-2e (partial), GDPR-5-2 (partial), GDPR-17-2-19 (integrator). Crash-time audit consistency, read in the code: AuditedTaskStore::append_event (audit/task_store.rs) appends to the log and then writes the `task.event` record, and `record_event` returns nothing, so a crash between the two leaves an event in the log with no audit record; nothing checks the chain against the log's positions (AuditLog::verify checks the chain only). EncryptedTaskStore leaves ids, states, timestamps, metadata and order in the clear.",
+    "action": "not built; each is a format or protocol change. A coverage check of the audit chain against the event log is the cheapest first step"
   },
   {
     "id": "X-20",

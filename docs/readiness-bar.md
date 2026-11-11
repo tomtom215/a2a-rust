@@ -172,3 +172,20 @@ are directions and rough sizes, not exact percentages.
 rise (no profiler was run); how much of the telemetry cost is spans and how
 much is the default metrics; whether any of it holds on another host, with
 a different executor, or on another binding.
+
+### 2026-11-11: what was measured, and a correction
+
+**F1 is measured** (`crates/a2a-protocol-server/tests/push_hang_live_subscriber.rs`, run on this tree): a real TCP peer that reads the webhook request
+and never answers; the streaming send that registered it ends in 0.23 s, the executor's own pacing being 0.2 s, and the same test fails (the stream does
+not end in 10 s) with push delivery run inline. This meets F1's "the send path is not delayed"; its "retried within its budget and then dropped with a
+log line" half is covered by `tests/push_sender_tests.rs` and was not re-measured here.
+
+**Correction to the 2026-10-24 reading.** The section above reads "HEAD is not slower than 0.14.1: 102.0 against 106.2 µs" for one blocking send, and
+that figure stands for what it measured: client and server in one process on one worker. Over HTTP between two processes the same comparison
+reads differently: with the server on two cores this tree needed 232 µs of server CPU per request at one connection against 157 for 0.14.1 and was 18% to 29%
+slower in throughput (two runs); with the server on one core the gap was 4 to 12%
+(`docs/sdk-comparison-2026-11-11.md`, tables 2 and 3). The earlier line did not say the gap was absent, and it is now stated what it could not see: the
+cross-thread wake-ups of a runtime with more than one worker.
+
+**R1 to R7, C1 to C5, F2 to F5 are still unmeasured**; the throughput matrix above is not any of them (it is a closed-loop echo benchmark, not these load
+profiles), and no claim here depends on them.

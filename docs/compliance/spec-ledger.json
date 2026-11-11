@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:12933 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:12951 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -2011,7 +2011,7 @@
     "crates/a2a-protocol-server/src/rpc_span/mod.rs:345 ServerSpan::call",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:318 SyncCollector::run",
-    "crates/a2a-protocol-server/src/handler/messaging/execute.rs:422 write_failure_event"
+    "crates/a2a-protocol-server/src/handler/messaging/execute.rs:431 write_failure_event"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/rpc_span/tests.rs:120 a_finished_call_is_recorded_once",

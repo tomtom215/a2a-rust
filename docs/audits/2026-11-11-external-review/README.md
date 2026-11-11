@@ -43,12 +43,12 @@ fail with the defect put in by hand.
 | X-11 | a status written with no event (E-F25) | CONFIRMED, OPEN | CHANGELOG Known Limitations; measured 2.0 s for a cancel at a 2 s ceiling. |
 | X-12 | fuzzing is smoke-only in CI | NOT SUPPORTED | .github/workflows/fuzz.yml: nightly cron 41 3 * * *, 600 s per target (60 s on PRs), corpus restored and saved per target; fuzz/fuzz_targets has 18 targets including proto_convert, json_deser, webhook_url. |
 | X-13 | MSRV 1.94 against 1.85 | TRADE-OFF, documented | STABILITY.md section 5 and README: 0.15.0 raised the floor from 1.88 to 1.94 for sqlx 0.9. A lower floor for the types and client crates alone is not possible in one workspace lockfile while the server needs sqlx 0.9. |
-| X-14 | no current head-to-head benchmark; the history shows a2a-rs faster in places | CONFIRMED, OPEN | benches/sdk-comparison/harness/agent-a2a-rust is pinned =0.14.1 and the results were measured at 0.14.1 (docs/handoff.md, item 6). |
-| X-15 | the production-readiness measurement matrix is incomplete | CONFIRMED, OPEN | docs/readiness-bar.md: 'No row above (R1 to R7, C1 to C5, F1 to F5) has been measured'. |
+| X-14 | no current head-to-head benchmark; the history shows a2a-rs faster in places | CONFIRMED, MEASURED; a2a-rs is faster here; partly improved, gap open | benches/sdk-comparison was pinned at 0.14.1. Re-run on one host against a2a-rs's current published crates: a2a-rs serves 1.25 to 1.9x the blocking-send requests/s of this tree, a2a-rust uses 2.5 to 3x less memory; this tree was 18% to 29% slower than 0.14.1 at one connection (docs/sdk-comparison-2026-11-11.md). |
+| X-15 | the production-readiness measurement matrix is incomplete | CONFIRMED, one row measured (F1); the rest open | docs/readiness-bar.md: 'No row above (R1 to R7, C1 to C5, F1 to F5) has been measured'. |
 | X-16 | SLIMRPC is outside the workspace and unpublished | CONFIRMED, MAINTAINER'S DECISION | bindings/a2a-protocol-slimrpc has its own lockfile; handoff 'Publishing'. |
 | X-17 | the CLI is not published | CONFIRMED, MAINTAINER'S DECISION | packaging/README.md: binaries wait on vars.PUBLISH_CLI_BINARIES. |
 | X-18 | the official CLI states it sends no usage telemetry and redacts credentials; a2a-rust's CLI says neither | PARTLY TRUE, OPEN (low) | tools/a2a-cli/README.md 'Telemetry': with OTEL_EXPORTER_OTLP_ENDPOINT unset 'no exporter is built and nothing is sent'. Nothing there about credentials in output, and no test that none is printed. |
-| X-19 | crash-time audit consistency, cross-replica erasure, metadata encryption and onward propagation need resolution for regulated use | CONFIRMED, OPEN | docs/compliance/controls.toml rows CRA-AI-I-2e (partial), GDPR-5-2 (partial), GDPR-17-2-19 (integrator); EncryptedTaskStore leaves ids, states, timestamps, metadata and order in the clear. |
+| X-19 | crash-time audit consistency, cross-replica erasure, metadata encryption and onward propagation need resolution for regulated use | CONFIRMED, OPEN | docs/compliance/controls.toml rows CRA-AI-I-2e (partial), GDPR-5-2 (partial), GDPR-17-2-19 (integrator). Crash-time audit consistency, read in the code: AuditedTaskStore::append_event (audit/task_store.rs) appends to the log and then writes the `task.event` record, and `record_event` returns nothing, so a crash between the two leaves an event in the log with no audit record; nothing checks the chain against the log's positions (AuditLog::verify checks the chain only). EncryptedTaskStore leaves ids, states, timestamps, metadata and order in the clear. |
 | X-20 | neither SDK should be presented as operating at OpenAI/Anthropic/Google scale | VERIFIED | grep of README.md, ROADMAP.md, book/src, docs/*.md and the crate READMEs for hyperscale, web-scale, planet-scale, enterprise-grade, battle-tested, proven in production: no claim of that kind; book/src/deployment/horizontal-scaling.md:168 asks for measurements. |
 | X-21 | single-maintainer concentration | CONFIRMED, not a code finding | MAINTAINERS.md |
 | X-22 | ACTS runs of the two projects used different revisions | CONFIRMED for a2a-rs; a2a-rust is pinned | acts.yml pins a2a-itk at bcce1a15; itk.yml floats `main` (A2A_ITK_REVISION: main) for its own baseline run, which is a different gate. |
@@ -93,7 +93,7 @@ to live, instead of silent. It touches the outbox trait and its three stores,
 every call that hands an event to the push lanes (it must carry the log
 position), and needs a kill-9 test on PostgreSQL to be believed.
 
-## Measurement
+## Measurement (done in this change: see `docs/sdk-comparison-2026-11-11.md`)
 
 The review's strongest fair point is that neither SDK has a reproducible
 head-to-head at these commits. `docs/readiness-bar.md` lists R1 to R7, C1 to C5
