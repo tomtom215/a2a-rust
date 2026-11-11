@@ -23,6 +23,7 @@ if [ "$#" -lt 2 ]; then
   exit 2
 fi
 dest=$1; shift
+fetcher="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../scripts/ci" && pwd)/fetch_verified.sh"
 mkdir -p "$dest"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -34,8 +35,9 @@ fetch() { # project version sha256 tool
     echo "install_tools: $dest/$4 is already $2"
     return
   fi
-  curl -fsSL -o "$work/$1.tar.gz" "https://github.com/prometheus/$1/releases/download/v$2/$name.tar.gz"
-  echo "$3  $work/$1.tar.gz" | sha256sum -c -
+  # Retried, and checked against the pin before anything is unpacked: a bare
+  # `curl -fsSL` ended observability.yml on an HTTP 504 on 2026-11-09.
+  "$fetcher" "https://github.com/prometheus/$1/releases/download/v$2/$name.tar.gz" "$3" "$work/$1.tar.gz"
   tar xzf "$work/$1.tar.gz" -C "$work" "$name/$4"
   mv "$work/$name/$4" "$dest/"
 }

@@ -41,6 +41,9 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # A registry that answers 5xx for a moment must not fail a job that installs a tool: cargo's
+  # default is 3 retries (scripts/check_workflow_downloads.py, rule D3).
+  CARGO_NET_RETRY: 10
   RUSTFLAGS: "-D warnings"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -97,7 +100,7 @@ jobs:
       # grpc build scripts in crates/a2a-protocol-client and crates/a2a-protocol-server).
 
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov --locked
+        run: cargo install cargo-llvm-cov --locked --version 0.9.1
 
       # Two instrumented runs, one report. `--no-report` accumulates profiles
       # across both; the second adds the `#[ignore]`d PostgreSQL suite, which

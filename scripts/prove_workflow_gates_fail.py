@@ -779,6 +779,36 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "on a shallow clone rather than reporting a flattering figure"
     )
 
+    # ── Downloads and clones (2026-11-11) ────────────────────────────────────
+    #
+    # A step that fetches a tool or a pinned upstream checkout fails the job
+    # on its own exit status, so `discover` files it as a gate. What it can
+    # decide is "the bytes did not arrive, or are not the pinned ones", and
+    # that is proved where the mechanism lives, not by running the real
+    # download here: scripts/ci/test_fetch_verified.py (a ci.yml static-checks
+    # step) serves an HTTP 504, an error page with status 200 and a wrong
+    # digest and checks the helper's verdict and what it leaves behind, and
+    # scripts/check_workflow_downloads.py (the next step, itself proved by
+    # prove_gates_fail.sh) refuses any workflow that fetches by another route.
+    for key in (
+        "benchmarks.yml::bench::Install mdBook",
+        "docs.yml::build::Install mdBook",
+        "deploy.yml::manifests::Install kubeconform",
+    ):
+        reg[key] = Exempt(
+            "its verdict is scripts/ci/fetch_verified.sh's exit status, proved by "
+            "scripts/ci/test_fetch_verified.py in ci.yml (504, error page, wrong digest)"
+        )
+    for key in (
+        "itk.yml::itk-current-mount::Clone upstream ITK",
+        "official-tck.yml::official-tck::Clone the official TCK",
+    ):
+        reg[key] = Exempt(
+            "a network clone of a pinned upstream under scripts/ci/retry.sh, which "
+            "check_workflow_downloads.py requires of every clone; the retry wrapper "
+            "is exercised by scripts/ci/test_retry.py in ci.yml"
+        )
+
     # ── deploy.yml ───────────────────────────────────────────────────────────
     #
     # The step runs the image the job just built, which a fixture cannot have.

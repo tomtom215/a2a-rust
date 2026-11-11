@@ -95,7 +95,7 @@ jobs:
           echo "A2A_TCK_REVISION=$A2A_TCK_REVISION" >> "$GITHUB_ENV"
           git init --quiet /tmp/a2a-tck
           git -C /tmp/a2a-tck remote add origin https://github.com/a2aproject/a2a-tck
-          git -C /tmp/a2a-tck fetch --quiet --depth 1 origin "$A2A_TCK_REVISION"
+          scripts/ci/retry.sh 5 -- git -C /tmp/a2a-tck fetch --quiet --depth 1 origin "$A2A_TCK_REVISION"
           git -C /tmp/a2a-tck checkout --quiet FETCH_HEAD
           echo "a2a-tck revision graded: $(git -C /tmp/a2a-tck rev-parse HEAD) (requested: $A2A_TCK_REVISION)"
 
