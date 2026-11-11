@@ -295,6 +295,7 @@ fn hold(rig: &Rig) -> Duration {
 #[tokio::test(start_paused = true)]
 async fn a_stored_event_is_delivered_once_from_its_reservation() {
     let mut rig = Rig::new(TaskState::Working).await;
+    let started = tokio::time::Instant::now();
     rig.run_on_a(status(1, TaskState::Working)).await.unwrap();
 
     assert_eq!(
@@ -303,6 +304,12 @@ async fn a_stored_event_is_delivered_once_from_its_reservation() {
             replica: "a",
             state: Some(TaskState::Working)
         }
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "armed when the event was stored ({:?}), not settled after the hold ({:?})",
+        started.elapsed(),
+        hold(&rig)
     );
     rig.wait(Duration::from_secs(30)).await;
     assert!(rig.a_seen.try_recv().is_err(), "delivered once");
@@ -326,9 +333,18 @@ async fn an_event_the_store_refused_leaves_no_row_of_its_own() {
         },
         "the verdict, not the artifact"
     );
+    assert!(
+        hold(&rig) > Duration::from_secs(40),
+        "the wait below ends before the hold does"
+    );
     rig.wait(Duration::from_secs(30)).await;
     assert!(rig.a_seen.try_recv().is_err(), "nothing else was delivered");
-    assert_eq!(rig.rows().await, 0, "the artifact's reservation is gone");
+    assert_eq!(
+        rig.rows().await,
+        0,
+        "the artifact's reservation was released by its processor, not settled by the hold"
+    );
+    assert_eq!(rig.metrics.count(push_outcome::RESERVATION_SETTLED), 0);
 }
 
 /// The window H14 is about: the replica stops after the store has the event and
@@ -385,6 +401,47 @@ async fn a_stop_before_the_store_write_is_settled_as_not_stored_and_tells_nobody
     assert!(rig.a_seen.try_recv().is_err());
     assert!(rig.b_seen.try_recv().is_err(), "an event the task lacks");
     assert_eq!(rig.metrics.count(push_outcome::RESERVATION_SETTLED), 1);
+}
+
+/// An artifact update is reserved like a status update: the same stop, the
+/// same recovery.
+#[tokio::test(start_paused = true)]
+async fn an_artifact_update_is_reserved_too() {
+    let mut rig = Rig::new(TaskState::Working).await;
+    rig.store.stop(Stop::After);
+    let running = rig.run_on_a(artifact(1));
+    rig.store.parked.notified().await;
+    rig.kill_a(running).await;
+    assert_eq!(rig.rows().await, 1);
+
+    rig.wait(hold(&rig) + Duration::from_secs(30)).await;
+    assert_eq!(
+        rig.b_seen.recv().await.unwrap(),
+        Seen {
+            replica: "b",
+            state: None
+        },
+        "an artifact update"
+    );
+    assert_eq!(rig.rows().await, 0);
+}
+
+/// The hold outlasts a fold however long the store is made to retry: two
+/// retried writes (the log, then the save) and a margin.
+#[test]
+fn the_hold_outlasts_two_store_write_retries_and_a_margin() {
+    for retry in [
+        Duration::from_secs(1),
+        Duration::from_secs(30),
+        Duration::from_secs(600),
+    ] {
+        let limits = HandlerLimits::default().with_store_write_retry(retry);
+        let held = super::super::push_delivery::reservation_hold(&limits);
+        assert!(
+            held >= retry * 2 + Duration::from_secs(30),
+            "{held:?} for a retry of {retry:?}"
+        );
+    }
 }
 
 /// A terminal event is logged after the store rules on it. A stop between its

@@ -92,6 +92,13 @@ fn events_that_differ_in_content_are_different() {
 #[test]
 fn only_status_and_artifact_updates_are_reserved() {
     assert!(may_push(&status(TaskState::Working)));
+    assert!(!may_push(&StreamResponse::Task(
+        a2a_protocol_types::task::Task::new(
+            TaskId::new("t1"),
+            ContextId::new("c1"),
+            TaskStatus::new(TaskState::Working),
+        )
+    )));
     assert!(!may_push(&StreamResponse::Message(
         a2a_protocol_types::message::Message::user("m1", vec![Part::text("hi")])
     )));
