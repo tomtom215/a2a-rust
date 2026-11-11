@@ -115,6 +115,16 @@ impl TaskStore for Stopping {
     ) -> F<'a, ()> {
         Box::pin(self.around(self.inner.save_artifact_delta(t, delta)))
     }
+    fn try_save_status_delta<'a>(&'a self, t: &'a Task) -> F<'a, bool> {
+        self.inner.try_save_status_delta(t)
+    }
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        t: &'a Task,
+        delta: crate::store::ArtifactDelta,
+    ) -> F<'a, bool> {
+        self.inner.try_save_artifact_delta(t, delta)
+    }
     fn get<'a>(&'a self, id: &'a TaskId) -> F<'a, Option<Task>> {
         self.inner.get(id)
     }

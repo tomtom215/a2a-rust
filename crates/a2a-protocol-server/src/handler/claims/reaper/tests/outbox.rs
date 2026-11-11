@@ -69,6 +69,16 @@ impl TaskStore for ParksAppend {
     fn save_status_delta<'a>(&'a self, t: &'a a2a_protocol_types::task::Task) -> F<'a, ()> {
         self.inner.save_status_delta(t)
     }
+    fn try_save_status_delta<'a>(&'a self, t: &'a a2a_protocol_types::task::Task) -> F<'a, bool> {
+        self.inner.try_save_status_delta(t)
+    }
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        t: &'a a2a_protocol_types::task::Task,
+        delta: crate::store::ArtifactDelta,
+    ) -> F<'a, bool> {
+        self.inner.try_save_artifact_delta(t, delta)
+    }
     fn get<'a>(&'a self, id: &'a TaskId) -> F<'a, Option<a2a_protocol_types::task::Task>> {
         self.inner.get(id)
     }
