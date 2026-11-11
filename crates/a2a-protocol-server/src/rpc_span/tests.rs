@@ -282,10 +282,9 @@ fn spans_created_under(policy: InboundTracePolicy) -> Vec<String> {
     crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
     let created = Created::default();
     let subscriber = tracing_subscriber::registry().with(created.clone());
-    let seen = Seen::default();
     let handler = crate::RequestHandlerBuilder::new(Idle)
         .without_agent_card()
-        .with_metrics(Recording(Arc::clone(&seen)))
+        .with_metrics(Recording(Seen::default()))
         .with_inbound_trace_policy(policy)
         .build()
         .unwrap();
