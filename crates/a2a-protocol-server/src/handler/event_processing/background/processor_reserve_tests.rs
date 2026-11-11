@@ -579,7 +579,9 @@ async fn four_hundred_stale_reservations_are_settled_in_one_look() {
     // at the start and again ten seconds on, which is 128 of the 400.
     rig.wait(Duration::from_secs(12)).await;
     assert_eq!(rig.rows().await, 0, "all released in the first look");
-    assert_eq!(rig.metrics.count(push_outcome::RESERVATION_SETTLED), 400);
+    // Counted by each replica that settled one: two workers can settle the same
+    // reservation at once (the removal is idempotent), so at least 400.
+    assert!(rig.metrics.count(push_outcome::RESERVATION_SETTLED) >= 400);
 }
 
 /// Reservations that cannot be settled because the task store cannot be read

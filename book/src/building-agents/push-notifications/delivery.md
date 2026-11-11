@@ -139,18 +139,42 @@ keeps them in a store instead (ADR 0037): open one, for example
 `PostgresPushOutbox::new(&database_url).await?`, and pass it as
 `.with_push_outbox(Arc::new(outbox))` next to `.with_push_sender(...)`.
 
-- **What is stored.** One row per event and webhook (`a2a_push_outbox`),
-  written by the task's lane once the event is stored, in order. A row names
-  the config, not its credentials, so a config that is deleted, or removed
-  after a `410`, ends its rows. The event body is in the row; `with_cipher`
-  seals it with the push configs' `PushConfigCipher`. The write is not in the
-  event's own transaction, so a crash between the event's storage and its row
-  loses that event's deliveries. The window is the task's lane: the event
-  waits there, in memory, behind the rows queued before it (at most
-  `push_queue_capacity`, 1024 by default, and none for more than the time a
-  row's write takes while the database answers) and the one being written. A
-  slow or unavailable outbox database widens it. Without the outbox every
+- **What is stored.** One row per event and webhook (`a2a_push_outbox`), in
+  event order. A row names the config, not its credentials, so a config that
+  is deleted, or removed after a `410`, ends its rows. The event body is in the
+  row; `with_cipher` seals it with the push configs' `PushConfigCipher`.
+- **Written before the event is stored.** The handler reserves an event's rows
+  before its first durable write, and arms them once the event is stored (or
+  removes them if it was not). A reserved row is never claimed, but it holds
+  its webhook's place, so deliveries stay in event order. A process that is
+  killed between the two leaves rows whose hold (three store-write retries and
+  a minute: 150 s by default) runs out; any replica's worker then asks the task
+  store whether the event was stored (the position the stored task has reached,
+  and the event at that position in the log), and either delivers it or
+  removes it. So a replica lost at any point does not lose a stored event's
+  deliveries, and no webhook is told of an event the task does not have. Each
+  of those settlements is counted `reservation_settled`: a rate above zero
+  means replicas are dying mid-event (two replicas that settle one reservation at
+  once each count it). This needs a task store with an event
+  log (the SQLite, PostgreSQL and in-memory stores have one) and an outbox that
+  keeps reservations (all three here do); with either missing, the row is
+  written after the event is stored, by the task's lane, and a crash between
+  the two writes loses that event's deliveries. Without the outbox every
   queued delivery and every retry is lost with the process.
+- **Endings.** A task's ending that no queued event carries (a cancel taken
+  on another replica, a task the claim reaper ends, an executor that
+  panicked) is recorded in the outbox before it is written to the log, behind
+  any rows a stopped replica still has reserved for the task, so a webhook
+  sees it after the events that were stored before it. A stop in between
+  leaves the log without the ending, which the reaper completes, at worst
+  delivering it twice.
+- **Not covered.** An outbox that is down when an event is reserved leaves
+  that event to the task's lane, which records it after it is stored; a
+  webhook can then see it after a later event. A task ended by an executor's
+  panic is saved before its ending is recorded: a stop in that one write is
+  repaired only where turn claims are on. A stopped replica's last event
+  reaches the webhook after the hold (150 s by default), and the ending
+  behind it.
 - **Who delivers.** A worker per handler claims rows that are due, under a
   lease (three times `push_delivery_timeout` plus 30 s), from whichever
   replica: PostgreSQL's claim is `FOR UPDATE SKIP LOCKED`, so replicas never
@@ -190,6 +214,7 @@ its outcome:
 | `gone` | The webhook answered `410 Gone` and its config was removed (`push_remove_gone`). Counted for each delivery that learned it: a blocking send's batch reads its configs once, so the rest of that batch's events also reach the webhook and are counted. |
 | `throttled` | Not attempted: the delivery waited `push_delivery_timeout` for a slot in the push gate and was not let through. Not held against the webhook. |
 | `expired` | The push outbox gave up on it: older than `push_outbox_max_age` when next due. |
+| `reservation_settled` | Not a delivery: a worker settled the reserved rows of an event whose replica stopped before arming or removing them. Counts crashes the outbox recovered from. |
 
 `suspended` and `gone` are in `a2a:push_delivery_failure_ratio:rate5m` with
 `failed`, as `dropped` is: it is the share of deliveries that did not reach a

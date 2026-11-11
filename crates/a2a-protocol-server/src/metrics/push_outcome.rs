@@ -76,7 +76,8 @@ pub const EXPIRED: &str = "expired";
 /// releasing them, and the task store said whether the event was stored (ADR
 /// 0037, audit H14). Not a delivery: a count of crashes (or stalls past the
 /// hold) the outbox recovered from, so an alert can tell that replicas are
-/// dying mid-event.
+/// dying mid-event. A reservation that two replicas settle at once is
+/// counted by each.
 pub const RESERVATION_SETTLED: &str = "reservation_settled";
 /// No longer reported.
 ///
