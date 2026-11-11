@@ -1,0 +1,12 @@
+[
+  {
+    "name": "the abandoned phase does not settle",
+    "old": "        let ended = TenantContext::scope_partition(scope, &token, async {\n            self.settle_reservations(task_id).await;\n            self.fail(task_id).await",
+    "new": "        let ended = TenantContext::scope_partition(scope, &token, async {\n            self.fail(task_id).await"
+  },
+  {
+    "name": "the finish phase does not settle",
+    "old": "        TenantContext::scope_partition(scope, &token, async {\n            self.settle_reservations(task_id).await;\n            self.complete_ending(task_id).await;",
+    "new": "        TenantContext::scope_partition(scope, &token, async {\n            self.complete_ending(task_id).await;"
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "name": "postgres records an existing delivery id again",
+    "old": "if present > 0 {",
+    "new": "if present > 1_000_000 {"
+  },
+  {
+    "name": "postgres held_for_task wrong tenant",
+    "old": "WHERE NOT armed AND tenant = $1",
+    "new": "WHERE NOT armed AND tenant != $1"
+  },
+  {
+    "name": "postgres renew ignores the owner",
+    "old": "WHERE owner = $1 AND lease_until > now()",
+    "new": "WHERE owner <> $1 AND lease_until > now()"
+  }
+]
