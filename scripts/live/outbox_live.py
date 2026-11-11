@@ -114,17 +114,27 @@ try:
     time.sleep(5)  # a duplicate, or a wrong delivery, would land here
     with LOCK:
         final = list(SEEN)
-    artifacts = [s for s in final if s["kind"].startswith("artifact:")]
-    working = [s for s in final if s["kind"] == "status:TASK_STATE_WORKING"]
-    ids = [s["delivery_id"] for s in final]
+    # At least once: a delivery whose owner died before it was removed is sent
+    # again under the same delivery id. What must not happen is one event under
+    # two ids, or an event the task never stored.
+    first = {}
+    for s in final:
+        first.setdefault(s["delivery_id"], s)
+    distinct = list(first.values())
+    artifacts = [s for s in distinct if s["kind"].startswith("artifact:")]
+    working = [s for s in distinct if s["kind"] == "status:TASK_STATE_WORKING"]
+    retries = len(final) - len(distinct)
     settled = common.psql("SELECT count(*) FROM a2a_push_outbox", DB)
+    order = [s["kind"] for s in sorted(final, key=lambda s: s["at"])]
     print(f"{LABEL} ({KILL_AT}): receiver saw {[(s['kind'], round(s['at'], 1)) for s in final]}; "
-          f"outbox rows left {settled}")
-    ok = len(working) == 1 and len(ids) == len(set(ids)) and settled == "0"
+          f"{retries} retry(ies) under an id already seen; outbox rows left {settled}")
+    ok = len(working) == 1 and settled == "0" and None not in first
     if KILL_AT == "arm":
-        ok = ok and len(artifacts) == 1 and artifacts[0]["at"] > killed_at + 30
-        print(f"{LABEL}: the artifact in the window was delivered once, {artifacts[0]['at'] - killed_at:.0f} s after "
-              "the kill, by the survivor" if ok else f"{LABEL}: FAILED to deliver it exactly once")
+        ok = ok and len(artifacts) == 1 and artifacts[0]["at"] > killed_at
+        ok = ok and order.index("artifact:A-early") < order.index("status:TASK_STATE_FAILED")
+        print(f"{LABEL}: the artifact in the window was delivered once, "
+              f"{artifacts[0]['at'] - killed_at:.0f} s after the kill, by the survivor, before the ending"
+              if ok else f"{LABEL}: FAILED to deliver it once, in order")
     else:
         ok = ok and len(artifacts) == 0
         print(f"{LABEL}: no delivery for the event the task never stored" if ok

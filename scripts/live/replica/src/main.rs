@@ -218,6 +218,22 @@ impl PushOutbox for Killing {
     fn held(&self, limit: usize) -> OutboxFuture<'_, Vec<Held>> {
         self.inner.held(limit)
     }
+    // A wrapper has to forward every method an outbox may provide, or the
+    // handler falls back to the trait's defaults (no renewal, no settling by task).
+    fn held_for_task<'a>(
+        &'a self,
+        tenant: &'a str,
+        caller: Option<&'a str>,
+        task_id: &'a str,
+    ) -> OutboxFuture<'a, Vec<Held>> {
+        self.inner.held_for_task(tenant, caller, task_id)
+    }
+    fn supports_renewal(&self) -> bool {
+        true
+    }
+    fn renew<'a>(&'a self, owner: &'a str, lease: Duration) -> OutboxFuture<'a, usize> {
+        self.inner.renew(owner, lease)
+    }
 }
 
 #[tokio::main]
