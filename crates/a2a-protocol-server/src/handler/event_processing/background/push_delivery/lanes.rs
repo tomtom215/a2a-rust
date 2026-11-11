@@ -221,16 +221,26 @@ impl PushLanes {
         self.push_after_store(task_id, event);
     }
 
-    /// Records `event`'s deliveries in the outbox, behind every row of the
-    /// task that is reserved or waiting (a webhook sees events in the order
-    /// they were stored), and returns `true`; `false`, having done nothing,
-    /// when the handler has no outbox. For an ending the processor did not
-    /// receive as an event (the reaper's), which is stored first.
-    pub fn push_recorded(&self, task_id: &TaskId, event: &StreamResponse) -> bool {
-        if !self.0.as_ref().is_some_and(|lanes| lanes.outbox.is_some()) {
+    /// Records `event`'s deliveries in the outbox now, and returns `true`
+    /// once they are written; `false`, having done nothing, when the handler
+    /// has no outbox, and the caller sends or queues the event itself.
+    ///
+    /// For a task's ending that no queued event carried (the reaper's, an
+    /// executor's panic, a verdict from another writer): called **before** the
+    /// ending is written to the task's log, so that a stop in between leaves
+    /// the log without it, which is what the reaper looks for, instead of a
+    /// log that has it and a webhook that was never told. The row queues
+    /// behind every row of the task that is reserved or waiting, so a webhook
+    /// sees the ending after the events that were stored before it.
+    pub async fn record_now(&self, task_id: &TaskId, event: &StreamResponse) -> bool {
+        let Some(lanes) = self.0.as_ref() else {
             return false;
-        }
-        self.push_after_store(task_id, event);
+        };
+        let Some(outboxed) = lanes.outbox.as_ref() else {
+            return false;
+        };
+        self.start_worker();
+        outbox_worker::record(lanes, outboxed, task_id, std::slice::from_ref(event)).await;
         true
     }
 

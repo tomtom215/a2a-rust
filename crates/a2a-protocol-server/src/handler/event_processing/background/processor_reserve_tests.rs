@@ -428,7 +428,8 @@ async fn an_ending_recorded_after_a_crash_is_delivered_behind_the_reserved_event
 
     assert!(
         rig.b
-            .push_recorded(&TaskId::new("t"), &status(2, TaskState::Failed).event),
+            .record_now(&TaskId::new("t"), &status(2, TaskState::Failed).event)
+            .await,
         "the handler has an outbox"
     );
     rig.wait(Duration::from_secs(30)).await;
@@ -457,10 +458,61 @@ async fn an_ending_recorded_after_a_crash_is_delivered_behind_the_reserved_event
 }
 
 /// Without an outbox there is nothing to record in: the caller sends it.
-#[test]
-fn without_an_outbox_nothing_is_recorded() {
+#[tokio::test]
+async fn without_an_outbox_nothing_is_recorded() {
     assert!(
         !crate::handler::PushLanes::default()
-            .push_recorded(&TaskId::new("t"), &status(1, TaskState::Failed).event)
+            .record_now(&TaskId::new("t"), &status(1, TaskState::Failed).event)
+            .await
     );
+}
+
+/// A task's ending that no queued event carried (another replica cancelled
+/// it) is recorded in the outbox before it is logged: a stop between the two
+/// leaves the log without the ending, which is what the reaper looks for, and
+/// the webhook told. (Logged first, a stop in between left a log that had the
+/// ending and a webhook that was never told, and the reaper skips an ending
+/// the log already holds.)
+#[tokio::test(start_paused = true)]
+async fn an_ending_is_recorded_before_it_is_logged() {
+    let mut rig = Rig::new(TaskState::Canceled).await;
+    rig.store.park_next_append();
+    let (store, lanes, limits) = (Arc::clone(&rig.store), rig.a.clone(), rig.limits.clone());
+    let running = tokio::spawn(async move {
+        let id = TaskId::new("t");
+        let mut run = Processor::new(
+            &id,
+            BackgroundDeps {
+                task_store: &*store,
+                push: &lanes,
+                limits: &limits,
+                metrics: &crate::metrics::NoopMetrics,
+            },
+            task(TaskState::Working),
+            CancellationToken::new(),
+            None,
+            None,
+        );
+        run.close_out().await;
+    });
+    parked(&rig).await;
+
+    assert_eq!(
+        next(&mut rig.a_seen).await,
+        Seen {
+            replica: "a",
+            state: Some(TaskState::Canceled)
+        },
+        "delivered while its log write has not happened"
+    );
+    assert!(
+        rig.store
+            .inner
+            .read_events(&TaskId::new("t"), 0, 10)
+            .await
+            .unwrap()
+            .is_empty(),
+        "the log does not have it yet"
+    );
+    rig.kill_a(running).await;
 }

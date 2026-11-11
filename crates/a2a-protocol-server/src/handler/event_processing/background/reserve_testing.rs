@@ -38,6 +38,8 @@ pub(in crate::handler::event_processing) struct Stopping {
     pub(in crate::handler::event_processing) inner: InMemoryTaskStore,
     /// The stop, and how many writes go through before it applies.
     mode: Mutex<(Stop, usize)>,
+    /// The next `append_event` never reaches the log.
+    park_append: std::sync::atomic::AtomicBool,
     /// A write has reached its stop.
     pub(in crate::handler::event_processing) parked: Notify,
     pub(in crate::handler::event_processing) resume: Notify,
@@ -48,6 +50,7 @@ impl Stopping {
         Arc::new(Self {
             inner: InMemoryTaskStore::new(),
             mode: Mutex::new((Stop::Never, 0)),
+            park_append: std::sync::atomic::AtomicBool::new(false),
             parked: Notify::new(),
             resume: Notify::new(),
         })
@@ -55,6 +58,12 @@ impl Stopping {
 
     pub(in crate::handler::event_processing) fn stop(&self, at: Stop) {
         self.stop_after(0, at);
+    }
+
+    /// The next log append stops before it is written, as a process does.
+    pub(in crate::handler::event_processing) fn park_next_append(&self) {
+        self.park_append
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Lets `writes` writes through, then stops the next at `at`.
@@ -122,6 +131,16 @@ impl TaskStore for Stopping {
         true
     }
     fn append_event<'a>(&'a self, id: &'a TaskId, seq: u64, e: &'a StreamResponse) -> F<'a, ()> {
+        if self
+            .park_append
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Box::pin(async move {
+                self.parked.notify_one();
+                std::future::pending::<()>().await;
+                Ok(())
+            });
+        }
         self.inner.append_event(id, seq, e)
     }
     fn last_event_seq<'a>(&'a self, id: &'a TaskId) -> F<'a, u64> {

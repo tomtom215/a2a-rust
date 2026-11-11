@@ -134,6 +134,12 @@ impl<'a> Processor<'a> {
             self.last_task.context_id.clone(),
             status,
         ));
+        // Recorded in the outbox before it is logged, when there is one (see
+        // `PushLanes::record_now`): a stop in between leaves the log without
+        // the ending, which the reaper completes, not a log with it and
+        // webhooks that were never told.
+        let recorded =
+            !self.pushed_terminal && self.deps.push.record_now(self.task_id, &event).await;
         super::super::append_ending(
             self.deps.task_store,
             self.task_id,
@@ -143,7 +149,9 @@ impl<'a> Processor<'a> {
         )
         .await;
         if !self.pushed_terminal {
-            self.deps.push.push(self.task_id, &event);
+            if !recorded {
+                self.deps.push.push(self.task_id, &event);
+            }
             self.pushed_terminal = true;
         }
         self.ended = true;
@@ -328,11 +336,18 @@ impl<'a> Processor<'a> {
 
         if terminal {
             self.answer(seq, verdict.clone());
+        }
+        // Recorded in the outbox before it is logged: see `announce`.
+        let recorded =
+            !self.pushed_terminal && self.deps.push.record_now(self.task_id, &verdict).await;
+        if terminal {
             self.record(seq, verdict.clone()).await;
             self.ended = true;
         }
         if !self.pushed_terminal {
-            self.deps.push.push(self.task_id, &verdict);
+            if !recorded {
+                self.deps.push.push(self.task_id, &verdict);
+            }
             self.pushed_terminal = true;
         }
         self.superseded = Some(verdict);

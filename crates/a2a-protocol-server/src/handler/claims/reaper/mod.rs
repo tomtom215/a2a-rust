@@ -227,6 +227,11 @@ impl Reaper {
             task.context_id.clone(),
             task.status.clone(),
         ));
+        // Recorded in the outbox before it is logged, when there is one: a
+        // stop in between leaves the log without the ending, which the next
+        // look finishes, rather than a log that has it and webhooks that were
+        // never told.
+        let recorded = self.push_lanes.record_now(&id, &event).await;
         crate::handler::event_processing::append_ending(
             &*self.task_store,
             &id,
@@ -242,7 +247,7 @@ impl Reaper {
         );
         self.metrics
             .on_claim(crate::metrics::control::claim::FINISHED);
-        if !self.push_lanes.push_recorded(&id, &event) {
+        if !recorded {
             crate::handler::event_processing::deliver_push_bg(
                 &id,
                 &event,
@@ -337,6 +342,11 @@ impl Reaper {
             task.context_id.clone(),
             status,
         ));
+        // Recorded in the outbox before it is logged, when there is one: a
+        // stop in between leaves the log without the ending, which the next
+        // look finishes, rather than a log that has it and webhooks that were
+        // never told.
+        let recorded = self.push_lanes.record_now(&id, &event).await;
         crate::handler::event_processing::append_ending(
             &*self.task_store,
             &id,
@@ -345,7 +355,7 @@ impl Reaper {
             self.limits.store_write_retry,
         )
         .await;
-        if !self.push_lanes.push_recorded(&id, &event) {
+        if !recorded {
             crate::handler::event_processing::deliver_push_bg(
                 &id,
                 &event,
