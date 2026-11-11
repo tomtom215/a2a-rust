@@ -469,6 +469,8 @@ async fn without_a_task_store_the_lane_records_after_the_event_is_stored() {
     assert!(rx.try_recv().is_err());
 }
 
+#[path = "processor_reserve_tests/declines.rs"]
+mod declines;
 #[path = "processor_reserve_tests/endings.rs"]
 mod endings;
 #[path = "processor_reserve_tests/follow_ups.rs"]

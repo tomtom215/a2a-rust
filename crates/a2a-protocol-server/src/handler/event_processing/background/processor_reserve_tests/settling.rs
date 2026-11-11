@@ -180,3 +180,41 @@ async fn a_trimmed_log_entry_does_not_hide_a_stored_event() {
     assert!(rig.b_seen.try_recv().is_err(), "each once");
     assert_eq!(rig.rows().await, 0);
 }
+
+/// A batch that comes back short ends the look: the worker does not ask again
+/// for what it has just been told is all there is. Each replica looks once in
+/// the first ten seconds, so the outbox is asked once by each.
+#[tokio::test(start_paused = true)]
+async fn a_short_batch_ends_the_look_without_asking_again() {
+    let rig = Rig::new(TaskState::Working).await;
+    for n in 0..5u64 {
+        let delivery = crate::push::outbox::NewDelivery {
+            delivery_id: format!("d{n}"),
+            tenant: String::new(),
+            caller: None,
+            task_id: "t".to_owned(),
+            config_id: format!("c{n}"),
+            event: status(n + 1, TaskState::Working).event,
+            ends_turn: false,
+        };
+        rig.outbox
+            .reserve(
+                &format!("r{n}"),
+                n + 1,
+                vec![delivery],
+                1024,
+                Duration::ZERO,
+            )
+            .await
+            .unwrap();
+    }
+    rig.wait(Duration::from_secs(5)).await;
+    assert_eq!(rig.rows().await, 0, "all five were settled");
+    assert_eq!(
+        rig.flaky
+            .held_calls
+            .load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "one look each for two replicas, one question per look"
+    );
+}

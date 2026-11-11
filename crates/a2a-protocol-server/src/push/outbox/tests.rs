@@ -127,3 +127,67 @@ fn the_in_memory_outbox_shows_what_waits() {
     let outbox = InMemoryPushOutbox::new();
     assert_eq!(format!("{outbox:?}"), "InMemoryPushOutbox { pending: 0 }");
 }
+
+/// An outbox that overrides only what is required keeps no reservations and
+/// does not renew leases, and says so: a worker given one records an event's
+/// rows after the event is stored, and takes the long lease. What it is asked
+/// to do beyond that is refused, not silently done.
+#[tokio::test]
+async fn a_plain_outbox_keeps_no_reservations_and_does_not_renew() {
+    struct Plain(InMemoryPushOutbox);
+    impl PushOutbox for Plain {
+        fn record(&self, d: Vec<NewDelivery>, cap: usize) -> OutboxFuture<'_, usize> {
+            self.0.record(d, cap)
+        }
+        fn claim<'a>(
+            &'a self,
+            owner: &'a str,
+            max: usize,
+            lease: Duration,
+        ) -> OutboxFuture<'a, Vec<ClaimedDelivery>> {
+            self.0.claim(owner, max, lease)
+        }
+        fn complete(&self, seq: i64) -> OutboxFuture<'_, ()> {
+            self.0.complete(seq)
+        }
+        fn retry_after<'a>(
+            &'a self,
+            seq: i64,
+            owner: &'a str,
+            after: Duration,
+        ) -> OutboxFuture<'a, ()> {
+            self.0.retry_after(seq, owner, after)
+        }
+        fn pending(&self) -> OutboxFuture<'_, usize> {
+            self.0.pending()
+        }
+    }
+    let outbox = Plain(InMemoryPushOutbox::new());
+    assert!(!outbox.supports_reservations());
+    assert!(!outbox.supports_renewal());
+    let unsupported = |what: &str, refused: bool| assert!(refused, "{what} is refused");
+    unsupported(
+        "reserve",
+        outbox
+            .reserve(
+                "r",
+                1,
+                vec![delivery("", "a", TaskState::Working)],
+                10,
+                Duration::ZERO,
+            )
+            .await
+            .is_err(),
+    );
+    unsupported("arm", outbox.arm("r").await.is_err());
+    unsupported("release", outbox.release("r").await.is_err());
+    unsupported("held", outbox.held(10).await.is_err());
+    unsupported(
+        "held_for_task",
+        outbox.held_for_task("", None, "t").await.is_err(),
+    );
+    unsupported(
+        "renew",
+        outbox.renew("me", Duration::from_secs(1)).await.is_err(),
+    );
+}

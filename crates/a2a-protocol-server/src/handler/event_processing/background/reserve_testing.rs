@@ -44,6 +44,8 @@ pub(in crate::handler::event_processing) struct Stopping {
     pub(in crate::handler::event_processing) reads: std::sync::atomic::AtomicUsize,
     /// `get_with_position` fails: the task store cannot be read.
     pub(in crate::handler::event_processing) unreadable: std::sync::atomic::AtomicBool,
+    /// `supports_event_log` says no: nothing to settle a reservation from.
+    pub(in crate::handler::event_processing) without_log: std::sync::atomic::AtomicBool,
     /// The next `append_event` never reaches the log.
     park_append: std::sync::atomic::AtomicBool,
     /// A write has reached its stop.
@@ -58,6 +60,7 @@ impl Stopping {
             mode: Mutex::new((Stop::Never, 0)),
             park_append: std::sync::atomic::AtomicBool::new(false),
             unreadable: std::sync::atomic::AtomicBool::new(false),
+            without_log: std::sync::atomic::AtomicBool::new(false),
             reads: std::sync::atomic::AtomicUsize::new(0),
             parked: Notify::new(),
             resume: Notify::new(),
@@ -158,7 +161,7 @@ impl TaskStore for Stopping {
         self.inner.delete(id)
     }
     fn supports_event_log(&self) -> bool {
-        true
+        !self.without_log.load(std::sync::atomic::Ordering::SeqCst)
     }
     fn append_event<'a>(&'a self, id: &'a TaskId, seq: u64, e: &'a StreamResponse) -> F<'a, ()> {
         if self
@@ -269,6 +272,8 @@ impl Outcomes {
 pub(in crate::handler::event_processing) struct Flaky {
     pub(in crate::handler::event_processing) inner: Arc<crate::push::outbox::InMemoryPushOutbox>,
     pub(in crate::handler::event_processing) fail_reserve: std::sync::atomic::AtomicBool,
+    /// How many times a worker asked for the reservations to settle.
+    pub(in crate::handler::event_processing) held_calls: std::sync::atomic::AtomicUsize,
 }
 
 impl Flaky {
@@ -278,6 +283,7 @@ impl Flaky {
         Self {
             inner,
             fail_reserve: std::sync::atomic::AtomicBool::new(false),
+            held_calls: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 }
@@ -343,6 +349,8 @@ impl crate::push::outbox::PushOutbox for Flaky {
         self.inner.release(reservation)
     }
     fn held(&self, limit: usize) -> O<'_, Vec<crate::push::outbox::Held>> {
+        self.held_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.inner.held(limit)
     }
     fn held_for_task<'a>(

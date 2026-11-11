@@ -213,3 +213,46 @@ async fn an_executor_panic_announces_failed_once_and_at_once() {
     assert_eq!(rig.rows().await, 0);
     assert_eq!(rig.metrics.count(push_outcome::RESERVATION_SETTLED), 0);
 }
+
+/// An ending whose reservation outlives the push of the terminal state (it
+/// was pushed already, by this processor) is released, never armed: the
+/// webhooks are not told twice. An executor's panic reserves only for a task
+/// that is not finished, so this is the guard behind that, not a path it takes
+/// today; it is set up by hand.
+#[tokio::test(start_paused = true)]
+async fn an_ending_reserved_after_the_terminal_was_pushed_is_released_not_armed() {
+    use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+    use a2a_protocol_types::task::{ContextId, TaskStatus};
+
+    let mut rig = Rig::new(TaskState::Working).await;
+    let id = TaskId::new("t");
+    let failed = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+        id.clone(),
+        ContextId::new("c"),
+        TaskStatus::new(TaskState::Failed),
+    ));
+    let reservation = rig.a.reserve_ending(&id, &failed).await.expect("reserved");
+    assert_eq!(rig.rows().await, 1);
+
+    let mut run = Processor::new(
+        &id,
+        BackgroundDeps {
+            task_store: &*rig.store,
+            push: &rig.a,
+            limits: &rig.limits,
+            metrics: &crate::metrics::NoopMetrics,
+        },
+        task(TaskState::Working),
+        CancellationToken::new(),
+        None,
+        None,
+    );
+    run.pushed_terminal = true;
+    run.announce(TaskStatus::new(TaskState::Failed), Some(reservation))
+        .await;
+
+    assert_eq!(rig.rows().await, 0, "released");
+    rig.wait(hold(&rig) + Duration::from_secs(30)).await;
+    assert!(rig.a_seen.try_recv().is_err(), "nobody is told twice");
+    assert!(rig.b_seen.try_recv().is_err());
+}
