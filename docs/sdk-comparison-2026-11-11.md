@@ -203,8 +203,12 @@ five prompts, two rounds, the three targets interleaved in rotating order, this 
 | a2a-rs | 10 | 198 / 359 | 4200 | 10 of 10 | 10 of 10 |
 | a2a-rust | 10 | 212 / 324 | 4382 | 10 of 10 | 10 of 10 |
 
-The paired first-token overhead was -3.7 ms (a2a-rs) and +17 ms (a2a-rust) at the median, with ranges of
-about ±200 ms: **a sample of ten cannot separate either SDK from the model's own variance, and with a
+The same run with Gemma 4 E2B (Q4_0, ggml-org; `results/2026-11-11/llm-e2e-gemma-4-e2b.txt`): direct 97 ms to
+the first token and 1017 ms for the answer, a2a-rs 97 and 1059, a2a-rust 99 and 1016; text identical to direct
+10 of 10 for both and 10 of 10 tasks completed.
+
+The paired first-token overhead on Qwen was -3.7 ms (a2a-rs) and +17 ms (a2a-rust) at the median, with ranges of
+about ±200 ms (on Gemma -3.7 and +11 ms, ranges about ±70 ms): **a sample of ten cannot separate either SDK from the model's own variance, and with a
 model in the loop the echo benchmark's gap is not what a user would see.** What the run does show is that the
 streaming path (executor, event queue, SSE) delivers a real model's answer byte for byte on this tree. Raw:
 `results/2026-11-11/llm-e2e-qwen3.5-2b.txt`.
