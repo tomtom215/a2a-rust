@@ -123,12 +123,12 @@ impl<'a> Processor<'a> {
                 _ => return,
             }
         };
-        self.announce(status).await;
+        self.announce(status, None).await;
     }
 
     /// Tells the task's webhooks how it ended, unless this processor already
     /// did, and records the ending in its log at the next position.
-    async fn announce(&mut self, status: TaskStatus) {
+    async fn announce(&mut self, status: TaskStatus, reserved: Option<super::Reservation>) {
         let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
             self.task_id.clone(),
             self.last_task.context_id.clone(),
@@ -138,8 +138,18 @@ impl<'a> Processor<'a> {
         // `PushLanes::record_now`): a stop in between leaves the log without
         // the ending, which the reaper completes, not a log with it and
         // webhooks that were never told.
-        let recorded =
-            !self.pushed_terminal && self.deps.push.record_now(self.task_id, &event).await;
+        let recorded = match reserved {
+            // Reserved before the status was saved: armed now that it is stored.
+            Some(reservation) if !self.pushed_terminal => {
+                reservation.arm_now().await;
+                true
+            }
+            Some(reservation) => {
+                reservation.release_now().await;
+                true
+            }
+            None => !self.pushed_terminal && self.deps.push.record_now(self.task_id, &event).await,
+        };
         super::super::append_ending(
             self.deps.task_store,
             self.task_id,
@@ -164,6 +174,14 @@ impl<'a> Processor<'a> {
             return;
         }
         let failed_event = super::super::panic_failure(&mut self.last_task);
+        // The ending's rows are reserved before it is saved, settled by the
+        // state the task is stored in: a stop between the save and the record
+        // leaves rows another replica arms, not a failed task nobody announces.
+        let reservation = self
+            .deps
+            .push
+            .reserve_ending(self.task_id, &failed_event)
+            .await;
         let task = &self.last_task;
         let saved = super::super::persisting(
             self.deps.limits.store_write_retry,
@@ -172,6 +190,9 @@ impl<'a> Processor<'a> {
             || self.deps.task_store.save(task),
         );
         if let Err(e) = saved.await {
+            if let Some(reservation) = reservation {
+                reservation.release_now().await;
+            }
             if let Some(conflict) = TerminalStateConflict::from_error(&e) {
                 self.supersede(&conflict, None, false).await;
                 return;
@@ -197,7 +218,7 @@ impl<'a> Processor<'a> {
         let StreamResponse::StatusUpdate(failed) = failed_event else {
             return;
         };
-        self.announce(failed.status).await;
+        self.announce(failed.status, reservation).await;
     }
 
     /// Folds one event from the persistence channel.

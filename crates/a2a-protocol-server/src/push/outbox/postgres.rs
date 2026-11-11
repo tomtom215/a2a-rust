@@ -141,6 +141,49 @@ impl PostgresPushOutbox {
         self
     }
 
+    /// Makes room under `per_webhook` for one more row of `d`'s webhook: how many
+    /// rows it dropped, or `None` when there is nothing to drop and `d` does not
+    /// end a turn, so `d` is the row not kept.
+    async fn make_room(
+        tx: &mut sqlx::PgConnection,
+        d: &NewDelivery,
+        per_webhook: usize,
+    ) -> Result<Option<usize>, sqlx::Error> {
+        let waiting: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM a2a_push_outbox
+             WHERE tenant = $1 AND caller IS NOT DISTINCT FROM $2
+               AND task_id = $3 AND config_id = $4",
+        )
+        .bind(&d.tenant)
+        .bind(&d.caller)
+        .bind(&d.task_id)
+        .bind(&d.config_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if usize::try_from(waiting).unwrap_or(usize::MAX) < per_webhook.max(1) {
+            return Ok(Some(0));
+        }
+        let removed = sqlx::query(
+            "DELETE FROM a2a_push_outbox WHERE seq = (
+                SELECT seq FROM a2a_push_outbox
+                WHERE tenant = $1 AND caller IS NOT DISTINCT FROM $2
+                  AND task_id = $3 AND config_id = $4 AND NOT ends_turn
+                  AND armed AND (lease_until IS NULL OR lease_until <= now())
+                ORDER BY seq LIMIT 1)",
+        )
+        .bind(&d.tenant)
+        .bind(&d.caller)
+        .bind(&d.task_id)
+        .bind(&d.config_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+        if removed == 0 && !d.ends_turn {
+            return Ok(None);
+        }
+        Ok(Some(usize::try_from(removed).unwrap_or(0)))
+    }
+
     /// Records `deliveries` with their stored `bodies` inside `tx`.
     async fn record_in(
         tx: &mut sqlx::PgConnection,
@@ -160,39 +203,12 @@ impl PostgresPushOutbox {
             if present > 0 {
                 continue;
             }
-            let waiting: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM a2a_push_outbox
-                 WHERE tenant = $1 AND caller IS NOT DISTINCT FROM $2
-                   AND task_id = $3 AND config_id = $4",
-            )
-            .bind(&d.tenant)
-            .bind(&d.caller)
-            .bind(&d.task_id)
-            .bind(&d.config_id)
-            .fetch_one(&mut *tx)
-            .await?;
-            if usize::try_from(waiting).unwrap_or(usize::MAX) >= per_webhook.max(1) {
-                let removed = sqlx::query(
-                    "DELETE FROM a2a_push_outbox WHERE seq = (
-                        SELECT seq FROM a2a_push_outbox
-                        WHERE tenant = $1 AND caller IS NOT DISTINCT FROM $2
-                          AND task_id = $3 AND config_id = $4 AND NOT ends_turn
-                          AND armed AND (lease_until IS NULL OR lease_until <= now())
-                        ORDER BY seq LIMIT 1)",
-                )
-                .bind(&d.tenant)
-                .bind(&d.caller)
-                .bind(&d.task_id)
-                .bind(&d.config_id)
-                .execute(&mut *tx)
-                .await?
-                .rows_affected();
-                if removed == 0 && !d.ends_turn {
-                    dropped += 1;
-                    continue;
-                }
-                dropped += usize::try_from(removed).unwrap_or(0);
-            }
+            let Some(made) = Self::make_room(&mut *tx, d, per_webhook).await? else {
+                // Nothing to drop, and this row does not end a turn: it is the one dropped.
+                dropped += 1;
+                continue;
+            };
+            dropped += made;
             sqlx::query(
                 "INSERT INTO a2a_push_outbox
                     (delivery_id, tenant, caller, task_id, config_id, event, ends_turn,

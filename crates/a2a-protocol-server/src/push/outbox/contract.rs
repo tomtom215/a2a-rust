@@ -429,7 +429,7 @@ pub async fn a_delivery_id_is_recorded_once(outbox: &dyn PushOutbox) {
     );
 
     let claimed = outbox.claim("me", 10, HOUR).await.unwrap();
-    assert_eq!(ids(&claimed), [id.clone()]);
+    assert_eq!(ids(&claimed), std::slice::from_ref(&id));
     outbox.complete(claimed[0].seq).await.unwrap();
     outbox.record(vec![row], 10).await.unwrap();
     assert_eq!(ids(&outbox.claim("me", 10, HOUR).await.unwrap()), [id]);

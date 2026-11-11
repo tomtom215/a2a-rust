@@ -192,7 +192,11 @@ impl Reaper {
                 return;
             }
         }
-        TenantContext::scope_partition(scope, &token, self.complete_ending(task_id)).await;
+        TenantContext::scope_partition(scope, &token, async {
+            self.settle_reservations(task_id).await;
+            self.complete_ending(task_id).await;
+        })
+        .await;
         if let Err(_e) = claims.store.release(&token).await {
             trace_warn!(task_id, error = %_e, "reaper's claim not released; it expires");
         }
@@ -278,6 +282,16 @@ impl Reaper {
         ))
     }
 
+    /// Settles the push reservations of a task whose claim this reaper has just
+    /// taken, at once, from what the task store holds. Taking the claim fences
+    /// the dead replica off (a store refuses a writer whose claim was taken
+    /// over), so the store's answer is final and nothing waits for a reservation's
+    /// hold to run out; the ending is then recorded behind the events that were
+    /// stored.
+    async fn settle_reservations(&self, task_id: &str) {
+        self.push_lanes.settle_task(&TaskId::new(task_id)).await;
+    }
+
     /// Ends one task under a claim of its own. Whether it ended it.
     async fn end(&self, claims: &TurnClaims, scope: &str, task_id: &str) -> bool {
         let token = uuid::Uuid::new_v4().to_string();
@@ -295,7 +309,11 @@ impl Reaper {
                 return false;
             }
         }
-        let ended = TenantContext::scope_partition(scope, &token, self.fail(task_id)).await;
+        let ended = TenantContext::scope_partition(scope, &token, async {
+            self.settle_reservations(task_id).await;
+            self.fail(task_id).await
+        })
+        .await;
         if let Err(_e) = claims.store.release(&token).await {
             trace_warn!(task_id, error = %_e, "reaper's claim not released; it expires");
         }

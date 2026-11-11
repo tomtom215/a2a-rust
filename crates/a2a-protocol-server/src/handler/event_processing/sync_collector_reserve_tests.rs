@@ -88,10 +88,7 @@ impl Rig {
         let handler = RequestHandlerBuilder::new(Idle)
             .without_agent_card()
             .with_task_store_arc(Arc::clone(&store) as Arc<dyn TaskStore>)
-            .with_push_sender(Sender {
-                replica: "a",
-                seen: a_tx,
-            })
+            .with_push_sender(Sender::new("a", a_tx))
             .with_push_outbox(Arc::clone(&outbox) as Arc<dyn PushOutbox>)
             .with_handler_limits(limits.clone())
             .with_metrics(MetricsOf(Arc::clone(&metrics)))
@@ -105,10 +102,7 @@ impl Rig {
         let (b_tx, b_seen) = mpsc::unbounded_channel();
         let b = crate::handler::PushLanes::with_reservations(
             Arc::clone(&handler.push_config_store) as Arc<dyn PushConfigStore>,
-            Some(Arc::new(Sender {
-                replica: "b",
-                seen: b_tx,
-            }) as Arc<dyn PushSender>),
+            Some(Arc::new(Sender::new("b", b_tx)) as Arc<dyn PushSender>),
             limits.clone(),
             Arc::clone(&metrics) as Arc<dyn Metrics>,
             TaskTracker::new(),

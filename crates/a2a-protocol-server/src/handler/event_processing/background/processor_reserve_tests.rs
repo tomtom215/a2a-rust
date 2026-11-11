@@ -27,12 +27,16 @@ use crate::push::outbox::{InMemoryPushOutbox, PushOutbox};
 use crate::push::{InMemoryPushConfigStore, PushConfigStore, PushSender};
 use crate::store::TaskStore;
 
-use super::super::reserve_testing::{Outcomes, Seen, Sender, Stop, Stopping};
+use super::super::reserve_testing::{Flaky, Outcomes, Seen, Sender, Stop, Stopping};
 
 /// Two replicas over one task store, push config store and outbox.
 struct Rig {
     store: Arc<Stopping>,
     outbox: Arc<InMemoryPushOutbox>,
+    /// What both replicas see as their outbox: `outbox`, whose reserving can fail.
+    flaky: Arc<Flaky>,
+    /// What each replica's sender was given to deliver.
+    senders: Vec<Arc<Sender>>,
     limits: HandlerLimits,
     metrics: Arc<Outcomes>,
     /// The replica that runs the task.
@@ -56,15 +60,19 @@ impl Rig {
         let outbox = Arc::new(InMemoryPushOutbox::new());
         let limits = HandlerLimits::default().with_store_write_retry(Duration::from_secs(1));
         let metrics = Arc::new(Outcomes::default());
-        let lanes = |replica: &'static str, stops: CancellationToken| {
+        let flaky = Arc::new(Flaky::new(Arc::clone(&outbox)));
+        let mut senders = Vec::new();
+        let mut lanes = |replica: &'static str, stops: CancellationToken| {
             let (seen, rx) = mpsc::unbounded_channel();
+            let sender = Arc::new(Sender::new(replica, seen));
+            senders.push(Arc::clone(&sender));
             let lanes = crate::handler::PushLanes::with_reservations(
                 Arc::clone(&configs) as Arc<dyn PushConfigStore>,
-                Some(Arc::new(Sender { replica, seen }) as Arc<dyn PushSender>),
+                Some(sender as Arc<dyn PushSender>),
                 limits.clone(),
                 Arc::clone(&metrics) as Arc<dyn Metrics>,
                 TaskTracker::new(),
-                Some((Arc::clone(&outbox) as Arc<dyn PushOutbox>, stops)),
+                Some((Arc::clone(&flaky) as Arc<dyn PushOutbox>, stops)),
                 Some(Arc::clone(&store) as Arc<dyn TaskStore>),
             );
             (lanes, rx)
@@ -75,6 +83,8 @@ impl Rig {
         Self {
             store,
             outbox,
+            flaky,
+            senders,
             limits,
             metrics,
             a,
@@ -105,6 +115,42 @@ impl Rig {
             );
             run.handle(Ok(event)).await;
         })
+    }
+
+    /// Replica `a` runs the end of a task whose executor panicked.
+    fn run_panic_on_a(&self) -> tokio::task::JoinHandle<()> {
+        let (store, lanes, limits) = (Arc::clone(&self.store), self.a.clone(), self.limits.clone());
+        tokio::spawn(async move {
+            let id = TaskId::new("t");
+            let mut run = Processor::new(
+                &id,
+                BackgroundDeps {
+                    task_store: &*store,
+                    push: &lanes,
+                    limits: &limits,
+                    metrics: &crate::metrics::NoopMetrics,
+                },
+                task(TaskState::Working),
+                CancellationToken::new(),
+                None,
+                None,
+            );
+            run.executor_panicked().await;
+        })
+    }
+
+    /// Every delivery id either replica's sender saw, in the order of its sender.
+    fn delivery_ids(&self) -> Vec<String> {
+        self.senders
+            .iter()
+            .flat_map(|sender| {
+                sender
+                    .ids
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone()
+            })
+            .collect()
     }
 
     /// Replica `a` stops: its task is aborted and its worker ends.
@@ -378,10 +424,7 @@ async fn without_a_task_store_the_lane_records_after_the_event_is_stored() {
     let (seen, mut rx) = mpsc::unbounded_channel();
     let lanes = crate::handler::PushLanes::with_outbox(
         configs,
-        Some(Arc::new(Sender {
-            replica: "plain",
-            seen,
-        }) as Arc<dyn PushSender>),
+        Some(Arc::new(Sender::new("plain", seen)) as Arc<dyn PushSender>),
         rig.limits.clone(),
         Arc::new(crate::metrics::NoopMetrics),
         TaskTracker::new(),
@@ -415,5 +458,7 @@ async fn without_a_task_store_the_lane_records_after_the_event_is_stored() {
 
 #[path = "processor_reserve_tests/endings.rs"]
 mod endings;
+#[path = "processor_reserve_tests/follow_ups.rs"]
+mod follow_ups;
 #[path = "processor_reserve_tests/settling.rs"]
 mod settling;

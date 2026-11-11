@@ -19,11 +19,11 @@ mod push_delivery;
 #[cfg(test)]
 pub(in crate::handler::event_processing) mod reserve_testing;
 pub use push_delivery::deliver_push_bg;
-pub(in crate::handler::event_processing) use push_delivery::push_requested;
 #[cfg(test)]
 pub(in crate::handler::event_processing) use push_delivery::reservation_hold;
 pub use push_delivery::timeout_outcome;
 pub use push_delivery::{PushLanes, ends_turn};
+pub(in crate::handler::event_processing) use push_delivery::{Reservation, push_requested};
 pub use push_delivery::{deliver_to_every_config, delivery_concurrency, list_configs};
 mod state_machine;
 

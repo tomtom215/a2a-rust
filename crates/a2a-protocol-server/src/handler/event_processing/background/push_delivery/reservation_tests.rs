@@ -9,7 +9,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskSt
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
-use super::{Verdict, may_push, verdict};
+use super::{Verdict, ending_verdict, may_push, verdict};
 
 fn status(state: TaskState) -> StreamResponse {
     StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
@@ -102,4 +102,39 @@ fn only_status_and_artifact_updates_are_reserved() {
     assert!(!may_push(&StreamResponse::Message(
         a2a_protocol_types::message::Message::user("m1", vec![Part::text("hi")])
     )));
+}
+
+/// A task's ending is stored when the task is in the terminal state it names,
+/// and in no other case: not running, not another terminal state, not gone.
+#[test]
+fn an_ending_is_stored_only_when_the_task_is_in_that_terminal_state() {
+    let failed = status(TaskState::Failed);
+    assert_eq!(
+        ending_verdict(&failed, Some(TaskState::Failed)),
+        Verdict::Arm
+    );
+    for other in [
+        Some(TaskState::Working),
+        Some(TaskState::Submitted),
+        Some(TaskState::Canceled),
+        Some(TaskState::Completed),
+        None,
+    ] {
+        assert_eq!(
+            ending_verdict(&failed, other),
+            Verdict::Release,
+            "{other:?}"
+        );
+    }
+    // Not a status update at all: never armed.
+    assert_eq!(
+        ending_verdict(
+            &StreamResponse::Message(a2a_protocol_types::message::Message::user(
+                "m",
+                vec![Part::text("x")]
+            )),
+            Some(TaskState::Failed)
+        ),
+        Verdict::Release
+    );
 }

@@ -31,6 +31,8 @@ pub(in crate::handler::event_processing) enum Stop {
     Before,
     /// After the store has the write; never returns.
     After,
+    /// After the store has the write; returns when `resume` is notified.
+    AfterThenWait,
 }
 
 /// An in-memory store whose writes can be made to stop, as a process does.
@@ -96,6 +98,10 @@ impl Stopping {
         if at == Stop::After {
             self.parked.notify_one();
             std::future::pending::<()>().await;
+        }
+        if at == Stop::AfterThenWait {
+            self.parked.notify_one();
+            self.resume.notified().await;
         }
         done
     }
@@ -189,8 +195,23 @@ pub(in crate::handler::event_processing) struct Seen {
 }
 
 pub(in crate::handler::event_processing) struct Sender {
-    pub(in crate::handler::event_processing) replica: &'static str,
-    pub(in crate::handler::event_processing) seen: mpsc::UnboundedSender<Seen>,
+    replica: &'static str,
+    seen: mpsc::UnboundedSender<Seen>,
+    /// The `A2A-Delivery-Id` of each delivery that carried one.
+    pub(in crate::handler::event_processing) ids: Mutex<Vec<String>>,
+}
+
+impl Sender {
+    pub(in crate::handler::event_processing) fn new(
+        replica: &'static str,
+        seen: mpsc::UnboundedSender<Seen>,
+    ) -> Self {
+        Self {
+            replica,
+            seen,
+            ids: Mutex::new(Vec::new()),
+        }
+    }
 }
 
 impl PushSender for Sender {
@@ -204,6 +225,12 @@ impl PushSender for Sender {
             StreamResponse::StatusUpdate(u) => Some(u.status.state),
             _ => None,
         };
+        if let Some(id) = crate::push::current_delivery_id() {
+            self.ids
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(id);
+        }
         let _ = self.seen.send(Seen {
             replica: self.replica,
             state,
@@ -234,5 +261,96 @@ impl Outcomes {
             .iter()
             .filter(|o| *o == outcome)
             .count()
+    }
+}
+
+/// An outbox that is the in-memory one, except that reserving can be made to
+/// fail, as it does while the outbox database is down.
+pub(in crate::handler::event_processing) struct Flaky {
+    pub(in crate::handler::event_processing) inner: Arc<crate::push::outbox::InMemoryPushOutbox>,
+    pub(in crate::handler::event_processing) fail_reserve: std::sync::atomic::AtomicBool,
+}
+
+impl Flaky {
+    pub(in crate::handler::event_processing) fn new(
+        inner: Arc<crate::push::outbox::InMemoryPushOutbox>,
+    ) -> Self {
+        Self {
+            inner,
+            fail_reserve: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+}
+
+type O<'a, T> = crate::push::outbox::OutboxFuture<'a, T>;
+
+impl crate::push::outbox::PushOutbox for Flaky {
+    fn record(&self, d: Vec<crate::push::outbox::NewDelivery>, cap: usize) -> O<'_, usize> {
+        self.inner.record(d, cap)
+    }
+    fn claim<'a>(
+        &'a self,
+        owner: &'a str,
+        max: usize,
+        lease: std::time::Duration,
+    ) -> O<'a, Vec<crate::push::outbox::ClaimedDelivery>> {
+        self.inner.claim(owner, max, lease)
+    }
+    fn complete(&self, seq: i64) -> O<'_, ()> {
+        self.inner.complete(seq)
+    }
+    fn retry_after<'a>(
+        &'a self,
+        seq: i64,
+        owner: &'a str,
+        after: std::time::Duration,
+    ) -> O<'a, ()> {
+        self.inner.retry_after(seq, owner, after)
+    }
+    fn pending(&self) -> O<'_, usize> {
+        self.inner.pending()
+    }
+    fn supports_renewal(&self) -> bool {
+        true
+    }
+    fn renew<'a>(&'a self, owner: &'a str, lease: std::time::Duration) -> O<'a, usize> {
+        self.inner.renew(owner, lease)
+    }
+    fn supports_reservations(&self) -> bool {
+        true
+    }
+    fn reserve<'a>(
+        &'a self,
+        reservation: &'a str,
+        log_seq: u64,
+        d: Vec<crate::push::outbox::NewDelivery>,
+        cap: usize,
+        hold: std::time::Duration,
+    ) -> O<'a, usize> {
+        if self.fail_reserve.load(std::sync::atomic::Ordering::SeqCst) {
+            return Box::pin(async {
+                Err(a2a_protocol_types::error::A2aError::internal(
+                    "the push outbox is down",
+                ))
+            });
+        }
+        self.inner.reserve(reservation, log_seq, d, cap, hold)
+    }
+    fn arm<'a>(&'a self, reservation: &'a str) -> O<'a, usize> {
+        self.inner.arm(reservation)
+    }
+    fn release<'a>(&'a self, reservation: &'a str) -> O<'a, ()> {
+        self.inner.release(reservation)
+    }
+    fn held(&self, limit: usize) -> O<'_, Vec<crate::push::outbox::Held>> {
+        self.inner.held(limit)
+    }
+    fn held_for_task<'a>(
+        &'a self,
+        tenant: &'a str,
+        caller: Option<&'a str>,
+        task_id: &'a str,
+    ) -> O<'a, Vec<crate::push::outbox::Held>> {
+        self.inner.held_for_task(tenant, caller, task_id)
     }
 }

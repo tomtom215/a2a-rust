@@ -23,6 +23,7 @@ use crate::push::outbox::{InMemoryPushOutbox, NewDelivery, OutboxFuture, PushOut
 use crate::push::{PushSender, current_delivery_id};
 
 mod faults;
+mod lease;
 
 /// One delivery as the sender saw it.
 #[derive(Debug, Clone, PartialEq)]

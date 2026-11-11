@@ -56,6 +56,25 @@ impl Outboxed {
     }
 }
 
+/// How long a claim is leased when the outbox renews leases: a worker that
+/// stops renewing (it died, or stalled) loses its rows after this, not after
+/// the longest a delivery can take.
+pub const RENEWED_LEASE: Duration = Duration::from_secs(30);
+
+/// How often a worker renews what it holds: a third of [`RENEWED_LEASE`], so
+/// two renewals can be missed.
+pub const RENEW_EVERY: Duration = Duration::from_secs(10);
+
+/// The lease for a claim: short with renewal, and otherwise longer than one
+/// delivery can take.
+pub fn claim_lease(outbox: &dyn PushOutbox, push_delivery_timeout: Duration) -> Duration {
+    if outbox.supports_renewal() {
+        RENEWED_LEASE
+    } else {
+        lease(push_delivery_timeout)
+    }
+}
+
 /// How long a claim is leased: longer than one delivery can take (a wait for
 /// the gate, then the webhook's time, then a wait for an address, then its
 /// time again), so a lease that runs out belonged to a replica that stopped.
@@ -91,12 +110,36 @@ pub async fn record(
     task_id: &TaskId,
     events: &[StreamResponse],
 ) {
+    record_with_ids(lanes, outboxed, task_id, events, &[]).await;
+}
+
+/// Records `event` again under the delivery ids its rows had: the reservation
+/// that held them was settled before the event was stored. Recording is
+/// idempotent on a delivery id, so rows that are still there stay one row.
+pub async fn record_again(
+    lanes: &Lanes,
+    outboxed: &Outboxed,
+    task_id: &TaskId,
+    event: &StreamResponse,
+    ids: &[(String, String)],
+) {
+    record_with_ids(lanes, outboxed, task_id, std::slice::from_ref(event), ids).await;
+}
+
+/// [`record`], with the delivery id of each `(config id, delivery id)` in `ids`.
+async fn record_with_ids(
+    lanes: &Lanes,
+    outboxed: &Outboxed,
+    task_id: &TaskId,
+    events: &[StreamResponse],
+    ids: &[(String, String)],
+) {
     let Some(configs) =
         super::list_configs(task_id, &*lanes.store, &lanes.limits, &*lanes.metrics).await
     else {
         return;
     };
-    let rows = rows(task_id, &configs, events);
+    let rows = rows_with_ids(task_id, &configs, events, ids);
     if rows.is_empty() {
         return;
     }
@@ -141,13 +184,27 @@ pub(super) fn rows(
     configs: &[a2a_protocol_types::push::TaskPushNotificationConfig],
     events: &[StreamResponse],
 ) -> Vec<NewDelivery> {
+    rows_with_ids(task_id, configs, events, &[])
+}
+
+/// [`rows`], a config in `ids` keeping the delivery id it names. For one event.
+fn rows_with_ids(
+    task_id: &TaskId,
+    configs: &[a2a_protocol_types::push::TaskPushNotificationConfig],
+    events: &[StreamResponse],
+    ids: &[(String, String)],
+) -> Vec<NewDelivery> {
     let (tenant, caller) = (TenantContext::current(), TenantContext::caller());
     let mut rows = Vec::with_capacity(events.len() * configs.len());
     for event in events {
         // Every store gives a config an id when it is set.
         for config_id in configs.iter().filter_map(|c| c.id.clone()) {
+            let delivery_id = ids
+                .iter()
+                .find(|(config, _)| *config == config_id)
+                .map_or_else(|| uuid::Uuid::new_v4().to_string(), |(_, id)| id.clone());
             rows.push(NewDelivery {
-                delivery_id: uuid::Uuid::new_v4().to_string(),
+                delivery_id,
                 tenant: tenant.clone(),
                 caller: caller.clone(),
                 task_id: task_id.as_ref().to_owned(),
@@ -178,7 +235,7 @@ pub async fn run(lanes: Weak<Lanes>, shutdown: CancellationToken) {
                 () = settle_held(&strong, outboxed) => {}
             }
         }
-        let lease = lease(strong.limits.push_delivery_timeout);
+        let lease = claim_lease(&*outboxed.outbox, strong.limits.push_delivery_timeout);
         let claimed = tokio::select! {
             () = shutdown.cancelled() => return,
             claimed = outboxed.outbox.claim(&outboxed.owner, BATCH, lease) => claimed,
@@ -195,7 +252,7 @@ pub async fn run(lanes: Weak<Lanes>, shutdown: CancellationToken) {
             }
             continue;
         }
-        if !deliver_batch(&strong, outboxed, claimed, &shutdown).await {
+        if !deliver_batch(&strong, outboxed, claimed, &shutdown, lease).await {
             return;
         }
     }
@@ -248,47 +305,22 @@ async fn settle_held(lanes: &Lanes, outboxed: &Outboxed) {
     }
 }
 
-/// One held reservation, settled by what the task store holds. A store that
-/// cannot be read leaves it for the next round.
-async fn settle_one(
+/// One held reservation, settled by what the task store holds: whether it was
+/// settled. A store that cannot be read leaves it for the next round.
+pub(super) async fn settle_one(
     lanes: &Lanes,
     outboxed: &Outboxed,
     tasks: &dyn crate::store::TaskStore,
     held: Held,
 ) -> bool {
     let task_id = TaskId::new(held.task_id.clone());
-    let position = match tasks.get_with_position(&task_id).await {
-        Ok(found) => found.and_then(|(_, position)| position),
-        Err(_err) => {
-            trace_warn!(task_id = %task_id, error = %_err, "a held push reservation could not be checked against its task; trying again");
-            return false;
-        }
+    let Some(verdict) = verdict_of(tasks, &task_id, &held).await else {
+        return false;
     };
-    // The log is read only when the task reflects the position: a task that
-    // has not reached it did not store the event, whatever the log holds.
-    let logged = if position.is_some_and(|stored| stored >= held.log_seq) {
-        match tasks
-            .read_events(&task_id, held.log_seq.saturating_sub(1), 1)
-            .await
-        {
-            Ok(events) => events
-                .into_iter()
-                .next()
-                .filter(|recorded| recorded.seq == held.log_seq)
-                .map(|recorded| recorded.event),
-            Err(_err) => {
-                trace_warn!(task_id = %task_id, error = %_err, "a held push reservation's event could not be looked up in its log; trying again");
-                return false;
-            }
-        }
-    } else {
-        None
+    let settled = match verdict {
+        Verdict::Arm => outboxed.outbox.arm(&held.reservation).await.map(|_| ()),
+        Verdict::Release => outboxed.outbox.release(&held.reservation).await,
     };
-    let settled =
-        match super::reservation::verdict(&held.event, held.log_seq, position, logged.as_ref()) {
-            Verdict::Arm => outboxed.outbox.arm(&held.reservation).await.map(|_| ()),
-            Verdict::Release => outboxed.outbox.release(&held.reservation).await,
-        };
     match settled {
         Ok(()) => {
             trace_warn!(
@@ -309,6 +341,60 @@ async fn settle_one(
     }
 }
 
+/// Whether `held`'s event was stored; `None` when the task store cannot say now.
+async fn verdict_of(
+    tasks: &dyn crate::store::TaskStore,
+    task_id: &TaskId,
+    held: &Held,
+) -> Option<Verdict> {
+    if held.log_seq == super::reservation::ENDING {
+        // A task's ending: stored if the task is in the terminal state it names.
+        return match tasks.get(task_id).await {
+            Ok(task) => Some(super::reservation::ending_verdict(
+                &held.event,
+                task.map(|task| task.status.state),
+            )),
+            Err(_err) => {
+                trace_warn!(task_id = %task_id, error = %_err, "a held push reservation could not be checked against its task; trying again");
+                None
+            }
+        };
+    }
+    let position = match tasks.get_with_position(task_id).await {
+        Ok(found) => found.and_then(|(_, position)| position),
+        Err(_err) => {
+            trace_warn!(task_id = %task_id, error = %_err, "a held push reservation could not be checked against its task; trying again");
+            return None;
+        }
+    };
+    // The log is read only when the task reflects the position: a task that
+    // has not reached it did not store the event, whatever the log holds.
+    let logged = if position.is_some_and(|stored| stored >= held.log_seq) {
+        match tasks
+            .read_events(task_id, held.log_seq.saturating_sub(1), 1)
+            .await
+        {
+            Ok(events) => events
+                .into_iter()
+                .next()
+                .filter(|recorded| recorded.seq == held.log_seq)
+                .map(|recorded| recorded.event),
+            Err(_err) => {
+                trace_warn!(task_id = %task_id, error = %_err, "a held push reservation's event could not be looked up in its log; trying again");
+                return None;
+            }
+        }
+    } else {
+        None
+    };
+    Some(super::reservation::verdict(
+        &held.event,
+        held.log_seq,
+        position,
+        logged.as_ref(),
+    ))
+}
+
 /// Delivers `claimed`, at once (the gate bounds them); `false` when shutdown
 /// cut it short, after releasing the rows still running.
 async fn deliver_batch(
@@ -316,15 +402,27 @@ async fn deliver_batch(
     outboxed: &Outboxed,
     claimed: Vec<ClaimedDelivery>,
     shutdown: &CancellationToken,
+    lease: Duration,
 ) -> bool {
     let running = Mutex::new(claimed.iter().map(|c| c.seq).collect::<HashSet<i64>>());
     let mut deliveries: futures_util::stream::FuturesUnordered<_> = claimed
         .into_iter()
         .map(|c| deliver_claimed(lanes, outboxed, c))
         .collect();
+    // The heartbeat: while deliveries run, the lease on what this worker holds
+    // is renewed, so a lease that runs out is one whose worker is gone.
+    let heartbeat = outboxed.outbox.supports_renewal();
+    let mut renewals = tokio::time::interval(RENEW_EVERY);
+    renewals.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    renewals.tick().await;
     loop {
         tokio::select! {
             () = shutdown.cancelled() => break,
+            _ = renewals.tick(), if heartbeat => {
+                if let Err(_err) = outboxed.outbox.renew(&outboxed.owner, lease).await {
+                    trace_warn!(error = %_err, "the push outbox did not renew this worker's leases");
+                }
+            }
             done = deliveries.next() => match done {
                 Some(seq) => {
                     running.lock().unwrap_or_else(PoisonError::into_inner).remove(&seq);

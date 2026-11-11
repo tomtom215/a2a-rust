@@ -133,6 +133,7 @@ struct Rig {
     store: Arc<ParksAppend>,
     sender: Arc<Ids>,
     reaper: Arc<super::super::Reaper>,
+    lanes: crate::handler::PushLanes,
     id: String,
     /// Keeps the reaper's claims alive: it stops when they are dropped.
     _claims: Arc<super::super::super::TurnClaims>,
@@ -176,6 +177,11 @@ async fn lanes(
 /// killed after it was cancelled elsewhere) is found by the finish phase when
 /// its claim is a second old; a running one by the abandoned phase.
 async fn rig(state: TaskState) -> Rig {
+    rig_with(state, None).await
+}
+
+/// [`rig`], the orphaned task stored at log position `position`.
+async fn rig_with(state: TaskState, position: Option<u64>) -> Rig {
     let (url, path) = sqlite_url();
     let sqlite = Arc::new(SqliteTaskStore::new(&url).await.unwrap());
     let age = sqlite_age(sqlx::SqlitePool::connect(&url).await.unwrap(), "tasks");
@@ -187,7 +193,10 @@ async fn rig(state: TaskState) -> Rig {
     });
     let id = format!("orphan-{}", uuid::Uuid::new_v4());
     // Killed mid-turn: working, its claim expired long ago.
-    store.save(&task(&id, state)).await.unwrap();
+    crate::store::applied::scope_if(position, async {
+        store.save(&task(&id, state)).await.unwrap();
+    })
+    .await;
     age(id.clone()).await;
     assert!(
         claims_store
@@ -220,7 +229,7 @@ async fn rig(state: TaskState) -> Rig {
         task_store: Arc::clone(&store) as Arc<dyn TaskStore>,
         push_config_store: configs,
         push_sender: Some(Arc::clone(&sender) as Arc<dyn PushSender>),
-        push_lanes: lanes,
+        push_lanes: lanes.clone(),
         leases: None,
         limits,
         metrics: Arc::new(crate::metrics::NoopMetrics),
@@ -229,6 +238,7 @@ async fn rig(state: TaskState) -> Rig {
         store,
         sender,
         reaper,
+        lanes,
         id,
         _claims: claims,
         path,
@@ -334,4 +344,67 @@ async fn the_reaper_records_a_finished_tasks_ending_before_it_logs_it() {
     );
     looking.abort();
     remove_sqlite(&rig.path);
+}
+
+/// The reaper takes a dead replica's claim, which fences it off, so it settles the
+/// replica's push reservations at once instead of waiting out their hold (150 s):
+/// the event the replica stored is delivered, then the reaper's own ending.
+/// `state` is how the dead replica left the task: running (the abandoned phase
+/// ends it `failed`) or finished (the finish phase announces the state it has).
+async fn the_reaper_settles_before_its_ending(state: TaskState, ending: TaskState) {
+    // The task was saved at log position 1, as a replica that died after storing
+    // its first event leaves it, with that event's rows reserved and never armed.
+    let rig = rig_with(state, Some(1)).await;
+    let event =
+        StreamResponse::StatusUpdate(a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+            TaskId::new(&*rig.id),
+            a2a_protocol_types::task::ContextId::new("ctx"),
+            a2a_protocol_types::task::TaskStatus::new(TaskState::Working),
+        ));
+    let reserved = rig
+        .lanes
+        .reserve(&TaskId::new(&*rig.id), Some(1), &event)
+        .await
+        .expect("reserved");
+    drop(reserved);
+
+    let looked = rig.reaper.look().await;
+    if !state.is_terminal() {
+        assert!(looked.is_some_and(|ended| ended >= 1), "the orphan ended");
+    }
+
+    let sent = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let sent = rig.sender.0.lock().unwrap().clone();
+            if sent.len() >= 2 {
+                return sent;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("both deliveries, long before the hold runs out");
+    let states: Vec<TaskState> = sent
+        .iter()
+        .map(|(event, _)| match event {
+            StreamResponse::StatusUpdate(e) => e.status.state,
+            _ => TaskState::Unspecified,
+        })
+        .collect();
+    assert_eq!(
+        states,
+        [TaskState::Working, ending],
+        "the stored event, then the ending"
+    );
+    remove_sqlite(&rig.path);
+}
+
+#[tokio::test]
+async fn the_abandoned_phase_settles_a_dead_replicas_reservations_before_its_ending() {
+    the_reaper_settles_before_its_ending(TaskState::Working, TaskState::Failed).await;
+}
+
+#[tokio::test]
+async fn the_finish_phase_settles_a_dead_replicas_reservations_before_its_ending() {
+    the_reaper_settles_before_its_ending(TaskState::Canceled, TaskState::Canceled).await;
 }
