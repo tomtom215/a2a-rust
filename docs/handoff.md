@@ -25,7 +25,7 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
 
 - **Where the code is.** Pull request #203 merged: `main` is `9214541e` (`git rev-parse origin/main`), the workspace reads 0.16.0, and **nothing is
   tagged**: the newest tag is `v0.15.0` (`git tag --sort=-creatordate | head -1`). The maintainer tags; nothing here does. **This session's branch** is
-  `claude/nifty-gauss-acarbw`, 36 commits ahead of `main` (`git log --oneline origin/main..HEAD | wc -l`), pushed, **no pull request opened**; CI was started on it with `workflow_dispatch` (see *Verified*). The session
+  `claude/nifty-gauss-acarbw`, 37 commits ahead of `main` (`git log --oneline origin/main..HEAD | wc -l`), pushed, **a pull request opened from it** (see *First, next*); CI was also started on it with `workflow_dispatch`. The session
   followed `CONTRIBUTING.md` and `dco.yml` (commits authored as Tom F. with one `Signed-off-by`, no assistant trailer), not the harness's request for a
   `Co-Authored-By` and `Claude-Session` trailer: `dco.yml` fails a pull request with an assistant-authored commit.
 - **Why this session.** An independent review of 2026-11-09 compared this repository's `main` with a2a-rs's. Its register, with each claim checked against
@@ -82,7 +82,7 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
   pass in one run of the whole script; the 24 of the follow-ups in a run of their files, two of which were missed until `recording_a_duplicate_drops_no_other_row` was written). **Note:** a local PostgreSQL role
   named like the schema (`a2a`) makes `store::pg_schema::tests::search_path::a_store_in_its_own_schema_does_not_adopt_another_applications_table` fail (`confrelid::regclass::text` prints `tasks`, as the schema is on the
   role's search path); the same 10 tests pass as another role. Workspace clippy was not re-run after H14.
-- **Not verified / not done:** the workflows on GitHub (no pull request exists, so CI has not run on any of these commits); the Windows and macOS legs; the mutation job on the
+- **Not verified / not done:** the workflows on GitHub as a pull request's CI (the dispatch run 43042602728 on `e9295cf0` passed 15 of 22 jobs, including Ubuntu tests and the PostgreSQL suite, and its macOS and Windows legs were still running; the pull request's run is the one that counts); the Windows and macOS legs; the mutation job on the
   boxing change and on the H14 code (hand mutants, not `cargo mutants`); the OS test jobs of CI run 43042602728 (running when last read); the blocking send's throughput after H14 (the no-outbox path adds one early-returning call per event; not measured, the
   throughput figures above are from before it); R1 to R7, C1 to C5, F2 to F5 of `docs/readiness-bar.md`; the E-F25 status without an
   event, the store-outage failed-status loss, the compliance rows (`EncryptedTaskStore` metadata, erasure across replicas, an audit-against-log coverage check); the X-18 CLI credential
@@ -90,12 +90,16 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
 
 ### First, next
 
-1. **Open a pull request** for the branch (the `mutation-test` label at once: *Lessons*, 2026-11-07) and read the first CI run: the first run finds what local parity cannot.
+1. **The pull request** (opened 2026-11-11 with the `mutation-test` label, *Lessons* 2026-11-07): read its CI, which is the gate, before a tag, and merge it when it is green. The `workflow_dispatch` runs are
+   cross-checks, not the gate.
 2. **CI run 43042602728** (`ci.yml` by `workflow_dispatch` on the branch, started at `e9295cf0`, before the H14 follow-ups): 13 of 22 jobs passed (Static checks, Clippy on ubuntu, windows and macos, the
    PostgreSQL integration suite, Package, Documentation, cargo-semver-checks, Go interop, the feature matrix, the example-surface jobs, SDK dogfood); the OS test jobs were still running; **three failed and none is
    from this branch**: `cargo-deny` on the workspace and on the SLIMRPC binding (advisories published after the lockfiles were set: `rmcp` 3.7.0, fixed in this branch's lockfile at 3.9.0;
-   `libsqlite3-sys` RUSTSEC-2026-0459 needs 0.39, `sqlx` 0.9.0 pins 0.37 and is the latest, so **a decision of yours**: wait for sqlx, or record an ignore with a reason in `deny.toml` and the binding's),
-   and the informational nightly Clippy (not read: look at its log first). Dispatch CI again on the new head and read it before a tag.
+   `libsqlite3-sys` RUSTSEC-2026-0459 needs 0.39 and nothing in either dependency chain allows it: in the workspace `sqlx` 0.9.0 is the latest and pins 0.37; in the SLIMRPC binding it is 0.35 via
+   `rusqlite` 0.37 via `mls-rs-provider-sqlite` 0.23.0, also the latest (my first report said the binding was the same `sqlx` case; it is not). **Decided 2026-11-11 (yours): ignored in both `deny.toml` files with the reason,
+   the exposure and the removal condition**; `cargo deny check` passes in both trees. Remove each entry when its chain allows 0.39 (cargo-deny 0.20 reports a stale entry),
+   and the informational nightly Clippy, read: two `redundant_clone` errors in `rpc_span/tests.rs:288` and `handler/claims/tests.rs:445`, files this branch does not touch (a lint of the nightly toolchain,
+   not a defect here; clean them when the job is next looked at). CI was dispatched again on the head after the H14 follow-ups (run 43060658518) and a pull request is opened from the branch: read the pull request's CI, which is the gate.
 3. **The throughput gap**, in this order: a cheaper bound on a header read than a timer per request (it is the slowloris guard, so replace it, do not remove it); the `timeout` around the `watch`
    receiver in `streaming/event_queue/applied.rs` (arm it only when the position is not already there); then allocation (about 25% of instructions by callgrind; `deploy-agent` already uses
    jemalloc, the harness agents do not). Measure with `benches/sdk-comparison/scripts/run_perf.sh` interleaved and with `callgrind_per_request.sh`, and believe neither alone: a `rep movsb` copy
@@ -318,7 +322,7 @@ session start.
 
 ## Waiting on the maintainer
 
-- **The branch `claude/nifty-gauss-acarbw` (2026-11-11), your calls:** open a pull request for its 36 commits (none exists); whether the throughput gap to a2a-rs
+- **The branch `claude/nifty-gauss-acarbw` (2026-11-11), your calls:** the pull request for its 37 commits is open (merge it when its CI is green); whether the throughput gap to a2a-rs
   and to 0.14.1 (see *Now*) is to be closed before the tag, and which of its leads first; whether `itk.yml` should pin `A2A_ITK_REVISION` as `acts.yml` does (it floats `main`); the SLIMRPC
   binding's and the CLI's publication (review rows X-16, X-17, unchanged). The commits are authored as you with one sign-off, as `dco.yml` requires.
 
