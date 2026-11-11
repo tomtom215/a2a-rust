@@ -28,7 +28,7 @@ macro_rules! now_ms {
     };
 }
 
-const SCHEMA: [&str; 3] = [
+const SCHEMA: [&str; 4] = [
     "CREATE TABLE IF NOT EXISTS a2a_push_outbox (
         seq         INTEGER PRIMARY KEY AUTOINCREMENT,
         delivery_id TEXT    NOT NULL UNIQUE,
@@ -52,6 +52,9 @@ const SCHEMA: [&str; 3] = [
         ON a2a_push_outbox (tenant, caller, task_id, config_id, seq)",
     "CREATE INDEX IF NOT EXISTS a2a_push_outbox_reservation
         ON a2a_push_outbox (reservation) WHERE reservation IS NOT NULL",
+    // What `held` looks for, without reading a backlog of armed rows.
+    "CREATE INDEX IF NOT EXISTS a2a_push_outbox_unarmed
+        ON a2a_push_outbox (hold_ms) WHERE armed = 0",
 ];
 
 /// The columns of the two-phase record (audit H14), added to a table an

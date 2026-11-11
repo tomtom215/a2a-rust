@@ -79,6 +79,9 @@ pub const fn hold(limits: &crate::handler::limits::HandlerLimits) -> Duration {
 /// How often the worker looks for reservations to settle.
 pub const SETTLE_EVERY: Duration = Duration::from_secs(10);
 
+/// The most batches of [`BATCH`] reservations one look settles.
+const MAX_ROUNDS: usize = 64;
+
 /// Records `events`' deliveries to every config of `task_id`, in the caller's
 /// tenant. A store that will not take them costs nothing more than the lanes
 /// did: the deliveries are made from memory, now.
@@ -210,24 +213,38 @@ async fn settle_held(lanes: &Lanes, outboxed: &Outboxed) {
     ) else {
         return;
     };
-    let held = match outboxed.outbox.held(BATCH).await {
-        Ok(held) => held,
-        Err(_err) => {
-            trace_warn!(error = %_err, "the push outbox's reservations could not be read; trying again");
+    // A replica lost with many tasks in flight leaves that many reservations,
+    // and one batch every `SETTLE_EVERY` would take minutes: go on while a
+    // batch comes back full and settled something. A reservation that cannot
+    // be settled (a task store that cannot be read) is listed again, so a
+    // round that settled nothing ends the look.
+    for _ in 0..MAX_ROUNDS {
+        let held = match outboxed.outbox.held(BATCH).await {
+            Ok(held) => held,
+            Err(_err) => {
+                trace_warn!(error = %_err, "the push outbox's reservations could not be read; trying again");
+                return;
+            }
+        };
+        let listed = held.len();
+        let mut settled = 0;
+        for held in held {
+            let tenant = held.tenant.clone();
+            let caller = held.caller.clone();
+            let settle = async {
+                if let Some(caller) = caller {
+                    // A fresh request scope, so this cannot conflict.
+                    let _ = TenantContext::set_caller(&caller);
+                }
+                settle_one(lanes, outboxed, tasks.as_ref(), held).await
+            };
+            if TenantContext::scope_request(tenant, settle).await {
+                settled += 1;
+            }
+        }
+        if listed < BATCH || settled == 0 {
             return;
         }
-    };
-    for held in held {
-        let tenant = held.tenant.clone();
-        let caller = held.caller.clone();
-        let settle = async {
-            if let Some(caller) = caller {
-                // A fresh request scope, so this cannot conflict.
-                let _ = TenantContext::set_caller(&caller);
-            }
-            settle_one(lanes, outboxed, tasks.as_ref(), held).await;
-        };
-        TenantContext::scope_request(tenant, settle).await;
     }
 }
 
@@ -238,13 +255,13 @@ async fn settle_one(
     outboxed: &Outboxed,
     tasks: &dyn crate::store::TaskStore,
     held: Held,
-) {
+) -> bool {
     let task_id = TaskId::new(held.task_id.clone());
     let position = match tasks.get_with_position(&task_id).await {
         Ok(found) => found.and_then(|(_, position)| position),
         Err(_err) => {
             trace_warn!(task_id = %task_id, error = %_err, "a held push reservation could not be checked against its task; trying again");
-            return;
+            return false;
         }
     };
     // The log is read only when the task reflects the position: a task that
@@ -261,7 +278,7 @@ async fn settle_one(
                 .map(|recorded| recorded.event),
             Err(_err) => {
                 trace_warn!(task_id = %task_id, error = %_err, "a held push reservation's event could not be looked up in its log; trying again");
-                return;
+                return false;
             }
         }
     } else {
@@ -283,9 +300,11 @@ async fn settle_one(
                 .metrics
                 .on_push_delivery(push_outcome::RESERVATION_SETTLED);
             outboxed.wake.notify_one();
+            true
         }
         Err(_err) => {
             trace_warn!(task_id = %task_id, error = %_err, "a held push reservation could not be settled; trying again");
+            false
         }
     }
 }

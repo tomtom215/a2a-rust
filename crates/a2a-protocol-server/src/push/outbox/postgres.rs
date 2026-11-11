@@ -27,7 +27,7 @@ use crate::metrics::{Metrics, NoopMetrics};
 use crate::push::PushConfigCipher;
 use crate::store::pg_retry;
 
-const SCHEMA: [&str; 8] = [
+const SCHEMA: [&str; 9] = [
     "CREATE TABLE IF NOT EXISTS a2a_push_outbox (
         seq         BIGSERIAL   PRIMARY KEY,
         delivery_id TEXT        NOT NULL UNIQUE,
@@ -55,6 +55,9 @@ const SCHEMA: [&str; 8] = [
     "ALTER TABLE a2a_push_outbox ADD COLUMN IF NOT EXISTS hold_until TIMESTAMPTZ",
     "CREATE INDEX IF NOT EXISTS a2a_push_outbox_reservation
         ON a2a_push_outbox (reservation) WHERE reservation IS NOT NULL",
+    // What `held` looks for, without reading a backlog of armed rows.
+    "CREATE INDEX IF NOT EXISTS a2a_push_outbox_unarmed
+        ON a2a_push_outbox (hold_until) WHERE NOT armed",
     "CREATE INDEX IF NOT EXISTS a2a_push_outbox_webhook
         ON a2a_push_outbox (tenant, caller, task_id, config_id, seq)",
     "CREATE INDEX IF NOT EXISTS a2a_push_outbox_due ON a2a_push_outbox (due_at)",

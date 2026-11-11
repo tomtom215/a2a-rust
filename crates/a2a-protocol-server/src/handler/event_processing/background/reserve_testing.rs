@@ -38,6 +38,10 @@ pub(in crate::handler::event_processing) struct Stopping {
     pub(in crate::handler::event_processing) inner: InMemoryTaskStore,
     /// The stop, and how many writes go through before it applies.
     mode: Mutex<(Stop, usize)>,
+    /// How many times `get_with_position` was called.
+    pub(in crate::handler::event_processing) reads: std::sync::atomic::AtomicUsize,
+    /// `get_with_position` fails: the task store cannot be read.
+    pub(in crate::handler::event_processing) unreadable: std::sync::atomic::AtomicBool,
     /// The next `append_event` never reaches the log.
     park_append: std::sync::atomic::AtomicBool,
     /// A write has reached its stop.
@@ -51,6 +55,8 @@ impl Stopping {
             inner: InMemoryTaskStore::new(),
             mode: Mutex::new((Stop::Never, 0)),
             park_append: std::sync::atomic::AtomicBool::new(false),
+            unreadable: std::sync::atomic::AtomicBool::new(false),
+            reads: std::sync::atomic::AtomicUsize::new(0),
             parked: Notify::new(),
             resume: Notify::new(),
         })
@@ -113,6 +119,14 @@ impl TaskStore for Stopping {
         self.inner.get(id)
     }
     fn get_with_position<'a>(&'a self, id: &'a TaskId) -> F<'a, Option<(Task, Option<u64>)>> {
+        self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if self.unreadable.load(std::sync::atomic::Ordering::SeqCst) {
+            return Box::pin(async {
+                Err(a2a_protocol_types::error::A2aError::internal(
+                    "the task store cannot be read",
+                ))
+            });
+        }
         self.inner.get_with_position(id)
     }
     fn list<'a>(

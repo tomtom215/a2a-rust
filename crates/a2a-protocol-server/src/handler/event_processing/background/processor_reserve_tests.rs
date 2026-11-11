@@ -546,3 +546,84 @@ async fn a_verdict_is_recorded_before_it_is_logged() {
     );
     rig.kill_a(running).await;
 }
+
+/// A replica lost with many tasks in flight leaves as many reservations; one
+/// look of the worker settles them all, not a batch of 32 every ten seconds.
+#[tokio::test(start_paused = true)]
+async fn a_hundred_stale_reservations_are_settled_in_one_look() {
+    let rig = Rig::new(TaskState::Working).await;
+    for n in 0..100u64 {
+        let delivery = crate::push::outbox::NewDelivery {
+            delivery_id: format!("d{n}"),
+            tenant: String::new(),
+            caller: None,
+            task_id: "t".to_owned(),
+            config_id: format!("c{n}"),
+            event: status(n + 1, TaskState::Working).event,
+            ends_turn: false,
+        };
+        // Held already; positions past what the task reflects: not stored.
+        rig.outbox
+            .reserve(
+                &format!("r{n}"),
+                n + 1,
+                vec![delivery],
+                1024,
+                Duration::ZERO,
+            )
+            .await
+            .unwrap();
+    }
+    assert_eq!(rig.rows().await, 100);
+    // One look (ten seconds apart), not four.
+    rig.wait(Duration::from_secs(12)).await;
+    assert_eq!(rig.rows().await, 0, "all released in the first look");
+    assert_eq!(rig.metrics.count(push_outcome::RESERVATION_SETTLED), 100);
+}
+
+/// Reservations that cannot be settled because the task store cannot be read
+/// stay for the next look, and the look ends: a round that settled nothing is
+/// not repeated.
+#[tokio::test(start_paused = true)]
+async fn an_unreadable_task_store_leaves_the_reservations_and_does_not_spin() {
+    let rig = Rig::new(TaskState::Working).await;
+    rig.store
+        .unreadable
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    for n in 0..40u64 {
+        let delivery = crate::push::outbox::NewDelivery {
+            delivery_id: format!("d{n}"),
+            tenant: String::new(),
+            caller: None,
+            task_id: "t".to_owned(),
+            config_id: format!("c{n}"),
+            event: status(n + 1, TaskState::Working).event,
+            ends_turn: false,
+        };
+        rig.outbox
+            .reserve(
+                &format!("r{n}"),
+                n + 1,
+                vec![delivery],
+                1024,
+                Duration::ZERO,
+            )
+            .await
+            .unwrap();
+    }
+    rig.wait(Duration::from_secs(35)).await;
+    assert_eq!(rig.rows().await, 40, "left for when the store can be read");
+    let reads = rig.store.reads.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(
+        reads <= 4 * 32,
+        "{reads} reads in about three looks: a round that settled nothing is not repeated"
+    );
+    assert_eq!(rig.metrics.count(push_outcome::RESERVATION_SETTLED), 0);
+
+    // Readable again: settled at the next look.
+    rig.store
+        .unreadable
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    rig.wait(Duration::from_secs(12)).await;
+    assert_eq!(rig.rows().await, 0);
+}
