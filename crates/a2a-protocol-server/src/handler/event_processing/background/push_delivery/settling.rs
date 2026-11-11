@@ -49,7 +49,7 @@ pub(super) async fn settle_held(lanes: &Lanes, outboxed: &Outboxed) {
             }
         };
         let listed = held.len();
-        let mut settled = 0;
+        let mut any_settled = false;
         for held in held {
             let tenant = held.tenant.clone();
             let caller = held.caller.clone();
@@ -60,11 +60,9 @@ pub(super) async fn settle_held(lanes: &Lanes, outboxed: &Outboxed) {
                 }
                 settle_one(lanes, outboxed, tasks.as_ref(), held).await
             };
-            if TenantContext::scope_request(tenant, settle).await {
-                settled += 1;
-            }
+            any_settled |= TenantContext::scope_request(tenant, settle).await;
         }
-        if listed < BATCH || settled == 0 {
+        if listed < BATCH || !any_settled {
             return;
         }
     }
