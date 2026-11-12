@@ -49,5 +49,5 @@ handler uses and a live PostgreSQL 16 (3,256 passed); the integration tests of t
 repository's static gates; the book's doc-tests (351 passed, 4 ignored); against **real models** on llama.cpp (Qwen3-1.7B), the tool-loop
 strict profile, argument validation, terminal truth through a real handler, stream and webhook, and the step journal and approval binding (S1, S7); and, on a real server over real sockets, the readiness bar's rows R1 to R4 and C1 to C5 (see S5 and D1).
 
-Not verified: the workflows on GitHub for these commits; the Windows and macOS legs; the mutation job on the changed lines (the hand mutants stand in for it
+Not verified: the workflows on GitHub beyond the first run (on `f62284f8`, which found four defects and a mutation-baseline failure, all fixed at `a9847722`; the run on that head had not reported when this was written); the Windows and macOS legs; the mutation job on the changed lines (the hand mutants stand in for it
 and are not the same measurement); the `--full` preflight; any multi-replica or load behaviour of the new code.
