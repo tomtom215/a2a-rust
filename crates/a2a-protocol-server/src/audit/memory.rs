@@ -44,6 +44,23 @@ impl std::fmt::Debug for InMemoryAuditStore {
     }
 }
 
+/// Deletes `chain`'s records through `seq` and the checkpoints below it, from
+/// `chains`, which the caller holds for writing; how many records went.
+fn delete_through_locked(
+    chains: &mut std::collections::HashMap<String, Chain>,
+    chain: &str,
+    seq: u64,
+) -> u64 {
+    let Some(c) = chains.get_mut(chain) else {
+        return 0;
+    };
+    let keep = c.records.split_off(&seq.saturating_add(1));
+    let removed = c.records.len() as u64;
+    c.records = keep;
+    c.checkpoints.retain(|(s, _), _| *s >= seq);
+    removed
+}
+
 impl AuditStore for InMemoryAuditStore {
     fn is_process_local(&self) -> bool {
         true
@@ -143,15 +160,28 @@ impl AuditStore for InMemoryAuditStore {
     fn delete_through<'a>(&'a self, chain: &'a str, seq: u64) -> BoxFuture<'a, A2aResult<u64>> {
         Box::pin(async move {
             let mut chains = self.chains.write().await;
-            let Some(c) = chains.get_mut(chain) else {
-                return Ok(0);
-            };
-            let keep = c.records.split_off(&seq.saturating_add(1));
-            let removed = c.records.len() as u64;
-            c.records = keep;
-            c.checkpoints.retain(|(s, _), _| *s >= seq);
+            Ok(delete_through_locked(&mut chains, chain, seq))
+        })
+    }
+
+    /// Reads the holds and deletes under the holds' read lock, which
+    /// `place_hold` needs to write: no hold lands between the two. The order
+    /// (holds, then chains) is the only one any method takes both in.
+    fn delete_through_unless_held<'a>(
+        &'a self,
+        chain: &'a str,
+        seq: u64,
+    ) -> BoxFuture<'a, A2aResult<Option<u64>>> {
+        Box::pin(async move {
+            let holds = self.holds.read().await;
+            if holds.contains_key(chain) {
+                return Ok(None);
+            }
+            let mut chains = self.chains.write().await;
+            let removed = delete_through_locked(&mut chains, chain, seq);
             drop(chains);
-            Ok(removed)
+            drop(holds);
+            Ok(Some(removed))
         })
     }
 

@@ -1712,6 +1712,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **A reservation could be settled while its writer was still writing** (R3). `PushOutbox::extend_hold` (new, with a default that reports it
   unsupported) lets the processor renew the hold while its fold runs; the three built-in outboxes implement it. A custom outbox that keeps
   reservations should implement it.
+- **A legal hold that completed did not stop a purge that had already begun** (A1). `AuditLog::purge` read the holds once and deleted later,
+  without the chain's lock. It now takes each chain's lock, reads the holds afresh, and deletes with the new
+  `AuditStore::delete_through_unless_held`, which the in-memory, SQLite and PostgreSQL stores run atomically with the hold check (PostgreSQL:
+  under the chain's advisory lock, which `place_hold` takes too), so the guarantee holds across replicas. A custom store keeps the default, which
+  is not atomic across processes, and should override it.
+- **Concurrent first appends to different audit chains could exhaust a PostgreSQL pool** (A2). Sealing read the store (the latest anchor of an empty
+  chain, the subject keys of `AuditPrivacy`) while the append held a connection, so N such appends on N connections each waited for another. Sealing
+  now reads nothing: the keys are resolved, and the anchor read when the chain is found empty, before the append begins.
+
 - **A replica lost between storing an event and recording its push rows lost that event's deliveries** (audit H14; independent review of 2026-11-11,
   X-08). The outbox row was written after the event was stored, by the task's lane, so the window was the lane's backlog (up to `push_queue_capacity`,
   1,024 by default, longer behind a slow outbox database), not one write, and the blocking send recorded every event of a request only when the request

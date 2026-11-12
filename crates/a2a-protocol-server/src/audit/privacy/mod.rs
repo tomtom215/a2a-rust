@@ -8,11 +8,13 @@
 
 mod digest;
 mod log;
+mod protect;
 mod reveal;
 #[cfg(test)]
 mod tests;
 
 pub use log::Erasure;
+pub(in crate::audit) use protect::Resolved;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -43,7 +45,8 @@ const DEK_LEN: usize = 32;
 const SID_LEN: usize = 16;
 
 /// The detail fields that name a person, sealed under that person's key.
-const PERSON_FIELDS: [&str; 2] = ["requestedBy", "erasedCaller"];
+pub(super) const PERSON_FIELDS: [&str; 2] = ["requestedBy", "erasedCaller"];
+
 /// The detail field listing the agents that acted for the actor (RFC 8693,
 /// ADR 0021): each element names a person or agent and is sealed under its
 /// own key, in the context `actors/<index>`.
@@ -55,7 +58,7 @@ pub(super) fn actors_element(i: usize) -> String {
 }
 
 /// The detail fields that are free text, sealed under the actor's key.
-const TEXT_FIELDS: [&str; 1] = ["reason"];
+pub(super) const TEXT_FIELDS: [&str; 1] = ["reason"];
 
 /// The keys an [`AuditLog`](super::AuditLog) protects its records with.
 ///
@@ -410,72 +413,6 @@ impl AuditPrivacy {
             .open_in_place(nonce, Aad::from(context), &mut rest)
             .map_err(|_| refused())?;
         String::from_utf8(plain.to_vec()).map_err(|_| refused())
-    }
-
-    /// Seals what `record` says about people, and keys its digests, for the
-    /// record about to be sealed at `seq`.
-    pub(super) async fn protect(
-        &self,
-        store: &dyn AuditStore,
-        record: &mut AuditRecord,
-        seq: u64,
-    ) -> A2aResult<()> {
-        let chain = record.chain.clone();
-        let owner = record
-            .actor
-            .as_ref()
-            .map_or_else(String::new, |a| a.subject.clone());
-        let mut owner_key: Option<(String, Zeroizing<Vec<u8>>)> = if let Some(actor) =
-            record.actor.as_mut()
-        {
-            let (sid, dek) = self.subject_key(store, &chain, &actor.subject).await?;
-            actor.subject = self.seal_value(&dek, &chain, &sid, "actor", seq, &actor.subject)?;
-            Some((sid, dek))
-        } else {
-            None
-        };
-        for field in PERSON_FIELDS {
-            if let Some(serde_json::Value::String(person)) = record.detail.get(field).cloned() {
-                let (sid, dek) = self.subject_key(store, &chain, &person).await?;
-                let sealed = self.seal_value(&dek, &chain, &sid, field, seq, &person)?;
-                record.detail.insert(field.to_owned(), sealed.into());
-            }
-        }
-        if let Some(serde_json::Value::Array(actors)) = record.detail.get(ACTORS_FIELD).cloned() {
-            let mut sealed = Vec::with_capacity(actors.len());
-            for (i, actor) in actors.iter().enumerate() {
-                let serde_json::Value::String(actor) = actor else {
-                    return Err(refused());
-                };
-                let (sid, dek) = self.subject_key(store, &chain, actor).await?;
-                let field = actors_element(i);
-                sealed.push(
-                    self.seal_value(&dek, &chain, &sid, &field, seq, actor)?
-                        .into(),
-                );
-            }
-            record
-                .detail
-                .insert(ACTORS_FIELD.to_owned(), serde_json::Value::Array(sealed));
-        }
-        for field in TEXT_FIELDS {
-            if let Some(serde_json::Value::String(text)) = record.detail.get(field).cloned() {
-                if owner_key.is_none() {
-                    owner_key = Some(self.subject_key(store, &chain, &owner).await?);
-                }
-                let (sid, dek) = owner_key.as_ref().ok_or_else(refused)?;
-                let sealed = self.seal_value(dek, &chain, sid, field, seq, &text)?;
-                record.detail.insert(field.to_owned(), sealed.into());
-            }
-        }
-        for (name, digest) in &mut record.digests {
-            let mac = self.mac(
-                &self.active,
-                &serde_json::json!(["a2a-audit-digest/v1", chain, seq, name, digest]),
-            );
-            *digest = format!("{KEYED_DIGEST_PREFIX}{}:{mac}", self.active);
-        }
-        Ok(())
     }
 
     /// `subject`'s keys in `chain`, found under every HMAC key in the ring.

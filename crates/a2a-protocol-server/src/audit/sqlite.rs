@@ -249,6 +249,48 @@ impl AuditStore for SqliteAuditStore {
         })
     }
 
+    /// One transaction whose first statement is a write: that takes
+    /// `SQLite`'s write lock, which a hold's insert needs too, so the hold is
+    /// read and the records deleted with none placed in between. The hold is
+    /// tested inside each `DELETE`, so a held chain loses nothing.
+    fn delete_through_unless_held<'a>(
+        &'a self,
+        chain: &'a str,
+        seq: u64,
+    ) -> BoxFuture<'a, A2aResult<Option<u64>>> {
+        Box::pin(async move {
+            let mut tx = self.pool.begin().await.map_err(|e| db(&e))?;
+            let done = sqlx::query(
+                "DELETE FROM a2a_audit_records WHERE chain = ?1 AND seq <= ?2
+                 AND NOT EXISTS (SELECT 1 FROM a2a_audit_holds WHERE chain = ?1)",
+            )
+            .bind(chain)
+            .bind(i64_of(seq))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| db(&e))?;
+            sqlx::query(
+                "DELETE FROM a2a_audit_checkpoints WHERE chain = ?1 AND seq < ?2
+                 AND NOT EXISTS (SELECT 1 FROM a2a_audit_holds WHERE chain = ?1)",
+            )
+            .bind(chain)
+            .bind(i64_of(seq))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| db(&e))?;
+            // The write lock is held: the answer cannot change before the commit.
+            let held: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM a2a_audit_holds WHERE chain = ?1)",
+            )
+            .bind(chain)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| db(&e))?;
+            tx.commit().await.map_err(|e| db(&e))?;
+            Ok((!held).then(|| done.rows_affected()))
+        })
+    }
+
     fn place_hold<'a>(&'a self, hold: &'a LegalHold) -> BoxFuture<'a, A2aResult<()>> {
         Box::pin(async move {
             sqlx::query(

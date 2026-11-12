@@ -2,6 +2,7 @@
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 mod holds;
+mod purge_hold_race;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

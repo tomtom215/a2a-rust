@@ -240,51 +240,68 @@ impl AuditLog {
         }
         #[allow(clippy::cast_possible_truncation)]
         let cutoff = now_ms.saturating_sub(retention.keep_for.as_millis() as i64);
-        let holds: Vec<String> = self
-            .store()
-            .holds()
-            .await?
-            .into_iter()
-            .map(|h| h.chain)
-            .collect();
         let mut report = PurgeReport::default();
         for chain in self.store().chains().await? {
-            if holds.contains(&chain) {
+            // Each chain under its own lock, with the holds read afresh under
+            // it, and the deletion itself refused by the store if a hold has
+            // been placed since (`delete_through_unless_held`). Reading the
+            // holds once at the start and deleting some time later let a hold
+            // that completed in between stop nothing (adversarial review A1,
+            // 2026-11-12). The lock covers this log; the store's atomic check
+            // covers another replica's.
+            let _guard = self.lock_chain(&chain).await;
+            if self.is_held(&chain).await? {
                 report.held.push(chain);
                 continue;
             }
-            let Some((head, _)) = self.store().head(&chain).await? else {
-                continue;
-            };
-            let Some((mut seq, mut hash)) = self.store().last_before(&chain, cutoff).await? else {
-                continue;
-            };
-            if seq >= head {
-                // Never the newest: step back to the record before it.
-                let Some(before) = self
-                    .store()
-                    .read(&chain, seq.saturating_sub(2), 1)
-                    .await?
-                    .into_iter()
-                    .find(|r| r.seq == head - 1)
+            if let Some((seq, hash)) = self.purge_point(&chain, cutoff).await? {
+                self.sign_checkpoint("anchor", &chain, seq, &hash).await?;
+                let Some(deleted) = self.store().delete_through_unless_held(&chain, seq).await?
                 else {
+                    // Held since the check above: placed by another replica.
+                    report.held.push(chain);
                     continue;
                 };
-                seq = before.seq;
-                hash = before.hash;
+                report.purged.push((chain.clone(), deleted, seq));
             }
-            self.sign_checkpoint("anchor", &chain, seq, &hash).await?;
-            let deleted = self.store().delete_through(&chain, seq).await?;
-            report.purged.push((chain, deleted, seq));
-        }
-        #[cfg(feature = "encryption")]
-        if self.privacy.is_some() {
-            for chain in self.store().chains().await? {
-                if !holds.contains(&chain) {
-                    report.keys_deleted += self.drop_unreferenced_keys(&chain).await?;
-                }
+            #[cfg(feature = "encryption")]
+            if self.privacy.is_some() {
+                report.keys_deleted += self.drop_unreferenced_keys_locked(&chain).await?;
             }
         }
         Ok(report)
+    }
+
+    /// Whether a legal hold is placed on `chain`, read from the store now.
+    async fn is_held(&self, chain: &str) -> A2aResult<bool> {
+        Ok(self
+            .store()
+            .holds()
+            .await?
+            .iter()
+            .any(|hold| hold.chain == chain))
+    }
+
+    /// The record `purge` anchors at and deletes through for `chain`: the last
+    /// of the leading run of records sealed before `cutoff`, never the newest;
+    /// `None` when there is nothing to delete.
+    async fn purge_point(&self, chain: &str, cutoff: i64) -> A2aResult<Option<(u64, String)>> {
+        let Some((head, _)) = self.store().head(chain).await? else {
+            return Ok(None);
+        };
+        let Some((seq, hash)) = self.store().last_before(chain, cutoff).await? else {
+            return Ok(None);
+        };
+        if seq < head {
+            return Ok(Some((seq, hash)));
+        }
+        // Never the newest: step back to the record before it.
+        Ok(self
+            .store()
+            .read(chain, seq.saturating_sub(2), 1)
+            .await?
+            .into_iter()
+            .find(|r| r.seq == head - 1)
+            .map(|before| (before.seq, before.hash)))
     }
 }

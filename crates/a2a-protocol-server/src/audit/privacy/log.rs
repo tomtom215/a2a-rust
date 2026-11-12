@@ -201,8 +201,22 @@ impl AuditLog {
     /// record that was never stored. Under the chain's lock, so no append in
     /// this process is between making a key and storing its record; another
     /// replica's can be, and loses that record's names to this.
+    ///
+    /// `purge` calls the [`_locked`](Self::drop_unreferenced_keys_locked)
+    /// form under the lock it already holds for the chain; this one takes the
+    /// lock itself, for the tests.
+    #[cfg(test)]
     pub(in crate::audit) async fn drop_unreferenced_keys(&self, chain: &str) -> A2aResult<u64> {
         let _guard = self.lock_chain(chain).await;
+        self.drop_unreferenced_keys_locked(chain).await
+    }
+
+    /// [`drop_unreferenced_keys`](Self::drop_unreferenced_keys) for a caller
+    /// that holds the chain's lock.
+    pub(in crate::audit) async fn drop_unreferenced_keys_locked(
+        &self,
+        chain: &str,
+    ) -> A2aResult<u64> {
         let keys = self.store().subject_keys(chain).await?;
         if keys.is_empty() {
             return Ok(0);
