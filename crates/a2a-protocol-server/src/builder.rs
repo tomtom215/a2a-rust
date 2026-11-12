@@ -1741,6 +1741,7 @@ impl RequestHandlerBuilder {
                         .unwrap_or(DEFAULT_MAX_CONCURRENT_STREAMS),
                 );
                 mgr = mgr.with_metrics(Arc::clone(&self.metrics));
+                mgr = mgr.with_terminal_confirmation(self.handler_limits.terminal_confirmation);
                 if let Some(max) = self.handler_limits.max_buffered_event_bytes {
                     mgr = mgr.with_max_buffered_bytes(max);
                 }

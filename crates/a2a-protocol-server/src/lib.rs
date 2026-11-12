@@ -220,7 +220,7 @@ pub use executor::AgentExecutor;
 pub use executor_helpers::{ArtifactChunk, EventEmitter, boxed_future};
 pub use handler::{
     HaltReport, HaltScope, HandlerLimits, InFlightReport, InboundTracePolicy, LOAD_HEADER,
-    LoadReport, RequestHandler, SendMessageResult, ShutdownReport,
+    LoadReport, RequestHandler, SendMessageResult, ShutdownReport, TerminalConfirmation,
 };
 pub use interceptor::{CallOutcome, ServerInterceptor, ServerInterceptorChain};
 pub use metrics::{ConnectionPoolStats, Metrics, RpcCall};

@@ -78,6 +78,21 @@ const fn may_push(event: &StreamResponse) -> bool {
     )
 }
 
+/// What became of the event a reservation was made for, as far as the fold's
+/// caller knows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::handler::event_processing) enum Fate {
+    /// The fold decides: armed if it asked for a push, removed if not.
+    ByFold,
+    /// The store has the event: armed.
+    Stored,
+    /// The store does not have it: removed.
+    NotStored,
+    /// The write failed and the store cannot say whether it was applied: the
+    /// rows are left as they are, for [`Reservation::resolve`] and the worker.
+    Unknown,
+}
+
 /// Rows reserved for one event, to be settled by [`settle`](Self::settle).
 pub struct Reservation {
     lanes: Arc<Lanes>,
@@ -89,6 +104,8 @@ pub struct Reservation {
     /// ids a receiver may already have seen.
     ids: Vec<(String, String)>,
     task_id: TaskId,
+    /// The log position the rows were reserved at (`ENDING` for an ending).
+    seq: u64,
     event: StreamResponse,
     wanted: Arc<AtomicBool>,
 }
@@ -193,6 +210,7 @@ impl PushLanes {
             id,
             ids,
             task_id: task_id.clone(),
+            seq,
             event: event.clone(),
             wanted: Arc::new(AtomicBool::new(false)),
         })
@@ -237,20 +255,112 @@ impl PushLanes {
 }
 
 impl Reservation {
-    /// Runs `fold`, the event's whole processing, noting whether it pushes.
+    /// Runs `fold`, the event's whole processing, noting whether it pushes,
+    /// and **keeping the reservation held while it runs**: its hold is
+    /// extended every quarter of itself until the fold ends, so a worker never
+    /// settles the reservation of a writer that is alive however long its
+    /// store takes to answer (adversarial review R3, 2026-11-12). A writer that
+    /// stops stops renewing, and its hold runs out as before.
     pub(in crate::handler::event_processing) fn scope<F: Future>(
         &self,
         fold: F,
     ) -> impl Future<Output = F::Output> + use<F> {
-        WANTED.scope(Arc::clone(&self.wanted), fold)
+        let held = self.keep_held();
+        let fold = WANTED.scope(Arc::clone(&self.wanted), fold);
+        async move {
+            let mut fold = std::pin::pin!(fold);
+            tokio::select! {
+                biased;
+                out = &mut fold => out,
+                never = held => match never {},
+            }
+        }
     }
 
-    /// The fold is over: arms the rows if it pushed, releases them if not.
-    pub(in crate::handler::event_processing) async fn settle(self) {
-        if self.wanted.load(Ordering::SeqCst) {
+    /// The heartbeat of a held reservation: never ready.
+    fn keep_held(&self) -> impl Future<Output = std::convert::Infallible> + use<> {
+        let renewing = self
+            .id
+            .clone()
+            .zip(self.lanes.outbox.as_ref().map(|o| Arc::clone(&o.outbox)))
+            .map(|(id, outbox)| (id, outbox, outbox_worker::hold(&self.lanes.limits)));
+        async move {
+            let Some((id, outbox, hold)) = renewing else {
+                return std::future::pending().await;
+            };
+            let mut beat = tokio::time::interval_at(
+                tokio::time::Instant::now() + hold / 4,
+                (hold / 4).max(std::time::Duration::from_millis(1)),
+            );
+            beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                beat.tick().await;
+                match outbox.extend_hold(&id, hold).await {
+                    // Settled by a worker, or released: nothing left to extend.
+                    Ok(0) => return std::future::pending().await,
+                    Ok(_) => {}
+                    // The outbox is down or does not extend: the hold stands as
+                    // set, and the next beat tries again.
+                    Err(_err) => {
+                        trace_warn!(error = %_err, "a push reservation's hold could not be extended");
+                    }
+                }
+            }
+        }
+    }
+
+    /// The fold is over: settles the rows by `fate`. A reservation that could
+    /// not be settled (its removal failed, or the store cannot say what became
+    /// of the event) is returned: it holds a place in the outbox for an event
+    /// that may not be stored, and its owner keeps it until
+    /// [`resolve`](Self::resolve) settles it, and writes no log position past
+    /// it meanwhile (see [`Processor`](super::super::processor)).
+    pub(in crate::handler::event_processing) async fn settle(self, fate: Fate) -> Option<Self> {
+        let armed = match fate {
+            Fate::ByFold => self.wanted.load(Ordering::SeqCst),
+            Fate::Stored => true,
+            Fate::NotStored => false,
+            Fate::Unknown => return Some(self),
+        };
+        if armed {
             self.arm_now().await;
+            None
+        } else if self.release_now().await {
+            None
         } else {
-            self.release_now().await;
+            Some(self)
+        }
+    }
+
+    /// Whether the store holds the event the rows were reserved for, read from
+    /// it: `Some(true)` it does, `Some(false)` it does not, `None` it cannot
+    /// say (the store cannot be read).
+    ///
+    /// Exact while the owner writes no position past this one — which is what
+    /// keeping an unsettled reservation obliges it to — so the stored position
+    /// reaches this one only by this event's own write.
+    pub(in crate::handler::event_processing) async fn stored(&self) -> Option<bool> {
+        let tasks = self.lanes.tasks.as_ref()?;
+        let verdict =
+            super::settling::verdict_for(tasks.as_ref(), &self.task_id, self.seq, &self.event)
+                .await?;
+        Some(verdict == Verdict::Arm)
+    }
+
+    /// Settles a reservation [`settle`](Self::settle) returned, from what the
+    /// store holds; whether it is settled now. A reservation with no rows
+    /// (the outbox did not take it) has nothing to settle.
+    pub(in crate::handler::event_processing) async fn resolve(&self) -> bool {
+        if self.id.is_none() {
+            return true;
+        }
+        match self.stored().await {
+            Some(true) => {
+                self.arm_now().await;
+                true
+            }
+            Some(false) => self.release_now().await,
+            None => false,
         }
     }
 
@@ -263,7 +373,7 @@ impl Reservation {
     /// settlement had armed it and it was delivered, the receiver sees the same
     /// id twice, which it knows for a retry. With no reservation (the outbox was
     /// down) the event is recorded now, in order.
-    pub(in crate::handler::event_processing) async fn arm_now(self) {
+    pub(in crate::handler::event_processing) async fn arm_now(&self) {
         let Some(outboxed) = self.lanes.outbox.as_ref() else {
             return;
         };
@@ -299,89 +409,27 @@ impl Reservation {
         }
     }
 
-    /// The event was not stored: its rows are removed. A row that cannot be
-    /// removed is removed by the worker's settling.
-    pub(in crate::handler::event_processing) async fn release_now(self) {
+    /// The event was not stored: its rows are removed. Whether they are gone
+    /// (or there were none); a row that cannot be removed stays, and the
+    /// worker's settling removes it once its hold runs out.
+    pub(in crate::handler::event_processing) async fn release_now(&self) -> bool {
         let (Some(outboxed), Some(id)) = (self.lanes.outbox.as_ref(), &self.id) else {
-            return;
+            return true;
         };
         if let Err(_err) = outboxed.outbox.release(id).await {
             trace_warn!(
                 task_id = %self.task_id,
                 error = %_err,
-                "the push outbox did not release a reservation; the worker will"
+                "the push outbox did not release a reservation; \
+                 its owner holds it until it can"
             );
+            return false;
         }
+        true
     }
 }
 
-/// What to do with a reservation whose reserver is gone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Verdict {
-    /// The event is stored: deliver it.
-    Arm,
-    /// It is not: it never was, and never will be, so no webhook is told.
-    Release,
-}
-
-/// Whether the event reserved at `log_seq` was stored, from what its task's
-/// store holds.
-///
-/// `position` is the log position the stored task reflects (`None`: the task
-/// is gone, or the store records none); `logged` is the event the log holds
-/// at `log_seq`, if it holds one.
-///
-/// * The stored task has not reached `log_seq`: the fold never saved the
-///   event. A non-terminal event is logged before it is folded, so the log
-///   may hold it all the same; the task did not take it.
-/// * It has, and the log holds a *different* event at that position: the
-///   position was taken by another turn after the reserver stopped (the
-///   numbering of a turn starts past the log's end and the stored position,
-///   so this needs the reserver to have stopped before logging).
-/// * It has, and the log holds this event or nothing: stored. (Nothing is
-///   how a terminal event looks between its save and its log write, and how
-///   an event whose log write failed looks.)
-#[must_use]
-pub fn verdict(
-    reserved: &StreamResponse,
-    log_seq: u64,
-    position: Option<u64>,
-    logged: Option<&StreamResponse>,
-) -> Verdict {
-    if position.is_none_or(|stored| stored < log_seq) {
-        return Verdict::Release;
-    }
-    match logged {
-        // `StreamResponse` has no `PartialEq`; both came through serde.
-        Some(other) if serde_json::to_value(other).ok() != serde_json::to_value(reserved).ok() => {
-            Verdict::Release
-        }
-        _ => Verdict::Arm,
-    }
-}
-
-/// What a reservation's `log_seq` is when it reserves a task's ending, which has
-/// no position in the log yet. Real positions start at 1.
-pub(super) const ENDING: u64 = 0;
-
-/// Whether the ending reserved as `reserved` was stored: the task is stored in
-/// the terminal state it names. A terminal state is never left, so this is
-/// exact: another terminal state means another writer ended the task, and that
-/// writer's ending is not this one.
-#[must_use]
-pub fn ending_verdict(
-    reserved: &StreamResponse,
-    stored: Option<a2a_protocol_types::task::TaskState>,
-) -> Verdict {
-    match (reserved, stored) {
-        (StreamResponse::StatusUpdate(update), Some(state))
-            if state.is_terminal() && update.status.state == state =>
-        {
-            Verdict::Arm
-        }
-        _ => Verdict::Release,
-    }
-}
+pub use super::verdict::{ENDING, Verdict, ending_verdict, verdict};
 
 #[cfg(test)]
 #[path = "reservation_tests.rs"]

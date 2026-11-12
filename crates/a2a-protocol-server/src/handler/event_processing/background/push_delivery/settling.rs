@@ -110,11 +110,22 @@ async fn verdict_of(
     task_id: &TaskId,
     held: &Held,
 ) -> Option<Verdict> {
-    if held.log_seq == super::reservation::ENDING {
+    verdict_for(tasks, task_id, held.log_seq, &held.event).await
+}
+
+/// Whether the event reserved at `log_seq` was stored, from what the task
+/// store holds; `None` when it cannot say now.
+pub(super) async fn verdict_for(
+    tasks: &dyn crate::store::TaskStore,
+    task_id: &TaskId,
+    log_seq: u64,
+    event: &a2a_protocol_types::events::StreamResponse,
+) -> Option<Verdict> {
+    if log_seq == super::reservation::ENDING {
         // A task's ending: stored if the task is in the terminal state it names.
         return match tasks.get(task_id).await {
             Ok(task) => Some(super::reservation::ending_verdict(
-                &held.event,
+                event,
                 task.map(|task| task.status.state),
             )),
             Err(_err) => {
@@ -132,15 +143,15 @@ async fn verdict_of(
     };
     // The log is read only when the task reflects the position: a task that
     // has not reached it did not store the event, whatever the log holds.
-    let logged = if position.is_some_and(|stored| stored >= held.log_seq) {
+    let logged = if position.is_some_and(|stored| stored >= log_seq) {
         match tasks
-            .read_events(task_id, held.log_seq.saturating_sub(1), 1)
+            .read_events(task_id, log_seq.saturating_sub(1), 1)
             .await
         {
             Ok(events) => events
                 .into_iter()
                 .next()
-                .filter(|recorded| recorded.seq == held.log_seq)
+                .filter(|recorded| recorded.seq == log_seq)
                 .map(|recorded| recorded.event),
             Err(_err) => {
                 trace_warn!(task_id = %task_id, error = %_err, "a held push reservation's event could not be looked up in its log; trying again");
@@ -151,8 +162,8 @@ async fn verdict_of(
         None
     };
     Some(super::reservation::verdict(
-        &held.event,
-        held.log_seq,
+        event,
+        log_seq,
         position,
         logged.as_ref(),
     ))

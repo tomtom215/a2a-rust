@@ -348,3 +348,64 @@ pub(super) async fn recording_a_duplicate_drops_no_other_row(outbox: &dyn PushOu
         [second_id]
     );
 }
+
+/// Extending a hold moves a lapsed, unarmed reservation out of `held` and back
+/// in once the new hold has run out; an armed or unknown reservation has
+/// nothing to extend (adversarial review R3: a live writer keeps its
+/// reservation, a stopped one does not).
+pub(super) async fn extend_hold_keeps_a_live_reservation_out_of_held(outbox: &dyn PushOutbox) {
+    outbox
+        .reserve(
+            "live",
+            1,
+            vec![
+                delivery("", "a", TaskState::Working),
+                delivery("", "b", TaskState::Working),
+            ],
+            10,
+            NOW,
+        )
+        .await
+        .unwrap();
+    outbox
+        .reserve(
+            "dead",
+            2,
+            vec![delivery("", "c", TaskState::Working)],
+            10,
+            NOW,
+        )
+        .await
+        .unwrap();
+    let names = |held: Vec<crate::push::outbox::Held>| {
+        let mut names: Vec<String> = held.into_iter().map(|h| h.reservation).collect();
+        names.sort();
+        names
+    };
+    assert_eq!(names(outbox.held(10).await.unwrap()), ["dead", "live"]);
+
+    assert_eq!(
+        outbox.extend_hold("live", HOUR).await.unwrap(),
+        2,
+        "both of its rows"
+    );
+    assert_eq!(
+        names(outbox.held(10).await.unwrap()),
+        ["dead"],
+        "a reservation whose hold was extended is not settled"
+    );
+
+    outbox.arm("dead").await.unwrap();
+    assert_eq!(
+        outbox.extend_hold("dead", HOUR).await.unwrap(),
+        0,
+        "an armed reservation has no hold"
+    );
+    assert_eq!(
+        outbox.extend_hold("never-existed", HOUR).await.unwrap(),
+        0,
+        "nor has one that is not there"
+    );
+    outbox.release("live").await.unwrap();
+    assert_eq!(outbox.extend_hold("live", HOUR).await.unwrap(), 0);
+}

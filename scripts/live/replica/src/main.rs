@@ -215,6 +215,9 @@ impl PushOutbox for Killing {
     fn release<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, ()> {
         self.inner.release(reservation)
     }
+    fn extend_hold<'a>(&'a self, reservation: &'a str, hold: Duration) -> OutboxFuture<'a, usize> {
+        self.inner.extend_hold(reservation, hold)
+    }
     fn held(&self, limit: usize) -> OutboxFuture<'_, Vec<Held>> {
         self.inner.held(limit)
     }

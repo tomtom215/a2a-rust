@@ -90,6 +90,8 @@ pub struct EventQueueManager {
     /// The process-wide budget over buffered event bytes, when there is one
     /// (ADR 0047).
     byte_budget: Option<super::byte_budget::ByteBudget>,
+    /// What a subscriber is told of a terminal event the store did not confirm.
+    terminal_confirmation: crate::handler::TerminalConfirmation,
     /// How many queues the map holds, stored at every change of it, so the
     /// load signal reads it without the map's lock (ADR 0046).
     live: Arc<std::sync::atomic::AtomicUsize>,
@@ -105,6 +107,7 @@ impl std::fmt::Debug for EventQueueManager {
             .field("max_concurrent_queues", &self.max_concurrent_queues)
             .field("metrics", &self.metrics.is_some())
             .field("byte_budget", &self.byte_budget)
+            .field("terminal_confirmation", &self.terminal_confirmation)
             .field("live", &self.live_queues())
             .finish()
     }
@@ -120,6 +123,7 @@ impl Default for EventQueueManager {
             max_concurrent_queues: None,
             metrics: None,
             byte_budget: None,
+            terminal_confirmation: crate::handler::TerminalConfirmation::Required,
             live: Arc::default(),
         }
     }
@@ -151,6 +155,7 @@ impl EventQueueManager {
             max_concurrent_queues: None,
             metrics: None,
             byte_budget: None,
+            terminal_confirmation: crate::handler::TerminalConfirmation::Required,
             live: Arc::default(),
         }
     }
@@ -174,6 +179,17 @@ impl EventQueueManager {
     #[must_use]
     pub(crate) const fn with_write_timeout(mut self, write_timeout: std::time::Duration) -> Self {
         self.write_timeout = write_timeout;
+        self
+    }
+
+    /// What a subscriber is told of a terminal event the store did not
+    /// confirm (`HandlerLimits::terminal_confirmation`).
+    #[must_use]
+    pub(crate) const fn with_terminal_confirmation(
+        mut self,
+        confirmation: crate::handler::TerminalConfirmation,
+    ) -> Self {
+        self.terminal_confirmation = confirmation;
         self
     }
 
@@ -380,7 +396,10 @@ impl EventQueueManager {
             // gate on a collected writer would hold every terminal event for
             // the full write timeout.
             let writer = match consumer {
-                QueueConsumer::Background => self.observed(writer).with_terminal_gate(),
+                QueueConsumer::Background => self
+                    .observed(writer)
+                    .with_terminal_gate()
+                    .with_terminal_confirmation(self.terminal_confirmation),
                 QueueConsumer::Collector => self.observed(writer).collected(),
             };
             let writer = Arc::new(writer);

@@ -47,9 +47,17 @@ pub(super) struct BackgroundDeps<'a> {
 pub(super) enum Outcome {
     /// The event's effect is persisted.
     Persisted,
-    /// Nothing was persisted: the event was dropped, or the store failed and
-    /// the failure was reported. The task is still this processor's to write.
+    /// Nothing was persisted, and nothing went wrong: the event was dropped by
+    /// a rule (an empty artifact, an append past a bound, a repeat of the
+    /// terminal state the task already holds). The task is still this
+    /// processor's to write.
     NotPersisted,
+    /// The store failed the write (an error that is neither a refusal nor a
+    /// lost claim) and the in-memory task was put back as it was. **The write
+    /// may nonetheless have been applied**: an acknowledgement is lost as
+    /// easily as a request, so the caller reads the store before it says what
+    /// became of the event (adversarial review R1, R2).
+    StoreFailed,
     /// The store refused the write because the task is already terminal in
     /// another state — another writer finished it. Nothing this executor
     /// emits from here on can change the task.
@@ -107,7 +115,7 @@ async fn fail_invalid_transition(
             "background processor: failed to persist failed state after invalid transition"
         );
         metrics.on_persistence_error(persistence_operation::FAILED_STATE, e.metric_label());
-        return Outcome::NotPersisted;
+        return Outcome::StoreFailed;
     }
     Outcome::Persisted
 }
@@ -207,7 +215,7 @@ pub(super) async fn process_event_with(
                     .on_persistence_error(persistence_operation::STATUS_UPDATE, e.metric_label());
                 // Revert in-memory state to stay consistent with the store.
                 last_task.status = prev_status;
-                return Outcome::NotPersisted;
+                return Outcome::StoreFailed;
             }
             if let Some(on_persisted) = on_persisted {
                 on_persisted();
@@ -305,7 +313,7 @@ pub(super) async fn process_event_with(
                         existing.parts.truncate(prev_parts_len);
                         existing.metadata = prev_metadata;
                     }
-                    return Outcome::NotPersisted;
+                    return Outcome::StoreFailed;
                 }
                 push.push(task_id, stream_resp);
                 return Outcome::Persisted;
@@ -347,7 +355,7 @@ pub(super) async fn process_event_with(
                     {
                         *slot = previous;
                     }
-                    return Outcome::NotPersisted;
+                    return Outcome::StoreFailed;
                 }
                 push.push(task_id, stream_resp);
                 return Outcome::Persisted;
@@ -387,7 +395,7 @@ pub(super) async fn process_event_with(
                 if let Some(ref mut arts) = last_task.artifacts {
                     arts.pop();
                 }
-                return Outcome::NotPersisted;
+                return Outcome::StoreFailed;
             }
             push.push(task_id, stream_resp);
             Outcome::Persisted
@@ -435,7 +443,7 @@ pub(super) async fn process_event_with(
                 metrics
                     .on_persistence_error(persistence_operation::TASK_SNAPSHOT, e.metric_label());
                 *last_task = prev;
-                return Outcome::NotPersisted;
+                return Outcome::StoreFailed;
             }
             if let Some(on_persisted) = on_persisted {
                 on_persisted();
@@ -472,7 +480,7 @@ pub(super) async fn process_event_with(
                     save_err.metric_label(),
                 );
                 last_task.status = prev_status;
-                return Outcome::NotPersisted;
+                return Outcome::StoreFailed;
             }
             Outcome::Persisted
         }
@@ -542,7 +550,7 @@ async fn append_message(
         if !had_history {
             last_task.history = None;
         }
-        return Outcome::NotPersisted;
+        return Outcome::StoreFailed;
     }
     Outcome::Persisted
 }
@@ -613,7 +621,7 @@ async fn process_folded_message(
         deps.limits.store_write_retry,
     )
     .await;
-    if outcome == Outcome::NotPersisted {
+    if matches!(outcome, Outcome::NotPersisted | Outcome::StoreFailed) {
         last_task.status = prev_status;
     }
     if outcome == Outcome::Persisted && open {
@@ -1468,7 +1476,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(outcome, Outcome::NotPersisted);
+        assert_eq!(outcome, Outcome::StoreFailed);
         assert!(lanes.is_idle(), "nothing was queued for a refused write");
         assert_eq!(last_task.status, before.status);
         assert_eq!(last_task.history, before.history);

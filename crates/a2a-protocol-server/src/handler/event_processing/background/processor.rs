@@ -49,8 +49,13 @@ use crate::streaming::event_queue::applied::AppliedMark;
 use crate::streaming::event_queue::carries_terminal_state;
 use crate::streaming::event_queue::terminal_gate::TerminalGate;
 
-use super::record_event;
 use super::state_machine::{BackgroundDeps, Outcome, process_queued_event};
+use super::{Reservation, record_event};
+
+/// The most reservations a processor holds unsettled at once. Past it an event
+/// is not reserved for, and its push is the lane's, after it is stored (the
+/// outbox is down, or has been for a long time).
+const MAX_UNSETTLED: usize = 64;
 
 /// The state one background processor carries between events.
 pub(super) struct Processor<'a> {
@@ -78,6 +83,14 @@ pub(super) struct Processor<'a> {
     /// [`close_out`](Self::close_out) looks for is an ending nothing here
     /// told.
     ended: bool,
+    /// Reservations whose rows could not be settled: an event the store does
+    /// not hold, whose rows would not go (the outbox failed), or one whose fate
+    /// the store could not say. Settled again before each event, and **while
+    /// any is held no log position is stored past it**: the worker settles a
+    /// reservation by "the stored position reached its event", which is only a
+    /// statement about that event if nothing later has moved the position
+    /// (adversarial review R2, 2026-11-12).
+    unsettled: Vec<Reservation>,
 }
 
 impl<'a> Processor<'a> {
@@ -99,6 +112,7 @@ impl<'a> Processor<'a> {
             superseded: None,
             pushed_terminal: false,
             ended: false,
+            unsettled: Vec::new(),
         }
     }
 
@@ -109,6 +123,7 @@ impl<'a> Processor<'a> {
     /// whose executor here simply returned on its token (audit E-F9, NEW-e-2).
     /// Its webhooks have not heard, and its log has no ending.
     pub(super) async fn close_out(&mut self) {
+        self.settle_unsettled().await;
         if self.ended {
             return;
         }
@@ -240,12 +255,16 @@ impl<'a> Processor<'a> {
             return;
         }
 
+        // What an earlier event left unsettled is settled first, so the
+        // position below is withheld only while it has to be.
+        self.settle_unsettled().await;
+
         // The event's push rows are reserved in the outbox before anything of
         // the event is written, so a stop at any later point leaves rows the
         // worker settles from the store, rather than a stored event with no
         // delivery (audit H14).
         let reservation = match (&event, seq) {
-            (Ok(queued), Some(_)) => {
+            (Ok(queued), Some(_)) if self.unsettled.len() < MAX_UNSETTLED => {
                 self.deps
                     .push
                     .reserve(self.task_id, seq, &queued.event)
@@ -285,19 +304,44 @@ impl<'a> Processor<'a> {
         );
         // The store records `seq` with each write the fold makes, so a
         // subscriber elsewhere knows which events the stored task reflects
-        // (`TaskStore::get_with_position`, audit register R69).
-        let folded = crate::store::applied::scope_if(seq, fold);
-        let outcome = match reservation {
+        // (`TaskStore::get_with_position`, audit register R69) — except while a
+        // reservation is unsettled (see `unsettled`).
+        let position = if self.unsettled.is_empty() { seq } else { None };
+        let folded = crate::store::applied::scope_if(position, fold);
+        let outcome = match &reservation {
             // Boxed: the scope would otherwise hold the whole fold inline, in
             // a future that is moved at every poll wrapper above it.
-            Some(reservation) => {
-                let outcome = Box::pin(reservation.scope(folded)).await;
-                reservation.settle().await;
-                outcome
-            }
+            Some(reservation) => Box::pin(reservation.scope(folded)).await,
             None => folded.await,
         };
 
+        self.finish(outcome, seq, terminal, reservation, pushes_terminal)
+            .await;
+    }
+
+    /// The fold is over: what became of the event is established (reading the
+    /// store if its write failed), its reservation settled, and the run told.
+    async fn finish(
+        &mut self,
+        outcome: Outcome,
+        seq: Option<u64>,
+        terminal: Option<StreamResponse>,
+        reservation: Option<Reservation>,
+        pushes_terminal: bool,
+    ) {
+        let (outcome, fate) = self
+            .reconciled(
+                outcome,
+                terminal.as_ref(),
+                reservation.as_ref(),
+                pushes_terminal,
+            )
+            .await;
+        if let Some(reservation) = reservation
+            && let Some(left) = reservation.settle(fate).await
+        {
+            self.unsettled.push(left);
+        }
         self.conclude(outcome, seq, terminal, pushes_terminal).await;
     }
 
@@ -313,6 +357,15 @@ impl<'a> Processor<'a> {
         match outcome {
             Outcome::Refused(conflict) => self.supersede(&conflict, seq, terminal.is_some()).await,
             Outcome::ClaimLost => self.lose_claim(seq, terminal.is_some()).await,
+            Outcome::StoreFailed => {
+                // The store does not hold the ending, or cannot say: the
+                // stream is told it is unconfirmed, and nothing is logged or
+                // pushed that the store may lack. `ended` stays unset, so that
+                // `close_out` announces the ending if the store comes to hold it.
+                if terminal.is_some() {
+                    self.unconfirm(seq);
+                }
+            }
             Outcome::Persisted | Outcome::NotPersisted => {
                 if outcome == Outcome::Persisted && pushes_terminal {
                     self.pushed_terminal = true;
@@ -403,6 +456,20 @@ impl<'a> Processor<'a> {
         self.superseded = Some(verdict);
     }
 
+    /// Tells the writer waiting at `seq`, if one is, that the store did not
+    /// confirm its terminal event.
+    fn unconfirm(&self, seq: Option<u64>) {
+        if let (Some(gate), Some(seq)) = (self.gate, seq) {
+            gate.reject(
+                seq,
+                a2a_protocol_types::error::A2aError::unavailable(
+                    "the task store did not confirm the task's terminal state; \
+                     call GetTask for the state the store holds",
+                ),
+            );
+        }
+    }
+
     /// Answers the terminal ticket at `seq`, if one is armed.
     fn answer(&self, seq: Option<u64>, verdict: StreamResponse) {
         if let (Some(gate), Some(seq)) = (self.gate, seq) {
@@ -429,6 +496,8 @@ impl<'a> Processor<'a> {
         .await;
     }
 }
+
+mod reconcile;
 
 #[cfg(test)]
 #[path = "processor_tests.rs"]

@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use super::{HandlerLimits, MIN_MESSAGE_ID_LENGTH};
+use super::{HandlerLimits, MIN_MESSAGE_ID_LENGTH, TerminalConfirmation};
 
 impl HandlerLimits {
     /// The bound `message.id` is actually held to: never below
@@ -128,6 +128,14 @@ impl HandlerLimits {
     #[must_use]
     pub const fn with_store_write_retry(mut self, retry: Duration) -> Self {
         self.store_write_retry = retry;
+        self
+    }
+
+    /// Sets what a streaming client is told when the store does not confirm a
+    /// terminal event; see [`terminal_confirmation`](Self::terminal_confirmation).
+    #[must_use]
+    pub const fn with_terminal_confirmation(mut self, confirmation: TerminalConfirmation) -> Self {
+        self.terminal_confirmation = confirmation;
         self
     }
 

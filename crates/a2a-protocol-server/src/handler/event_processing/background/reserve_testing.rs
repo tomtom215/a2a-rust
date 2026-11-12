@@ -35,6 +35,16 @@ pub(in crate::handler::event_processing) enum Stop {
     AfterThenWait,
 }
 
+/// A write fault: which task writes fail, and whether the write is applied
+/// before it fails (a lost acknowledgement) or not at all (a rejection).
+pub(in crate::handler::event_processing) struct Fault {
+    when: Arc<dyn Fn(&Task) -> bool + Send + Sync>,
+    /// The write reaches the store and then reports an error.
+    ack_lost: bool,
+    /// How many matching writes still fail; `None` for all of them.
+    left: Option<usize>,
+}
+
 /// An in-memory store whose writes can be made to stop, as a process does.
 pub(in crate::handler::event_processing) struct Stopping {
     pub(in crate::handler::event_processing) inner: InMemoryTaskStore,
@@ -44,10 +54,14 @@ pub(in crate::handler::event_processing) struct Stopping {
     pub(in crate::handler::event_processing) reads: std::sync::atomic::AtomicUsize,
     /// `get_with_position` fails: the task store cannot be read.
     pub(in crate::handler::event_processing) unreadable: std::sync::atomic::AtomicBool,
+    /// `get` fails too.
+    pub(in crate::handler::event_processing) fail_reads: std::sync::atomic::AtomicBool,
     /// `supports_event_log` says no: nothing to settle a reservation from.
     pub(in crate::handler::event_processing) without_log: std::sync::atomic::AtomicBool,
     /// The next `append_event` never reaches the log.
     park_append: std::sync::atomic::AtomicBool,
+    /// Task writes that fail, as a store does while it is unavailable.
+    fault: Mutex<Option<Fault>>,
     /// A write has reached its stop.
     pub(in crate::handler::event_processing) parked: Notify,
     pub(in crate::handler::event_processing) resume: Notify,
@@ -59,7 +73,9 @@ impl Stopping {
             inner: InMemoryTaskStore::new(),
             mode: Mutex::new((Stop::Never, 0)),
             park_append: std::sync::atomic::AtomicBool::new(false),
+            fault: Mutex::new(None),
             unreadable: std::sync::atomic::AtomicBool::new(false),
+            fail_reads: std::sync::atomic::AtomicBool::new(false),
             without_log: std::sync::atomic::AtomicBool::new(false),
             reads: std::sync::atomic::AtomicUsize::new(0),
             parked: Notify::new(),
@@ -80,6 +96,58 @@ impl Stopping {
     /// Lets `writes` writes through, then stops the next at `at`.
     pub(in crate::handler::event_processing) fn stop_after(&self, writes: usize, at: Stop) {
         *self.mode.lock().unwrap_or_else(PoisonError::into_inner) = (at, writes);
+    }
+
+    /// Makes every task write for which `when` holds fail (`times` of them, or
+    /// all when `None`): rejected before the store has it, or, when `ack_lost`,
+    /// after the store has it.
+    pub(in crate::handler::event_processing) fn fail_writes(
+        &self,
+        when: impl Fn(&Task) -> bool + Send + Sync + 'static,
+        ack_lost: bool,
+        times: Option<usize>,
+    ) {
+        *self.fault.lock().unwrap_or_else(PoisonError::into_inner) = Some(Fault {
+            when: Arc::new(when),
+            ack_lost,
+            left: times,
+        });
+    }
+
+    /// Writes go through again.
+    pub(in crate::handler::event_processing) fn heal(&self) {
+        *self.fault.lock().unwrap_or_else(PoisonError::into_inner) = None;
+    }
+
+    /// Whether this write of `task` is to fail, and if so whether it is applied first.
+    fn faulted(&self, task: &Task) -> Option<bool> {
+        let mut fault = self.fault.lock().unwrap_or_else(PoisonError::into_inner);
+        let active = fault.as_mut().filter(|f| (f.when)(task))?;
+        if let Some(left) = &mut active.left {
+            if *left == 0 {
+                return None;
+            }
+            *left -= 1;
+        }
+        let ack_lost = active.ack_lost;
+        drop(fault);
+        Some(ack_lost)
+    }
+
+    /// A write of `task`, failed as the fault says.
+    async fn faulting(&self, task: &Task, write: F<'_, ()>) -> A2aResult<()> {
+        match self.faulted(task) {
+            None => self.around(write).await,
+            Some(false) => Err(a2a_protocol_types::error::A2aError::internal(
+                "the task store rejected the write",
+            )),
+            Some(true) => {
+                self.around(write).await?;
+                Err(a2a_protocol_types::error::A2aError::internal(
+                    "the task store's acknowledgement was lost",
+                ))
+            }
+        }
     }
 
     /// Runs `write` with the stop applied: once, then writes go through.
@@ -112,17 +180,17 @@ impl Stopping {
 
 impl TaskStore for Stopping {
     fn save<'a>(&'a self, t: &'a Task) -> F<'a, ()> {
-        Box::pin(self.around(self.inner.save(t)))
+        Box::pin(self.faulting(t, self.inner.save(t)))
     }
     fn save_status_delta<'a>(&'a self, t: &'a Task) -> F<'a, ()> {
-        Box::pin(self.around(self.inner.save_status_delta(t)))
+        Box::pin(self.faulting(t, self.inner.save_status_delta(t)))
     }
     fn save_artifact_delta<'a>(
         &'a self,
         t: &'a Task,
         delta: crate::store::ArtifactDelta,
     ) -> F<'a, ()> {
-        Box::pin(self.around(self.inner.save_artifact_delta(t, delta)))
+        Box::pin(self.faulting(t, self.inner.save_artifact_delta(t, delta)))
     }
     fn try_save_status_delta<'a>(&'a self, t: &'a Task) -> F<'a, bool> {
         self.inner.try_save_status_delta(t)
@@ -135,6 +203,13 @@ impl TaskStore for Stopping {
         self.inner.try_save_artifact_delta(t, delta)
     }
     fn get<'a>(&'a self, id: &'a TaskId) -> F<'a, Option<Task>> {
+        if self.fail_reads.load(std::sync::atomic::Ordering::SeqCst) {
+            return Box::pin(async {
+                Err(a2a_protocol_types::error::A2aError::internal(
+                    "the task store cannot be read",
+                ))
+            });
+        }
         self.inner.get(id)
     }
     fn get_with_position<'a>(&'a self, id: &'a TaskId) -> F<'a, Option<(Task, Option<u64>)>> {
@@ -272,6 +347,13 @@ impl Outcomes {
 pub(in crate::handler::event_processing) struct Flaky {
     pub(in crate::handler::event_processing) inner: Arc<crate::push::outbox::InMemoryPushOutbox>,
     pub(in crate::handler::event_processing) fail_reserve: std::sync::atomic::AtomicBool,
+    /// `release` fails and removes nothing, as it does while the outbox
+    /// database is down.
+    pub(in crate::handler::event_processing) fail_release: std::sync::atomic::AtomicBool,
+    /// `arm` fails and arms nothing.
+    pub(in crate::handler::event_processing) fail_arm: std::sync::atomic::AtomicBool,
+    /// `extend_hold` fails: an outbox that cannot renew a hold, or is down.
+    pub(in crate::handler::event_processing) fail_extend: std::sync::atomic::AtomicBool,
     /// How many times a worker asked for the reservations to settle.
     pub(in crate::handler::event_processing) held_calls: std::sync::atomic::AtomicUsize,
 }
@@ -283,6 +365,9 @@ impl Flaky {
         Self {
             inner,
             fail_reserve: std::sync::atomic::AtomicBool::new(false),
+            fail_release: std::sync::atomic::AtomicBool::new(false),
+            fail_arm: std::sync::atomic::AtomicBool::new(false),
+            fail_extend: std::sync::atomic::AtomicBool::new(false),
             held_calls: std::sync::atomic::AtomicUsize::new(0),
         }
     }
@@ -343,10 +428,34 @@ impl crate::push::outbox::PushOutbox for Flaky {
         self.inner.reserve(reservation, log_seq, d, cap, hold)
     }
     fn arm<'a>(&'a self, reservation: &'a str) -> O<'a, usize> {
+        if self.fail_arm.load(std::sync::atomic::Ordering::SeqCst) {
+            return Box::pin(async {
+                Err(a2a_protocol_types::error::A2aError::internal(
+                    "the push outbox is down",
+                ))
+            });
+        }
         self.inner.arm(reservation)
     }
     fn release<'a>(&'a self, reservation: &'a str) -> O<'a, ()> {
+        if self.fail_release.load(std::sync::atomic::Ordering::SeqCst) {
+            return Box::pin(async {
+                Err(a2a_protocol_types::error::A2aError::internal(
+                    "the push outbox is down",
+                ))
+            });
+        }
         self.inner.release(reservation)
+    }
+    fn extend_hold<'a>(&'a self, reservation: &'a str, hold: std::time::Duration) -> O<'a, usize> {
+        if self.fail_extend.load(std::sync::atomic::Ordering::SeqCst) {
+            return Box::pin(async {
+                Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                    "this push outbox does not extend the hold of a reservation",
+                ))
+            });
+        }
+        self.inner.extend_hold(reservation, hold)
     }
     fn held(&self, limit: usize) -> O<'_, Vec<crate::push::outbox::Held>> {
         self.held_calls

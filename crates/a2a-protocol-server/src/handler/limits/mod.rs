@@ -6,7 +6,9 @@
 //! Configurable limits for [`super::RequestHandler`].
 
 mod fields;
+mod terminal;
 pub use fields::HandlerLimits;
+pub use terminal::TerminalConfirmation;
 
 use std::time::Duration;
 
@@ -44,6 +46,7 @@ impl Default for HandlerLimits {
             subscribe_replay_catchup: Duration::from_secs(2),
             final_task_snapshot: false,
             store_write_retry: Duration::from_secs(30),
+            terminal_confirmation: TerminalConfirmation::Required,
             max_buffered_event_bytes: None,
             saturation_readiness: None,
         }

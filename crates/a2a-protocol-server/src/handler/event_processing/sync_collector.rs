@@ -442,7 +442,25 @@ impl SyncCollector {
             // whole fold inline.
             Some(reservation) => {
                 let folded = Box::pin(reservation.scope(folded)).await;
-                reservation.settle().await;
+                // A write that failed may have been applied (a lost
+                // acknowledgement): the store says, not the error. Nothing
+                // after this error folds, so what it says is exact. A
+                // reservation that cannot be settled now is the worker's, once
+                // its hold runs out.
+                let fate = match &folded {
+                    Err(ServerError::Protocol(e))
+                        if crate::store::TerminalStateConflict::from_error(e).is_none()
+                            && crate::store::ClaimLost::from_error(e).is_none() =>
+                    {
+                        match reservation.stored().await {
+                            Some(true) => super::background::Fate::Stored,
+                            Some(false) => super::background::Fate::NotStored,
+                            None => super::background::Fate::Unknown,
+                        }
+                    }
+                    _ => super::background::Fate::ByFold,
+                };
+                let _ = reservation.settle(fate).await;
                 folded
             }
             None => folded.await,

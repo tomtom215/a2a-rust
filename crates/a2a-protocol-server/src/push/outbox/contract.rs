@@ -241,4 +241,5 @@ where
     reservations::recording_a_duplicate_drops_no_other_row(&fresh().await).await;
     reservations::held_for_task_lists_that_tasks_unarmed_reservations(&fresh().await).await;
     reservations::renew_applies_to_the_owners_live_leases_only(&fresh().await).await;
+    reservations::extend_hold_keeps_a_live_reservation_out_of_held(&fresh().await).await;
 }

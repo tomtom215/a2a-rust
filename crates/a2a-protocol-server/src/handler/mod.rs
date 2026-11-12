@@ -93,7 +93,7 @@ use crate::streaming::{EventQueueManager, InMemoryQueueReader};
 use crate::tenant_config::PerTenantConfig;
 use crate::tenant_resolver::TenantResolver;
 
-pub use limits::{HandlerLimits, MIN_MESSAGE_ID_LENGTH};
+pub use limits::{HandlerLimits, MIN_MESSAGE_ID_LENGTH, TerminalConfirmation};
 pub(crate) use load::LoadReporting;
 pub use load::{LOAD_HEADER, LoadReport};
 pub use tenant_resolution::MAX_TENANT_LEN;

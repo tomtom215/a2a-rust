@@ -1698,6 +1698,20 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A stream could be told a task completed that the store never recorded as completed** (adversarial review of 2026-11-12, R1). When the write of a
+  terminal status failed (rejected, or the acknowledgement lost) the processor answered the terminal gate with the event as emitted, so the
+  stream said `Completed` while `GetTask` still said `Working`, and, when the write had in fact landed, the reservation was released and
+  its webhook lost. The processor now reads the store back: a terminal state the store holds is confirmed (stream, log and webhook, once);
+  anything else ends the stream with `UNAVAILABLE`, with nothing logged or pushed for an ending the store lacks.
+  `HandlerLimits::with_terminal_confirmation(TerminalConfirmation::BestEffort)` keeps the earlier behaviour. A terminal event with no answer
+  within the write timeout, or after the processor stopped, is treated the same way. See ADR 0037 amendment 2026-11-12.
+- **A rejected event could be delivered to a webhook by the outbox's recovery** (R2). A reservation for an event the state machine did not store
+  (a part bound, a failed save) whose removal then failed stayed in the outbox, and when a later event moved the stored log position past it,
+  a worker read that as "stored" and armed it. A processor now keeps a reservation it could not settle and stores no position past it, and
+  reads the store after a failed write instead of assuming it failed (an applied write with a lost acknowledgement is delivered, not lost).
+- **A reservation could be settled while its writer was still writing** (R3). `PushOutbox::extend_hold` (new, with a default that reports it
+  unsupported) lets the processor renew the hold while its fold runs; the three built-in outboxes implement it. A custom outbox that keeps
+  reservations should implement it.
 - **A replica lost between storing an event and recording its push rows lost that event's deliveries** (audit H14; independent review of 2026-11-11,
   X-08). The outbox row was written after the event was stored, by the task's lane, so the window was the lane's backlog (up to `push_queue_capacity`,
   1,024 by default, longer behind a slow outbox database), not one write, and the blocking send recorded every event of a request only when the request

@@ -81,6 +81,16 @@ pub(super) fn artifact(seq: u64) -> StreamEvent {
     )
 }
 
+/// The state a ruled verdict names; `None` for a verdict that confirms nothing.
+fn ruled_state(
+    verdict: &crate::streaming::event_queue::terminal_gate::Verdict,
+) -> Option<TaskState> {
+    match verdict {
+        crate::streaming::event_queue::terminal_gate::Verdict::Ruled(event) => state_of(event),
+        crate::streaming::event_queue::terminal_gate::Verdict::Unconfirmed(_) => None,
+    }
+}
+
 const fn state_of(event: &StreamResponse) -> Option<TaskState> {
     match event {
         StreamResponse::StatusUpdate(e) => Some(e.status.state),
@@ -196,7 +206,7 @@ async fn a_refused_write_supersedes_the_run() {
     run.handle(Ok(status(2, TaskState::Completed))).await;
 
     let verdict = ticket.try_recv().expect("answered");
-    assert_eq!(state_of(&verdict), Some(TaskState::Canceled));
+    assert_eq!(ruled_state(&verdict), Some(TaskState::Canceled));
 
     run.handle(Ok(artifact(3))).await;
     assert_eq!(
@@ -230,7 +240,7 @@ async fn a_refused_terminal_event_is_answered_and_logged_as_the_stored_state() {
     let mut ticket = f.gate.arm(4).expect("gate open");
     run.handle(Ok(status(4, TaskState::Completed))).await;
     assert_eq!(
-        state_of(&ticket.try_recv().expect("answered")),
+        ruled_state(&ticket.try_recv().expect("answered")),
         Some(TaskState::Canceled)
     );
     assert_eq!(f.logged().await, vec![(4, Some(TaskState::Canceled))]);
@@ -250,7 +260,7 @@ async fn a_persisted_terminal_event_is_answered_with_itself() {
     let mut ticket = f.gate.arm(1).expect("gate open");
     run.handle(Ok(status(1, TaskState::Completed))).await;
     assert_eq!(
-        state_of(&ticket.try_recv().expect("answered")),
+        ruled_state(&ticket.try_recv().expect("answered")),
         Some(TaskState::Completed)
     );
     assert_eq!(f.logged().await, vec![(1, Some(TaskState::Completed))]);
@@ -282,7 +292,7 @@ async fn a_terminal_event_that_was_not_persisted_is_still_answered() {
     let mut ticket = f.gate.arm(1).expect("gate open");
     run.handle(Ok(status(1, TaskState::Canceled))).await;
     assert_eq!(
-        state_of(&ticket.try_recv().expect("answered")),
+        ruled_state(&ticket.try_recv().expect("answered")),
         Some(TaskState::Canceled)
     );
     assert!(!f.cancel.is_cancelled(), "a repeat is not a conflict");
@@ -401,7 +411,7 @@ async fn a_refusal_is_trusted_over_a_stale_read() {
     let mut ticket = f.gate.arm(1).expect("gate open");
     run.handle(Ok(status(1, TaskState::Completed))).await;
     assert_eq!(
-        state_of(&ticket.try_recv().expect("answered")),
+        ruled_state(&ticket.try_recv().expect("answered")),
         Some(TaskState::Canceled)
     );
     assert_eq!(run.last_task.status.state, TaskState::Canceled);

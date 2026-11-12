@@ -38,6 +38,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::task::{ContextId, TaskId, TaskState};
+
+use crate::handler::TerminalConfirmation;
 use tokio::sync::{broadcast, mpsc};
 
 use super::{EventQueueReader, EventQueueWriter, StreamEvent};
@@ -201,6 +203,9 @@ pub struct InMemoryQueueWriter {
     /// on it. `None` unless the send path enabled it; see
     /// [`TerminalGate`](super::terminal_gate::TerminalGate).
     terminal_gate: Option<Arc<super::terminal_gate::TerminalGate>>,
+    /// What a subscriber is told of a terminal event the store did not
+    /// confirm; see [`TerminalConfirmation`].
+    terminal_confirmation: TerminalConfirmation,
     /// The persistence channel is read by a blocking send's collector, which
     /// *is* the request: its closing is the send ending, not a processor
     /// lost. See [`collected`](Self::collected).
@@ -242,6 +247,7 @@ impl InMemoryQueueWriter {
             identity: Arc::new(std::sync::OnceLock::new()),
             turn: Arc::default(),
             terminal_gate: None,
+            terminal_confirmation: TerminalConfirmation::Required,
             collected: false,
             byte_budget: None,
         }
@@ -266,6 +272,7 @@ impl InMemoryQueueWriter {
             identity: Arc::new(std::sync::OnceLock::new()),
             turn: Arc::default(),
             terminal_gate: None,
+            terminal_confirmation: TerminalConfirmation::Required,
             collected: false,
             byte_budget: None,
         }
@@ -453,6 +460,18 @@ impl InMemoryQueueWriter {
         self
     }
 
+    /// What a subscriber is told of a terminal event the store did not
+    /// confirm. Only a gated writer holds terminal events for a verdict, so
+    /// this has no effect on any other.
+    #[must_use]
+    pub(crate) const fn with_terminal_confirmation(
+        mut self,
+        confirmation: TerminalConfirmation,
+    ) -> Self {
+        self.terminal_confirmation = confirmation;
+        self
+    }
+
     /// Marks the persistence channel as read by a blocking send's collector.
     ///
     /// The collector reads the bounded `mpsc` rather than a broadcast
@@ -478,6 +497,23 @@ impl InMemoryQueueWriter {
         self.terminal_gate.clone()
     }
 
+    /// Whether `event` is a terminal event this writer must not tell its
+    /// subscribers of until the store has confirmed it.
+    fn requires_confirmation(&self, event: &StreamEvent) -> bool {
+        self.terminal_confirmation == TerminalConfirmation::Required
+            && self.terminal_gate.is_some()
+            && carries_terminal_state(&event.event)
+    }
+
+    /// The error a subscriber is sent in place of a terminal event the store
+    /// did not confirm.
+    fn unconfirmed(why: &str) -> A2aError {
+        A2aError::unavailable(format!(
+            "the task store did not confirm the task's terminal state ({why}); \
+             call GetTask for the state the store holds"
+        ))
+    }
+
     /// A ticket for `event`'s verdict, when this writer is gated and the
     /// event carries a terminal state.
     fn ticket_for(&self, event: &StreamEvent) -> Option<Ticket<'_>> {
@@ -496,13 +532,16 @@ impl InMemoryQueueWriter {
 struct Ticket<'a> {
     gate: &'a super::terminal_gate::TerminalGate,
     seq: u64,
-    verdict: tokio::sync::oneshot::Receiver<StreamResponse>,
+    verdict: tokio::sync::oneshot::Receiver<super::terminal_gate::Verdict>,
 }
 
 impl Ticket<'_> {
     /// The verdict, or `None` if none arrives within `timeout` or the
     /// processor went away without giving one.
-    async fn verdict_within(mut self, timeout: std::time::Duration) -> Option<StreamResponse> {
+    async fn verdict_within(
+        mut self,
+        timeout: std::time::Duration,
+    ) -> Option<super::terminal_gate::Verdict> {
         tokio::time::timeout(timeout, &mut self.verdict)
             .await
             .ok()?
@@ -599,17 +638,39 @@ impl InMemoryQueueWriter {
         // already finished the task. No verdict by the write's deadline — or a
         // processor that exited — broadcasts it unchanged, which is what every
         // event did before the gate existed.
-        if let Some(ticket) = ticket
-            && let Some(verdict) = ticket
+        if let Some(ticket) = ticket {
+            let required = self.terminal_confirmation == TerminalConfirmation::Required;
+            match ticket
                 .verdict_within(deadline.saturating_duration_since(tokio::time::Instant::now()))
                 .await
-        {
-            // The verdict's frame holds the bytes the event did: the
-            // subscribers keep it as long as they would have kept the event.
-            let charge = event.as_ref().as_ref().ok().and_then(|e| e.charge.clone());
-            let mut ruled = StreamEvent::at(seq, verdict);
-            ruled.charge = charge;
-            event = Arc::new(Ok(ruled));
+            {
+                Some(super::terminal_gate::Verdict::Ruled(verdict)) => {
+                    // The verdict's frame holds the bytes the event did: the
+                    // subscribers keep it as long as they would have kept the
+                    // event.
+                    let charge = event.as_ref().as_ref().ok().and_then(|e| e.charge.clone());
+                    let mut ruled = StreamEvent::at(seq, *verdict);
+                    ruled.charge = charge;
+                    event = Arc::new(Ok(ruled));
+                }
+                Some(super::terminal_gate::Verdict::Unconfirmed(error)) if required => {
+                    event = Arc::new(Err(error));
+                }
+                // No verdict by the write's deadline, or a processor that
+                // exited: nothing says the store holds the event.
+                None if required => {
+                    trace_warn!(
+                        seq = seq,
+                        "terminal event not confirmed within the write timeout"
+                    );
+                    event = Arc::new(Err(Self::unconfirmed(
+                        "no answer within the queue's write timeout",
+                    )));
+                }
+                // `BestEffort`: the event as the executor wrote it, which is
+                // what every event did before the gate existed.
+                Some(super::terminal_gate::Verdict::Unconfirmed(_)) | None => {}
+            }
         }
         self.broadcast(event, collector_gone)
     }
@@ -757,6 +818,7 @@ impl InMemoryQueueWriter {
         // Armed before the hand-off, so the processor's verdict can never
         // arrive ahead of the ticket it answers.
         let mut ticket = self.ticket_for(&event);
+        let must_confirm = self.requires_confirmation(&event);
         let event: super::Shared = Arc::new(Ok(event));
 
         // Persistence first (if configured): this channel is independent of
@@ -779,6 +841,18 @@ impl InMemoryQueueWriter {
                     });
                 }
             }
+        }
+        if must_confirm && ticket.is_none() {
+            // Nobody can rule on it: the processor has exited (its gate is
+            // closed, or its channel), so the event is not being stored. A
+            // subscriber is told so, not that the task finished.
+            trace_warn!(
+                seq = seq,
+                "terminal event not confirmed: no background processor is left to store it"
+            );
+            let unconfirmed = Self::unconfirmed("its processor had stopped");
+            let broadcast = self.broadcast(Arc::new(Err(unconfirmed)), collector_gone);
+            return Box::pin(std::future::ready(broadcast));
         }
         if ticket.is_some() {
             return Box::pin(async move {
