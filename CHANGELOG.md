@@ -41,6 +41,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`PushOutbox::reserve`, `arm`, `release`, `held` and `held_for_task`, `supports_renewal` and `renew`**, `PushOutbox::supports_reservations` (false by default, so an outbox of your own keeps working
+  and keeps recording after the event is stored), the `Held` type, and the push outcome `reservation_settled` (`push_outcome::RESERVATION_SETTLED`; the
+  metric and its label are in the book). `InMemoryPushOutbox`, `SqlitePushOutbox` and `PostgresPushOutbox` implement them (an outbox that wraps another has to forward each, or the handler uses the trait's default for it); `record` and `reserve` now leave a delivery id that is already in the outbox as it is; the table
+  `a2a_push_outbox` gains `armed`, `reservation`, `log_seq` and `hold_ms` / `hold_until`, added in place to a table an earlier build created. See Fixed,
+  audit H14.
+
+- **`TurnClaimStore::ended_unreleased`** (a provided method; the default lists none, so a claim store of your own keeps working) and the
+  `finished` outcome of the claim-events metric (`Metrics::on_claim`), for the reaper's completion of a finished task's ending (see Fixed, W2-hostile-3).
+
 - **`ToolLoop::with_max_calls_per_turn`** (default `DEFAULT_MAX_CALLS_PER_TURN`, 64; hostile campaign, wave 2, W2-LIVE-5): a model reply with
   more tool calls than this runs the first ones, drops the rest and says so in the trace. With no bound a reply of 90,000 calls (7.6 MB, inside the
   8 MiB response cap) took a loop from 21 MB to a 1.4 GB peak in 14 s; the dropped calls are not kept in the conversation. A model that wrote more
@@ -1689,6 +1698,65 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A replica lost between storing an event and recording its push rows lost that event's deliveries** (audit H14; independent review of 2026-11-11,
+  X-08). The outbox row was written after the event was stored, by the task's lane, so the window was the lane's backlog (up to `push_queue_capacity`,
+  1,024 by default, longer behind a slow outbox database), not one write, and the blocking send recorded every event of a request only when the request
+  ended. The background processor and the blocking send's collector now **reserve** an event's rows before its first durable write (unarmed: never
+  claimed, holding their webhooks' places so the order of a webhook's deliveries is the order of the events), run the fold, and **arm** the rows if
+  the state machine announced the event or **release** them if not. Every replica's worker settles a reservation whose hold (three
+  `store_write_retry` plus a minute: 150 s by default) ran out, from the task store: the event was stored if the stored task has reached its log
+  position and the log holds no different event there; stored, it is delivered with the delivery id its replica gave it, otherwise removed and no
+  webhook is told of an event the task does not have (counted `reservation_settled`). A task's ending that no queued event carried (the reaper's, an
+  executor's panic, a verdict from another writer) is recorded before it is written to the log, because the reaper skips an ending the log already
+  holds; the reaper records through the outbox, behind a dead replica's reserved rows. Needs a task store with an event log and an outbox that keeps
+  reservations (all three here do); otherwise nothing changes. Not one transaction: ADR 0037, amendment 2026-11-11, says why not. Checked: the
+  contract on all three outboxes (PostgreSQL live; two replicas settling one reservation; a table from an earlier build upgraded in place), a unit test
+  for each row of the settlement's decision table, tests that abort a task at a chosen point of its store write with two replicas over one outbox
+  (before the write, after it, a terminal event between its save and its log write, stalled past the hold), the same on the blocking path, and 64 hand
+  mutants of each rule, all caught (`scripts/mutants/push-outbox-h14/run.sh`; `scripts/live/outbox_live.py`'s run is below). Live, two replicas on one PostgreSQL database and a webhook
+  receiver, replica A sent itself `SIGKILL` after it stored an artifact and before it armed the row: the receiver saw `working`, then the artifact
+  once, 71 s after the kill and from the survivor, then the reaper's `failed`, the outbox empty; killed after reserving and before storing, the event
+  the task never had was never delivered. (Those first runs delivered the stored artifact 71 s after the kill; see the follow-ups below.) The first live run found the reaper sending its `failed` from its own loop 40 s before that artifact, which is
+  why it now records through the outbox. Not covered, and under Known Limitations: a store without an event log, an outbox that is down when an event
+  is reserved, an executor panic's one write where turn claims are off.
+
+  Follow-ups to that, each found open by the first report and closed with its own tests and hand mutants: (1) **the reaper settles a dead replica's
+  reservations as soon as it takes the task's claim**, which fences the dead replica off, so the store's answer is final and nothing waits for the
+  reservation's hold (`PushOutbox::held_for_task`, `PushLanes::settle_task`): live, four of four runs delivered the stored artifact and then the
+  reaper's `failed` 30.2 to 30.3 s after the start (the claim's time to live), in that order, with no duplicate, where the hold had made it 71 s; the hold
+  itself is unchanged (three `store_write_retry` plus a minute, 150 s by default) because it must exceed two retried writes and now only backs up
+  deployments with no reaper; (2) **a worker claims rows for 30 s and renews every 10 s** (`PushOutbox::renew`), so a killed worker's rows are free after
+  30 s, not 120 s, and a delivery that outlasts the lease is not taken from a live worker; an outbox that cannot renew keeps the long lease; (3) **a
+  delivery id is the row's identity**: recording is idempotent on it, and a reservation settled before its event was stored is recorded again under the
+  ids it had, so a repeat is a retry the receiver can recognise; (4) **an outbox that is down when an event is reserved no longer reorders**: the event
+  is recorded in the processor, awaited, before the next event's reservation, not queued behind it in the lane; (5) **an executor panic's ending is
+  reserved before it is saved** and settled by the state the task is stored in. The live harness found a defect in itself that is worth a user's
+  attention: its outbox wrapper did not forward `renew` and `held_for_task`, and the handler silently used the defaults (a 120 s lease and no settling by
+  task); a wrapping outbox has to forward every provided method.
+
+- **Every blocking send copied two 36,000-byte futures four times each** (found by measuring this tree against a2a-rs and against 0.14.1
+  on one host, `docs/sdk-comparison-2026-11-11.md`). The executor's `async` block and the blocking send's collector block each hold the request
+  context, the stored task and every `await` of the run, and `TenantContext::scope`, the span wrapper, the task tracker and `tokio::spawn` each
+  moved the whole future by value. callgrind: 604,000 instructions per blocking send over HTTP against 320,000 for 0.14.1, 261,000 of the added 284,000
+  in `memcpy` called from those layers; each future is now boxed once before its wrappers (277,000). The instruction count over-states the
+  gain (a copy counts per byte): six interleaved repetitions of the unmodified and the changed tree measured 4.4k to 4.7k requests/s and 232 to 216 µs
+  of server CPU at one connection, 7.5k to 7.9k and 229 to 216 µs at sixteen, in the same direction in all four comparisons with overlapping ranges.
+  Behaviour is unchanged; the server's 5,045 tests pass with it. Not fixed, and recorded under Known Limitations: this tree is still slower than 0.14.1 and
+  than a2a-rs at the same blocking send.
+
+- **A task canceled on another replica, whose owner then died, stayed `canceled` with no ending in its log and no webhook for it** (hostile
+  campaign W2-hostile-3, 2026-11-08; raised again by the external review of 2026-11-09). `CancelTask` on a replica that does not run the turn
+  stores `canceled` and leaves the ending to the owner's own event processor; an owner killed before it ended the turn left a terminal task whose
+  log stopped short, whose webhooks and audit trail never heard, and whose claim row stayed, because the reaper looked only at running tasks.
+  Each look of the reaper now also takes over a claim left behind a terminal task, expired for longer than the claim's time to live
+  (`TurnClaimStore::ended_unreleased`), reads the log's last event, and, when it is not the task's ending, appends the ending and sends it to the
+  webhooks once; when the log already ends the task it only releases the claim. A claim that is live, one that expired inside the margin and one
+  the handler holds itself are left alone, and a task that is not finished gets no ending. Reproduced and checked live, two replicas on one
+  PostgreSQL database, the owner killed with `SIGKILL` as the cancel returned: before, 75 s later the stored state was `canceled`, no event carried
+  the ending and the claim was still there; after, the log carries the ending once and the claim is gone 44 s after the kill (42 s with the owner
+  killed in the middle of a real model's answer, llama.cpp `llama-server` f3b407ca with Qwen3.5-2B Q4_K_M). Tests: SQLite and PostgreSQL, plain and
+  tenant-aware, 21 hand mutants of the new code and SQL all killed (`handler/claims/reaper/tests/finish.rs`).
+
 - **A provider's, or a delegated child's, absurd token count left the task `working` for ever** (types and
   server; found by the live-model campaign, 2026-11-08, by serving a scripted provider and a scripted peer
   to a budgeted agent). `BudgetHandle::status()` is written onto every status update, and the server
@@ -2842,13 +2910,19 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 - **A status written with no event** (audit E-F25): a `CancelTask` of a parked task on one replica, and a task the claim reaper ends, write a status with no event in the log, so a subscriber on another replica learns of it at its next poll (up to `subscribe_reattach_max_interval`), also with `with_log_notifications`; measured: 2.0 s for a cancel at a 2 s ceiling.
 
-- **A cancel taken on another replica, then the owner's abrupt death** (hostile campaign W2-hostile-3, 2026-11-08): `CancelTask` on a replica
-  that does not run the turn stores `Canceled` and leaves the terminal event to the owner's own event processor. If the owner is killed
-  (`kill -9`, an out-of-memory kill, a `SIGTERM` nothing handles) before it ends the turn, the task is `Canceled` in the store with no terminal
-  event in its log, which webhooks, the audit trail and a resuming subscriber read, and its expired claim row stays, because the reaper's
-  query excludes terminal tasks. The owner left running, or shut down by `shutdown_with_timeout` (what `Server::serve_with_shutdown` runs on
-  `SIGTERM`), logs the event and frees the claim (`tests/turn_claims`, SQLite and PostgreSQL). Closing the gap needs the canceller to append
-  the ending itself and the processor to skip an ending already logged, so a decision on duplicate terminal events; not changed.
+- **Throughput against a2a-rs and against 0.14.1** (measured 2026-11-11, `docs/sdk-comparison-2026-11-11.md`; echo executor, blocking `SendMessage` over
+  JSON-RPC, 4 shared vCPUs, server on two): a2a-rs serves 1.25 to 1.9 times the requests per second (7.8k against 4.3k at one connection before the change, 4.9k
+  after), and a2a-rust holds 2.5 to 3 times less resident memory. Against its own 0.14.1 this tree was 18% to 29% slower at one connection before the change
+  (4.4k against 5.4k, and 4.3k against 6.1k, in two runs) and is 12% to 14% slower after (4.7k against 5.4k, 4.9k against 5.7k; ranges overlapping). The two-core gap is mostly cross-thread wake-ups of the
+  runtime's I/O driver (2.2 `write` calls per request against 0.1), from timers armed on every request (hyper's connection, a `timeout` around a `watch`
+  receiver) and from the scheduler; with one worker the gap to 0.14.1 is 4 to 12%. Not closed. The in-process benchmark in `docs/readiness-bar.md`
+  ("not slower than 0.14.1") does not see it.
+
+- **A finished task whose owner died is completed after about three claim lifetimes** (hostile campaign W2-hostile-3, 2026-11-08; the reaper's
+  completion is under Fixed): measured at 42 to 44 s with the default 15 s time to live (the claim expires, stays 15 s more before it is stale, and the
+  survivor's reaper looks every 15 s). A handler without turn claims (a process-local store) has no claim to find. With a push outbox the reaper records
+  the ending there (behind a dead replica's reserved rows, so a stopped replica's last event reaches a webhook before the ending); without one it sends it
+  from its own loop.
 
 - **Authentication runs after method dispatch, body parsing and version negotiation** (hostile campaign W2-hostile-5, 2026-11-08): with a bearer
   interceptor and no credential, a call to a known method answers the reference `401`, but an unknown JSON-RPC method (`-32601`), invalid JSON
@@ -2880,7 +2954,9 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 - **Load and admission** (audit H7, H9, H17): ORCA over gRPC trailers, a queue-cap gauge, priority from the request, preemption, fleet-wide admission, a tool-loop limit across processes and retrying a turn that failed mid-stream are not built (ADRs 0045 to 0048). The ORCA header format was not checked against Envoy.
 
-- **Push** (audit H14, SEC-14): the outbox row is written after the event is stored, so a crash between the two loses that event's deliveries; per-destination rate limits, the verification handshake and a per-caller configuration quota are not built (ADR 0043, ADR 0037).
+- **Push** (audit H14, SEC-14): the outbox reserves an event's rows before it is stored (see Fixed), which needs a task store with an event log and an outbox that keeps reservations; with either missing the row is written after the event is stored, by the task's lane, and a crash loses the deliveries of the events still waiting in that lane (up to `push_queue_capacity`, 1024 by default). With both, what is not covered: a deployment without turn claims has no reaper, so a stopped replica's reservations wait for the hold (150 s by default); while the outbox is down nothing is durable (a process that stops then loses what it held in memory, and the order is kept); a processor stalled past the hold records an event again under the same delivery id (a retry, at least once); a reservation's position reused by another turn after its reserver stopped before logging is told apart by comparing events, so a log write that also failed lets it be armed; per-destination rate limits, the verification handshake and a per-caller configuration quota are not built (ADR 0043, ADR 0037).
+
+- **Dependencies** (cargo-deny, run 43042602728 of 2026-11-11): RUSTSEC-2026-0459 (CVE-2026-119375: the C SQLite bundled by `libsqlite3-sys` 0.6.0 to 0.38.2, before SQLite 3.54.0, returns stale bytes from process memory when a database file is opened with a `-wal` file of a different page size; a local attack on a file pair someone else wrote) cannot be fixed by an update, and is recorded as an ignore, with its reason and removal condition, in `deny.toml` and in the SLIMRPC binding's `deny.toml` (checked 2026-11-11 against crates.io). In the workspace it comes in through `sqlx-sqlite` 0.9.0, which requires `libsqlite3-sys` 0.37, and `sqlx` 0.9.0 is the latest `sqlx`; only builds with the opt-in `sqlite` feature of `a2a-protocol-server` link it, and the stores open the path the operator configures (the SQLite store's book page says to open only files you own). In the binding it is 0.35.0, through `rusqlite` 0.37 and `mls-rs-provider-sqlite` 0.23.0 (the latest) of SLIM's MLS persistence. The entries come out when `sqlx`, and the SLIM chain, allow `libsqlite3-sys` 0.39 or newer. RUSTSEC-2026-0462 (`rmcp` 3.7.0, the two MCP examples) is fixed by the lockfile at 3.9.0. The OSV job `Rust lockfiles` is a separate gate from cargo-deny, with its own ignore files, and it failed on this branch's pull request: RUSTSEC-2026-0459 is therefore also an ignore, with the same reason, in the four `osv-scanner.toml` files whose lockfiles record the crate (the workspace, the binding, `fuzz/`, and `benches/sdk-comparison/harness/agent-a2a-rust/`, where it is built only with the harness's opt-in `sqlite` feature); `main`'s scheduled run of 2026-11-11 06:35 UTC was already red on it and on `rmcp`. RUSTSEC-2026-0486 (`rustix` 1.1.5; informational *unsound*: the `xattr` functions mark bytes initialised when given a zero-length buffer; no source file here mentions `xattr` or `rustix`, and the workspace reaches it through `tempfile`) is cleared by `rustix` 1.1.6 in the five lockfiles that locked 1.1.5, a change of that package's version and checksum only (`cargo metadata --locked` accepts each). The four waivers for GHSA-qwgh-2vcv-g2f7 (`block-buffer` 0.10.4) are removed: OSV narrowed that advisory on 2026-10-30 to 0.11.0 up to 0.12.1, and osv-scanner 2.7.0 reported the waivers as unused. osv-scanner 2.7.0 with `osv.yml`'s lockfile arguments: nine findings before, "No issues found" after.
 
 - **Network** (audit B-25, B-28, B-29): the WebSocket upgrade's same-origin check does not defend against DNS rebinding (the HTTP endpoints have no Host or Origin check either); there is no DNS cache; there is no `fips` feature and no CRL or OCSP helper (ADR 0041).
 

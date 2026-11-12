@@ -1,0 +1,27 @@
+[
+  {
+    "name": "the worker never renews",
+    "old": "_ = renewals.tick(), if heartbeat => {",
+    "new": "_ = renewals.tick(), if false => {"
+  },
+  {
+    "name": "the lease is long when the outbox renews",
+    "old": "if outbox.supports_renewal() {\n        RENEWED_LEASE",
+    "new": "if !outbox.supports_renewal() {\n        RENEWED_LEASE"
+  },
+  {
+    "name": "the renewed lease is five minutes",
+    "old": "RENEWED_LEASE: Duration = Duration::from_secs(30);",
+    "new": "RENEWED_LEASE: Duration = Duration::from_secs(300);"
+  },
+  {
+    "name": "rows ignore the ids they are given",
+    "old": ".find(|(config, _)| *config == config_id)",
+    "new": ".find(|(config, _)| config.is_empty())"
+  },
+  {
+    "name": "hold is one retry",
+    "old": ".saturating_mul(3)\n        .saturating_add(Duration::from_secs(60))",
+    "new": ".saturating_mul(1)\n        .saturating_add(Duration::from_secs(60))"
+  }
+]

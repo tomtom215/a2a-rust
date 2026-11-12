@@ -5776,3 +5776,184 @@ command is named so the next session re-runs it instead of copying the number. A
    produced and reconciled with `### Breaking Changes` (*Verified*, above); run it again with `--release-type patch --baseline-rev v0.15.0
    --all-features` if the public API changes before the tag.
 
+## Superseded: the "Now" block of `handoff.md` as it stood on 2026-11-09 (pull request #203)
+
+Kept verbatim; pull request #203 has since merged (`main` is `9214541e`). Its CI history, its survivors and its gate figures are here.
+
+State on 2026-11-08 (UTC). Each figure was read from a command in the session that wrote it; the command is named so the next
+session re-runs it instead of copying the number. What was not run is under *Not verified*. The previous version of this block
+(pull request #197's CI history, its survivors and its gate figures) is kept verbatim in
+[`handoff-history.md`](handoff-history.md), last section.
+
+- **Where the code is.** Pull request #197 merged: `main` is `27889e09` (`git rev-parse origin/main`), the workspace reads 0.16.0, and
+  **nothing is tagged**: the newest tag is `v0.15.0` (`git tag --sort=-creatordate | head -1`). The maintainer tags; nothing here does.
+- **This session's branch** is `claude/affectionate-gauss-5yn4f5` off `main`, 98 commits ahead before the latest of this file's commits (`git log --oneline
+  origin/main..HEAD | wc -l`), in **draft pull request #203** (https://github.com/tomtom215/a2a-rust/pull/203). CI has run four times on it
+  (*Verified*). Started on the maintainer's instruction of 2026-11-07: ADR 0035 (agent skills) and
+  ADR 0036 (steering) **before the tag** (moving the decision of 2026-11-03), the adversarial campaign, and the deferred items, with CI at 60 to
+  90 minutes a run so few runs, and surviving mutants prevented by writing the tests with the code and running cargo-mutants on the diff
+  locally before any push. **Authorship:** every commit is `Tom F. <tomf@tomtomtech.net>` with one `Signed-off-by`, as the maintainer said
+  and as `dco.yml` compares; the session's stop hook asked repeatedly to re-author them as `Claude <noreply@anthropic.com>` because GitHub will
+  show them Unverified ("missing signature, or committer email is not noreply@anthropic.com"; none is signed, `git log -1 --format=%G?` is `N`).
+  That was not done: it contradicts the instruction and would fail the DCO check (it passed on all of them in CI). Yours to decide before the merge.
+- **Built on that branch** (each by a test seen to fail first, or a hand mutant seen to be killed, as each commit says): E-F15
+  (`AuthFailureThrottle::with_shared_counter`, and the PostgreSQL rate-limit counter's sweep, which deleted another window width's live rows,
+  measured in plain SQL); F14 (a streaming send whose executor panics ends with the `failed` frame); B-11 option 2
+  (`ClientBuilder::with_blocking_over_stream`); E-F25 (b) (`LISTEN`/`NOTIFY` wake on appends, opt-in; **latency, not idle load**) and (c) (a
+  read pool **measured and not built**, ADR 0057); `parked_task_ttl` (ADR 0056); Agent Skills (ADR 0035); steering (ADR 0036); the adopter
+  walk-through's fixes; and, on 2026-11-08, **M-1** (an empty final model reply fails the task with a failure class, a reply cut at the output
+  limit completes it with `a2a-rust.com/finish-reason: length` on the answer artifact and the status message) and **`ListTasks` with a page
+  token no store issued answers `InvalidParams`** in all five stores (`-32602`, 400, `INVALID_ARGUMENT`). Closing the second found a defect: a
+  token with a separator and a nonsense timestamp reached PostgreSQL's `::timestamp` cast and came back as `-32603` carrying the database's
+  message (seen with the new check turned off). Running the CI jobs nobody had run on the merged tree found six more, all fixed: three
+  rustdoc errors (`cargo doc -D warnings`), two Windows-only clippy errors in `skills/`, and a test file pushed past 500 lines.
+- **Verified** (CI's flags; each figure is a command's output on this tree, at the commit named): server lib, all features, live PostgreSQL
+  included, `cargo nextest run --profile ci -p a2a-protocol-server --all-features --lib --run-ignored all`: 3397 passed (at `02ab23e4`), 3404 after the NUL
+  refusal and the year-zero change (the lib suite at `af07c2b5`'s tree; the integration binaries were not re-run in full since the chunks above);
+  every `tests/` entry but `soak`, `soak_multi_replica` and `swarm_scale`, in 8 chunks, `--run-ignored all`: 1613 of 1614 passed, the one failure
+  being `log_wake_e2e::an_event_on_one_replica_ends_a_long_wait_on_the_other`, **a race in the test** (it released the executor 0 to 7 ms after
+  the fourth timeout, when the stream had not yet parked: 2 failures in 122 runs under busy loops and none in 15 quiet ones; the cause is in
+  the message of `f5609abb`; 60 loaded runs after the fix passed, which on a 1.5% rate proves little, the mechanism is the argument).
+  **On the final tree (`cc4210d0`, the same commands, all features, `--run-ignored all`, live PostgreSQL): server lib 3417 passed; the 8 integration chunks
+  1621 passed; types 893; client 1528; SDK 117 (1 skipped); no failure**, the flaky test included. Workspace clippy `-D warnings` (all features, defaults, and
+  `--target x86_64-pc-windows-gnu`), `cargo doc` for the workspace, each published crate and all features, `cargo package`, `cargo deny check` and the
+  book build with its link check (225 pages): exit 0. `cargo semver-checks --baseline-rev v0.15.0 --release-type patch` over the four published crates, all
+  features, lists every difference from 0.15.0: types two lints (39 structs marked `#[non_exhaustive]`, `sign_agent_card` removed), client five,
+  server six, SDK none; each is in the CHANGELOG's Breaking Changes and the upgrade guide, two UnwindSafe losses (`CardFetchOptions`,
+  `AuthFailureThrottle`) added today (the commit message of `179e71fa` says "types 13 checks failing in two lints": the tool's line was 2 lints). Earlier today, before
+  the final changes, the doctests in three feature sets (533, 532, 532 passed) and `cargo hack clippy --each-feature` (61 combinations) passed.
+  Later the same day, on `fd5c0b84`: `cargo hack clippy --each-feature` (61 combinations) and the SLIMRPC binding (format, clippy with and without default
+  features, `cargo build --bin slim-node`, `cargo test -- --test-threads=1`, the in-process example, the packaging check): exit 0; `cargo run -p agent-team
+  --release --all-features`, the dogfood suite: exit 0 ("Every claimed SDK feature was exercised"); nightly 1.102 clippy over the workspace with all features
+  `-D warnings` (two redundant clones in tests, fixed) and the docs.rs doc build (`--cfg docsrs`): exit 0; `scripts/preflight_all.py --skip-ci-yml`, 13 rows, **12
+  PASS**: `dco`, `coverage ignores`, the ITK traversal self-test, the official TCK, the TCK self-test, all bindings, the official client against this server, card
+  signature interop, gRPC wire compatibility, loom, `cargo deny` and `cargo semver-checks`; the 13th, the promtool gate, got HTTP 504 twice downloading Alertmanager in that run. Run again later the same day (the proxy
+  answered at once; `deploy/observability/scripts/install_tools.sh` checked both tarballs against its pinned SHA-256, promtool 3.15.1 and amtool 0.34.2), on `394130fd`
+  (docs-only difference from `fd5c0b84`), every step of `observability.yml:promtool` exits 0: `promtool check config` on the three Prometheus files, `check rules` on
+  the three rule files (14, 22 and 6 rules), `test rules` on the 4 test files (4 SUCCESS), `amtool check-config`, and `check_stack.py` ("check_stack: ok"). The 504 was transient.
+  CI's `test` matrix on `bdf025af` (a docs-only difference from `fd5c0b84`: `git diff --stat fd5c0b84 bdf025af -- . ':!docs'` is empty), `nextest --profile ci`,
+  `RUSTFLAGS=-D warnings`, live PostgreSQL: the nine single-package variants (client with `tls-rustls`; server with each of `tls-rustls`, `sqlite`, `postgres`, `axum`,
+  `tool-loop`, `skills`, `auth-jwt`, `auth-jwt,tls-rustls`) passed, 0 failures (1330, 3180, 3557, 3248, 3274, 3349, 3528, 3256, 3256 tests). The seven `--workspace`
+  variants **did not run**: each exited 101 at a build step before any test started (`linking with cc failed`; five logs say `No space left on device`, and the
+  two `--features signing` and `tracing` logs say only `ld terminated with signal 7 [Bus error]`, which I read as the same full disk, CONJECTURED: the same crates link
+  and pass one package at a time). They were then run **one package at a time**, with the
+  test executables deleted between packages: default features, all 26 workspace members; `--no-default-features`, all 26; `--all-features`, the 22 members that are not
+  published crates (the four published ones were run with all features earlier); and `--features signing` (6 members that define it), `tracing` (5), `websocket` (4), `grpc` (4):
+  **every one of the 93 runs exited 0** (`scratchpad/members_summary.log`, `members2_summary.log`; e.g. default features, server 3180 passed and 15 skipped, client 1330,
+  types 662, SDK 27, discovery 17, CLI 81; four members have no tests: `a2a-benchmarks`, `a2a-tck-sut`, `live-model`, `swarm`). **That is not CI's command**: `--workspace`
+  unifies features across all members in one build, and a package-at-a-time run does not, so a failure that appears only under unified features would not show here.
+  **CI on pull request #203** (the check-run lists, read through the GitHub tools; each number below is a count of what they returned). *First pass*,
+  head `e0d2bee2` (a docs-only difference from `fd5c0b84`): 83 check runs, 71 success, 5 failure, 7 skipped (the incremental and full mutation jobs, the benchmark run, the ITK
+  baseline comparison, the nightly canary, the `codecov.yml` check). The Test jobs on Ubuntu and macOS passed for both toolchains, so **the `--workspace` builds CI runs, which this
+  disk could not, passed**. The five failures: (1) *Test (postgres integration)*: no test failed. `scripts/run_postgres_suites.py` takes every library file that spells the
+  PostgreSQL URL variable as a module it must find a PostgreSQL test in, and `store/claim/steering_tests.rs` spelled it only in its module doc ("library module
+  store::claim::steering_tests ran no test"). Reproduced against a local PostgreSQL 16, fixed in `908e6be0`; the script then exits 0 (14 test targets, 21 library modules, 66
+  library tests) and the two steps CI skipped after the failure pass (encrypted store, 1 test; rate-limit counter, 10). The same commit lengthens a 30 ms claim time to live in
+  that file's case `a_message_never_reaches_a_later_claim`: it failed once in my first local run with `NoClaim` where `Queued` was expected, and with a 100 ms gap injected
+  between the claim and the hand-over it fails that way in all three stores while 1 s passes in all three (the stall that lapsed the claim in the real run was not
+  reproduced: 60 runs under CPU load and 20 with PostgreSQL paused passed). (2, 3) *Test (stable, windows-latest)* and *(1.94, windows-latest)*: the same two of 7621 tests failed
+  in each, both in `skills/reader_tests` and both a test assuming Unix path behaviour: `PathBuf::push` onto a `\\?\` path removes `..` (std's `path.rs`, "verbatim paths need .
+  and .. removed", read in the toolchain's source), so the test never built an unresolved path and `verify` rightly returned `Ok`; and `ENOTDIR` is a Unix error kind. `verify`
+  and `from_io` are unchanged; fixed in `f2bd4103`. (4) *CodeQL*: four alerts, below. (5) *Mutation Testing (incremental)*: fails by design until the PR carries the
+  `mutation-test` label (`mutants.yml`); not added. *Second pass*, head `6eca972b` (the three fix commits, the last touching only `model_proxy.py`): 83 check runs, 74 success, 2
+  failure, 7 skipped; **both Windows Test jobs, both macOS, both Ubuntu and PostgreSQL integration passed**; the two failures are CodeQL and the label gate. Durations, start to
+  completion: Windows 83 and 107 minutes (the jobs now run all 25 steps instead of stopping at step 6), macOS 88 and 89, so budget two hours a run. *Third pass*, head `a647094e` (`1da23c01` and the first handoff update): 83 check runs, 74 success, 2 failure, 7 skipped; **every Test job passed**
+  (macOS 1.94 last, 110 minutes after the push); the failures are the label gate and CodeQL's one remaining alert.
+  *Fourth pass*, head `432c0d02` (a docs-only difference from `a647094e`; the `mutation-test` label was added right after the push): 132 check runs, 121 success, 2 failure, 9 skipped, none
+  running at 00:06 UTC on 2026-11-09. **CodeQL passes** ("No new alerts in code changed by this pull request"; the maintainer dismissed alert 205). **Mutation run 42525027544: all 46 shard jobs
+  and the aggregator succeeded**, so no survivor, failure or timeout across the 678-file diff; it took 150 minutes wall clock (21:24 to 23:54); server shards 53.7 to 92.4 minutes, 18 of the
+  40 over 75 minutes and none near the job's `timeout-minutes: 180` (`mutants.yml:1235`; the comment above it still says 75, which is stale), client 23.0 and 28.1, types 11.2 and 10.1,
+  discovery 0.4, sdk 0.3. The two failures: *Test (stable, windows-latest)*, one flaky test, and a stale *Mutation Testing (incremental)* failure from the run the push itself started a few
+  seconds before the label was added (it saw no label; that run was cancelled when the label run began), which only a new head replaces. The flaky test,
+  `a2a-protocol-client discovery::fleet_tests::a_zero_draw_leaves_the_lifetime_whole` (`left: 2, right: 1`): the counting server's `Date` has one-second resolution, so a response arrives up to a
+  second old (RFC 9111 §4.2.3, `apparent_age` in `freshness.rs`) and the test advanced 9 s of a 10 s lifetime, leaving that second as its whole margin; `stale_window.rs` already records the
+  same trap for its cases. Reproduced on Linux under 12 busy loops on 4 vCPUs (2 of 600 runs, 1 of 150 runs of the whole module; 0 of 400 on a quiet machine) and, with a `Date` 1.5 s old
+  injected, 5 of 5; fixed in `d3269f4f` (the server sends a `Date` 5 s ahead, an age of zero), which passed 2400 of 2400 under the same load. `jitter_shortens_freshness_by_the_drawn_share`
+  has a 0.5 s margin and passed 1500 of 1500 under that load, so it is unchanged. The edit took `fleet_tests.rs` over the 500-line ratchet, so the jitter tests moved to
+  `fleet_tests/jitter.rs`. Pushing that fix restarts CI and the mutation run: the next result is the one to merge on.
+  **CodeQL**: four alerts in scripts no workflow runs: `scripts/live/campaign/live/model_proxy.py` (partial SSRF at the upstream request; response splitting twice at the
+  header relay) and `scripts/live/adopter/06-manifest-lint.py:73` (clear-text logging: the line prints a Kubernetes Secret reference's name and key, not a secret, so a
+  false positive, left for you to dismiss). The proxy listens on `127.0.0.1` and connects only to its upstream port; a probe found one real defect (a control character in
+  the path dropped the connection with a traceback), fixed in `6eca972b`, **which did not clear the alerts**: the second CodeQL run still reports 1 critical, 1 high, 2 medium
+  (response splitting reappeared as alerts 209 and 210 at the new line). CodeQL's own query source (python-all 7.2.9, read as text from its downloadable bundle) models a
+  header-injection sanitizer only as `x.replace("\n", ...)` and a partial-SSRF guard only as `re.fullmatch` on a local variable; `1da23c01` rewrites the proxy that way,
+  and **the third CodeQL run, on `a647094e`, cleared the proxy alerts**: one alert is left, a high, which is the `06-manifest-lint.py:73` one (threads 206 to 210 resolved and outdated, 205 open). **Running the CodeQL binary was refused by the session's permission classifier**, so there is no local CodeQL result; the clearing is CI's.
+  Before that: the moved in-memory token tests and `store_tests` (21 passed), the skills lib tests (175 passed). Workspace, `-D warnings`:
+  `cargo clippy --workspace --all-targets` with all features and with defaults, `cargo hack clippy --each-feature` over the four published
+  crates (61 combinations), and the Windows cross-clippy (`--target x86_64-pc-windows-gnu`, after two fixes): exit 0; `cargo test --doc
+  --workspace` with all features, with defaults and with none: 533, 532 and 532 passed, 0 failed (the book's code blocks included);
+  `cargo doc --no-deps` for the workspace, each published crate and all features, `RUSTDOCFLAGS=-D warnings`: exit 0 after the fixes;
+  `cargo package` (CI's exclude list), `cargo deny check` (advisories, bans, licenses, sources ok), `mdbook build` and
+  `check_book_links.py` (225 pages, 0 broken): exit 0. The static gates of `ci.yml`'s `static-checks` job that need no compile (the list is
+  in `scripts/preflight.sh --list`), run on 2026-11-08 at the commit before this file's: of 36, 35 exit 0 and `check_gate_reachability.py`
+  exits 1 with 14 findings, **all from the two campaign agents' worktrees under `.claude/worktrees/`** (it read their `benches/` as the
+  repository's; it reported 0 findings with no worktree present, earlier the same day), and 10 more checks of that job (fmt, proto copies,
+  lockfiles, net copies, example servers, SQL driver isolation, mutants config, gate inventory, inert bounds, advisory floors) exit 0. A full
+  disk fails four gates for no reason.
+- **Mutation, local, RUSTFLAGS unset** (see *Lessons*, 2026-11-07): the B-11, E-F15 and F14 diff. Server, from the tool's own totals: the first
+  run stopped after 18 of 39 (12 caught, 6 unviable, 0 missed) and its resume reported 21 (10 caught, 10 unviable, 1 missed), but the resume's
+  output directory also held mutants of earlier invocations (*Lessons*, `--examine-re`), so read 39 as approximate. Client: 30 mutants,
+  22 caught, 7 unviable, 1 missed, 0 timeouts (`30 mutants tested in 19m`). **Both misses are outside this branch's diff** (`handler/shutdown/in_flight.rs:236`
+  and `a2a-protocol-client/src/https_client.rs:116`, `connect_timeout` deleted from `Settings` in
+  `build_https_client_with_connect_timeout`: no test sees a custom connect timeout ignored; `git diff origin/main HEAD` of that file is empty, as it is for `in_flight.rs`),
+  so the incremental gate will not show them and the weekly sweep may.
+  The diff since `a746210f` (both campaigns' fixes, the NUL and year-zero changes, the tool-loop bounds), server crate, RUSTFLAGS unset, the narrowed test
+  set: **94 mutants, 85 caught, 4 unviable, 5 missed, 0 timeouts**; the five are closed: three equivalent mutants of the non-Unix `identity()` (skipped with a
+  written proof, `797002cb`), and two real ones (`<` to `<=` in the usage float bound, `*` to `+` in `TRACE_LINE_LIMIT`) killed by new tests, each seen failing
+  with the mutant applied by hand, the file restored byte for byte. Types: 3 mutants, 2 caught, 1 unviable. The re-run after the two fixes was not repeated in
+  full; each fix was checked by its hand mutant. M-1 and the page-token diff, server, 40 mutants, tests `--lib` plus the
+  `tool_loop`, `handler_conformance`, `store_tests`, `in_memory_page_tokens`, `postgres_store_tests` binaries: 31 caught, 9 unviable (all
+  E0277, no `Default`), 0 missed, 0 timeouts. The agents' own passes, all unflagged: skills 409 caught, 43 unviable, 0 missed **on an extraction
+  crate, not the server crate**; E-F25 and parked tasks 122 caught, 35 unviable, 0 missed; steering 0 missed over 330 server mutants.
+- **The campaign's second wave** (two agents, briefs in `docs/audits/2026-11-07-campaign-wave2/briefs/`, launched 2026-11-08 from `a746210f`).
+  **Hostile peers and chaos** reported and is merged (`docs/audits/2026-11-07-campaign-wave2/hostile/README.md`, scripts in
+  `scripts/live/campaign/hostile/`, about 35 attack classes held, one per line in `evidence/*.jsonl`). Each finding was re-checked before it was
+  relied on, and the re-check changed two: **W2-hostile-1/2** (a year-0000 timestamp or a NUL in a page-token id reached PostgreSQL as `-32603`) was fixed
+  by the agent, but its fix left PostgreSQL listing a year-0000 task as the newest and answering an empty page for `statusTimestampAfter` of year
+  0000, and left SQLite issuing a page token its own decoder refused (both seen failing; `2470ffc1`); **W2-hostile-3** (a cancel's terminal event and
+  claim lost "on graceful shutdown") was a harness fault: its binary handled `SIGINT` only and the script sent `SIGTERM`, so the replica was killed
+  at once; the graceful path is correct (tests on SQLite and PostgreSQL, `54774886`), and what remains is a cancel followed by the owner's *abrupt*
+  death, medium, in the CHANGELOG's Known Limitations. **W2-hostile-4** (a NUL in any message field: `-32603` on PostgreSQL, accepted elsewhere) is
+  fixed uniformly at ingress (`af07c2b5`), a behaviour change listed for you. **W2-hostile-5** (authentication after dispatch, low) is a Known
+  Limitation, not changed. Not run by that agent: cargo-fuzz, h2spec, toxiproxy, `LISTEN`/`NOTIFY` abuse, the 0.15-table upgrade with live rows, mTLS
+  identity from a forwarded header, a timing measurement of credential comparison. **The live-model agent** (Qwen3.5-2B and Gemma 4 E2B on llama.cpp b12189, 24 provider misbehaviours, 58 hostile skill reads, steering, budgets,
+  delegation, canaries through traces, metrics and logs; `docs/audits/2026-11-07-campaign-wave2/live/README.md`, scripts in
+  `scripts/live/campaign/live/`) reported 15 findings and is merged. It fixed four (**W2-LIVE-1, high**: a provider `usage` or a child's `spent`
+  of 2^64-1 left the task `working` for ever, because the status written on every update held a number the event queue refuses; the grant of an
+  unnamed meter at `u64::MAX`; a linked `references/` directory listed to the model; a provider's error body forging log lines). Re-checked here, not
+  taken on its word: its production diffs read, its tests re-run on the merged tree (394 passed), and four of its findings fixed on this branch
+  (`17e124fb`): **a failed run now sends its tool trace first** (W2-LIVE-3, partly this branch's own regression: M-1 turned "empty reply after tools"
+  from completed-with-trace into failed-with-nothing), **a trace line is bounded** to 16 KiB (W2-LIVE-4: a 16 MiB result failed a finished run), **a
+  reply's tool calls are bounded** to 64 (W2-LIVE-5: 90,000 calls reached 1.4 GB), and **a malformed usage count no longer refuses a completion**
+  (W2-LIVE-10). W2-LIVE-15 is not a defect: the README's "10 of 10" are recorded earlier runs. Left, in the CHANGELOG's Known Limitations: W2-LIVE-8
+  (provider error body in span events and logs), 9 (`gen_ai.response.model` as a label), 11, 12, 13, 14. Not run by that agent: Docker and the
+  observability stack, PostgreSQL steering and cross-replica runs, `rig-agent`, `mcp-agent`, `agent-team`, `swarm`, thinking-on skills and steering,
+  gRPC with a bearer token, steering over WebSocket.
+- **Decisions made for the maintainer, open to a veto** are listed in *Waiting on the maintainer*, under "Added to 0.16.0 on 2026-11-07".
+
+### First, next
+
+1. Both campaign reports are in and merged. If a third wave runs, treat each report as data (re-run what it claims, read the source it cites,
+   only then fix: two of the hostile agent's findings and one of the live agent's were wrong or incomplete on re-checking), and **remove its
+   worktree** (`git worktree remove`) before running the gates: a leftover one breaks `check_gate_reachability.py`.
+2. CI parity: CI has now run everything in `ci.yml` that is not skipped, twice (76 of 83 check runs reached a conclusion; the examples, the TCK cross-language and
+   example-agent legs, the fuzz smoke jobs, Kani, the Docker-built jobs and the Windows and macOS test legs are in it). The incremental mutation shards ran over the whole diff on `432c0d02` and all passed (*Verified*); the comment above
+   the shard job in `mutants.yml` says 75 minutes while its `timeout-minutes` is 180 and 18 shards ran past 75, so that comment is stale (yours to fix).
+3. Mutation: the whole diff ran the way `mutants.yml` shards it (*Verified*, fourth pass), `skills/reader.rs` and `skills/tools.rs` included. The two out-of-diff survivors above are open.
+4. Then re-point the spec ledger after the last CHANGELOG edit (`python3 scripts/check_spec_ledger.py --fix-lines`: it cites a CHANGELOG line),
+   update this file (the pull request is open: #203, draft); the register is current for E-F15, D-03 (d), B-11, E-F25 and D-18
+   (`scripts/audit/plan_status.py`: 191 of 191). The adopter's open lows (D-6, D-9 to D-13, D-16 to D-18) are in
+   `docs/audits/2026-11-07-adopter-walkthrough/README.md`, all low or polish; `STABILITY.md` section 1 says 0.15.0 is the newest release and is
+   false at the tag. One question is only partly answered: what a streaming send's stream does when its executor returns `Ok` with no terminal
+   state. The hostile agent's `h7_zombie.py` held 50 subscribers on such a task and cancelled it (8 of 8), but states no hold time; a measured number
+   belongs in the CHANGELOG if the answer is not "until the executor timeout".
+5. The maintainer's open items stay as *Waiting on the maintainer*: the two redundant remote branches, RustSec, the `v*` tag ruleset,
+   ADR 0028.
+
+- **Not verified** (as of this checkpoint): two reaper tests
+  (`handler::claims::reaper::tests`) failed once in my first local run of the PostgreSQL step against a long-used shared database and passed in ten later runs and in CI,
+  cause unexplained (CONJECTURED: more than 32 older abandoned tasks in the shared database push this run's orphan out of the reaper's sweep, `ORDER BY updated_at LIMIT 32`;
+  seeding 40 old orphans failed a different assertion, so it is not shown); everything under *First, next* 1; a live model run of skills or steering beyond what the agent ran (it ran both, on Qwen3.5-2B and Gemma 4 E2B, over JSON-RPC, HTTP+JSON and
+  gRPC); steering over WebSocket (carried as any `SendMessage`, not tested); anything through PgBouncer; Kubernetes; IPv6 on the wire (this kernel has
+  none).
+

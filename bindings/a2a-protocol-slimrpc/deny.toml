@@ -144,7 +144,25 @@ yanked  = "deny"
 #   mls-rs-crypto-awslc 0.25.1 -> 0.26.0, leaving rustls at 0.23.46 and
 #   aws-lc-rs at 1.18.1, and cargo-deny 0.20 then reported this entry as
 #   "yanked crate not detected" with advisories ok. Removed that day.
-ignore  = []
+#
+# One entry since 2026-11-11, RUSTSEC-2026-0459 (CVE-2026-119375):
+#   `libsqlite3-sys` 0.6.0 to 0.38.2 bundle SQLite before 3.54.0, which can
+#   return uninitialised page-cache memory when a process opens a database file
+#   together with a sibling `-wal` file whose page size differs (a local attack
+#   on a file a less trusted party could have written). Here the crate is
+#   0.35.0, reached through rusqlite 0.37 <- mls-rs-provider-sqlite 0.23.0 <-
+#   agntcy-slim-persistence 0.2.1 <- agntcy-slim-mls 0.5.1 (the SLIM stack's MLS
+#   group store). Checked 2026-11-11 against crates.io: each of those is the
+#   latest published version, and `cargo update --dry-run` here moves no
+#   `libsqlite3-sys`; the fix is `libsqlite3-sys` 0.39.0 or newer, which needs
+#   rusqlite 0.41 or newer, which mls-rs-provider-sqlite 0.23.0 does not use.
+#   Exposure: the binding's own code opens no SQLite file; SLIM's MLS
+#   persistence opens the path SLIM is configured with, which is the
+#   operator's. Remove when the chain above moves to rusqlite 0.41 or newer
+#   (cargo-deny 0.20 reports a stale entry as "advisory not detected").
+ignore  = [
+    { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys 0.35 via rusqlite 0.37 via mls-rs-provider-sqlite 0.23.0 (latest, checked 2026-11-11); local attack through a crafted database and -wal pair on a path the operator configures; remove when the SLIM chain moves to rusqlite >= 0.41" },
+]
 
 # ---------------------------------------------------------------------------
 # Banned crates

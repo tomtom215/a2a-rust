@@ -11,7 +11,7 @@ is on docs.rs.
 
 - **Asking whether it is ready for production?** [readiness-bar.md](readiness-bar.md) — what that would have to mean, written before measuring, and what has been measured against it
 - **About to quote a claim this project makes?** [claims-ledger-2026-09-24.md](claims-ledger-2026-09-24.md) — every overstated claim found from 0.6.0 on, checked against the published artifacts, and what backs the ones that stand
-- **Comparing this SDK with the official one?** [sdk-comparison-2026-10-02.md](sdk-comparison-2026-10-02.md) — both crates.io releases measured on one machine: official conformance and interop suites, throughput, memory, a live model, black-box tenant/auth/persistence probes; where each one is better, and the harness to re-run it
+- **Comparing this SDK with the official one?** [sdk-comparison-2026-10-02.md](sdk-comparison-2026-10-02.md) — both crates.io releases measured on one machine: official conformance and interop suites, throughput, memory, a live model, black-box tenant/auth/persistence probes; where each one is better, and the harness to re-run it The current head-to-head, including where a2a-rs is faster: [sdk-comparison-2026-11-11.md](sdk-comparison-2026-11-11.md).
 - **Picking up work mid-stream?** [handoff.md](handoff.md) — the current state, what to do next and what waits on the maintainer; [handoff-history.md](handoff-history.md) keeps each earlier session's record
 
 ## Conformance and compliance

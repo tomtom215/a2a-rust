@@ -70,6 +70,15 @@ pub const THROTTLED: &str = "throttled";
 /// Its webhook did not take it in that time; the event is still in the
 /// task's log, for a receiver to read after the gap.
 pub const EXPIRED: &str = "expired";
+/// The outbox worker settled a push reservation that a replica left behind.
+///
+/// The replica reserved an event's rows and stopped before arming or
+/// releasing them, and the task store said whether the event was stored (ADR
+/// 0037, audit H14). Not a delivery: a count of crashes (or stalls past the
+/// hold) the outbox recovered from, so an alert can tell that replicas are
+/// dying mid-event. A reservation that two replicas settle at once is
+/// counted by each.
+pub const RESERVATION_SETTLED: &str = "reservation_settled";
 /// No longer reported.
 ///
 /// It counted configs the per-event delivery budget never reached; since

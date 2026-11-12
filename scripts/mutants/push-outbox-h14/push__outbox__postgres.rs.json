@@ -1,0 +1,27 @@
+[
+  {
+    "name": "postgres held_for_task wrong tenant",
+    "old": "WHERE NOT armed AND tenant = $1",
+    "new": "WHERE NOT armed AND tenant != $1"
+  },
+  {
+    "name": "postgres renew ignores the owner",
+    "old": "WHERE owner = $1 AND lease_until > now()",
+    "new": "WHERE owner <> $1 AND lease_until > now()"
+  },
+  {
+    "name": "postgres claim ignores unarmed",
+    "old": "WHERE o.due_at <= now() AND o.armed",
+    "new": "WHERE o.due_at <= now()"
+  },
+  {
+    "name": "postgres release deletes armed",
+    "old": "WHERE reservation = $1 AND NOT armed",
+    "new": "WHERE reservation = $1"
+  },
+  {
+    "name": "postgres held ignores the hold",
+    "old": "WHERE NOT armed AND hold_until <= now()",
+    "new": "WHERE NOT armed AND hold_until >= now()"
+  }
+]

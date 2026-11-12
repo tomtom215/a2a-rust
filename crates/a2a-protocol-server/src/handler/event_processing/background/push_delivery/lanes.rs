@@ -46,6 +46,7 @@ use crate::handler::limits::HandlerLimits;
 use crate::metrics::{Metrics, push_outcome};
 use crate::push::outbox::PushOutbox;
 use crate::push::{PushConfigStore, PushSender};
+use crate::store::TaskStore;
 use crate::store::tenant::TenantContext;
 
 /// A delivery waiting in a lane.
@@ -64,7 +65,7 @@ type Key = (String, TaskId);
 /// The handler's push lanes; cloning shares them. Inert when the handler has
 /// no push sender.
 #[derive(Clone, Default)]
-pub struct PushLanes(Option<Arc<Lanes>>);
+pub struct PushLanes(pub(super) Option<Arc<Lanes>>);
 
 impl std::fmt::Debug for PushLanes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -82,6 +83,9 @@ pub(super) struct Lanes {
     tracker: TaskTracker,
     /// The outbox deliveries are recorded in, when there is one.
     pub(super) outbox: Option<Outboxed>,
+    /// The task store, which settles a reservation whose reserver stopped
+    /// (see `reservation`); without it nothing is reserved.
+    pub(super) tasks: Option<Arc<dyn TaskStore>>,
     /// Fires at shutdown, ending the outbox's worker.
     shutdown: CancellationToken,
     /// The outbox's worker has been started.
@@ -109,6 +113,7 @@ impl PushLanes {
     /// [`new`](Self::new), recording deliveries in `outbox` when it is given,
     /// with its worker ended by its token (ADR 0037). The worker starts now
     /// when there is a Tokio runtime, and otherwise with the first delivery.
+    #[cfg(test)]
     pub fn with_outbox(
         store: Arc<dyn PushConfigStore>,
         sender: Option<Arc<dyn PushSender>>,
@@ -116,6 +121,23 @@ impl PushLanes {
         metrics: Arc<dyn Metrics>,
         tracker: TaskTracker,
         outbox: Option<(Arc<dyn PushOutbox>, CancellationToken)>,
+    ) -> Self {
+        Self::with_reservations(store, sender, limits, metrics, tracker, outbox, None)
+    }
+
+    /// [`with_outbox`](Self::with_outbox), with the task store that settles
+    /// the reservations a stopped replica leaves, which is what lets the
+    /// background processor reserve an event's rows before it stores the
+    /// event (audit H14). Without a task store, rows are recorded after the
+    /// event is stored.
+    pub fn with_reservations(
+        store: Arc<dyn PushConfigStore>,
+        sender: Option<Arc<dyn PushSender>>,
+        limits: HandlerLimits,
+        metrics: Arc<dyn Metrics>,
+        tracker: TaskTracker,
+        outbox: Option<(Arc<dyn PushOutbox>, CancellationToken)>,
+        tasks: Option<Arc<dyn TaskStore>>,
     ) -> Self {
         let lanes = Self(sender.map(|sender| {
             let (outbox, shutdown) = outbox.map_or_else(
@@ -129,6 +151,7 @@ impl PushLanes {
                 metrics,
                 tracker,
                 outbox,
+                tasks,
                 shutdown,
                 started: AtomicBool::new(false),
                 queues: Mutex::default(),
@@ -141,7 +164,7 @@ impl PushLanes {
     }
 
     /// Starts the outbox's worker, once, if there is an outbox.
-    fn start_worker(&self) {
+    pub(super) fn start_worker(&self) {
         if let Some(lanes) = &self.0
             && lanes.outbox.is_some()
             && !lanes.started.swap(true, Ordering::SeqCst)
@@ -188,7 +211,42 @@ impl PushLanes {
 
     /// Queues `event`'s delivery to every config of `task_id`, in the
     /// caller's tenant and span, and returns at once.
+    ///
+    /// Inside a reservation's scope (`Reservation::scope`) it only notes
+    /// that the event is announced: its rows are already in the outbox.
     pub fn push(&self, task_id: &TaskId, event: &StreamResponse) {
+        if super::reservation::requested() {
+            return;
+        }
+        self.push_after_store(task_id, event);
+    }
+
+    /// Records `event`'s deliveries in the outbox now, and returns `true`
+    /// once they are written; `false`, having done nothing, when the handler
+    /// has no outbox, and the caller sends or queues the event itself.
+    ///
+    /// For a task's ending that no queued event carried (the reaper's, an
+    /// executor's panic, a verdict from another writer): called **before** the
+    /// ending is written to the task's log, so that a stop in between leaves
+    /// the log without it, which is what the reaper looks for, instead of a
+    /// log that has it and a webhook that was never told. The row queues
+    /// behind every row of the task that is reserved or waiting, so a webhook
+    /// sees the ending after the events that were stored before it.
+    pub async fn record_now(&self, task_id: &TaskId, event: &StreamResponse) -> bool {
+        let Some(lanes) = self.0.as_ref() else {
+            return false;
+        };
+        let Some(outboxed) = lanes.outbox.as_ref() else {
+            return false;
+        };
+        self.start_worker();
+        outbox_worker::record(lanes, outboxed, task_id, std::slice::from_ref(event)).await;
+        true
+    }
+
+    /// [`push`](Self::push) for an event that is stored and has no
+    /// reservation: its rows are recorded now, by the task's lane.
+    pub(super) fn push_after_store(&self, task_id: &TaskId, event: &StreamResponse) {
         let Some(lanes) = &self.0 else {
             return;
         };

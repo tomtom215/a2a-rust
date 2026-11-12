@@ -119,7 +119,7 @@ jobs:
 
       - name: Clone upstream ITK
         run: |
-          git clone --depth 1 --branch "$A2A_ITK_REVISION" \
+          scripts/ci/retry.sh 5 -- git clone --depth 1 --branch "$A2A_ITK_REVISION" \
             https://github.com/a2aproject/a2a-itk /tmp/a2a-itk
 
       # The ITK spawns its baseline agents and mock notification server via

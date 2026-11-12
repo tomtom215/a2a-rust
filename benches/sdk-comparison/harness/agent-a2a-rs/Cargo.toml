@@ -20,9 +20,9 @@ dhat-heap = ["dep:dhat"]
 llm = ["dep:reqwest"]
 
 [dependencies]
-a2a-client = { package = "a2a-client-lf", version = "=0.2.7" }
-a2a = { package = "a2a-lf", version = "=0.4.1" }
-a2a-server = { package = "a2a-server-lf", version = "=0.5.1" }
+a2a-client = { package = "a2a-client-lf", version = "=0.2.9" }
+a2a = { package = "a2a-lf", version = "=0.4.2" }
+a2a-server = { package = "a2a-server-lf", version = "=0.5.3" }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"

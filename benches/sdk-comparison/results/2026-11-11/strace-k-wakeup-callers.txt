@@ -1,0 +1,10 @@
+strace -f -k -e trace=write of the boxed a2a-rust agent (frame pointers on), one connection, ~2 s;
+each line: eventfd wake-up writes by the callers above mio::Waker::wake, outermost last
+total writes: 257
+  76 <tokio::runtime::driver::Handle>::unpark <- <tokio::runtime::time::handle::Handle>::reregister <- <tokio::time::sleep::Sleep as core::future::future::Future>::poll <- <hyper::proto::h1::conn::Conn<hyper_util::common::rewind::Rewind<hyper_util::rt::tokio::TokioIo<a2a_protocol_s
+  73 <tokio::runtime::driver::Handle>::unpark <- <tokio::runtime::scheduler::multi_thread::handle::Handle>::transition_worker_from_searching <- <tokio::runtime::scheduler::multi_thread::worker::Context>::run_task <- <tokio::runtime::scheduler::multi_thread::worker::Context>::run
+  50 <tokio::runtime::driver::Handle>::unpark <- <tokio::runtime::time::handle::Handle>::reregister <- <tokio::time::sleep::Sleep as core::future::future::Future>::poll <- <tokio::time::timeout::Timeout<<tokio::sync::watch::Receiver<a2a_protocol_server::streaming::event_queue::appl
+  32 <tokio::runtime::driver::Handle>::unpark <- tokio::runtime::scheduler::multi_thread::worker::with_current::<(), <tokio::runtime::scheduler::multi_thread:: <- tokio::runtime::context::with_scheduler::<(), tokio::runtime::scheduler::multi_thread::worker::with_current<() <- <alloc::sync::Arc<tokio::runtime::scheduler::multi_thread::handle::Handle> as tokio::runtime::task::Schedule>:
+  16 <tokio::runtime::driver::Handle>::unpark <- tokio::runtime::scheduler::multi_thread::worker::with_current::<(), <tokio::runtime::scheduler::multi_thread:: <- tokio::runtime::context::with_scheduler::<(), tokio::runtime::scheduler::multi_thread::worker::with_current<() <- <tokio::runtime::scheduler::multi_thread::handle::Handle>::schedule_option_task_without_yield
+   9 
+   1 <tokio::runtime::driver::Handle>::unpark <- <tokio::runtime::time::handle::Handle>::reregister <- <a2a_protocol_server::serve::graceful::idle::IdleTimeout<tokio::net::tcp::stream::TcpStream> as tokio::io::asy <- <hyper_util::server::conn::auto::ReadVersion<hyper_util::rt::tokio::TokioIo<a2a_protocol_server::serve::gracef

@@ -31,6 +31,21 @@
 //! `failed`, not resubmitted: what the executor had done (a model call, a
 //! tool's side effect) is not known, so running the turn again is the
 //! caller's decision, and `transient` says it may succeed if sent again.
+//!
+//! # A task that is already finished
+//!
+//! A turn that ends releases its claim. A claim that stays behind a
+//! **terminal** task means its replica stopped after the task reached its
+//! terminal state and before it finished what follows: the ending in the
+//! event log, the webhooks, the audit record. The state can reach the store
+//! without the owner: `CancelTask` on a replica that does not run the turn
+//! stores `canceled` and leaves the ending to the owner's own processor, and
+//! an owner killed in between left a `canceled` task whose log and webhooks
+//! never heard (hostile campaign W2-hostile-3). Each look therefore also
+//! takes such a claim over, reads the log's last event, and, when it is not
+//! the task's ending, appends the ending and sends it to the webhooks, once;
+//! when the log already ends the task it only releases the claim, because
+//! then the owner got at least that far and nothing provable is missing.
 
 use std::sync::{Arc, Weak};
 
@@ -70,6 +85,11 @@ pub struct Reaper {
     pub task_store: Arc<dyn TaskStore>,
     pub push_config_store: Arc<dyn PushConfigStore>,
     pub push_sender: Option<Arc<dyn PushSender>>,
+    /// Where an ending is recorded when the handler has a push outbox: behind
+    /// the rows another event of the task still has reserved, so a webhook
+    /// sees the ending after the events its dead replica had stored, and
+    /// durably.
+    pub push_lanes: crate::handler::PushLanes,
     /// The handler's lease store, when it grants leases: a task ended here
     /// had a lease its dead replica's watcher would have released.
     pub leases: Option<Arc<dyn LeaseStore>>,
@@ -129,8 +149,147 @@ impl Reaper {
                 ended += 1;
             }
         }
+        self.finish_ended(&claims).await;
         self.sweep_leases().await;
         Some(ended)
+    }
+
+    /// Completes the ending of each finished task whose claim expired with
+    /// its replica; see the module documentation.
+    async fn finish_ended(&self, claims: &TurnClaims) {
+        let found = match claims.store.ended_unreleased(claims.ttl, BATCH).await {
+            Ok(found) => found,
+            Err(_e) => {
+                trace_warn!(error = %_e, "finished tasks with an unreleased claim not looked for; retrying next interval");
+                return;
+            }
+        };
+        for (scope, task_id) in found {
+            // As for an abandoned task: a claim this handler itself holds is
+            // not stale, whatever the table says.
+            if claims.holds_task(&task_id) {
+                continue;
+            }
+            self.finish(claims, &scope, &task_id).await;
+        }
+    }
+
+    /// Takes the stale claim of one finished task, completes its ending, and
+    /// releases the claim.
+    async fn finish(&self, claims: &TurnClaims, scope: &str, task_id: &str) {
+        let token = uuid::Uuid::new_v4().to_string();
+        match claims
+            .store
+            .claim(scope, task_id, &claims.owner, &token, claims.ttl)
+            .await
+        {
+            Ok(true) => {}
+            // Someone holds it: a send took it over, or another replica's
+            // reaper got there first.
+            Ok(false) => return,
+            Err(_e) => {
+                trace_warn!(task_id, error = %_e, "finished task's stale claim not taken");
+                return;
+            }
+        }
+        TenantContext::scope_partition(scope, &token, async {
+            self.settle_reservations(task_id).await;
+            self.complete_ending(task_id).await;
+        })
+        .await;
+        if let Err(_e) = claims.store.release(&token).await {
+            trace_warn!(task_id, error = %_e, "reaper's claim not released; it expires");
+        }
+    }
+
+    /// Appends the task's ending to its log and sends it to its webhooks,
+    /// unless the log already ends with it. A store with no log has nothing
+    /// to prove an ending missing by, so nothing is sent: the webhooks of a
+    /// store like that were never promised more than the lanes give.
+    async fn complete_ending(&self, task_id: &str) {
+        let id = TaskId::new(task_id);
+        let task = match self.task_store.get(&id).await {
+            Ok(Some(task)) => task,
+            Ok(None) => return,
+            Err(_e) => {
+                trace_warn!(task_id, error = %_e, "finished task not read");
+                return;
+            }
+        };
+        if !task.status.state.is_terminal() {
+            return;
+        }
+        match self.log_ends_with(&id, task.status.state).await {
+            Some(false) => {}
+            // Logged already, or the log could not be read (a store with no
+            // log answers `last_event_seq` with an error): nothing provably
+            // missing.
+            Some(true) | None => return,
+        }
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
+            id.clone(),
+            task.context_id.clone(),
+            task.status.clone(),
+        ));
+        // Recorded in the outbox before it is logged, when there is one: a
+        // stop in between leaves the log without the ending, which the next
+        // look finishes, rather than a log that has it and webhooks that were
+        // never told.
+        let recorded = self.push_lanes.record_now(&id, &event).await;
+        crate::handler::event_processing::append_ending(
+            &*self.task_store,
+            &id,
+            &event,
+            &*self.metrics,
+            self.limits.store_write_retry,
+        )
+        .await;
+        trace_warn!(
+            task_id,
+            state = %task.status.state,
+            "completed the ending of a finished task its replica left unlogged and unannounced"
+        );
+        self.metrics
+            .on_claim(crate::metrics::control::claim::FINISHED);
+        if !recorded {
+            crate::handler::event_processing::deliver_push_bg(
+                &id,
+                &event,
+                &*self.push_config_store,
+                self.push_sender.as_deref(),
+                &self.limits,
+                &*self.metrics,
+            )
+            .await;
+        }
+    }
+
+    /// Whether the task's log ends with a status update to `state`; `None`
+    /// when the log cannot be read.
+    async fn log_ends_with(&self, id: &TaskId, state: TaskState) -> Option<bool> {
+        let last = self.task_store.last_event_seq(id).await.ok()?;
+        if last == 0 {
+            return Some(false);
+        }
+        let tail = self
+            .task_store
+            .read_events(id, last.saturating_sub(1), 1)
+            .await
+            .ok()?;
+        Some(matches!(
+            tail.last().map(|recorded| &recorded.event),
+            Some(StreamResponse::StatusUpdate(update)) if update.status.state == state
+        ))
+    }
+
+    /// Settles the push reservations of a task whose claim this reaper has just
+    /// taken, at once, from what the task store holds. Taking the claim fences
+    /// the dead replica off (a store refuses a writer whose claim was taken
+    /// over), so the store's answer is final and nothing waits for a reservation's
+    /// hold to run out; the ending is then recorded behind the events that were
+    /// stored.
+    async fn settle_reservations(&self, task_id: &str) {
+        self.push_lanes.settle_task(&TaskId::new(task_id)).await;
     }
 
     /// Ends one task under a claim of its own. Whether it ended it.
@@ -150,7 +309,11 @@ impl Reaper {
                 return false;
             }
         }
-        let ended = TenantContext::scope_partition(scope, &token, self.fail(task_id)).await;
+        let ended = TenantContext::scope_partition(scope, &token, async {
+            self.settle_reservations(task_id).await;
+            self.fail(task_id).await
+        })
+        .await;
         if let Err(_e) = claims.store.release(&token).await {
             trace_warn!(task_id, error = %_e, "reaper's claim not released; it expires");
         }
@@ -197,6 +360,11 @@ impl Reaper {
             task.context_id.clone(),
             status,
         ));
+        // Recorded in the outbox before it is logged, when there is one: a
+        // stop in between leaves the log without the ending, which the next
+        // look finishes, rather than a log that has it and webhooks that were
+        // never told.
+        let recorded = self.push_lanes.record_now(&id, &event).await;
         crate::handler::event_processing::append_ending(
             &*self.task_store,
             &id,
@@ -205,15 +373,17 @@ impl Reaper {
             self.limits.store_write_retry,
         )
         .await;
-        crate::handler::event_processing::deliver_push_bg(
-            &id,
-            &event,
-            &*self.push_config_store,
-            self.push_sender.as_deref(),
-            &self.limits,
-            &*self.metrics,
-        )
-        .await;
+        if !recorded {
+            crate::handler::event_processing::deliver_push_bg(
+                &id,
+                &event,
+                &*self.push_config_store,
+                self.push_sender.as_deref(),
+                &self.limits,
+                &*self.metrics,
+            )
+            .await;
+        }
         true
     }
 }

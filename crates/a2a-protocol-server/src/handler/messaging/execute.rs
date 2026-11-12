@@ -314,63 +314,72 @@ impl RequestHandler {
         let span = self.open_executor_span(&ctx);
         #[cfg(feature = "tracing")]
         let recorder = span.recorder(continues(&ctx.task_id, ctx.stored_task.as_ref()));
-        span.instrument(tenant.scope(async move {
-            // Owned by this future, so the slots are returned when the
-            // executor finishes, fails, panics, or is aborted.
-            let _slots = slots.into_parts();
-            // The turn's claim (`handler::claims`) is held by this future,
-            // which reads it when the executor returns (`Stop::after_run`),
-            // and by the turn's event consumer: released when the last of the
-            // two ends, so no write of this turn comes after another
-            // replica's next.
-            trace_debug!(task_id = %ctx.task_id, "executor started");
+        // Boxed once, here: this state machine is tens of kilobytes (it holds
+        // the request context and every `await` of the run), and `scope`,
+        // `instrument`, the task tracker and `tokio::spawn` each move their
+        // argument by value, so unboxed each layer copied all of it
+        // (callgrind, 2026-11-11: about 36,000 bytes per layer per request).
+        let run: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> =
+            Box::pin(async move {
+                // Owned by this future, so the slots are returned when the
+                // executor finishes, fails, panics, or is aborted.
+                let _slots = slots.into_parts();
+                // The turn's claim (`handler::claims`) is held by this future,
+                // which reads it when the executor returns (`Stop::after_run`),
+                // and by the turn's event consumer: released when the last of the
+                // two ends, so no write of this turn comes after another
+                // replica's next.
+                trace_debug!(task_id = %ctx.task_id, "executor started");
 
-            // Armed before the executor runs; see the type's docs for when it
-            // fires. There is no `catch_unwind` here — the guard *is* the
-            // panic handling.
-            let mut cleanup_guard = CleanupGuard {
-                task_id: Some(task_id.clone()),
-                queue_mgr: event_queue_mgr.clone(),
-                tokens: Arc::clone(&cancel_tokens),
-                turn: Arc::clone(&turn),
-            };
+                // Armed before the executor runs; see the type's docs for when it
+                // fires. There is no `catch_unwind` here — the guard *is* the
+                // panic handling.
+                let mut cleanup_guard = CleanupGuard {
+                    task_id: Some(task_id.clone()),
+                    queue_mgr: event_queue_mgr.clone(),
+                    tokens: Arc::clone(&cancel_tokens),
+                    turn: Arc::clone(&turn),
+                };
 
-            // Before the executor runs, so the run is registered first.
-            #[cfg(feature = "audit")]
-            crate::audit::record_run_started(audit.as_ref(), &ctx).await;
+                // Before the executor runs, so the run is registered first.
+                #[cfg(feature = "audit")]
+                crate::audit::record_run_started(audit.as_ref(), &ctx).await;
 
-            let writer = TerminalTracking::new(writer, Arc::clone(&turn)).with_budget(ctx.budget());
-            #[cfg(feature = "tracing")]
-            let writer = writer.with_recorder(recorder);
-            let run = RunTimer::start(metrics);
-            let result = budget::run_bounded(&ctx, executor_timeout, |timeout| {
-                run_executor(executor.as_ref(), &ctx, &writer, timeout, expose_internal)
-            })
-            .await;
-            turn.close_inbox(&*steering_metrics, &task_id);
-            let stop = Stop::after_run(&turn, shutdown.is_cancelled(), claim.is_some(), &*executor);
-            run.finish(run_outcome(
-                &result,
-                stop != Stop::No || ctx.cancellation_token.is_cancelled(),
-            ));
-            writer
-                .finish_run(executor.as_ref(), &ctx, result, stop)
+                let writer =
+                    TerminalTracking::new(writer, Arc::clone(&turn)).with_budget(ctx.budget());
+                #[cfg(feature = "tracing")]
+                let writer = writer.with_recorder(recorder);
+                let run = RunTimer::start(metrics);
+                let result = budget::run_bounded(&ctx, executor_timeout, |timeout| {
+                    run_executor(executor.as_ref(), &ctx, &writer, timeout, expose_internal)
+                })
                 .await;
-            // The queue is released, and a continuation admitted, only once
-            // the turn's events are logged and stored: its numbering resumes
-            // from the log, and the task row has one writer at a time.
-            writer.settled().await;
-            // Drop the writer so the channel closes and readers see EOF.
-            drop(writer);
-            // Explicit cleanup, then disarm the guard so it does not release
-            // a second time on normal exit.
-            event_queue_mgr.destroy(&task_id).await;
-            cancel_tokens.write().await.remove(&task_id);
-            cleanup_guard.task_id = None;
-            // Last: a continuation waiting in admission may now lease
-            // a queue and register a token under the same id.
-            turn.finished.cancel();
-        }))
+                turn.close_inbox(&*steering_metrics, &task_id);
+                let stop =
+                    Stop::after_run(&turn, shutdown.is_cancelled(), claim.is_some(), &*executor);
+                run.finish(run_outcome(
+                    &result,
+                    stop != Stop::No || ctx.cancellation_token.is_cancelled(),
+                ));
+                writer
+                    .finish_run(executor.as_ref(), &ctx, result, stop)
+                    .await;
+                // The queue is released, and a continuation admitted, only once
+                // the turn's events are logged and stored: its numbering resumes
+                // from the log, and the task row has one writer at a time.
+                writer.settled().await;
+                // Drop the writer so the channel closes and readers see EOF.
+                drop(writer);
+                // Explicit cleanup, then disarm the guard so it does not release
+                // a second time on normal exit.
+                event_queue_mgr.destroy(&task_id).await;
+                cancel_tokens.write().await.remove(&task_id);
+                cleanup_guard.task_id = None;
+                // Last: a continuation waiting in admission may now lease
+                // a queue and register a token under the same id.
+                turn.finished.cancel();
+            });
+        span.instrument(tenant.scope(run))
     }
 }
 

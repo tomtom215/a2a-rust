@@ -1,0 +1,37 @@
+[
+  {
+    "name": "a panic's ending is not reserved",
+    "old": "        let reservation = self\n            .deps\n            .push\n            .reserve_ending(self.task_id, &failed_event)\n            .await;",
+    "new": "        let reservation: Option<super::Reservation> = None;"
+  },
+  {
+    "name": "a refused panic leaves its reservation",
+    "old": "            if let Some(reservation) = reservation {\n                reservation.release_now().await;\n            }\n            if let Some(conflict)",
+    "new": "            if let Some(_reservation) = reservation {}\n            if let Some(conflict)"
+  },
+  {
+    "name": "a panic's ending is never armed",
+    "old": "            Some(reservation) if !self.pushed_terminal => {\n                reservation.arm_now().await;",
+    "new": "            Some(reservation) if !self.pushed_terminal => {\n                drop(reservation);"
+  },
+  {
+    "name": "processor never settles",
+    "old": "reservation.settle().await;",
+    "new": ""
+  },
+  {
+    "name": "processor never reserves",
+    "old": "(Ok(queued), Some(_)) => {",
+    "new": "(Ok(queued), Some(_)) if false => {"
+  },
+  {
+    "name": "announce logs before it records",
+    "old": "None => !self.pushed_terminal && self.deps.push.record_now(self.task_id, &event).await,",
+    "new": "None => false,"
+  },
+  {
+    "name": "supersede logs before it records",
+    "old": "let recorded =\n            !self.pushed_terminal && self.deps.push.record_now(self.task_id, &verdict).await;",
+    "new": "let recorded = false;"
+  }
+]

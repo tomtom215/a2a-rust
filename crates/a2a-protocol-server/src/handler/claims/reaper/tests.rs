@@ -30,9 +30,12 @@ use crate::store::{InMemoryLeaseStore, LeaseStore, TaskStore};
 
 use super::super::Held;
 
+mod finish;
+mod outbox;
+
 /// Records what it was asked to deliver.
 #[derive(Default)]
-struct Recorder(Mutex<Vec<(String, StreamResponse)>>);
+pub(super) struct Recorder(pub(super) Mutex<Vec<(String, StreamResponse)>>);
 
 impl PushSender for Recorder {
     fn send<'a>(
@@ -228,6 +231,7 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
         task_store: Arc::clone(&store),
         push_config_store: pushes,
         push_sender: Some(Arc::clone(&sender) as Arc<dyn PushSender>),
+        push_lanes: crate::handler::PushLanes::default(),
         leases: Some(Arc::clone(&leases) as Arc<dyn LeaseStore>),
         limits: crate::handler::limits::HandlerLimits::default(),
         metrics: Arc::clone(&claim_events) as Arc<dyn crate::metrics::Metrics>,

@@ -442,7 +442,7 @@ fn a_lapse_before_the_executor_has_a_token_stops_it_when_it_gets_one() {
 
     let (cancel, turn) = (CancellationToken::new(), Arc::new(ExecutorTurn::default()));
     TurnClaim {
-        claims: Arc::clone(&claims),
+        claims,
         token: "a".to_owned(),
     }
     .attach(&cancel, &turn);

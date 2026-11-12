@@ -400,6 +400,8 @@ injection_for() {
             echo "no_model_artifacts" ;;
         *"check_net_copies.py"*)
             echo "net_copies" ;;
+        *"check_workflow_downloads.py"*)
+            echo "workflow_downloads" ;;
         *"hand_mutate.py"*)
             echo "hand_mutate" ;;
         *"check_example_servers.py"*)
@@ -608,6 +610,7 @@ expected_marker() {
         # The function's name and the verb, not the label that opens the line:
         # the label is the pair of paths, which any drift in that pair shares.
         net_copies)       echo "\`truthy\` differs between the client's and the server's copy" ;;
+        workflow_downloads) echo "D1 download without the verified helper" ;;
         # The self-test's own line for the mutant it must skip. It reads
         # MISSED only if the ambiguous pattern was applied and the command,
         # which cannot fail on it, ran: a self-test that died for any other
@@ -759,6 +762,28 @@ old = '"1" | "true" | "yes" | "on"'
 if s.count(old) != 1:
     sys.exit(f"net_copies: expected exactly one `{old}` in {p}; found {s.count(old)}")
 p.write_text(s.replace(old, '"1" | "true" | "yes"'), encoding="utf-8")
+PY
+            ;;
+        # The line that failed on 2026-11-09, verbatim: docs.yml installing
+        # mdBook with `curl | tar` instead of the verified helper. The edit is
+        # anchored on the helper's call so a reworded step aborts here instead
+        # of passing as "no defect injected".
+        workflow_downloads)
+            local wf=.github/workflows/docs.yml
+            note_touched "$wf"
+            python3 - "$wf" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+s = p.read_text(encoding="utf-8")
+old = '          scripts/ci/install_mdbook.sh "$HOME/.local/bin"\n'
+new = (
+    '          mkdir -p "$HOME/.local/bin"\n'
+    '          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz \\\n'
+    '            | tar -xz -C "$HOME/.local/bin"\n'
+)
+if s.count(old) != 1:
+    sys.exit(f"workflow_downloads: expected exactly one `{old.strip()}` in {p}; found {s.count(old)}")
+p.write_text(s.replace(old, new), encoding="utf-8")
 PY
             ;;
         # The self-test proves the tool's own rules refuse what they must, so

@@ -249,6 +249,30 @@ pub trait TurnClaimStore: Send + Sync + 'static {
         self.abandoned(quiet, limit)
     }
 
+    /// Tasks that are **finished** whose claim is still there and expired for
+    /// at least `quiet`: a turn that did not end the way a turn ends.
+    ///
+    /// A turn that ends releases its claim. A claim that stayed, behind a
+    /// terminal task, means the replica holding it stopped (killed, out of
+    /// memory, its node gone) after the task reached its terminal state and
+    /// before it finished what follows it: the terminal event in the log, the
+    /// webhooks, the audit record. The state can reach the store without the
+    /// owner: a `CancelTask` taken on another replica stores `canceled` and
+    /// leaves the ending to the owner's own processor. The reaper
+    /// ([`abandoned`](Self::abandoned) finds the running tasks) calls this to
+    /// complete what is missing and release the claim.
+    ///
+    /// Each entry is `(scope, task_id)`, oldest claim first, at most `limit`.
+    /// The default, for a store that has no task table to look in, is none.
+    ///
+    /// # Errors
+    ///
+    /// The storage's.
+    fn ended_unreleased(&self, quiet: Duration, limit: usize) -> Fut<'_, Vec<(String, String)>> {
+        let _ = (quiet, limit);
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
     /// Stores a steering message (ADR 0036) for the replica that holds the
     /// live claim on the task, unless that claim's queue already holds
     /// `capacity` messages. One atomic step: the claim is checked and the

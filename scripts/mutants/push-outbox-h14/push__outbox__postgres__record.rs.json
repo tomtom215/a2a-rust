@@ -1,0 +1,12 @@
+[
+  {
+    "name": "postgres records an existing delivery id again",
+    "old": "if present > 0 {",
+    "new": "if present > 1_000_000 {"
+  },
+  {
+    "name": "postgres bound drops unarmed",
+    "old": "AND armed AND (lease_until",
+    "new": "AND (lease_until"
+  }
+]

@@ -69,7 +69,7 @@ reads as 100 s.
 | `error` on `a2a.server.errors` | `ServerError::metric_label`: `task_not_found`, `task_not_cancelable`, `invalid_params`, `serialization`, `http`, `http_client`, `transport`, `push_not_supported`, `internal`, `method_not_found`, `payload_too_large`, `unsupported_operation`, `invalid_state_transition`, `overloaded`, `halted`; for an A2A error the binding answers as it is, `unauthenticated` or `permission_denied` for a refused credential, else its code's label (below); `executor_drain_timeout` on `SendMessage` when `HandlerLimits::executor_drain_timeout` elapses; and `push_throttled` on `PushDelivery`, once for each webhook delivery that waited for a permit under `HandlerLimits::push_max_in_flight` or `push_max_in_flight_per_host` |
 | A2A code labels | `parse_error`, `invalid_request`, `method_not_found`, `invalid_params`, `internal_error`, `task_not_found`, `task_not_cancelable`, `push_notification_not_supported`, `unsupported_operation`, `content_type_not_supported`, `invalid_agent_response`, `extended_agent_card_not_configured`, `extension_support_required`, `version_not_supported` |
 | `outcome` on `a2a.server.executor.duration` | `completed`, `error`, `budget_exhausted`, `canceled`, `aborted` (`executor_outcome`) |
-| `outcome` on `a2a.server.push_deliveries` | `delivered`, `failed` (also once for an event whose task's webhook list could not be read), `timeout`, `timeout_truncated`, `dropped`, `suspended`, `gone`, `throttled`, `expired` (`push_outcome`) |
+| `outcome` on `a2a.server.push_deliveries` | `delivered`, `failed` (also once for an event whose task's webhook list could not be read), `timeout`, `timeout_truncated`, `dropped`, `suspended`, `gone`, `throttled`, `expired`, `reservation_settled` (`push_outcome`) |
 | `operation` on `persistence_errors` and `store_retries` | `status_update`, `artifact_append`, `artifact_push`, `event_append`, `task_snapshot`, `failed_state`, `history_append`, `event_log_catchup`, `queue_handoff`, `statement`, `audit_append`, `push_config_list` (`persistence_operation`) |
 | `error` on `persistence_errors` | The A2A code label of the store's error, or one of the sub-kinds below |
 | `cause` on `store_retries` | `unavailable` (the store said not now; a turn's write, retried for up to `HandlerLimits::store_write_retry`), `connection_lost` (with `operation` `statement`: a PostgreSQL statement ran once more on a new connection), `read_only` (with `operation` `statement`: a write a read-only server refused, after a failover, ran once more on a connection opened since) |
@@ -180,6 +180,7 @@ suspended          not attempted: the webhook failed push_suspend_after deliveri
 gone               the webhook answered 410 Gone and its config was removed
 throttled          not attempted: it waited push_delivery_timeout for a slot in the push gate
 expired            the push outbox gave up: older than push_outbox_max_age, not delivered
+reservation_settled  not a delivery: a worker settled the rows a stopped replica reserved
 ```
 
 `timeout_truncated` is not a network failure. It means `push_delivery_timeout`
@@ -435,7 +436,7 @@ implements it; so can you, to count something of your own
 | `on_lease(event)` | A task lease event: `lapsed` | `a2a.server.lease.events` |
 | `on_halt(scope, action, stopped)` | A halt or resume is applied: scope `all` \| `tenant` \| `root` (a job), action `halt` \| `resume`, and the running tasks it stopped | `a2a.server.halts`, `a2a.server.halt.stopped_tasks` |
 | `on_steering(outcome)` | A steering message is decided about (ADR 0036): `delivered`, `handed_off`, `replayed`, `full`, `ended`, `too_large`, `halted`, `unread`, `received` | `a2a.server.steering` |
-| `on_claim(event)` | A turn-claim event: `reaped` (the reaper ended a task its replica left) | `a2a.server.claim.events` |
+| `on_claim(event)` | A turn-claim event: `reaped` (the reaper ended a task its replica left), `finished` (the reaper logged and pushed the ending of a task that was terminal in the store when its replica stopped) | `a2a.server.claim.events` |
 | `on_subscribe_wake(cause)` | A cross-replica `SubscribeToTask` stream stops waiting to read the store again, on a store that can wake it (`with_log_notifications`): `notification`, `resync` (the listener reconnected), or `timeout` | `a2a.server.subscribe.wakes` |
 
 `RpcCall` carries `system`, `method` (`Option`), `duration`, `status_code`

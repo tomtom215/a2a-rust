@@ -45,3 +45,16 @@ Features:
   the database file, so `delete` and `purge_expired` do not leave it in a free
   page; it does not reach the write-ahead log until a checkpoint truncates it,
   nor a backup. A pool you pass to `from_pool` keeps your own pragmas.
+
+## Open only database files you own
+
+The SQLite that the `sqlite` feature builds in is older than 3.54.0 (`libsqlite3-sys`
+0.37, pinned by `sqlx` 0.9.0, the latest `sqlx`): RUSTSEC-2026-0459 /
+CVE-2026-119375. A process that opens a database file together with a sibling
+`-wal` file whose page size differs from the database's can be made to return
+stale bytes from its own memory. The attack is local and needs a file pair that
+someone else wrote, so open only paths the process's own user controls (the
+store's path is one you configure; keep the directory writable by that user
+alone). The fix is a `sqlx` release that allows `libsqlite3-sys` 0.39; until
+then `deny.toml` records the advisory as ignored with this reason.
+

@@ -209,3 +209,83 @@ async fn the_sqlite_outbox_shows_whether_it_seals() {
     let outbox = outbox.with_cipher(Arc::new(Bound));
     assert!(format!("{outbox:?}").contains("Body { sealed: true }"));
 }
+
+/// A reservation outlives the process that made it: the file, reopened, lists
+/// it as held and arming it from there makes its row claimable. This is the
+/// state a crash between "reserve" and "arm" leaves behind (audit H14).
+#[tokio::test]
+async fn a_reservation_outlives_the_outbox_that_made_it() {
+    let db = TempDb::new("reserved");
+    let row = delivery("t", "a", TaskState::Working);
+    let id = row.delivery_id.clone();
+    {
+        let first = SqlitePushOutbox::new(&db.url()).await.unwrap();
+        first
+            .reserve("r1", 9, vec![row], 10, Duration::ZERO)
+            .await
+            .unwrap();
+        assert!(
+            first
+                .claim("x", 10, Duration::from_secs(60))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        first.pool.close().await;
+    }
+    let second = SqlitePushOutbox::new(&db.url()).await.unwrap();
+    let held = second.held(10).await.unwrap();
+    assert_eq!(held.len(), 1);
+    assert_eq!((held[0].reservation.as_str(), held[0].log_seq), ("r1", 9));
+    assert_eq!(second.arm("r1").await.unwrap(), 1);
+    let claimed = second
+        .claim("y", 10, Duration::from_secs(60))
+        .await
+        .unwrap();
+    assert_eq!(claimed[0].delivery.delivery_id, id);
+}
+
+/// A table an earlier build created, without the two-phase columns, is
+/// upgraded in place and its rows stay armed.
+#[tokio::test]
+async fn a_table_without_the_reservation_columns_is_upgraded() {
+    let db = TempDb::new("upgrade");
+    let pool = crate::sqlite_pool::sqlite_pool(&db.url()).await.unwrap();
+    sqlx::query(
+        "CREATE TABLE a2a_push_outbox (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT, delivery_id TEXT NOT NULL UNIQUE,
+            tenant TEXT NOT NULL, caller TEXT, task_id TEXT NOT NULL, config_id TEXT NOT NULL,
+            event TEXT NOT NULL, ends_turn INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+            recorded_ms INTEGER NOT NULL, due_ms INTEGER NOT NULL, owner TEXT, lease_ms INTEGER)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let old = delivery("t", "a", TaskState::Working);
+    let body = serde_json::to_string(&old.event).unwrap();
+    sqlx::query(
+        "INSERT INTO a2a_push_outbox (delivery_id, tenant, task_id, config_id, event, ends_turn,
+            recorded_ms, due_ms) VALUES (?1, 't', 't1', 'a', ?2, 0, 0, 0)",
+    )
+    .bind(&old.delivery_id)
+    .bind(body)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let outbox = SqlitePushOutbox::from_pool(pool).await.unwrap();
+    // Opening it again changes nothing.
+    SqlitePushOutbox::from_pool(outbox.pool.clone())
+        .await
+        .unwrap();
+    let claimed = outbox
+        .claim("me", 10, Duration::from_secs(60))
+        .await
+        .unwrap();
+    assert_eq!(
+        claimed.len(),
+        1,
+        "the row from before the columns existed is armed"
+    );
+    assert!(outbox.held(10).await.unwrap().is_empty());
+}

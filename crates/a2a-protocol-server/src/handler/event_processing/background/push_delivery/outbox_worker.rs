@@ -55,6 +55,25 @@ impl Outboxed {
     }
 }
 
+/// How long a claim is leased when the outbox renews leases: a worker that
+/// stops renewing (it died, or stalled) loses its rows after this, not after
+/// the longest a delivery can take.
+pub const RENEWED_LEASE: Duration = Duration::from_secs(30);
+
+/// How often a worker renews what it holds: a third of [`RENEWED_LEASE`], so
+/// two renewals can be missed.
+pub const RENEW_EVERY: Duration = Duration::from_secs(10);
+
+/// The lease for a claim: short with renewal, and otherwise longer than one
+/// delivery can take.
+pub fn claim_lease(outbox: &dyn PushOutbox, push_delivery_timeout: Duration) -> Duration {
+    if outbox.supports_renewal() {
+        RENEWED_LEASE
+    } else {
+        lease(push_delivery_timeout)
+    }
+}
+
 /// How long a claim is leased: longer than one delivery can take (a wait for
 /// the gate, then the webhook's time, then a wait for an address, then its
 /// time again), so a lease that runs out belonged to a replica that stopped.
@@ -62,6 +81,17 @@ pub const fn lease(push_delivery_timeout: Duration) -> Duration {
     push_delivery_timeout
         .saturating_mul(3)
         .saturating_add(Duration::from_secs(30))
+}
+
+/// How long a reservation is held before the worker settles it: longer than
+/// a fold can take, however long the task store makes it retry (the log
+/// write, then the save, each for up to `store_write_retry`), so that a hold
+/// that runs out belonged to a replica that stopped.
+pub const fn hold(limits: &crate::handler::limits::HandlerLimits) -> Duration {
+    limits
+        .store_write_retry
+        .saturating_mul(3)
+        .saturating_add(Duration::from_secs(60))
 }
 
 /// Records `events`' deliveries to every config of `task_id`, in the caller's
@@ -73,12 +103,36 @@ pub async fn record(
     task_id: &TaskId,
     events: &[StreamResponse],
 ) {
+    record_with_ids(lanes, outboxed, task_id, events, &[]).await;
+}
+
+/// Records `event` again under the delivery ids its rows had: the reservation
+/// that held them was settled before the event was stored. Recording is
+/// idempotent on a delivery id, so rows that are still there stay one row.
+pub async fn record_again(
+    lanes: &Lanes,
+    outboxed: &Outboxed,
+    task_id: &TaskId,
+    event: &StreamResponse,
+    ids: &[(String, String)],
+) {
+    record_with_ids(lanes, outboxed, task_id, std::slice::from_ref(event), ids).await;
+}
+
+/// [`record`], with the delivery id of each `(config id, delivery id)` in `ids`.
+async fn record_with_ids(
+    lanes: &Lanes,
+    outboxed: &Outboxed,
+    task_id: &TaskId,
+    events: &[StreamResponse],
+    ids: &[(String, String)],
+) {
     let Some(configs) =
         super::list_configs(task_id, &*lanes.store, &lanes.limits, &*lanes.metrics).await
     else {
         return;
     };
-    let rows = rows(task_id, &configs, events);
+    let rows = rows_with_ids(task_id, &configs, events, ids);
     if rows.is_empty() {
         return;
     }
@@ -118,18 +172,32 @@ pub async fn record(
 }
 
 /// One row per event and config, in order, in the caller's tenant and caller.
-fn rows(
+pub(super) fn rows(
     task_id: &TaskId,
     configs: &[a2a_protocol_types::push::TaskPushNotificationConfig],
     events: &[StreamResponse],
+) -> Vec<NewDelivery> {
+    rows_with_ids(task_id, configs, events, &[])
+}
+
+/// [`rows`], a config in `ids` keeping the delivery id it names. For one event.
+fn rows_with_ids(
+    task_id: &TaskId,
+    configs: &[a2a_protocol_types::push::TaskPushNotificationConfig],
+    events: &[StreamResponse],
+    ids: &[(String, String)],
 ) -> Vec<NewDelivery> {
     let (tenant, caller) = (TenantContext::current(), TenantContext::caller());
     let mut rows = Vec::with_capacity(events.len() * configs.len());
     for event in events {
         // Every store gives a config an id when it is set.
         for config_id in configs.iter().filter_map(|c| c.id.clone()) {
+            let delivery_id = ids
+                .iter()
+                .find(|(config, _)| *config == config_id)
+                .map_or_else(|| uuid::Uuid::new_v4().to_string(), |(_, id)| id.clone());
             rows.push(NewDelivery {
-                delivery_id: uuid::Uuid::new_v4().to_string(),
+                delivery_id,
                 tenant: tenant.clone(),
                 caller: caller.clone(),
                 task_id: task_id.as_ref().to_owned(),
@@ -145,6 +213,7 @@ fn rows(
 /// Delivers what the outbox holds until `shutdown`, or until the lanes are
 /// gone.
 pub async fn run(lanes: Weak<Lanes>, shutdown: CancellationToken) {
+    let mut next_settle = tokio::time::Instant::now();
     loop {
         let Some(strong) = lanes.upgrade() else {
             return;
@@ -152,7 +221,14 @@ pub async fn run(lanes: Weak<Lanes>, shutdown: CancellationToken) {
         let Some(outboxed) = strong.outbox.as_ref() else {
             return;
         };
-        let lease = lease(strong.limits.push_delivery_timeout);
+        if tokio::time::Instant::now() >= next_settle {
+            next_settle = tokio::time::Instant::now() + super::settling::SETTLE_EVERY;
+            tokio::select! {
+                () = shutdown.cancelled() => return,
+                () = super::settling::settle_held(&strong, outboxed) => {}
+            }
+        }
+        let lease = claim_lease(&*outboxed.outbox, strong.limits.push_delivery_timeout);
         let claimed = tokio::select! {
             () = shutdown.cancelled() => return,
             claimed = outboxed.outbox.claim(&outboxed.owner, BATCH, lease) => claimed,
@@ -169,7 +245,7 @@ pub async fn run(lanes: Weak<Lanes>, shutdown: CancellationToken) {
             }
             continue;
         }
-        if !deliver_batch(&strong, outboxed, claimed, &shutdown).await {
+        if !deliver_batch(&strong, outboxed, claimed, &shutdown, lease).await {
             return;
         }
     }
@@ -182,15 +258,27 @@ async fn deliver_batch(
     outboxed: &Outboxed,
     claimed: Vec<ClaimedDelivery>,
     shutdown: &CancellationToken,
+    lease: Duration,
 ) -> bool {
     let running = Mutex::new(claimed.iter().map(|c| c.seq).collect::<HashSet<i64>>());
     let mut deliveries: futures_util::stream::FuturesUnordered<_> = claimed
         .into_iter()
         .map(|c| deliver_claimed(lanes, outboxed, c))
         .collect();
+    // The heartbeat: while deliveries run, the lease on what this worker holds
+    // is renewed, so a lease that runs out is one whose worker is gone.
+    let heartbeat = outboxed.outbox.supports_renewal();
+    let mut renewals = tokio::time::interval(RENEW_EVERY);
+    renewals.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    renewals.tick().await;
     loop {
         tokio::select! {
             () = shutdown.cancelled() => break,
+            _ = renewals.tick(), if heartbeat => {
+                if let Err(_err) = outboxed.outbox.renew(&outboxed.owner, lease).await {
+                    trace_warn!(error = %_err, "the push outbox did not renew this worker's leases");
+                }
+            }
             done = deliveries.next() => match done {
                 Some(seq) => {
                     running.lock().unwrap_or_else(PoisonError::into_inner).remove(&seq);

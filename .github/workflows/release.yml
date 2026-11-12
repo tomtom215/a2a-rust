@@ -34,6 +34,9 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # A registry that answers 5xx for a moment must not fail a job that installs a tool: cargo's
+  # default is 3 retries (scripts/check_workflow_downloads.py, rule D3).
+  CARGO_NET_RETRY: 10
   RUSTFLAGS: "-D warnings"
   RUSTDOCFLAGS: "-D warnings"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

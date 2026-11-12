@@ -1692,7 +1692,7 @@ impl RequestHandlerBuilder {
             )
         });
         let in_flight = crate::handler::InFlight::default();
-        let push_lanes = crate::handler::PushLanes::with_outbox(
+        let push_lanes = crate::handler::PushLanes::with_reservations(
             Arc::clone(&push_config_store),
             push_sender.clone(),
             self.handler_limits.clone(),
@@ -1700,6 +1700,8 @@ impl RequestHandlerBuilder {
             in_flight.background().clone(),
             self.push_outbox
                 .map(|outbox| (outbox, in_flight.shutdown_token())),
+            // Settles the reservations a replica that stopped leaves (H14).
+            Some(Arc::clone(&task_store)),
         );
         if let Some((unready_at, ready_at)) = self.handler_limits.saturation_readiness
             && ready_at >= unready_at

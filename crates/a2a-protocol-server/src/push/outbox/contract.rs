@@ -16,6 +16,10 @@ use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
 use super::{NewDelivery, PushOutbox};
 
+const NOW: Duration = Duration::ZERO;
+
+mod reservations;
+
 const HOUR: Duration = Duration::from_secs(3600);
 
 fn event(state: TaskState) -> StreamResponse {
@@ -227,4 +231,14 @@ where
     the_bound_drops_what_the_lanes_drop(&fresh().await).await;
     tenants_and_callers_are_separate_webhooks(&fresh().await).await;
     completing_twice_is_harmless(&fresh().await).await;
+    reservations::a_reserved_row_is_claimed_only_once_armed(&fresh().await).await;
+    reservations::an_unarmed_row_holds_its_webhooks_place(&fresh().await).await;
+    reservations::release_removes_unarmed_rows_only(&fresh().await).await;
+    reservations::held_lists_lapsed_unarmed_reservations_once(&fresh().await).await;
+    reservations::held_is_oldest_first_and_limited(&fresh().await).await;
+    reservations::the_bound_never_drops_a_reserved_row(&fresh().await).await;
+    reservations::a_delivery_id_is_recorded_once(&fresh().await).await;
+    reservations::recording_a_duplicate_drops_no_other_row(&fresh().await).await;
+    reservations::held_for_task_lists_that_tasks_unarmed_reservations(&fresh().await).await;
+    reservations::renew_applies_to_the_owners_live_leases_only(&fresh().await).await;
 }

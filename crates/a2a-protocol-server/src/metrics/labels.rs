@@ -251,5 +251,9 @@ pub mod control {
         /// The reaper ended a task its replica left running (its claim had
         /// expired).
         pub const REAPED: &str = "reaped";
+        /// The reaper completed the ending of a task that was already
+        /// terminal in the store but whose replica stopped before it logged
+        /// the ending and told the webhooks (its claim had expired).
+        pub const FINISHED: &str = "finished";
     }
 }

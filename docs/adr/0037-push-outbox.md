@@ -4,9 +4,9 @@
 # ADR 0037: Push notifications get a durable outbox, claimed per webhook, where the store is shared
 
 **Date:** 2026-11-04
-**Status:** Accepted and built in 0.16.0, amended 2026-11-05 (the
-amendment below is what was built; where it departs from the proposal, it
-says why). Proposed 2026-11-04 as the third option of audit D-05, which the
+**Status:** Accepted and built in 0.16.0, amended 2026-11-05 and again
+2026-11-11 (the amendments below are what was built; where they depart from
+the proposal, they say why). Proposed 2026-11-04 as the third option of audit D-05, which the
 maintainer's position for D-05 (2026-11-03) said to write down rather than
 build; the maintainer's instruction of 2026-11-04 put it in 0.16.0 (H14).
 **Author:** Tom F.
@@ -153,12 +153,15 @@ changes: the lanes deliver from memory as before.
    they use, and it is what the proposal called "the lanes as they are" for
    a process-local store, with retries that outlast one delivery.
 2. **Written after the event is stored, not in its transaction** (departs
-   from decision 1). The event log and the outbox are in different stores,
+   from decision 1; replaced for the events below by amendment 2026-11-11). The event log and the outbox are in different stores,
    which the handler composes but cannot enlist in one transaction without
    a cross-store API every `TaskStore` would have to implement. The record
    is written by the task's lane, in order, as soon as the event is stored:
-   a crash between the two writes loses that event's deliveries, a window
-   of one write, where before it was every queued delivery and every retry.
+   a crash between the two writes loses that event's deliveries. The window
+   is the lane, not one write (corrected 2026-11-11: this said "one write"):
+   the event waits in memory behind the rows queued before it, up to
+   `push_queue_capacity`, and a slow outbox database widens it. Before the
+   outbox it was every queued delivery and every retry.
 3. **The event body is in the row** (departs from decision 1). Reading it
    back from the log by position would tie the outbox's life to the log's
    retention and to an API of every task store. The body is sealed with the
@@ -176,7 +179,8 @@ changes: the lanes deliver from memory as before.
    tenant, caller, task and config, with a lease (`FOR UPDATE SKIP LOCKED`
    on PostgreSQL; one `UPDATE ... RETURNING` on SQLite; a lock in memory). A
    lease is three times `push_delivery_timeout` plus 30 s (the open
-   question): a delivery's wait for the gate, its webhook's time, a wait for
+   question; for an outbox that renews, 30 s renewed every 10 s, see
+   amendment 2026-11-11, item 8): a delivery's wait for the gate, its webhook's time, a wait for
    an address and its time again fit inside it, so a lease that lapses
    belonged to a replica that is gone. At shutdown the worker releases what
    it holds at once. A row whose body cannot be read (sealed under another
@@ -209,3 +213,144 @@ changes: the lanes deliver from memory as before.
 * **A ceiling on the table across webhooks.** The per-webhook cap times
   `max_push_configs_per_task` times the tasks with rows bounds it; a
   ceiling would have to choose whose events to drop.
+
+## Amendment, 2026-11-11: the rows are reserved before the event is stored
+
+An independent review of 2026-11-11 (X-08; audit H14) held that "the outbox
+row in the event's transaction" was still open: amendment 1 wrote the row after
+the event was stored, so the window was the time the event waited in its lane
+(up to `push_queue_capacity` events, longer behind a slow outbox database), not
+one write. What was built closes the window without putting both writes in one
+transaction.
+
+**Why not the event's transaction.** The event log is appended before the fold
+for every event except a terminal one, which is appended after the store has
+ruled on it; a row tied to that append would queue events the fold then
+refuses. Tying the row to the task save instead would add an outbox statement
+to every write statement of every SQL task store, on two databases, and would
+hold only where the task store and the outbox share one. A reservation holds across any
+pair of stores.
+
+**What is built.**
+
+1. `PushOutbox::reserve`, `arm`, `release` and `held` (default: unsupported;
+   `supports_reservations` is false for an outbox that does not override
+   them), implemented for the in-memory, SQLite and PostgreSQL outboxes behind
+   one contract suite. A reserved row is **unarmed**: never claimed, never
+   dropped to make room, and it holds its webhook's place, so the order of a
+   webhook's deliveries is the order of the events whether or not they are
+   stored yet. It carries the event's log position and a hold that the
+   database's clock ends. Columns `armed`, `reservation`, `log_seq`,
+   `hold_ms`/`hold_until` are added to a table an earlier build created.
+2. The background processor, and the collector that folds a blocking send's
+   events, reserve an event's rows (one per config of the task) **before the
+   event's first durable write**, runs the fold in a scope
+   in which `PushLanes::push` only notes that the state machine announced the
+   event, and then **arms** the rows if it did and **releases** them if not
+   (the store refused the event, the write failed, nothing is announced for
+   it). The state machine's own decision, not a copy of it, says which.
+3. A reservation whose hold has run out (three `store_write_retry` plus a
+   minute: 150 s by default) was left by a process that stopped, or that stalled
+   past any fold. Every replica's worker settles those every 10 s, asking the
+   task store: the event was stored if the stored task has reached its log
+   position (`get_with_position`) and the log does not hold a *different*
+   event at that position (`read_events`); the log holding nothing counts as
+   stored, because a terminal event is logged after its save and an event
+   whose log write failed is never logged. Stored: armed and delivered, with
+   the delivery id the reserver gave it. Not stored: removed, and no webhook
+   is told of an event the task does not have. Each is counted
+   `reservation_settled`.
+4. A processor that was only slow, whose reservation the worker already
+   removed because the store did not yet show the event, finds nothing to arm
+   when its write completes and records the deliveries afresh, with new ids.
+   This is the one path on which the same event can reach a webhook twice
+   under two delivery ids (the first being the settlement's if the write had in
+   fact landed before the worker looked): at-least-once, as before.
+
+5. A task's ending that no queued event carried (the reaper's, an executor's
+   panic, a verdict from another writer) is **recorded in the outbox before it
+   is written to the log** (`PushLanes::record_now`, awaited). It used to be
+   logged and then queued, and the reaper skips an ending the log already
+   holds, so a stop in between left a log with the ending and a webhook that
+   was never told. Now a stop in between leaves the log without it, which the
+   reaper completes (at worst delivering it twice, under two ids). The reaper
+   records through the outbox when the handler has one, which also puts its
+   ending behind the rows a dead replica still has reserved: a live run
+   delivered `failed` 40 s before an artifact the killed replica had stored
+   when the reaper sent from its own loop.
+
+6. **A task's reservations are settled at once by whoever holds its claim.** The
+   reaper takes a dead replica's turn claim before it ends the task or completes
+   its ending, and a store refuses a writer whose claim was taken over, so what
+   the task store holds is final. `PushOutbox::held_for_task` lists the task's
+   unarmed reservations whether or not their hold has run out, `PushLanes::settle_task`
+   settles them by the same verdict, and the reaper then records its own ending
+   behind them. Measured live: the stored artifact and the reaper's `failed` reach
+   the webhook 30 s after the kill (the claim's time to live), in that order;
+   before, 71 s (the reservation's hold, 63 s there).
+7. **A delivery id is the row's identity, and recording is idempotent on it.**
+   `record` and `reserve` leave an id that is already in the outbox as it is,
+   without dropping another row to make room for it. A reservation the worker
+   settled before the event was stored (its processor was stalled past the hold)
+   is recorded again under the ids it had, so a delivery that was armed,
+   delivered and removed meanwhile is delivered again under the **same**
+   `A2A-Delivery-Id`: the receiver sees a retry, not a second event.
+8. **Leases are short and renewed.** `PushOutbox::renew` (with `supports_renewal`)
+   extends every live lease its owner holds; a worker claims for 30 s and renews
+   every 10 s while it delivers, so the rows of a worker that died are free after
+   30 s, not after 3 x `push_delivery_timeout` + 30 s (120 s), and a delivery that
+   runs longer than the lease (a wait for the gate, a slow webhook) is not taken
+   from a worker that is alive. An outbox that does not renew keeps the long lease.
+   A lease that runs out under a stalled worker costs one delivery repeated under
+   the same id.
+9. **An outbox that is down when an event is reserved no longer reorders.** The
+   event gets a reservation with no rows, and once the fold announces it is
+   recorded in the processor, awaited, before the next event's reservation; it
+   used to be queued in the task's lane behind it. Nothing is durable while the
+   outbox is down, and a crash in that time loses what was in memory; the order
+   is kept.
+10. **An executor panic's ending is reserved before it is saved.** `reserve_ending`
+    reserves the `failed` status at log position 0 (no real position is 0: an ending
+    has none yet), the save follows, and the rows are armed if it succeeded or
+    removed if it was refused. A reservation at position 0 is settled by the state
+    the task is stored in (`ending_verdict`): `failed` arms it, anything else
+    removes it, which a terminal state's permanence makes exact.
+
+**Options taken and not taken for the hold.** The hold is a wall-clock guess at
+how long a live processor can be inside one fold, and it must exceed two retried
+writes (the log, then the save, each up to `store_write_retry`): three of them and
+a minute, 150 s by default. *Shortening it* makes a live, slow processor's
+reservation get settled as not stored while its write is in flight, which is
+repaired by recording again and costs a repeated delivery; it buys latency only
+where nothing else can know the owner is dead. *Asking the claim store whether the
+reserver's claim is live*, for every reservation older than a few seconds, puts a
+claim-store read per in-flight event on every replica every ten seconds. *Settling
+under the fence the reaper already takes* (taken: item 6) costs nothing extra, is
+exact, and needs no wall-clock. The hold stays as the backstop where there is no
+reaper (a deployment without turn claims, which has one process) and for a
+processor that is alive and stuck.
+
+**What it does not cover** (each is stated in the book's delivery page and
+CHANGELOG): a store with no event log, and an outbox with no reservations, keep
+amendment 1's after-the-store write; a deployment without turn claims has no
+reaper, so a stopped replica's reservations wait for the hold (150 s) there;
+while the outbox is down nothing is durable (item 9); a position reused by another
+turn after the reserver stopped before logging is told apart only by comparing the
+event in the log with the reserved one, so a log write that also failed lets the
+reservation be armed; an outbox that wraps another has to forward every provided
+method (`reserve`, `arm`, `release`, `held`, `held_for_task`, `supports_renewal`,
+`renew`), or the handler falls back to the trait's defaults for it, as the live
+harness's wrapper did until the first run showed a 120 s lease.
+
+**How it was checked.** The contract suite on all three outboxes (PostgreSQL
+live), including two replicas settling one reservation and a table from an
+earlier build upgraded in place; the settlement's decision table, one unit
+test per row; processor-level tests that abort a task at a chosen point of the
+store write (before it, after it, a terminal event between its save and its
+log write, stalled past the hold) with two replicas over one outbox; hand
+64 hand mutants of each rule (`scripts/mutants/push-outbox-h14/run.sh`, through `scripts/hand_mutate.py`); and `scripts/live/outbox_live.py`, which runs two real
+replicas on PostgreSQL and sends one `SIGKILL` at its `reserve` or its `arm`
+(the event stored and its rows unarmed: delivered once by the survivor, 30 s
+after the kill, before the reaper's ending, in four of four runs; the event not
+stored: never delivered).
+

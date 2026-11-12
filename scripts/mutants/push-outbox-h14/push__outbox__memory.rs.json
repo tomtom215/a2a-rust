@@ -1,0 +1,42 @@
+[
+  {
+    "name": "memory records an existing delivery id again",
+    "old": ".any(|row| row.delivery.delivery_id == delivery.delivery_id)",
+    "new": ".any(|_| false)"
+  },
+  {
+    "name": "memory held_for_task ignores the task",
+    "old": "&& d.task_id == task_id",
+    "new": "&& true"
+  },
+  {
+    "name": "memory renew ignores the owner",
+    "old": "&& held == owner",
+    "new": "&& true"
+  },
+  {
+    "name": "memory claim ignores unarmed",
+    "old": "if row.due > now || row.leased(now) || row.unarmed() {",
+    "new": "if row.due > now || row.leased(now) {"
+  },
+  {
+    "name": "memory bound drops unarmed",
+    "old": "!row.delivery.ends_turn && !row.leased(now) && !row.unarmed()",
+    "new": "!row.delivery.ends_turn && !row.leased(now)"
+  },
+  {
+    "name": "memory held ignores the hold",
+    "old": "reserved.hold_until > now",
+    "new": "false"
+  },
+  {
+    "name": "memory release deletes armed",
+    "old": ".is_none_or(|held| held.armed || held.id != reservation)",
+    "new": ".is_none_or(|held| held.id != reservation)"
+  },
+  {
+    "name": "memory arm does not arm",
+    "old": "held.armed = true;",
+    "new": ""
+  }
+]

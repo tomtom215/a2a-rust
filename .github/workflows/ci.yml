@@ -37,6 +37,9 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # A registry that answers 5xx for a moment must not fail a job that installs a tool: cargo's
+  # default is 3 retries (scripts/check_workflow_downloads.py, rule D3).
+  CARGO_NET_RETRY: 10
   RUST_BACKTRACE: 1
   RUSTFLAGS: "-D warnings"
   RUSTDOCFLAGS: "-D warnings"
@@ -177,9 +180,7 @@ jobs:
       # version docs.yml deploys and checks every internal link and #anchor.
       - name: Install mdBook
         run: |
-          mkdir -p "$HOME/.local/bin"
-          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz \
-            | tar -xz -C "$HOME/.local/bin"
+          scripts/ci/install_mdbook.sh "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Book builds and its links resolve
@@ -317,6 +318,21 @@ jobs:
       # reached the other. The functions the copies share stay identical.
       - name: Client and server outbound-HTTP copies agree
         run: python3 scripts/check_net_copies.py --self-test && python3 scripts/check_net_copies.py
+
+      # `main`'s CI died twice on 2026-11-09 on a download, not on the code:
+      # this job on `curl | tar` of mdBook ("not in gzip format", so the gates
+      # after it never ran) and observability.yml on an HTTP 504 fetching
+      # promtool. Every download in a workflow now goes through
+      # scripts/ci/fetch_verified.sh (HTTPS, --fail, retried, pinned digest),
+      # a clone through scripts/ci/retry.sh, and `cargo install` is locked,
+      # versioned and retried. The first command runs the helper against a
+      # local server that returns 504s and an error page with status 200.
+      - name: Workflow downloads are retried and verified
+        run: |
+          python3 scripts/ci/test_fetch_verified.py
+          python3 scripts/ci/test_retry.py
+          python3 scripts/check_workflow_downloads.py --self-test
+          python3 scripts/check_workflow_downloads.py
 
       # The local stand-in for `cargo mutants` on the server crate, where the
       # sharded CI run is the arbiter: it applies hand-written mutants one at a
@@ -645,7 +661,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install cargo-hack
-        run: cargo install cargo-hack --locked
+        run: cargo install cargo-hack --locked --version 0.6.46
       - name: Clippy (each feature of every published crate)
         run: cargo hack clippy -p a2a-protocol-types -p a2a-protocol-client -p a2a-protocol-server -p a2a-protocol-sdk --all-targets --each-feature -- -D warnings
 
@@ -1266,8 +1282,13 @@ jobs:
         run: |
           set -euo pipefail
           version=1.11.2
-          curl -fsSL -o /tmp/spire.tar.gz \
-            "https://github.com/spiffe/spire/releases/download/v${version}/spire-${version}-linux-amd64-musl.tar.gz"
+          # SHA-256 of the tarball below, downloaded twice on 2026-11-11 with the
+          # same result (the release publishes no checksum file). Change a
+          # version and its digest together.
+          sha256=ac53853d478175f15cec8a3757d71638d0821126c0d69583ed4141399e01c49f
+          scripts/ci/fetch_verified.sh \
+            "https://github.com/spiffe/spire/releases/download/v${version}/spire-${version}-linux-amd64-musl.tar.gz" \
+            "$sha256" /tmp/spire.tar.gz
           tar xzf /tmp/spire.tar.gz -C /tmp
           echo "SPIRE_BIN_DIR=/tmp/spire-${version}/bin" >> "$GITHUB_ENV"
 

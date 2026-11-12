@@ -73,7 +73,9 @@ impl CollectState {
     /// Without one, `spawn_push_delivery` discards the buffer unread, so
     /// cloning every event into it was a deep copy per event for nothing.
     fn record_for_push(&mut self, has_sender: bool, event: &StreamResponse) {
-        if has_sender {
+        // Inside a push reservation's scope the event's rows are already in
+        // the outbox: only the reservation is told it was announced.
+        if has_sender && !super::background::push_requested() {
             self.push_events.push(event.clone());
         }
     }
@@ -422,10 +424,29 @@ impl SyncCollector {
         let _applying = seq
             .zip(self.applied.as_deref())
             .map(|(seq, mark)| mark.applying(seq));
+        // With a push outbox, the event's rows are reserved before anything of
+        // the event is written, as the background processor does (audit H14):
+        // a replica that stops mid-request leaves rows another settles, instead
+        // of a stored event whose webhooks were to be told when the request
+        // ended.
+        let reservation = match (&event, seq) {
+            (Ok(queued), Some(_)) => self.push_lanes.reserve(task_id, seq, &queued.event).await,
+            _ => None,
+        };
         // The store records `seq` with each write, as the background
         // processor's do (`TaskStore::get_with_position`, audit register R69).
         let fold = self.process_event(event, task_id, state);
-        let folded = crate::store::applied::scope_if(seq, fold).await;
+        let folded = crate::store::applied::scope_if(seq, fold);
+        let folded = match reservation {
+            // Boxed, as in the background processor: the scope would hold the
+            // whole fold inline.
+            Some(reservation) => {
+                let folded = Box::pin(reservation.scope(folded)).await;
+                reservation.settle().await;
+                folded
+            }
+            None => folded.await,
+        };
         self.unless_superseded(folded, task_id, state).await
     }
 
@@ -2875,3 +2896,7 @@ mod tests {
         assert_eq!(collected.task.status, stored.status);
     }
 }
+
+#[cfg(test)]
+#[path = "sync_collector_reserve_tests.rs"]
+mod reserve_tests;

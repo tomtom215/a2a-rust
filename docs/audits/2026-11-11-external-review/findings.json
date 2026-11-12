@@ -1,0 +1,178 @@
+[
+  {
+    "id": "X-01",
+    "section": "5",
+    "claim": "ci.yml static-checks died installing mdBook: archive 'not valid gzip', so no later gate ran",
+    "status": "CONFIRMED, FIXED",
+    "evidence": "ci.yml, benchmarks.yml and docs.yml each ran `curl -sSL <url> | tar -xz` (no --fail, no retry, no checksum). Reproduced as scripts/ci/test_fetch_verified.py cases `error_page` and `flaky_504`.",
+    "action": "scripts/ci/fetch_verified.sh + install_mdbook.sh (pinned SHA-256, downloaded twice); gate scripts/check_workflow_downloads.py rule D1; proved able to fail by scripts/prove_gates_fail.sh (c6b58439)"
+  },
+  {
+    "id": "X-02",
+    "section": "5",
+    "claim": "observability.yml failed on an HTTP 504 downloading test tooling",
+    "status": "CONFIRMED, FIXED",
+    "evidence": "deploy/observability/scripts/install_tools.sh had a checksum and `curl -fsSL` but no retry.",
+    "action": "uses fetch_verified.sh (retry on transfer and on digest mismatch); run against the real promtool 3.15.1 and amtool 0.34.2 pins (c6b58439)"
+  },
+  {
+    "id": "X-03",
+    "section": "5",
+    "claim": "(not in the review) other downloads of the same class",
+    "status": "FOUND BY THE NEW GATE, FIXED",
+    "evidence": "check_workflow_downloads.py on the unmodified tree: SPIRE tarball (no retry, no digest), kubeconform (no retry), two network clones (itk.yml, official-tck.yml), cargo-hack and cargo-llvm-cov installed unpinned, no CARGO_NET_RETRY in four workflows.",
+    "action": "digest pinned for SPIRE (downloaded twice), helper for kubeconform, scripts/ci/retry.sh around both clones, versions 0.6.46 / 0.9.1, CARGO_NET_RETRY=10 (c6b58439)"
+  },
+  {
+    "id": "X-04",
+    "section": "6",
+    "claim": "a2a-rs maps an absent Part.content to empty text; is a2a-rust affected?",
+    "status": "NOT AFFECTED, now pinned on the wire",
+    "evidence": "crates/a2a-protocol-types/src/proto/convert/messaging.rs `TryFrom<pb::Part>` refuses an unset oneof; a unit test existed. No test drove it through a binding.",
+    "action": "gRPC service test (unary and streaming) and JSON-RPC/HTTP+JSON wire test; each seen to fail with the defect put in by hand (756be81d)"
+  },
+  {
+    "id": "X-05",
+    "section": "6",
+    "claim": "a2a-rs drops typed error details on gRPC; is a2a-rust affected?",
+    "status": "NOT AFFECTED",
+    "evidence": "crates/a2a-protocol-server/src/dispatch/grpc/details.rs encodes BadRequest and Struct details; unit tests in the same file; a stream error keeps its streamLagged marker (native.rs test).",
+    "action": "none"
+  },
+  {
+    "id": "X-06",
+    "section": "6",
+    "claim": "a2a-rs awaits webhook delivery before publishing to live subscribers; is a2a-rust affected?",
+    "status": "NOT AFFECTED, now measured",
+    "evidence": "push_hang_live_subscriber.rs: real TCP peer that reads the webhook request and never answers; a streaming send ends in 0.23 s (executor pacing 0.2 s). With push submission run inline (block_in_place) the same test fails: 'the stream did not end while the webhook hung' (10 s guard).",
+    "action": "regression test (756be81d). Not done: the same measurement against a2a-rs main"
+  },
+  {
+    "id": "X-07",
+    "section": "6",
+    "claim": "SSRF corpus never run against both SDKs",
+    "status": "OPEN (evidence only)",
+    "evidence": "a2a-rust's own corpus is pinned by tests: decimal/hex/octal/packed IPv4, IPv6 loopback and link-local, IPv4-mapped/compatible/NAT64, CGNAT, DNS pinning, redirects not followed, proxy answers still refused (server/src/push/sender.rs tests, tests/push_sender_*.rs).",
+    "action": "running it against a2a-rs main needs a build of that repository and a harness; not done"
+  },
+  {
+    "id": "X-08",
+    "section": "3,6",
+    "claim": "event commit and outbox insertion are not atomic (H14)",
+    "status": "CONFIRMED, FIXED by a two-phase row, not by one transaction",
+    "evidence": "ADR 0037 amendment 2026-11-11; push::outbox::contract (memory, SQLite, live PostgreSQL), handler/event_processing/background/processor_reserve_tests.rs, sync_collector_reserve_tests.rs, handler/claims/reaper/tests/outbox.rs; scripts/live/outbox_live.py. Until now the loss window was the lane's backlog (up to push_queue_capacity), not one write.",
+    "action": "built: reserve before the first durable write, arm or release after the fold, settle a stopped replica's reservation from the task store (at once by the reaper under its claim fence, else after the hold); endings recorded before they are logged and an executor panic's ending reserved; leases renewed; delivery ids stable. Not covered: a store with no event log, a deployment with no turn claims, the outbox being down (nothing durable; order kept)"
+  },
+  {
+    "id": "X-09",
+    "section": "3",
+    "claim": "crash-consistency issues of the earlier review still apply",
+    "status": "PARTLY FIXED",
+    "evidence": "W2-hostile-3 reproduced live (scripts/live/finish_live.py, two replicas on PostgreSQL, owner killed with SIGKILL as the cancel returned): 75 s later the stored state was canceled, 0 events carried the ending, the claim row was still there.",
+    "action": "reaper finishes terminal tasks whose claim expired (ended_unreleased and a finish phase). After: ending logged once and claim gone 44 s after the kill; 42 s with the owner mid-generation of a real model (llama.cpp f3b407ca, Qwen3.5-2B Q4_K_M). SQLite and PostgreSQL, plain and tenant-aware; 21 hand mutants killed"
+  },
+  {
+    "id": "X-10",
+    "section": "3",
+    "claim": "an outage longer than the write retry loses the event and can drop the failed status",
+    "status": "CONFIRMED, OPEN",
+    "evidence": "handoff 'Open engineering': 'Not solved: an outage longer than the retry loses the event being written'. With turn claims the reaper ends a task left working after the claim lapses; without claims nothing does.",
+    "action": "not built"
+  },
+  {
+    "id": "X-11",
+    "section": "3",
+    "claim": "a status written with no event (E-F25)",
+    "status": "CONFIRMED, OPEN",
+    "evidence": "CHANGELOG Known Limitations; measured 2.0 s for a cancel at a 2 s ceiling.",
+    "action": "not built"
+  },
+  {
+    "id": "X-12",
+    "section": "5",
+    "claim": "fuzzing is smoke-only in CI",
+    "status": "NOT SUPPORTED",
+    "evidence": ".github/workflows/fuzz.yml: nightly cron 41 3 * * *, 600 s per target (60 s on PRs), corpus restored and saved per target; fuzz/fuzz_targets has 18 targets including proto_convert, json_deser, webhook_url.",
+    "action": "none"
+  },
+  {
+    "id": "X-13",
+    "section": "5",
+    "claim": "MSRV 1.94 against 1.85",
+    "status": "TRADE-OFF, documented",
+    "evidence": "STABILITY.md section 5 and README: 0.15.0 raised the floor from 1.88 to 1.94 for sqlx 0.9. A lower floor for the types and client crates alone is not possible in one workspace lockfile while the server needs sqlx 0.9.",
+    "action": "not changed; the maintainer's decision"
+  },
+  {
+    "id": "X-14",
+    "section": "7",
+    "claim": "no current head-to-head benchmark; the history shows a2a-rs faster in places",
+    "status": "CONFIRMED, MEASURED; a2a-rs is faster here; partly improved, gap open",
+    "evidence": "benches/sdk-comparison was pinned at 0.14.1. Re-run on one host against a2a-rs's current published crates: a2a-rs serves 1.25 to 1.9x the blocking-send requests/s of this tree, a2a-rust uses 2.5 to 3x less memory; this tree was 18% to 29% slower than 0.14.1 at one connection (docs/sdk-comparison-2026-11-11.md).",
+    "action": "two large futures boxed once (5,044 of 5,045 server tests pass; small gain, direction consistent, ranges overlap); wake-ups attributed by strace -k to per-request timers and the scheduler; not closed. Next: a cheaper header-read bound, and the `timeout` around the `watch` receiver in streaming"
+  },
+  {
+    "id": "X-15",
+    "section": "7",
+    "claim": "the production-readiness measurement matrix is incomplete",
+    "status": "CONFIRMED, one row measured (F1); the rest open",
+    "evidence": "docs/readiness-bar.md: 'No row above (R1 to R7, C1 to C5, F1 to F5) has been measured'.",
+    "action": "F1 measured (hung webhook: stream ends in 0.23 s; inline push fails the test). R1-R7, C1-C5, F2-F5 not measured (docs/readiness-bar.md, 2026-11-11)"
+  },
+  {
+    "id": "X-16",
+    "section": "3,9",
+    "claim": "SLIMRPC is outside the workspace and unpublished",
+    "status": "CONFIRMED, MAINTAINER'S DECISION",
+    "evidence": "bindings/a2a-protocol-slimrpc has its own lockfile; handoff 'Publishing'.",
+    "action": "none here"
+  },
+  {
+    "id": "X-17",
+    "section": "8",
+    "claim": "the CLI is not published",
+    "status": "CONFIRMED, MAINTAINER'S DECISION",
+    "evidence": "packaging/README.md: binaries wait on vars.PUBLISH_CLI_BINARIES.",
+    "action": "none here"
+  },
+  {
+    "id": "X-18",
+    "section": "8",
+    "claim": "the official CLI states it sends no usage telemetry and redacts credentials; a2a-rust's CLI says neither",
+    "status": "PARTLY TRUE, OPEN (low)",
+    "evidence": "tools/a2a-cli/README.md 'Telemetry': with OTEL_EXPORTER_OTLP_ENDPOINT unset 'no exporter is built and nothing is sent'. Nothing there about credentials in output, and no test that none is printed.",
+    "action": "not done"
+  },
+  {
+    "id": "X-19",
+    "section": "10",
+    "claim": "crash-time audit consistency, cross-replica erasure, metadata encryption and onward propagation need resolution for regulated use",
+    "status": "CONFIRMED, OPEN",
+    "evidence": "docs/compliance/controls.toml rows CRA-AI-I-2e (partial), GDPR-5-2 (partial), GDPR-17-2-19 (integrator). Crash-time audit consistency, read in the code: AuditedTaskStore::append_event (audit/task_store.rs) appends to the log and then writes the `task.event` record, and `record_event` returns nothing, so a crash between the two leaves an event in the log with no audit record; nothing checks the chain against the log's positions (AuditLog::verify checks the chain only). EncryptedTaskStore leaves ids, states, timestamps, metadata and order in the clear.",
+    "action": "not built; each is a format or protocol change. A coverage check of the audit chain against the event log is the cheapest first step"
+  },
+  {
+    "id": "X-20",
+    "section": "Final",
+    "claim": "neither SDK should be presented as operating at OpenAI/Anthropic/Google scale",
+    "status": "VERIFIED",
+    "evidence": "grep of README.md, ROADMAP.md, book/src, docs/*.md and the crate READMEs for hyperscale, web-scale, planet-scale, enterprise-grade, battle-tested, proven in production: no claim of that kind; book/src/deployment/horizontal-scaling.md:168 asks for measurements.",
+    "action": "none"
+  },
+  {
+    "id": "X-21",
+    "section": "9",
+    "claim": "single-maintainer concentration",
+    "status": "CONFIRMED, not a code finding",
+    "evidence": "MAINTAINERS.md",
+    "action": "none"
+  },
+  {
+    "id": "X-22",
+    "section": "5",
+    "claim": "ACTS runs of the two projects used different revisions",
+    "status": "CONFIRMED for a2a-rs; a2a-rust is pinned",
+    "evidence": "acts.yml pins a2a-itk at bcce1a15; itk.yml floats `main` (A2A_ITK_REVISION: main) for its own baseline run, which is a different gate.",
+    "action": "none here; whether itk.yml should pin is a decision"
+  }
+]

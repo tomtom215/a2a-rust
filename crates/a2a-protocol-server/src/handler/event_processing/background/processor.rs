@@ -123,17 +123,33 @@ impl<'a> Processor<'a> {
                 _ => return,
             }
         };
-        self.announce(status).await;
+        self.announce(status, None).await;
     }
 
     /// Tells the task's webhooks how it ended, unless this processor already
     /// did, and records the ending in its log at the next position.
-    async fn announce(&mut self, status: TaskStatus) {
+    async fn announce(&mut self, status: TaskStatus, reserved: Option<super::Reservation>) {
         let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
             self.task_id.clone(),
             self.last_task.context_id.clone(),
             status,
         ));
+        // Recorded in the outbox before it is logged, when there is one (see
+        // `PushLanes::record_now`): a stop in between leaves the log without
+        // the ending, which the reaper completes, not a log with it and
+        // webhooks that were never told.
+        let recorded = match reserved {
+            // Reserved before the status was saved: armed now that it is stored.
+            Some(reservation) if !self.pushed_terminal => {
+                reservation.arm_now().await;
+                true
+            }
+            Some(reservation) => {
+                reservation.release_now().await;
+                true
+            }
+            None => !self.pushed_terminal && self.deps.push.record_now(self.task_id, &event).await,
+        };
         super::super::append_ending(
             self.deps.task_store,
             self.task_id,
@@ -143,7 +159,9 @@ impl<'a> Processor<'a> {
         )
         .await;
         if !self.pushed_terminal {
-            self.deps.push.push(self.task_id, &event);
+            if !recorded {
+                self.deps.push.push(self.task_id, &event);
+            }
             self.pushed_terminal = true;
         }
         self.ended = true;
@@ -156,6 +174,14 @@ impl<'a> Processor<'a> {
             return;
         }
         let failed_event = super::super::panic_failure(&mut self.last_task);
+        // The ending's rows are reserved before it is saved, settled by the
+        // state the task is stored in: a stop between the save and the record
+        // leaves rows another replica arms, not a failed task nobody announces.
+        let reservation = self
+            .deps
+            .push
+            .reserve_ending(self.task_id, &failed_event)
+            .await;
         let task = &self.last_task;
         let saved = super::super::persisting(
             self.deps.limits.store_write_retry,
@@ -164,6 +190,9 @@ impl<'a> Processor<'a> {
             || self.deps.task_store.save(task),
         );
         if let Err(e) = saved.await {
+            if let Some(reservation) = reservation {
+                reservation.release_now().await;
+            }
             if let Some(conflict) = TerminalStateConflict::from_error(&e) {
                 self.supersede(&conflict, None, false).await;
                 return;
@@ -189,7 +218,7 @@ impl<'a> Processor<'a> {
         let StreamResponse::StatusUpdate(failed) = failed_event else {
             return;
         };
-        self.announce(failed.status).await;
+        self.announce(failed.status, reservation).await;
     }
 
     /// Folds one event from the persistence channel.
@@ -210,6 +239,20 @@ impl<'a> Processor<'a> {
             }
             return;
         }
+
+        // The event's push rows are reserved in the outbox before anything of
+        // the event is written, so a stop at any later point leaves rows the
+        // worker settles from the store, rather than a stored event with no
+        // delivery (audit H14).
+        let reservation = match (&event, seq) {
+            (Ok(queued), Some(_)) => {
+                self.deps
+                    .push
+                    .reserve(self.task_id, seq, &queued.event)
+                    .await
+            }
+            _ => None,
+        };
 
         // A terminal event is recorded *after* the store rules on it, so the
         // log holds the verdict; everything else is recorded first, as it
@@ -243,8 +286,30 @@ impl<'a> Processor<'a> {
         // The store records `seq` with each write the fold makes, so a
         // subscriber elsewhere knows which events the stored task reflects
         // (`TaskStore::get_with_position`, audit register R69).
-        let outcome = crate::store::applied::scope_if(seq, fold).await;
+        let folded = crate::store::applied::scope_if(seq, fold);
+        let outcome = match reservation {
+            // Boxed: the scope would otherwise hold the whole fold inline, in
+            // a future that is moved at every poll wrapper above it.
+            Some(reservation) => {
+                let outcome = Box::pin(reservation.scope(folded)).await;
+                reservation.settle().await;
+                outcome
+            }
+            None => folded.await,
+        };
 
+        self.conclude(outcome, seq, terminal, pushes_terminal).await;
+    }
+
+    /// What the fold's outcome means for the run: another writer's verdict,
+    /// a lost claim, or an event stored (or not) and, if terminal, ended.
+    async fn conclude(
+        &mut self,
+        outcome: Outcome,
+        seq: Option<u64>,
+        terminal: Option<StreamResponse>,
+        pushes_terminal: bool,
+    ) {
         match outcome {
             Outcome::Refused(conflict) => self.supersede(&conflict, seq, terminal.is_some()).await,
             Outcome::ClaimLost => self.lose_claim(seq, terminal.is_some()).await,
@@ -255,7 +320,7 @@ impl<'a> Processor<'a> {
                 if let Some(event) = terminal {
                     // Idempotent: a ticket `on_persisted` already answered is
                     // gone, and resolving it again does nothing.
-                    release(&event);
+                    self.answer(seq, event.clone());
                     self.record(seq, event).await;
                     self.ended = true;
                 }
@@ -292,11 +357,18 @@ impl<'a> Processor<'a> {
 
         if terminal {
             self.answer(seq, verdict.clone());
+        }
+        // Recorded in the outbox before it is logged: see `announce`.
+        let recorded =
+            !self.pushed_terminal && self.deps.push.record_now(self.task_id, &verdict).await;
+        if terminal {
             self.record(seq, verdict.clone()).await;
             self.ended = true;
         }
         if !self.pushed_terminal {
-            self.deps.push.push(self.task_id, &verdict);
+            if !recorded {
+                self.deps.push.push(self.task_id, &verdict);
+            }
             self.pushed_terminal = true;
         }
         self.superseded = Some(verdict);
@@ -365,3 +437,7 @@ mod tests;
 #[cfg(test)]
 #[path = "close_out_tests.rs"]
 mod close_out_tests;
+
+#[cfg(test)]
+#[path = "processor_reserve_tests.rs"]
+mod reserve_tests;

@@ -242,9 +242,14 @@ impl RequestHandler {
         let tenant = crate::store::tenant::TenantContext::capture();
         let mut executor = executor.watch();
         let (answer, collected) = tokio::sync::oneshot::channel();
-        self.in_flight
-            .executors()
-            .spawn(crate::rpc_span::in_current_span(tenant.scope(async move {
+        // Boxed once, before the wrappers: this state machine holds the stored
+        // task, the event stream and the executor's watch across its awaits
+        // (about 36,000 bytes), and `scope`, `in_current_span`, the task
+        // tracker and `tokio::spawn` each move their argument by value, so
+        // unboxed each layer copied all of it on every blocking send
+        // (callgrind, 2026-11-11).
+        let collecting: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> =
+            Box::pin(async move {
                 // Held to the collection's last write (`handler::claims`).
                 let _claim = claim;
                 // Answers at a terminal or interrupted state, and after an
@@ -259,7 +264,10 @@ impl RequestHandler {
                     )
                     .await;
                 executor.finish().await;
-            })));
+            });
+        self.in_flight
+            .executors()
+            .spawn(crate::rpc_span::in_current_span(tenant.scope(collecting)));
         let collected = collected.await.map_err(|_| {
             crate::error::ServerError::Internal("event collection ended abnormally".to_owned())
         })??;

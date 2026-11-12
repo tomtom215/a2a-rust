@@ -8,8 +8,8 @@ Reproduces [`docs/sdk-comparison-2026-10-02.md`](../../docs/sdk-comparison-2026-
 writes new files rather than editing those, so the two runs can be diffed.
 
 ```text
-harness/agent-a2a-rs     the benchmark agent on a2a-rs (a2a-lf =0.4.1, a2a-server-lf =0.5.1, a2a-client-lf =0.2.7)
-harness/agent-a2a-rust   the same agent on a2a-rust (a2a-protocol-sdk =0.14.1)
+harness/agent-a2a-rs     the benchmark agent on a2a-rs (a2a-lf =0.4.2, a2a-server-lf =0.5.3, a2a-client-lf =0.2.9; 0.4.1 / 0.5.1 / 0.2.7 for the 2026-10-02 run)
+harness/agent-a2a-rust   the same agent on a2a-rust (a path dependency on this checkout's `crates/a2a-protocol-sdk`; `=0.14.1` for the 2026-10-02 run, whose results are at that run's commit)
 harness/loadgen          SDK-agnostic closed-loop JSON-RPC load generator
 harness/shared/llm.rs    the model client both agents compile in (`--features llm`)
 harness/shared/alloc_count.rs  counting global allocator both agents compile in (`--features alloc-count`)

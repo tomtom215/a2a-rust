@@ -54,6 +54,7 @@ recordings go to `$A2A_LIVE_OUT` (default `target/live`).
 | `terminate_live.py` | Ends every backend mid-turn; reports parts lost | `terminate_live.py $R LABEL` |
 | `lock_live.py` | Locks the task's row 2 s under a 200 ms statement timeout; reports gaps | `lock_live.py $R LABEL` |
 | `restart_live.py` | Stops the database 4 s mid-turn; reports gaps | `restart_live.py $R LABEL` |
+| `outbox_live.py` | Two replicas, a webhook receiver; one replica sends itself `SIGKILL` at its outbox `reserve` or `arm` (audit H14); the survivor must deliver the stored event once, in order, and none that was not stored | `outbox_live.py $R LABEL arm\|reserve` (replica built with `A2A_OUTBOX=1`; see its docstring) |
 | `burst_live.py` | 2,000 or 6,000 events through an 8 s row lock under a 100 ms timeout | `burst_live.py $R LABEL [burst\|burst6k]` |
 | `partition_live.py` | Cuts one replica's link 5 s and 20 s, restarts the database; PASS/FAIL | `partition_live.py $R` |
 | `upgrade_live.py` | A 0.15.0 replica beside a new one; PASS/FAIL per scenario | `upgrade_live.py $OLD $R [--no-guard]` |
