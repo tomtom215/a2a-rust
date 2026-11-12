@@ -54,6 +54,58 @@ pub fn strip_tenant_prefix(path: &str) -> (Option<&str>, &str) {
     (None, path)
 }
 
+/// Whether `method` on the unprefixed `path` is one of the REST binding's
+/// routes: the table `dispatch_rest` matches, by shape. Used to tell a path
+/// that *is* a route from one that only starts like one, so a first segment
+/// named like a route head can still be a tenant when the whole path is not a
+/// route (adversarial review P2, 2026-11-12).
+#[must_use]
+pub fn is_route(method: &str, path: &str) -> bool {
+    let trimmed = path.strip_prefix('/').unwrap_or(path);
+    let trimmed = trimmed.strip_suffix('/').unwrap_or(trimmed);
+    let segments: Vec<&str> = trimmed.split('/').collect();
+    let push_config =
+        |name: &str| matches!(name, "pushNotificationConfigs" | "pushNotificationConfig");
+    match (method, segments.as_slice()) {
+        ("POST", ["message:send" | "message:stream"])
+        | ("GET", ["tasks" | "extendedAgentCard"]) => true,
+        ("GET", ["tasks", id]) | ("POST", ["tasks", id, "cancel"]) => !id.is_empty(),
+        ("POST", ["tasks", id]) => id
+            .split_once(':')
+            .is_some_and(|(id, action)| !id.is_empty() && matches!(action, "cancel" | "subscribe")),
+        ("POST" | "GET", ["tasks", id, name]) => !id.is_empty() && push_config(name),
+        ("GET" | "DELETE", ["tasks", id, name, config])
+        | ("POST", ["tasks", id, name, config, "delete"]) => {
+            !id.is_empty() && !config.is_empty() && push_config(name)
+        }
+        _ => false,
+    }
+}
+
+/// [`strip_tenant_prefix`] for a request whose method is known: a first
+/// segment named like a route head is a tenant when the whole path is not
+/// itself a route ([`is_route`]) and the remainder is, so `POST
+/// /tasks/message:send` is `SendMessage` for the tenant `tasks`. A path that is
+/// a route always routes as itself (`GET /tasks/tasks` is `GetTask` with the id
+/// `tasks`), which is why a client names a tenant that collides with a route
+/// head in the primary binding's form (`?tenant=`) instead.
+pub fn strip_tenant_prefix_for<'a>(method: &str, path: &'a str) -> (Option<&'a str>, &'a str) {
+    if path.starts_with("/tenants/") {
+        return strip_tenant_prefix(path);
+    }
+    if let Some(no_slash) = path.strip_prefix('/')
+        && let Some(slash_pos) = no_slash.find('/')
+    {
+        let first = &no_slash[..slash_pos];
+        let remaining = &no_slash[slash_pos..];
+        let head = remaining[1..].split('/').next().unwrap_or("");
+        if !first.is_empty() && is_route_head(head) && !is_route(method, path) {
+            return (Some(first), remaining);
+        }
+    }
+    (None, path)
+}
+
 /// Parses a single query parameter value as `u32`: `None` when it is absent.
 ///
 /// # Errors
@@ -447,6 +499,79 @@ mod tests {
         assert!(!contains_path_traversal("/message:send"));
         // Encoded but harmless content decodes to a fixpoint and passes.
         assert!(!contains_path_traversal("/tasks/%2561%2562"));
+    }
+
+    // ── strip_tenant_prefix_for (adversarial review P2) ───────────────────
+
+    /// A tenant named like a route head is a tenant wherever the whole path is
+    /// not itself a route: what an official-SDK client sends for it.
+    #[test]
+    fn a_route_named_tenant_is_split_off_when_the_path_is_not_a_route() {
+        for (method, path, tenant, rest) in [
+            ("POST", "/tasks/message:send", "tasks", "/message:send"),
+            ("POST", "/tasks/message:stream", "tasks", "/message:stream"),
+            ("POST", "/message/message:send", "message", "/message:send"),
+            ("GET", "/message/tasks", "message", "/tasks"),
+            (
+                "GET",
+                "/message/extendedAgentCard",
+                "message",
+                "/extendedAgentCard",
+            ),
+            (
+                "GET",
+                "/extendedAgentCard/tasks",
+                "extendedAgentCard",
+                "/tasks",
+            ),
+            (
+                "POST",
+                "/tasks/tasks/t1:cancel",
+                "tasks",
+                "/tasks/t1:cancel",
+            ),
+            ("GET", "/tasks/tasks/t1", "tasks", "/tasks/t1"),
+            ("GET", "/acme/tasks", "acme", "/tasks"),
+        ] {
+            assert_eq!(
+                strip_tenant_prefix_for(method, path),
+                (Some(tenant), rest),
+                "{method} {path}"
+            );
+        }
+    }
+
+    /// A path that is a route routes as itself, even if it would also read as a
+    /// tenant: the ambiguity a client avoids by sending `?tenant=`.
+    #[test]
+    fn a_path_that_is_a_route_is_never_taken_for_a_tenant() {
+        for (method, path) in [
+            ("GET", "/tasks/tasks"),
+            ("GET", "/tasks/extendedAgentCard"),
+            ("GET", "/tasks/message"),
+            ("GET", "/tasks/t1"),
+            ("POST", "/tasks/t1:cancel"),
+            ("POST", "/tasks/t1/cancel"),
+            ("GET", "/tasks/t1/pushNotificationConfigs"),
+            ("POST", "/message:send"),
+            ("GET", "/extendedAgentCard"),
+        ] {
+            assert!(is_route(method, path), "{method} {path} is a route");
+            assert_eq!(
+                strip_tenant_prefix_for(method, path),
+                (None, path),
+                "{method} {path}"
+            );
+        }
+        for (method, path) in [
+            ("GET", "/message:send"),
+            ("POST", "/tasks"),
+            ("GET", "/tasks/t1/other"),
+            ("POST", "/tasks/t1:other"),
+            ("POST", "/tasks//cancel"),
+        ] {
+            assert!(!is_route(method, path), "{method} {path} is not a route");
+        }
     }
 
     // ── strip_tenant_prefix ──────────────────────────────────────────────

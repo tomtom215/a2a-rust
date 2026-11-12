@@ -289,13 +289,11 @@ impl TenantResolver for BearerTokenTenantResolver {
     ) -> Pin<Box<dyn Future<Output = Option<String>> + Send + 'a>> {
         Box::pin(async move {
             let auth = ctx.http_headers().get("authorization")?;
-            let token = auth
-                .strip_prefix("Bearer ")
-                .or_else(|| auth.strip_prefix("bearer "))?;
-
-            if token.is_empty() {
-                return None;
-            }
+            // The parser authentication uses, not a second one: a header that
+            // authenticates names the same token here, so what routes a request
+            // cannot differ from what authenticated it by spelling or
+            // whitespace (adversarial review R5, 2026-11-12).
+            let token = crate::auth::extract_bearer(auth)?;
 
             self.mapper
                 .as_ref()

@@ -22,6 +22,32 @@ const fn state_of(event: &StreamResponse) -> Option<a2a_protocol_types::task::Ta
 }
 
 impl Processor<'_> {
+    /// The fold is over: what became of the event is established (reading the
+    /// store if its write failed), its reservation settled, and the run told.
+    pub(super) async fn finish(
+        &mut self,
+        outcome: Outcome,
+        seq: Option<u64>,
+        terminal: Option<StreamResponse>,
+        reservation: Option<Reservation>,
+        pushes_terminal: bool,
+    ) {
+        let (outcome, fate) = self
+            .reconciled(
+                outcome,
+                terminal.as_ref(),
+                reservation.as_ref(),
+                pushes_terminal,
+            )
+            .await;
+        if let Some(reservation) = reservation
+            && let Some(left) = reservation.settle(fate).await
+        {
+            self.unsettled.push(left);
+        }
+        self.conclude(outcome, seq, terminal, pushes_terminal).await;
+    }
+
     /// Settles the reservations an earlier event left, from what the store
     /// holds; those that still cannot be settled stay.
     pub(super) async fn settle_unsettled(&mut self) {

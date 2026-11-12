@@ -319,32 +319,6 @@ impl<'a> Processor<'a> {
             .await;
     }
 
-    /// The fold is over: what became of the event is established (reading the
-    /// store if its write failed), its reservation settled, and the run told.
-    async fn finish(
-        &mut self,
-        outcome: Outcome,
-        seq: Option<u64>,
-        terminal: Option<StreamResponse>,
-        reservation: Option<Reservation>,
-        pushes_terminal: bool,
-    ) {
-        let (outcome, fate) = self
-            .reconciled(
-                outcome,
-                terminal.as_ref(),
-                reservation.as_ref(),
-                pushes_terminal,
-            )
-            .await;
-        if let Some(reservation) = reservation
-            && let Some(left) = reservation.settle(fate).await
-        {
-            self.unsettled.push(left);
-        }
-        self.conclude(outcome, seq, terminal, pushes_terminal).await;
-    }
-
     /// What the fold's outcome means for the run: another writer's verdict,
     /// a lost claim, or an event stored (or not) and, if terminal, ended.
     async fn conclude(

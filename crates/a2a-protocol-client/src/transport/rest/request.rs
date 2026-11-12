@@ -22,6 +22,16 @@ use super::RestTransport;
 use super::query::{build_query_string, encode_query_value};
 use super::routing::{HttpMethod, Route, route_for};
 
+/// The first path segments the REST binding's routes begin with (and the
+/// colon routes), and the explicit `/tenants/{tenant}/` prefix, which a tenant
+/// of the same name would collide with.
+fn is_route_name(tenant: &str) -> bool {
+    matches!(
+        tenant,
+        "message:send" | "message:stream" | "message" | "tasks" | "extendedAgentCard" | "tenants"
+    )
+}
+
 impl RestTransport {
     pub(super) fn build_uri(
         &self,
@@ -45,14 +55,26 @@ impl RestTransport {
             .and_then(serde_json::Value::as_str)
             .filter(|t| !t.is_empty())
             .map(str::to_owned);
+        // A tenant named like a route (`tasks`, `message`, ...) cannot be told
+        // from the route by its place in the path (`/tasks/tasks` is `GetTask`
+        // with the id `tasks`, or `ListTasks` for the tenant `tasks`), so it
+        // goes where the proto's *primary* binding puts it: the query string
+        // (the body, too, on POST). Every other tenant leads the path
+        // (adversarial review P2, 2026-11-12).
+        let mut tenant_in_query = None;
         if let Some(tenant) = tenant {
-            // The query encoder is a superset of path-segment encoding (it also
-            // escapes `/`, `?`, `#`), so the segment cannot escape its slot.
-            path = format!("/{}{path}", encode_query_value(&tenant));
-            if route.http_method != HttpMethod::Post
-                && let Some(obj) = remaining.as_object_mut()
-            {
-                obj.remove("tenant");
+            if is_route_name(&tenant) {
+                tenant_in_query = Some(encode_query_value(&tenant));
+            } else {
+                // The query encoder is a superset of path-segment encoding (it
+                // also escapes `/`, `?`, `#`), so the segment cannot escape its
+                // slot.
+                path = format!("/{}{path}", encode_query_value(&tenant));
+                if route.http_method != HttpMethod::Post
+                    && let Some(obj) = remaining.as_object_mut()
+                {
+                    obj.remove("tenant");
+                }
             }
         }
 
@@ -83,13 +105,17 @@ impl RestTransport {
 
         let mut uri = format!("{}{path}", self.inner.base_url);
 
-        // For GET/DELETE, append remaining params as query string.
+        // For GET/DELETE, append remaining params as query string (the tenant
+        // among them, when it is not in the path).
         if route.http_method == HttpMethod::Get || route.http_method == HttpMethod::Delete {
             let query = build_query_string(&remaining)?;
             if !query.is_empty() {
                 uri.push('?');
                 uri.push_str(&query);
             }
+        } else if let Some(tenant) = tenant_in_query {
+            uri.push_str("?tenant=");
+            uri.push_str(&tenant);
         }
 
         Ok((uri, remaining))

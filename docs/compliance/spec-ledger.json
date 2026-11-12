@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:12996 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:13046 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -1176,14 +1176,14 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config_page.rs:37 RequestHandler::on_list_push_configs_page",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:82 list_push_configs_params"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:134 list_push_configs_params"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/push_config_pagination.rs:76 pages_cover_every_config_once_and_the_last_has_no_token",
     "crates/a2a-protocol-server/tests/push_config_pagination.rs:177 jsonrpc_and_rest_carry_the_page_and_its_token",
     "crates/a2a-protocol-server/tests/push_config_pagination.rs:235 the_websocket_binding_carries_the_page_and_its_token",
     "crates/a2a-protocol-server/tests/push_config_pagination.rs:215 the_axum_router_carries_the_page_and_its_token",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:931 list_push_configs_pages_with_a_token"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:935 list_push_configs_pages_with_a_token"
    ],
    "notes": "Since 2026-10-14 RequestHandler::on_list_push_configs_page pages the list on every binding (JSON-RPC and WebSocket params, HTTP+JSON and axum query, gRPC and SLIMRPC fields): ordered by id, at most pageSize, nextPageToken while more remain (base64url of the last id returned), InvalidField(pageToken) for one this server did not give, pageSize 0 read as unset. Without pageSize or pageToken the whole list is returned unordered, as before. Before: pageSize/pageToken were ignored and nextPageToken was always None; the list is bounded by max_push_configs_per_task either way. Existing tests assert 5 configs come back in 3 pages of at most 2 with no token on the last, also over JSON-RPC and REST; shown able to fail by making push_config_page.rs page() return every config unpaged (2026-10-20)",
    "auditor": "A",
@@ -1286,10 +1286,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:190 get_extended_agent_card_without_capability_returns_unsupported"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:220 get_extended_agent_card_without_capability_returns_unsupported"
    ],
    "notes": "",
    "auditor": "A",
@@ -1305,10 +1305,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:168 a_declared_card_with_no_extended_card_is_not_configured"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:198 a_declared_card_with_no_extended_card_is_not_configured"
    ],
    "notes": "Returned when the handler's card declares the capability and no extended card is set with with_extended_agent_card (since 2026-10-14, audit register R68). Until then the public card was served in the extended card's place, and -32007 was returned only by a handler with no card at all, which now answers UnsupportedOperationError (see 3164).",
    "auditor": "A",
@@ -1327,7 +1327,7 @@
     "crates/a2a-protocol-client/src/methods/extended_card.rs:35 A2aClient::get_extended_agent_card",
     "crates/a2a-protocol-client/src/auth.rs:186 AuthInterceptor",
     "crates/a2a-protocol-client/src/auth.rs:276 AuthInterceptor::api_key",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call",
     "crates/a2a-protocol-server/src/interceptor/mod.rs:226 ServerInterceptorChain::run_before",
     "crates/a2a-protocol-client/src/transport/mod.rs:416 with_query",
     "crates/a2a-protocol-client/src/credential_preflight.rs:252 Preflight::check",
@@ -1335,8 +1335,8 @@
     "crates/a2a-protocol-client/src/interceptor.rs:354 InterceptorChain::run_before"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:245 get_extended_agent_card_with_authenticator_gates_on_credentials",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:207 get_extended_agent_card_without_authenticator_is_refused",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:275 get_extended_agent_card_with_authenticator_gates_on_credentials",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:237 get_extended_agent_card_without_authenticator_is_refused",
     "crates/a2a-protocol-client/src/auth/tests.rs:238 an_api_key_goes_where_the_scheme_says",
     "crates/a2a-protocol-sdk/tests/api_key_placement_e2e.rs:90 an_api_key_reaches_the_agent_over_json_rpc",
     "crates/a2a-protocol-client/tests/api_key_query.rs:111 jsonrpc_puts_the_key_in_the_url",
@@ -1370,10 +1370,10 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:719 RequestHandlerBuilder::with_extended_agent_card",
     "crates/a2a-protocol-server/src/builder.rs:734 RequestHandlerBuilder::with_extended_card_provider",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:346 a_configured_extended_card_is_served_in_place_of_the_public_one",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:376 a_configured_extended_card_is_served_in_place_of_the_public_one",
     "crates/a2a-protocol-server/tests/extended_card_per_caller.rs:99 each_caller_is_served_the_card_chosen_for_it"
    ],
    "notes": "RequestHandlerBuilder::with_extended_agent_card sets the card served to an authenticated caller, distinct from the public one. Without it a card that declares the capability answers ExtendedAgentCardNotConfiguredError (since 2026-10-14; the public card used to be served). One extended card for every authenticated caller: no per-caller variation (see 3144). Until 2026-10-14 the builder had no extended-card setting, so the 'extended' card was always the public one (audit register R56). Existing test asserts two authenticated callers are served extended cards with different skills; shown able to fail by serving the configured extended card without the per-caller provider in extended_card.rs (2026-10-20)",
@@ -1528,8 +1528,8 @@
     "crates/a2a-protocol-server/src/handler/helpers.rs:241 parse_extensions_header",
     "crates/a2a-protocol-server/src/handler/helpers.rs:74 build_call_context",
     "crates/a2a-protocol-server/src/handler/capability.rs:121 RequestHandler::activated_extensions",
-    "crates/a2a-protocol-client/src/builder/mod.rs:908 ClientBuilder::with_extensions",
-    "crates/a2a-protocol-client/src/builder/transport_factory.rs:206 ClientBuilder::send_extensions",
+    "crates/a2a-protocol-client/src/builder/mod.rs:935 ClientBuilder::with_extensions",
+    "crates/a2a-protocol-client/src/builder/transport_factory.rs:207 ClientBuilder::send_extensions",
     "crates/a2a-protocol-client/src/extensions.rs:35 header_value",
     "crates/a2a-protocol-client/src/extensions.rs:50 ExtensionsHeader",
     "crates/a2a-protocol-client/src/transport/websocket.rs:624 open"
@@ -1571,7 +1571,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:191 axum_enforces_the_protocol_version_except_for_discovery",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:740 an_unsupported_version_is_refused_with_version_not_supported",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:744 an_unsupported_version_is_refused_with_version_not_supported",
     "bindings/a2a-protocol-slimrpc/tests/operations.rs:337 an_unsupported_version_is_refused_over_the_fabric"
    ],
    "notes": "Every binding, the axum adapter included (validate_a2a_request middleware), answers VersionNotSupportedError.",
@@ -1780,7 +1780,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:20 AuthRejectionKind",
     "crates/a2a-protocol-types/src/error.rs:402 A2aError::insufficient_scope",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:427 JwtValidator::require_scope",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:428 JwtValidator::require_scope",
     "crates/a2a-protocol-server/src/error/mod.rs:197 ServerError::http_status",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status"
    ],
@@ -1805,7 +1805,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:56 AuthRejection::insufficient_scope",
     "crates/a2a-protocol-types/src/error.rs:402 A2aError::insufficient_scope",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:595 JwtValidator::validate"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:596 JwtValidator::validate"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:123 insufficient_scope_names_the_scopes_in_its_challenge",
@@ -2039,7 +2039,7 @@
     "crates/a2a-protocol-types/src/error.rs:1355 error_info_data_for_a2a_error_has_expected_shape",
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:159 json_rpc_answers_a_missing_bearer_token_401_with_the_body_unchanged",
     "crates/a2a-protocol-sdk/tests/binding_equivalence/errors.rs:118 every_binding_s_error_carries_a_code_and_a_message",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:740 an_unsupported_version_is_refused_with_version_not_supported"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:744 an_unsupported_version_is_refused_with_version_not_supported"
    ],
    "notes": "JSON-RPC {code,message,data}, REST AIP-193 {code,status,message,details}, gRPC Status(code,message,details).",
    "auditor": "B",
@@ -2065,7 +2065,7 @@
     "crates/a2a-protocol-types/src/error.rs:1355 error_info_data_for_a2a_error_has_expected_shape",
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:105 unary_errors_keep_their_data",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:103 other_data_becomes_a_struct",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:425 a_lagged_stream_s_error_keeps_its_marker",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:429 a_lagged_stream_s_error_keeps_its_marker",
     "crates/a2a-protocol-server/src/streaming/sse.rs:1086 an_object_data_is_a_protojson_any_holding_a_struct"
    ],
    "notes": "Every detail carries @type. An A2A error's ErrorInfo (and RetryInfo for a rate limit) comes from error_info_data. A2aError.data follows it as a typed detail (sse::error_details, used by JSON-RPC, HTTP+JSON and WebSocket): as it is when it names its own string @type (a google.rpc.BadRequest), otherwise as a google.protobuf.Struct in the ProtoJSON Any form, {\"@type\": ..., \"value\": {...}}, with a non-object under value (since 2026-10-14, audit register R19; the fields were written beside @type, the form a2a-go writes, which a ProtoJSON Any decoder rejects). The gRPC binding sends the same data as BadRequest field violations or a Struct Any (dispatch/grpc/details.rs).",
@@ -2225,12 +2225,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:190 get_extended_agent_card_without_capability_returns_unsupported",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:168 a_declared_card_with_no_extended_card_is_not_configured",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:151 get_extended_agent_card_with_no_card_at_all_is_unsupported"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:220 get_extended_agent_card_without_capability_returns_unsupported",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:198 a_declared_card_with_no_extended_card_is_not_configured",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:181 get_extended_agent_card_with_no_card_at_all_is_unsupported"
    ],
    "notes": "The handler's card decides: not declared, UnsupportedOperation; declared, the extended card if one is set, else ExtendedAgentCardNotConfigured (since 2026-10-14; the public card was served); no card at all, the extended card if one is set, else UnsupportedOperation (since 2026-10-14; it was NotConfigured).",
    "auditor": "B",
@@ -2252,7 +2252,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:30 RequestHandler::on_get_extended_agent_card"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:275 get_extended_agent_card_enforces_required_extensions",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:305 get_extended_agent_card_enforces_required_extensions",
     "crates/a2a-protocol-server/tests/handler_conformance/required_extensions.rs:147 every_operation_refuses_a_client_that_does_not_declare_a_required_extension",
     "crates/a2a-protocol-server/tests/handler_conformance/required_extensions.rs:173 every_operation_admits_a_client_that_declares_the_required_extension",
     "crates/a2a-protocol-server/tests/handler_conformance/required_extensions.rs:277 both_http_bindings_refuse_every_operation_without_the_declaration"
@@ -2274,7 +2274,7 @@
     "crates/a2a-protocol-client/src/declared.rs:82 DeclaredCapabilities::require",
     "crates/a2a-protocol-client/src/client.rs:167 A2aClient::with_declared",
     "crates/a2a-protocol-client/src/methods/send_message.rs:67 A2aClient::require_inline_push_declared",
-    "crates/a2a-protocol-client/src/builder/mod.rs:783 ClientBuilder::without_capability_checks"
+    "crates/a2a-protocol-client/src/builder/mod.rs:810 ClientBuilder::without_capability_checks"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:177 a_card_declaring_nothing_refuses_every_dependent_call_before_sending",
@@ -2990,7 +2990,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:188 JsonRpcTransport::build_request",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:100 RestTransport::build_request",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:126 RestTransport::build_request",
     "crates/a2a-protocol-client/src/transport/grpc.rs:558 GrpcTransport::add_metadata",
     "crates/a2a-protocol-client/src/transport/websocket.rs:624 open",
     "crates/a2a-protocol-client/src/discovery.rs:833 fetch_card_with_metadata",
@@ -3023,7 +3023,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/version_query.rs:41 VersionQueryInterceptor",
     "crates/a2a-protocol-client/src/version_query.rs:56 VersionQueryInterceptor::before",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:100 RestTransport::build_request",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:126 RestTransport::build_request",
     "crates/a2a-protocol-server/src/dispatch/version.rs:82 requested_version"
    ],
    "test_evidence": [
@@ -3103,7 +3103,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:191 axum_enforces_the_protocol_version_except_for_discovery",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:740 an_unsupported_version_is_refused_with_version_not_supported",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:744 an_unsupported_version_is_refused_with_version_not_supported",
     "bindings/a2a-protocol-slimrpc/tests/operations.rs:337 an_unsupported_version_is_refused_over_the_fabric"
    ],
    "notes": "The axum adapter now validates A2A-Version like the other bindings.",
@@ -3128,7 +3128,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:526 jsonrpc_missing_version_header_rejected",
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:840 rest_missing_version_header_rejected_but_card_discovery_versionless",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:697 default_config_rejects_a_versionless_rpc",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:701 default_config_rejects_a_versionless_rpc",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2952 ws_missing_version_header_rejected_by_default",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:338 an_empty_version_is_refused_unless_none_is_required",
     "bindings/a2a-protocol-slimrpc/src/server/methods/tests.rs:146 an_absent_version_is_refused_as_0_3_unless_none_is_required"
@@ -3148,7 +3148,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/selection.rs:54 is_compatible",
-    "crates/a2a-protocol-client/src/builder/selection.rs:78 candidates",
+    "crates/a2a-protocol-client/src/builder/selection.rs:111 candidates",
     "crates/a2a-protocol-server/src/dispatch/version.rs:62 validate_version_metadata"
    ],
    "test_evidence": [
@@ -3702,7 +3702,7 @@
     "tck/src/equivalence.rs:646 bind_equiv_003",
     "crates/a2a-protocol-server/tests/http_json_error_parity.rs:76 rest_and_axum_answer_the_same_failures_identically",
     "crates/a2a-protocol-server/tests/http_query_validation.rs:82 a_malformed_query_value_is_refused_naming_its_parameter",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:425 a_lagged_stream_s_error_keeps_its_marker",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:429 a_lagged_stream_s_error_keeps_its_marker",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:134 invalid_params_carry_their_field_violations",
     "crates/a2a-protocol-client/src/transport/grpc.rs:1573 status_to_error_keeps_a_struct_detail_as_data",
     "crates/a2a-protocol-client/src/transport/grpc.rs:1658 status_to_error_keeps_field_violations_as_data"
@@ -3774,12 +3774,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring",
-    "crates/a2a-protocol-client/src/builder/mod.rs:473 ClientBuilder::chosen_interface"
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring",
+    "crates/a2a-protocol-client/src/builder/mod.rs:485 ClientBuilder::chosen_interface"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:999 from_card_prefers_the_callers_binding_order_over_the_cards",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1013 a_later_preference_wins_when_the_earlier_one_is_not_offered"
+    "crates/a2a-protocol-client/src/builder/mod.rs:1026 from_card_prefers_the_callers_binding_order_over_the_cards",
+    "crates/a2a-protocol-client/src/builder/mod.rs:1040 a_later_preference_wins_when_the_earlier_one_is_not_offered"
    ],
    "notes": "from_card_preferring / with_protocol_binding. The tests assert from_card_preferring connects to the binding the caller ranks, not the card's first interface; shown able to fail by removing the preference sort in builder/selection.rs (both fail) (2026-10-20).",
    "auditor": "C",
@@ -3795,8 +3795,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:70 ClientBuilder",
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
+    "crates/a2a-protocol-client/src/builder/mod.rs:72 ClientBuilder",
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/builder/selection_tests.rs:157 an_unbuildable_first_choice_falls_back_to_the_next_interface",
@@ -4477,7 +4477,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:574 validate_header_value",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:182 contains_path_traversal",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:234 contains_path_traversal",
     "crates/a2a-protocol-server/src/handler/ids.rs:29 refuse_control_chars",
     "crates/a2a-protocol-server/src/handler/ids.rs:60 validate_id"
    ],
@@ -4488,7 +4488,7 @@
     "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:232 jsonrpc_tenant_with_control_character_is_invalid_params",
     "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:248 rest_message_and_task_ids_with_crlf_are_400",
     "crates/a2a-protocol-server/src/push/sender.rs:1264 rejects_header_with_crlf",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:384 path_traversal_raw"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:436 path_traversal_raw"
    ],
    "notes": "Split 2026-10-20 from the APPLICATION entry on this line (ledger audit): the SDK is an implementation, and what it takes from a request and uses itself is sanitized and tested. Push credential header values refuse CR/LF (validate_header_value), REST paths refuse traversal (contains_path_traversal), and every client-supplied identifier the server validates (message, context, task, reference task, push-config and tenant ids, and the ListTasks contextId filter) refuses any control character (handler/ids.rs, since 2026-10-20; until then validate_id refused only empty and over-long ids). The SQL stores bind values as placeholders; that was grepped, not audited, and is not claimed here.",
    "auditor": "C",
@@ -4544,7 +4544,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/declared.rs:66 check",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_every_method.rs:148 every_method_is_refused_without_a_valid_credential_on_both_http_bindings",
@@ -4739,10 +4739,10 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:719 RequestHandlerBuilder::with_extended_agent_card",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:346 a_configured_extended_card_is_served_in_place_of_the_public_one",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:376 a_configured_extended_card_is_served_in_place_of_the_public_one",
     "crates/a2a-protocol-server/tests/optional_features/extended_card.rs:72 extended_card_exposes_quota_capabilities_the_public_card_lacks"
    ],
    "notes": "with_extended_agent_card (since 2026-10-14) sets an extended card with whatever the operator adds; before, the handler served the public card. The tests assert an authenticated caller is served the configured extended card with a skill and quota capabilities the public card lacks, and an unauthenticated one is refused; shown able to fail by serving the public card in its place (2026-10-20).",
@@ -4759,11 +4759,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:207 get_extended_agent_card_without_authenticator_is_refused",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:245 get_extended_agent_card_with_authenticator_gates_on_credentials"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:237 get_extended_agent_card_without_authenticator_is_refused",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:275 get_extended_agent_card_with_authenticator_gates_on_credentials"
    ],
    "notes": "Refuses unless an authenticating interceptor is registered or operator opts out explicitly.",
    "auditor": "C",
@@ -5017,7 +5017,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/interceptor/mod.rs:150 ServerInterceptor::authenticates",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:427 JwtValidator::require_scope",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:428 JwtValidator::require_scope",
     "crates/a2a-protocol-server/src/call_context.rs:114 CallContext"
    ],
    "test_evidence": [
@@ -5385,12 +5385,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:214 ClientBuilder::from_card",
-    "crates/a2a-protocol-client/src/builder/selection.rs:78 candidates"
+    "crates/a2a-protocol-client/src/builder/mod.rs:225 ClientBuilder::from_card",
+    "crates/a2a-protocol-client/src/builder/selection.rs:111 candidates"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:1095 from_card_follows_the_cards_order",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1040 an_empty_preference_list_takes_the_cards_first_interface",
+    "crates/a2a-protocol-client/src/builder/mod.rs:1122 from_card_follows_the_cards_order",
+    "crates/a2a-protocol-client/src/builder/mod.rs:1067 an_empty_preference_list_takes_the_cards_first_interface",
     "crates/a2a-protocol-client/src/builder/selection_tests.rs:51 a_v03_interface_listed_first_is_passed_over_for_v10",
     "crates/a2a-protocol-client/src/builder/selection_tests.rs:157 an_unbuildable_first_choice_falls_back_to_the_next_interface"
    ],
@@ -5408,12 +5408,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:214 ClientBuilder::from_card",
-    "crates/a2a-protocol-client/src/builder/selection.rs:78 candidates"
+    "crates/a2a-protocol-client/src/builder/mod.rs:225 ClientBuilder::from_card",
+    "crates/a2a-protocol-client/src/builder/selection.rs:111 candidates"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:1095 from_card_follows_the_cards_order",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1040 an_empty_preference_list_takes_the_cards_first_interface"
+    "crates/a2a-protocol-client/src/builder/mod.rs:1122 from_card_follows_the_cards_order",
+    "crates/a2a-protocol-client/src/builder/mod.rs:1067 an_empty_preference_list_takes_the_cards_first_interface"
    ],
    "notes": "from_card keeps the card's order, earlier entries first, with the rest as build() fallbacks in that order. from_card_preferring lets a caller who explicitly ranks bindings override the agent's order (a2a-go parity); card order then breaks ties within a rank.",
    "auditor": "D",
@@ -5429,13 +5429,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring",
-    "crates/a2a-protocol-client/src/builder/transport_factory.rs:237 ClientBuilder::fall_back",
-    "crates/a2a-protocol-client/src/builder/mod.rs:498 ClientBuilder::with_protocol_binding"
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring",
+    "crates/a2a-protocol-client/src/builder/transport_factory.rs:238 ClientBuilder::fall_back",
+    "crates/a2a-protocol-client/src/builder/mod.rs:510 ClientBuilder::with_protocol_binding"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:999 from_card_prefers_the_callers_binding_order_over_the_cards",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1053 chosen_interface_is_the_one_from_card_picked"
+    "crates/a2a-protocol-client/src/builder/mod.rs:1026 from_card_prefers_the_callers_binding_order_over_the_cards",
+    "crates/a2a-protocol-client/src/builder/mod.rs:1080 chosen_interface_is_the_one_from_card_picked"
    ],
    "notes": "Endpoint taken from the selected AgentInterface; fallback moves endpoint and binding together.",
    "auditor": "D",
@@ -5450,7 +5450,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring",
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring",
     "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/methods/send_message.rs:21 apply_client_config",
     "crates/a2a-protocol-client/src/methods/extended_card.rs:35 A2aClient::get_extended_agent_card"
@@ -5458,7 +5458,7 @@
    "test_evidence": [
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:304 rest_client_from_card_carries_tenant_on_every_request",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1171 switching_binding_carries_that_interfaces_tenant",
+    "crates/a2a-protocol-client/src/builder/mod.rs:1198 switching_binding_carries_that_interfaces_tenant",
     "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/src/methods/mod.rs:217 no_tenant_anywhere_leaves_the_field_absent"
    ],
@@ -6514,7 +6514,7 @@
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:105 unary_errors_keep_their_data",
     "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs:97 jsonrpc_stream_error_is_a_jsonrpc_error_response",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:103 other_data_becomes_a_struct",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:425 a_lagged_stream_s_error_keeps_its_marker"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:429 a_lagged_stream_s_error_keeps_its_marker"
    ],
    "notes": "A2aError::data reaches the client as a further detail (a Struct, or as is when it names its @type) on JSON-RPC and HTTP+JSON unary responses, on both bindings' stream frames, and on WebSocket. Since 2026-10-13 gRPC carries it too, unary and stream: a BadRequest as google.rpc.BadRequest, other data as a google.protobuf.Struct Any (dispatch/grpc/details.rs). SLIMRPC carries the message text only.",
    "auditor": "E",
@@ -6607,7 +6607,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:297 validated_metadata_accepts_1_0_with_any_patch",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:697 default_config_rejects_a_versionless_rpc"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:701 default_config_rejects_a_versionless_rpc"
    ],
    "notes": "All 11 RPCs go through A2aServiceImpl::admit (dispatch/grpc/admit.rs), which reads the metadata with helpers::request_headers, itself validated_metadata, and passes the headers to the handler (corrected 2026-10-23: the note named validated_metadata as called by each RPC).",
    "auditor": "E",
@@ -6652,7 +6652,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:169 every_a2a_reason_maps_to_error_info_detail",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:197 standard_errors_have_no_error_info_detail",
     "crates/a2a-protocol-client/src/transport/grpc.rs:1677 status_to_error_prefers_error_info_reason",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:425 a_lagged_stream_s_error_keeps_its_marker"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:429 a_lagged_stream_s_error_keeps_its_marker"
    ],
    "notes": "Unary, pre-stream and mid-stream errors carry ErrorInfo through tonic_types: since 2026-10-13 reader_to_native_stream sends a stream's error through server_error_to_status as a unary call's. It was Status::internal(\"event queue error\"), which lost the message and the streamLagged marker.",
    "auditor": "E",
@@ -6699,11 +6699,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:100 RestTransport::build_request"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:126 RestTransport::build_request"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:661 build_request_labels_a_body_and_only_a_body",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:647 build_request_non_streaming_accepts_a2a_json_first"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:687 build_request_labels_a_body_and_only_a_body",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:673 build_request_non_streaming_accepts_a2a_json_first"
    ],
    "notes": "Since 2026-10-14 (audit register R50) the REST client labels a request body application/a2a+json, sends no Content-Type on a GET or DELETE (no body), and asks Accept: application/a2a+json, application/json on a non-streaming call. Until then every request, bodiless ones included, was labelled application/json, for interop: a2a-java 1.3.0.Final's REST server refuses any other type (A2AServerRoutes.validateContentType, read from the jar's bytecode with javap, 2026-10-10). a2a-java accepts application/a2a+json from 1.4.0.Final (pin-freshness run 38299384752; this repository's a2a-tck a2a_media_type_accepted on REST), which the ITK pins; an older a2a-java server is reached over JSON-RPC (upgrading guide). a2a-go v2.5.0 and a2a-sdk 1.1.4 servers do not check the request type, and this server accepts both.",
    "auditor": "E",
@@ -6721,7 +6721,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:124 RestDispatcher::dispatch_unlabelled",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:303 header_fields",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:100 RestTransport::build_request",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:126 RestTransport::build_request",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter/validate.rs:27 validate_a2a_request",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:506 handler_error_to_response"
    ],
@@ -6731,7 +6731,7 @@
     "crates/a2a-protocol-server/tests/repeated_header_lines.rs:116 rest_reads_and_echoes_both_lines",
     "crates/a2a-protocol-server/tests/repeated_header_lines.rs:178 axum_reads_both_lines",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:191 axum_enforces_the_protocol_version_except_for_discovery",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:689 build_request_includes_extra_headers",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:715 build_request_includes_extra_headers",
     "crates/a2a-protocol-sdk/tests/extensions_e2e.rs:122 http_json_sends_the_extensions_asked_for"
    ],
    "notes": "RestDispatcher validates A2A-Version and forwards headers. The axum adapter (A2aRouter) forwards headers and validates A2A-Version as RestDispatcher does (axum_adapter.rs:212, validate_a2a_request).",
@@ -6749,11 +6749,11 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/mod.rs:303 header_fields",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:321 field_value",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:100 RestTransport::build_request"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:126 RestTransport::build_request"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/mod.rs:354 header_fields_are_named_in_lowercase",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:689 build_request_includes_extra_headers"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:715 build_request_includes_extra_headers"
    ],
    "notes": "",
    "auditor": "E",
@@ -6791,12 +6791,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:26 RestTransport::build_uri",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:36 RestTransport::build_uri",
     "crates/a2a-protocol-client/src/transport/rest/routing.rs:34 route_for",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:124 RestDispatcher::dispatch_unlabelled",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:281 RestDispatcher::dispatch_rest",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:98 parse_query_param",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:182 contains_path_traversal"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:150 parse_query_param",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:234 contains_path_traversal"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:16 rest_send_message",
@@ -6823,16 +6823,16 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:26 RestTransport::build_uri",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:100 RestTransport::build_request",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:36 RestTransport::build_uri",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:126 RestTransport::build_request",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:281 RestDispatcher::dispatch_rest",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:245 parse_list_tasks_query",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:82 list_push_configs_params",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:297 parse_list_tasks_query",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:134 list_push_configs_params",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:931 body_with_path_id"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:340 build_uri_extracts_path_param_and_appends_query",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:659 parse_list_tasks_query_all_params",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:366 build_uri_extracts_path_param_and_appends_query",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:784 parse_list_tasks_query_all_params",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:823 axum_get_task_honours_history_length",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:844 axum_get_requests_read_the_tenant_from_the_query",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:881 axum_push_config_and_subscribe_routes_read_the_tenant_from_the_query"
@@ -6851,14 +6851,14 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:245 parse_list_tasks_query",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:82 list_push_configs_params",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:297 parse_list_tasks_query",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:134 list_push_configs_params",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:739 handle_list_tasks",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:32 build_query_string"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:659 parse_list_tasks_query_all_params",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:356 build_uri_appends_query_for_get",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:784 parse_list_tasks_query_all_params",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:382 build_uri_appends_query_for_get",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:823 axum_get_task_honours_history_length",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:844 axum_get_requests_read_the_tenant_from_the_query",
     "crates/a2a-protocol-server/tests/http_query_validation.rs:82 a_malformed_query_value_is_refused_naming_its_parameter"
@@ -6877,14 +6877,14 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:224 parse_query_param_bool",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:65 parse_query_param_u32",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:276 parse_query_param_bool",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:117 parse_query_param_u32",
     "crates/a2a-protocol-types/src/generated/task.rs:21 TaskState",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:27 RequestHandler::on_list_tasks",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:32 build_query_string"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:684 parse_list_tasks_query_with_status",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:809 parse_list_tasks_query_with_status",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:146 build_query_string_handles_bool",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks_tests.rs:102 list_tasks_invalid_status_timestamp_after_is_invalid_params",
     "crates/a2a-protocol-client/tests/received_validation/wire.rs:44 list_tasks_sends_status_timestamp_after_in_utc"
@@ -6905,7 +6905,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/query.rs:32 build_query_string",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:59 push_pair",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:98 parse_query_param"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:150 parse_query_param"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/query.rs:194 build_query_string_repeats_an_array_parameter"
@@ -6946,13 +6946,13 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/query.rs:79 encode_query_value",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:98 parse_query_param",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:118 percent_decode"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:150 parse_query_param",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:170 percent_decode"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/query.rs:105 encode_query_value_encodes_special_chars",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:117 build_query_string_encodes_values",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:316 percent_decode_encoded_chars"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:368 percent_decode_encoded_chars"
    ],
    "notes": "Client encodes everything except RFC 3986 unreserved chars. Server percent-decodes values (and `+` as space). Query keys are compared undecoded, which is harmless for the camelCase ASCII keys.",
    "auditor": "E",
@@ -7463,7 +7463,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket/stream.rs:21 stream_events",
-    "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:457 event_stream"
+    "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:455 event_stream"
    ],
    "test_evidence": [],
    "notes": "Both custom bindings support streaming. Re-examined 2026-10-18, kept: conditional on a binding without streaming; both custom bindings this SDK provides stream (websocket_binding_spec.rs a_stream_is_frames_then_the_marker; SLIMRPC e2e streaming_send_delivers_events_and_terminates). Re-verified against the code 2026-10-20 (ledger audit): the WebSocket citation named the push-config list handler; it now names stream_events.",
@@ -8084,7 +8084,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/push_config.rs:42 A2aClient::check_webhook_url",
-    "crates/a2a-protocol-client/src/builder/mod.rs:746 ClientBuilder::require_https_webhooks"
+    "crates/a2a-protocol-client/src/builder/mod.rs:773 ClientBuilder::require_https_webhooks"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/webhook_https_tests.rs:151 require_https_refuses_plaintext_to_a_remote_host_before_sending",
@@ -8199,13 +8199,13 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:30 RequestHandler::on_get_extended_agent_card",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call",
     "crates/a2a-protocol-server/src/builder.rs:1074 RequestHandlerBuilder::allow_unauthenticated_extended_card"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:207 get_extended_agent_card_without_authenticator_is_refused",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:245 get_extended_agent_card_with_authenticator_gates_on_credentials",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:372 without_a_public_card_a_configured_extended_card_is_served"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:237 get_extended_agent_card_without_authenticator_is_refused",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:275 get_extended_agent_card_with_authenticator_gates_on_credentials",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:402 without_a_public_card_a_configured_extended_card_is_served"
    ],
    "notes": "Refused unless an interceptor reporting authenticates()==true is registered, or the operator opts out with allow_unauthenticated_extended_card(). The check applies to an extended card set with with_extended_agent_card too, with or without a public card on the handler.",
    "auditor": "F",
@@ -8291,10 +8291,10 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:719 RequestHandlerBuilder::with_extended_agent_card",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:346 a_configured_extended_card_is_served_in_place_of_the_public_one"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:376 a_configured_extended_card_is_served_in_place_of_the_public_one"
    ],
    "notes": "with_extended_agent_card serves a card with skills the public one lacks; the test adds one. Until 2026-10-14 the public and extended card were the same (audit register R56). Asserts the extended card served to an authenticated caller has a skill the public card lacks; shown able to fail by serving the public card in its place (2026-10-20).",
    "auditor": "F",
@@ -8311,10 +8311,10 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:719 RequestHandlerBuilder::with_extended_agent_card",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:421 build_checks_the_extended_card_as_it_checks_the_public_one",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:451 build_checks_the_extended_card_as_it_checks_the_public_one",
     "crates/a2a-protocol-server/tests/optional_features/extended_card.rs:72 extended_card_exposes_quota_capabilities_the_public_card_lacks"
    ],
    "notes": "The extended card is any valid card the operator sets, capabilities included; build() advertises this server's extensions on it as on the public card. Until 2026-10-14 there was one card. Asserts over HTTP+JSON that /extendedAgentCard carries a quotas extension (requestsPerMinute, monthlyTasks) that the public well-known card lacks; shown able to fail by serving the public card in place of the extended one (2026-10-20).",
@@ -8333,7 +8333,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:719 RequestHandlerBuilder::with_extended_agent_card",
     "crates/a2a-protocol-server/src/builder.rs:734 RequestHandlerBuilder::with_extended_card_provider",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/optional_features/extended_card.rs:136 extended_card_carries_configuration_specific_to_the_caller"
@@ -8453,11 +8453,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:190 get_extended_agent_card_without_capability_returns_unsupported",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:151 get_extended_agent_card_with_no_card_at_all_is_unsupported"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:220 get_extended_agent_card_without_capability_returns_unsupported",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:181 get_extended_agent_card_with_no_card_at_all_is_unsupported"
    ],
    "notes": "Not declared by the handler's card: UnsupportedOperationError. No card on the handler at all and no extended card: UnsupportedOperationError too, since 2026-10-14 (the register's §13.3 row, approved); it answered ExtendedAgentCardNotConfigured, asserting a declaration the handler cannot see. A handler with no public card but an extended card serves it (the card published elsewhere declares the capability).",
    "auditor": "F",
@@ -8473,10 +8473,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:168 a_declared_card_with_no_extended_card_is_not_configured"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:198 a_declared_card_with_no_extended_card_is_not_configured"
    ],
    "notes": "Declared by the handler's card with no with_extended_agent_card: ExtendedAgentCardNotConfiguredError, since 2026-10-14 (audit register R68). Until then this entry was TESTED on the no-card path, the only one that returned -32007; a declared card with no extended card served the public card instead, which this MUST forbids. The test failed before the change.",
    "auditor": "F",
@@ -8593,8 +8593,8 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:27 RequestHandler::on_list_tasks",
     "crates/a2a-protocol-server/src/handler/limits/fields.rs:35 HandlerLimits",
     "crates/a2a-protocol-server/src/handler/push_config.rs:73 RequestHandler::validate_and_store_push_config",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:65 parse_query_param_u32",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:245 parse_list_tasks_query"
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:117 parse_query_param_u32",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:297 parse_list_tasks_query"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks_tests.rs:102 list_tasks_invalid_status_timestamp_after_is_invalid_params",
@@ -8671,7 +8671,7 @@
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:106 debug_names_no_accepted_credential",
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:135 accepting_and_refusing_logs_no_credential",
     "crates/a2a-protocol-server/tests/credential_rotation.rs:116 an_api_key_is_rotated_and_revoked_while_serving",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1938 debug_impls_render_type_and_redact_secrets"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:2081 debug_impls_render_type_and_redact_secrets"
    ],
    "notes": "Constant-time comparison, Debug shows counts not keys, identity labels separate from credentials, push secrets redacted. Exception: SQL push-config stores keep credentials plaintext at rest (see 3131). Client: until 2026-10-14 (audit register R17) the derived Debug of ClientRequest, ClientResponse, CardFetchOptions and WebSocketTransportConfig printed header values (the Authorization an auth interceptor adds) and push-config params and results verbatim; they print header names and JSON keys now, never values.",
    "auditor": "F",
@@ -8690,7 +8690,7 @@
     "crates/a2a-protocol-server/src/auth/credentials.rs:44 CredentialSet::add",
     "crates/a2a-protocol-server/src/auth/mod.rs:261 ApiKeyAuthInterceptor::credentials",
     "crates/a2a-protocol-server/src/auth/mod.rs:379 BearerTokenAuthInterceptor::credentials",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1164 RemoteJwks::get"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1243 RemoteJwks::get"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/credential_rotation.rs:101 a_bearer_token_is_rotated_and_revoked_while_serving",
@@ -8712,7 +8712,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/plaintext.rs:94 Guard::check",
-    "crates/a2a-protocol-client/src/builder/mod.rs:763 ClientBuilder::require_https_credentials",
+    "crates/a2a-protocol-client/src/builder/mod.rs:790 ClientBuilder::require_https_credentials",
     "crates/a2a-protocol-server/src/handler/push_config.rs:531 refuse_an_unservable_config",
     "crates/a2a-protocol-server/src/push/sender.rs:416 HttpPushSender::https_only"
    ],
@@ -8738,7 +8738,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/credentials.rs:58 CredentialSet::revoke",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1164 RemoteJwks::get"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1243 RemoteJwks::get"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/credential_rotation.rs:101 a_bearer_token_is_rotated_and_revoked_while_serving",
@@ -9810,7 +9810,7 @@
     "crates/a2a-protocol-client/tests/received_validation/cards.rs:92 an_extended_card_that_breaks_a_publishing_rule_is_refused_and_not_adopted",
     "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
     "crates/a2a-protocol-client/src/builder/selection_tests.rs:107 an_interface_without_a_protocol_version_is_passed_over",
-    "crates/a2a-protocol-client/src/builder/selection.rs:137 compatibility_is_major_one_and_never_unstated"
+    "crates/a2a-protocol-client/src/builder/selection.rs:170 compatibility_is_major_one_and_never_unstated"
    ],
    "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
@@ -9841,7 +9841,7 @@
     "crates/a2a-protocol-client/tests/received_validation/cards.rs:92 an_extended_card_that_breaks_a_publishing_rule_is_refused_and_not_adopted",
     "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
     "crates/a2a-protocol-client/src/builder/selection_tests.rs:107 an_interface_without_a_protocol_version_is_passed_over",
-    "crates/a2a-protocol-client/src/builder/selection.rs:137 compatibility_is_major_one_and_never_unstated"
+    "crates/a2a-protocol-client/src/builder/selection.rs:170 compatibility_is_major_one_and_never_unstated"
    ],
    "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
@@ -9857,7 +9857,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring",
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring",
     "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/methods/send_message.rs:21 apply_client_config",
     "crates/a2a-protocol-client/src/methods/get_task.rs:57 A2aClient::read_task",
@@ -9869,8 +9869,8 @@
     "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:281 jsonrpc_client_from_card_carries_tenant_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:304 rest_client_from_card_carries_tenant_on_every_request",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1423 builder_from_card_preserves_tenant",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1171 switching_binding_carries_that_interfaces_tenant"
+    "crates/a2a-protocol-client/src/builder/mod.rs:1450 builder_from_card_preserves_tenant",
+    "crates/a2a-protocol-client/src/builder/mod.rs:1198 switching_binding_carries_that_interfaces_tenant"
    ],
    "notes": "from_card copies the selected interface's tenant into ClientConfig.tenant; every method fills params.tenant via tenant_or_default. A per-request tenant (or with_tenant after selection) deliberately overrides the card value (test explicit_request_tenant_wins_over_client_default).",
    "auditor": "G",
@@ -9900,7 +9900,7 @@
     "crates/a2a-protocol-client/tests/received_validation/cards.rs:92 an_extended_card_that_breaks_a_publishing_rule_is_refused_and_not_adopted",
     "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
     "crates/a2a-protocol-client/src/builder/selection_tests.rs:107 an_interface_without_a_protocol_version_is_passed_over",
-    "crates/a2a-protocol-client/src/builder/selection.rs:137 compatibility_is_major_one_and_never_unstated"
+    "crates/a2a-protocol-client/src/builder/selection.rs:170 compatibility_is_major_one_and_never_unstated"
    ],
    "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
@@ -9978,12 +9978,12 @@
     "crates/a2a-protocol-server/src/builder.rs:1207 RequestHandlerBuilder::build",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
     "crates/a2a-protocol-types/src/generated/agent_card.rs:86 AgentCard",
-    "crates/a2a-protocol-client/src/builder/selection.rs:78 candidates"
+    "crates/a2a-protocol-client/src/builder/selection.rs:111 candidates"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:352 builder_rejects_empty_interfaces_in_card",
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
-    "crates/a2a-protocol-client/src/builder/mod.rs:1335 builder_from_card_empty_interfaces_returns_error"
+    "crates/a2a-protocol-client/src/builder/mod.rs:1362 builder_from_card_empty_interfaces_returns_error"
    ],
    "notes": "Builder refuses a card with no interfaces; always serialized; client tolerates absence at parse (default []) then refuses to select (InvalidEndpoint 'agent card has no supported interfaces').",
    "auditor": "G",
@@ -10181,8 +10181,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/transport_factory.rs:206 ClientBuilder::send_extensions",
-    "crates/a2a-protocol-client/src/builder/mod.rs:928 ClientBuilder::skip_required_extension_check"
+    "crates/a2a-protocol-client/src/builder/transport_factory.rs:207 ClientBuilder::send_extensions",
+    "crates/a2a-protocol-client/src/builder/mod.rs:955 ClientBuilder::skip_required_extension_check"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/builder/required_extensions_tests.rs:36 a_required_extension_the_client_does_not_ask_for_refuses_the_build",
@@ -10372,7 +10372,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
@@ -11011,7 +11011,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/send_message.rs:21 apply_client_config",
     "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
@@ -11057,7 +11057,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
@@ -11089,7 +11089,7 @@
     "crates/a2a-protocol-server/tests/empty_task_ids.rs:19 an_empty_task_id_is_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:488 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "An empty or whitespace-only id (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup; it used to reach the store and answer TaskNotFound. JSON absent is -32602 as before. Shown to fail with the check removed from each of the three handlers. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11145,7 +11145,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
@@ -11271,7 +11271,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
@@ -11303,7 +11303,7 @@
     "crates/a2a-protocol-server/tests/empty_task_ids.rs:19 an_empty_task_id_is_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:488 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "An empty or whitespace-only id (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup; it used to reach the store and answer TaskNotFound. JSON absent is -32602 as before. Shown to fail with the check removed from each of the three handlers. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11320,7 +11320,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
@@ -11348,7 +11348,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:1229 empty_required_ids_are_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:488 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "Empty taskId is InvalidParams before any lookup (require_field, since 56f8d61); this entry had not been updated. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11372,7 +11372,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:1229 empty_required_ids_are_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:488 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "Empty id is InvalidParams before any lookup (require_field, since 56f8d61); this entry had not been updated. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11389,7 +11389,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
@@ -11414,7 +11414,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:1229 empty_required_ids_are_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:488 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "An empty value (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup, on get, list and delete; absent in JSON is still -32602 / 400 at parse. Until 2026-10-11 an empty id reached the store and delete/list answered success or TaskNotFound. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11436,7 +11436,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:1229 empty_required_ids_are_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:488 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "An empty value (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup, on get, list and delete; absent in JSON is still -32602 / 400 at parse. Until 2026-10-11 an empty id reached the store and delete/list answered success or TaskNotFound. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11453,7 +11453,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
@@ -11485,7 +11485,7 @@
     "crates/a2a-protocol-server/tests/empty_task_ids.rs:19 an_empty_task_id_is_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:488 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "An empty or whitespace-only id (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup; it used to reach the store and answer TaskNotFound. JSON absent is -32602 as before. Shown to fail with the check removed from each of the three handlers. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11502,7 +11502,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",
@@ -11527,7 +11527,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:1229 empty_required_ids_are_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:488 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "An empty value (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup, on get, list and delete; absent in JSON is still -32602 / 400 at parse. Until 2026-10-11 an empty id reached the store and delete/list answered success or TaskNotFound. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11544,7 +11544,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:34 A2aClient::tenant_or_default",
-    "crates/a2a-protocol-client/src/builder/mod.rs:258 ClientBuilder::from_card_preferring"
+    "crates/a2a-protocol-client/src/builder/mod.rs:269 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/methods/mod.rs:146 card_tenant_is_sent_on_every_request",

@@ -234,3 +234,74 @@ fn bearer_resolver_debug_shows_has_mapper() {
     let debug = format!("{resolver_with:?}");
     assert!(debug.contains("true"));
 }
+
+/// Adversarial review R5, 2026-11-12. Authentication reads the scheme in any
+/// case and trims the token (`auth::extract_bearer`); the tenant resolver read
+/// only `Bearer ` and `bearer ` and did not trim, so a header that
+/// authenticated could resolve no tenant (`BEARER tok`), or a different one
+/// (`Bearer  tok` named the token ` tok`). Every spelling authentication
+/// accepts names the one tenant.
+#[tokio::test]
+async fn every_header_the_authenticator_accepts_names_the_same_tenant() {
+    let resolver = BearerTokenTenantResolver::default();
+    let canonical = resolver
+        .resolve(&make_ctx().with_http_header("authorization", "Bearer tok_abc123"))
+        .await
+        .expect("a tenant");
+    for header in [
+        "bearer tok_abc123",
+        "BEARER tok_abc123",
+        "BeArEr tok_abc123",
+        "Bearer  tok_abc123",
+        "Bearer     tok_abc123",
+        "Bearer tok_abc123 ",
+        "bearer   tok_abc123  ",
+    ] {
+        // What the authenticating interceptors take from this header.
+        assert_eq!(
+            crate::auth::extract_bearer(header),
+            Some("tok_abc123"),
+            "the authenticator reads {header:?} as this token"
+        );
+        let ctx = make_ctx().with_http_header("authorization", header);
+        assert_eq!(
+            resolver.resolve(&ctx).await,
+            Some(canonical.clone()),
+            "{header:?} authenticates as the token, so it must name its tenant"
+        );
+    }
+}
+
+/// What authentication does not accept resolves nothing, so the two agree on
+/// the other side too.
+#[tokio::test]
+async fn a_header_the_authenticator_refuses_names_no_tenant() {
+    let resolver = BearerTokenTenantResolver::default();
+    for header in [
+        "Bearer",
+        "Bearer ",
+        "Bearer    ",
+        "Basic dXNlcjpwYXNz",
+        "Bearertok",
+        "Token tok",
+    ] {
+        assert_eq!(crate::auth::extract_bearer(header), None, "{header:?}");
+        let ctx = make_ctx().with_http_header("authorization", header);
+        assert_eq!(resolver.resolve(&ctx).await, None, "{header:?}");
+    }
+}
+
+/// The mapper is handed the token as authentication read it, never the
+/// whitespace around it.
+#[tokio::test]
+async fn the_mapper_receives_the_token_as_authentication_reads_it() {
+    let resolver = BearerTokenTenantResolver::with_mapper(|token| Some(format!("[{token}]")));
+    for header in ["Bearer tok", "BEARER tok", "Bearer   tok  "] {
+        let ctx = make_ctx().with_http_header("authorization", header);
+        assert_eq!(
+            resolver.resolve(&ctx).await,
+            Some("[tok]".into()),
+            "{header:?}"
+        );
+    }
+}

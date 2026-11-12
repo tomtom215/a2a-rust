@@ -20,6 +20,18 @@ use super::response::parse_params;
 use crate::error::ServerError;
 
 impl JsonRpcDispatcher {
+    /// The tenant `GetExtendedAgentCard` names (`params.tenant`), if it names
+    /// one: the request's one field (adversarial review P3, 2026-11-12).
+    pub(super) async fn extended_card_tenant(
+        &self,
+        rpc_req: &JsonRpcRequest,
+        headers: Option<&HashMap<String, String>>,
+    ) -> Result<Option<String>, ServerError> {
+        let params: a2a_protocol_types::params::GetExtendedAgentCardParams =
+            self.params(rpc_req, headers).await?;
+        Ok(params.tenant.filter(|t| !t.is_empty()))
+    }
+
     /// [`parse_params`], with the interceptor chain's refusal in place of
     /// the parse error when the chain does not admit the caller.
     pub(super) async fn params<T>(

@@ -72,9 +72,15 @@ interval of the last fetch it is refused with `401` and nothing is fetched,
 and requests that arrive while a refetch is under way wait for it. Before
 2026-10-30 every such token forced a fetch, so anyone, with no credential,
 could make the agent send the identity provider one request per request it
-received. A fetch is bounded to 30 s and 256 KiB. If the first fetch fails, or
+received. A fetch is bounded to 30 s (`with_jwks_fetch_budget`) and 256 KiB. If the first fetch fails, or
 the set holds no usable key, the call is refused with a server error (not
-`401`), because no verdict about the token could be reached; a refetch for an
+`401`), because no verdict about the token could be reached. With the cache
+cold or expired, **a failed fetch is shared**: the requests queued behind it are
+given its error and fetch nothing until a cooldown of the refetch interval (plus
+up to a fifth, jittered) has passed, so an identity provider that is down is asked
+once and not once per request, no request waits longer than about one fetch budget,
+and past 256 requests waiting for one refresh the rest are refused at once
+(adversarial review R4, 2026-11-12); a refetch for an
 unknown `kid` that fails leaves the keys in hand, and the token is refused
 with `401`. Only RSA keys and P-256 EC keys are
 loaded, and an RS256 key must be 2048 to 8192 bits; entries of another key

@@ -1712,6 +1712,33 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **A reservation could be settled while its writer was still writing** (R3). `PushOutbox::extend_hold` (new, with a default that reports it
   unsupported) lets the processor renew the hold while its fold runs; the three built-in outboxes implement it. A custom outbox that keeps
   reservations should implement it.
+- **A client built from the builder sent `//message:send` to a REST server whenever the base URL ended in `/`** (adversarial review P1). The builder's
+  constructor kept the slash the public constructors removed. One function (`canonical_base_url`) now validates and normalises the base for every
+  way a `RestTransport` is made, and a wire-level test (12 builds: builder, card and transport; root and base path; with and without the slash)
+  asserts the request line the server received.
+- **`with_protocol_binding` could select an interface `from_card` had rejected for its protocol version** (P4). A card listing JSON-RPC `0.3` at
+  `/legacy` before JSON-RPC `1.0` at `/v1` selected `/v1` from `from_card` and `/legacy` from `with_protocol_binding("JSONRPC")`, while the client
+  went on sending version 1 requests. Both paths, and `build_grpc`, now use one selection rule (`selection::compatible_for`), `REST` and `HTTP+JSON`
+  are one binding, and an override the card offers only for another protocol major is a **build error** naming what it offers (use
+  `with_custom_transport` to supply your own).
+- **A tenant named `tasks`, `message` or `extendedAgentCard` did not round-trip over REST** (P2). The client puts the tenant first in the path
+  (`/{tenant}/message:send`), and the server refused to read a first segment named like a route as a tenant. The server now splits the tenant off when
+  the whole path is not itself a route (`strip_tenant_prefix_for`, `is_route`), and the client sends a tenant that collides with a route name
+  (`tasks`, `message`, `message:send`, `message:stream`, `extendedAgentCard`, `tenants`) in the primary binding's form, `?tenant=`, which has no ambiguity.
+  A test makes every operation for eleven tenant spellings on REST and JSON-RPC and asserts the tenant the handler saw.
+- **`GetExtendedAgentCard` dropped the request's tenant and skipped tenant admission** (P3). It was the one operation that did not resolve the tenant: a
+  provider could not tell two tenants of one principal apart, and with `require_resolved_tenant` a request with no resolvable tenant was **served**
+  (reproduced). It now goes through the same resolution, scope and caller partition as `GetTask`, on JSON-RPC, REST, gRPC and SLIMRPC
+  (`RequestHandler::on_get_extended_agent_card_for_tenant`; the old method is the tenant-less case). **Behaviour change:** on a server whose
+  stores do not partition by tenant, a request that names a tenant is now refused as every other operation's is, unless `accept_unisolated_tenants()`.
+- **A bearer header authentication accepted could resolve to another tenant, or none** (R5). `BEARER tok` or `Bearer  tok` authenticated (the
+  authenticator reads the scheme in any case and trims) but the tenant resolver read only `Bearer `/`bearer ` and did not trim, so a task
+  made under one spelling was in a different tenant partition from the same credential in another (reproduced over REST and JSON-RPC; with
+  `require_resolved_tenant`, refused). The resolver now uses the authenticator's parser, `auth::extract_bearer`.
+- **A remote JWKS endpoint that was down was fetched from once per request** (R4). With the key cache cold or expired, callers queued on a lock and each made
+  its own fetch (reproduced: 100 fetches for 100 requests). A failed fetch is now shared with the requests behind it for a jittered cooldown of the
+  refetch interval, a request waits at most about one fetch budget (`JwtAuthInterceptor::with_jwks_fetch_budget`, 30 s by default), and past 256
+  waiters the rest are refused at once; validation stays fail closed.
 - **A legal hold that completed did not stop a purge that had already begun** (A1). `AuditLog::purge` read the holds once and deleted later,
   without the chain's lock. It now takes each chain's lock, reads the holds afresh, and deletes with the new
   `AuditStore::delete_through_unless_held`, which the in-memory, SQLite and PostgreSQL stores run atomically with the hold check (PostgreSQL:

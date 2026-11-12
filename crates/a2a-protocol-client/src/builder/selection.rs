@@ -69,6 +69,39 @@ pub fn canonical_binding(binding: &str) -> Option<&'static str> {
         })
 }
 
+/// Whether `a` and `b` name the same binding: the canonical names (so `REST`
+/// and `HTTP+JSON` are one), ignoring ASCII case; names this SDK does not
+/// implement are compared as written, ignoring case.
+pub fn same_binding(a: &str, b: &str) -> bool {
+    match (canonical_binding(a), canonical_binding(b)) {
+        (Some(x), Some(y)) => x == y,
+        _ => a.eq_ignore_ascii_case(b),
+    }
+}
+
+/// The first of `interfaces` for `binding` that speaks this SDK's protocol
+/// major, in the order given. The one selection rule every path uses
+/// (`from_card`, an explicit override, `build_grpc`), so an interface already
+/// rejected for its version cannot be selected by another path.
+pub(super) fn compatible_for<'a>(
+    interfaces: &'a [AgentInterface],
+    binding: &str,
+) -> Option<&'a AgentInterface> {
+    interfaces
+        .iter()
+        .find(|i| same_binding(&i.protocol_binding, binding) && is_compatible(&i.protocol_version))
+}
+
+/// What `interfaces` offer for `binding`, as `"<version> at <url>"`, for an
+/// error message; empty when it offers none.
+pub(super) fn offered_for(interfaces: &[AgentInterface], binding: &str) -> Vec<String> {
+    interfaces
+        .iter()
+        .filter(|i| same_binding(&i.protocol_binding, binding))
+        .map(|i| format!("{} at {}", i.protocol_version, i.url))
+        .collect()
+}
+
 /// The card's compatible interfaces, in the order to try them.
 ///
 /// # Errors

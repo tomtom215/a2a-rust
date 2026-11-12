@@ -31,25 +31,55 @@ impl RequestHandler {
         &self,
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<AgentCard> {
+        self.on_get_extended_agent_card_for_tenant(None, headers)
+            .await
+    }
+
+    /// [`on_get_extended_agent_card`](Self::on_get_extended_agent_card) for the
+    /// tenant the request names (`GetExtendedAgentCardRequest.tenant`, which
+    /// every binding carries: the JSON-RPC and gRPC field, the REST path
+    /// prefix or query). The tenant goes through the same admission as every
+    /// other operation's: it is resolved (`TenantResolver`, strict resolution,
+    /// the halt switch), the call runs in its scope, so an interceptor and the
+    /// [`ExtendedCardProvider`](crate::ExtendedCardProvider) see it in
+    /// `ctx.tenant()`, and the caller's partition is entered. Before, this was
+    /// the one operation that dropped the tenant, so a provider could not tell
+    /// two tenants of one principal apart (adversarial review P3, 2026-11-12).
+    ///
+    /// # Errors
+    ///
+    /// As [`on_get_extended_agent_card`](Self::on_get_extended_agent_card),
+    /// and a refusal of the tenant, as for any other operation.
+    pub async fn on_get_extended_agent_card_for_tenant(
+        &self,
+        tenant: Option<&str>,
+        headers: Option<&HashMap<String, String>>,
+    ) -> ServerResult<AgentCard> {
         let start = Instant::now();
         self.metrics.on_request("GetExtendedAgentCard");
 
         let result: ServerResult<_> = async {
-            let call_ctx =
-                build_call_context("GetExtendedAgentCard", headers, self.inbound_trace_policy);
-            let mut call = self.interceptors.begin(&call_ctx);
-            let result = async {
-                call.before().await?;
-                // SPEC §3.3.4: as for every other operation, a client that
-                // does not declare an extension the card marks required is
-                // refused. This was the one operation that skipped it.
-                self.ensure_required_extensions(&call_ctx)?;
+            let tenant = self
+                .resolve_tenant_counted(start, "GetExtendedAgentCard", headers, tenant)
+                .await?;
+            crate::store::tenant::TenantContext::scope_request(tenant, async {
+                let call_ctx =
+                    build_call_context("GetExtendedAgentCard", headers, self.inbound_trace_policy);
+                let mut call = self.interceptors.begin(&call_ctx);
+                let result = async {
+                    self.admit(&mut call, &call_ctx).await?;
+                    // SPEC §3.3.4: as for every other operation, a client that
+                    // does not declare an extension the card marks required is
+                    // refused. This was the one operation that skipped it.
+                    self.ensure_required_extensions(&call_ctx)?;
 
-                let card = self.extended_card_for_this_call()?;
-                crate::agent_card::for_caller(self, &call_ctx, card).await
-            }
-            .await;
-            call.finish(result).await
+                    let card = self.extended_card_for_this_call()?;
+                    crate::agent_card::for_caller(self, &call_ctx, card).await
+                }
+                .await;
+                call.finish(result).await
+            })
+            .await
         }
         .await;
 
@@ -122,360 +152,5 @@ impl RequestHandler {
 }
 
 #[cfg(test)]
-mod tests {
-    use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface};
-
-    use crate::agent_executor;
-    use crate::builder::RequestHandlerBuilder;
-    use crate::error::ServerError;
-
-    struct DummyExecutor;
-    agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
-
-    fn make_agent_card() -> AgentCard {
-        AgentCard::new(
-            "Test Agent",
-            "1.0.0",
-            AgentInterface::new("http://localhost:8080", "JSONRPC").with_protocol_version("1.0.0"),
-        )
-        .with_description("A test agent")
-        .with_input_modes(vec!["text/plain"])
-        .with_output_modes(vec!["text/plain"])
-        .with_skill(
-            a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
-        )
-        .with_capabilities(AgentCapabilities::none())
-    }
-
-    #[tokio::test]
-    async fn get_extended_agent_card_with_no_card_at_all_is_unsupported() {
-        // SPEC §13.3: with `capabilities.extendedAgentCard` false or not
-        // present the operation MUST return UnsupportedOperationError. A
-        // handler with neither card declares nothing and can serve nothing;
-        // -32007 would assert a capability it cannot know is declared.
-        let handler = RequestHandlerBuilder::new(DummyExecutor)
-            .without_agent_card()
-            .build()
-            .unwrap();
-        let result = handler.on_get_extended_agent_card(None).await;
-        assert!(
-            matches!(result, Err(ServerError::UnsupportedOperation(_))),
-            "expected UnsupportedOperation when no card is configured, got: {result:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_declared_card_with_no_extended_card_is_not_configured() {
-        // SPEC §3.1.11 / §13.3: "When support is declared but no extended
-        // card is configured, the operation MUST return
-        // ExtendedAgentCardNotConfiguredError." The public card is not an
-        // extended card: serving it in its place answered a different
-        // question than the one the client asked.
-        let mut card = make_agent_card();
-        card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
-        let handler = RequestHandlerBuilder::new(DummyExecutor)
-            .with_agent_card(card)
-            .allow_unauthenticated_extended_card()
-            .build()
-            .unwrap();
-        let result = handler.on_get_extended_agent_card(None).await;
-        assert!(
-            matches!(result, Err(ServerError::Protocol(ref e))
-                if e.code == a2a_protocol_types::error::ErrorCode::ExtendedAgentCardNotConfigured),
-            "expected ExtendedAgentCardNotConfigured, got: {result:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn get_extended_agent_card_without_capability_returns_unsupported() {
-        let card = make_agent_card(); // capabilities.extended_agent_card is None
-        let handler = RequestHandlerBuilder::new(DummyExecutor)
-            .with_agent_card(card)
-            .build()
-            .unwrap();
-        let result = handler.on_get_extended_agent_card(None).await;
-        assert!(
-            matches!(result, Err(ServerError::UnsupportedOperation(_))),
-            "expected UnsupportedOperation when capability is false, got: {result:?}"
-        );
-    }
-
-    /// §13.3: with no authenticating interceptor, the extended card is
-    /// refused by default — a bare deployment must not serve the
-    /// "authenticated" card to anonymous callers.
-    #[tokio::test]
-    async fn get_extended_agent_card_without_authenticator_is_refused() {
-        let mut card = make_agent_card();
-        card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
-        let handler = RequestHandlerBuilder::new(DummyExecutor)
-            .with_agent_card(card.clone())
-            .with_extended_agent_card(card)
-            .build()
-            .unwrap();
-        let result = handler.on_get_extended_agent_card(None).await;
-        assert!(
-            matches!(result, Err(ServerError::Protocol(ref e))
-                if e.message.contains("requires authentication")),
-            "expected an authentication-required refusal, got: {result:?}"
-        );
-    }
-
-    /// The explicit opt-out restores unauthenticated serving.
-    #[tokio::test]
-    async fn get_extended_agent_card_with_optout_returns_ok() {
-        let mut card = make_agent_card();
-        card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
-        let handler = RequestHandlerBuilder::new(DummyExecutor)
-            .with_agent_card(card.clone())
-            .with_extended_agent_card(card)
-            .allow_unauthenticated_extended_card()
-            .build()
-            .unwrap();
-        let result = handler.on_get_extended_agent_card(None).await;
-        assert!(
-            result.is_ok(),
-            "expected Ok with explicit unauthenticated opt-in, got: {result:?}"
-        );
-        assert_eq!(result.unwrap().name, "Test Agent");
-    }
-
-    /// With an authenticating interceptor, valid credentials get the card and
-    /// missing credentials are rejected by the interceptor itself.
-    #[tokio::test]
-    async fn get_extended_agent_card_with_authenticator_gates_on_credentials() {
-        let card = declaring();
-        let handler = RequestHandlerBuilder::new(DummyExecutor)
-            .with_agent_card(card.clone())
-            .with_extended_agent_card(card)
-            .with_interceptor(crate::auth::BearerTokenAuthInterceptor::new(["sekret"]))
-            .build()
-            .unwrap();
-
-        // No credentials → the auth interceptor rejects.
-        let anon = handler.on_get_extended_agent_card(None).await;
-        assert!(
-            anon.is_err(),
-            "unauthenticated request must be rejected, got: {anon:?}"
-        );
-
-        // Valid credentials → the card is served.
-        let mut headers = std::collections::HashMap::new();
-        headers.insert("authorization".to_owned(), "Bearer sekret".to_owned());
-        let authed = handler.on_get_extended_agent_card(Some(&headers)).await;
-        assert!(
-            authed.is_ok(),
-            "authenticated request must be served, got: {authed:?}"
-        );
-        assert_eq!(authed.unwrap().name, "Test Agent");
-    }
-
-    /// §3.3.4: a required extension the client does not declare is
-    /// `ExtensionSupportRequired` here as on every other operation.
-    #[tokio::test]
-    async fn get_extended_agent_card_enforces_required_extensions() {
-        use a2a_protocol_types::extensions::AgentExtension;
-        let uri = "https://example.com/ext/required/v1";
-        let mut card = make_agent_card();
-        card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
-        card.capabilities.extensions = Some(vec![
-            AgentExtension::new(uri.to_owned()).with_required(true),
-        ]);
-        let handler = RequestHandlerBuilder::new(DummyExecutor)
-            .with_agent_card(card.clone())
-            .with_extended_agent_card(card)
-            .allow_unauthenticated_extended_card()
-            .build()
-            .unwrap();
-
-        let refused = handler.on_get_extended_agent_card(None).await;
-        assert!(
-            matches!(
-                refused,
-                Err(ServerError::Protocol(ref e))
-                    if e.code == a2a_protocol_types::error::ErrorCode::ExtensionSupportRequired
-            ),
-            "{refused:?}"
-        );
-        let headers =
-            std::collections::HashMap::from([("a2a-extensions".to_owned(), uri.to_owned())]);
-        handler
-            .on_get_extended_agent_card(Some(&headers))
-            .await
-            .expect("a client that declares the extension gets the card");
-    }
-
-    fn declaring() -> AgentCard {
-        let mut card = make_agent_card();
-        card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
-        bearer_declared(card)
-    }
-
-    /// `card` declaring the scheme `BearerTokenAuthInterceptor` checks: spec
-    /// §13.3 has requests authenticated with a scheme the public card declares.
-    fn bearer_declared(card: AgentCard) -> AgentCard {
-        let bearer =
-            serde_json::json!({"bearer": {"httpAuthSecurityScheme": {"scheme": "Bearer"}}});
-        card.with_security_schemes(serde_json::from_value(bearer).unwrap())
-    }
-
-    /// The public card plus a skill only authenticated callers see.
-    fn extended() -> AgentCard {
-        let mut card = declaring();
-        card.skills.push(
-            a2a_protocol_types::AgentSkill::new("billing", "Billing", "Account details")
-                .with_tags(["billing"]),
-        );
-        card
-    }
-
-    fn has_billing(card: &AgentCard) -> bool {
-        card.skills.iter().any(|skill| skill.id == "billing")
-    }
-
-    fn refusal(builder: RequestHandlerBuilder) -> String {
-        match builder.build() {
-            Err(ServerError::Config(why)) => why,
-            other => panic!("expected Config, got: {other:?}"),
-        }
-    }
-
-    /// Audit register R56: the card an authenticated caller gets is the one
-    /// configured for it. It was the public card, since nothing else could
-    /// be configured.
-    #[tokio::test]
-    async fn a_configured_extended_card_is_served_in_place_of_the_public_one() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor)
-            .with_agent_card(declaring())
-            .with_extended_agent_card(extended())
-            .with_interceptor(crate::auth::BearerTokenAuthInterceptor::new(["sekret"]))
-            .build()
-            .unwrap();
-        assert!(
-            handler.on_get_extended_agent_card(None).await.is_err(),
-            "still authenticated"
-        );
-        let headers = std::collections::HashMap::from([(
-            "authorization".to_owned(),
-            "Bearer sekret".to_owned(),
-        )]);
-        let served = handler
-            .on_get_extended_agent_card(Some(&headers))
-            .await
-            .expect("served to an authenticated caller");
-        assert!(has_billing(&served), "{served:?}");
-        assert!(!has_billing(handler.agent_card.as_ref().unwrap()));
-    }
-
-    /// With no public card here, the one published elsewhere declares the
-    /// operation, and the extended card is served, authenticated as ever.
-    #[tokio::test]
-    async fn without_a_public_card_a_configured_extended_card_is_served() {
-        let open = RequestHandlerBuilder::new(DummyExecutor)
-            .without_agent_card()
-            .with_extended_agent_card(extended())
-            .allow_unauthenticated_extended_card()
-            .build()
-            .unwrap();
-        let served = open.on_get_extended_agent_card(None).await.unwrap();
-        assert!(has_billing(&served));
-        assert!(
-            served
-                .capabilities
-                .extensions
-                .iter()
-                .flatten()
-                .any(|e| e.uri == a2a_protocol_types::failure::FAILURE_EXTENSION_URI),
-            "advertised with no public card too: {served:?}"
-        );
-
-        let closed = RequestHandlerBuilder::new(DummyExecutor)
-            .without_agent_card()
-            .with_extended_agent_card(extended())
-            .build()
-            .unwrap();
-        let refused = closed.on_get_extended_agent_card(None).await;
-        assert!(
-            matches!(refused, Err(ServerError::Protocol(ref e))
-                if e.message.contains("requires authentication")),
-            "{refused:?}"
-        );
-    }
-
-    #[test]
-    fn build_refuses_an_extended_card_the_public_card_never_serves() {
-        let why = refusal(
-            RequestHandlerBuilder::new(DummyExecutor)
-                .with_agent_card(bearer_declared(make_agent_card()))
-                .with_extended_agent_card(extended()),
-        );
-        assert!(
-            why.contains("does not declare capabilities.extendedAgentCard"),
-            "{why}"
-        );
-    }
-
-    /// Validity, a push sender for a push capability, and the advertised
-    /// extensions: a client that fetches the extended card reads its
-    /// capabilities from then on.
-    #[test]
-    fn build_checks_the_extended_card_as_it_checks_the_public_one() {
-        let with = |card| {
-            RequestHandlerBuilder::new(DummyExecutor)
-                .with_agent_card(declaring())
-                .with_extended_agent_card(card)
-        };
-
-        let mut invalid = extended();
-        invalid.version = String::new();
-        let why = refusal(with(invalid));
-        assert!(
-            why.starts_with("the extended agent card is not valid"),
-            "{why}"
-        );
-
-        let mut push = extended();
-        push.capabilities.push_notifications = Some(true);
-        let why = refusal(with(push));
-        assert!(
-            why.starts_with("the extended agent card declares capabilities.pushNotifications"),
-            "{why}"
-        );
-
-        let mut signed = extended();
-        signed.signatures = Some(vec![
-            a2a_protocol_types::extensions::AgentCardSignature::new("e30", "c2ln"),
-        ]);
-        let why = refusal(with(signed));
-        assert!(
-            why.starts_with("the extended agent card carries a signature"),
-            "{why}"
-        );
-
-        let handler = with(extended()).build().unwrap();
-        let advertised = handler
-            .extended_agent_card
-            .as_ref()
-            .and_then(|card| card.capabilities.extensions.as_ref())
-            .expect("extensions advertised");
-        assert!(
-            advertised
-                .iter()
-                .any(|e| e.uri == a2a_protocol_types::failure::FAILURE_EXTENSION_URI),
-            "{advertised:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn get_extended_agent_card_error_path_records_metrics() {
-        // Exercises the Err metrics path when no agent card is configured.
-        let handler = RequestHandlerBuilder::new(DummyExecutor)
-            .without_agent_card()
-            .build()
-            .unwrap();
-        let result = handler.on_get_extended_agent_card(None).await;
-        assert!(
-            result.is_err(),
-            "expected error for error metrics path, got: {result:?}"
-        );
-    }
-}
+#[path = "extended_card_tests.rs"]
+mod tests;
