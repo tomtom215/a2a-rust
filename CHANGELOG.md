@@ -1705,6 +1705,10 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   anything else ends the stream with `UNAVAILABLE`, with nothing logged or pushed for an ending the store lacks.
   `HandlerLimits::with_terminal_confirmation(TerminalConfirmation::BestEffort)` keeps the earlier behaviour. A terminal event with no answer
   within the write timeout, or after the processor stopped, is treated the same way. See ADR 0037 amendment 2026-11-12.
+  End to end with Qwen3-1.7B on llama.cpp `4fffab6` as the agent behind the tool loop, a real webhook socket and a store that rejects only the `Completed`
+  write (`tests/terminal_truth_live.rs`): healthy, the stream showed `[Working, Completed]`, `GetTask` said `Completed` and the webhook was told `Completed`; with the
+  write rejected, the stream showed `[Working]` and ended `UNAVAILABLE`, `GetTask` said `Working` and no webhook carried `Completed`; under
+  `BestEffort` the stream again said `Completed` while the store held `Working` (the webhook still did not).
 - **A rejected event could be delivered to a webhook by the outbox's recovery** (R2). A reservation for an event the state machine did not store
   (a part bound, a failed save) whose removal then failed stayed in the outbox, and when a later event moved the stored log position past it,
   a worker read that as "stored" and armed it. A processor now keeps a reservation it could not settle and stores no position past it, and

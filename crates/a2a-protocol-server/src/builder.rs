@@ -464,11 +464,10 @@ impl RequestHandlerBuilder {
                 if self.approval_gate.is_none() {
                     self.approval_gate = Some(crate::approval::ApprovalGate::new());
                 }
-                self.with_audit(log)
+                self = self.with_audit(log);
             }
             crate::profile::Profile::Production => {
                 self.profiles.push(crate::profile::ProfileKind::Production);
-                self
             }
             crate::profile::Profile::MultiTenant => {
                 self.profiles.push(crate::profile::ProfileKind::MultiTenant);
@@ -478,9 +477,9 @@ impl RequestHandlerBuilder {
                     self.caller_isolation = Some(CallerIsolation::EveryCaller);
                 }
                 self.require_resolved_tenant = true;
-                self
             }
         }
+        self
     }
 
     /// Checks approval decisions before the executor sees them: see
