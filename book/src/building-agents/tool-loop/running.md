@@ -32,6 +32,10 @@ let tool_loop = ToolLoop::new(model, tools)
 | `with_max_turns(n)` | 8 (`DEFAULT_MAX_TURNS`) | How many model turns a run may take. `0` is taken as `1`: a run asks the model at least once |
 | `with_max_calls_per_turn(n)` | 64 (`DEFAULT_MAX_CALLS_PER_TURN`) | How many tool calls one model reply may make. The first `n` run; the rest are dropped, with a line in the trace saying so. `0` is taken as `1` |
 | `with_recover_text_calls(bool)` | on | Whether a final reply that is exactly one JSON object naming a tool in the set (bare, in a code fence, or between `<tool_call>` tags) is run as that call rather than returned as the answer |
+| `with_text_call_recovery(TextCallRecovery)` | `All` | Which tools a reply written as a call may run: `All` (as `with_recover_text_calls(true)`), `ReadOnly` (only a tool that declares `read_only()`), `Off` (never: a requested JSON example stays an example) |
+| `with_trace_content(TraceContent)` | `Full` | What the caller's `tool-trace` artifact holds: `Full` (`name(arguments) -> result`, truncated, **not redacted**) or `Receipt` (`name [call id]: ran`, `failed` or `not run again`: no arguments, no result; the model still sees both) |
+| `with_policy(ToolPolicy)` | none | Asked before **every** call runs (native, recovered from text, repeated after a retry) with the tool, the arguments and the request's tenant and authenticated caller, and able to refuse it; the reason is the call's result as the model sees it |
+| `ToolLoop::strict(model, tools)` | — | `new` with `TextCallRecovery::Off` and `TraceContent::Receipt`: for a deployment that takes a tool call to be an action with consequences |
 | `with_idempotency_secret([u8; 32])` | drawn per loop | The secret call keys are derived under; see [Idempotency keys](./tools.md#idempotency-keys) |
 | `with_agent_name(name)` | none | Recorded as `gen_ai.agent.name` on the run's metrics |
 | `with_meter(&Meter)` | the global meter provider | Where the loop's metrics go (`otel` feature); see [Spans and metrics](./telemetry.md) |

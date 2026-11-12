@@ -13,11 +13,15 @@ use super::answer::Answer;
 use super::idempotency::{self, Secret};
 pub use super::loop_error::LoopError;
 use super::model::{ChatMessage, ChatRequest, ToolCall, ToolModel};
+use super::policy::{
+    CallStatus, PolicyDecision, PolicyRequest, TextCallRecovery, ToolPolicy, TraceContent,
+    TrustedIdentity,
+};
 use super::recover;
 use super::retry::ModelRetry;
 use super::run_support::{charge_usage, give_ids, limit_calls, parse_arguments};
 use super::steering::{Side, before_turn};
-use super::tool::{ToolError, ToolInvocation, ToolSet};
+use super::tool::{Tool, ToolError, ToolInvocation, ToolSet};
 use super::trace;
 use crate::rpc_span::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 
@@ -36,6 +40,22 @@ pub const DEFAULT_MAX_TURNS: usize = 8;
 /// of 90,000 of them took a loop from 21 MB to 1.4 GB (hostile campaign, wave
 /// 2, W2-LIVE-5).
 pub const DEFAULT_MAX_CALLS_PER_TURN: usize = 64;
+
+/// Where a call came from, for the policy.
+#[derive(Clone, Copy)]
+struct Origin<'a> {
+    from_text: bool,
+    identity: Option<&'a TrustedIdentity>,
+}
+
+impl<'a> Origin<'a> {
+    const fn of(from_text: bool, side: &Side<'a>) -> Self {
+        Self {
+            from_text,
+            identity: side.identity,
+        }
+    }
+}
 
 /// A model, the tools it may call, and the bounded loop between them.
 ///
@@ -57,7 +77,9 @@ pub struct ToolLoop {
     pub(super) preamble: String,
     max_turns: usize,
     max_calls_per_turn: usize,
-    recover_text_calls: bool,
+    text_recovery: TextCallRecovery,
+    trace_content: TraceContent,
+    policy: Option<Box<dyn ToolPolicy>>,
     secret: Secret,
     agent_name: Option<String>,
     meter: GenAiMeter,
@@ -71,7 +93,9 @@ impl fmt::Debug for ToolLoop {
             .field("tools", &self.tools)
             .field("max_turns", &self.max_turns)
             .field("max_calls_per_turn", &self.max_calls_per_turn)
-            .field("recover_text_calls", &self.recover_text_calls)
+            .field("text_recovery", &self.text_recovery)
+            .field("trace_content", &self.trace_content)
+            .field("policy", &self.policy.is_some())
             .field("agent_name", &self.agent_name)
             .field("model_retry", &self.model_retry)
             .finish_non_exhaustive()
@@ -89,80 +113,14 @@ impl ToolLoop {
             preamble: String::new(),
             max_turns: DEFAULT_MAX_TURNS,
             max_calls_per_turn: DEFAULT_MAX_CALLS_PER_TURN,
-            recover_text_calls: true,
+            text_recovery: TextCallRecovery::All,
+            trace_content: TraceContent::Full,
+            policy: None,
             secret: idempotency::fresh_secret(),
             agent_name: None,
             meter: GenAiMeter::default(),
             model_retry: None,
         }
-    }
-
-    /// Names the agent this loop is, recorded as `gen_ai.agent.name` on
-    /// the run's metrics.
-    #[must_use]
-    pub fn with_agent_name(mut self, name: impl Into<String>) -> Self {
-        self.agent_name = Some(name.into());
-        self
-    }
-
-    /// Records the loop's metrics (`gen_ai.client.inference.duration` and
-    /// the rest; ADR 0013) to `meter` rather than to the global provider's
-    /// meter, which is looked up each time one is recorded.
-    ///
-    /// Takes the meter by reference since 0.16.0: the instruments are built
-    /// from it once, here, and the meter itself is not kept (audit C-23).
-    #[cfg(feature = "otel")]
-    #[must_use]
-    pub fn with_meter(mut self, meter: &opentelemetry::metrics::Meter) -> Self {
-        self.meter = GenAiMeter::new(meter);
-        self
-    }
-
-    /// Sets the secret idempotency keys are derived under. Each loop draws
-    /// its own by default, so keys differ between processes; replicas that
-    /// set the same secret give the same call in the same scope the same
-    /// key, so a backend deduplicates a call one replica retries after
-    /// another made it. Keep it as secret as a credential: with it, keys
-    /// can be computed from task ids and arguments.
-    #[must_use]
-    pub const fn with_idempotency_secret(mut self, secret: [u8; 32]) -> Self {
-        self.secret = secret;
-        self
-    }
-
-    /// Sets the system preamble every turn is sent with.
-    #[must_use]
-    pub fn with_preamble(mut self, preamble: impl Into<String>) -> Self {
-        self.preamble = preamble.into();
-        self
-    }
-
-    /// Sets how many model turns a run may take. `0` is taken as `1`: a run
-    /// asks the model at least once.
-    #[must_use]
-    pub const fn with_max_turns(mut self, max_turns: usize) -> Self {
-        self.max_turns = if max_turns == 0 { 1 } else { max_turns };
-        self
-    }
-
-    /// Sets how many tool calls one model reply may make; the first this many
-    /// run and the rest are dropped, with a line in the trace saying so. `0` is
-    /// taken as `1`. [`DEFAULT_MAX_CALLS_PER_TURN`] when not set.
-    #[must_use]
-    pub const fn with_max_calls_per_turn(mut self, max_calls: usize) -> Self {
-        self.max_calls_per_turn = if max_calls == 0 { 1 } else { max_calls };
-        self
-    }
-
-    /// Whether a final reply that is exactly one JSON object naming a tool
-    /// in the set — bare, in a code fence, or between `<tool_call>` tags —
-    /// is run as that call rather than returned as the answer. On by
-    /// default: small models write calls as text, and an answer of raw JSON
-    /// helps nobody.
-    #[must_use]
-    pub const fn with_recover_text_calls(mut self, on: bool) -> Self {
-        self.recover_text_calls = on;
-        self
     }
 
     /// The turn bound.
@@ -292,13 +250,11 @@ impl ToolLoop {
 
             let mut text = reply.text;
             let mut calls = reply.tool_calls;
+            let mut from_text = false;
             limit_calls(&mut calls, self.max_calls_per_turn, &mut trace, side.trace);
             if calls.is_empty() {
-                let recovered = if self.recover_text_calls {
-                    recover::text_call(&text, &names)
-                } else {
-                    None
-                };
+                let recovered = self.recovered(&text, &names);
+                from_text = recovered.is_some();
                 let Some((name, arguments)) = recovered else {
                     return Answer::from_reply(text, trace, reply.finish_reason);
                 };
@@ -321,8 +277,11 @@ impl ToolLoop {
                 if cancel.is_cancelled() {
                     return Err(LoopError::Cancelled);
                 }
-                let content = self.call(run, &call, cancel, scope, &mut done).await?;
-                let line = trace::line(&call.name, &call.arguments, &content);
+                let origin = Origin::of(from_text, &side);
+                let (content, status) = self
+                    .call(run, &call, cancel, scope, &mut done, origin)
+                    .await?;
+                let line = self.trace_line(&call, &content, status);
                 trace::record(&mut trace, side.trace, line);
                 messages.push(ChatMessage::ToolResult {
                     call_id: call.id,
@@ -332,6 +291,47 @@ impl ToolLoop {
             }
         }
         Err(LoopError::TurnLimit(self.max_turns))
+    }
+
+    /// The call a reply written as text is, if it is one the loop's
+    /// [`TextCallRecovery`] runs.
+    fn recovered(&self, text: &str, names: &[String]) -> Option<(String, serde_json::Value)> {
+        recover::text_call(text, names).filter(|(name, _)| {
+            let read_only = self.tools.get(name).is_some_and(|t| t.read_only());
+            self.text_recovery.permits(read_only)
+        })
+    }
+
+    /// The line `call` leaves in the caller's trace, as [`TraceContent`] says.
+    fn trace_line(&self, call: &ToolCall, content: &str, status: CallStatus) -> String {
+        match self.trace_content {
+            TraceContent::Full => trace::line(&call.name, &call.arguments, content),
+            TraceContent::Receipt => status.receipt(&call.name, &call.id),
+        }
+    }
+
+    /// Why the policy refuses `call`, if there is one and it does.
+    async fn denied(
+        &self,
+        call: &ToolCall,
+        read_only: bool,
+        arguments: &serde_json::Value,
+        origin: Origin<'_>,
+    ) -> Option<String> {
+        let policy = self.policy.as_ref()?;
+        let request = PolicyRequest {
+            tool: &call.name,
+            arguments,
+            call_id: &call.id,
+            read_only,
+            recovered_from_text: origin.from_text,
+            tenant: origin.identity.and_then(|i| i.tenant.as_deref()),
+            principal: origin.identity.and_then(|i| i.principal.as_deref()),
+        };
+        match policy.authorize(&request).await {
+            PolicyDecision::Deny(why) => Some(why),
+            PolicyDecision::Allow => None,
+        }
     }
 
     /// The span of `call`, opened as it starts to run.
@@ -400,7 +400,8 @@ impl ToolLoop {
         cancel: &CancellationToken,
         scope: &str,
         done: &mut HashMap<String, String>,
-    ) -> Result<String, LoopError> {
+        origin: Origin<'_>,
+    ) -> Result<(String, CallStatus), LoopError> {
         let tool = self.tools.get(&call.name);
         let arguments = parse_arguments(&call.arguments);
         let key = match (&tool, &arguments) {
@@ -410,44 +411,64 @@ impl ToolLoop {
             _ => String::new(),
         };
         if let Some(earlier) = done.get(&key) {
-            return Ok(format!(
+            let content = format!(
                 "not run again: an identical call already ran in this task and returned: {earlier}"
-            ));
+            );
+            return Ok((content, CallStatus::NotRun));
         }
         run.tool_call();
         let span = self.tool_span(call);
         let Some(tool) = tool else {
             span.failed("unknown_tool");
-            return Ok(format!(
+            let content = format!(
                 "error: no tool named '{}'; the tools are: {}",
                 call.name,
                 self.tools.names().join(", ")
-            ));
+            );
+            return Ok((content, CallStatus::Failed));
         };
         let arguments = match arguments {
             Ok(arguments) => arguments,
             Err(e) => {
                 span.failed("invalid_arguments");
-                return Ok(format!("error: {e}"));
+                return Ok((format!("error: {e}"), CallStatus::Failed));
             }
         };
+        if let Some(why) = self
+            .denied(call, tool.read_only(), &arguments, origin)
+            .await
+        {
+            span.failed("policy_denied");
+            let content = format!("error: this call was not permitted: {why}");
+            return Ok((content, CallStatus::Failed));
+        }
         let invocation = ToolInvocation::new(arguments, key.clone());
         let result = tokio::select! {
             biased;
             () = cancel.cancelled() => return Err(LoopError::Cancelled),
             result = span.instrument(tool.call(invocation)) => result,
         };
+        Self::settled(result, &span, (&**tool, call, key), done)
+    }
+
+    /// What a call that ran returns to the model and records.
+    fn settled(
+        result: Result<String, ToolError>,
+        span: &GenAiSpan,
+        (tool, call, key): (&dyn Tool, &ToolCall, String),
+        done: &mut HashMap<String, String>,
+    ) -> Result<(String, CallStatus), LoopError> {
         match result {
             Ok(output) => {
                 span.succeeded();
                 if !tool.read_only() {
                     done.insert(key, output.clone());
                 }
-                Ok(output)
+                Ok((output, CallStatus::Ran))
             }
             Err(ToolError::Failed(e)) => {
                 span.failed("tool_error");
-                Ok(format!("error: {e}"))
+                Ok((format!("error: {e}"), CallStatus::Failed))
             }
             Err(ToolError::Fatal(message)) => {
                 span.failed("tool_fatal");
@@ -460,6 +481,8 @@ impl ToolLoop {
     }
 }
 
+#[path = "run_config.rs"]
+mod config;
 #[path = "run_retried.rs"]
 mod retried;
 

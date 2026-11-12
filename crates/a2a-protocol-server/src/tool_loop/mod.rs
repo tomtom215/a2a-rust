@@ -85,6 +85,7 @@ mod model;
 mod openai;
 mod openai_parse;
 mod openai_stream;
+mod policy;
 mod recover;
 mod retry;
 mod run;
@@ -104,6 +105,9 @@ pub use model::{
     ToolSpec,
 };
 pub use openai::{DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_TIMEOUT, ERROR_BODY_LIMIT, OpenAiChatModel};
+pub use policy::{
+    PolicyDecision, PolicyRequest, TextCallRecovery, ToolPolicy, TraceContent, TrustedIdentity,
+};
 pub use retry::ModelRetry;
 pub use run::{DEFAULT_MAX_CALLS_PER_TURN, DEFAULT_MAX_TURNS, LoopError, ToolLoop};
 pub use tool::{DuplicateTool, Tool, ToolError, ToolInvocation, ToolSet};

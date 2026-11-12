@@ -21,6 +21,8 @@ pub(super) struct Side<'a> {
     pub(super) inbox: Option<&'a Inbox>,
     /// Where each trace line is also put as it is made, for a run that fails.
     pub(super) trace: Option<&'a super::trace::Sink>,
+    /// The authenticated request's identity, for the policy.
+    pub(super) identity: Option<&'a super::policy::TrustedIdentity>,
 }
 
 impl Side<'_> {
@@ -211,6 +213,7 @@ mod tests {
             drafts: None,
             inbox: Some(&inbox),
             trace: None,
+            identity: None,
         };
         let answer = tool_loop
             .run_drafting("scope", "do it", &CancellationToken::new(), None, side)
@@ -276,6 +279,7 @@ mod tests {
             drafts: Some(&tx),
             inbox: None,
             trace: None,
+            identity: None,
         };
         let sink = side.sink(3).expect("drafts are on");
         sink.push("hello");

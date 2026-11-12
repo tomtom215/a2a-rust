@@ -1712,6 +1712,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **A reservation could be settled while its writer was still writing** (R3). `PushOutbox::extend_hold` (new, with a default that reports it
   unsupported) lets the processor renew the hold while its fold runs; the three built-in outboxes implement it. A custom outbox that keeps
   reservations should implement it.
+- **A tool-loop deployment had no way to keep tool content from its caller, to stop a JSON example becoming an action, or to authorise a call**
+  (adversarial review T1, T2, T3). `ToolLoop::strict(model, tools)` is the profile: `TextCallRecovery::Off` (a reply written as a call is the answer, not
+  an action; `ReadOnly` and `All` also exist, and `All` stays the default as documented), `TraceContent::Receipt` (the caller's trace is `tool [call id]: ran`,
+  not the arguments and result), and `with_policy(ToolPolicy)`, asked before every call runs, native or recovered, with the request's tenant and caller
+  taken from the authenticated request and never from the model. Run against Qwen3-1.7B on llama.cpp `4fffab6`
+  (`tests/tool_loop_strict_live.rs`): the model chose `transfer_money` itself, the policy refused it, the tool ran 0 times and the trace was
+  `transfer_money [id]: failed`; asked for a JSON example, the strict loop returned it as the answer with an empty trace, and the default loop ran the
+  same text as an action three times (`get_balance`, to the turn bound). **Not done:** JSON-Schema validation of arguments before a call, a durable approval
+  bound to a call, and a durable step journal (see `docs/audits/2026-11-12-adversarial-review/`).
 - **A client built from the builder sent `//message:send` to a REST server whenever the base URL ended in `/`** (adversarial review P1). The builder's
   constructor kept the slash the public constructors removed. One function (`canonical_base_url`) now validates and normalises the base for every
   way a `RestTransport` is made, and a wire-level test (12 builds: builder, card and transport; root and base path; with and without the slash)

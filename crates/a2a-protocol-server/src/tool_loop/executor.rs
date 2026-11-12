@@ -131,11 +131,17 @@ impl ToolLoopExecutor {
         let scope = idempotency::task_scope(&ctx.task_id.0, &ctx.message.id.0);
         let cancel = &ctx.cancellation_token;
         let inbox = if self.steering { ctx.inbox() } else { None };
+        // From the authenticated request, never from what the model wrote.
+        let identity = super::policy::TrustedIdentity {
+            tenant: ctx.tenant().map(str::to_owned),
+            principal: ctx.caller_identity().map(str::to_owned),
+        };
         if !self.drafts {
             let side = Side {
                 drafts: None,
                 inbox,
                 trace: Some(trace),
+                identity: Some(&identity),
             };
             return Ok(self
                 .tool_loop
@@ -147,6 +153,7 @@ impl ToolLoopExecutor {
             drafts: Some(&tx),
             inbox,
             trace: Some(trace),
+            identity: Some(&identity),
         };
         let run = self
             .tool_loop
