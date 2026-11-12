@@ -299,6 +299,8 @@ impl AuditLog {
     /// and starts at 1 otherwise. `anchor` is that anchor if it has been read;
     /// when it has not, `wanted_anchor` is set and the sealing fails, for the
     /// caller to read it and ask again.
+    // `self` is read only where record protection (`encryption`) is built.
+    #[cfg_attr(not(feature = "encryption"), allow(clippy::unused_self))]
     fn seal_next(
         &self,
         template: &AuditRecord,

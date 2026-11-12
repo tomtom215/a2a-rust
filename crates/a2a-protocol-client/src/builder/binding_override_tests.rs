@@ -137,6 +137,69 @@ fn a_binding_the_card_offers_only_for_another_major_is_a_build_error() {
     );
 }
 
+/// A transport the builder only holds: `build()` constructs a client and never
+/// calls it.
+struct NeverCalled;
+
+impl crate::transport::Transport for NeverCalled {
+    fn send_request<'a>(
+        &'a self,
+        _method: &'a str,
+        _params: serde_json::Value,
+        _headers: &'a std::collections::HashMap<String, String>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = crate::error::ClientResult<serde_json::Value>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async { Err(ClientError::Transport("unused".into())) })
+    }
+
+    fn send_streaming_request<'a>(
+        &'a self,
+        _method: &'a str,
+        _params: serde_json::Value,
+        _headers: &'a std::collections::HashMap<String, String>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = crate::error::ClientResult<crate::streaming::EventStream>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async { Err(ClientError::Transport("unused".into())) })
+    }
+}
+
+/// A caller who supplies their own transport is not held to the card offering
+/// the binding they named: the card is not asked for an address. The same card
+/// and override without the transport is refused (the test above), so this is
+/// the transport's doing and not a leniency of the check.
+#[test]
+fn a_custom_transport_is_not_held_to_the_card_offering_the_binding() {
+    let only_legacy_rest = card(vec![
+        iface(BINDING_JSONRPC, "1.0", "http://agent.example/rpc", None),
+        iface(
+            BINDING_HTTP_JSON,
+            "0.3",
+            "http://agent.example/legacy-rest",
+            None,
+        ),
+    ]);
+    let builder = ClientBuilder::from_card(&only_legacy_rest)
+        .expect("from_card")
+        .with_protocol_binding(BINDING_HTTP_JSON);
+    assert!(
+        builder.binding_conflict.is_some(),
+        "the fixture must conflict, or this test proves nothing"
+    );
+    let built = builder.with_custom_transport(NeverCalled).build();
+    assert!(built.is_ok(), "{built:?}");
+}
+
 /// A later override that the card does resolve clears an earlier conflict.
 #[test]
 fn a_later_resolvable_override_clears_the_conflict() {

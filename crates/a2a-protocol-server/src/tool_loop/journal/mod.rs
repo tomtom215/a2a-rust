@@ -66,6 +66,9 @@ mod postgres;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 
+#[cfg(test)]
+mod tests;
+
 #[cfg(feature = "postgres")]
 pub use postgres::PostgresStepJournal;
 #[cfg(feature = "sqlite")]

@@ -13,7 +13,10 @@
 //! The thresholds are the bar's, written before any number existed; none is
 //! tuned here. Each row prints its number and its verdict **before** anything
 //! is asserted, so a failure still shows what was measured. `#[ignore]`d: it runs
-//! for `A2A_BAR_SECS` seconds (default 20) of load.
+//! for `A2A_BAR_SECS` seconds (default 20) of load. Its rows mean something only
+//! in a release build running alone, so the mutation sweeps keep it out
+//! (`.github/workflows/mutants.yml`, the `-E` filter): under their debug profile
+//! with four jobs R2 read 2.21 against a bar of 1.5.
 //!
 //! ```bash
 //! cargo test -p a2a-protocol-server --release --test readiness_bar -- --ignored --nocapture

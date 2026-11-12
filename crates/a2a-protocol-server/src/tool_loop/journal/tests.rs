@@ -125,7 +125,7 @@ async fn the_sqlite_journal_keeps_the_contract() {
 #[tokio::test]
 async fn the_sqlite_journal_survives_a_restart() {
     let path = std::env::temp_dir().join(format!("a2a-journal-{}.db", uuid::Uuid::new_v4()));
-    let url = format!("sqlite://{}", path.display());
+    let url = format!("sqlite://{}?mode=rwc", path.display());
     let first = crate::tool_loop::SqliteStepJournal::new(&url)
         .await
         .unwrap();

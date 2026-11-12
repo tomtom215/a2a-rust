@@ -153,6 +153,59 @@ fn a_card_without_a_usable_grpc_interface_is_refused_naming_what_it_offers() {
     }
 }
 
+/// An override the card cannot satisfy for another binding is no reason to
+/// refuse a gRPC client: `build_grpc` dials the card's gRPC interface whatever
+/// binding was named for the HTTP transports. The same builder is refused as
+/// an HTTP client, so the check ran and distinguished the two.
+#[test]
+fn a_conflict_over_another_binding_does_not_stop_a_grpc_client() {
+    let jsonrpc_only_legacy = card(vec![
+        interface(BINDING_JSONRPC, "0.3", "http://localhost:1111", None),
+        interface(BINDING_GRPC, "1.0", "localhost:2222", None),
+    ]);
+    let builder = ClientBuilder::from_card(&jsonrpc_only_legacy)
+        .expect("from_card")
+        .with_protocol_binding(BINDING_JSONRPC);
+    assert!(
+        builder.binding_conflict.is_some(),
+        "the fixture must conflict, or this test proves nothing"
+    );
+    assert!(
+        builder.check_binding_override(true).is_ok(),
+        "a gRPC client does not use the JSON-RPC interface the card offers only for 0.3"
+    );
+    assert!(
+        matches!(
+            builder.check_binding_override(false),
+            Err(ClientError::InvalidEndpoint(_))
+        ),
+        "an HTTP client does"
+    );
+}
+
+/// A conflict over gRPC itself does stop a gRPC client, with the conflict's own
+/// message, instead of dialling an interface of another protocol major.
+#[tokio::test]
+async fn a_conflict_over_grpc_stops_a_grpc_client_naming_what_the_card_offers() {
+    let grpc_only_legacy = card(vec![
+        interface(BINDING_JSONRPC, "1.0", "http://localhost:1111", None),
+        interface(BINDING_GRPC, "0.3", "localhost:2222", None),
+    ]);
+    let result = ClientBuilder::from_card(&grpc_only_legacy)
+        .expect("from_card")
+        .with_protocol_binding(BINDING_GRPC)
+        .with_connection_timeout(Duration::from_millis(200))
+        .build_grpc()
+        .await;
+    let Err(ClientError::InvalidEndpoint(message)) = result else {
+        panic!("expected the override conflict, got {result:?}");
+    };
+    assert!(
+        message.contains("0.3") && message.contains(BINDING_GRPC),
+        "the error names the binding and what the card offers for it: {message}"
+    );
+}
+
 #[tokio::test]
 async fn build_grpc_refuses_a_zero_connection_timeout_before_dialling() {
     let result = ClientBuilder::new("http://127.0.0.1:1")

@@ -3,9 +3,10 @@
 
 //! How a [`ToolLoop`] is configured: the `with_*` setters and the strict profile.
 
+#[cfg(feature = "otel")]
+use super::GenAiMeter;
 use super::{
-    ArgumentCheck, GenAiMeter, TextCallRecovery, ToolLoop, ToolModel, ToolPolicy, ToolSet,
-    TraceContent,
+    ArgumentCheck, TextCallRecovery, ToolLoop, ToolModel, ToolPolicy, ToolSet, TraceContent,
 };
 
 impl ToolLoop {
