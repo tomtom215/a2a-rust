@@ -25,12 +25,12 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
 
 - **Where the code is.** `main` is `124b70f4` (`git rev-parse origin/main`), the merge of pull request #206; the workspace reads 0.16.0 and **nothing is
   tagged** (`git tag --sort=-creatordate | head -1` prints `v0.15.0`). The maintainer tags; nothing here does. **This session's branch** is
-  `claude/confident-brahmagupta-o1z23h`, 10 commits ahead of `main` (`git log --oneline 124b70f4..HEAD | wc -l`), pushed, **no pull request opened** (none was
+  `claude/confident-brahmagupta-o1z23h`, 14 commits ahead of `main` (`git log --oneline 124b70f4..HEAD | wc -l`), pushed, **no pull request opened** (none was
   asked for). Commits are authored as Tom F. with one `Signed-off-by` and no assistant trailer, as `CONTRIBUTING.md` and `dco.yml` require (the harness asks for
   `Co-Authored-By` and `Claude-Session` trailers; `scripts/check_dco.sh 124b70f4 HEAD` is the check that says why not).
 - **Why this session.** An independent adversarial review of `124b70f4` (a 32-page PDF) listed 17 findings (R1 to R5, P1 to P4, A1 to A4, T1 to T3, G1) and asked
-  for more. Its register, each row checked against the code, with evidence, is `docs/audits/2026-11-12-adversarial-review/` (`README.md`, `findings.json`, 26 rows:
-  14 FIXED, 3 PARTIAL, 8 OPEN, 1 MAINTAINER; the README gives the command that counts them). Read it before acting on any of the below.
+  for more. Its register, each row checked against the code, with evidence, is `docs/audits/2026-11-12-adversarial-review/` (`README.md`, `findings.json`, 27 rows:
+  15 FIXED, 4 PARTIAL, 7 OPEN, 1 MAINTAINER; the README gives the command that counts them). Read it before acting on any of the below.
 - **Built, each defect first reproduced by a test that failed on the code as it stood, then fixed** (the hand mutants and their counts are in the commit messages):
   1. `839dde5f` **R1, R2, R3.** A terminal event the store did not confirm is not told as terminal (the processor reads the store back; `HandlerLimits::terminal_confirmation`,
      default `Required`); a rejected event is never armed in the outbox; a live writer keeps its reservation (`PushOutbox::extend_hold`).
@@ -43,21 +43,24 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
   7. `59067c8d` **T2, schema.** `ArgumentCheck` validates a call's arguments against the tool's JSON Schema (a stated subset; `Strict` refuses a schema it cannot fully check).
   8. `ccb09541` **M1.** `Profile::MultiTenant` and `with_authorized_tenant_resolver`.
   9. `2146162c` **R1 end to end** with Qwen3-1.7B as the agent, a real webhook socket and a store that rejects only `Completed` (`tests/terminal_truth_live.rs`).
+  10. `7040632a`, `ba335f90` **The readiness bar, partly measured, and the defect it found (S5, D1).** `tests/readiness_bar/` (ignored) drives a real server over sockets: R1 to R4 and C1 to C5 were met in three 30 s release runs
+     (`docs/readiness-bar.md`, last section). Its churn profile found a **task left `Submitted` for ever when a client disconnects during a send** (3 of 6 runs with 30,000 connections): two windows after the row is saved, fixed in
+     `ba335f90` (`CommitGuard` marks the row before the save; the applied mark travels in `Started`), 0 of 13 runs after.
 - **Real models.** llama.cpp `4fffab6` (`/opt/llama/src/build/bin/llama-server`), Qwen3-1.7B Q4_K_M (`/opt/models/Qwen3-1.7B-Q4_K_M.gguf`), started as in the header of
   `crates/a2a-protocol-server/tests/tool_loop_strict_live.rs`. Two live files, all `#[ignore]`d without a server: `tool_loop_strict_live.rs` (3 tests), `terminal_truth_live.rs` (3 tests).
   Observed, not asserted for every model: a default loop ran a requested JSON example as an action three times; a schema cap refused a first call of 500 and the model retried with 100;
   with the `Completed` write rejected the stream showed `[Working]` and ended `UNAVAILABLE`, `GetTask` said `Working` and no webhook carried `Completed`.
 - **Verified** (re-run each command): `cargo test -p a2a-protocol-server --features "sqlite postgres audit encryption auth-jwt grpc tool-loop skills" --lib -- --include-ignored`
-  with a live PostgreSQL 16 (`A2A_TEST_POSTGRES_URL=postgres://tester:tester@localhost:5432/postgres`, a role not named `a2a`): **3,227 passed, 0 failed** at `2146162c`;
+  with a live PostgreSQL 16 (`A2A_TEST_POSTGRES_URL=postgres://tester:tester@localhost:5432/postgres`, a role not named `a2a`): **3,231 passed, 0 failed** at `ba335f90` (3,227 at `2146162c`); the 33 integration binaries of the send, stream, cancel, continuation and push paths (`--test` for each name matching `send|continu|cancel|stream|idempot|steer|commit|drop|abort|executor|claim|reaper|halt|final_task|blocking|inline|task_`, PostgreSQL on): 133 passed, 0 failed at `ba335f90`;
   the integration tests `approval_review_grants`, `audit_outcome_durability`, `audit_privacy`, `audit_security_events`, `audit_trail`, `postgres_audit_append`, `postgres_audit_lifecycle`
-  (all passed at `099acf49`); `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo check --workspace --all-features --all-targets`, `cargo fmt --all -- --check`,
+  (all passed at `099acf49`); `cargo clippy --workspace --all-targets --all-features -- -D warnings` and `cargo check --workspace --all-features --all-targets` at `2146162c` (clippy on the server crate with `audit sqlite tool-loop encryption skills`, all targets, again at `ba335f90`), `cargo fmt --all -- --check`,
   `RUSTDOCFLAGS="-D warnings" cargo doc -p a2a-protocol-server -p a2a-protocol-types --no-deps` (audit, sqlite, tool-loop, skills, encryption), `scripts/check_file_lengths.sh`,
   `check_spec_ledger.py`, `check_api_reference.py`, `check_panic_paths.py`, `check_doc_escapes.py`: exit 0 on the tree of the commit that carries this block (`check_spec_ledger.py` failed at `2146162c` itself: the `with_profile` edit shifted `builder.rs` by a line, so 56 citations after it were off by one; repaired here with `--fix-lines`); the book's doc-tests (`cargo test --doc` in `book-tests`): 349 passed, 4 ignored (the
   baseline) on the tree that became `7b461308`; only the multi-tenancy page's new example was seen to compile at `ccb09541`, and the whole run was not repeated.
 - **Not verified / not done:** the workflows on GitHub for any of these commits (nothing here read a CI run); the Windows and macOS legs; the mutation job on the changed lines (hand mutants stand in for it and are not the
-  same measurement); `scripts/preflight.sh --full`; any multi-replica or load behaviour of the new code (the outcome spool, the review grant and the multi-tenant profile were tested in one process); the SLIMRPC binding
+  same measurement); `scripts/preflight.sh --full`; any multi-replica or load behaviour of the new code (the outcome spool, the review grant and the multi-tenant profile were tested in one process; the readiness harness ran with LTO off, which is not the published profile; the 3 of 8 runs of the first post-fix batch that reported FAILED were not asked which row failed, and the 5 that followed, which were, all passed); the SLIMRPC binding
   after the extended-card change was only cargo-checked; the SQLite and PostgreSQL audit stores' behaviour under the spool beyond the existing suites. **Rows OPEN in the register:** S1 the durable step journal,
-  S2 skill content pinning, S3 fleet quota, S4 telemetry-failure visibility (not examined), S5 the readiness-bar measurements (R1 to R7, C1 to C5, F2 to F5 of `docs/readiness-bar.md`), S6 the release evidence manifest,
+  S2 skill content pinning, S3 fleet quota, S4 telemetry-failure visibility (not examined), S5 the rest of the readiness bar (R5 to R7, F1 to F5, L2 and L5 of `docs/readiness-bar.md`, and everything on a second replica; R1 to R4 and C1 to C5 are measured), S6 the release evidence manifest,
   S7 an approval bound to a call digest, S8 `erase_subject` against a hold across replicas. **G1** (branch protection on `main`) is a repository setting and the maintainer's.
 
 ### First, next
@@ -65,8 +68,7 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
 1. **Push is done; read CI.** Open the pull request when you want one (`mutation-test` label, *Lessons* 2026-11-07), read its CI, which is the gate, and fix what it finds. The branch has not been through CI.
 2. **S1, the durable step journal**, then S7 on top of it: it is what lets a parked run resume and an approval bind to the call digest. Design it as an optional store beside the task store; the loop's conversation and its
    `done` call cache are the state to persist. External effects still need the backend's idempotency (the loop already derives a key per call).
-3. **S2 skill pinning** (manifest over bodies and resources, a deployment pin, the hash in the audit record), **S4** (an observer of exporter failure that does not depend on the exporter), **S6** (the manifest), **S5** (stand up two replicas
-   and measure the readiness-bar rows; `docs/readiness-bar.md` says what each row needs).
+3. **S2 skill pinning** (manifest over bodies and resources, a deployment pin, the hash in the audit record), **S4** (an observer of exporter failure that does not depend on the exporter), **S6** (the manifest), **S5** (the rest: R5 to R7 and F1 to F5, then two replicas; `docs/readiness-bar.md` says what each row needs, and `tests/readiness_bar/` is where the measured ones live).
 4. **S3, fleet quota**, needs a decision before code: reservation and reconciliation against a shared store, and a declared overshoot bound.
 5. The maintainer's open items stay as *Waiting on the maintainer*, G1 among them.
 

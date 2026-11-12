@@ -83,12 +83,15 @@ numbers are read, not after.
 
 ## Measurements
 
-No row above (R1 to R7, C1 to C5, F1 to F5) has been measured: each is unmet,
-not assumed. The one measurement made so far compares a send's CPU cost
-across commits; it is recorded here because it closes a question the
+Rows R1 to R4 and C1 to C5 were first measured on 2026-11-12, over HTTP
+JSON-RPC on loopback, under L1, L3 and L4 only (the last section of this page
+records what each run was). **R5, R6, R7 and F1 to F5 have not been measured:
+each is unmet, not assumed**, as is every row under L2 and L5, and every row on a
+second replica or a real PostgreSQL. The measurement of 2026-10-24 compares a send's
+CPU cost across commits; it is recorded here because it closes a question the
 handoff carried open since 2026-10-14 (was a send slower at `2b0a3abd` than
-at `6ce5dc9a`?). Each later measurement states the commit, the host, the
-build profile, the exact command, and the spread across runs.
+at `6ce5dc9a`?). Each measurement states the commit, the host, the build
+profile, the exact command, and the spread across runs.
 
 ### 2026-10-24: the CPU cost of a blocking send, across commits
 
@@ -189,3 +192,73 @@ cross-thread wake-ups of a runtime with more than one worker.
 
 **R1 to R7, C1 to C5, F2 to F5 are still unmeasured**; the throughput matrix above is not any of them (it is a closed-loop echo benchmark, not these load
 profiles), and no claim here depends on them.
+
+### 2026-11-12: L1, L3 and L4 over HTTP JSON-RPC (R1 to R4, C1 to C5)
+
+**What.** `crates/a2a-protocol-server/tests/readiness_bar/` drives a real server
+(`Server` and `JsonRpcDispatcher`, in-memory store capped at 2,000 tasks as the soak test
+does) over real sockets, client and server in one process. L1: 8 clients sending
+blocking `SendMessage` to an executor that writes one artifact and completes, for 30 s
+after a 200-request warm-up. L3: 2,000 connections, each sending one `SendMessage`,
+even-numbered ones closed before the response is read. L4: a handler with
+`max_concurrent_streams(4)` and an executor that holds its slot for 300 ms, 16 concurrent
+sends. Each row prints its number and verdict before anything is asserted.
+
+**Host and build.** Intel Xeon Processor @ 2.30 GHz, 4 vCPUs, one socket, a shared
+virtual machine (kernel 6.18.44); rustc 1.99.1 (58cf8f9c3 2026-10-13). Release profile
+with the workspace's `lto = true` and `codegen-units = 1` **turned off** for build time
+(`CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+CARGO_PROFILE_RELEASE_STRIP=false`): this is not the profile a published binary has, and
+the difference was not measured.
+
+**Commit.** `ba335f90`.
+
+**Command.**
+
+```bash
+CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
+CARGO_PROFILE_RELEASE_STRIP=false A2A_BAR_SECS=30 \
+  cargo test -p a2a-protocol-server --release --test readiness_bar -- --ignored --nocapture
+```
+
+**Results**, three consecutive runs of that command. Every row was met in every run.
+
+| Row | Bar | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|---|
+| R1 errors under L1 | 0 | 0 of 396,747 | 0 of 406,848 | 0 of 395,425 |
+| R2 last-quarter p99 / first-quarter p99 | ≤ 1.5 | 1.09 | 1.10 | 1.01 |
+| R3 p99 of a blocking send, 8 clients | < 25 ms | 1.155 ms | 1.083 ms | 1.163 ms |
+| (R3 p50) | | 0.583 ms | 0.575 ms | 0.585 ms |
+| C1 RSS growth per request | ≤ 1,024 B | 57.1 | 56.3 | 58.0 |
+| C2 fds after L1 and after L3 | pre-load ± 8 | 11 and 11 (before: 11) | same | same |
+| C3 tokio tasks after L1 and after L3 | pre-load | 1 and 1 (before: 1) | same | same |
+| C4 non-terminal tasks after L1 | 0 | 0 | 0 | 0 |
+| C5 live event queues after L3 | 0 | 0 | 0 | 0 |
+| R4 refusals, 16 sends against a limit of 4 | all refused with the overload signal, none a timeout | 4 served, 12 refused, 0 other | same | same |
+
+Throughput under L1 was 13,224, 13,562 and 13,181 requests per second.
+
+**What these numbers are not.** One process holds client and server on four shared vCPUs,
+over loopback, with an in-memory store and no TLS, so R3 is the cost of the SDK's path
+and not of a deployment's. C1's figure includes the harness's own latency record, 16 bytes
+per request, so the server's share is lower. A 5 s run gives a higher C1 (210 B per
+request) because the store is still filling; the bar's figure needs a run long enough to
+leave warm-up behind, and 30 s does. `num_alive_tasks` counted one task (the accept loop)
+before and after. R4's refusal is an HTTP 200 carrying a JSON-RPC error of code `-32603`
+and a `google.rpc.RetryInfo` of one second, with the text `server at maximum concurrent
+stream capacity (4); retry later`: the bar's "a JSON-RPC error" is met, and the code is
+InternalError, not a code of its own.
+
+**What this found.** C4 is defined after L1 only. The harness also reads it after L3, for up
+to 120 s, because a task a dropped client leaves behind is a different question. With 30,000
+connections (half dropped early), **3 of 6 runs left one task `Submitted` for the whole read**,
+and nothing ended it. Two windows after a new task's row is saved, both fixed in `ba335f90`
+(CHANGELOG, Fixed): the commit guard learned a row existed only when the save returned, and the
+send awaited the queue map between its commit and the task that stores the executor's events.
+Deterministic tests drop the send at each window and failed on the unfixed code. After both
+fixes 0 of 13 runs of the same churn left a task.
+
+Not measured: L2 and L5; R5 (a continuation the moment `input-required` arrives), R6 (graceful
+shutdown with streams open), R7 (a peer that disconnects mid-stream), F1 to F5; any binding other
+than JSON-RPC; SQLite or PostgreSQL stores; two replicas.
+

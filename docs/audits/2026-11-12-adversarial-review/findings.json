@@ -213,11 +213,11 @@
   "id": "S5",
   "severity": "Evidence",
   "finding": "Measure docs/readiness-bar.md rows R1-R7, C1-C5, F2-F5 and publish failure and recovery evidence",
-  "status": "OPEN",
-  "note": "",
-  "commit": "",
-  "evidence": "Not started. Needs a multi-replica topology and sustained load this session did not stand up.",
-  "tests": ""
+  "status": "PARTIAL",
+  "note": "R1 to R4 and C1 to C5 measured over HTTP JSON-RPC under L1, L3 and L4; R5, R6, R7, F1 to F5, L2 and L5 are not, and nothing is measured on two replicas or PostgreSQL.",
+  "commit": "7040632a; ba335f90",
+  "evidence": "tests/readiness_bar/ (an --ignored harness) printed every row MET in three 30 s release runs at ba335f90 (0 errors in about 400,000 requests per run; p99 1.08 to 1.16 ms against a 25 ms bar; 56 to 58 bytes per request against 1,024; fds, tokio tasks, queues and non-terminal tasks back to baseline; R4 refused 12 of 16 with a retry signal and none timed out). Recorded in docs/readiness-bar.md with host, profile, command and spread. Built with LTO off, which is not the published profile.",
+  "tests": "crates/a2a-protocol-server/tests/readiness_bar/ (1 test, ignored)"
  },
  {
   "id": "S6",
@@ -258,5 +258,15 @@
   "commit": "",
   "evidence": "A repository setting, not code: enable required status checks, a review policy and protection of workflow files on main. Not changed from this session.",
   "tests": ""
+ },
+ {
+  "id": "D1",
+  "severity": "High",
+  "finding": "A client that disconnects during a send can leave its new task Submitted for ever (found by S5's churn profile)",
+  "status": "FIXED",
+  "note": "Two windows after the row is saved, both fixed. The harness read after the bar defines C4 (after L3, for 120 s) to find it.",
+  "commit": "ba335f90",
+  "evidence": "Reproduced first: 30,000 loopback connections, half dropped before the response, left one task Submitted for the whole 120 s read in 3 of 6 runs. (1) CommitGuard learned a row existed only when the save returned; (2) the send awaited applied_mark between its commit and the task that stores the executor's events. After both fixes 0 of 13 runs left a task.",
+  "tests": "handler/messaging/dropped_send_tests.rs (4: a gate at the await, a store that writes the row and never answers, a continuation that must not be rolled back, a blocking send dropped after its commit); 3 hand mutants"
  }
 ]
