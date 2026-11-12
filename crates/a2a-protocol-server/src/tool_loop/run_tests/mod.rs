@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::*;
 use crate::tool_loop::model::{ModelError, ModelTurn, ToolSpec};
-use crate::tool_loop::tool::{DuplicateTool, Tool, ToolInvocation};
+use crate::tool_loop::tool::{DuplicateTool, Tool, ToolError, ToolInvocation};
 
 /// What the scripted model saw on each turn.
 #[derive(Debug, Clone)]
@@ -111,6 +111,7 @@ struct TestTool {
     keys: Arc<Mutex<Vec<String>>>,
     behaviour: Behaviour,
     read_only: bool,
+    schema: Option<Value>,
 }
 
 impl TestTool {
@@ -125,8 +126,15 @@ impl TestTool {
             keys: Arc::new(Mutex::new(Vec::new())),
             behaviour: Box::new(behaviour),
             read_only: false,
+            schema: None,
         };
         (tool, calls)
+    }
+
+    /// Advertises `schema` as the tool's parameters.
+    fn with_schema(mut self, schema: Value) -> Self {
+        self.schema = Some(schema);
+        self
     }
 
     /// Declares the tool read-only.
@@ -144,7 +152,9 @@ impl Tool for TestTool {
         "a test tool"
     }
     fn parameters(&self) -> Value {
-        json!({"type": "object", "properties": {"service": {"type": "string"}}})
+        self.schema.clone().unwrap_or_else(
+            || json!({"type": "object", "properties": {"service": {"type": "string"}}}),
+        )
     }
     fn read_only(&self) -> bool {
         self.read_only
@@ -225,6 +235,7 @@ mod cancel;
 mod idempotency;
 mod recovery;
 mod retry;
+mod schema;
 mod strict;
 mod turns;
 

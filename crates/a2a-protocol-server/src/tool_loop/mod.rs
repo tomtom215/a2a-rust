@@ -92,6 +92,7 @@ mod recover;
 mod retry;
 mod run;
 mod run_support;
+mod schema;
 #[cfg(feature = "skills")]
 mod skills;
 mod steering;
@@ -114,5 +115,6 @@ pub use policy::{
 };
 pub use retry::ModelRetry;
 pub use run::{DEFAULT_MAX_CALLS_PER_TURN, DEFAULT_MAX_TURNS, LoopError, ToolLoop};
+pub use schema::ArgumentCheck;
 pub use tool::{DuplicateTool, Tool, ToolError, ToolInvocation, ToolSet};
 pub use trace::TRACE_LINE_LIMIT;

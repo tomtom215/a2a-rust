@@ -3,7 +3,10 @@
 
 //! How a [`ToolLoop`] is configured: the `with_*` setters and the strict profile.
 
-use super::{GenAiMeter, TextCallRecovery, ToolLoop, ToolModel, ToolPolicy, ToolSet, TraceContent};
+use super::{
+    ArgumentCheck, GenAiMeter, TextCallRecovery, ToolLoop, ToolModel, ToolPolicy, ToolSet,
+    TraceContent,
+};
 
 impl ToolLoop {
     /// Names the agent this loop is, recorded as `gen_ai.agent.name` on
@@ -94,6 +97,15 @@ impl ToolLoop {
         self
     }
 
+    /// Whether a call's arguments are checked against the tool's JSON Schema
+    /// before the policy is asked and the call runs (adversarial review T2);
+    /// see [`ArgumentCheck`] for what is checked and what is not.
+    #[must_use]
+    pub const fn with_argument_check(mut self, check: ArgumentCheck) -> Self {
+        self.argument_check = check;
+        self
+    }
+
     /// Installs a policy asked before every call runs (adversarial review T2).
     #[must_use]
     pub fn with_policy(mut self, policy: impl ToolPolicy) -> Self {
@@ -103,13 +115,15 @@ impl ToolLoop {
 
     /// A loop for a deployment that takes a tool call to be an action with
     /// consequences: no call is lifted out of text
-    /// ([`TextCallRecovery::Off`]) and the caller's trace is a receipt
-    /// ([`TraceContent::Receipt`]). Add a [`ToolPolicy`] with
+    /// ([`TextCallRecovery::Off`]), the caller's trace is a receipt
+    /// ([`TraceContent::Receipt`]) and arguments are checked against the tool's
+    /// schema ([`ArgumentCheck::Strict`]). Add a [`ToolPolicy`] with
     /// [`with_policy`](Self::with_policy) for per-action authorisation.
     #[must_use]
     pub fn strict(model: impl ToolModel, tools: ToolSet) -> Self {
         Self::new(model, tools)
             .with_text_call_recovery(TextCallRecovery::Off)
             .with_trace_content(TraceContent::Receipt)
+            .with_argument_check(ArgumentCheck::Strict)
     }
 }

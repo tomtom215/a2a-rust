@@ -1719,8 +1719,18 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   taken from the authenticated request and never from the model. Run against Qwen3-1.7B on llama.cpp `4fffab6`
   (`tests/tool_loop_strict_live.rs`): the model chose `transfer_money` itself, the policy refused it, the tool ran 0 times and the trace was
   `transfer_money [id]: failed`; asked for a JSON example, the strict loop returned it as the answer with an empty trace, and the default loop ran the
-  same text as an action three times (`get_balance`, to the turn bound). **Not done:** JSON-Schema validation of arguments before a call, a durable approval
-  bound to a call, and a durable step journal (see `docs/audits/2026-11-12-adversarial-review/`).
+  same text as an action three times (`get_balance`, to the turn bound). **Not done:** a durable approval bound to a call, and a durable step journal (see
+  `docs/audits/2026-11-12-adversarial-review/`); JSON-Schema validation is the next entry.
+- **A tool call's arguments were never checked against the schema the tool advertised** (adversarial review T2). The loop checked that arguments were an
+  object and the tool was in the set; `{"amount": "everything"}` reached a tool whose schema says `amount` is a number. `ToolLoop::with_argument_check(ArgumentCheck)`
+  (default `Off`, so nothing changes unasked; `ToolLoop::strict` uses `Strict`) checks `type`, `enum`, `const`, `properties`, `required`,
+  `additionalProperties`, `items`, the size and bound keywords, `uniqueItems` and `anyOf`/`oneOf`/`allOf`/`not` before the policy is asked and the tool runs, for native,
+  repeated and recovered calls alike; a violation is answered to the model as an error it can correct. It is a checker for the subset tool schemas use, and
+  says so: `Strict` refuses, by name, a call to a tool whose schema uses a keyword it does not implement (`$ref`, `pattern`, `multipleOf`, `if`, `contains`, …),
+  rather than let a constraint go unchecked; `Checked` ignores them. Against Qwen3-1.7B on llama.cpp `4fffab6` (`tests/tool_loop_strict_live.rs`), asked to
+  transfer 500 where the schema caps the amount at 100: the first call was refused (`'/amount': is 500, needs at most 100`), the model retried with 100, the
+  policy then refused the transfer, and the tool ran 0 times. 17 schema tests, 6 loop tests, 27 hand mutants killed (16 before the checker was split into
+  smaller functions, 11 re-run after). No `format` assertion, no `pattern`; numbers compare as `f64`.
 - **A required audit log lost the outcome of a call whenever its store refused the write** (adversarial review A3). `require_record` gated admission on
   `call.started` and nothing after it: a `call` record (how the call ended), `task.event`, `run.started`, `approval`, `halt` or `task.cancel_requested`
   the store refused was counted and dropped, so a chain held a start with no end and nothing said so (reproduced: `["call.started", "call.started"]`

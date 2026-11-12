@@ -27,8 +27,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use a2a_protocol_server::tool_loop::{
-    OpenAiChatModel, PolicyDecision, PolicyRequest, Tool, ToolError, ToolInvocation, ToolLoop,
-    ToolPolicy, ToolSet,
+    ArgumentCheck, OpenAiChatModel, PolicyDecision, PolicyRequest, Tool, ToolError, ToolInvocation,
+    ToolLoop, ToolPolicy, ToolSet,
 };
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -226,4 +226,96 @@ async fn a_requested_json_example_stays_an_example_under_the_strict_profile() {
         lookup.load(Ordering::SeqCst),
         outcome.map(|a| a.text)
     );
+}
+
+/// A transfer tool that records the arguments it was actually given. Its schema
+/// wants an eight-character account and an amount over 0 and at most 100, a cap
+/// the prompt below runs into.
+struct Checked(Arc<Mutex<Vec<Value>>>);
+
+impl Tool for Checked {
+    fn name(&self) -> &str {
+        "transfer_money"
+    }
+    fn description(&self) -> &'static str {
+        "Transfers money out of an account. The account number is exactly eight characters."
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["account", "amount"],
+            "properties": {
+                "account": {"type": "string", "minLength": 8, "maxLength": 8},
+                "amount": {"type": "number", "exclusiveMinimum": 0, "maximum": 100}
+            },
+            "additionalProperties": false
+        })
+    }
+    fn call<'a>(
+        &'a self,
+        invocation: ToolInvocation,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ToolError>> + Send + 'a>> {
+        self.0.lock().unwrap().push(invocation.arguments);
+        Box::pin(async { Ok("transferred".to_owned()) })
+    }
+}
+
+/// The model is asked for an amount past the cap in the tool's schema. Whatever
+/// it then does (retry within the cap, or give up), no call that reached the
+/// tool, or the policy before it, broke the schema.
+#[tokio::test]
+#[ignore = "needs a llama-server (A2A_LIVE_MODEL_URL)"]
+async fn a_real_models_call_that_breaks_the_schema_never_reaches_the_tool() {
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let mut set = ToolSet::new();
+    set.add(Checked(Arc::clone(&received))).unwrap();
+    // Full trace so the refusals can be counted; the check is what is tested.
+    let tool_loop = ToolLoop::new(model(), set)
+        .with_preamble(PREAMBLE)
+        .with_max_turns(4)
+        .with_argument_check(ArgumentCheck::Strict)
+        .with_policy(NoTransfers(Arc::clone(&asked)));
+    let answer = tool_loop
+        .run_within(
+            "Transfer 500 dollars out of account 4417 using transfer_money.",
+            &CancellationToken::new(),
+            None,
+        )
+        .await
+        .expect("the run ends");
+
+    let refused = answer
+        .trace
+        .iter()
+        .filter(|l| l.contains("do not match this tool's schema"))
+        .count();
+    println!("model answered: {:?}", answer.text);
+    println!("trace: {:#?}", answer.trace);
+    println!(
+        "calls refused for their arguments: {refused}; put to the policy: {:?}; reached the tool: {:?}",
+        asked.lock().unwrap(),
+        received.lock().unwrap()
+    );
+    assert!(
+        !answer.trace.is_empty(),
+        "the model made no call, so nothing was tested; rerun or change the prompt"
+    );
+    for arguments in received.lock().unwrap().iter() {
+        let account = arguments["account"].as_str().unwrap_or("");
+        assert_eq!(
+            account.chars().count(),
+            8,
+            "a malformed call ran: {arguments}"
+        );
+        assert!(
+            arguments["amount"]
+                .as_f64()
+                .is_some_and(|a| a > 0.0 && a <= 100.0),
+            "{arguments}"
+        );
+    }
+    // Only a call that fit was put to the policy, which refuses transfers: so
+    // nothing reached the tool at all.
+    assert_eq!(received.lock().unwrap().len(), 0);
 }

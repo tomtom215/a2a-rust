@@ -13,15 +13,13 @@ use super::answer::Answer;
 use super::idempotency::{self, Secret};
 pub use super::loop_error::LoopError;
 use super::model::{ChatMessage, ChatRequest, ToolCall, ToolModel};
-use super::policy::{
-    CallStatus, PolicyDecision, PolicyRequest, TextCallRecovery, ToolPolicy, TraceContent,
-    TrustedIdentity,
-};
+use super::policy::{CallStatus, TextCallRecovery, ToolPolicy, TraceContent, TrustedIdentity};
 use super::recover;
 use super::retry::ModelRetry;
-use super::run_support::{charge_usage, give_ids, limit_calls, parse_arguments};
+use super::run_support::{charge_usage, give_ids, limit_calls};
+use super::schema::ArgumentCheck;
 use super::steering::{Side, before_turn};
-use super::tool::{Tool, ToolError, ToolInvocation, ToolSet};
+use super::tool::ToolSet;
 use super::trace;
 use crate::rpc_span::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 
@@ -63,11 +61,11 @@ impl<'a> Origin<'a> {
 /// catalogue; a reply with calls has them run and their results appended,
 /// and a reply without is the answer. What a call returns goes back to the
 /// model, errors included: an unknown tool, arguments that are not a JSON
-/// object and [`ToolError::Failed`] are each that call's result, because
+/// object and [`ToolError::Failed`](super::ToolError::Failed) are each that call's result, because
 /// that is how a model recovers. Only the provider failing, a
-/// [`ToolError::Fatal`], the turn bound and cancellation end a run.
+/// [`ToolError::Fatal`](super::ToolError::Fatal), the turn bound and cancellation end a run.
 ///
-/// Each call carries an idempotency key ([`ToolInvocation::idempotency_key`],
+/// Each call carries an idempotency key ([`ToolInvocation::idempotency_key`](super::ToolInvocation::idempotency_key),
 /// ADR 0026), and a call identical to one that already succeeded in the run
 /// is answered with the earlier result instead of being run again, unless
 /// its tool is [`read_only`](super::Tool::read_only).
@@ -79,6 +77,7 @@ pub struct ToolLoop {
     max_calls_per_turn: usize,
     text_recovery: TextCallRecovery,
     trace_content: TraceContent,
+    argument_check: ArgumentCheck,
     policy: Option<Box<dyn ToolPolicy>>,
     secret: Secret,
     agent_name: Option<String>,
@@ -95,6 +94,7 @@ impl fmt::Debug for ToolLoop {
             .field("max_calls_per_turn", &self.max_calls_per_turn)
             .field("text_recovery", &self.text_recovery)
             .field("trace_content", &self.trace_content)
+            .field("argument_check", &self.argument_check)
             .field("policy", &self.policy.is_some())
             .field("agent_name", &self.agent_name)
             .field("model_retry", &self.model_retry)
@@ -115,6 +115,7 @@ impl ToolLoop {
             max_calls_per_turn: DEFAULT_MAX_CALLS_PER_TURN,
             text_recovery: TextCallRecovery::All,
             trace_content: TraceContent::Full,
+            argument_check: ArgumentCheck::Off,
             policy: None,
             secret: idempotency::fresh_secret(),
             agent_name: None,
@@ -310,44 +311,6 @@ impl ToolLoop {
         }
     }
 
-    /// Why the policy refuses `call`, if there is one and it does.
-    async fn denied(
-        &self,
-        call: &ToolCall,
-        read_only: bool,
-        arguments: &serde_json::Value,
-        origin: Origin<'_>,
-    ) -> Option<String> {
-        let policy = self.policy.as_ref()?;
-        let request = PolicyRequest {
-            tool: &call.name,
-            arguments,
-            call_id: &call.id,
-            read_only,
-            recovered_from_text: origin.from_text,
-            tenant: origin.identity.and_then(|i| i.tenant.as_deref()),
-            principal: origin.identity.and_then(|i| i.principal.as_deref()),
-            task: origin.identity.and_then(|i| i.task.as_deref()),
-        };
-        match policy.authorize(&request).await {
-            PolicyDecision::Deny(why) => Some(why),
-            PolicyDecision::Allow => None,
-        }
-    }
-
-    /// The span of `call`, opened as it starts to run.
-    fn tool_span(&self, call: &ToolCall) -> GenAiSpan {
-        let tool = self.tools.get(&call.name);
-        let description = tool.map(|t| t.description());
-        GenAiSpan::tool(
-            &call.name,
-            tool.is_some(),
-            &call.id,
-            description,
-            &self.meter,
-        )
-    }
-
     /// One model turn, in its span, abandoned if `cancel` fires.
     async fn turn(
         &self,
@@ -388,100 +351,10 @@ impl ToolLoop {
             }
         }
     }
-
-    /// Runs one call in its span and returns what goes back to the model.
-    /// Only [`ToolError::Fatal`] and cancellation are errors here. A call
-    /// whose key is in `done` is not run: the earlier result is returned,
-    /// marked, and no span is opened and nothing counted in `run`, since
-    /// nothing ran.
-    async fn call(
-        &self,
-        run: &AgentRun,
-        call: &ToolCall,
-        cancel: &CancellationToken,
-        scope: &str,
-        done: &mut HashMap<String, String>,
-        origin: Origin<'_>,
-    ) -> Result<(String, CallStatus), LoopError> {
-        let tool = self.tools.get(&call.name);
-        let arguments = parse_arguments(&call.arguments);
-        let key = match (&tool, &arguments) {
-            (Some(_), Ok(arguments)) => {
-                idempotency::call_key(&self.secret, scope, &call.name, arguments)
-            }
-            _ => String::new(),
-        };
-        if let Some(earlier) = done.get(&key) {
-            let content = format!(
-                "not run again: an identical call already ran in this task and returned: {earlier}"
-            );
-            return Ok((content, CallStatus::NotRun));
-        }
-        run.tool_call();
-        let span = self.tool_span(call);
-        let Some(tool) = tool else {
-            span.failed("unknown_tool");
-            let content = format!(
-                "error: no tool named '{}'; the tools are: {}",
-                call.name,
-                self.tools.names().join(", ")
-            );
-            return Ok((content, CallStatus::Failed));
-        };
-        let arguments = match arguments {
-            Ok(arguments) => arguments,
-            Err(e) => {
-                span.failed("invalid_arguments");
-                return Ok((format!("error: {e}"), CallStatus::Failed));
-            }
-        };
-        if let Some(why) = self
-            .denied(call, tool.read_only(), &arguments, origin)
-            .await
-        {
-            span.failed("policy_denied");
-            let content = format!("error: this call was not permitted: {why}");
-            return Ok((content, CallStatus::Failed));
-        }
-        let invocation = ToolInvocation::new(arguments, key.clone());
-        let result = tokio::select! {
-            biased;
-            () = cancel.cancelled() => return Err(LoopError::Cancelled),
-            result = span.instrument(tool.call(invocation)) => result,
-        };
-        Self::settled(result, &span, (&**tool, call, key), done)
-    }
-
-    /// What a call that ran returns to the model and records.
-    fn settled(
-        result: Result<String, ToolError>,
-        span: &GenAiSpan,
-        (tool, call, key): (&dyn Tool, &ToolCall, String),
-        done: &mut HashMap<String, String>,
-    ) -> Result<(String, CallStatus), LoopError> {
-        match result {
-            Ok(output) => {
-                span.succeeded();
-                if !tool.read_only() {
-                    done.insert(key, output.clone());
-                }
-                Ok((output, CallStatus::Ran))
-            }
-            Err(ToolError::Failed(e)) => {
-                span.failed("tool_error");
-                Ok((format!("error: {e}"), CallStatus::Failed))
-            }
-            Err(ToolError::Fatal(message)) => {
-                span.failed("tool_fatal");
-                Err(LoopError::Fatal {
-                    tool: call.name.clone(),
-                    message,
-                })
-            }
-        }
-    }
 }
 
+#[path = "run_call.rs"]
+mod call;
 #[path = "run_config.rs"]
 mod config;
 #[path = "run_retried.rs"]
