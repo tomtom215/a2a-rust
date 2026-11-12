@@ -262,3 +262,30 @@ Not measured: L2 and L5; R5 (a continuation the moment `input-required` arrives)
 shutdown with streams open), R7 (a peer that disconnects mid-stream), F1 to F5; any binding other
 than JSON-RPC; SQLite or PostgreSQL stores; two replicas.
 
+<!-- measured-limits:begin -->
+The rows above in machine-readable form, for `scripts/release_evidence.py`, which copies this block into a
+release's evidence manifest and fails if it changes after the manifest was made. The prose is the
+record; this block repeats its numbers and adds nothing.
+
+```json
+{
+  "measured_at_commit": "ba335f90",
+  "host": "Intel Xeon Processor @ 2.30 GHz, 4 vCPUs, shared VM, kernel 6.18.44",
+  "profile": "release, LTO off (not the published profile)",
+  "command": "A2A_BAR_SECS=30 cargo test -p a2a-protocol-server --release --test readiness_bar -- --ignored --nocapture",
+  "runs": 3,
+  "rows": [
+    {"id": "R1", "bar": "0 errors under L1", "results": ["0 of 396747", "0 of 406848", "0 of 395425"], "met": true},
+    {"id": "R2", "bar": "last-quarter p99 / first-quarter p99 <= 1.5", "results": [1.09, 1.10, 1.01], "met": true},
+    {"id": "R3", "bar": "p99 of a blocking send < 25 ms", "results": ["1.155 ms", "1.083 ms", "1.163 ms"], "met": true},
+    {"id": "R4", "bar": "overload refused with the signal, none a timeout", "results": ["12 of 16", "12 of 16", "12 of 16"], "met": true},
+    {"id": "C1", "bar": "RSS growth <= 1024 bytes per request", "results": [57.1, 56.3, 58.0], "met": true},
+    {"id": "C2", "bar": "fds back to pre-load +- 8", "results": ["11 of 11", "11 of 11", "11 of 11"], "met": true},
+    {"id": "C3", "bar": "tokio tasks back to pre-load", "results": ["1 of 1", "1 of 1", "1 of 1"], "met": true},
+    {"id": "C4", "bar": "0 non-terminal tasks after L1", "results": [0, 0, 0], "met": true},
+    {"id": "C5", "bar": "0 live event queues after L3", "results": [0, 0, 0], "met": true}
+  ],
+  "not_measured": ["R5", "R6", "R7", "F1", "F2", "F3", "F4", "F5", "L2", "L5", "any second replica", "any PostgreSQL or SQLite store", "any binding but JSON-RPC"]
+}
+```
+<!-- measured-limits:end -->

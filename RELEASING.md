@@ -136,6 +136,19 @@ git checkout -b release/vX.Y.Z main
 # (the heading must be `## [X.Y.Z] - YYYY-MM-DD` — the release workflow
 # rejects undated headings). Add new empty [Unreleased] section.
 
+# Generate the release evidence manifest at the commit you are about to tag, and
+# keep it with the release (attach it to the GitHub release; do not commit it, since
+# a manifest cannot name the commit that adds it). It ties the tree to its lockfile
+# and waiver hashes, the advisory waivers and their reasons, the deployment profiles
+# and feature names, the findings register's counts and open rows, the measured
+# limits of docs/readiness-bar.md, the unreleased breaking changes, and the exit
+# status of the static gates:
+#     scripts/release_evidence.py generate --run-gates --out release-evidence.json
+#     scripts/release_evidence.py verify release-evidence.json --head
+# `verify` says the manifest still describes that commit, not that the commit is
+# good. It is not yet a gate in release.yml (that needs the gate inventory and
+# reachability checks to learn it first); run it by hand until it is.
+
 # Update CITATION.cff: set `version` and `date-released` to the new release
 # (validated against the tag by the release workflow)
 
