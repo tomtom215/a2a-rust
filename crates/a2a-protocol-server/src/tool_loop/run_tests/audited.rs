@@ -194,3 +194,20 @@ async fn a_denial_the_store_refuses_is_kept_and_the_reason_is_unchanged() {
     let r = log.export("").await.unwrap().pop().unwrap();
     assert_eq!(r.detail["decision"], "deny");
 }
+
+/// Its debug form names it and says whether another policy answers first, and
+/// shows nothing of either.
+#[test]
+fn the_audited_policy_debug_names_itself_and_whether_it_wraps_one() {
+    let log = Arc::new(AuditLog::new(
+        Arc::new(crate::audit::InMemoryAuditStore::new()) as Arc<dyn AuditStore>,
+    ));
+    let alone = format!("{:?}", AuditedPolicy::new(Arc::clone(&log)));
+    assert!(alone.starts_with("AuditedPolicy"), "{alone}");
+    assert!(alone.contains("wraps_a_policy: false"), "{alone}");
+    let gate = Gate {
+        asked: Arc::new(StdMutex::new(Vec::new())),
+    };
+    let wrapping = format!("{:?}", AuditedPolicy::new(log).wrapping(gate));
+    assert!(wrapping.contains("wraps_a_policy: true"), "{wrapping}");
+}

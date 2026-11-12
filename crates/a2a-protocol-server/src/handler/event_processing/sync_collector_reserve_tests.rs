@@ -282,3 +282,44 @@ async fn an_event_is_delivered_while_the_request_is_still_running() {
     assert!(rig.a_seen.try_recv().is_err(), "once each");
     assert_eq!(rig.rows().await, 0);
 }
+
+/// A write the store refuses because it lost a race (the task already ended in
+/// another state, or its claim moved to another replica) is settled by the
+/// fold, which asked for no push: the rows are removed at once. The store is
+/// not asked what became of the event, and could not say here, which would
+/// leave the rows for the worker instead.
+#[tokio::test(start_paused = true)]
+async fn a_write_that_lost_a_race_has_its_rows_removed_without_asking_the_store() {
+    use crate::store::{ClaimLost, TerminalStateConflict};
+
+    let task_id = TaskId::new("t");
+    let errors = [
+        TerminalStateConflict::new(task_id.clone(), TaskState::Failed, TaskState::Completed)
+            .into_error(),
+        ClaimLost::new(task_id).into_error(),
+    ];
+    for error in errors {
+        let rig = Rig::new().await;
+        rig.store
+            .refuse_writes_with(|t| t.status.state == TaskState::Completed, error.clone());
+        rig.store
+            .unreadable
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        rig.blocking_request(vec![status(TaskState::Completed)])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            rig.store.reads.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "the store was asked what became of the event: {error:?}"
+        );
+        assert_eq!(
+            rig.rows().await,
+            0,
+            "the refused event leaves no row behind"
+        );
+        assert_eq!(rig.metrics.count(push_outcome::RESERVATION_SETTLED), 0);
+    }
+}

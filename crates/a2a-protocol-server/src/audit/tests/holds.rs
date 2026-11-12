@@ -110,3 +110,45 @@ async fn the_default_hold_checked_deletion_refuses_the_held_chain_only() {
         "the deleted chain still has records: {left:?}"
     );
 }
+
+/// The holds half of the store contract: the hold is kept and listed, a
+/// hold-checked deletion refuses the held chain only, and a released chain is
+/// deleted from. `r3` is the one record left on chain `c`, and chain `other`
+/// holds its first.
+pub(super) async fn holds_contract(store: &dyn AuditStore, r3: &AuditRecord) {
+    // Holds.
+    assert_eq!(store.holds().await.unwrap(), Vec::new());
+    let hold = LegalHold {
+        chain: "c".to_owned(),
+        reason: "case 7".to_owned(),
+        placed_at: "now".to_owned(),
+    };
+    store.place_hold(&hold).await.unwrap();
+    assert_eq!(store.holds().await.unwrap(), vec![hold]);
+    // A hold-checked deletion of the held chain deletes nothing and says so
+    // (`None`); a chain with no hold is deleted from, and the count comes back.
+    assert_eq!(
+        store.delete_through_unless_held("c", 3).await.unwrap(),
+        None,
+        "the held chain is refused"
+    );
+    assert_eq!(
+        store.read("c", 0, 10).await.unwrap(),
+        vec![r3.clone()],
+        "and keeps its record"
+    );
+    assert_eq!(
+        store.delete_through_unless_held("other", 1).await.unwrap(),
+        Some(1),
+        "a hold on one chain stops nothing on another"
+    );
+    assert_eq!(store.read("other", 0, 10).await.unwrap(), Vec::new());
+    assert!(store.release_hold("c").await.unwrap());
+    assert_eq!(
+        store.delete_through_unless_held("c", 3).await.unwrap(),
+        Some(1),
+        "released, the chain is deleted from"
+    );
+    assert_eq!(store.read("c", 0, 10).await.unwrap(), Vec::new());
+    assert!(!store.release_hold("c").await.unwrap());
+}

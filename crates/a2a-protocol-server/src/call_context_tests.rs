@@ -130,3 +130,20 @@ fn debug_prints_header_names_and_never_their_values() {
         "the names are what a debug-print is usually asking for: {rendered}"
     );
 }
+
+/// The identifier is made by the server for each call: a UUID, never empty and
+/// never the one another call has, so the end of a call can be matched to its
+/// start on the audit record.
+#[test]
+fn each_call_context_has_a_call_id_of_its_own() {
+    let (a, b) = (
+        CallContext::new("SendMessage"),
+        CallContext::new("SendMessage"),
+    );
+    assert!(
+        uuid::Uuid::parse_str(a.call_id()).is_ok(),
+        "not a UUID: {:?}",
+        a.call_id()
+    );
+    assert_ne!(a.call_id(), b.call_id());
+}

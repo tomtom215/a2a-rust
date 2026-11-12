@@ -101,17 +101,7 @@ async fn store_contract(store: &dyn AuditStore) {
     assert!(!left.contains(&old), "{left:?}");
     assert!(left.contains(&anchor), "{left:?}");
 
-    // Holds.
-    assert_eq!(store.holds().await.unwrap(), Vec::new());
-    let hold = LegalHold {
-        chain: "c".to_owned(),
-        reason: "case 7".to_owned(),
-        placed_at: "now".to_owned(),
-    };
-    store.place_hold(&hold).await.unwrap();
-    assert_eq!(store.holds().await.unwrap(), vec![hold]);
-    assert!(store.release_hold("c").await.unwrap());
-    assert!(!store.release_hold("c").await.unwrap());
+    holds::holds_contract(store, &r3).await;
 }
 
 #[tokio::test]

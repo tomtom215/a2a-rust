@@ -267,6 +267,25 @@ fn a_refusal_lists_five_and_counts_the_rest() {
     assert!(why.ends_with("(and 3 more)"), "{why}");
 }
 
+/// Up to five are listed and nothing more is said: "(and 0 more)" is noise.
+#[test]
+fn a_refusal_of_five_or_fewer_has_no_count_of_the_rest() {
+    for n in [1, 5] {
+        let props: serde_json::Map<String, Value> = (0..n)
+            .map(|i| (format!("p{i}"), json!({"type": "string"})))
+            .collect();
+        let args: serde_json::Map<String, Value> =
+            (0..n).map(|i| (format!("p{i}"), json!(i))).collect();
+        let why = checked(&json!({"properties": props}), &Value::Object(args)).unwrap();
+        assert_eq!(
+            why.matches("expected string, got number").count(),
+            n,
+            "{why}"
+        );
+        assert!(!why.contains("more"), "{why}");
+    }
+}
+
 #[test]
 fn strict_names_a_keyword_it_cannot_check_and_checked_ignores_it() {
     for keyword in [

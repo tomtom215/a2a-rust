@@ -30,6 +30,7 @@ use crate::store::{InMemoryLeaseStore, LeaseStore, TaskStore};
 
 use super::super::Held;
 
+mod backlog;
 mod finish;
 mod outbox;
 
@@ -79,6 +80,26 @@ pub(super) fn task(id: &str, state: TaskState) -> Task {
 }
 
 type Age = Box<dyn Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+
+/// Looks until `done` holds, and returns how many tasks the looks ended in all
+/// (`None` once the reaper's handler is gone). One look takes the oldest
+/// [`BATCH`](super::BATCH) abandoned tasks, and a database shared with other
+/// tests or with earlier, stopped runs can hold more than that, so "the
+/// reaper ends it" is a look until it is ended and not the first look.
+async fn look_until<F, Fut>(reaper: &super::Reaper, mut done: F) -> Option<usize>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = bool>,
+{
+    let mut ended = 0;
+    for _ in 0..64 {
+        ended += reaper.look().await?;
+        if done().await {
+            break;
+        }
+    }
+    Some(ended)
+}
 
 /// The scenario, with tasks in partition `scope`; `age(id)` makes a task
 /// look unwritten for an hour.
@@ -237,9 +258,27 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
         metrics: Arc::clone(&claim_events) as Arc<dyn crate::metrics::Metrics>,
     };
 
-    // Other runs' leftovers in a shared database may be ended too; this
-    // run's orphan must be among them.
-    let first = reaper.look().await;
+    // Other runs' leftovers in a shared database are ended too, and a look
+    // takes only the oldest few: look until this run's orphan is among them.
+    let state_of = |id: &str| {
+        let (store, scope, id) = (Arc::clone(&store), scope.to_owned(), id.to_owned());
+        async move {
+            TenantContext::scope(scope, async move {
+                store
+                    .get(&TaskId::new(id))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .status
+                    .state
+            })
+            .await
+        }
+    };
+    let first = look_until(&reaper, || async {
+        state_of(&orphan).await == TaskState::Failed
+    })
+    .await;
     assert!(first.is_some_and(|n| n >= 1), "the orphan ended");
     // Each ending is counted once as a reaped claim (audit H11).
     assert_eq!(
@@ -264,28 +303,16 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
     .await;
     // NEW-e-1: a task this handler holds is not abandoned, whatever the table
     // says; once it lets go of it, the next look ends it.
-    let state_of = |id: &str| {
-        let (store, scope, id) = (Arc::clone(&store), scope.to_owned(), id.to_owned());
-        async move {
-            TenantContext::scope(scope, async move {
-                store
-                    .get(&TaskId::new(id))
-                    .await
-                    .unwrap()
-                    .unwrap()
-                    .status
-                    .state
-            })
-            .await
-        }
-    };
     assert_eq!(
         state_of(&mine).await,
         TaskState::Working,
         "held here: left alone"
     );
     claims.held().remove("mine");
-    reaper.look().await;
+    look_until(&reaper, || async {
+        state_of(&mine).await == TaskState::Failed
+    })
+    .await;
     assert_eq!(state_of(&mine).await, TaskState::Failed, "released: ended");
     // N-E-2: the ending is in the log, once, at the first position, and the
     // tasks left alone have no entry.

@@ -1997,7 +1997,7 @@ mod tests {
         };
         let error = A2aError::unavailable("the provider is down");
         let mut cooldowns = std::collections::BTreeSet::new();
-        for _ in 0..64 {
+        for _ in 0..400 {
             remote.record_failure(&error);
             let cooldown = remote
                 .last_failure
@@ -2013,7 +2013,18 @@ mod tests {
             );
             cooldowns.insert(cooldown);
         }
-        assert!(cooldowns.len() > 1, "the same cooldown 64 times: no jitter");
+        assert!(
+            cooldowns.len() > 1,
+            "the same cooldown 400 times: no jitter"
+        );
+        // A draw is uniform over a fifth in 200 steps, so 400 draws all within
+        // the lower half have a chance of 0.5^400: the top of the range is
+        // reached, and the step is a thousandth of the interval, not smaller.
+        let longest = *cooldowns.last().expect("a cooldown was recorded");
+        assert!(
+            longest > interval + interval / 10,
+            "{longest:?}: the jitter never passed a tenth of the interval"
+        );
     }
 
     #[tokio::test]

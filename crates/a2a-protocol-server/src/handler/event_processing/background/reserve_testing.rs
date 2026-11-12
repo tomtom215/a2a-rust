@@ -43,6 +43,8 @@ pub(in crate::handler::event_processing) struct Fault {
     ack_lost: bool,
     /// How many matching writes still fail; `None` for all of them.
     left: Option<usize>,
+    /// The error the rejected write returns, in place of a plain failure.
+    error: Option<a2a_protocol_types::error::A2aError>,
 }
 
 /// An in-memory store whose writes can be made to stop, as a process does.
@@ -111,6 +113,23 @@ impl Stopping {
             when: Arc::new(when),
             ack_lost,
             left: times,
+            error: None,
+        });
+    }
+
+    /// Makes every task write for which `when` holds be refused with `error`
+    /// before the store has it: the error a store of a real database returns
+    /// for a write that lost a race (a terminal-state conflict, a lost claim).
+    pub(in crate::handler::event_processing) fn refuse_writes_with(
+        &self,
+        when: impl Fn(&Task) -> bool + Send + Sync + 'static,
+        error: a2a_protocol_types::error::A2aError,
+    ) {
+        *self.fault.lock().unwrap_or_else(PoisonError::into_inner) = Some(Fault {
+            when: Arc::new(when),
+            ack_lost: false,
+            left: None,
+            error: Some(error),
         });
     }
 
@@ -119,8 +138,9 @@ impl Stopping {
         *self.fault.lock().unwrap_or_else(PoisonError::into_inner) = None;
     }
 
-    /// Whether this write of `task` is to fail, and if so whether it is applied first.
-    fn faulted(&self, task: &Task) -> Option<bool> {
+    /// Whether this write of `task` is to fail, and if so whether it is applied
+    /// first and with what error.
+    fn faulted(&self, task: &Task) -> Option<(bool, Option<a2a_protocol_types::error::A2aError>)> {
         let mut fault = self.fault.lock().unwrap_or_else(PoisonError::into_inner);
         let active = fault.as_mut().filter(|f| (f.when)(task))?;
         if let Some(left) = &mut active.left {
@@ -129,19 +149,20 @@ impl Stopping {
             }
             *left -= 1;
         }
-        let ack_lost = active.ack_lost;
+        let (ack_lost, error) = (active.ack_lost, active.error.clone());
         drop(fault);
-        Some(ack_lost)
+        Some((ack_lost, error))
     }
 
     /// A write of `task`, failed as the fault says.
     async fn faulting(&self, task: &Task, write: F<'_, ()>) -> A2aResult<()> {
         match self.faulted(task) {
             None => self.around(write).await,
-            Some(false) => Err(a2a_protocol_types::error::A2aError::internal(
+            Some((false, Some(error))) => Err(error),
+            Some((false, None)) => Err(a2a_protocol_types::error::A2aError::internal(
                 "the task store rejected the write",
             )),
-            Some(true) => {
+            Some((true, _)) => {
                 self.around(write).await?;
                 Err(a2a_protocol_types::error::A2aError::internal(
                     "the task store's acknowledgement was lost",
