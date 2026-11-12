@@ -47,17 +47,32 @@ async fn a_call_the_crash_left_unended_is_found_and_closed_once() {
         .unwrap();
     assert_eq!(written.len(), 1);
     assert_eq!(written[0].kind, kind::CALL_UNRESOLVED);
-    assert_eq!(
-        call_ids(&log, kind::CALL_UNRESOLVED).await,
-        [ctx.call_id()]
-    );
+    assert_eq!(call_ids(&log, kind::CALL_UNRESOLVED).await, [ctx.call_id()]);
     assert_eq!(written[0].detail["startedSeq"], 1);
 
     // Closed: neither found nor written again.
-    assert_eq!(log.unresolved_calls("", 0, Duration::ZERO).await.unwrap().len(), 0);
-    assert_eq!(log.reconcile_unresolved("", 0, Duration::ZERO).await.unwrap().len(), 0);
-    assert_eq!(kinds(&log).await, [kind::CALL_STARTED, kind::CALL_UNRESOLVED]);
-    assert!(log.verify("").await.unwrap().is_intact(), "the chain still verifies");
+    assert_eq!(
+        log.unresolved_calls("", 0, Duration::ZERO)
+            .await
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(
+        log.reconcile_unresolved("", 0, Duration::ZERO)
+            .await
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(
+        kinds(&log).await,
+        [kind::CALL_STARTED, kind::CALL_UNRESOLVED]
+    );
+    assert!(
+        log.verify("").await.unwrap().is_intact(),
+        "the chain still verifies"
+    );
 }
 
 /// What this process is still serving, or holds in its spool, is not lost.
@@ -83,7 +98,15 @@ async fn a_call_still_running_or_still_spooled_is_not_unresolved() {
     // Ended: nothing is owed for it.
     audit.on_complete(&running, CallOutcome::Succeeded).await;
     tokio::time::sleep(Duration::from_secs(10)).await;
-    assert_eq!(audit.log.unresolved_calls("", 0, Duration::ZERO).await.unwrap().len(), 0);
+    assert_eq!(
+        audit
+            .log
+            .unresolved_calls("", 0, Duration::ZERO)
+            .await
+            .unwrap()
+            .len(),
+        0
+    );
     assert!(
         audit.log.live_call_ids().is_empty(),
         "an ended call is not remembered as running"
@@ -97,15 +120,30 @@ async fn a_recent_start_is_left_alone() {
     let (_store, _ctx, log) = after_a_crash().await;
     let grace = Duration::from_hours(1);
     assert_eq!(log.unresolved_calls("", 0, grace).await.unwrap().len(), 0);
-    assert_eq!(log.reconcile_unresolved("", 0, grace).await.unwrap().len(), 0);
-    assert_eq!(log.unresolved_calls("", 0, Duration::ZERO).await.unwrap().len(), 1);
+    assert_eq!(
+        log.reconcile_unresolved("", 0, grace).await.unwrap().len(),
+        0
+    );
+    assert_eq!(
+        log.unresolved_calls("", 0, Duration::ZERO)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 /// Reading starts after `after`: calls before it are not looked at.
 #[tokio::test(start_paused = true)]
 async fn reconciliation_starts_after_the_position_given() {
     let (_store, _ctx, log) = after_a_crash().await;
-    assert_eq!(log.unresolved_calls("", 1, Duration::ZERO).await.unwrap().len(), 0);
+    assert_eq!(
+        log.unresolved_calls("", 1, Duration::ZERO)
+            .await
+            .unwrap()
+            .len(),
+        0
+    );
 }
 
 /// A `call.started` that names no call id, written before ids existed, is
@@ -117,5 +155,11 @@ async fn a_start_with_no_call_id_is_not_reported() {
     let mut r = AuditRecord::new("", kind::CALL_STARTED);
     r.method = Some("message/send".to_owned());
     log.append(r).await.unwrap();
-    assert_eq!(log.unresolved_calls("", 0, Duration::ZERO).await.unwrap().len(), 0);
+    assert_eq!(
+        log.unresolved_calls("", 0, Duration::ZERO)
+            .await
+            .unwrap()
+            .len(),
+        0
+    );
 }

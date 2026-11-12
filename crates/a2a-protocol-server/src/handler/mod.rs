@@ -44,6 +44,7 @@ mod push_config_page;
 #[cfg(test)]
 mod push_config_race_tests;
 mod renamed;
+mod review;
 mod shutdown;
 pub(crate) mod subscribers;
 mod tenant_resolution;
@@ -383,7 +384,13 @@ impl RequestHandler {
                 ),
             ));
         };
-        if crate::store::tenant::TenantContext::set_caller(caller) {
+        // A reviewer holding a grant is let into the requester's partition for
+        // the two methods it covers (`review`); the audit record still names
+        // the reviewer, since `caller_identity` is untouched.
+        let partition_of = self.review_scope(call_ctx)?;
+        if crate::store::tenant::TenantContext::set_caller(
+            partition_of.as_deref().unwrap_or(caller),
+        ) {
             Ok(())
         } else {
             Err(crate::error::ServerError::Internal(
@@ -434,6 +441,8 @@ mod control_metrics_tests;
 mod default_store_metrics_tests;
 #[cfg(test)]
 mod executor_metrics_tests;
+#[cfg(test)]
+mod review_tests;
 #[cfg(test)]
 mod subscribers_tests;
 #[cfg(test)]

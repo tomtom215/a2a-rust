@@ -1615,14 +1615,16 @@ impl RequestHandlerBuilder {
                 "an authenticating interceptor makes this handler isolate tasks by caller \
                  (spec §13.1), and the approval gate needs a caller other than the \
                  requester to answer, who could then never reach the requester's task. \
-                 Call share_tasks_across_callers(), or let requesters answer their own \
+                 Call share_tasks_across_callers(), give the approvers a narrow grant with \
+                 ApprovalGate::with_review_grants(), or let requesters answer their own \
                  runs with ApprovalGate::allowing_self_approval()"
             } else {
                 "isolate_tasks_by_caller keeps every caller from another's tasks, and the \
                  approval gate needs a caller other than the requester to answer, so no \
                  decision could ever be admitted. Call share_tasks_across_callers() \
-                 instead, or let requesters answer their own runs with \
-                 ApprovalGate::allowing_self_approval()"
+                 instead, give the approvers a narrow grant with \
+                 ApprovalGate::with_review_grants(), or let requesters answer their own \
+                 runs with ApprovalGate::allowing_self_approval()"
             };
             return Err(crate::error::ServerError::Config(why.to_owned()));
         }

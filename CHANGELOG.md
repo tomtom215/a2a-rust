@@ -1733,6 +1733,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   a `ToolPolicy` that writes a `tool.action` record (tool, call id, verdict, a digest of the arguments, caller, task) *before* a call runs and does
   not run a call it cannot record. **Not done:** the spool is memory, so a process that dies with records in it loses them (reconciliation makes the
   gap visible for calls, not for `task.event`s); a result record after a tool ran; off-machine retention of signed checkpoints, which is the deployment's.
+- **An independent approver could reach the requester's task only by sharing every task of the tenant** (adversarial review A4). Under caller isolation the
+  gate's approver sat in another partition, so `build()` refused the gate; the ways out were `share_tasks_across_callers()` (every caller reads and
+  continues every task) or `allowing_self_approval()` (no second pair of eyes). `ApprovalGate::with_review_grants()` (opt-in; needs `with_approvers`)
+  is a third: a named approver who sends `x-a2a-review-for: <requester>` (`REVIEW_FOR_HEADER`) is scoped to the requester's partition for `GetTask`,
+  `SendMessage` and `SendStreamingMessage` only. They read a task only while it waits for a decision (any other is `TaskNotFound`), and may send only
+  an approval decision (any other message is `PermissionDenied`, so they cannot create, steer or continue a task); `ListTasks`, `CancelTask`,
+  `SubscribeToTask` and push configuration are refused with the header. A quorum above 1 can then be met under isolation. The audit `approval` record
+  names the reviewer and carries `reviewFor`. 10 handler tests (12 hand mutants killed) and one over a real HTTP+JSON server.
+  **Not done:** discovery (how an approver learns a task waits) is the application's; there is no list-waiting-approvals method.
 - **A client built from the builder sent `//message:send` to a REST server whenever the base URL ended in `/`** (adversarial review P1). The builder's
   constructor kept the slash the public constructors removed. One function (`canonical_base_url`) now validates and normalises the base for every
   way a `RestTransport` is made, and a wire-level test (12 builds: builder, card and transport; root and base path; with and without the slash)

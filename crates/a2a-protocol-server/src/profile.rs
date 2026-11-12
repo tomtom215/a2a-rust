@@ -39,6 +39,7 @@ pub enum Profile {
     ///   cannot reach the requester's task when tasks are isolated by caller,
     ///   which is the default with an authenticating interceptor. Call
     ///   [`share_tasks_across_callers`](crate::RequestHandlerBuilder::share_tasks_across_callers),
+    ///   give the approvers a [narrow grant](crate::approval::ApprovalGate::with_review_grants),
     ///   or set a gate that
     ///   [allows self-approval](crate::approval::ApprovalGate::allowing_self_approval).
     ///

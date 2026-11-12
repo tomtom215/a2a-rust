@@ -206,7 +206,12 @@ async fn the_spool_drains_without_further_traffic() {
     let ctx = CallContext::new("message/send");
     audit.before(&ctx).await.unwrap();
     store.set_down(true);
-    audit.on_complete(&ctx, CallOutcome::Failed(&crate::error::ServerError::from(A2aError::internal("x")))).await;
+    audit
+        .on_complete(
+            &ctx,
+            CallOutcome::Failed(&crate::error::ServerError::from(A2aError::internal("x"))),
+        )
+        .await;
     assert_eq!(audit.log.pending_outcomes(), 1);
     assert_eq!(audit.log.failures(), 1, "the refusal is still counted");
     store.set_down(false);
@@ -275,7 +280,9 @@ async fn a_full_spool_counts_what_it_cannot_keep() {
     let extra = 5;
     for i in 0..super::super::outcomes::MAX_PENDING + extra {
         assert!(
-            log.append_required(rec("", &format!("t{i}"))).await.is_err(),
+            log.append_required(rec("", &format!("t{i}")))
+                .await
+                .is_err(),
             "the store is down"
         );
     }
@@ -345,7 +352,11 @@ async fn a_hook_dropped_mid_write_still_has_its_record_kept() {
     assert_eq!(audit.log.pending_outcomes(), 0, "not yet refused");
 
     tokio::time::sleep(Duration::from_secs(2)).await;
-    assert_eq!(audit.log.pending_outcomes(), 1, "refused after its caller left");
+    assert_eq!(
+        audit.log.pending_outcomes(),
+        1,
+        "refused after its caller left"
+    );
     store.set_down(false);
     store.delay_ms.store(0, Ordering::SeqCst);
     until(|| async { audit.log.pending_outcomes() == 0 }).await;

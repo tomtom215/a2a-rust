@@ -51,6 +51,7 @@ impl RequestHandler {
                         .get(&task_id)
                         .await?
                         .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+                    self.ensure_review_sees_a_waiting_task(&call_ctx, &task)?;
                     // A read that activates the lease extension renews the
                     // task's lease (`lease`, ADR 0020).
                     if self.renew_lease_if_asked(&call_ctx, &task_id.0).await {

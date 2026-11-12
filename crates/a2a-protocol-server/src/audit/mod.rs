@@ -93,11 +93,11 @@ pub(crate) mod tests;
 
 pub use a2a_protocol_types::audit as record;
 pub use log::AuditLog;
+pub use outcomes::UnresolvedCall;
 #[cfg(feature = "encryption")]
 pub use privacy::{
     AuditPrivacy, Erasure, HMAC_KEY_LEN, KEYED_DIGEST_PREFIX, Revealed, SEALED_PREFIX,
 };
-pub use outcomes::UnresolvedCall;
 pub use retention::{AuditRetention, Erased, PurgeReport, SIX_MONTHS};
 pub use store::{
     Appended, AuditStore, BoxFuture, InMemoryAuditStore, LegalHold, Sealer, SubjectKey,
@@ -196,6 +196,7 @@ pub(crate) async fn record_approval(
     call: &CallContext,
     task_id: &TaskId,
     approval: &crate::approval::VerifiedApproval,
+    review_for: Option<&str>,
 ) {
     let mut r = interceptor::record_for(call, kind::APPROVAL);
     r.chain = TenantContext::current();
@@ -212,6 +213,10 @@ pub(crate) async fn record_approval(
     );
     if let Some(by) = &approval.request.requested_by {
         r.detail.insert("requestedBy".to_owned(), by.clone().into());
+    }
+    // Answered through a review grant, not from the requester's own partition.
+    if let Some(requester) = review_for {
+        r.detail.insert("reviewFor".to_owned(), requester.into());
     }
     // Under a quorum, each approver's decision is a record of its own; these
     // say where the count stood once it was made, and whether it reached

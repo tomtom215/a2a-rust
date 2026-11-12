@@ -118,9 +118,8 @@ async fn the_records_of_a_call_that_ends_in_an_outage_are_all_written_afterwards
         down: AtomicBool::new(false),
     });
     STORE.set(Arc::clone(&store)).ok().unwrap();
-    let log = Arc::new(
-        AuditLog::new(Arc::clone(&store) as Arc<dyn AuditStore>).require_record(true),
-    );
+    let log =
+        Arc::new(AuditLog::new(Arc::clone(&store) as Arc<dyn AuditStore>).require_record(true));
     let handler = RequestHandlerBuilder::new(Flaky)
         .without_agent_card()
         .with_audit(Arc::clone(&log))
@@ -147,10 +146,16 @@ async fn the_records_of_a_call_that_ends_in_an_outage_are_all_written_afterwards
     let resp = client.request(req).await.unwrap();
     let status = resp.status().as_u16();
     let _ = resp.into_body().collect().await.unwrap();
-    assert_eq!(status, 200, "the call itself is served: only its records waited");
+    assert_eq!(
+        status, 200,
+        "the call itself is served: only its records waited"
+    );
 
     // The store is still down: what the call and its task owed is waiting.
-    assert!(log.pending_outcomes() > 0, "nothing was waiting for the store");
+    assert!(
+        log.pending_outcomes() > 0,
+        "nothing was waiting for the store"
+    );
     store.down.store(false, Ordering::SeqCst);
 
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -161,8 +166,16 @@ async fn the_records_of_a_call_that_ends_in_an_outage_are_all_written_afterwards
     assert_eq!(log.outcomes_lost(), 0, "a record was lost");
 
     let records = log.export("").await.unwrap();
-    let call_id = |r: &AuditRecord| r.detail.get("callId").and_then(|v| v.as_str()).map(str::to_owned);
-    let started: Vec<_> = records.iter().filter(|r| r.kind == kind::CALL_STARTED).collect();
+    let call_id = |r: &AuditRecord| {
+        r.detail
+            .get("callId")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+    };
+    let started: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind == kind::CALL_STARTED)
+        .collect();
     let ended: Vec<_> = records.iter().filter(|r| r.kind == kind::CALL).collect();
     assert_eq!(started.len(), 1);
     assert_eq!(ended.len(), 1, "the call's outcome is in the chain");
@@ -177,6 +190,11 @@ async fn the_records_of_a_call_that_ends_in_an_outage_are_all_written_afterwards
         states.iter().any(|s| s.contains("COMPLETED")),
         "the completion event is in the chain: {states:?}"
     );
-    assert!(log.unresolved_calls("", 0, Duration::ZERO).await.unwrap().is_empty());
+    assert!(
+        log.unresolved_calls("", 0, Duration::ZERO)
+            .await
+            .unwrap()
+            .is_empty()
+    );
     assert!(log.verify("").await.unwrap().is_intact());
 }

@@ -60,6 +60,25 @@
 //! nobody sent, since every name in it was written by the gate after that
 //! approver's check.
 //!
+//! # Reviewing without sharing every task
+//!
+//! With tasks isolated by caller, an approver cannot reach the requester's
+//! task; the alternative to [`share_tasks_across_callers`] is a gate that lets
+//! the requester answer their own run. [`with_review_grants`] is the narrow
+//! third way. A caller named by [`with_approvers`] who sends
+//! [`REVIEW_FOR_HEADER`] with the requester's identity is let into that
+//! requester's partition for **two methods and one purpose**: `GetTask`, for a
+//! task that is waiting for a decision (any other task is `TaskNotFound`), and
+//! `SendMessage` or `SendStreamingMessage`, for a message that is an
+//! approval decision (any other message is refused, so a reviewer cannot
+//! create, steer or continue a task). `ListTasks`, `CancelTask`,
+//! `SubscribeToTask` and push configuration stay in the reviewer's own
+//! partition. How an approver learns that a task is waiting, and for whom, is
+//! the application's: it knows whom it asked.
+//!
+//! [`share_tasks_across_callers`]: crate::RequestHandlerBuilder::share_tasks_across_callers
+//! [`with_review_grants`]: ApprovalGate::with_review_grants
+//! [`with_approvers`]: ApprovalGate::with_approvers
 //! [`EventEmitter::request_approval`]: crate::EventEmitter::request_approval
 //! [`RequestHandlerBuilder::with_approval_gate`]: crate::RequestHandlerBuilder::with_approval_gate
 
@@ -77,12 +96,21 @@ mod quorum;
 pub use quorum::QUORUM_METADATA_KEY;
 pub(crate) use quorum::Tally;
 
+/// The request header in which a reviewer names the requester whose task they
+/// are answering; see [`ApprovalGate::with_review_grants`].
+///
+/// Its value is the requester's authenticated identity, as the approval request
+/// names it in `requestedBy` (`bearer:<label>`, `jwt:<issuer>:<sub>`, …). A gRPC
+/// client sends it as metadata under the same name, as it sends its credential.
+pub const REVIEW_FOR_HEADER: &str = "x-a2a-review-for";
+
 /// Who may approve, checked before a decision reaches the executor.
 #[derive(Debug, Clone)]
 pub struct ApprovalGate {
     approvers: Option<HashSet<String>>,
     distinct_from_requester: bool,
     quorum: usize,
+    review: bool,
 }
 
 impl Default for ApprovalGate {
@@ -99,7 +127,22 @@ impl ApprovalGate {
             approvers: None,
             distinct_from_requester: true,
             quorum: 1,
+            review: false,
         }
+    }
+
+    /// Lets each caller named by [`with_approvers`](Self::with_approvers) reach
+    /// a task waiting for their decision, and nothing else of the requester's,
+    /// when tasks are isolated by caller; see [the module](self). The caller
+    /// names the requester in [`REVIEW_FOR_HEADER`]. Off by default.
+    ///
+    /// Needs an explicit approver list, which `build()` insists on: a grant to
+    /// every authenticated caller is not narrow. It also lets a quorum above 1
+    /// be met under isolation, which is otherwise refused.
+    #[must_use]
+    pub const fn with_review_grants(mut self) -> Self {
+        self.review = true;
+        self
     }
 
     /// Waits for `n` distinct approvers to approve the same request before
@@ -137,11 +180,22 @@ impl ApprovalGate {
         self
     }
 
-    /// Whether a caller other than the requester has to answer, which
-    /// isolating tasks by caller makes impossible: the requester's task is
-    /// then in a partition no other caller reaches.
+    /// Whether a caller other than the requester has to answer and nothing
+    /// lets them reach the task, which isolating tasks by caller makes
+    /// impossible: the requester's task is then in a partition no other
+    /// caller reaches, unless a review grant opens it for answering.
     pub(crate) const fn needs_another_caller(&self) -> bool {
-        self.distinct_from_requester
+        self.distinct_from_requester && !self.review
+    }
+
+    /// Whether `caller` holds a review grant: the gate grants them, and they
+    /// are named as an approver.
+    pub(crate) fn grants_review_to(&self, caller: &str) -> bool {
+        self.review
+            && self
+                .approvers
+                .as_ref()
+                .is_some_and(|allowed| allowed.contains(caller))
     }
 
     /// Whether decisions wait for more than one approver.
@@ -167,11 +221,18 @@ impl ApprovalGate {
                 allowed.len()
             ));
         }
-        (isolate_callers && self.has_quorum()).then(|| {
+        if self.review && self.approvers.is_none() {
+            return Some(
+                "ApprovalGate::with_review_grants names no one: a grant is for the callers \
+                 with_approvers lists, and a grant to every authenticated caller is not narrow"
+                    .to_owned(),
+            );
+        }
+        (isolate_callers && self.has_quorum() && !self.review).then(|| {
             format!(
                 "the approval gate's quorum is {}, and isolating tasks by caller keeps every \
                  caller but the requester from the task, so it could never be met. Call \
-                 share_tasks_across_callers()",
+                 share_tasks_across_callers(), or ApprovalGate::with_review_grants()",
                 self.quorum
             )
         })

@@ -248,11 +248,30 @@ identities you list. Without it, anyone your interceptor authenticates can
 approve.
 
 An approver answers by continuing the requester's task, so the two must
-share it. With an authenticating interceptor, tasks are isolated by caller
+reach it. With an authenticating interceptor, tasks are isolated by caller
 unless the builder says otherwise, and `build()` refuses a gate that wants a
-second caller until it does: call `share_tasks_across_callers()`, as above,
-or let requesters answer their own runs with
-`ApprovalGate::allowing_self_approval()`.
+second caller until you choose how:
+
+- **`ApprovalGate::with_review_grants()`**, the narrow way. Each caller named
+  by `with_approvers` may read a task *that is waiting for a decision*, and
+  answer it, in the requester's partition, and nothing else of the
+  requester's. The approver sends `x-a2a-review-for: <the requester's
+  identity>` (as the request's `requestedBy` names them, `bearer:alice`) on
+  `GetTask` and on `SendMessage` or `SendStreamingMessage` (gRPC: the same name
+  as metadata). The grant covers those three methods: any other message than
+  a decision is refused, so a reviewer cannot create, steer or continue a
+  task; a task not waiting for a decision is `TaskNotFound`; `ListTasks`,
+  `CancelTask`, `SubscribeToTask` and push configuration stay in the
+  reviewer's own records. It needs `with_approvers`, since a grant to every
+  authenticated caller is not narrow, and the gate's other rules still apply
+  (the requester cannot approve their own run; a quorum counts distinct
+  approvers). The `approval` audit record names the reviewer and carries
+  `reviewFor`. How an approver learns that a task is waiting, and for whom, is
+  the application's: it knows whom it asked.
+- `share_tasks_across_callers()`, as above: every authenticated caller reaches
+  every task of the tenant, an approver's reach included.
+- `ApprovalGate::allowing_self_approval()`, so requesters answer their own
+  runs.
 
 A continuation that carries a decision is refused before anything runs when:
 
@@ -317,7 +336,8 @@ names every approver in `approvers`.
 - Each decision is its own `approval` audit record, with `required`, the
   `approvedBy` list as it stood, and `reachedExecutor`.
 - `build()` refuses a quorum of `0`, one larger than the `with_approvers`
-  list, or one above `1` with tasks isolated by caller.
+  list, or one above `1` with tasks isolated by caller, unless the gate grants
+  review (`with_review_grants()`).
 
 The count is kept on the task, so replicas sharing a task store count
 together. One handler serializes the approvals for a task; two replicas do

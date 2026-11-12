@@ -64,7 +64,10 @@ async fn an_allowed_call_is_on_the_record_before_it_runs() {
     assert_eq!(r.detail["toolCallId"], "c1");
     assert_eq!(r.detail["decision"], "allow");
     assert_eq!(r.detail["recoveredFromText"], false);
-    let digest = r.digests.get("arguments").expect("a digest of the arguments");
+    let digest = r
+        .digests
+        .get("arguments")
+        .expect("a digest of the arguments");
     assert!(digest.starts_with("sha256:"), "{digest}");
     let everything = serde_json::to_string(r).unwrap();
     assert!(!everything.contains(SECRET), "an argument was recorded");
@@ -180,7 +183,11 @@ async fn a_denial_the_store_refuses_is_kept_and_the_reason_is_unchanged() {
     assert_eq!(used.load(Ordering::SeqCst), 0);
     let told = results(&seen.lock().unwrap().clone(), 1);
     assert!(told[0].1.contains("mallory may not transfer"), "{told:?}");
-    assert_eq!(log.pending_outcomes(), 1, "the denial is waiting for the store");
+    assert_eq!(
+        log.pending_outcomes(),
+        1,
+        "the denial is waiting for the store"
+    );
 
     store.set_down(false);
     tokio::time::sleep(std::time::Duration::from_secs(30)).await;

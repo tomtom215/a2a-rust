@@ -8,7 +8,7 @@
 use std::net::SocketAddr;
 
 /// The headers-map key under which a binding records the address of the
-/// connection a call arrived on, as `ip:port`; see [`CallContext::peer_addr`].
+/// connection a call arrived on, as `ip:port`; see [`CallContext::peer_addr`](crate::call_context::CallContext::peer_addr).
 ///
 /// A transport of your own that calls the
 /// [`RequestHandler`](crate::RequestHandler) directly sets it in the headers
@@ -19,14 +19,14 @@ pub const PEER_ADDR_KEY: &str = ":peer-addr";
 /// extension.
 ///
 /// The SDK's servers insert it into each request before dispatching it, and
-/// the dispatchers copy it to [`CallContext::peer_addr`]; see the
+/// the dispatchers copy it to [`CallContext::peer_addr`](crate::call_context::CallContext::peer_addr); see the
 /// [module docs](crate::call_context).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PeerAddr(pub SocketAddr);
 
 /// The headers-map key under which a binding records the client's
 /// mutual-TLS certificate, standard base64 of its DER encoding; see
-/// [`CallContext::peer_certificate`].
+/// [`CallContext::peer_certificate`](crate::call_context::CallContext::peer_certificate).
 pub const PEER_CERTIFICATE_KEY: &str = ":peer-certificate";
 
 /// The certificate a client presented in the TLS handshake of the

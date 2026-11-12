@@ -157,6 +157,7 @@ impl RequestHandler {
             // SPEC §3.3.4: reject clients that do not declare support for
             // extensions the agent card marks required.
             self.ensure_required_extensions(&call_ctx)?;
+            self.ensure_review_answers_an_approval(&call_ctx, &params.message)?;
 
             let (mode, committed) = self
                 .validate_and_commit(params, streaming, &call_ctx)
