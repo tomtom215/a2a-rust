@@ -1289,7 +1289,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:220 get_extended_agent_card_without_capability_returns_unsupported"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:70 get_extended_agent_card_without_capability_returns_unsupported"
    ],
    "notes": "",
    "auditor": "A",
@@ -1308,7 +1308,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:198 a_declared_card_with_no_extended_card_is_not_configured"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:48 a_declared_card_with_no_extended_card_is_not_configured"
    ],
    "notes": "Returned when the handler's card declares the capability and no extended card is set with with_extended_agent_card (since 2026-10-14, audit register R68). Until then the public card was served in the extended card's place, and -32007 was returned only by a handler with no card at all, which now answers UnsupportedOperationError (see 3164).",
    "auditor": "A",
@@ -1335,8 +1335,8 @@
     "crates/a2a-protocol-client/src/interceptor.rs:354 InterceptorChain::run_before"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:275 get_extended_agent_card_with_authenticator_gates_on_credentials",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:237 get_extended_agent_card_without_authenticator_is_refused",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:125 get_extended_agent_card_with_authenticator_gates_on_credentials",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:87 get_extended_agent_card_without_authenticator_is_refused",
     "crates/a2a-protocol-client/src/auth/tests.rs:238 an_api_key_goes_where_the_scheme_says",
     "crates/a2a-protocol-sdk/tests/api_key_placement_e2e.rs:90 an_api_key_reaches_the_agent_over_json_rpc",
     "crates/a2a-protocol-client/tests/api_key_query.rs:111 jsonrpc_puts_the_key_in_the_url",
@@ -1373,7 +1373,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:376 a_configured_extended_card_is_served_in_place_of_the_public_one",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:224 a_configured_extended_card_is_served_in_place_of_the_public_one",
     "crates/a2a-protocol-server/tests/extended_card_per_caller.rs:99 each_caller_is_served_the_card_chosen_for_it"
    ],
    "notes": "RequestHandlerBuilder::with_extended_agent_card sets the card served to an authenticated caller, distinct from the public one. Without it a card that declares the capability answers ExtendedAgentCardNotConfiguredError (since 2026-10-14; the public card used to be served). One extended card for every authenticated caller: no per-caller variation (see 3144). Until 2026-10-14 the builder had no extended-card setting, so the 'extended' card was always the public one (audit register R56). Existing test asserts two authenticated callers are served extended cards with different skills; shown able to fail by serving the configured extended card without the per-caller provider in extended_card.rs (2026-10-20)",
@@ -2228,9 +2228,9 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:220 get_extended_agent_card_without_capability_returns_unsupported",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:198 a_declared_card_with_no_extended_card_is_not_configured",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:181 get_extended_agent_card_with_no_card_at_all_is_unsupported"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:70 get_extended_agent_card_without_capability_returns_unsupported",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:48 a_declared_card_with_no_extended_card_is_not_configured",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:31 get_extended_agent_card_with_no_card_at_all_is_unsupported"
    ],
    "notes": "The handler's card decides: not declared, UnsupportedOperation; declared, the extended card if one is set, else ExtendedAgentCardNotConfigured (since 2026-10-14; the public card was served); no card at all, the extended card if one is set, else UnsupportedOperation (since 2026-10-14; it was NotConfigured).",
    "auditor": "B",
@@ -2252,7 +2252,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:30 RequestHandler::on_get_extended_agent_card"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:305 get_extended_agent_card_enforces_required_extensions",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:155 get_extended_agent_card_enforces_required_extensions",
     "crates/a2a-protocol-server/tests/handler_conformance/required_extensions.rs:147 every_operation_refuses_a_client_that_does_not_declare_a_required_extension",
     "crates/a2a-protocol-server/tests/handler_conformance/required_extensions.rs:173 every_operation_admits_a_client_that_declares_the_required_extension",
     "crates/a2a-protocol-server/tests/handler_conformance/required_extensions.rs:277 both_http_bindings_refuse_every_operation_without_the_declaration"
@@ -4742,7 +4742,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:376 a_configured_extended_card_is_served_in_place_of_the_public_one",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:224 a_configured_extended_card_is_served_in_place_of_the_public_one",
     "crates/a2a-protocol-server/tests/optional_features/extended_card.rs:72 extended_card_exposes_quota_capabilities_the_public_card_lacks"
    ],
    "notes": "with_extended_agent_card (since 2026-10-14) sets an extended card with whatever the operator adds; before, the handler served the public card. The tests assert an authenticated caller is served the configured extended card with a skill and quota capabilities the public card lacks, and an unauthenticated one is refused; shown able to fail by serving the public card in its place (2026-10-20).",
@@ -4762,8 +4762,8 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:237 get_extended_agent_card_without_authenticator_is_refused",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:275 get_extended_agent_card_with_authenticator_gates_on_credentials"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:87 get_extended_agent_card_without_authenticator_is_refused",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:125 get_extended_agent_card_with_authenticator_gates_on_credentials"
    ],
    "notes": "Refuses unless an authenticating interceptor is registered or operator opts out explicitly.",
    "auditor": "C",
@@ -8203,9 +8203,9 @@
     "crates/a2a-protocol-server/src/builder.rs:1074 RequestHandlerBuilder::allow_unauthenticated_extended_card"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:237 get_extended_agent_card_without_authenticator_is_refused",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:275 get_extended_agent_card_with_authenticator_gates_on_credentials",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:402 without_a_public_card_a_configured_extended_card_is_served"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:87 get_extended_agent_card_without_authenticator_is_refused",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:125 get_extended_agent_card_with_authenticator_gates_on_credentials",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:248 without_a_public_card_a_configured_extended_card_is_served"
    ],
    "notes": "Refused unless an interceptor reporting authenticates()==true is registered, or the operator opts out with allow_unauthenticated_extended_card(). The check applies to an extended card set with with_extended_agent_card too, with or without a public card on the handler.",
    "auditor": "F",
@@ -8294,7 +8294,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:376 a_configured_extended_card_is_served_in_place_of_the_public_one"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:224 a_configured_extended_card_is_served_in_place_of_the_public_one"
    ],
    "notes": "with_extended_agent_card serves a card with skills the public one lacks; the test adds one. Until 2026-10-14 the public and extended card were the same (audit register R56). Asserts the extended card served to an authenticated caller has a skill the public card lacks; shown able to fail by serving the public card in its place (2026-10-20).",
    "auditor": "F",
@@ -8314,7 +8314,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:451 build_checks_the_extended_card_as_it_checks_the_public_one",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:297 build_checks_the_extended_card_as_it_checks_the_public_one",
     "crates/a2a-protocol-server/tests/optional_features/extended_card.rs:72 extended_card_exposes_quota_capabilities_the_public_card_lacks"
    ],
    "notes": "The extended card is any valid card the operator sets, capabilities included; build() advertises this server's extensions on it as on the public card. Until 2026-10-14 there was one card. Asserts over HTTP+JSON that /extendedAgentCard carries a quotas extension (requestsPerMinute, monthlyTasks) that the public well-known card lacks; shown able to fail by serving the public card in place of the extended one (2026-10-20).",
@@ -8456,8 +8456,8 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:220 get_extended_agent_card_without_capability_returns_unsupported",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:181 get_extended_agent_card_with_no_card_at_all_is_unsupported"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:70 get_extended_agent_card_without_capability_returns_unsupported",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:31 get_extended_agent_card_with_no_card_at_all_is_unsupported"
    ],
    "notes": "Not declared by the handler's card: UnsupportedOperationError. No card on the handler at all and no extended card: UnsupportedOperationError too, since 2026-10-14 (the register's §13.3 row, approved); it answered ExtendedAgentCardNotConfigured, asserting a declaration the handler cannot see. A handler with no public card but an extended card serves it (the card published elsewhere declares the capability).",
    "auditor": "F",
@@ -8476,7 +8476,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:102 RequestHandler::extended_card_for_this_call"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:198 a_declared_card_with_no_extended_card_is_not_configured"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs:48 a_declared_card_with_no_extended_card_is_not_configured"
    ],
    "notes": "Declared by the handler's card with no with_extended_agent_card: ExtendedAgentCardNotConfiguredError, since 2026-10-14 (audit register R68). Until then this entry was TESTED on the no-card path, the only one that returned -32007; a declared card with no extended card served the public card instead, which this MUST forbids. The test failed before the change.",
    "auditor": "F",
