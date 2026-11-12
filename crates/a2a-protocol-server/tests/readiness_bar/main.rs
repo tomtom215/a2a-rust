@@ -23,177 +23,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::executor_helpers::EventEmitter;
-use a2a_protocol_server::serve::{ServeConfig, Server};
 use a2a_protocol_server::store::InMemoryTaskStore;
 use a2a_protocol_server::store::task_store::TaskStoreConfig;
 use a2a_protocol_server::{RequestHandler, RequestHandlerBuilder};
-use a2a_protocol_types::params::ListTasksParams;
-use a2a_protocol_types::task::TaskState;
-use http_body_util::{BodyExt as _, Full};
-use hyper::body::Bytes;
+use http_body_util::BodyExt as _;
 use tokio::io::AsyncWriteExt as _;
 
-/// The bar's L1 concurrency.
-const L1_CLIENTS: usize = 8;
-/// The store's ceiling: tasks accumulate by protocol design, so an unbounded
-/// store's growth is indistinguishable from a leak (the soak test's reasoning).
-const STORE_CAPACITY: usize = 2_000;
+mod support;
 
-/// An executor that writes one artifact and completes, as L1 says.
-struct OneArtifact;
-impl a2a_protocol_server::executor::AgentExecutor for OneArtifact {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a a2a_protocol_server::request_context::RequestContext,
-        queue: &'a dyn a2a_protocol_server::streaming::EventQueueWriter,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
-    > {
-        Box::pin(async move {
-            let emit = EventEmitter::new(ctx, queue);
-            emit.artifact(
-                "out",
-                vec![a2a_protocol_types::Part::text("bar")],
-                Some(true),
-                Some(true),
-            )
-            .await?;
-            emit.status(TaskState::Completed).await
-        })
-    }
-}
-
-/// An executor that holds its slot for a while, so L4 can overload it.
-struct Slow;
-impl a2a_protocol_server::executor::AgentExecutor for Slow {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a a2a_protocol_server::request_context::RequestContext,
-        queue: &'a dyn a2a_protocol_server::streaming::EventQueueWriter,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
-    > {
-        Box::pin(async move {
-            tokio::time::sleep(Duration::from_millis(300)).await;
-            EventEmitter::new(ctx, queue)
-                .status(TaskState::Completed)
-                .await
-        })
-    }
-}
-
-fn resident_bytes() -> u64 {
-    let statm = std::fs::read_to_string("/proc/self/statm").expect("needs /proc");
-    let pages: u64 = statm.split_whitespace().nth(1).unwrap().parse().unwrap();
-    pages * 4096
-}
-
-fn open_fds() -> usize {
-    std::fs::read_dir("/proc/self/fd")
-        .expect("needs /proc")
-        .count()
-}
-
-fn alive_tasks() -> usize {
-    tokio::runtime::Handle::current()
-        .metrics()
-        .num_alive_tasks()
-}
-
-fn body(n: u64) -> String {
-    serde_json::json!({
-        "jsonrpc": "2.0", "method": "SendMessage", "id": format!("r-{n}"),
-        "params": {"message": {"messageId": format!("m-{n}"), "role": "ROLE_USER", "parts": [{"text": "bar"}]}}
-    })
-    .to_string()
-}
-
-fn percentile(samples: &mut [u64], p: f64) -> u64 {
-    if samples.is_empty() {
-        return 0;
-    }
-    samples.sort_unstable();
-    let idx = ((samples.len() as f64) * p) as usize;
-    samples[idx.min(samples.len() - 1)]
-}
-
-fn client() -> hyper_util::client::legacy::Client<
-    hyper_util::client::legacy::connect::HttpConnector,
-    Full<Bytes>,
-> {
-    hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
-        .build_http::<Full<Bytes>>()
-}
-
-fn request(addr: std::net::SocketAddr, n: u64) -> hyper::Request<Full<Bytes>> {
-    hyper::Request::builder()
-        .method("POST")
-        .uri(format!("http://{addr}/"))
-        .header("content-type", "application/json")
-        .header("a2a-version", "1.0")
-        .body(Full::new(Bytes::from(body(n))))
-        .unwrap()
-}
-
-async fn serve(
-    handler: Arc<RequestHandler>,
-) -> (std::net::SocketAddr, tokio::sync::oneshot::Sender<()>) {
-    let server = Server::bind("127.0.0.1:0")
-        .await
-        .unwrap()
-        .with_config(ServeConfig::new().with_max_connections(256));
-    let addr = server.local_addr().unwrap();
-    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    tokio::spawn(
-        server.serve_with_shutdown(JsonRpcDispatcher::new(handler), async move {
-            stopped.await.ok();
-        }),
-    );
-    (addr, stop)
-}
-
-/// Waits up to `within` for `ok` to hold; returns the last reading.
-async fn settles<T: PartialOrd + Copy + std::fmt::Debug>(
-    within: Duration,
-    read: impl Fn() -> T,
-    ok: impl Fn(T) -> bool,
-) -> T {
-    let deadline = Instant::now() + within;
-    loop {
-        let v = read();
-        if ok(v) || Instant::now() >= deadline {
-            return v;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-}
-
-struct Rows(Vec<(&'static str, bool, String)>);
-impl Rows {
-    fn row(&mut self, id: &'static str, pass: bool, said: String) {
-        println!("{id}: {} -- {said}", if pass { "MET" } else { "UNMET" });
-        self.0.push((id, pass, said));
-    }
-}
-
-async fn non_terminal(handler: &RequestHandler) -> u64 {
-    let mut total = 0;
-    for state in [
-        TaskState::Submitted,
-        TaskState::Working,
-        TaskState::InputRequired,
-        TaskState::AuthRequired,
-    ] {
-        let mut params = ListTasksParams::default();
-        params.status = Some(state);
-        params.page_size = Some(1);
-        let page = handler.on_list_tasks(params, None).await.unwrap();
-        total += u64::from(page.total_size);
-    }
-    total
-}
+use support::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "load; run explicitly with --ignored --release (see the module docs)"]
@@ -326,7 +164,10 @@ async fn the_readiness_bar_rows_l1_l3_l4() {
     );
 
     // ── L3: churn, half dropped before the response arrives ─────────────────────
-    let churn: u64 = 2_000;
+    let churn: u64 = std::env::var("A2A_BAR_CHURN")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2_000);
     for n in 0..churn {
         let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
         let payload = body(500_000 + n);
@@ -363,16 +204,25 @@ async fn the_readiness_bar_rows_l1_l3_l4() {
         running == 0,
         format!("after L3: {running} live event queues (bar: 0)"),
     );
+    // The bar names C4 after L1 only. After L3 it is read as well, and for longer,
+    // because a task a dropped client left behind is a different question: does
+    // anything end it, and when?
+    let waited = Instant::now();
     let open = settles(
-        Duration::from_secs(10),
+        Duration::from_secs(120),
         || futures_lite_count(&handler),
         |v| v == 0,
     )
     .await;
+    let after = waited.elapsed();
+    let left = stuck(&handler).await;
     rows.row(
         "C4",
         open == 0,
-        format!("{open} tasks non-terminal after L3"),
+        format!(
+            "{open} tasks non-terminal after L3, read for up to 120 s ({:.1} s waited); left: {left:?}",
+            after.as_secs_f64(),
+        ),
     );
 
     let _ = handler.shutdown().await;

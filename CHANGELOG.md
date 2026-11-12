@@ -1744,6 +1744,14 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `accept_unisolated_tenants()` was not called), sharing across callers comes with a tenant-aware store you supply, and every tenant has a concurrency
   limit. 7 tests, 12 hand mutants killed (two survivors were equivalent logic, which was removed). Not enforced, and said so on the page: retention and
   erasure schedules, and that the limits are per replica.
+- **A client that disconnected during a send could leave its new task `Submitted` for ever** (found by the readiness bar's churn profile, 2026-11-12). Two windows, both after
+  the task row was saved. (1) The commit guard, which deletes a new task's row when the send is dropped, learned a row existed only when the save *returned*, so a drop while the
+  save was finishing (a database's acknowledgement in flight; in memory, an eviction sweep after the insert) left the row with no executor. The guard now knows before the save
+  starts; removing a row that was never written is a no-op, and a continuation's task is never rolled back. (2) The send read the queue map (`applied_mark().await`, which
+  yields while a queue is made or destroyed) between its commit and the task that stores the executor's events, so a drop there took the event channel with it while the executor
+  ran on; the mark now travels in `Started`. Reproduced first: with 30,000 loopback connections, half dropped before the response, 3 of 6 runs (and 2 of 3 before that) left one
+  task `Submitted` for the whole 120 s read; deterministic tests drop the send at each window (a gate at the await; a store that writes the row and never answers) and failed on
+  the unfixed code. After both fixes 0 of 13 runs left a task. 4 tests, 3 hand mutants killed.
 - **A required audit log lost the outcome of a call whenever its store refused the write** (adversarial review A3). `require_record` gated admission on
   `call.started` and nothing after it: a `call` record (how the call ended), `task.event`, `run.started`, `approval`, `halt` or `task.cancel_requested`
   the store refused was counted and dropped, so a chain held a start with no end and nothing said so (reproduced: `["call.started", "call.started"]`

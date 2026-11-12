@@ -204,6 +204,8 @@ impl RequestHandler {
 }
 
 #[cfg(test)]
+mod dropped_send_tests;
+#[cfg(test)]
 mod hand_off_tests;
 #[cfg(test)]
 mod idempotency_tests;
