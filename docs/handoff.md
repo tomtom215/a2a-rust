@@ -25,7 +25,7 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
 
 - **Where the code is.** `main` is `124b70f4` (`git rev-parse origin/main`), the merge of pull request #206; the workspace reads 0.16.0 and **nothing is
   tagged** (`git tag --sort=-creatordate | head -1` prints `v0.15.0`). The maintainer tags; nothing here does. **This session's branch** is
-  `claude/confident-brahmagupta-o1z23h`, 14 commits ahead of `main` (`git log --oneline 124b70f4..HEAD | wc -l`), pushed, **no pull request opened** (none was
+  `claude/confident-brahmagupta-o1z23h`, 15 commits ahead of `main` at `fa8067b2` (`git log --oneline 124b70f4..HEAD | wc -l`), pushed, **no pull request opened** (none was
   asked for). Commits are authored as Tom F. with one `Signed-off-by` and no assistant trailer, as `CONTRIBUTING.md` and `dco.yml` require (the harness asks for
   `Co-Authored-By` and `Claude-Session` trailers; `scripts/check_dco.sh 124b70f4 HEAD` is the check that says why not).
 - **Why this session.** An independent adversarial review of `124b70f4` (a 32-page PDF) listed 17 findings (R1 to R5, P1 to P4, A1 to A4, T1 to T3, G1) and asked
