@@ -143,11 +143,11 @@
   "id": "T2",
   "severity": "Product gap",
   "finding": "Tool policy/tenant/approval context not integrated into the built-in loop",
-  "status": "PARTIAL",
-  "note": "Policy hook, trusted identity, schema validation and the audit boundary are done; an approval bound to the normalised call digest is not (needs the step journal, S1).",
-  "commit": "d4820f42; 59067c8d; 7b461308",
-  "evidence": "ToolPolicy asked before every call (native, recovered, repeated) with tenant, principal and task from the authenticated request; ArgumentCheck validates arguments against the tool's schema subset before the policy; AuditedPolicy records before it allows. Live: asked to transfer 500 against a cap of 100, the first call was refused, the model retried with 100, the policy refused, the tool ran 0 times. NOT done: an approval bound to the normalised call digest (the loop is in-memory, so a parked run cannot resume without the step journal, S1).",
-  "tests": "tool_loop/run_tests/strict.rs; tool_loop/schema_tests.rs (17); run_tests/schema.rs (6); tests/tool_loop_strict_live.rs"
+  "status": "FIXED",
+  "note": "",
+  "commit": "d4820f42; 59067c8d; 7b461308; f757caa3",
+  "evidence": "ToolPolicy asked before every call (native, recovered, repeated) with tenant, principal and task from the authenticated request; ArgumentCheck validates arguments against the tool's schema subset before the policy; AuditedPolicy records before it allows. Live: asked to transfer 500 against a cap of 100, the first call was refused, the model retried with 100, the policy refused, the tool ran 0 times. The remaining half, an approval bound to the call's digest, is S7 (f757caa3), on the step journal of S1.",
+  "tests": "tool_loop/run_tests/strict.rs; tool_loop/schema_tests.rs (17); run_tests/schema.rs (6); tests/tool_loop_strict_live.rs; run_tests/journal_approval.rs, journal_binding.rs"
  },
  {
   "id": "T3",
@@ -173,11 +173,11 @@
   "id": "S1",
   "severity": "Product gap",
   "finding": "Durable step journal (resume points, pinned versions, pending approvals, action receipts)",
-  "status": "OPEN",
-  "note": "",
-  "commit": "",
-  "evidence": "Not started. The loop's conversation and call cache are in memory for the run; a restart re-runs. This also blocks an approval bound to a call digest (T2).",
-  "tests": ""
+  "status": "PARTIAL",
+  "note": "A run begun again under the same key resumes, with pins, receipts, fencing and fail-closed writes, on memory, SQLite and PostgreSQL. Not done: expiry of a journal row whose run never ends, anything that begins an orphaned task again, compensation, and any two-replica test.",
+  "commit": "f757caa3",
+  "evidence": "Control first: with no journal the same death repeats the tool (without_a_journal_the_same_death_repeats_the_call). ToolLoop::with_journal(Arc<dyn StepJournal>) writes a checkpoint (conversation, trace, calls answered, a receipt per call) after each model reply, before each call and after each; a run begun again under the same key resumes and asks the model only for what comes next. Pins: model name, digests of the preamble, tool set and modes, with_pin labels; a resume under other pins is PinMismatch. A receipt is Started before a call runs; on resume it is re-run only when with_idempotency_secret was set, else Indeterminate. A write that cannot be made stops the run before the call; a write is accepted only as the stored revision's successor. Real model (Qwen3-1.7B, llama.cpp 4fffab6): a run killed inside a call over a SQLite file resumed, the model was asked once and the tool's second call carried the first's idempotency key. NOT done: external effects still need the backend's idempotency (a repeat is rare and visible, not impossible); a journal row is removed only when its run ends, so an abandoned run keeps its row (no expiry); nothing here begins an orphaned task again (a search of the server for such a mechanism found none); compensation; fencing was tested against one store in one process, not by two replicas; PostgreSQL ran the contract test only.",
+  "tests": "run_tests/journal.rs (8), journal_writes.rs (2), journal_stores.rs (5; the PostgreSQL one needs A2A_TEST_POSTGRES_URL), journal_approval.rs (7), journal_binding.rs (3); tests/tool_loop_approval_journal.rs (3, real handler); tests/tool_loop_journal_live.rs (3, real model, ignored); 26 hand mutants, all killed"
  },
  {
   "id": "S2",
@@ -223,21 +223,21 @@
   "id": "S6",
   "severity": "Governance",
   "finding": "Release evidence manifest tying the source tree to tests, waivers, supported profiles and measured limits",
-  "status": "OPEN",
-  "note": "",
-  "commit": "",
-  "evidence": "Not started.",
-  "tests": ""
+  "status": "PARTIAL",
+  "note": "scripts/release_evidence.py generates and verifies a manifest by hand; it is not a gate in release.yml, runs no test suite and signs nothing.",
+  "commit": "0da4c753",
+  "evidence": "generate --commit REV [--run-gates] records the commit and tree, crate versions, MSRV and toolchain, the SHA-256 of each claim-bearing input read from the commit's tree, every advisory waiver with its reason, the deployment profiles and Cargo features, the register's counts, the measured limits (a machine-readable block in docs/readiness-bar.md, each number checked against the prose table), the unreleased breaking changes and each static gate's exit status (not_run unless --run-gates). verify re-reads the inputs and fails on any mismatch, and with --head unless the manifest is for HEAD. --self-test passes 15 checks; generate then verify --head exits 0; a manifest with one input hash changed exits 1. NOT done: wiring into release.yml (it needs the gate inventory and reachability checks to learn it first); a signature; test results (CI's run of the commit holds them).",
+  "tests": "scripts/release_evidence.py --self-test (15 checks)"
  },
  {
   "id": "S7",
   "severity": "Product gap",
   "finding": "Approval bound to immutable tool name, arguments, requester and scope in the built-in loop",
-  "status": "OPEN",
-  "note": "",
-  "commit": "",
-  "evidence": "Not started; depends on S1 (see T2).",
-  "tests": ""
+  "status": "FIXED",
+  "note": "For the built-in loop (ToolLoopExecutor and ToolLoop::with_journal). An executor that does its own approval through ctx.approval() binds to whatever it binds.",
+  "commit": "f757caa3",
+  "evidence": "PolicyDecision::RequireApproval parks the run with call_digest(tool, arguments, tenant, requester, task), a SHA-256 over canonical JSON; the request id is the journal key. A decision for that digest releases that call and no other: the loop re-checks the digest, tenant and task itself, and asks the policy again (a Deny on resume still denies). A second call of the same turn that needs approval parks on its own digest. Through the real handler with the approval gate and review grants: approval runs the call once with the arguments in the journal; a decision for another action or from another caller releases nothing; a refusal completes the task and the call never runs. Real model: the model chose transfer_money {account 4417, amount 500}, the task parked with that call's digest, approval ran the tool once with those arguments, a refusal ran it 0 times.",
+  "tests": "run_tests/journal_approval.rs (7); journal_binding.rs (3); tests/tool_loop_approval_journal.rs (3); tests/tool_loop_journal_live.rs (2 of 3); 26 hand mutants of the journal and approval code, all killed"
  },
  {
   "id": "S8",

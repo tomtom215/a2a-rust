@@ -21,12 +21,12 @@ Read from `findings.json` by the command below, not copied from a summary.
 
 | Status | Rows | IDs |
 |---|---|---|
-| FIXED | 15 | R1, R2, A1, A2, R4, R5, P1, P2, P3, P4, A4, T1, T3, M1, D1 |
-| PARTIAL | 4 | R3, A3, T2, S5 |
-| OPEN | 7 | S1, S2, S3, S4, S6, S7, S8 |
+| FIXED | 17 | R1, R2, A1, A2, R4, R5, P1, P2, P3, P4, A4, T1, T2, T3, M1, S7, D1 |
+| PARTIAL | 5 | R3, A3, S1, S5, S6 |
+| OPEN | 4 | S2, S3, S4, S8 |
 | MAINTAINER | 1 | G1 |
 
-Of the reviewer's own 17 rows: 13 fixed, 3 partial, 0 open, 1 for the maintainer.
+Of the reviewer's own 17 rows: 14 fixed, 2 partial (R3, A3), 0 open, 1 for the maintainer.
 
 ```bash
 python3 -c "import json,collections;r=json.load(open('docs/audits/2026-11-12-adversarial-review/findings.json'));print(len(r),collections.Counter(x['status'] for x in r))"
@@ -37,16 +37,17 @@ python3 -c "import json,collections;r=json.load(open('docs/audits/2026-11-12-adv
 * A fix that changes a default is not made: T1, T3 and the rest of the tool-loop strictness are **opt-in** (`ToolLoop::strict`, `ArgumentCheck`,
   `AuditedPolicy`), because a release must not change what a deployment relies on without being asked. Their defaults are unchanged and documented.
 * FIXED is for the scope in the row's `note`. R5 is proven for REST and JSON-RPC, P2 for four route families, A1 for one store's atomic hold check.
-* A row is OPEN when nothing was built. S1 to S8 are the durable step journal, skill content pinning, fleet quota, telemetry-failure visibility, the
-  readiness-bar measurements (S5, partly done), the release evidence manifest, an approval bound to a call digest, and `erase_subject` against a hold across replicas.
+* A row is OPEN when nothing was built: S2 skill content pinning, S3 fleet quota, S4 telemetry-failure visibility and S8 `erase_subject` against a hold across
+  replicas. S1 (the durable step journal), S5 (the readiness-bar measurements) and S6 (the release evidence manifest) are PARTIAL, and each row's `note` says what is
+  not built. S7 (an approval bound to a call digest) is FIXED for the built-in loop.
 * G1 (branch protection) is a repository setting. It cannot be changed from a session and is the maintainer's.
 
 ## Verified, and not
 
-Verified on the tree that became `ba335f90` (commands in `docs/handoff.md`, *Now*): the server crate's library tests with every feature the
-handler uses and a live PostgreSQL 16; the integration tests of the changed areas; clippy `-D warnings`, rustdoc `-D warnings`, rustfmt and the
-repository's static gates for the changed crates; the book's doc-tests; against **real models** on llama.cpp (Qwen3-1.7B), the tool-loop
-strict profile, argument validation and terminal truth through a real handler, stream and webhook; and, on a real server over real sockets, the readiness bar's rows R1 to R4 and C1 to C5 (see S5 and D1).
+Verified on the tree that became `f757caa3` (commands in `docs/handoff.md`, *Now*): the server crate's library tests with every feature the
+handler uses and a live PostgreSQL 16 (3,256 passed); the integration tests of the changed areas; workspace clippy `-D warnings`, rustdoc `-D warnings`, rustfmt and the
+repository's static gates; the book's doc-tests (351 passed, 4 ignored); against **real models** on llama.cpp (Qwen3-1.7B), the tool-loop
+strict profile, argument validation, terminal truth through a real handler, stream and webhook, and the step journal and approval binding (S1, S7); and, on a real server over real sockets, the readiness bar's rows R1 to R4 and C1 to C5 (see S5 and D1).
 
 Not verified: the workflows on GitHub for these commits; the Windows and macOS legs; the mutation job on the changed lines (the hand mutants stand in for it
 and are not the same measurement); the `--full` preflight; any multi-replica or load behaviour of the new code.

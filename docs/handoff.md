@@ -25,12 +25,12 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
 
 - **Where the code is.** `main` is `124b70f4` (`git rev-parse origin/main`), the merge of pull request #206; the workspace reads 0.16.0 and **nothing is
   tagged** (`git tag --sort=-creatordate | head -1` prints `v0.15.0`). The maintainer tags; nothing here does. **This session's branch** is
-  `claude/confident-brahmagupta-o1z23h`, 15 commits ahead of `main` at `fa8067b2` (`git log --oneline 124b70f4..HEAD | wc -l`), pushed, **no pull request opened** (none was
-  asked for). Commits are authored as Tom F. with one `Signed-off-by` and no assistant trailer, as `CONTRIBUTING.md` and `dco.yml` require (the harness asks for
+  `claude/confident-brahmagupta-o1z23h`, 19 commits ahead of `main` at `6437c144` (`git log --oneline 124b70f4..HEAD | wc -l`; this handoff is the 20th), pushed, with
+  **pull request [#209](https://github.com/tomtom215/a2a-rust/pull/209)** open (the maintainer's session asked for it; it carries the `mutation-test` label and this session is subscribed to its events). Commits are authored as Tom F. with one `Signed-off-by` and no assistant trailer, as `CONTRIBUTING.md` and `dco.yml` require (the harness asks for
   `Co-Authored-By` and `Claude-Session` trailers; `scripts/check_dco.sh 124b70f4 HEAD` is the check that says why not).
 - **Why this session.** An independent adversarial review of `124b70f4` (a 32-page PDF) listed 17 findings (R1 to R5, P1 to P4, A1 to A4, T1 to T3, G1) and asked
   for more. Its register, each row checked against the code, with evidence, is `docs/audits/2026-11-12-adversarial-review/` (`README.md`, `findings.json`, 27 rows:
-  15 FIXED, 4 PARTIAL, 7 OPEN, 1 MAINTAINER; the README gives the command that counts them). Read it before acting on any of the below.
+  17 FIXED, 5 PARTIAL, 4 OPEN, 1 MAINTAINER; the README gives the command that counts them). Read it before acting on any of the below.
 - **Built, each defect first reproduced by a test that failed on the code as it stood, then fixed** (the hand mutants and their counts are in the commit messages):
   1. `839dde5f` **R1, R2, R3.** A terminal event the store did not confirm is not told as terminal (the processor reads the store back; `HandlerLimits::terminal_confirmation`,
      default `Required`); a rejected event is never armed in the outbox; a live writer keeps its reservation (`PushOutbox::extend_hold`).
@@ -46,8 +46,14 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
   10. `7040632a`, `ba335f90` **The readiness bar, partly measured, and the defect it found (S5, D1).** `tests/readiness_bar/` (ignored) drives a real server over sockets: R1 to R4 and C1 to C5 were met in three 30 s release runs
      (`docs/readiness-bar.md`, last section). Its churn profile found a **task left `Submitted` for ever when a client disconnects during a send** (3 of 6 runs with 30,000 connections): two windows after the row is saved, fixed in
      `ba335f90` (`CommitGuard` marks the row before the save; the applied mark travels in `Started`), 0 of 13 runs after.
+  11. `f757caa3` **S1 and S7, the durable step journal and an approval bound to the call.** `ToolLoop::with_journal(Arc<dyn StepJournal>)` (memory, SQLite, PostgreSQL): a checkpoint after each model reply, before each call and after
+     each; a run begun again under the same key resumes; pins (model, preamble, tool set, modes, `with_pin` labels) refuse a changed resume; a receipt is `Started` before a call runs and the call is re-run on resume only
+     with `with_idempotency_secret` (else `Indeterminate`); a failed write stops the run before the call; writes are fenced by revision. `PolicyDecision::RequireApproval` parks the run with `call_digest(tool, arguments, tenant,
+     requester, task)`; a decision releases that call and no other, and the policy is asked again on resume. 25 unit tests, 3 through the handler, 3 against Qwen3-1.7B, 26 hand mutants all killed (3 survived at first and got tests).
+  12. `0da4c753` **S6, partly.** `scripts/release_evidence.py generate|verify|--self-test`: a manifest of a commit's hashes, waivers, profiles, features, register counts, measured limits (a JSON block in `docs/readiness-bar.md`)
+     and gate status. **Not a gate in `release.yml`**; run it by hand (`RELEASING.md`).
 - **Real models.** llama.cpp `4fffab6` (`/opt/llama/src/build/bin/llama-server`), Qwen3-1.7B Q4_K_M (`/opt/models/Qwen3-1.7B-Q4_K_M.gguf`), started as in the header of
-  `crates/a2a-protocol-server/tests/tool_loop_strict_live.rs`. Two live files, all `#[ignore]`d without a server: `tool_loop_strict_live.rs` (3 tests), `terminal_truth_live.rs` (3 tests).
+  `crates/a2a-protocol-server/tests/tool_loop_strict_live.rs`. Three live files, all `#[ignore]`d without a server: `tool_loop_strict_live.rs` (3 tests), `terminal_truth_live.rs` (3 tests), `tool_loop_journal_live.rs` (3 tests; run with `--features "tool-loop sqlite" -- --ignored --test-threads=1`; the server was restarted this session with `llama-server -m /opt/models/Qwen3-1.7B-Q4_K_M.gguf --host 127.0.0.1 --port 11434 --alias qwen3:1.7b --jinja -c 4096 -np 1`).
   Observed, not asserted for every model: a default loop ran a requested JSON example as an action three times; a schema cap refused a first call of 500 and the model retried with 100;
   with the `Completed` write rejected the stream showed `[Working]` and ended `UNAVAILABLE`, `GetTask` said `Working` and no webhook carried `Completed`.
 - **Verified** (re-run each command): `cargo test -p a2a-protocol-server --features "sqlite postgres audit encryption auth-jwt grpc tool-loop skills" --lib -- --include-ignored`
@@ -57,20 +63,24 @@ verbatim in [`handoff-history.md`](handoff-history.md), last section.
   `RUSTDOCFLAGS="-D warnings" cargo doc -p a2a-protocol-server -p a2a-protocol-types --no-deps` (audit, sqlite, tool-loop, skills, encryption), `scripts/check_file_lengths.sh`,
   `check_spec_ledger.py`, `check_api_reference.py`, `check_panic_paths.py`, `check_doc_escapes.py`: exit 0 on the tree of the commit that carries this block (`check_spec_ledger.py` failed at `2146162c` itself: the `with_profile` edit shifted `builder.rs` by a line, so 56 citations after it were off by one; repaired here with `--fix-lines`); the book's doc-tests (`cargo test --doc` in `book-tests`): 349 passed, 4 ignored (the
   baseline) on the tree that became `7b461308`; only the multi-tenancy page's new example was seen to compile at `ccb09541`, and the whole run was not repeated.
-- **Not verified / not done:** the workflows on GitHub for any of these commits (nothing here read a CI run); the Windows and macOS legs; the mutation job on the changed lines (hand mutants stand in for it and are not the
+- **Verified for S1, S7 and S6** (re-run each): at the tree that became `f757caa3`, the server lib suite above, **3,256 passed, 0 failed** (25 of them new); `cargo clippy --workspace --all-targets -D warnings` and
+  `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`, both with `a2a-protocol-server/{audit,sqlite,postgres,tool-loop,encryption,skills}`, no output; `cargo fmt --all --check`; the repository gates above (the ledger needed
+  `--fix-lines` once more at `6437c144`, because the CHANGELOG entry grew after the first ledger run: run it after *every* edit, CHANGELOG included); the book's doc-tests, a full run in `book-tests` with its own target directory: **351 passed, 0 failed, 4 ignored**;
+  `tests/tool_loop_approval_journal.rs` 3 passed; `tests/tool_loop_journal_live.rs` 3 passed against Qwen3-1.7B. `scripts/release_evidence.py --self-test` 15 checks; `generate --commit HEAD` then `verify --head` exit 0; a manifest with one hash changed exits 1.
+- **Not verified / not done:** the workflows on GitHub for any of these commits (pull request #209 was opened and labelled; no CI event had arrived when this was written, so nothing here read a CI run); the Windows and macOS legs; the mutation job on the changed lines (hand mutants stand in for it and are not the
   same measurement); `scripts/preflight.sh --full`; any multi-replica or load behaviour of the new code (the outcome spool, the review grant and the multi-tenant profile were tested in one process; the readiness harness ran with LTO off, which is not the published profile; the 3 of 8 runs of the first post-fix batch that reported FAILED were not asked which row failed, and the 5 that followed, which were, all passed); the SLIMRPC binding
-  after the extended-card change was only cargo-checked; the SQLite and PostgreSQL audit stores' behaviour under the spool beyond the existing suites. **Rows OPEN in the register:** S1 the durable step journal,
-  S2 skill content pinning, S3 fleet quota, S4 telemetry-failure visibility (not examined), S5 the rest of the readiness bar (R5 to R7, F1 to F5, L2 and L5 of `docs/readiness-bar.md`, and everything on a second replica; R1 to R4 and C1 to C5 are measured), S6 the release evidence manifest,
-  S7 an approval bound to a call digest, S8 `erase_subject` against a hold across replicas. **G1** (branch protection on `main`) is a repository setting and the maintainer's.
+  after the extended-card change was only cargo-checked; the SQLite and PostgreSQL audit stores' behaviour under the spool beyond the existing suites. **Rows OPEN in the register:** S2 skill content pinning, S3 fleet quota, S4 telemetry-failure visibility (not examined), S8 `erase_subject` against a hold across replicas. **Rows PARTIAL beyond R3, A3:** S1 (no expiry of an abandoned run's row, nothing that begins an orphaned task again, no two-replica test of the fencing, PostgreSQL only ran the store contract test), S5 (R5 to R7, F1 to F5, L2 and L5 of `docs/readiness-bar.md`, and everything on a second replica; R1 to R4 and C1 to C5 are measured), S6 (`release_evidence.py` is not wired into `release.yml`). **G1** (branch protection on `main`) is a repository setting and the maintainer's.
 
 ### First, next
 
-1. **Push is done; read CI.** Open the pull request when you want one (`mutation-test` label, *Lessons* 2026-11-07), read its CI, which is the gate, and fix what it finds. The branch has not been through CI.
-2. **S1, the durable step journal**, then S7 on top of it: it is what lets a parked run resume and an approval bind to the call digest. Design it as an optional store beside the task store; the loop's conversation and its
-   `done` call cache are the state to persist. External effects still need the backend's idempotency (the loop already derives a key per call).
-3. **S2 skill pinning** (manifest over bodies and resources, a deployment pin, the hash in the audit record), **S4** (an observer of exporter failure that does not depend on the exporter), **S6** (the manifest), **S5** (the rest: R5 to R7 and F1 to F5, then two replicas; `docs/readiness-bar.md` says what each row needs, and `tests/readiness_bar/` is where the measured ones live).
-4. **S3, fleet quota**, needs a decision before code: reservation and reconciliation against a shared store, and a declared overshoot bound.
-5. The maintainer's open items stay as *Waiting on the maintainer*, G1 among them.
+1. **Read pull request #209's CI** (the `mutation-test` label is on, and its job grades the changed lines; that is the measurement the hand mutants only stand in for). CI is the gate: fix what it finds in one validated push,
+   and do not poll for it (the session is subscribed to the pull request's events).
+2. **S1's open edges**, in this order: an expiry or sweep for a journal row whose run never ends (today a row goes only when its run ends); a two-replica test of the fencing over PostgreSQL (two loops, one key, one writer
+   loses with `JournalError::Conflict`); and a decision about what begins an orphaned task again (nothing does; a search of the server found no mechanism, which is a grep, not a proof).
+3. **S6's wiring:** make `scripts/release_evidence.py verify --head` a step of `release.yml`; that needs the gate inventory and reachability checks to learn the script first, and a decision on where the manifest is kept (attached to the release, not committed).
+4. **S2 skill pinning** (manifest over bodies and resources, a deployment pin, the hash in the audit record), **S4** (an observer of exporter failure that does not depend on the exporter), **S5** (the rest: R5 to R7 and F1 to F5, then two replicas; `docs/readiness-bar.md` says what each row needs, and `tests/readiness_bar/` is where the measured ones live), **S8** (`erase_subject` against a hold across replicas).
+5. **S3, fleet quota**, needs a decision before code: reservation and reconciliation against a shared store, and a declared overshoot bound.
+6. The maintainer's open items stay as *Waiting on the maintainer*, G1 among them.
 
 ### Facts this session established
 
@@ -952,6 +962,11 @@ into this file: the commit that records it changes it.
 - **Run the three gates that read other files after every commit, not once at the end (2026-11-12).** Three of this session's commits landed red on a gate their own tests did not exercise: the audit commit failed
   `cargo fmt --check` and `RUSTDOCFLAGS=-D warnings cargo doc` (a doc link in a file I had moved text out of), and a later one drifted 56 spec-ledger citations by moving a line in `builder.rs`.
   After any edit, **including to `CHANGELOG.md`, whose line numbers the ledger cites** (the dropped-send entry moved a citation and `ba335f90` landed with a failing ledger), run `cargo fmt --all -- --check`, `check_spec_ledger.py` and the `cargo doc` line in *Now*; a green test suite says none of them.
+- **That lesson recurred, and three more came with it (2026-11-12).** (1) I extended the S1/S7 CHANGELOG entry after the ledger run, and the ledger failed at the next check (`6437c144` repairs it): run the gates
+  as the *last* step before `git commit`, not before the final edit. (2) A test module that reaches 500 lines fails `check_file_lengths.sh`, and clippy's `too_many_lines` (60) applies to tests: split by seam
+  (`run_tests/journal*.rs`, with `pub(super)` helpers) and extract a helper instead of allowing the lint. (3) The three S1/S7 mutant survivors were each a missing test, not dead logic (a resumed run's turn count; a
+  receipt's `Started` write on a re-run; an approval for call one releasing call two of the same turn), so the first question for a survivor is which behaviour has no test, and only then whether the code is equivalent.
+  To wait for a background command without polling, `tail --pid=<pid> -f /dev/null` blocks until it exits; `$?` after `cmd | tail` is `tail`'s status, not `cmd`'s.
 - **`git commit -s` signs as whoever `git config` says (2026-11-12).** The container's identity is `Claude <noreply@anthropic.com>`, and `scripts/check_dco.sh` refuses an assistant author. Commit with
   `git -c user.name="Tom F." -c user.email="tomf@tomtomtech.net" commit -s`, then `bash scripts/check_dco.sh <base> HEAD` before pushing.
 - **A surviving hand mutant is often dead logic, and the fix is to delete it (2026-11-12).** Three survivors this session were equivalent: a guard that could never be false (`reviewed_requester` re-checking what admission had
