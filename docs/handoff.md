@@ -951,7 +951,7 @@ into this file: the commit that records it changes it.
 
 - **Run the three gates that read other files after every commit, not once at the end (2026-11-12).** Three of this session's commits landed red on a gate their own tests did not exercise: the audit commit failed
   `cargo fmt --check` and `RUSTDOCFLAGS=-D warnings cargo doc` (a doc link in a file I had moved text out of), and a later one drifted 56 spec-ledger citations by moving a line in `builder.rs`.
-  After any edit run `cargo fmt --all -- --check`, `check_spec_ledger.py` and the `cargo doc` line in *Now*; a green test suite says none of them.
+  After any edit, **including to `CHANGELOG.md`, whose line numbers the ledger cites** (the dropped-send entry moved a citation and `ba335f90` landed with a failing ledger), run `cargo fmt --all -- --check`, `check_spec_ledger.py` and the `cargo doc` line in *Now*; a green test suite says none of them.
 - **`git commit -s` signs as whoever `git config` says (2026-11-12).** The container's identity is `Claude <noreply@anthropic.com>`, and `scripts/check_dco.sh` refuses an assistant author. Commit with
   `git -c user.name="Tom F." -c user.email="tomf@tomtomtech.net" commit -s`, then `bash scripts/check_dco.sh <base> HEAD` before pushing.
 - **A surviving hand mutant is often dead logic, and the fix is to delete it (2026-11-12).** Three survivors this session were equivalent: a guard that could never be false (`reviewed_requester` re-checking what admission had
