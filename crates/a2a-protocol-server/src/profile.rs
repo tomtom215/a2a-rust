@@ -82,6 +82,43 @@ pub enum Profile {
     /// does not declare. A handler built without this profile keeps the
     /// defaults it always had.
     Production,
+
+    /// For a deployment that serves several tenants and must not let one reach
+    /// another's work, or take its capacity (adversarial review, 2026-11-12).
+    ///
+    /// Applies:
+    /// * [`isolate_tasks_by_caller`](crate::RequestHandlerBuilder::isolate_tasks_by_caller),
+    ///   unless [`share_tasks_across_callers`](crate::RequestHandlerBuilder::share_tasks_across_callers)
+    ///   was called: every caller is named, and a request nothing named is
+    ///   refused, rather than kept in the tenant's shared records;
+    /// * [`require_resolved_tenant`](crate::RequestHandlerBuilder::require_resolved_tenant):
+    ///   a request no tenant can be found for is refused, rather than served
+    ///   from the shared default partition.
+    ///
+    /// And makes `build()` refuse, naming what is missing, unless:
+    /// * an interceptor that authenticates is installed;
+    /// * the tenant resolver was given through
+    ///   [`with_authorized_tenant_resolver`](crate::RequestHandlerBuilder::with_authorized_tenant_resolver),
+    ///   which asserts it names a tenant only from what the server verified or a
+    ///   gateway sets, never from what the client chose;
+    /// * the task and push-config stores partition by tenant, and
+    ///   [`accept_unisolated_tenants`](crate::RequestHandlerBuilder::accept_unisolated_tenants)
+    ///   was not called;
+    /// * sharing across callers, if chosen, comes with a tenant-aware task
+    ///   store you supply (the default for a sharing handler is one set of
+    ///   records for every tenant);
+    /// * every tenant has a concurrency limit
+    ///   ([`with_tenant_config`](crate::RequestHandlerBuilder::with_tenant_config),
+    ///   [`TenantLimits::with_max_concurrent_tasks`](crate::tenant_config::TenantLimits::with_max_concurrent_tasks)),
+    ///   the default and each override: a tenant without one can take every
+    ///   executor slot a replica has.
+    ///
+    /// What it cannot see, and leaves to you: that the resolver really is
+    /// authorized (you asserted it); the limits are per replica, not for the
+    /// fleet (see `TenantLimits`); a tool-using agent's own strictness
+    /// (`ToolLoop::strict`, `ArgumentCheck`, `AuditedPolicy`); and retention
+    /// and erasure of what the stores hold.
+    MultiTenant,
 }
 
 /// Which profiles a builder had applied, for `build()` to check.
@@ -90,6 +127,7 @@ pub(crate) enum ProfileKind {
     #[cfg(feature = "audit")]
     Auditable,
     Production,
+    MultiTenant,
 }
 
 #[cfg(test)]

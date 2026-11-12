@@ -1731,6 +1731,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   transfer 500 where the schema caps the amount at 100: the first call was refused (`'/amount': is 500, needs at most 100`), the model retried with 100, the
   policy then refused the transfer, and the tool ran 0 times. 17 schema tests, 6 loop tests, 27 hand mutants killed (16 before the checker was split into
   smaller functions, 11 re-run after). No `format` assertion, no `pattern`; numbers compare as `f64`.
+- **`Profile::MultiTenant`, a strict multi-tenant preset, and `RequestHandlerBuilder::with_authorized_tenant_resolver`** (adversarial review, "multi-tenant
+  production policy must be explicit"). `Profile::Production` required authentication but not named callers or strict tenant resolution, so a deployment
+  could serve several tenants with unnamed credentials in a shared partition, a tenant the client chose and no per-tenant budget. The profile applies
+  `isolate_tasks_by_caller()` (unless you chose `share_tasks_across_callers()`) and `require_resolved_tenant()`, and `build()` refuses unless an
+  interceptor authenticates, the resolver was given through `with_authorized_tenant_resolver` (which asserts it names a tenant only from what the server
+  verified or a gateway sets; **the assertion is the deployment's, nothing checks it**), the task and push-config stores partition by tenant (and
+  `accept_unisolated_tenants()` was not called), sharing across callers comes with a tenant-aware store you supply, and every tenant has a concurrency
+  limit. 7 tests, 12 hand mutants killed (two survivors were equivalent logic, which was removed). Not enforced, and said so on the page: retention and
+  erasure schedules, and that the limits are per replica.
 - **A required audit log lost the outcome of a call whenever its store refused the write** (adversarial review A3). `require_record` gated admission on
   `call.started` and nothing after it: a `call` record (how the call ended), `task.event`, `run.started`, `approval`, `halt` or `task.cancel_requested`
   the store refused was counted and dropped, so a chain held a start with no end and nothing said so (reproduced: `["call.started", "call.started"]`
