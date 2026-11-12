@@ -39,6 +39,37 @@ impl ToolLoop {
     #[must_use]
     pub const fn with_idempotency_secret(mut self, secret: [u8; 32]) -> Self {
         self.secret = secret;
+        self.secret_set = true;
+        self
+    }
+
+    /// Keeps each run's progress in `journal`, so a run begun again under the
+    /// same key resumes instead of starting over, and a call a policy says
+    /// needs approval can wait for it (adversarial review, S1 and S7). See
+    /// [`StepJournal`](super::StepJournal) for what is written, what a resume
+    /// promises, and what it does not.
+    ///
+    /// Set [`with_idempotency_secret`](Self::with_idempotency_secret) too if a
+    /// call may be in flight when a replica dies: without it a call whose
+    /// receipt was written and whose result was not cannot be re-run safely, and
+    /// the resumed run fails with [`LoopError::Indeterminate`](super::LoopError::Indeterminate).
+    #[must_use]
+    pub fn with_journal(mut self, journal: std::sync::Arc<dyn super::StepJournal>) -> Self {
+        self.journal = Some(journal);
+        self
+    }
+
+    /// Whether a journal is installed.
+    pub(in crate::tool_loop) fn has_journal(&self) -> bool {
+        self.journal.is_some()
+    }
+
+    /// Adds a pin to every checkpoint: a policy version, a skill bundle digest,
+    /// anything the deployment says a resumed run must still be running under.
+    /// A run whose checkpoint carries other pins is refused on resume.
+    #[must_use]
+    pub fn with_pin(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.pin_labels.insert(name.into(), value.into());
         self
     }
 

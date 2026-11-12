@@ -3,14 +3,17 @@
 
 //! [`ToolLoop`]: model turns and tool calls until the model answers.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::sync::Arc;
 
 use a2a_protocol_types::budget::BudgetHandle;
 use tokio_util::sync::CancellationToken;
 
 use super::answer::Answer;
 use super::idempotency::{self, Secret};
+use super::journal::{ReceiptState, StepJournal};
+use super::journaling::{RunJournal, Verdict};
 pub use super::loop_error::LoopError;
 use super::model::{ChatMessage, ChatRequest, ToolCall, ToolModel};
 use super::policy::{CallStatus, TextCallRecovery, ToolPolicy, TraceContent, TrustedIdentity};
@@ -39,20 +42,31 @@ pub const DEFAULT_MAX_TURNS: usize = 8;
 /// 2, W2-LIVE-5).
 pub const DEFAULT_MAX_CALLS_PER_TURN: usize = 64;
 
-/// Where a call came from, for the policy.
+/// Where a call came from, for the policy, and what a person has decided.
 #[derive(Clone, Copy)]
 struct Origin<'a> {
     from_text: bool,
     identity: Option<&'a TrustedIdentity>,
+    /// The decision on the call the run was parked on, when it is resumed.
+    approval: Option<&'a Verdict>,
+    /// Whether a call that needs approval has a journal to wait in.
+    can_park: bool,
 }
 
-impl<'a> Origin<'a> {
-    const fn of(from_text: bool, side: &Side<'a>) -> Self {
-        Self {
-            from_text,
-            identity: side.identity,
-        }
-    }
+/// A run's conversation, trace and record of answered calls, which a journal
+/// checkpoints.
+pub(super) struct Progress {
+    pub(super) messages: Vec<ChatMessage>,
+    pub(super) trace: Vec<String>,
+    pub(super) done: HashMap<String, String>,
+}
+
+/// What one model reply is.
+enum Turn {
+    /// The answer, and why the model stopped.
+    Answer(String, Option<String>),
+    /// Calls to run, and whether the model wrote them as text.
+    Calls(Vec<ToolCall>, bool),
 }
 
 /// A model, the tools it may call, and the bounded loop between them.
@@ -70,14 +84,19 @@ impl<'a> Origin<'a> {
 /// is answered with the earlier result instead of being run again, unless
 /// its tool is [`read_only`](super::Tool::read_only).
 pub struct ToolLoop {
-    model: Box<dyn ToolModel>,
+    pub(super) model: Box<dyn ToolModel>,
     pub(super) tools: ToolSet,
     pub(super) preamble: String,
-    max_turns: usize,
-    max_calls_per_turn: usize,
-    text_recovery: TextCallRecovery,
-    trace_content: TraceContent,
-    argument_check: ArgumentCheck,
+    pub(super) max_turns: usize,
+    pub(super) max_calls_per_turn: usize,
+    pub(super) text_recovery: TextCallRecovery,
+    pub(super) trace_content: TraceContent,
+    pub(super) argument_check: ArgumentCheck,
+    pub(super) journal: Option<Arc<dyn StepJournal>>,
+    /// The deployment's own pins, checked on resume.
+    pub(super) pin_labels: BTreeMap<String, String>,
+    /// Whether the idempotency secret was set, so keys agree across replicas.
+    pub(super) secret_set: bool,
     policy: Option<Box<dyn ToolPolicy>>,
     secret: Secret,
     agent_name: Option<String>,
@@ -95,6 +114,7 @@ impl fmt::Debug for ToolLoop {
             .field("text_recovery", &self.text_recovery)
             .field("trace_content", &self.trace_content)
             .field("argument_check", &self.argument_check)
+            .field("journal", &self.journal.is_some())
             .field("policy", &self.policy.is_some())
             .field("agent_name", &self.agent_name)
             .field("model_retry", &self.model_retry)
@@ -116,6 +136,9 @@ impl ToolLoop {
             text_recovery: TextCallRecovery::All,
             trace_content: TraceContent::Full,
             argument_check: ArgumentCheck::Off,
+            journal: None,
+            pin_labels: BTreeMap::new(),
+            secret_set: false,
             policy: None,
             secret: idempotency::fresh_secret(),
             agent_name: None,
@@ -182,6 +205,10 @@ impl ToolLoop {
     /// different work different scopes: the same call in the same scope has
     /// the same key.
     ///
+    /// With a [journal](Self::with_journal) the scope is also the journal's
+    /// key: running the same scope again resumes the run it left, and two
+    /// pieces of work that share a scope share a checkpoint.
+    ///
     /// # Errors
     ///
     /// As [`run_within`](Self::run_within).
@@ -230,68 +257,172 @@ impl ToolLoop {
     ) -> Result<Answer, LoopError> {
         let specs = self.tools.specs();
         let names = self.tools.names();
-        let mut messages = vec![ChatMessage::User(user_text.to_owned())];
-        let mut trace = Vec::new();
-        // What each call that succeeded returned, by key, for tools that
-        // are not read-only.
-        let mut done = HashMap::new();
+        let (mut journal, restored) =
+            RunJournal::open(self, scope, user_text, &specs, side.approval, side.identity).await?;
+        let (mut progress, first_turn, mut resume, identity) = restored.begin(side.trace);
+        let identity = identity.as_ref().or(side.identity);
 
-        for turn in 0..self.max_turns {
+        for turn in first_turn..self.max_turns {
             if cancel.is_cancelled() {
                 return Err(LoopError::Cancelled);
             }
-            before_turn(budget, side.inbox, &mut messages)?;
-            run.inference_call();
-            let sink = side.sink(turn + 1);
-            let request = ChatRequest::new(&self.preamble, &messages, &specs);
-            let reply = self
-                .retried_turn(request, cancel, sink.as_ref(), budget)
-                .await?;
-            charge_usage(budget, &reply)?;
-
-            let mut text = reply.text;
-            let mut calls = reply.tool_calls;
-            let mut from_text = false;
-            limit_calls(&mut calls, self.max_calls_per_turn, &mut trace, side.trace);
-            if calls.is_empty() {
-                let recovered = self.recovered(&text, &names);
-                from_text = recovered.is_some();
-                let Some((name, arguments)) = recovered else {
-                    return Answer::from_reply(text, trace, reply.finish_reason);
-                };
-                // The model wrote the call as text: run it as the call it
-                // is, and keep it in the conversation as one.
-                calls.push(ToolCall::new(
-                    format!("recovered-{turn}"),
-                    name,
-                    arguments.to_string(),
-                ));
-                text.clear();
-            }
-            give_ids(&mut calls, turn);
-            messages.push(ChatMessage::Assistant {
-                text,
-                tool_calls: calls.clone(),
-            });
-
-            for call in calls {
-                if cancel.is_cancelled() {
-                    return Err(LoopError::Cancelled);
-                }
-                let origin = Origin::of(from_text, &side);
-                let (content, status) = self
-                    .call(run, &call, cancel, scope, &mut done, origin)
+            let (calls, from_text) = if let Some(r) = resume.take() {
+                (r.calls, r.recovered)
+            } else {
+                let reply = self
+                    .ask_model(run, turn, cancel, budget, &side, &specs, &mut progress)
                     .await?;
-                let line = self.trace_line(&call, &content, status);
-                trace::record(&mut trace, side.trace, line);
-                messages.push(ChatMessage::ToolResult {
-                    call_id: call.id,
-                    name: call.name,
-                    content,
-                });
-            }
+                match self.turn_of(reply, turn, &names, &side, &mut progress) {
+                    Turn::Answer(text, finish_reason) => {
+                        let answer = Answer::from_reply(text, progress.trace, finish_reason)?;
+                        journal.clear().await;
+                        return Ok(answer);
+                    }
+                    Turn::Calls(calls, from_text) => {
+                        journal.save((turn, from_text), &progress).await?;
+                        (calls, from_text)
+                    }
+                }
+            };
+            let origin = Origin {
+                from_text,
+                identity,
+                approval: side.approval,
+                can_park: journal.enabled(),
+            };
+            let step = (turn, from_text);
+            self.run_calls(
+                run,
+                calls,
+                step,
+                (cancel, scope, origin),
+                &side,
+                &mut progress,
+                &mut journal,
+            )
+            .await?;
         }
         Err(LoopError::TurnLimit(self.max_turns))
+    }
+
+    /// One model turn: what the caller said since the last is added to the
+    /// conversation, the model is asked, and its usage charged.
+    #[allow(clippy::too_many_arguments)]
+    async fn ask_model(
+        &self,
+        run: &AgentRun,
+        turn: usize,
+        cancel: &CancellationToken,
+        budget: Option<&BudgetHandle>,
+        side: &Side<'_>,
+        specs: &[super::model::ToolSpec],
+        progress: &mut Progress,
+    ) -> Result<super::model::ModelTurn, LoopError> {
+        before_turn(budget, side.inbox, &mut progress.messages)?;
+        run.inference_call();
+        let sink = side.sink(turn + 1);
+        let request = ChatRequest::new(&self.preamble, &progress.messages, specs);
+        let reply = self
+            .retried_turn(request, cancel, sink.as_ref(), budget)
+            .await?;
+        charge_usage(budget, &reply)?;
+        Ok(reply)
+    }
+
+    /// Runs `calls`, one after another, each recorded before it runs and after
+    /// it ends; a call a person has to approve parks the run.
+    #[allow(clippy::too_many_arguments)]
+    async fn run_calls(
+        &self,
+        run: &AgentRun,
+        calls: Vec<ToolCall>,
+        step: (usize, bool),
+        (cancel, scope, origin): (&CancellationToken, &str, Origin<'_>),
+        side: &Side<'_>,
+        progress: &mut Progress,
+        journal: &mut RunJournal<'_>,
+    ) -> Result<(), LoopError> {
+        for call in calls {
+            if cancel.is_cancelled() {
+                return Err(LoopError::Cancelled);
+            }
+            // Written before the call runs: a call the journal cannot record is
+            // not run.
+            if journal.enabled() {
+                journal.started(&call, super::journaling::arguments_digest(&call));
+                journal.save(step, progress).await?;
+            }
+            match self
+                .call(run, &call, cancel, scope, &mut progress.done, origin)
+                .await
+            {
+                Ok((content, status)) => {
+                    let line = self.trace_line(&call, &content, status);
+                    trace::record(&mut progress.trace, side.trace, line);
+                    progress.messages.push(ChatMessage::ToolResult {
+                        call_id: call.id.clone(),
+                        name: call.name.clone(),
+                        content,
+                    });
+                    let state = match status {
+                        CallStatus::Ran => ReceiptState::Ran,
+                        CallStatus::Failed => ReceiptState::Failed,
+                        CallStatus::NotRun => ReceiptState::NotRun,
+                    };
+                    journal.ended(&call.id, state);
+                    journal.save(step, progress).await?;
+                }
+                Err(LoopError::AwaitingApproval(needed)) => {
+                    journal.park(&call, &needed, origin.identity);
+                    journal.save(step, progress).await?;
+                    return Err(LoopError::AwaitingApproval(needed));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+
+    /// What a reply is: the calls it asks for, with the assistant turn pushed
+    /// to `messages`, or the answer.
+    fn turn_of(
+        &self,
+        reply: super::model::ModelTurn,
+        turn: usize,
+        names: &[String],
+        side: &Side<'_>,
+        progress: &mut Progress,
+    ) -> Turn {
+        let mut text = reply.text;
+        let mut calls = reply.tool_calls;
+        let mut from_text = false;
+        limit_calls(
+            &mut calls,
+            self.max_calls_per_turn,
+            &mut progress.trace,
+            side.trace,
+        );
+        if calls.is_empty() {
+            let recovered = self.recovered(&text, names);
+            from_text = recovered.is_some();
+            let Some((name, arguments)) = recovered else {
+                return Turn::Answer(text, reply.finish_reason);
+            };
+            // The model wrote the call as text: run it as the call it is, and
+            // keep it in the conversation as one.
+            calls.push(ToolCall::new(
+                format!("recovered-{turn}"),
+                name,
+                arguments.to_string(),
+            ));
+            text.clear();
+        }
+        give_ids(&mut calls, turn);
+        progress.messages.push(ChatMessage::Assistant {
+            text,
+            tool_calls: calls.clone(),
+        });
+        Turn::Calls(calls, from_text)
     }
 
     /// The call a reply written as text is, if it is one the loop's

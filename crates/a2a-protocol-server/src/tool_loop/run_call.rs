@@ -10,22 +10,34 @@ use tokio_util::sync::CancellationToken;
 
 use super::{LoopError, Origin, ToolLoop};
 use crate::rpc_span::{AgentRun, GenAiSpan};
+use crate::tool_loop::loop_error::ApprovalNeeded;
 use crate::tool_loop::model::ToolCall;
-use crate::tool_loop::policy::{CallStatus, PolicyDecision, PolicyRequest};
+use crate::tool_loop::policy::{
+    CallStatus, PolicyDecision, PolicyRequest, TrustedIdentity, call_digest,
+};
 use crate::tool_loop::run_support::parse_arguments;
 use crate::tool_loop::tool::{Tool, ToolError, ToolInvocation};
 use crate::tool_loop::{idempotency, schema};
 
+/// What the policy decided about one call.
+enum Gate {
+    Allow,
+    Deny(String),
+    Approval(String),
+}
+
 impl ToolLoop {
-    /// Why the policy refuses `call`, if there is one and it does.
-    async fn denied(
+    /// What the policy says of `call`.
+    async fn gate(
         &self,
         call: &ToolCall,
         read_only: bool,
         arguments: &serde_json::Value,
         origin: Origin<'_>,
-    ) -> Option<String> {
-        let policy = self.policy.as_ref()?;
+    ) -> Gate {
+        let Some(policy) = self.policy.as_ref() else {
+            return Gate::Allow;
+        };
         let request = PolicyRequest {
             tool: &call.name,
             arguments,
@@ -37,8 +49,58 @@ impl ToolLoop {
             task: origin.identity.and_then(|i| i.task.as_deref()),
         };
         match policy.authorize(&request).await {
-            PolicyDecision::Deny(why) => Some(why),
-            PolicyDecision::Allow => None,
+            PolicyDecision::Deny(why) => Gate::Deny(why),
+            PolicyDecision::RequireApproval(summary) => Gate::Approval(summary),
+            _ => Gate::Allow,
+        }
+    }
+
+    /// What a call that needs approval does now: `None` runs it (a person
+    /// approved exactly this call), `Some` is what the call returns instead.
+    fn approval_gate(
+        call: &ToolCall,
+        arguments: &serde_json::Value,
+        summary: String,
+        scope: &str,
+        origin: Origin<'_>,
+        span: &GenAiSpan,
+    ) -> Option<Result<(String, CallStatus), LoopError>> {
+        let who = |f: fn(&TrustedIdentity) -> Option<&str>| origin.identity.and_then(f);
+        let digest = call_digest(
+            &call.name,
+            arguments,
+            who(|i| i.tenant.as_deref()),
+            who(|i| i.principal.as_deref()),
+            who(|i| i.task.as_deref()),
+        );
+        match origin.approval {
+            Some(v) if v.digest == digest && v.approved => None,
+            Some(v) if v.digest == digest => {
+                span.failed("approval_refused");
+                Some(Ok((
+                    format!("error: this call was not approved by {}", v.by),
+                    CallStatus::Failed,
+                )))
+            }
+            _ if !origin.can_park => {
+                span.failed("approval_unavailable");
+                Some(Ok((
+                    "error: this action needs approval, and this loop has no journal to wait \
+                     in; it was not run"
+                        .to_owned(),
+                    CallStatus::Failed,
+                )))
+            }
+            _ => {
+                span.failed("awaiting_approval");
+                Some(Err(LoopError::AwaitingApproval(Box::new(ApprovalNeeded {
+                    request_id: scope.to_owned(),
+                    summary,
+                    digest,
+                    tool: call.name.clone(),
+                    call_id: call.id.clone(),
+                }))))
+            }
         }
     }
 
@@ -106,13 +168,20 @@ impl ToolLoop {
             span.failed("invalid_arguments");
             return Ok((format!("error: {why}"), CallStatus::Failed));
         }
-        if let Some(why) = self
-            .denied(call, tool.read_only(), &arguments, origin)
-            .await
-        {
-            span.failed("policy_denied");
-            let content = format!("error: this call was not permitted: {why}");
-            return Ok((content, CallStatus::Failed));
+        match self.gate(call, tool.read_only(), &arguments, origin).await {
+            Gate::Allow => {}
+            Gate::Deny(why) => {
+                span.failed("policy_denied");
+                let content = format!("error: this call was not permitted: {why}");
+                return Ok((content, CallStatus::Failed));
+            }
+            Gate::Approval(summary) => {
+                if let Some(refusal) =
+                    Self::approval_gate(call, &arguments, summary, scope, origin, &span)
+                {
+                    return refusal;
+                }
+            }
         }
         let invocation = ToolInvocation::new(arguments, key.clone());
         let result = tokio::select! {

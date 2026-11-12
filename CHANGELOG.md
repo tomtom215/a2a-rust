@@ -1752,6 +1752,22 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   ran on; the mark now travels in `Started`. Reproduced first: with 30,000 loopback connections, half dropped before the response, 3 of 6 runs (and 2 of 3 before that) left one
   task `Submitted` for the whole 120 s read; deterministic tests drop the send at each window (a gate at the await; a store that writes the row and never answers) and failed on
   the unfixed code. After both fixes 0 of 13 runs left a task. 4 tests, 3 hand mutants killed.
+- **A tool-loop run could not survive its replica, and an approval was not bound to the call it approved** (adversarial review S1 and S7, "task durability does not yet
+  establish durable arbitrary workflows"). `ToolLoop::with_journal(Arc<dyn StepJournal>)` keeps a run's progress: a checkpoint (the conversation, the trace, the calls answered, a
+  receipt per call) after each model reply, before each call and after each; a run begun again under the same key resumes, asks the model only for what comes next and does not
+  repeat a call it already ran. `InMemoryStepJournal`, `SqliteStepJournal` and `PostgresStepJournal`; a write is accepted only as the successor of the revision stored (fencing). The
+  checkpoint pins the model, the preamble, the tool set and the loop's modes plus your own `with_pin` labels, and a resume under other pins fails (`LoopError::PinMismatch`). A call's
+  receipt is written before it runs; one still `Started` on resume is re-run only when `with_idempotency_secret` was set (a key the same on every replica), else the run fails
+  (`LoopError::Indeterminate`); a checkpoint the journal cannot write stops the run before the call (`LoopError::Journal`). `PolicyDecision::RequireApproval` parks the run with
+  `call_digest(tool, arguments, tenant, requester, task)`; a decision for that digest from an approver the gate admits releases that call and no other, the loop re-checking the
+  digest, the tenant and the task itself and asking the policy again (a `Deny` on resume still denies). `ToolLoopExecutor` ends the turn `input-required` with the request and
+  resumes on the decision. Also: `ChatMessage` and `ToolCall` are `Serialize` and `Deserialize`. **Not done:** external effects are still the backend's idempotency (this makes a repeat
+  rare and visible, not impossible); compensation; a journal write per step is a cost, so it is opt-in; a journal row is removed only when its run ends, so a run that never
+  finishes keeps its row until the deployment deletes it (no expiry); this change resumes a run that is *begun again* under the same key and adds no dispatcher that begins an
+  orphaned task again (a search of the server for such a mechanism found none). The first run of the tests found that `ChatMessage` could not be serialized
+  as an internally tagged enum (newtype variants of strings); it is adjacently tagged. 25 unit tests (one against a live PostgreSQL), 3 through the real handler, 3 against a real
+  model served by llama.cpp (Qwen3-1.7B): a run killed inside a call resumes and asks the model once, an approval releases exactly the call the model chose, a refusal runs
+  nothing. 26 hand mutants of the journal and approval code, all killed (3 survived the first set of tests and each got a test of its own).
 - **A required audit log lost the outcome of a call whenever its store refused the write** (adversarial review A3). `require_record` gated admission on
   `call.started` and nothing after it: a `call` record (how the call ended), `task.event`, `run.started`, `approval`, `halt` or `task.cancel_requested`
   the store refused was counted and dropped, so a chain held a start with no end and nothing said so (reproduced: `["call.started", "call.started"]`

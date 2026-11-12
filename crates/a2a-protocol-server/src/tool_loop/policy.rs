@@ -97,6 +97,42 @@ pub enum PolicyDecision {
     /// Do not run it. The reason is the call's result, as the model sees it
     /// (an error it can recover from), and it is not recorded as a success.
     Deny(String),
+    /// Do not run it until a person approves *this call*. The text is what the
+    /// person is shown.
+    ///
+    /// The run is parked in its [`StepJournal`](super::StepJournal) with the call's
+    /// [digest](call_digest), and the task asks for approval under the
+    /// approval extension ([`ApprovalGate`](crate::approval::ApprovalGate)); the call
+    /// runs when a decision for that digest arrives from an approver the gate
+    /// admits, and for no other call. A loop with no journal has nowhere to park
+    /// and refuses the call as it does for [`Deny`](Self::Deny). The policy is
+    /// asked again on resume, and a [`Deny`](Self::Deny) then still denies.
+    RequireApproval(String),
+}
+
+/// `sha256:<hex>` of a call as an action: the tool, its arguments in
+/// canonical form, and who it is for (tenant, requester, task).
+///
+/// What an approval is bound to: a decision for this digest approves this call
+/// from this requester in this tenant and task, and not the same call from
+/// another, nor another call by the same.
+#[must_use]
+pub fn call_digest(
+    tool: &str,
+    arguments: &Value,
+    tenant: Option<&str>,
+    principal: Option<&str>,
+    task: Option<&str>,
+) -> String {
+    let mut text = String::new();
+    super::idempotency::canonical(
+        &serde_json::json!({
+            "tool": tool, "arguments": arguments,
+            "tenant": tenant, "principal": principal, "task": task,
+        }),
+        &mut text,
+    );
+    super::journaling::sha256_text(text.as_bytes())
 }
 
 /// One call, as a [`ToolPolicy`] is asked about it: the tool and arguments the

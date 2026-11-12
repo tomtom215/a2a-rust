@@ -81,6 +81,8 @@ mod audited;
 mod drafts;
 mod executor;
 mod idempotency;
+mod journal;
+mod journaling;
 mod limit;
 mod loop_error;
 mod model;
@@ -104,7 +106,16 @@ pub use answer::{Answer, FINISH_REASON_LENGTH, FINISH_REASON_METADATA_KEY};
 pub use audited::AuditedPolicy;
 pub use drafts::{FLUSH_AFTER, FLUSH_BYTES, draft_artifact_id};
 pub use executor::{ANSWER_ARTIFACT_ID, TRACE_ARTIFACT_ID, ToolLoopExecutor};
+#[cfg(feature = "postgres")]
+pub use journal::PostgresStepJournal;
+#[cfg(feature = "sqlite")]
+pub use journal::SqliteStepJournal;
+pub use journal::{
+    ActionReceipt, CHECKPOINT_VERSION, InMemoryStepJournal, JournalError, JournalFuture,
+    PendingApproval, Pins, ReceiptState, RunCheckpoint, StepJournal,
+};
 pub use limit::{InferenceLimit, LimitedModel};
+pub use loop_error::ApprovalNeeded;
 pub use model::{
     ChatMessage, ChatRequest, ModelError, ModelTurn, TextSink, TokenUsage, ToolCall, ToolModel,
     ToolSpec,
@@ -112,6 +123,7 @@ pub use model::{
 pub use openai::{DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_TIMEOUT, ERROR_BODY_LIMIT, OpenAiChatModel};
 pub use policy::{
     PolicyDecision, PolicyRequest, TextCallRecovery, ToolPolicy, TraceContent, TrustedIdentity,
+    call_digest,
 };
 pub use retry::ModelRetry;
 pub use run::{DEFAULT_MAX_CALLS_PER_TURN, DEFAULT_MAX_TURNS, LoopError, ToolLoop};
