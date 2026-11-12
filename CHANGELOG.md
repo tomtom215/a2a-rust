@@ -1721,6 +1721,18 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `transfer_money [id]: failed`; asked for a JSON example, the strict loop returned it as the answer with an empty trace, and the default loop ran the
   same text as an action three times (`get_balance`, to the turn bound). **Not done:** JSON-Schema validation of arguments before a call, a durable approval
   bound to a call, and a durable step journal (see `docs/audits/2026-11-12-adversarial-review/`).
+- **A required audit log lost the outcome of a call whenever its store refused the write** (adversarial review A3). `require_record` gated admission on
+  `call.started` and nothing after it: a `call` record (how the call ended), `task.event`, `run.started`, `approval`, `halt` or `task.cancel_requested`
+  the store refused was counted and dropped, so a chain held a start with no end and nothing said so (reproduced: `["call.started", "call.started"]`
+  after a store outage, and through a real server, `pending_outcomes() == 0` with the records gone). A required log now keeps a refused record
+  and writes it when the store answers, oldest first, from a task of its own that a dropped caller cannot cancel; the spool is bounded (1,024),
+  and a record that does not fit, or that a store which still answers reads refuses eight times, is counted in `AuditLog::outcomes_lost()`.
+  `call.started` and `call` records now carry the call's id (`CallContext::call_id()`, new, made by the server and not the caller's
+  `x-request-id`), and `AuditLog::unresolved_calls` / `reconcile_unresolved` find the starts a crash left without an end and close them with a
+  `call.unresolved` record (`kind::CALL_UNRESOLVED`; it says the outcome is unknown, not that the call failed). `AuditedPolicy` (`audit` + `tool-loop`) is
+  a `ToolPolicy` that writes a `tool.action` record (tool, call id, verdict, a digest of the arguments, caller, task) *before* a call runs and does
+  not run a call it cannot record. **Not done:** the spool is memory, so a process that dies with records in it loses them (reconciliation makes the
+  gap visible for calls, not for `task.event`s); a result record after a tool ran; off-machine retention of signed checkpoints, which is the deployment's.
 - **A client built from the builder sent `//message:send` to a REST server whenever the base URL ended in `/`** (adversarial review P1). The builder's
   constructor kept the slash the public constructors removed. One function (`canonical_base_url`) now validates and normalises the base for every
   way a `RestTransport` is made, and a wire-level test (12 builds: builder, card and transport; root and base path; with and without the slash)

@@ -76,6 +76,8 @@
 //! ```
 
 mod answer;
+#[cfg(feature = "audit")]
+mod audited;
 mod drafts;
 mod executor;
 mod idempotency;
@@ -97,6 +99,8 @@ mod tool;
 mod trace;
 
 pub use answer::{Answer, FINISH_REASON_LENGTH, FINISH_REASON_METADATA_KEY};
+#[cfg(feature = "audit")]
+pub use audited::AuditedPolicy;
 pub use drafts::{FLUSH_AFTER, FLUSH_BYTES, draft_artifact_id};
 pub use executor::{ANSWER_ARTIFACT_ID, TRACE_ARTIFACT_ID, ToolLoopExecutor};
 pub use limit::{InferenceLimit, LimitedModel};

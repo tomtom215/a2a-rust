@@ -327,6 +327,7 @@ impl ToolLoop {
             recovered_from_text: origin.from_text,
             tenant: origin.identity.and_then(|i| i.tenant.as_deref()),
             principal: origin.identity.and_then(|i| i.principal.as_deref()),
+            task: origin.identity.and_then(|i| i.task.as_deref()),
         };
         match policy.authorize(&request).await {
             PolicyDecision::Deny(why) => Some(why),

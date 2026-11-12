@@ -13,7 +13,7 @@ const SECRET_ARGUMENT: &str = "ssn-078-05-1120";
 const SECRET_RESULT: &str = "internal-account-4417";
 
 /// A tool that mutates (does not declare itself read-only) and returns a secret.
-fn mutating() -> (TestTool, Arc<AtomicUsize>) {
+pub(super) fn mutating() -> (TestTool, Arc<AtomicUsize>) {
     TestTool::new("transfer", |_| Ok(format!("done {SECRET_RESULT}")))
 }
 
@@ -144,8 +144,8 @@ async fn a_receipt_trace_holds_neither_the_arguments_nor_the_result() {
 
 /// Records what it was asked and refuses the tool named `transfer` for
 /// `mallory`.
-struct Gate {
-    asked: Arc<StdMutex<Vec<Asked>>>,
+pub(super) struct Gate {
+    pub(super) asked: Arc<StdMutex<Vec<Asked>>>,
 }
 
 /// What a policy was asked: the tool, whether recovered from text, the tenant
@@ -174,14 +174,15 @@ impl ToolPolicy for Gate {
     }
 }
 
-fn identity(principal: &'static str) -> crate::tool_loop::TrustedIdentity {
+pub(super) fn identity(principal: &'static str) -> crate::tool_loop::TrustedIdentity {
     crate::tool_loop::TrustedIdentity {
         tenant: Some("acme".to_owned()),
         principal: Some(principal.to_owned()),
+        task: Some("task-1".to_owned()),
     }
 }
 
-async fn run_as(
+pub(super) async fn run_as(
     tool_loop: &ToolLoop,
     who: &crate::tool_loop::TrustedIdentity,
 ) -> Result<Answer, LoopError> {

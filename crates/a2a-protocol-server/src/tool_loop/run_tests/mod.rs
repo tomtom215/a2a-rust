@@ -218,6 +218,8 @@ fn results(seen: &[Seen], turn: usize) -> Vec<(String, String)> {
 }
 
 mod answers;
+#[cfg(feature = "audit")]
+mod audited;
 mod budget;
 mod cancel;
 mod idempotency;

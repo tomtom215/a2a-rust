@@ -2,6 +2,8 @@
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 mod holds;
+pub mod outcome_durability;
+mod outcome_reconcile;
 mod purge_hold_race;
 
 use std::sync::Arc;

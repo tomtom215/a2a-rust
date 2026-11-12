@@ -121,6 +121,9 @@ pub struct PolicyRequest<'a> {
     pub tenant: Option<&'a str>,
     /// The authenticated caller's identity, when there is one.
     pub principal: Option<&'a str>,
+    /// The task the call is made for, when the loop runs under
+    /// [`ToolLoopExecutor`](super::ToolLoopExecutor).
+    pub task: Option<&'a str>,
 }
 
 /// Asked before every tool call runs, whatever kind it is (native, recovered
@@ -140,9 +143,12 @@ pub trait ToolPolicy: Send + Sync + 'static {
 
 /// The authenticated request's identity, handed to the loop by its executor.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct TrustedIdentity {
     /// The request's tenant.
     pub tenant: Option<String>,
     /// The authenticated caller.
     pub principal: Option<String>,
+    /// The task the run belongs to.
+    pub task: Option<String>,
 }

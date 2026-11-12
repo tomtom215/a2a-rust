@@ -135,6 +135,7 @@ impl ToolLoopExecutor {
         let identity = super::policy::TrustedIdentity {
             tenant: ctx.tenant().map(str::to_owned),
             principal: ctx.caller_identity().map(str::to_owned),
+            task: Some(ctx.task_id.0.clone()),
         };
         if !self.drafts {
             let side = Side {

@@ -5018,7 +5018,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/interceptor/mod.rs:150 ServerInterceptor::authenticates",
     "crates/a2a-protocol-server/src/auth/jwt.rs:428 JwtValidator::require_scope",
-    "crates/a2a-protocol-server/src/call_context.rs:114 CallContext"
+    "crates/a2a-protocol-server/src/call_context.rs:90 CallContext"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:214 permission_denied_answers_403_without_a_challenge_on_both_bindings",
@@ -7605,7 +7605,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/call_context.rs:373 CallContext::task_id",
+    "crates/a2a-protocol-server/src/call_context.rs:354 CallContext::task_id",
     "crates/a2a-protocol-server/src/handler/mod.rs:355 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/push_config.rs:73 RequestHandler::validate_and_store_push_config",
@@ -7673,7 +7673,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/tenant_resolver.rs:94 TenantResolver",
-    "crates/a2a-protocol-server/src/call_context.rs:114 CallContext"
+    "crates/a2a-protocol-server/src/call_context.rs:90 CallContext"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/caller_isolation.rs:128 isolated_another_callers_task_is_not_found_by_any_operation",
@@ -8758,8 +8758,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/audit/interceptor.rs:119 AuditInterceptor::on_complete",
-    "crates/a2a-protocol-server/src/audit/interceptor.rs:57 append_or_report"
+    "crates/a2a-protocol-server/src/audit/interceptor.rs:144 AuditInterceptor::on_complete",
+    "crates/a2a-protocol-server/src/audit/interceptor.rs:69 append_or_report"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/audit_trail.rs:126 every_call_and_event_is_recorded_and_attributable"
@@ -8779,7 +8779,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/throttle.rs:315 AuthFailureThrottle::refuse_if_throttled",
     "crates/a2a-protocol-server/src/auth/throttle.rs:341 AuthFailureThrottle::record_failure",
-    "crates/a2a-protocol-server/src/call_context.rs:341 CallContext::peer_addr",
+    "crates/a2a-protocol-server/src/call_context.rs:322 CallContext::peer_addr",
     "crates/a2a-protocol-server/src/rate_limit/mod.rs:378 RateLimitInterceptor::before"
    ],
    "test_evidence": [
@@ -8805,7 +8805,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/audit/interceptor.rs:119 on_complete"
+    "crates/a2a-protocol-server/src/audit/interceptor.rs:144 on_complete"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/audit_security_events.rs:125 an_authorization_denial_is_recorded_with_the_denied_caller",

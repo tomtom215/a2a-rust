@@ -80,6 +80,8 @@ pub struct AuditLog {
     locks: ChainLocks,
     runs: StdMutex<Runs>,
     failures: AtomicU64,
+    /// Records a required log holds for a store that refused them.
+    pub(super) outcomes: super::outcomes::Outcomes,
     /// Protects what records say about people; see [`super::AuditPrivacy`].
     #[cfg(feature = "encryption")]
     pub(super) privacy: Option<Arc<super::AuditPrivacy>>,
@@ -98,6 +100,7 @@ impl std::fmt::Debug for AuditLog {
             .field("checkpoint_every", &self.checkpoint_every)
             .field("require_record", &self.require_record)
             .field("failures", &self.failures.load(Ordering::Relaxed))
+            .field("pending_outcomes", &self.pending_outcomes())
             .finish_non_exhaustive()
     }
 }
@@ -114,6 +117,7 @@ impl AuditLog {
             locks: StdMutex::new(HashMap::new()),
             runs: StdMutex::new(Runs::default()),
             failures: AtomicU64::new(0),
+            outcomes: super::outcomes::Outcomes::default(),
             #[cfg(feature = "encryption")]
             privacy: None,
         }

@@ -11,8 +11,10 @@
 //!
 //! | Record | When | Carries |
 //! |---|---|---|
-//! | `call` | every RPC ends, refused ones included | method, outcome, actor, trace |
-//! | `call.started` | an RPC is admitted, if the log is [required](AuditLog::require_record) | method, trace |
+//! | `call` | every RPC ends, refused ones included | method, outcome, call id, actor, trace |
+//! | `call.started` | an RPC is admitted, if the log is [required](AuditLog::require_record) | method, call id, trace |
+//! | `call.unresolved` | [`reconcile_unresolved`](AuditLog::reconcile_unresolved) finds a call that was admitted and never ended | call id, the `call.started` it closes |
+//! | `tool.action` | a tool call is put to an [`AuditedPolicy`](crate::tool_loop::AuditedPolicy), if one is installed | tool, call id, verdict, digest of the arguments, caller, task |
 //! | `run.started` | an executor starts a run of a task | task, context, message id, digests of the message and each part, actor, trace |
 //! | `task.event` | an event is written to the task's event log | its position, new state, digest, and the `run.started` it belongs to |
 //! | `task.cancel_requested` | `CancelTask` signals a running task | task, actor, trace |
@@ -33,7 +35,31 @@
 //! ([`AuditLog::failures`]) and reported as `audit_append` to the handler's
 //! metrics; the call or event it describes goes ahead. A deployment for
 //! which an unrecorded call is worse than a refused one sets
-//! [`AuditLog::require_record`].
+//! [`AuditLog::require_record`], which holds three promises:
+//!
+//! * a call whose `call.started` cannot be written is refused;
+//! * any other record the store refuses is **kept and written when the store
+//!   answers again**, oldest first, by a task the log starts itself
+//!   ([`AuditLog::pending_outcomes`], [`AuditLog::flush_pending`]). A record
+//!   written late sits after records that came later in time; each names what
+//!   it describes. The wait is memory, bounded: a record that does not fit,
+//!   or that a store which still answers reads keeps refusing, is counted in
+//!   [`AuditLog::outcomes_lost`], never dropped without a trace;
+//! * what a crash or a full spool leaves behind, a `call.started` with no
+//!   `call`, is found by [`AuditLog::unresolved_calls`] and closed with a
+//!   `call.unresolved` record by [`AuditLog::reconcile_unresolved`]: run it at
+//!   start-up and on a schedule. It says the outcome is not known, which is
+//!   more than the chain said before.
+//!
+//! A chain proves the records it holds are intact; it cannot show that one was
+//! never written, and a process that dies with records in its spool loses them.
+//! For an action that must not run unrecorded, [`AuditedPolicy`]
+//! (`tool-loop` feature) writes the record *before* a tool call runs and
+//! refuses the call if it cannot. Retaining signed checkpoints off the
+//! machine, so that a rewritten chain is detectable, is the deployment's: see
+//! [`AuditLog::checkpoint`].
+//!
+//! [`AuditedPolicy`]: crate::tool_loop::AuditedPolicy
 //!
 //! **What it is not.** It is not a trusted timestamping service, and a
 //! process holding the signing key can rewrite and re-sign a chain. See ADR
@@ -42,6 +68,7 @@
 mod interceptor;
 mod log;
 mod memory;
+mod outcomes;
 #[cfg(feature = "encryption")]
 mod privacy;
 mod retention;
@@ -62,7 +89,7 @@ mod chain_lock_tests;
 #[cfg(test)]
 mod executor_detail_tests;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub use a2a_protocol_types::audit as record;
 pub use log::AuditLog;
@@ -70,6 +97,7 @@ pub use log::AuditLog;
 pub use privacy::{
     AuditPrivacy, Erasure, HMAC_KEY_LEN, KEYED_DIGEST_PREFIX, Revealed, SEALED_PREFIX,
 };
+pub use outcomes::UnresolvedCall;
 pub use retention::{AuditRetention, Erased, PurgeReport, SIX_MONTHS};
 pub use store::{
     Appended, AuditStore, BoxFuture, InMemoryAuditStore, LegalHold, Sealer, SubjectKey,
@@ -98,7 +126,7 @@ pub(crate) async fn record_run_started(
     ctx: &RequestContext,
 ) {
     let Some((log, metrics)) = audit else { return };
-    let (log, metrics): (&AuditLog, &dyn Metrics) = (log, &**metrics);
+    let (log, metrics): (&std::sync::Arc<AuditLog>, &dyn Metrics) = (log, &**metrics);
     let chain = TenantContext::current();
     let mut r = ctx.call_context.as_ref().map_or_else(
         || a2a_protocol_types::audit::AuditRecord::new(chain.clone(), kind::RUN_STARTED),
@@ -123,7 +151,7 @@ pub(crate) async fn record_run_started(
 
 /// Records that the caller of `call` asked for a task to be canceled.
 pub(crate) async fn record_cancel_requested(
-    log: &AuditLog,
+    log: &std::sync::Arc<AuditLog>,
     metrics: &dyn Metrics,
     call: &CallContext,
     task_id: &TaskId,
@@ -141,7 +169,7 @@ pub(crate) async fn record_cancel_requested(
 /// it (ADR 0036). Not written for a refused message, nor for a retry the
 /// idempotency key answered, which delivered nothing.
 pub(crate) async fn record_steered(
-    log: &AuditLog,
+    log: &std::sync::Arc<AuditLog>,
     metrics: &dyn Metrics,
     call: &CallContext,
     task: &a2a_protocol_types::task::Task,
@@ -163,7 +191,7 @@ pub(crate) async fn record_steered(
 
 /// Records a decision the approval gate admitted, naming the approver.
 pub(crate) async fn record_approval(
-    log: &AuditLog,
+    log: &std::sync::Arc<AuditLog>,
     metrics: &dyn Metrics,
     call: &CallContext,
     task_id: &TaskId,
@@ -203,7 +231,7 @@ pub(crate) async fn record_approval(
 /// Records a halt or a resume by the operator `by`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn record_halt(
-    log: &AuditLog,
+    log: &std::sync::Arc<AuditLog>,
     metrics: &dyn Metrics,
     chain: &str,
     by: &str,

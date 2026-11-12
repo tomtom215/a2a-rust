@@ -34,6 +34,14 @@ pub mod kind {
     /// An RPC was admitted, written before the handler runs when the log is
     /// configured to refuse calls it cannot record.
     pub const CALL_STARTED: &str = "call.started";
+    /// A call was admitted and no record of how it ended was ever written.
+    ///
+    /// Written by reconciliation (`AuditLog::reconcile_unresolved`), not by the
+    /// call, after the process ended before it could record the end or the store
+    /// refused the record for longer than the log could hold it. It names the
+    /// call (`callId`) and the `call.started` record (`startedSeq`) it closes,
+    /// and says the outcome is unknown, not that the call failed.
+    pub const CALL_UNRESOLVED: &str = "call.unresolved";
     /// An executor started a run of a task, on behalf of the caller named.
     pub const RUN_STARTED: &str = "run.started";
     /// The agent emitted an event that was written to the task's event log.
@@ -44,6 +52,12 @@ pub mod kind {
     /// it, to which task, by digest. Written when the server accepts the
     /// message, not when the executor reads it.
     pub const STEERED: &str = "task.steered";
+    /// A tool call was put to the policy before it ran, with its verdict.
+    ///
+    /// Names the tool, the call's id, a digest of its arguments and whether it
+    /// was allowed. Written by `AuditedPolicy` *before* an allowed call runs, and
+    /// the call is refused if it cannot be written.
+    pub const TOOL_ACTION: &str = "tool.action";
     /// A person approved or refused an action that waited for them.
     pub const APPROVAL: &str = "approval";
     /// Every task of a tenant, or of the server, was ordered to stop, or
