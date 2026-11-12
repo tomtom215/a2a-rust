@@ -119,6 +119,26 @@ async fn a_completion_whose_acknowledgement_was_lost_is_confirmed_by_reading_it_
     assert_eq!(log.unwrap().len(), 1, "the log records it");
 }
 
+/// A terminal whole-task snapshot is a terminal event like a status update, and
+/// names its state the same way: with the acknowledgement lost, the state read
+/// back is the one the snapshot names, so it is confirmed and not refused as
+/// another writer's ending.
+#[tokio::test(start_paused = true)]
+async fn a_completed_snapshot_whose_acknowledgement_was_lost_is_confirmed_by_reading_it_back() {
+    let rig = Rig::new(TaskState::Working).await;
+    rig.store
+        .fail_writes(|t| t.status.state == TaskState::Completed, true, None);
+
+    let snapshot = StreamEvent::at(1, StreamResponse::Task(task(TaskState::Completed)));
+    let (verdict, stored) = told(&rig, snapshot, 1, TaskState::Working).await;
+
+    assert_eq!(stored, Some(TaskState::Completed));
+    assert!(
+        matches!(&verdict, Verdict::Ruled(event) if matches!(&**event, StreamResponse::Task(_))),
+        "the store holds the completion the snapshot names, so it is confirmed: {verdict:?}"
+    );
+}
+
 /// An event that repeats a terminal state the task already holds is a harmless
 /// repeat: the stream is told that state, and nothing is delivered twice.
 #[tokio::test(start_paused = true)]

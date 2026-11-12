@@ -1983,6 +1983,39 @@ mod tests {
         assert!(err.message.contains("https"), "{err}");
     }
 
+    /// A failed key fetch is remembered for the refetch interval plus up to a
+    /// fifth of it, so replicas that failed together do not ask together: never
+    /// less than the interval, never a fifth or more beyond it, and not always
+    /// the same (adversarial review R4).
+    #[test]
+    fn a_failed_fetch_is_remembered_for_the_interval_plus_up_to_a_fifth() {
+        let interval = Duration::from_secs(100);
+        let i = JwtAuthInterceptor::from_jwks_url(base_validator(), "https://idp.example/jwks")
+            .with_jwks_refetch_interval(interval);
+        let KeySource::Remote(remote) = &i.keys else {
+            panic!("remote");
+        };
+        let error = A2aError::unavailable("the provider is down");
+        let mut cooldowns = std::collections::BTreeSet::new();
+        for _ in 0..64 {
+            remote.record_failure(&error);
+            let cooldown = remote
+                .last_failure
+                .lock()
+                .unwrap()
+                .as_ref()
+                .expect("recorded")
+                .cooldown;
+            assert!(cooldown >= interval, "{cooldown:?} is under the interval");
+            assert!(
+                cooldown < interval + interval / 5,
+                "{cooldown:?} is a fifth or more beyond the interval"
+            );
+            cooldowns.insert(cooldown);
+        }
+        assert!(cooldowns.len() > 1, "the same cooldown 64 times: no jitter");
+    }
+
     #[tokio::test]
     async fn missing_authorization_header_rejected() {
         let secret = URL_SAFE_NO_PAD.decode(HS256_SECRET_B64).unwrap();

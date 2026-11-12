@@ -105,3 +105,31 @@ async fn an_outbox_that_cannot_extend_a_hold_falls_back_to_recording_afresh() {
     assert!(rig.a_seen.try_recv().is_err() && rig.b_seen.try_recv().is_err());
     assert_eq!(rig.rows().await, 0);
 }
+
+/// The first extension of a hold comes a quarter of the hold after the
+/// reservation, and not before it: a writer whose fold ends sooner never asks
+/// the outbox to extend anything.
+#[tokio::test(start_paused = true)]
+async fn the_hold_is_first_extended_a_quarter_of_it_after_the_reservation() {
+    use std::sync::atomic::Ordering::SeqCst;
+
+    let rig = Rig::new(TaskState::Working).await;
+    rig.store.stop(Stop::Before);
+    let running = rig.run_on_a(artifact(1));
+    parked(&rig).await;
+
+    rig.wait(hold(&rig) / 8).await;
+    assert_eq!(
+        rig.flaky.extend_calls.load(SeqCst),
+        0,
+        "no beat comes before a quarter of the hold has passed"
+    );
+    rig.wait(hold(&rig) / 4).await;
+    assert!(
+        rig.flaky.extend_calls.load(SeqCst) >= 1,
+        "and one does once it has"
+    );
+
+    rig.store.resume.notify_one();
+    running.await.unwrap();
+}

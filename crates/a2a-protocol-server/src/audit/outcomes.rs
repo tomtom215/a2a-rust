@@ -224,6 +224,13 @@ impl AuditLog {
         chain
     }
 
+    /// Whether the task that retries the spool is running, for the tests that
+    /// say it ends once the spool is empty.
+    #[cfg(test)]
+    pub(super) fn retry_task_running(&self) -> bool {
+        self.outcomes.retrying.load(Ordering::SeqCst)
+    }
+
     /// Starts the task that retries the spool, unless one is running.
     fn ensure_retrying(self: &Arc<Self>) {
         if self.outcomes.retrying.swap(true, Ordering::SeqCst) {

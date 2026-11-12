@@ -356,6 +356,8 @@ pub(in crate::handler::event_processing) struct Flaky {
     pub(in crate::handler::event_processing) fail_extend: std::sync::atomic::AtomicBool,
     /// How many times a worker asked for the reservations to settle.
     pub(in crate::handler::event_processing) held_calls: std::sync::atomic::AtomicUsize,
+    /// How many times a hold was asked to be extended.
+    pub(in crate::handler::event_processing) extend_calls: std::sync::atomic::AtomicUsize,
 }
 
 impl Flaky {
@@ -369,6 +371,7 @@ impl Flaky {
             fail_arm: std::sync::atomic::AtomicBool::new(false),
             fail_extend: std::sync::atomic::AtomicBool::new(false),
             held_calls: std::sync::atomic::AtomicUsize::new(0),
+            extend_calls: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 }
@@ -448,6 +451,8 @@ impl crate::push::outbox::PushOutbox for Flaky {
         self.inner.release(reservation)
     }
     fn extend_hold<'a>(&'a self, reservation: &'a str, hold: std::time::Duration) -> O<'a, usize> {
+        self.extend_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if self.fail_extend.load(std::sync::atomic::Ordering::SeqCst) {
             return Box::pin(async {
                 Err(a2a_protocol_types::error::A2aError::unsupported_operation(

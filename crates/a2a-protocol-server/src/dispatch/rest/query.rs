@@ -574,6 +574,39 @@ mod tests {
         }
     }
 
+    /// The routes that name one push-notification config: its three spellings, in
+    /// both names the config goes by, each needing a task id, a config id and one
+    /// of the two names. A route with any of them missing or wrong is not one, so
+    /// the first segment of it can still be a tenant.
+    #[test]
+    fn a_route_naming_a_push_config_needs_a_task_a_config_and_its_name() {
+        for name in ["pushNotificationConfigs", "pushNotificationConfig"] {
+            for (method, tail) in [("GET", ""), ("DELETE", ""), ("POST", "/delete")] {
+                let path = format!("/tasks/t1/{name}/c1{tail}");
+                assert!(is_route(method, &path), "{method} {path} is a route");
+            }
+        }
+        for (method, path) in [
+            // No config id (an empty segment, not an absent one).
+            ("GET", "/tasks/t1/pushNotificationConfigs//"),
+            ("DELETE", "/tasks/t1/pushNotificationConfigs//"),
+            ("POST", "/tasks/t1/pushNotificationConfigs//delete"),
+            // No task id.
+            ("GET", "/tasks//pushNotificationConfigs/c1"),
+            ("DELETE", "/tasks//pushNotificationConfigs/c1"),
+            ("POST", "/tasks//pushNotificationConfigs/c1/delete"),
+            // Not a push-config name.
+            ("GET", "/tasks/t1/other/c1"),
+            ("DELETE", "/tasks/t1/other/c1"),
+            ("POST", "/tasks/t1/other/c1/delete"),
+            // The wrong verb for the spelling.
+            ("POST", "/tasks/t1/pushNotificationConfigs/c1"),
+            ("GET", "/tasks/t1/pushNotificationConfigs/c1/delete"),
+        ] {
+            assert!(!is_route(method, path), "{method} {path} is not a route");
+        }
+    }
+
     // ── strip_tenant_prefix ──────────────────────────────────────────────
 
     #[test]

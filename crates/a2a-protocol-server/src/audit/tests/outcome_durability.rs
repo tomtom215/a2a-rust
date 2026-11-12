@@ -377,3 +377,23 @@ async fn a_record_refused_a_few_times_is_still_written() {
     assert_eq!(kinds(&log).await, [kind::CALL]);
     assert_eq!(log.outcomes_lost(), 0);
 }
+
+/// Once the spool is empty the task that retries it ends, so a log that came
+/// through an outage does not keep a task running for ever.
+#[tokio::test(start_paused = true)]
+async fn the_retry_task_ends_once_the_spool_is_empty() {
+    let store = Flaky::new();
+    let audit = interceptor(&store);
+    let log = Arc::clone(&audit.log);
+    *store.refuses_next.lock().unwrap() = 4;
+    assert!(log.append_required(rec("", "t0")).await.is_err());
+    assert!(log.retry_task_running(), "started by the record it kept");
+    until(|| async { log.pending_outcomes() == 0 }).await;
+
+    // The task finds the spool empty at its next look, and ends.
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    assert!(
+        !log.retry_task_running(),
+        "the retry task is still running with nothing left to retry"
+    );
+}

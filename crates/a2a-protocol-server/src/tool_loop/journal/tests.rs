@@ -178,6 +178,9 @@ async fn the_postgres_journal_keeps_the_contract() {
     let journal = crate::tool_loop::PostgresStepJournal::from_pool(pool)
         .await
         .unwrap();
+    // It names itself, and shows no pool or metrics handle.
+    let shown = format!("{journal:?}");
+    assert!(shown.starts_with("PostgresStepJournal"), "{shown}");
     contract(&journal).await;
     // Two replicas writing the same revision: exactly one wins.
     let racing = format!("race-{}", uuid::Uuid::new_v4());

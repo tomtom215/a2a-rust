@@ -68,3 +68,45 @@ async fn placing_and_releasing_a_hold_are_chain_records_naming_the_person() {
     );
     assert!(log.verify("c").await.unwrap().is_intact());
 }
+
+/// The hold-checked deletion a store gets by default (one that does not
+/// override it) refuses a chain that has a hold and deletes one that has none:
+/// a hold on one chain stops nothing on another.
+#[tokio::test]
+async fn the_default_hold_checked_deletion_refuses_the_held_chain_only() {
+    use super::outcome_durability::Flaky;
+
+    let store = Flaky::new();
+    for chain in ["held", "free"] {
+        let r = sealed(chain, 1, None, "2026-01-01T00:00:00.000Z");
+        assert_eq!(store.append(&r).await.unwrap(), Appended::Stored);
+    }
+    store
+        .place_hold(&LegalHold {
+            chain: "held".to_owned(),
+            reason: "litigation".to_owned(),
+            placed_at: "2026-01-02T00:00:00.000Z".to_owned(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        store.delete_through_unless_held("held", 1).await.unwrap(),
+        None
+    );
+    assert_eq!(
+        store.read("held", 0, 10).await.unwrap().len(),
+        1,
+        "the held chain keeps its record"
+    );
+    assert_eq!(
+        store.delete_through_unless_held("free", 1).await.unwrap(),
+        Some(1)
+    );
+    let left = store.read("free", 0, 10).await.unwrap();
+    assert_eq!(
+        left.len(),
+        0,
+        "the deleted chain still has records: {left:?}"
+    );
+}

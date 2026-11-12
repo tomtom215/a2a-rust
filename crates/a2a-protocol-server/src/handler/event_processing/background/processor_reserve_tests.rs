@@ -457,3 +457,5 @@ mod rejected_events;
 mod settling;
 #[path = "processor_reserve_tests/terminal_truth.rs"]
 mod terminal_truth;
+#[path = "processor_reserve_tests/unsettled.rs"]
+mod unsettled;
