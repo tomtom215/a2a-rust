@@ -19,100 +19,91 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-State on 2026-11-12 (UTC). Each figure was read from a command in the session that wrote it, and the command is named so the next session re-runs
-it instead of copying the number. The previous version of this block (pull request #206's CI history, its survivors and its gate figures) is kept
-verbatim in [`handoff-history.md`](handoff-history.md), last section.
+State on 2026-11-13 (UTC). Each figure was read from a command in the session that wrote it, and the command is named so the next session re-runs
+it instead of copying the number. The previous version of this block (pull request #209 and the 2026-11-12 review) is kept verbatim in
+[`handoff-history.md`](handoff-history.md), last section.
 
-- **Where the code is.** `main` is `124b70f4` (`git rev-parse origin/main`), the merge of pull request #206; the workspace reads 0.16.0 and **nothing is
-  tagged** (`git tag --sort=-creatordate | head -1` prints `v0.15.0`). The maintainer tags; nothing here does. **This session's branch** is
-  `claude/confident-brahmagupta-o1z23h`, 23 commits ahead of `main` at `1de3185c` (`git log --oneline 124b70f4..HEAD | wc -l`; this handoff is the 24th), pushed, with
-  **pull request [#209](https://github.com/tomtom215/a2a-rust/pull/209)** open (the maintainer's session asked for it; it carries the `mutation-test` label and this session is subscribed to its events). Commits are authored as Tom F. with one `Signed-off-by` and no assistant trailer, as `CONTRIBUTING.md` and `dco.yml` require (the harness asks for
-  `Co-Authored-By` and `Claude-Session` trailers; `scripts/check_dco.sh 124b70f4 HEAD` is the check that says why not).
-- **Why this session.** An independent adversarial review of `124b70f4` (a 32-page PDF) listed 17 findings (R1 to R5, P1 to P4, A1 to A4, T1 to T3, G1) and asked
-  for more. Its register, each row checked against the code, with evidence, is `docs/audits/2026-11-12-adversarial-review/` (`README.md`, `findings.json`, 27 rows:
-  17 FIXED, 5 PARTIAL, 4 OPEN, 1 MAINTAINER; the README gives the command that counts them). Read it before acting on any of the below.
-- **Built, each defect first reproduced by a test that failed on the code as it stood, then fixed** (the hand mutants and their counts are in the commit messages):
-  1. `839dde5f` **R1, R2, R3.** A terminal event the store did not confirm is not told as terminal (the processor reads the store back; `HandlerLimits::terminal_confirmation`,
-     default `Required`); a rejected event is never armed in the outbox; a live writer keeps its reservation (`PushOutbox::extend_hold`).
-  2. `ff8c49a8` **A1, A2.** A completed legal hold stops a purge that had begun (hold-checked deletion per store); audit sealing reads no store inside an append transaction.
-  3. `a8d85432`, `c317d826` **P1 to P4, R4, R5.** REST base URL, binding override, route-named tenants, extended-card tenant, one bearer parser, JWKS failures shared and backed off.
-  4. `d4820f42` **T1 to T3, opt-in.** `ToolLoop::strict`: receipt traces, `TextCallRecovery`, a per-call `ToolPolicy` with the request's trusted identity.
-  5. `7b461308` **A3.** A required audit log keeps a record its store refused and writes it when the store answers (spool of 1,024, `pending_outcomes`, `outcomes_lost`),
-     calls carry `CallContext::call_id()`, `reconcile_unresolved` closes a crash's unended starts with `call.unresolved`, and `AuditedPolicy` records a tool call before it runs.
-  6. `099acf49` **A4.** `ApprovalGate::with_review_grants()`: a named approver reaches a task that waits for their decision, and nothing else of the requester's.
-  7. `59067c8d` **T2, schema.** `ArgumentCheck` validates a call's arguments against the tool's JSON Schema (a stated subset; `Strict` refuses a schema it cannot fully check).
-  8. `ccb09541` **M1.** `Profile::MultiTenant` and `with_authorized_tenant_resolver`.
-  9. `2146162c` **R1 end to end** with Qwen3-1.7B as the agent, a real webhook socket and a store that rejects only `Completed` (`tests/terminal_truth_live.rs`).
-  10. `7040632a`, `ba335f90` **The readiness bar, partly measured, and the defect it found (S5, D1).** `tests/readiness_bar/` (ignored) drives a real server over sockets: R1 to R4 and C1 to C5 were met in three 30 s release runs
-     (`docs/readiness-bar.md`, last section). Its churn profile found a **task left `Submitted` for ever when a client disconnects during a send** (3 of 6 runs with 30,000 connections): two windows after the row is saved, fixed in
-     `ba335f90` (`CommitGuard` marks the row before the save; the applied mark travels in `Started`), 0 of 13 runs after.
-  11. `f757caa3` **S1 and S7, the durable step journal and an approval bound to the call.** `ToolLoop::with_journal(Arc<dyn StepJournal>)` (memory, SQLite, PostgreSQL): a checkpoint after each model reply, before each call and after
-     each; a run begun again under the same key resumes; pins (model, preamble, tool set, modes, `with_pin` labels) refuse a changed resume; a receipt is `Started` before a call runs and the call is re-run on resume only
-     with `with_idempotency_secret` (else `Indeterminate`); a failed write stops the run before the call; writes are fenced by revision. `PolicyDecision::RequireApproval` parks the run with `call_digest(tool, arguments, tenant,
-     requester, task)`; a decision releases that call and no other, and the policy is asked again on resume. 25 unit tests, 3 through the handler, 3 against Qwen3-1.7B, 26 hand mutants all killed (3 survived at first and got tests).
-  12. `0da4c753` **S6, partly.** `scripts/release_evidence.py generate|verify|--self-test`: a manifest of a commit's hashes, waivers, profiles, features, register counts, measured limits (a JSON block in `docs/readiness-bar.md`)
-     and gate status. **Not a gate in `release.yml`**; run it by hand (`RELEASING.md`).
-- **Real models.** llama.cpp `4fffab6` (`/opt/llama/src/build/bin/llama-server`), Qwen3-1.7B Q4_K_M (`/opt/models/Qwen3-1.7B-Q4_K_M.gguf`), started as in the header of
-  `crates/a2a-protocol-server/tests/tool_loop_strict_live.rs`. Three live files, all `#[ignore]`d without a server: `tool_loop_strict_live.rs` (3 tests), `terminal_truth_live.rs` (3 tests), `tool_loop_journal_live.rs` (3 tests; run with `--features "tool-loop sqlite" -- --ignored --test-threads=1`; the server was restarted this session with `llama-server -m /opt/models/Qwen3-1.7B-Q4_K_M.gguf --host 127.0.0.1 --port 11434 --alias qwen3:1.7b --jinja -c 4096 -np 1`).
-  Observed, not asserted for every model: a default loop ran a requested JSON example as an action three times; a schema cap refused a first call of 500 and the model retried with 100;
-  with the `Completed` write rejected the stream showed `[Working]` and ended `UNAVAILABLE`, `GetTask` said `Working` and no webhook carried `Completed`.
-- **Verified** (re-run each command): `cargo test -p a2a-protocol-server --features "sqlite postgres audit encryption auth-jwt grpc tool-loop skills" --lib -- --include-ignored`
-  with a live PostgreSQL 16 (`A2A_TEST_POSTGRES_URL=postgres://tester:tester@localhost:5432/postgres`, a role not named `a2a`): **3,231 passed, 0 failed** at `ba335f90` (3,227 at `2146162c`); the 33 integration binaries of the send, stream, cancel, continuation and push paths (`--test` for each name matching `send|continu|cancel|stream|idempot|steer|commit|drop|abort|executor|claim|reaper|halt|final_task|blocking|inline|task_`, PostgreSQL on): 133 passed, 0 failed at `ba335f90`;
-  the integration tests `approval_review_grants`, `audit_outcome_durability`, `audit_privacy`, `audit_security_events`, `audit_trail`, `postgres_audit_append`, `postgres_audit_lifecycle`
-  (all passed at `099acf49`); `cargo clippy --workspace --all-targets --all-features -- -D warnings` and `cargo check --workspace --all-features --all-targets` at `2146162c` (clippy on the server crate with `audit sqlite tool-loop encryption skills`, all targets, again at `ba335f90`), `cargo fmt --all -- --check`,
-  `RUSTDOCFLAGS="-D warnings" cargo doc -p a2a-protocol-server -p a2a-protocol-types --no-deps` (audit, sqlite, tool-loop, skills, encryption), `scripts/check_file_lengths.sh`,
-  `check_spec_ledger.py`, `check_api_reference.py`, `check_panic_paths.py`, `check_doc_escapes.py`: exit 0 on the tree of the commit that carries this block (`check_spec_ledger.py` failed at `2146162c` itself: the `with_profile` edit shifted `builder.rs` by a line, so 56 citations after it were off by one; repaired here with `--fix-lines`); the book's doc-tests (`cargo test --doc` in `book-tests`): 349 passed, 4 ignored (the
-  baseline) on the tree that became `7b461308`; only the multi-tenancy page's new example was seen to compile at `ccb09541`, and the whole run was not repeated.
-- **Verified for S1, S7 and S6** (re-run each): at the tree that became `f757caa3`, the server lib suite above, **3,256 passed, 0 failed** (25 of them new); `cargo clippy --workspace --all-targets -D warnings` and
-  `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`, both with `a2a-protocol-server/{audit,sqlite,postgres,tool-loop,encryption,skills}`, no output; `cargo fmt --all --check`; the repository gates above (the ledger needed
-  `--fix-lines` once more at `6437c144`, because the CHANGELOG entry grew after the first ledger run: run it after *every* edit, CHANGELOG included); the book's doc-tests, a full run in `book-tests` with its own target directory: **351 passed, 0 failed, 4 ignored**;
-  `tests/tool_loop_approval_journal.rs` 3 passed; `tests/tool_loop_journal_live.rs` 3 passed against Qwen3-1.7B. `scripts/release_evidence.py --self-test` 15 checks; `generate --commit HEAD` then `verify --head` exit 0; a manifest with one hash changed exits 1.
-- **Verified for the cycle-3 survivor tests** (the tree that carries this block; re-run each): `cargo test -p a2a-protocol-server --features "sqlite postgres audit encryption auth-jwt grpc tool-loop skills" --lib -- --include-ignored` with the live PostgreSQL above: **3,281 passed, 0 failed** (the 3,256 above plus the 25 tests added for the survivors, the timeouts and the reaper flake); the same with `--all-features`: 3,618 passed, 0 failed;
-  `--test jsonrpc_extended_card_tenant` 2 passed; `cargo test -p a2a-protocol-client --lib` 870 passed. `cargo clippy --workspace --all-targets -- -D warnings` and with `--all-features`; `-p a2a-protocol-server --all-targets` with each of `sqlite`, `postgres`, `tool-loop` and `--no-default-features --features auth-jwt`; `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features`: exit 0;
-  `cargo hack clippy -p a2a-protocol-server --all-targets --each-feature --keep-going -- -D warnings`: 22 of 22 combinations, no warning (the other three published crates are unchanged since their 61-combination run, which is not re-run here). The mutants were proved by hand, not re-run in CI (see *CI cycle 3*).
-- **CI cycle 1 (pull request #209 at `f62284f8`)** found four defects local runs had not, and a fifth that hid the rest: *Static checks* stopped at its 20th step and **skipped 31 later gates**. Each was read from the job log, reproduced locally and fixed in `a9847722`:
-  the RFC ledger's 316 `jwt.rs` citations (moved by R4); the TCK untested-MUST map's CARD-EXT-002 citation (the test moved into `extended_card_tests.rs`, P3); `PostgresStepJournal`'s statements outside `pg_retry` (`load` retried, `save` and `clear` checked,
-  with the reason in the type's docs); two clippy failures only in feature subsets (`audit` alone: `seal_next`'s `self`; `skills` alone: an `otel`-only import), found by `cargo hack clippy --each-feature` (61 combinations over the four published crates, exit 0 after the fix). And **every mutation shard failed its unmutated baseline**:
-  `--run-ignored all` ran the ignored readiness-bar harness, whose R2 row read 2.21 on a debug build with four jobs; it is now excluded in all four places the filter appears. The aggregator's "2 surviving mutants" were real and came only from the client crate's shard 1/2, `check_binding_override` (`transport_factory.rs:292`, `||` to `&&` and `!=` to `==`; P4): three tests,
-  each mutant applied by hand and killed with the baseline passing. The server crate's mutants had **not yet been run by CI** at that point: its baseline never passed (cycle 3 below is the first run that reached them).
-- **CI cycle 2** (`c737bfa1`, run before the fixes, and `74cf7d50`, the fixes). `c737bfa1` repeated cycle 1 and added a sixth defect: *Test (postgres integration)* ran `scripts/run_postgres_suites.py`, which derives a library module's test path from its **file path**; `run_tests/journal_stores.rs` is mounted through `#[path]` as
-  `tool_loop::run::tests::journal_stores`, so the filter matched nothing (`ran no test`). The move to `journal/tests.rs` made the two agree (verified: `tool_loop::journal::tests: 1 test`, passing on live PostgreSQL). On `74cf7d50`: Static checks (all 51 steps), the PostgreSQL job, clippy on three OSes, docs, semver and deny passed; **every server mutation shard failed its baseline again**,
-  now on the three `#[ignore]`d live-model binaries (`tool_loop_strict_live`, `terminal_truth_live`, `tool_loop_journal_live`), which need a llama-server the job lacks and which cycle 1 had hidden because nextest stops at the first failure. Excluded in the filter at `1de3185c`. This time the baseline was reproduced locally first (below).
-- **CI cycle 3** (`c8a90547`, mutation run 43269886524): the baseline passed (shard 15/40: `ok Unmutated baseline in 173s build + 159s test`), so the server crate's mutants ran for the first time. **18 mutants survived in 16 of the 40 server shards** (counted with `grep -c '^MISSED '` over the 16 downloaded logs, 324 mutants tested in those shards; the client, types, discovery and sdk shards were green) and **6 timed out** in those 16 shards (`audit/retention.rs:282` `is_held` `==` to `!=`, `call_context.rs:386`, `tool_loop/audited.rs:54` `Debug`, `tool_loop/schema.rs:102` `>` to `>=`, `auth/jwt.rs:1303` `*` to `/`, `sync_collector.rs:452` fold guard). I first set the timeouts aside as "non-gating" (`mutants.yml` fails only on `MISSED`); *CI cycle 4* shows that was wrong.
-  Each survivor was a behaviour with no test, not dead logic: the extended-card tenant (`jsonrpc_extended_card_tenant.rs`, a real dispatcher over TCP); `is_route`'s push-config routes (`query.rs`); `ToolLoop::has_journal` and `PostgresStepJournal`'s `Debug`; and, in the background push processor, the unsettled-reservation cap and settling (`processor_reserve_tests/unsettled.rs`), the heartbeat's first extension at a quarter of the hold, a terminal `Task` snapshot confirmed after a lost acknowledgement (`terminal_truth.rs`),
-  the audit outcome retry task ending once the spool is empty, the default hold-checked deletion, and the JWKS failure jitter. **Each of the 18 was applied by hand with `apply_mutant.py --baseline` (the baseline passing first) and the new test failed with it applied; the file's hash was checked after each restore.** Two (`state_of` returning `None`; `Reservation::stored` returning `None`) first printed `KILLED` with no failing-test line in the script's output; I re-ran them by hand and read the failing test names before counting them.
-  Not repeated: the CI mutation run itself on the new head, which is the real measurement.
-- **CI cycle 4** (`1efc01c7`, mutation run 43299428386, the one that tested the fixes above): 43 of 49 jobs green, **three server shards red with one survivor each, and every one was a mutant that had timed out in cycle 3**: shard 16 `audit/sqlite.rs:290` `delete !` in `delete_through_unless_held` (TIMEOUT at 300 s of tests in cycle 3, MISSED at 278 s now: *the same mutant*), shard 21 `call_context.rs:386` `call_id` to `""` (cycle 3 had `"xyzzy"`), shard 35 `sync_collector.rs:453` `&&` to `||` in the fold's fate guard (cycle 3 had the guard at :452 as `true`).
-  **A TIMEOUT in this job is a mutant the tests did not catch and that ran the whole suite past the limit, not a hang the tests caught.** I applied the six cycle-3 timeouts to the full server lib suite (`--all-features`, live PostgreSQL) afterwards: five survive it (`call_id`, `AuditedPolicy`'s `Debug`, the schema refusal's `>` to `>=`, the JWKS jitter's `*` to `/`, the fold guard) and I recorded the sixth, `is_held`, as killed by two existing tests. **That was wrong:** the two failures were the PostgreSQL reaper flake described below, and with the flake absent the whole suite passes with that mutant applied (3,610 passed); it came back as MISSED in cycle 5. Tests now kill all of them, each applied by hand with the baseline passing and the failing test named:
-  `store_contract` in `audit/tests.rs` now holds memory, SQLite and PostgreSQL to `delete_through_unless_held`'s answer (each of the memory, SQLite and PostgreSQL stores' held-chain answers, inverted, is killed); `each_call_context_has_a_call_id_of_its_own`; `the_audited_policy_debug_names_itself_and_whether_it_wraps_one`; `a_refusal_of_five_or_fewer_has_no_count_of_the_rest`; the JWKS jitter test now draws 400 times and requires a draw past a tenth of the interval (the 64-draw version killed the `*` to `/` mutant only when a draw was 0, about 27 % of runs);
-  and `a_write_that_lost_a_race_has_its_rows_removed_without_asking_the_store` (`sync_collector_reserve_tests.rs`), which needed a new fault in the test store, `refuse_writes_with`, because the in-memory store refuses an ending as `InvalidStateTransition` before it writes, so my first version of the test never reached the guard and passed under the mutant (the read counter showed it: 0 reads either way).
-  **A flaky test found on the way, and its cause measured.** In one full run of the server lib suite the two PostgreSQL variants of `the_reaper_ends_only_what_nobody_runs` failed (`left: Working`, `right: Failed`, the orphan not ended); isolated they passed 10 of 10 and six further full runs passed. The database's own history gave the cause: in the minute of the failure the reaper had ended **exactly 32 tasks** in each of `tasks` and `tenant_tasks` (its `BATCH`; a clean run ends 3), so the scenario's orphan was behind a full batch of older abandoned tasks left by the day's killed and failing runs, and the scenario asked for one look.
-  A fresh database (CI) cannot show it, which is why CI was green; a developer's long-lived one can. `reaper/tests/backlog.rs` plants 40 abandoned tasks older than the scenario's in SQLite and reproduces the symptom deterministically against the old scenario (checked before the fix); the scenario now looks until the task it asks about is ended (`look_until`, bounded at 64), for the orphan and for the released task. Test-only; no production change. **Not checked:** `reaper/tests/finish.rs`'s PostgreSQL variant also looks once, against a different query (finished tasks with an expired claim); it did not fail and was not changed.
-- **CI cycle 5** (`41163e12`, mutation run 43328849766, the run that tested cycle 4's fixes): 5 server shards red (1, 9, 23, 24, 25) with **one survivor each**, and **5 more mutants that had only timed out** in shards that passed. This time I read all 40 server shards' logs for `^MISSED ` and `^TIMEOUT ` (a script over signed log URLs, `get_job_logs` then `curl`; the aggregate job lists no timeouts), because every survivor of cycle 4 had been a cycle-3 timeout I never saw in a green shard.
-  Missed: `streaming/event_queue/in_memory.rs:656` (the `BestEffort` guard on a ruling that the store kept nothing); `audit/retention.rs:282` (`is_held` `==` to `!=`); `auth/jwt.rs:1228` (`WaitingGuard::drop`); `audit/outcomes.rs:244` (`drain() > 0` to `< 0`: the retry's backoff); `tool_loop/schema.rs:216` (`same` on objects, and its twin on arrays at :213).
-  Timed out in green shards: `retention.rs:277` (`is_held` returning `false`); `sync_collector.rs:452` (the fold's fate guard as `false`: a lost acknowledgement delivers nothing); `tool_loop/journal/mod.rs:240` (`InMemoryStepJournal::is_empty`); and two **equivalent** mutants, `schema.rs:199` (`is_i64() || is_u64() || as_f64()...`: the first two terms never decide) and `journaling.rs:159` (`messages[at + 1..]`: the extra message is filtered out), removed by simplifying the code (`as_f64` alone; `split_first`) and not by a test, with the extremes (`u64::MAX`, `i64::MIN`, `1e300`, `-0.5`) pinned in the integer test before the change.
-  Each non-equivalent mutant has a test that was seen failing with it applied (baseline first, failing test named): `a_hold_on_one_chain_does_not_stop_the_purge_of_another` (with an anchor-checkpoint assertion that separates `Ok(false)` from the rest), `best_effort_broadcasts_the_event_unchanged_when_the_store_says_it_kept_nothing`, `a_waiting_request_gives_its_place_back_when_it_stops_waiting`, `a_store_that_stays_down_is_asked_less_and_less_often` (counts the store's asks over 20 s: about 9 with the backoff, 200 without; the test store gains an `attempts` counter), `a_const_is_not_matched_by_a_value_with_more_or_fewer_members`, `a_write_whose_acknowledgement_was_lost_still_delivers_its_event`, and `!journal.is_empty()` in the in-memory journal's contract test.
-  **Two mistakes of mine in this cycle, corrected above and below:** I had recorded `is_held` as "killed by existing tests" (those two failures were the reaper flake); and a batch script restored `auth/jwt.rs` with `git checkout` although it held my uncommitted new test, which deleted the test. The script had printed `NOT CLEAN` and carried on. The test was written again and proved with the hash-verified restore.
-  **Still not done:** `reaper/tests/finish.rs`'s PostgreSQL variant looks once, like the reaper scenario did (a different query; it has not failed). The next mutation run is the measurement; if it reports a timeout in a green shard again, treat it as a survivor and read every shard's log before the next push. A change to `mutants.yml` that prints each shard's `timeout.txt` in the aggregate, or fails on a timeout, would have saved this cycle and the one before it; I have not made it, because the `.config/nextest.toml` comments make "a timeout is in neither term of the score" a stated design, and that is the maintainer's to change.
-- **CI cycle 6** (`64af2919`, mutation run 43346475974): **one survivor and one hidden timeout**, down from ten. I read all 40 server shards (green ones too). Missed: `tool_loop/schema.rs:139` (`!rule.is_number()` guard in `scan`: strict mode must take a numeric `exclusiveMinimum`/`exclusiveMaximum` and name the draft 4 boolean), closed by `strict_takes_a_numeric_exclusive_bound_and_names_the_draft_4_boolean`. Timed out in a green shard: `event_queue/manager.rs:552` (`EventQueueManager::applied_mark` returning `None`), which the final-snapshot hook of the handler uses: with a live queue the hook must wait for the consumer to have stored what the stream delivered, and the existing tests of the final snapshot all use hand-made hooks. `subscribe/final_snapshot_hook_tests.rs` builds the handler's own hook over a live queue whose consumer is storing position 3, and the snapshot must come back terminal; with the mutant it reads the still-`working` task and sends nothing. Each was applied by hand with the baseline passing and the failing test named.
-  Other workflows on that head: all green except ACTS, which failed twice (an original run and my one allowed re-run) at the same step, before any test ran: the Docker build of the external `a2a-itk` checkout downloads `https://dot.net/v1/dotnet-install.sh` and the transfer failed (curl 18, then curl 35). It is outside this repository and was green on the earlier head; one comment on the pull request says so.
-  **Conjecture, not checked:** the number of survivors per run went 18, 3, 10, 2, and several of them were mutants that earlier runs had reported as caught. The reaper flake (fixed in `41163e12`) fails unrelated tests at random in a shared database, which would catch mutants for the wrong reason; if so, runs before the fix overstated the kills, and the counts will settle to zero only once the suite is stable.
-- **Not verified / not done:** the workflows on GitHub for the commits after `f62284f8` (the first CI run, on `f62284f8`, is read under *CI cycle 1* below; the run on `a9847722` had not reported when this was written); the Windows, macOS and MSRV-1.94 test legs, which were **cancelled** in the first run and so never gave a verdict; the Windows and macOS legs; the mutation job on the changed lines (hand mutants stand in for it and are not the
-  same measurement); `scripts/preflight.sh --full`; any multi-replica or load behaviour of the new code (the outcome spool, the review grant and the multi-tenant profile were tested in one process; the readiness harness ran with LTO off, which is not the published profile; the 3 of 8 runs of the first post-fix batch that reported FAILED were not asked which row failed, and the 5 that followed, which were, all passed); the SLIMRPC binding
-  after the extended-card change was only cargo-checked; the SQLite and PostgreSQL audit stores' behaviour under the spool beyond the existing suites. **Rows OPEN in the register:** S2 skill content pinning, S3 fleet quota, S4 telemetry-failure visibility (not examined), S8 `erase_subject` against a hold across replicas. **Rows PARTIAL beyond R3, A3:** S1 (no expiry of an abandoned run's row, nothing that begins an orphaned task again, no two-replica test of the fencing, PostgreSQL only ran the store contract test), S5 (R5 to R7, F1 to F5, L2 and L5 of `docs/readiness-bar.md`, and everything on a second replica; R1 to R4 and C1 to C5 are measured), S6 (`release_evidence.py` is not wired into `release.yml`). **G1** (branch protection on `main`) is a repository setting and the maintainer's.
+- **Where the code is.** `main` is `70dc3374` (`git rev-parse origin/main`), the merge of pull request #209; the workspace reads 0.16.0 and **nothing is
+  tagged** (`git tag --sort=-creatordate | head -1` prints `v0.15.0`). **This session's branch** is `claude/dazzling-wozniak-xp79ii`, ahead of `main`
+  (`git log --oneline 70dc3374..HEAD`), pushed, **with no pull request** (none was asked for). Commits are authored as Tom F. with one `Signed-off-by` and no
+  assistant trailer (`CONTRIBUTING.md`, `dco.yml`).
+- **Why this session.** An independent adversarial review of `70dc337` (a 27-page PDF) added sixteen findings, `N01` to `N16`, reported `main`'s CI red on macOS,
+  and corrected stale claims in this file. Its register is `docs/audits/2026-11-13-adversarial-review/` (`findings.json`, 20 rows: 18 FIXED, 1 PARTIAL (N14),
+  1 OPEN (CI1); the README has the command that counts them). The 2026-11-12 register was updated: S8 fixed, S1 and S6 notes. Read both before acting.
+- **Built, each behaviour defect first reproduced by a test that failed on the code as it stood** (the evidence is in each commit message and register row):
+  `861187ae` N01 (approval identities sealed; one field classification for sealing, reveal and erasure scans), `dd9502ad` N02 (`ToolPolicy::approved`; an approved
+  call is recorded durably before it runs), `aa26b2b0` N03 and S8 (key cleanup and erasure fenced against other replicas in every shipped store),
+  `21d03e00` N04 and N07 (a run's end is a fenced, retained, completed checkpoint; journal entries owned, sealable, sweepable and erasable), `8369649f` N05 and
+  N06 (a claim is kept until a task's ending is durable; `record_now` says how it recorded), `36d894cd` N10 to N12 (client: extended card verified, only `1.0`
+  interfaces selected, opt-in strict tenant), `ac63a18f` N08 and N09 (call ids unique per run; byte limits on results, requests and checkpoints), `a0d6300e`
+  N16 (per-model `Connection: close`), `01d28c48` N15 (the incremental mutation gate fails on a timeout), `3f6be5f7` N13 (a release requires `ci.yml`'s green
+  run of the tagged commit and writes and verifies the evidence manifest), `b04d6992` N14 (`migration-inventory.md`).
+- **Found by the real-model tests and fixed, `1591c8b6` (D1):** on a single-worker runtime a blocking send could hang for the executor timeout (an hour),
+  because the collecting task stopped polling the executor it runs inline while it folded an event; with `AuditedPolicy` the executor held the audit chain lock
+  the fold needed. Present since 2026-10-03 and in 0.15.0. Reproduced by `inline_executor_tests::an_executor_holding_what_a_fold_needs_is_still_polled` (no
+  answer in 10 s before the fix); live: 5 hangs in 11 runs of the file before, 0 in 8 after.
+- **Real models.** llama.cpp `9daa0aa` (`/opt/llama/src/build/bin/llama-server`), Qwen3-1.7B Q4_K_M (`/opt/models/Qwen3-1.7B-Q4_K_M.gguf`, SHA-256 equal to the
+  Hugging Face `lfs.oid`), served with `--host 127.0.0.1 --port 11434 --alias qwen3:1.7b --jinja -c 4096 -np 1 -t 4`. Five live files, all `#[ignore]`d without
+  a server and excluded from the mutation runs: `tool_loop_strict_live`, `terminal_truth_live`, `tool_loop_journal_live` (3 tests each, 9 of 9 passed),
+  `tool_loop_review_live` (2) and `tool_loop_audit_live` (1), run with `--features "tool-loop sqlite audit encryption" -- --ignored --test-threads=1`.
+  Measured: llama-server closes the connection after a streamed answer (3 of 3, N16).
+- **Verified** (re-run each; the tree is this branch's head unless a commit is named):
+  `A2A_TEST_POSTGRES_URL=postgres://tester:tester@localhost:5432/postgres cargo test --workspace --all-features --no-fail-fast` with a live PostgreSQL 16:
+  **8,491 passed, 0 failed, 275 ignored** over 420 result lines (summed from the `test result:` lines), at `b04d6992`; the ignored are the live-model, soak,
+  readiness and PostgreSQL-only tests. The server library with `--include-ignored` (PostgreSQL on): **3,659 passed, 0 failed**, on the tree that became
+  `1591c8b6` before its `closing` refactor; after it, the collector's and inline-executor tests (53) passed. `cargo clippy --workspace --all-targets
+  --all-features -- -D warnings`: exit 0 (Cargo 1.100's two `unused dependency` warnings for `book-tests`, under *Facts*). `scripts/run_workflow_job.py
+  .github/workflows/ci.yml static-checks`: **PASS, 47 steps run, 0 failed, 0 not run** (the book built and its links resolved); the same for `doc`: PASS after
+  this session's fixes of five broken doc links (three from `ac63a18f`, two feature-gated ones from `36d894cd`), which the per-crate default-feature build
+  found and the all-features build did not. **`ci.yml`'s jobs run locally with `scripts/run_workflow_job.py`** at `c47b818b` or its content: `static-checks` PASS (47 steps), `doc` PASS (2), `clippy` on `os=ubuntu-latest` PASS (14 feature sets), `features` PASS (cargo-hack, each feature of the four published crates), `package` PASS, `test-postgres` with `--services-ready` against the local PostgreSQL PASS (6 steps) after `c47b818b` fixed a race it found (D3; `statement_count` also needs `ssl = off` locally, under *Facts*). **Not run locally:** the `test` job's nextest legs per feature set (each a build of its own; this disk allowance holds about one; their compilation is covered by `clippy` and `features`, their runtime only by the all-features run above), and the Windows, macOS and MSRV legs. Live: the five live files as listed above. `scripts/ci_evidence.py --self-test` 13 of 13;
+  `scripts/release_evidence.py --self-test` 15; `scripts/prove_workflow_gates_fail.py` 34 proven, 0 unproven at `3f6be5f7`.
+- **Corrections to this file the review made, each checked here.** *Advisory waivers:* `deny.toml` has one, RUSTSEC-2026-0459 (`libsqlite3-sys`, since
+  2026-11-11), so "no waivers anywhere" below was stale and is corrected there. *`unsafe`:* the five published crates' library sources carry
+  `#![forbid(unsafe_code)]`; outside them 18 files hold `unsafe` (`git grep -lE '\bunsafe\b *(\{|fn|impl)' -- '*.rs'`, less `fuzz/`): `set_var("PROTOC")` in five
+  build scripts, three counting `GlobalAlloc` impls (two benchmarks, one test) and environment changes in ten test files. Each has a SAFETY note;
+  the two benchmark allocators' were added this session. *Spec ledger:* 510 rows for v1.0.1 = 455 TESTED + 32 APPLICATION + 19 NOT_APPLICABLE + 4 PARTIAL
+  (`python3 scripts/check_spec_ledger.py`). *TCK and ACTS:* the official TCK at its pin `70f6f73` was **run here** (`scripts/run_workflow_job.py .github/workflows/official-tck.yml official-tck`,
+  every step passed): full profile 240 passed, 4 failed (all baselined: CORE-SEND-003 on three bindings, HTTP_JSON-ERR-001), 19 skipped, 87 MUSTs graded
+  (floor 87), MUST classification 85 pass, 2 fail, 5 skipped, 7 manual, 16 not tested; minimal profile 175 passed, 4 failed, 84 skipped, 65 graded (floor 65);
+  required extension 2 passed. ACTS passed on `main` at `70dc337` (run 43394485553); its per-binding counts are the review's, not re-run here. Both are now
+  in `book/src/reference/conformance-statement.md`. *Branch protection:* `main` is unprotected (G1, the maintainer's), as *Waiting on the maintainer* already said.
+- **Not verified / not done:** the workflows on GitHub for any commit of this branch (no pull request, so no CI run); `CI1`, the macOS mDNS failures
+  (diagnosed, not root-caused: each process saw the other's announcement and not its own; Linux 0 of 160 concurrent runs failed); the N13 and N15 workflow
+  changes beyond `prove_workflow_gates_fail.py` and synthetic inputs; N14 on PostgreSQL; any two-replica run outside the tests that pause one log at the race.
+  Of the review's enterprise asks, the conformance statement is written (`book/src/reference/conformance-statement.md`); named deployment
+  profiles validated at startup, a qualification matrix, runbooks and a curated release-notes section from the 3,090-line Unreleased changelog are **not
+  started**; see *First, next*.
 
 ### First, next
 
-1. **Read pull request #209's CI on `a9847722`** (the `mutation-test` label is on; the job grades the changed lines, now that its baseline can pass). Expect surviving mutants in the server crate: close each by the mutation-survivor procedure (collect every shard first, a behavioural test per survivor, apply the mutant by hand and watch it fail, prove an equivalent with a refactor
-   or a written proof, never an exclusion), then push once. Do not poll: the session is subscribed to the pull request's events. The Test legs for MSRV 1.94, Windows and macOS have never reported; read them first.
-2. **S1's open edges**, in this order: an expiry or sweep for a journal row whose run never ends (today a row goes only when its run ends); a two-replica test of the fencing over PostgreSQL (two loops, one key, one writer
-   loses with `JournalError::Conflict`); and a decision about what begins an orphaned task again (nothing does; a search of the server found no mechanism, which is a grep, not a proof).
-3. **S6's wiring:** make `scripts/release_evidence.py verify --head` a step of `release.yml`; that needs the gate inventory and reachability checks to learn the script first, and a decision on where the manifest is kept (attached to the release, not committed).
-4. **S2 skill pinning** (manifest over bodies and resources, a deployment pin, the hash in the audit record), **S4** (an observer of exporter failure that does not depend on the exporter), **S5** (the rest: R5 to R7 and F1 to F5, then two replicas; `docs/readiness-bar.md` says what each row needs, and `tests/readiness_bar/` is where the measured ones live), **S8** (`erase_subject` against a hold across replicas).
-5. **S3, fleet quota**, needs a decision before code: reservation and reconciliation against a shared store, and a declared overshoot bound.
-6. The maintainer's open items stay as *Waiting on the maintainer*, G1 among them.
+1. **Open a pull request** for this branch when the maintainer asks, label it `mutation-test`, and read every shard's log (the aggregate now fails on a
+   timeout, N15). The Windows and macOS legs decide CI1.
+2. **CI1, the macOS mDNS failures:** reproduce on a macOS runner with `workflow_dispatch`; the conjecture to test is that a `ServiceDaemon` does not deliver
+   its own process's announcement to a browser `ServiceDaemon` in the same process on that runner.
+3. **The review's release criteria** (PDF section 7; the conformance statement is done): a support matrix, named
+   deployment profiles validated at startup, the qualification matrix (replica kill, store faults, provider faults), runbooks, and curated release notes with
+   the migration guide in front and the long changelog as an archive.
+4. **N14's rest:** a PostgreSQL 0.15 to 0.16 rehearsal (task, audit, push-config stores) and a rolling two-version run.
+5. **Older register rows still open:** S2 skill pinning, S3 fleet quota (a decision first), S4 telemetry-failure visibility; partial R3, A3, S1, S5.
+6. The maintainer's items stay under *Waiting on the maintainer*, G1 among them.
 
 ### Facts this session established
+
+- **Added 2026-11-13.** `rustup update stable` gave 1.100.0; CI is 1.99.1, so an `#[allow]` of a lint 1.99 does not know fails CI
+  (`unknown_lints`): avoid the lint (as `unused_async_trait_impl` was avoided by returning boxed futures) rather than allowing it. Cargo 1.100 also
+  warns `unused dependency` for `book-tests`' `a2a-protocol-sdk` and `a2a-protocol-discovery`, which only the book's `include_str!` doc-tests use
+  (93 pages and `local-discovery.md`): a false positive, left alone because a `[lints.cargo]` entry naming the lint would itself warn on 1.99.
+- The rustdoc JSON that `cargo-semver-checks` leaves under `target/semver-checks` documents **private items too**: `cargo public-api diff` over those
+  files reported 713 changed lines, most crate-private. For a public diff build the JSON yourself:
+  `RUSTC_BOOTSTRAP=1 cargo rustdoc -p <crate> --all-features --lib -- -Z unstable-options --output-format json` (in a `v0.15.0` worktree for the
+  baseline), then `cargo public-api -sss diff old.json new.json`. `-sss` hides derived impls, so a hand-written `impl Default` that became
+  `#[derive(Default)]` shows as removed: check the source before calling it a break.
+- **A hang that only shows with earlier tests in the same process** (D1) is still a product bug. What found it: a 300 s bound on each send (so a hang
+  fails with a message instead of waiting out the executor's hour), `eprintln!` markers whose heavier version (a backtrace on every lock) hid it, and a
+  backtrace captured **only when a lock is contended** (`try_lock_owned` first), which named both sides. `gdb -p PID -batch -ex "thread apply all bt"`
+  showed the runtime parked in `epoll_wait` with one distant timer: a future nobody polls, not a busy loop.
+- The `v0.15.0` tag is not in a fresh clone: `git fetch origin tag v0.15.0`. A worktree of it builds with its own `Cargo.lock`
+  (`git worktree add DIR v0.15.0`; remove it with `git worktree remove --force DIR`).
 
 - **A fresh container needs, in this order** (all done and timed on 2026-11-11): `rustup update stable` (this image had 1.97.0; its clippy reports 255 errors CI's 1.99.1 does not,
   and `cargo-semver-checks` would not build on it); `apt-get install -y openssh-client` (`prove_workflow_gates_fail.py`) and `cmake ninja-build`; `scripts/install_cargo_mutants.sh`, then
@@ -310,8 +301,8 @@ session start.
    39193157308 and 39343090044). The three 2026-10-19 survivors were
    re-verified killed on this branch by hand mutants (2026-10-20). Read the
    next scheduled sweep's logs.
-5. **Official TCK** after any wire change: `--min-graded 88` full, 66
-   minimal. Last run 2026-10-20 at `1305674b`, after the auth-ordering,
+5. **Official TCK** after any wire change. **Superseded:** the floors are 87 full and 65 minimal now, and the pinned `70f6f73` was run on 2026-11-13 (*Now* has the
+   figures; `book/src/reference/conformance-statement.md` states them). The run described next is the last one of this file's: 2026-10-20 at `1305674b`, after the auth-ordering,
    streaming-span and WebSocket trace-context changes, against a2a-tck
    `5daf014` (the workflow tracks `main`; the seven baselined failures were re-read against `d4d6fae` on 2026-10-24, `official-tck-findings.md` §25): full 88 graded, 81 passed, the
    9 baselined (requirement, transport) failures and no other; minimal 66
@@ -401,7 +392,7 @@ session start.
     is deprecated although most tests used it; a gRPC listener does not apply `ServeConfig`'s `idle_timeout` or `header_read_timeout`
     (ADR 0052); this repository has no gate that deprecation notes carry a removal version (ADR 0053).
   - *Exceptions to the rules, each documented where it stands:* 25 added `#[allow(deprecated)]` (4 from the observability package for
-    C-12, 21 on the tests of the names the API-shape package deprecated, each with its removal version in a comment), and one `unsafe`
+    C-12, 21 on the tests of the names the API-shape package deprecated, each with its removal version in a comment), and one new `unsafe` in that change (not in the tree: *Now* has the whole count)
     (`remove_var` in the one-test binary `tests/pinned_endpoints.rs`, with its SAFETY note); one `#[mutants::skip]` (`PlainConnector::poll_ready`, an
     equivalent mutant with its proof in the comment, ADR 0006); eight `#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]` (the live-PostgreSQL tests). Gate 39's allowlist
     (`scripts/inert_bounds_allowlist.txt`, the transports that do not read a config field): 16 entries gained the two new wrapper
@@ -673,7 +664,14 @@ against the 0.16.0 work: check `CHANGELOG.md`'s `### Fixed` and the register's s
 
 ## Waivers and their removal tests
 
-No waivers anywhere since 2026-10-23. The SLIMRPC binding's `deny.toml`
+One waiver, since 2026-11-11: RUSTSEC-2026-0459 (CVE-2026-119375) in the root
+`deny.toml`, for `libsqlite3-sys` 0.37, which `sqlx-sqlite` 0.9.0 pins: a local
+attack through a crafted database and `-wal` pair, reachable only with the
+opt-in `sqlite` feature. Its removal test is in the entry itself: remove it
+when `sqlx` allows `libsqlite3-sys` >= 0.39 (`cargo deny check advisories`
+then passes without it). Checked 2026-11-13: `cargo search sqlx-sqlite` still
+prints 0.9.0, so it stays. `SECURITY.md` names it too. Until 2026-11-11 there
+were none, from 2026-10-23. The SLIMRPC binding's `deny.toml`
 ignored the yanked `mls-rs-crypto-awslc` 0.25.1 until agntcy-slim-mls 0.5.1
 accepted 0.26; a plain `cargo update` in the binding then took
 agntcy-slim-rpc 3.4.6 and kept rustls at 0.23.46 (its comment has the

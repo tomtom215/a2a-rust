@@ -482,6 +482,9 @@ pub mod page_reference_cli {}
 #[doc = include_str!("../../book/src/reference/conformance-testing.md")]
 pub mod page_reference_conformance_testing {}
 
+#[doc = include_str!("../../book/src/reference/conformance-statement.md")]
+pub mod page_reference_conformance_statement {}
+
 #[doc = include_str!("../../book/src/deployment/observability/quick-start.md")]
 #[doc = include_str!("../../book/src/deployment/observability/walkthrough.md")]
 #[doc = include_str!("../../book/src/deployment/observability/telemetry.md")]

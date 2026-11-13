@@ -220,6 +220,7 @@
     - [Fixed defects](./reference/pitfalls/fixed.md)
 - [Architecture Decision Records](./reference/adrs.md)
 - [Conformance Testing](./reference/conformance-testing.md)
+- [Conformance Statement](./reference/conformance-statement.md)
 - [Benchmark Results](./reference/benchmarks.md)
 - [Cross-Language Benchmark](./reference/cross-language-benchmarks.md)
 

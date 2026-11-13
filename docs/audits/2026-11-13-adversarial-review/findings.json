@@ -135,7 +135,7 @@
   "finding": "Passing semver job skips the compatibility checks relevant to migration review",
   "status": "PARTIAL",
   "note": "Inventory, compile rehearsal and a SQLite data and rollback rehearsal done; PostgreSQL, the other stores, and a rolling two-version deployment were not rehearsed.",
-  "commit": "",
+  "commit": "b04d6992",
   "evidence": "migration-inventory.md: cargo-semver-checks 0.51.0 forced to minor (11 failing lints, 39 structs newly non_exhaustive) and a public-only cargo-public-api diff (93 removed or changed items), every one named in the upgrade guide; every v0.15.0 example checked against 0.16 (4 compile unchanged, 39 error sites, all of two documented kinds); 0.15 and 0.16 binaries reading and appending each other's SQLite task and audit files, the chain verifying and every sealed actor revealed both ways.",
   "tests": "docs/audits/2026-11-13-adversarial-review/migration-inventory.md (method and commands)"
  },
@@ -188,5 +188,15 @@
   "commit": "1591c8b6",
   "evidence": "streaming/event_queue/manager.rs kept gates in a static keyed by Arc::as_ptr and never removed them, so a later test's manager allocated at a freed address would wait at a gate nobody opens. Keyed by a Weak now, which holds the allocation, and dead gates are pruned.",
   "tests": "the server library suite"
+ },
+ {
+  "id": "D3",
+  "severity": "Low (tests only)",
+  "finding": "N03's PostgreSQL tests wrote to the database the audit store's contract test clears and counts",
+  "status": "FIXED",
+  "note": "Test-only; found by running ci.yml's test-postgres job locally, before any CI run of this branch.",
+  "commit": "c47b818b",
+  "evidence": "audit::tests::the_postgres_store_keeps_the_contract deletes the shared database's audit tables and then asserts chains() == [\"c\", \"other\"]; the two key_lifecycle PostgreSQL tests (aa26b2b0) ran in the same process and wrote n03-<random> chains there meanwhile, so the contract test saw [\"c\", \"n03-…\", \"n03-…\", \"other\"]. Each now creates a scratch database of its own and drops it, as the subject-key store test already did; the contract's exact assertion is kept.",
+  "tests": "audit/privacy/tests/key_lifecycle.rs; audit/tests.rs"
  }
 ]
