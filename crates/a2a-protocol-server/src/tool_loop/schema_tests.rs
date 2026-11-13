@@ -377,6 +377,26 @@ fn strict_finds_an_unsupported_keyword_wherever_a_schema_applies() {
     assert!(why.contains("neither an object nor a boolean"), "{why}");
 }
 
+/// Draft 6 and later give `exclusiveMinimum` and `exclusiveMaximum` a number,
+/// which the loop checks; draft 4 gave them a boolean that changes what
+/// `minimum` means, which it does not, and strict mode says so for either.
+#[test]
+fn strict_takes_a_numeric_exclusive_bound_and_names_the_draft_4_boolean() {
+    let strict = |schema: Value| refusal(ArgumentCheck::Strict, &schema, &json!(1));
+    assert_eq!(
+        strict(json!({"exclusiveMinimum": 0, "exclusiveMaximum": 10})),
+        None,
+        "numeric bounds are implemented"
+    );
+    for key in ["exclusiveMinimum", "exclusiveMaximum"] {
+        let why = strict(json!({ key: true })).expect("refused");
+        assert!(
+            why.contains(&format!("{key} as a boolean (draft 4)")),
+            "{why}"
+        );
+    }
+}
+
 #[test]
 fn strict_names_every_keyword_it_cannot_check_once() {
     let schema = json!({"pattern": "x", "multipleOf": 2, "properties": {"a": {"pattern": "y"}}});

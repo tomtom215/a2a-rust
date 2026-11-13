@@ -907,6 +907,8 @@ impl LogReplay {
 mod gap_tests;
 
 #[cfg(test)]
+mod final_snapshot_hook_tests;
+#[cfg(test)]
 mod finished_tests;
 mod hold;
 #[cfg(test)]
