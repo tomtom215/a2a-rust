@@ -169,12 +169,39 @@ pub struct PolicyRequest<'a> {
 /// An allowed task is not an authorised action: a task the caller may create
 /// does not authorise every tool a model may reach for. The policy decides per
 /// call, from the tool, the arguments and the request's identity.
+///
+/// # Order
+///
+/// For a call [`authorize`](Self::authorize) allows, nothing else is asked:
+/// it runs. For one it answers [`PolicyDecision::RequireApproval`], the run is
+/// parked; once a person approves exactly that call, the loop asks
+/// `authorize` again (a [`Deny`](PolicyDecision::Deny) still denies), checks
+/// the decision against the call's digest, and then, **immediately before
+/// the call runs**, tells the policy who approved it with
+/// [`approved`](Self::approved). Only that hook sees the effective decision;
+/// a policy that must record or check an approved action does it there, and
+/// an `Err` stops the call (adversarial review N02, 2026-11-13).
 pub trait ToolPolicy: Send + Sync + 'static {
     /// Whether the call may run.
     fn authorize<'a>(
         &'a self,
         request: &'a PolicyRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = PolicyDecision> + Send + 'a>>;
+
+    /// A call that [`authorize`](Self::authorize) sent for approval has been
+    /// approved by `approver` (the authenticated identity the approval gate
+    /// verified) and is about to run. `Err(reason)` stops it: it is not run,
+    /// and `reason` is its result as the model sees it.
+    ///
+    /// The default lets it run.
+    fn approved<'a>(
+        &'a self,
+        request: &'a PolicyRequest<'a>,
+        approver: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        let _ = (request, approver);
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// The authenticated request's identity, handed to the loop by its executor.

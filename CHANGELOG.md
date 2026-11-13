@@ -1698,6 +1698,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A call a person approved could run with no audit record of running, and a healthy store recorded it as denied** (adversarial review of
+  2026-11-13, N02). `AuditedPolicy` treated `RequireApproval` as not allowed: it wrote `decision = deny`, ignored whether that write succeeded,
+  and, once the run resumed with a matching approval, the loop ran the call with no further record. With the audit store down after the run was
+  parked, an approved transfer ran unrecorded. `ToolPolicy` gains `approved(request, approver)` (default: run), which the loop calls with the
+  approver the gate verified **immediately before an approved call runs**; an `Err` stops the call. `AuditedPolicy` now records `allow`, `deny`,
+  `approval_required` (pending, kept like a denial) and `approved` (durable like `allow`, naming the approver in `approvedBy`, which audit privacy
+  seals), and does not run an approved call whose record the store refuses. A wrapped policy's own `approved` is asked first. Reproduced with the
+  audit store failing only after parking and a healthy journal (`tool_loop/run_tests/audited_approval.rs`): on the old code the tool ran once and
+  the healthy-store record said `deny`; both fail there and pass now.
 - **An approval written under audit privacy kept its requester and approvers in the clear, and erasure said nothing was left** (adversarial review of
   2026-11-13, N01). `detail.reviewFor` (the requester a reviewer answered for) and every element of `detail.approvedBy` (a quorum's approvers) were in
   none of the field lists that key resolution, sealing, reveal and the in-clear scan each kept, so `AuditLog::with_privacy` stored them unsealed and

@@ -129,6 +129,12 @@ approval does not outrank a later `Deny`. A refusal is a result the model sees (
 call was not approved by …") and the call never runs. A loop with no journal has
 nowhere to wait: it refuses such a call, as for `Deny`.
 
+Once the digest matches and the policy has been asked again, the loop tells the policy
+who approved, through `ToolPolicy::approved(request, approver)`, immediately before the
+call runs; an `Err` there stops it. It is the only point that sees the effective
+decision, so a policy that must record or check an approved action does it there.
+`AuditedPolicy` writes its durable `approved` record in it.
+
 It needs an `ApprovalGate` on the handler (`with_approval_gate`): without one, a
 decision in a message is only a claim and `ctx.approval()` is always `None`. With tasks
 isolated by caller, give the approvers a review grant
