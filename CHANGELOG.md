@@ -1698,6 +1698,14 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **An approval written under audit privacy kept its requester and approvers in the clear, and erasure said nothing was left** (adversarial review of
+  2026-11-13, N01). `detail.reviewFor` (the requester a reviewer answered for) and every element of `detail.approvedBy` (a quorum's approvers) were in
+  none of the field lists that key resolution, sealing, reveal and the in-clear scan each kept, so `AuditLog::with_privacy` stored them unsealed and
+  `erase_subject` reported `in_clear = []` for a person named only there. One classification (`audit/privacy/fields.rs`: `requestedBy`,
+  `erasedCaller`, `reviewFor`; the lists `actors` and `approvedBy`, each element sealed as `<field>/<index>`) is now read by all four, and a test
+  holds it to every `detail` key the server's own records write. A record written before this change still names those people in the clear;
+  erasure now reports its `seq` instead of nothing. Reproduced first over HTTP+JSON with a two-approver quorum answered through review grants and the
+  chain in a SQLite file whose bytes are searched (`tests/audit_privacy_approvals.rs`): both tests failed on the old code and pass now.
 - **A stream could be told a task completed that the store never recorded as completed** (adversarial review of 2026-11-12, R1). When the write of a
   terminal status failed (rejected, or the acknowledgement lost) the processor answered the terminal gate with the event as emitted, so the
   stream said `Completed` while `GetTask` still said `Working`, and, when the write had in fact landed, the reservation was released and

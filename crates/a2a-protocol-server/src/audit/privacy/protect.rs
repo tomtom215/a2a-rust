@@ -12,10 +12,8 @@ use a2a_protocol_types::audit::AuditRecord;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use zeroize::Zeroizing;
 
-use super::{
-    ACTORS_FIELD, AuditPrivacy, KEYED_DIGEST_PREFIX, PERSON_FIELDS, TEXT_FIELDS, actors_element,
-    refused,
-};
+use super::fields::{TEXT_FIELDS, people_in};
+use super::{AuditPrivacy, KEYED_DIGEST_PREFIX, refused};
 use crate::audit::store::AuditStore;
 
 /// The keys of the people one record names, each as `(sid, key)`, found or
@@ -46,35 +44,23 @@ impl AuditPrivacy {
         record: &AuditRecord,
     ) -> A2aResult<Resolved> {
         let chain = record.chain.as_str();
-        let mut people: Vec<&str> = Vec::new();
+        let mut people: Vec<String> = Vec::new();
         let owner = record.actor.as_ref().map_or("", |a| a.subject.as_str());
         if record.actor.is_some() {
-            people.push(owner);
+            people.push(owner.to_owned());
         }
-        for field in PERSON_FIELDS {
-            if let Some(serde_json::Value::String(person)) = record.detail.get(field) {
-                people.push(person);
-            }
-        }
-        if let Some(serde_json::Value::Array(actors)) = record.detail.get(ACTORS_FIELD) {
-            for actor in actors {
-                let serde_json::Value::String(actor) = actor else {
-                    return Err(refused());
-                };
-                people.push(actor);
-            }
-        }
+        people.extend(people_in(&record.detail)?.into_iter().map(|(_, p)| p));
         if TEXT_FIELDS
             .iter()
             .any(|f| matches!(record.detail.get(*f), Some(serde_json::Value::String(_))))
         {
-            people.push(owner);
+            people.push(owner.to_owned());
         }
         let mut keys = HashMap::new();
         for person in people {
-            if !keys.contains_key(person) {
-                let key = self.subject_key(store, chain, person).await?;
-                keys.insert(person.to_owned(), key);
+            if let std::collections::hash_map::Entry::Vacant(slot) = keys.entry(person) {
+                let key = self.subject_key(store, chain, slot.key()).await?;
+                slot.insert(key);
             }
         }
         Ok(Resolved(keys))
@@ -103,29 +89,10 @@ impl AuditPrivacy {
             } else {
                 None
             };
-        for field in PERSON_FIELDS {
-            if let Some(serde_json::Value::String(person)) = record.detail.get(field).cloned() {
-                let (sid, dek) = resolved.key(&person)?;
-                let sealed = self.seal_value(dek, &chain, sid, field, seq, &person)?;
-                record.detail.insert(field.to_owned(), sealed.into());
-            }
-        }
-        if let Some(serde_json::Value::Array(actors)) = record.detail.get(ACTORS_FIELD).cloned() {
-            let mut sealed = Vec::with_capacity(actors.len());
-            for (i, actor) in actors.iter().enumerate() {
-                let serde_json::Value::String(actor) = actor else {
-                    return Err(refused());
-                };
-                let (sid, dek) = resolved.key(actor)?;
-                let field = actors_element(i);
-                sealed.push(
-                    self.seal_value(dek, &chain, sid, &field, seq, actor)?
-                        .into(),
-                );
-            }
-            record
-                .detail
-                .insert(ACTORS_FIELD.to_owned(), serde_json::Value::Array(sealed));
+        for (slot, person) in people_in(&record.detail)? {
+            let (sid, dek) = resolved.key(&person)?;
+            let sealed = self.seal_value(dek, &chain, sid, &slot.context(), seq, &person)?;
+            slot.set(&mut record.detail, sealed);
         }
         for field in TEXT_FIELDS {
             if let Some(serde_json::Value::String(text)) = record.detail.get(field).cloned() {

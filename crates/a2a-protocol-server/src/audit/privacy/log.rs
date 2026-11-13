@@ -11,7 +11,8 @@ use std::sync::Arc;
 use a2a_protocol_types::audit::{Actor, AuditRecord, kind};
 use a2a_protocol_types::error::{A2aError, A2aResult};
 
-use super::{AuditPrivacy, PERSON_FIELDS, Revealed, SEALED_PREFIX};
+use super::fields::names_in_clear;
+use super::{AuditPrivacy, Revealed, SEALED_PREFIX};
 use crate::audit::AuditLog;
 
 /// Records read at once while scanning a chain.
@@ -180,15 +181,8 @@ impl AuditLog {
         let mut seqs = Vec::new();
         self.scan(chain, |r| {
             let as_actor = r.actor.as_ref().is_some_and(|a| a.subject == subject);
-            let in_detail = PERSON_FIELDS
-                .iter()
-                .any(|f| r.detail.get(*f).and_then(serde_json::Value::as_str) == Some(subject));
-            let in_actors = r
-                .detail
-                .get(super::ACTORS_FIELD)
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(subject)));
-            if as_actor || in_detail || in_actors {
+            let in_detail = names_in_clear(&r.detail, subject);
+            if as_actor || in_detail {
                 seqs.push(r.seq);
             }
         })

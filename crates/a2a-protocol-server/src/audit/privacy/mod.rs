@@ -7,6 +7,7 @@
 //! erased: [`AuditPrivacy`], which documents the design.
 
 mod digest;
+mod fields;
 mod log;
 mod protect;
 mod reveal;
@@ -44,22 +45,6 @@ pub const HMAC_KEY_LEN: usize = 32;
 const DEK_LEN: usize = 32;
 const SID_LEN: usize = 16;
 
-/// The detail fields that name a person, sealed under that person's key.
-pub(super) const PERSON_FIELDS: [&str; 2] = ["requestedBy", "erasedCaller"];
-
-/// The detail field listing the agents that acted for the actor (RFC 8693,
-/// ADR 0021): each element names a person or agent and is sealed under its
-/// own key, in the context `actors/<index>`.
-pub(super) const ACTORS_FIELD: &str = "actors";
-
-/// The sealing context of element `i` of [`ACTORS_FIELD`].
-pub(super) fn actors_element(i: usize) -> String {
-    format!("{ACTORS_FIELD}/{i}")
-}
-
-/// The detail fields that are free text, sealed under the actor's key.
-pub(super) const TEXT_FIELDS: [&str; 1] = ["reason"];
-
 /// The keys an [`AuditLog`](super::AuditLog) protects its records with.
 ///
 /// Who and what a record names, protected at rest, and a person erased from
@@ -70,8 +55,10 @@ pub(super) const TEXT_FIELDS: [&str; 1] = ["reason"];
 /// record is changed as follows before it is hashed into its chain, so the
 /// chain verifies over the protected form with no key:
 ///
-/// - **Who.** `actor.subject` and `detail.requestedBy` are each sealed under
-///   the named person's own key; `detail.reason` under the actor's (under the
+/// - **Who.** `actor.subject` and every `detail` field that names a person
+///   (`requestedBy`, `erasedCaller`, `reviewFor`, and each element of
+///   `actors` and `approvedBy`; one list, in `fields.rs`) are each sealed
+///   under the named person's own key; `detail.reason` under the actor's (under the
 ///   key of the empty name when there is no actor). A sealed value is the
 ///   string `a2a-sealed:v1:<sid>:<base64>`: `sid` is a random handle for the
 ///   person, the rest a 96-bit nonce and AES-256-GCM output under a key
