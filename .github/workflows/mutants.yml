@@ -1780,14 +1780,21 @@ jobs:
             echo "${n:-0}"
           }
 
-          # Sum surviving mutants across every shard's report (if any ran).
-          TOTAL_MISSED=0
+          # Every outcome across every shard's report (if any ran): a
+          # mutant is caught, missed, timed out or unviable. A timeout is not
+          # a kill: it is a mutant the tests did not catch that ran the suite
+          # past its limit, and in this repository's cycles 4 and 5 every
+          # survivor had first appeared as a timeout in a shard that passed
+          # (docs/handoff.md). So timeouts are listed and fail the gate, as
+          # survivors do (adversarial review N15, 2026-11-13).
+          TOTAL_CAUGHT=0; TOTAL_MISSED=0; TOTAL_TIMEOUT=0; TOTAL_UNVIABLE=0; REPORTS=0
           shopt -s nullglob
-          MISSED_ANY=""
-          for f in shards/*/missed.txt; do
-            n=$(count "$f")
-            TOTAL_MISSED=$((TOTAL_MISSED + n))
-            if [ "$n" -gt 0 ]; then MISSED_ANY="${MISSED_ANY}${f}"$'\n'; fi
+          for d in shards/*/; do
+            if [ -f "${d}caught.txt" ] || [ -f "${d}missed.txt" ]; then REPORTS=$((REPORTS + 1)); fi
+            TOTAL_CAUGHT=$((TOTAL_CAUGHT + $(count "${d}caught.txt")))
+            TOTAL_MISSED=$((TOTAL_MISSED + $(count "${d}missed.txt")))
+            TOTAL_TIMEOUT=$((TOTAL_TIMEOUT + $(count "${d}timeout.txt")))
+            TOTAL_UNVIABLE=$((TOTAL_UNVIABLE + $(count "${d}unviable.txt")))
           done
 
           {
@@ -1795,22 +1802,31 @@ jobs:
             echo ""
             echo "Sharded across parallel runners; only PR-diff changes were mutated."
             echo ""
+            echo "| Shard reports | Caught | Missed | Timed out | Unviable |"
+            echo "|---|---|---|---|---|"
+            echo "| ${REPORTS} | ${TOTAL_CAUGHT} | ${TOTAL_MISSED} | ${TOTAL_TIMEOUT} | ${TOTAL_UNVIABLE} |"
+            echo ""
             if [ "$TOTAL_MISSED" -gt 0 ]; then
               echo "## ${TOTAL_MISSED} surviving mutant(s)"
               echo ""
               echo '```'
               cat shards/*/missed.txt 2>/dev/null
               echo '```'
-            else
-              echo "No surviving mutants across all shards."
+            fi
+            if [ "$TOTAL_TIMEOUT" -gt 0 ]; then
+              echo "## ${TOTAL_TIMEOUT} mutant(s) timed out: not killed, inconclusive"
+              echo ""
+              echo '```'
+              cat shards/*/timeout.txt 2>/dev/null
+              echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # Gate 1: any shard that failed (survivors OR an error/timeout) makes
-          # the matrix result non-success. This is the authoritative gate.
+          # Gate 1: any shard that failed (survivors OR an error) makes the
+          # matrix result non-success. This is the authoritative gate.
           SHARD_RESULT="${{ needs.mutants-incremental-shard.result }}"
           echo "Shard matrix result: ${SHARD_RESULT}"
-          echo "Aggregated surviving mutants: ${TOTAL_MISSED}"
+          echo "Aggregated: caught ${TOTAL_CAUGHT}, missed ${TOTAL_MISSED}, timed out ${TOTAL_TIMEOUT}, unviable ${TOTAL_UNVIABLE}"
 
           if [ "$SHARD_RESULT" != "success" ]; then
             echo "::error::Incremental mutation testing failed (a shard reported survivors or errored). See the per-shard jobs."
@@ -1824,4 +1840,11 @@ jobs:
             exit 1
           fi
 
-          echo "All incremental mutants caught across all shards."
+          # Gate 3: a timeout is inconclusive, not caught. Each needs a test
+          # that kills it inside the limit, or a written reason it cannot.
+          if [ "$TOTAL_TIMEOUT" -gt 0 ]; then
+            echo "::error::${TOTAL_TIMEOUT} mutant(s) timed out in changed files: not killed by any test; see the summary."
+            exit 1
+          fi
+
+          echo "All ${TOTAL_CAUGHT} incremental mutants caught by a test across all shards (${TOTAL_UNVIABLE} unviable)."
