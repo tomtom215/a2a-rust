@@ -103,6 +103,7 @@ CI_ONLY: dict[tuple[str, str], str] = {
     ("release.yml", "validate"): _REL,
     ("release.yml", "ci"): _REL,
     ("release.yml", "security"): _REL,
+    ("release.yml", "ci-evidence"): _REL,
     ("release.yml", "package"): _REL,
     ("release.yml", "conformance"): _REL,
     ("release.yml", "attest-conformance"): _REL,

@@ -1619,6 +1619,26 @@ def build_registry() -> dict[str, Probe | Exempt]:
             Defect("a crate built from a dirty tree", _crate_fixture("dirty"), "dirty working tree"),
         ],
     )
+    # Adversarial review N13 (2026-11-13). The script's --self-test (run first
+    # by the same step) proves its verdicts over run and job lists; this proves
+    # the step around it reads the API through `gh` and fails the job.
+    reg["release.yml::ci-evidence::ci.yml concluded success for this commit"] = Probe(
+        healthy=_ci_evidence_fixture(),
+        defects=[
+            Defect("ci.yml failed for the commit", _ci_evidence_fixture("red-run"), "concluded 'failure'"),
+            Defect("a job was cancelled in a green run", _ci_evidence_fixture("cancelled-job"), "ended 'cancelled'"),
+            Defect("CI never ran on the commit", _ci_evidence_fixture("no-run"), "no completed push or dispatch run"),
+            Defect("only a pull_request run exists", _ci_evidence_fixture("pr-only"), "no completed push or dispatch run"),
+            Defect("the API cannot be read", _ci_evidence_fixture("api-error"), "could not be read"),
+        ],
+        context={"github.token": "fake-token"},
+    )
+    reg["release.yml::package::Release evidence manifest for the tagged commit"] = Probe(
+        healthy=_release_evidence_fixture(),
+        defects=[
+            Defect("a static gate fails at the tagged commit", _release_evidence_fixture("gate-fails"), "exited 1"),
+        ],
+    )
     for name, why in (
         ("Generate CycloneDX SBOMs", "needs cargo-cyclonedx and a full dependency resolve"),
         ("Extract CHANGELOG section for this version", "runs only after a real tag exists in the release job"),
@@ -2093,6 +2113,76 @@ def _crate_fixture(defect: str | None = None) -> Setup:
                 member.size = len(data)
                 tar.addfile(member, io.BytesIO(data))
         return {"__env__": {"GITHUB_SHA": sha}}
+
+    return setup
+
+
+_FAKE_GH = """#!/usr/bin/env python3
+import json, os, sys
+path, mode = sys.argv[-1], os.environ["FAKE_MODE"]
+if mode == "api-error":
+    print("HTTP 401: Bad credentials", file=sys.stderr)
+    sys.exit(1)
+sha = os.environ["GITHUB_SHA"]
+if "/workflows/ci.yml/runs" in path:
+    run = {"id": 7, "status": "completed", "conclusion": "failure" if mode == "red-run" else "success",
+           "event": "pull_request" if mode == "pr-only" else "push", "run_attempt": 1,
+           "created_at": "2026-11-13T00:00:00Z", "head_sha": sha, "html_url": "https://example.invalid/7"}
+    print(json.dumps({"workflow_runs": [] if mode == "no-run" else [run]}))
+else:
+    jobs = [{"name": "Test", "conclusion": "success"}, {"name": "Bench", "conclusion": "skipped"}]
+    if mode == "cancelled-job":
+        jobs.append({"name": "Test (macOS)", "conclusion": "cancelled"})
+    print(json.dumps({"jobs": jobs}))
+"""
+
+
+def _ci_evidence_fixture(mode: str = "green") -> Setup:
+    """`scripts/ci_evidence.py` with a `gh` on PATH that answers as GitHub would."""
+
+    def setup(d: Path) -> dict:
+        (d / "scripts").mkdir()
+        shutil.copyfile(REPO / "scripts/ci_evidence.py", d / "scripts/ci_evidence.py")
+        bin_dir = d / "bin"
+        bin_dir.mkdir()
+        gh = bin_dir / "gh"
+        gh.write_text(_FAKE_GH)
+        gh.chmod(0o755)
+        return {
+            "__cwd__": str(d),
+            "__env__": {
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                "FAKE_MODE": mode,
+                "GITHUB_SHA": "1" * 40,
+                "GITHUB_REPOSITORY": "owner/repo",
+            },
+        }
+
+    return setup
+
+
+def _release_evidence_fixture(defect: str | None = None) -> Setup:
+    """A committed tree holding `scripts/release_evidence.py` and stand-ins for
+    the static gates it runs, one of which fails when asked to."""
+
+    def setup(d: Path) -> dict:
+        (d / "scripts").mkdir()
+        shutil.copyfile(REPO / "scripts/release_evidence.py", d / "scripts/release_evidence.py")
+        for gate in ("check_file_lengths.sh", "check_spec_ledger.py", "check_api_reference.py",
+                     "check_panic_paths.py", "check_doc_escapes.py"):
+            fails = defect == "gate-fails" and gate == "check_panic_paths.py"
+            body = "import sys; sys.exit(1)\n" if gate.endswith(".py") else ""
+            if gate.endswith(".sh"):
+                body = "exit 0\n"
+            elif not fails:
+                body = "import sys; sys.exit(0)\n"
+            (d / "scripts" / gate).write_text(body)
+        (d / "Cargo.toml").write_text('[workspace.package]\nrust-version = "1.94"\n')
+        git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false"]
+        subprocess.run(["git", "init", "-q"], cwd=d, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True)
+        subprocess.run([*git, "commit", "-q", "-m", "fixture"], cwd=d, check=True)
+        return {"__cwd__": str(d)}
 
     return setup
 
