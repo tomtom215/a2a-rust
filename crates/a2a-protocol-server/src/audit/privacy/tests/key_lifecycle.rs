@@ -350,26 +350,68 @@ async fn a_hold_placed_during_an_erasure_stops_it_in_sqlite() {
     remove_db(&path);
 }
 
+/// A scratch database of its own, dropped by [`Scratch::drop_now`]: the
+/// audit suite's contract test clears the shared database's tables and
+/// counts its chains, and these tests' chains, written to the same
+/// database while it ran, failed it.
 #[cfg(feature = "postgres")]
-async fn two_postgres_pools() -> (Arc<dyn AuditStore>, Arc<dyn AuditStore>) {
-    let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+struct Scratch {
+    admin: sqlx::PgPool,
+    name: String,
+}
+
+#[cfg(feature = "postgres")]
+impl Scratch {
+    async fn drop_now(self) {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)",
+            self.name
+        )))
+        .execute(&self.admin)
+        .await
+        .unwrap();
+    }
+}
+
+/// Two pools, as two replicas would hold, over a scratch database.
+#[cfg(feature = "postgres")]
+async fn two_postgres_pools() -> (Arc<dyn AuditStore>, Arc<dyn AuditStore>, Scratch) {
+    let admin_url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+    let (base, _) = admin_url.rsplit_once('/').expect("a database path");
+    let name = format!(
+        "a2a_test_key_lifecycle_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let admin = crate::store::postgres_store::pool::pg_pool(&admin_url)
+        .await
+        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE \"{name}\"")))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let url = format!("{base}/{name}");
     let a = crate::audit::PostgresAuditStore::new(&url).await.unwrap();
     let b = crate::audit::PostgresAuditStore::new(&url).await.unwrap();
-    (Arc::new(a), Arc::new(b))
+    (Arc::new(a), Arc::new(b), Scratch { admin, name })
 }
 
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[ignore = "needs A2A_TEST_POSTGRES_URL"]
 async fn a_key_dropped_during_an_append_is_made_again_in_postgres() {
-    let (a, b) = two_postgres_pools().await;
+    let (a, b, scratch) = two_postgres_pools().await;
     cleanup_during_an_append(a, b).await;
+    scratch.drop_now().await;
 }
 
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[ignore = "needs A2A_TEST_POSTGRES_URL"]
 async fn a_hold_placed_during_an_erasure_stops_it_in_postgres() {
-    let (a, b) = two_postgres_pools().await;
+    let (a, b, scratch) = two_postgres_pools().await;
     hold_during_an_erasure(a, b).await;
+    scratch.drop_now().await;
 }
