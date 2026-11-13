@@ -22,13 +22,13 @@ impl StepJournal for FailsAt {
     fn load<'a>(
         &'a self,
         key: &'a str,
-    ) -> crate::tool_loop::JournalFuture<'a, Option<crate::tool_loop::RunCheckpoint>> {
+    ) -> crate::tool_loop::JournalFuture<'a, Option<crate::tool_loop::JournalEntry>> {
         self.inner.load(key)
     }
     fn save<'a>(
         &'a self,
         key: &'a str,
-        cp: &'a crate::tool_loop::RunCheckpoint,
+        cp: &'a crate::tool_loop::JournalEntry,
     ) -> crate::tool_loop::JournalFuture<'a, ()> {
         let nth = self.writes.fetch_add(1, Ordering::SeqCst) + 1;
         if nth == self.n {
@@ -40,8 +40,25 @@ impl StepJournal for FailsAt {
         }
         self.inner.save(key, cp)
     }
-    fn clear<'a>(&'a self, key: &'a str) -> crate::tool_loop::JournalFuture<'a, ()> {
-        self.inner.clear(key)
+    fn clear<'a>(&'a self, key: &'a str, revision: u64) -> crate::tool_loop::JournalFuture<'a, ()> {
+        self.inner.clear(key, revision)
+    }
+    fn sweep(&self, done: i64, unfinished: i64) -> crate::tool_loop::JournalFuture<'_, u64> {
+        self.inner.sweep(done, unfinished)
+    }
+    fn runs_of<'a>(
+        &'a self,
+        principal: &'a str,
+        tenant: Option<&'a str>,
+    ) -> crate::tool_loop::JournalFuture<'a, Vec<crate::tool_loop::RunSummary>> {
+        self.inner.runs_of(principal, tenant)
+    }
+    fn erase<'a>(
+        &'a self,
+        principal: &'a str,
+        tenant: Option<&'a str>,
+    ) -> crate::tool_loop::JournalFuture<'a, u64> {
+        self.inner.erase(principal, tenant)
     }
 }
 

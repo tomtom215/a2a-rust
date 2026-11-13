@@ -5,7 +5,6 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::sync::Arc;
 
 use a2a_protocol_types::budget::BudgetHandle;
 use tokio_util::sync::CancellationToken;
@@ -92,7 +91,7 @@ pub struct ToolLoop {
     pub(super) text_recovery: TextCallRecovery,
     pub(super) trace_content: TraceContent,
     pub(super) argument_check: ArgumentCheck,
-    pub(super) journal: Option<Arc<dyn StepJournal>>,
+    pub(super) journal: super::journal_codec::JournalHandle,
     /// The deployment's own pins, checked on resume.
     pub(super) pin_labels: BTreeMap<String, String>,
     /// Whether the idempotency secret was set, so keys agree across replicas.
@@ -114,7 +113,7 @@ impl fmt::Debug for ToolLoop {
             .field("text_recovery", &self.text_recovery)
             .field("trace_content", &self.trace_content)
             .field("argument_check", &self.argument_check)
-            .field("journal", &self.journal.is_some())
+            .field("journal", &self.journal)
             .field("policy", &self.policy.is_some())
             .field("agent_name", &self.agent_name)
             .field("model_retry", &self.model_retry)
@@ -136,7 +135,7 @@ impl ToolLoop {
             text_recovery: TextCallRecovery::All,
             trace_content: TraceContent::Full,
             argument_check: ArgumentCheck::Off,
-            journal: None,
+            journal: super::journal_codec::JournalHandle::default(),
             pin_labels: BTreeMap::new(),
             secret_set: false,
             policy: None,
@@ -259,7 +258,11 @@ impl ToolLoop {
         let names = self.tools.names();
         let (mut journal, restored) =
             RunJournal::open(self, scope, user_text, &specs, side.approval, side.identity).await?;
-        let (mut progress, first_turn, mut resume, identity) = restored.begin(side.trace);
+        let (mut progress, first_turn, mut resume, identity, finished) = restored.begin(side.trace);
+        if let Some(done) = finished {
+            // Finished before: the same answer again, and nothing else (N04).
+            return Answer::from_reply(done.text, progress.trace, done.finish_reason);
+        }
         let identity = identity.as_ref().or(side.identity);
 
         for turn in first_turn..self.max_turns {
@@ -274,8 +277,9 @@ impl ToolLoop {
                     .await?;
                 match self.turn_of(reply, turn, &names, &side, &mut progress) {
                     Turn::Answer(text, finish_reason) => {
-                        let answer = Answer::from_reply(text, progress.trace, finish_reason)?;
-                        journal.clear().await;
+                        let answer =
+                            Answer::from_reply(text, progress.trace.clone(), finish_reason)?;
+                        journal.complete((turn, false), &progress, &answer).await?;
                         return Ok(answer);
                     }
                     Turn::Calls(calls, from_text) => {

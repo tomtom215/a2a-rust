@@ -1698,6 +1698,20 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A journaled run's end was unfenced and came before the task's result, and its checkpoints were a plaintext copy of every run outside
+  erasure** (adversarial review of 2026-11-13, N04 and N07; the step journal is new in this release, so its contract changes here).
+  `StepJournal::clear(key)` deleted whatever was stored, so a stale invocation's final answer removed a newer invocation's checkpoint; and the
+  loop cleared the checkpoint before the executor published the answer, so a process that died in between lost the conversation, the receipts
+  and the answer. A final answer is now a *completed* checkpoint written under the revision fence (a stale invocation gets `LoopError::Journal`
+  and publishes nothing), a run begun again under its key returns that answer without asking a model or running a tool, `clear` takes the
+  revision it deletes, and nothing in the loop deletes: `StepJournal::sweep(completed_before, unfinished_before)` does. Each entry
+  (`JournalEntry`) now records its owner (`RunOwner`: tenant, caller, task, from the request and kept when an approver resumes), for
+  `StepJournal::runs_of` (an access request) and `StepJournal::erase` (a person's erasure, which the task store's and audit log's do not reach);
+  and `ToolLoop::with_journal_cipher` (`encryption`) seals each body with a `ContentCipher` bound to the run's key and revision. The SQLite and
+  PostgreSQL tables gain `tenant`, `principal`, `task` and `completed`, added in place to a table an earlier build made. Reproduced first: on
+  the old code a stale invocation published its answer and the newer checkpoint was gone, and a replay after completion asked the model again
+  (`tool_loop/run_tests/journal_finish.rs`); the sealed journal holds none of three canaries placed in the prompt, a tool's arguments and its
+  result (`journal_sealed.rs`).
 - **Across replicas, a key cleanup could delete the key of a record being appended, and an erasure could delete keys under a legal hold**
   (adversarial review of 2026-11-13, N03; S8 of 2026-11-12). The chain lock is per process. Replica A made a new person's key and, before its
   append, replica B's key cleanup (which every `purge` runs) found the key unused and deleted it; A then stored a record whose actor could never

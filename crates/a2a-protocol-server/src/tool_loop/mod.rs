@@ -82,6 +82,7 @@ mod drafts;
 mod executor;
 mod idempotency;
 mod journal;
+mod journal_codec;
 mod journaling;
 mod limit;
 mod loop_error;
@@ -111,8 +112,9 @@ pub use journal::PostgresStepJournal;
 #[cfg(feature = "sqlite")]
 pub use journal::SqliteStepJournal;
 pub use journal::{
-    ActionReceipt, CHECKPOINT_VERSION, InMemoryStepJournal, JournalError, JournalFuture,
-    PendingApproval, Pins, ReceiptState, RunCheckpoint, StepJournal,
+    ActionReceipt, CHECKPOINT_VERSION, FinalAnswer, InMemoryStepJournal, JournalEntry,
+    JournalError, JournalFuture, PendingApproval, Pins, ReceiptState, RunCheckpoint, RunOwner,
+    RunSummary, SEALED_CHECKPOINT_PREFIX, StepJournal,
 };
 pub use limit::{InferenceLimit, LimitedModel};
 pub use loop_error::ApprovalNeeded;

@@ -82,7 +82,18 @@ async fn a_run_begun_again_resumes_and_does_not_repeat_a_call() {
         "{:?}",
         answer.trace
     );
-    assert_eq!(j.len(), 0, "a finished run is cleared");
+    // A finished run is kept, completed, with its answer (N04).
+    assert_eq!(
+        (j.len(), j.unfinished()),
+        (1, 0),
+        "a finished run is kept, completed"
+    );
+    let kept = j.load(KEY).await.unwrap().unwrap();
+    assert!(kept.completed);
+    assert_eq!(
+        kept.checkpoint().unwrap().answer.map(|a| a.text),
+        Some(answer.text.clone())
+    );
 }
 
 /// The control: with no journal the same death loses the run, and the tool is
@@ -314,7 +325,13 @@ async fn a_call_that_may_have_run_is_rerun_under_the_same_key_when_the_secret_is
     let j = journal();
     let keys = Arc::new(Mutex::new(Vec::new()));
     died_mid_call(&j, &keys).await;
-    let stored = j.load(KEY).await.unwrap().expect("a checkpoint");
+    let stored = j
+        .load(KEY)
+        .await
+        .unwrap()
+        .expect("a checkpoint")
+        .checkpoint()
+        .unwrap();
     assert_eq!(
         stored.receipts.iter().map(|r| r.state).collect::<Vec<_>>(),
         [ReceiptState::Started]
@@ -367,11 +384,15 @@ async fn a_checkpoint_of_another_version_is_refused() {
     let (transfer, _) = mutating();
     let (model, _) = Scripted::new(vec![one_transfer(), model_fails()]);
     let _ = run_keyed(&looped(model, vec![transfer], &j), KEY, Side::default()).await;
-    let mut stored = j.load(KEY).await.unwrap().unwrap();
-    j.clear(KEY).await.unwrap();
+    let entry = j.load(KEY).await.unwrap().unwrap();
+    j.clear(KEY, entry.revision).await.unwrap();
+    let mut stored = entry.checkpoint().unwrap();
     stored.version = 99;
     stored.revision = 1;
-    j.save(KEY, &stored).await.unwrap();
+    let mut entry = entry;
+    entry.revision = 1;
+    entry.body = crate::tool_loop::journal::to_text(&stored).unwrap();
+    j.save(KEY, &entry).await.unwrap();
     let (transfer, used) = mutating();
     let (model, _) = Scripted::new(vec![text("done")]);
     let r = run_keyed(&looped(model, vec![transfer], &j), KEY, Side::default()).await;

@@ -48,19 +48,42 @@
 //!   here with the digest of that exact call; see
 //!   [`PolicyDecision::RequireApproval`](super::PolicyDecision::RequireApproval).
 //!
+//! * **A finished run is kept, not deleted.** Its final answer is written as a
+//!   *completed* checkpoint, under the same revision fence as every other
+//!   write, before the loop returns it. A run begun again under that key
+//!   returns the stored answer, asks no model and runs no tool, so a process
+//!   that died between the answer and the task's `Completed` publishes the
+//!   same answer when the run is replayed (adversarial review N04,
+//!   2026-11-13; until then the checkpoint was deleted before the executor
+//!   published, and an unfenced delete of a stale run could remove a newer
+//!   run's checkpoint). The loop never deletes; [`StepJournal::sweep`] does,
+//!   on the deployment's retention schedule, and [`StepJournal::clear`] only
+//!   the revision it is given.
+//! * **Who a run is for, and how long it is kept** (N07). Each entry carries
+//!   its owner (tenant, authenticated caller, task) in fields of their own,
+//!   so [`StepJournal::runs_of`] can list a person's runs for an access
+//!   request, [`StepJournal::erase`] can delete them, and
+//!   [`StepJournal::sweep`] can drop completed runs past a replay window and
+//!   unfinished ones past a longer one. A run's content (the conversation,
+//!   tool arguments and results, the trace) is in the entry's body, which
+//!   `ToolLoop::with_journal_cipher` (the `encryption` feature) seals with a
+//!   `ContentCipher`; without one the body is JSON.
+//!
 //! The journal is the run's, not the task's: it is keyed by what the loop is
-//! given as its scope, and a finished run is cleared. Compensation (undoing a
-//! call that ran) and retry policy beyond the model retry are not here.
+//! given as its scope. Neither the task store's erasure nor the audit log's
+//! reaches it: call [`StepJournal::erase`] alongside them. Compensation
+//! (undoing a call that ran) and retry policy beyond the model retry are not
+//! here.
 
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
 use super::model::{ChatMessage, ToolCall};
 
+mod memory;
 #[cfg(feature = "postgres")]
 mod postgres;
 #[cfg(feature = "sqlite")]
@@ -69,6 +92,7 @@ mod sqlite;
 #[cfg(test)]
 mod tests;
 
+pub use memory::InMemoryStepJournal;
 #[cfg(feature = "postgres")]
 pub use postgres::PostgresStepJournal;
 #[cfg(feature = "sqlite")]
@@ -169,6 +193,20 @@ pub struct RunCheckpoint {
     pub receipts: Vec<ActionReceipt>,
     /// The call waiting for a decision, if one is.
     pub pending_approval: Option<PendingApproval>,
+    /// The run's final answer, once it has one: the run is over, and a run
+    /// begun again under its key returns this.
+    #[serde(default)]
+    pub answer: Option<FinalAnswer>,
+}
+
+/// What a finished run answered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct FinalAnswer {
+    /// The model's final text.
+    pub text: String,
+    /// Why the final reply stopped, as the provider said.
+    pub finish_reason: Option<String>,
 }
 
 /// Why a journal did not do what it was asked.
@@ -195,61 +233,180 @@ impl std::error::Error for JournalError {}
 /// What a journal's methods return.
 pub type JournalFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, JournalError>> + Send + 'a>>;
 
+/// Whose run an entry is: from the authenticated request, never from what the
+/// model wrote. What [`StepJournal::runs_of`] and [`StepJournal::erase`] find
+/// a run by.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct RunOwner {
+    /// The request's tenant.
+    pub tenant: Option<String>,
+    /// The authenticated caller the run answers.
+    pub principal: Option<String>,
+    /// The task the run belongs to.
+    pub task: Option<String>,
+}
+
+impl RunOwner {
+    /// An owner from its three parts.
+    #[must_use]
+    pub const fn new(
+        tenant: Option<String>,
+        principal: Option<String>,
+        task: Option<String>,
+    ) -> Self {
+        Self {
+            tenant,
+            principal,
+            task,
+        }
+    }
+
+    /// Whether this is `principal`'s, in `tenant` when one is given.
+    #[must_use]
+    pub fn is_of(&self, principal: &str, tenant: Option<&str>) -> bool {
+        self.principal.as_deref() == Some(principal)
+            && tenant.is_none_or(|t| self.tenant.as_deref() == Some(t))
+    }
+}
+
+/// One run as a [`StepJournal`] stores it. The journal reads `revision`,
+/// `owner`, `completed` and `updated_at_ms`; `body` is opaque to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct JournalEntry {
+    /// Counts the run's writes; see [`StepJournal::save`].
+    pub revision: u64,
+    /// Whose run it is.
+    pub owner: RunOwner,
+    /// Whether the run has its final answer.
+    pub completed: bool,
+    /// When the entry was written, in Unix milliseconds.
+    pub updated_at_ms: i64,
+    /// The [`RunCheckpoint`]: JSON, or sealed by the loop's journal cipher
+    /// (a string beginning [`SEALED_CHECKPOINT_PREFIX`]).
+    pub body: String,
+}
+
+impl JournalEntry {
+    /// An entry from its parts.
+    #[must_use]
+    pub const fn new(
+        revision: u64,
+        owner: RunOwner,
+        completed: bool,
+        updated_at_ms: i64,
+        body: String,
+    ) -> Self {
+        Self {
+            revision,
+            owner,
+            completed,
+            updated_at_ms,
+            body,
+        }
+    }
+
+    /// The checkpoint, when the body is not sealed: for an operator reading
+    /// a journal written without a cipher.
+    ///
+    /// # Errors
+    ///
+    /// [`JournalError::Store`] when the body is sealed or unreadable.
+    pub fn checkpoint(&self) -> Result<RunCheckpoint, JournalError> {
+        if self.body.starts_with(SEALED_CHECKPOINT_PREFIX) {
+            return Err(JournalError::Store(
+                "the checkpoint is sealed; the loop's journal cipher opens it".to_owned(),
+            ));
+        }
+        from_text(&self.body)
+    }
+
+    /// What [`StepJournal::runs_of`] lists of this entry under `key`.
+    #[must_use]
+    pub fn summary(&self, key: &str) -> RunSummary {
+        RunSummary {
+            key: key.to_owned(),
+            revision: self.revision,
+            owner: self.owner.clone(),
+            completed: self.completed,
+            updated_at_ms: self.updated_at_ms,
+        }
+    }
+}
+
+/// What [`StepJournal::runs_of`] lists of a run: everything but its content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct RunSummary {
+    /// The run's key.
+    pub key: String,
+    /// Its revision.
+    pub revision: u64,
+    /// Whose run it is.
+    pub owner: RunOwner,
+    /// Whether it has its final answer.
+    pub completed: bool,
+    /// When it was last written, in Unix milliseconds.
+    pub updated_at_ms: i64,
+}
+
+/// The prefix of a checkpoint body sealed by the loop's journal cipher.
+pub const SEALED_CHECKPOINT_PREFIX: &str = "a2a-sealed-run:v1:";
+
 /// Where a run's checkpoints are kept.
 ///
-/// An implementation must make [`save`](Self::save) atomic: it stores
-/// `checkpoint` only if the revision stored is `checkpoint.revision - 1` (none
-/// stored counts as `0`), and returns [`JournalError::Conflict`] otherwise.
+/// An implementation must make [`save`](Self::save) and
+/// [`clear`](Self::clear) atomic compare-and-sets on the revision: that is
+/// the fence that keeps a replica which lost its claim from overwriting, or
+/// deleting, a newer run's progress.
 pub trait StepJournal: Send + Sync + 'static {
-    /// The checkpoint stored under `key`, if there is one.
-    fn load<'a>(&'a self, key: &'a str) -> JournalFuture<'a, Option<RunCheckpoint>>;
+    /// The entry stored under `key`, if there is one.
+    fn load<'a>(&'a self, key: &'a str) -> JournalFuture<'a, Option<JournalEntry>>;
 
-    /// Stores `checkpoint` under `key` if it follows the one stored.
-    fn save<'a>(&'a self, key: &'a str, checkpoint: &'a RunCheckpoint) -> JournalFuture<'a, ()>;
+    /// Stores `entry` under `key` only if the revision stored is
+    /// `entry.revision - 1` (none stored counts as `0`), and returns
+    /// [`JournalError::Conflict`] otherwise.
+    fn save<'a>(&'a self, key: &'a str, entry: &'a JournalEntry) -> JournalFuture<'a, ()>;
 
-    /// Forgets `key`: the run is over.
-    fn clear<'a>(&'a self, key: &'a str) -> JournalFuture<'a, ()>;
+    /// Deletes the entry under `key` only if its revision is `revision`:
+    /// [`JournalError::Conflict`] when another revision is stored, `Ok` when
+    /// none is. A stale run's delete cannot remove a newer run's entry.
+    fn clear<'a>(&'a self, key: &'a str, revision: u64) -> JournalFuture<'a, ()>;
+
+    /// Deletes completed runs last written before `completed_before_ms` and
+    /// unfinished ones last written before `unfinished_before_ms` (Unix
+    /// milliseconds); returns how many went. A run still going when its entry
+    /// is swept is refused its next write ([`JournalError::Conflict`]: none
+    /// stored takes only revision 1), so the unfinished cutoff must be well
+    /// past the longest run and its approvals.
+    fn sweep(&self, completed_before_ms: i64, unfinished_before_ms: i64) -> JournalFuture<'_, u64>;
+
+    /// Every run of `principal`, in `tenant` when one is given, without its
+    /// content: for an access request, and to know what
+    /// [`erase`](Self::erase) would delete.
+    fn runs_of<'a>(
+        &'a self,
+        principal: &'a str,
+        tenant: Option<&'a str>,
+    ) -> JournalFuture<'a, Vec<RunSummary>>;
+
+    /// Deletes every run of `principal`, in `tenant` when one is given;
+    /// returns how many went. What a person's erasure must call for the
+    /// journal: the task store's and the audit log's do not reach it. A
+    /// person named only inside a run's content (a tool argument, a message)
+    /// is not found by this.
+    fn erase<'a>(&'a self, principal: &'a str, tenant: Option<&'a str>) -> JournalFuture<'a, u64>;
 }
 
-/// A journal in this process's memory, for tests and for a deployment that
-/// keeps a run on one replica and accepts losing it with the process.
-#[derive(Debug, Default)]
-pub struct InMemoryStepJournal {
-    runs: Mutex<HashMap<String, String>>,
-}
-
-impl InMemoryStepJournal {
-    /// An empty journal.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// How many runs it holds.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.runs
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .len()
-    }
-
-    /// Whether it holds none.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
-
-/// The revision of a stored checkpoint's text, without reading the rest of it.
-pub(super) fn revision_of(text: &str) -> Result<u64, JournalError> {
-    #[derive(Deserialize)]
-    struct Revision {
-        revision: u64,
-    }
-    serde_json::from_str::<Revision>(text)
-        .map(|r| r.revision)
-        .map_err(|e| JournalError::Store(format!("a stored checkpoint is unreadable: {e}")))
+/// The time now in Unix milliseconds, for an entry's `updated_at_ms`.
+pub(super) fn now_ms() -> i64 {
+    i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis()),
+    )
+    .unwrap_or(i64::MAX)
 }
 
 pub(super) fn to_text(checkpoint: &RunCheckpoint) -> Result<String, JournalError> {
@@ -260,45 +417,4 @@ pub(super) fn to_text(checkpoint: &RunCheckpoint) -> Result<String, JournalError
 pub(super) fn from_text(text: &str) -> Result<RunCheckpoint, JournalError> {
     serde_json::from_str(text)
         .map_err(|e| JournalError::Store(format!("a stored checkpoint is unreadable: {e}")))
-}
-
-impl StepJournal for InMemoryStepJournal {
-    fn load<'a>(&'a self, key: &'a str) -> JournalFuture<'a, Option<RunCheckpoint>> {
-        Box::pin(async move {
-            let text = self
-                .runs
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .get(key)
-                .cloned();
-            text.map(|t| from_text(&t)).transpose()
-        })
-    }
-
-    fn save<'a>(&'a self, key: &'a str, checkpoint: &'a RunCheckpoint) -> JournalFuture<'a, ()> {
-        Box::pin(async move {
-            let text = to_text(checkpoint)?;
-            let mut runs = self
-                .runs
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let stored = runs.get(key).map_or(Ok(0), |t| revision_of(t))?;
-            if stored.checked_add(1) != Some(checkpoint.revision) {
-                return Err(JournalError::Conflict);
-            }
-            runs.insert(key.to_owned(), text);
-            drop(runs);
-            Ok(())
-        })
-    }
-
-    fn clear<'a>(&'a self, key: &'a str) -> JournalFuture<'a, ()> {
-        Box::pin(async move {
-            self.runs
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .remove(key);
-            Ok(())
-        })
-    }
 }

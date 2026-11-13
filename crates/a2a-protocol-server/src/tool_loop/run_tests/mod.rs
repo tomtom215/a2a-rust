@@ -238,6 +238,9 @@ mod idempotency;
 mod journal;
 mod journal_approval;
 mod journal_binding;
+mod journal_finish;
+#[cfg(feature = "encryption")]
+mod journal_sealed;
 mod journal_writes;
 mod recovery;
 mod retry;
