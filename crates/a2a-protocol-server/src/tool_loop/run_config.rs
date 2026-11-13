@@ -83,6 +83,36 @@ impl ToolLoop {
         self
     }
 
+    /// Shows the model at most `bytes` of one tool's result; the rest is cut,
+    /// at a character boundary, and the model is told how much there was
+    /// ([`DEFAULT_RESULT_LIMIT`](super::DEFAULT_RESULT_LIMIT), 1 MiB). The
+    /// tool ran either way; this bounds what the run keeps of it (N09).
+    #[must_use]
+    pub const fn with_result_limit(mut self, bytes: usize) -> Self {
+        self.byte_limits.result = bytes;
+        self
+    }
+
+    /// Sends no model request past `bytes` (preamble, conversation and tool
+    /// catalogue, as JSON): the run ends with
+    /// [`LoopError::TooLarge`](super::LoopError::TooLarge) instead
+    /// ([`DEFAULT_REQUEST_LIMIT`](super::DEFAULT_REQUEST_LIMIT), 8 MiB; N09).
+    #[must_use]
+    pub const fn with_request_limit(mut self, bytes: usize) -> Self {
+        self.byte_limits.request = bytes;
+        self
+    }
+
+    /// Writes no checkpoint body past `bytes`: the run stops before the step
+    /// it would have recorded, as for any checkpoint the journal cannot write
+    /// ([`DEFAULT_CHECKPOINT_LIMIT`](super::DEFAULT_CHECKPOINT_LIMIT),
+    /// 32 MiB; N09).
+    #[must_use]
+    pub const fn with_checkpoint_limit(mut self, bytes: usize) -> Self {
+        self.journal.max_body = bytes;
+        self
+    }
+
     /// Whether a journal is installed.
     pub(in crate::tool_loop) fn has_journal(&self) -> bool {
         self.journal.store.is_some()

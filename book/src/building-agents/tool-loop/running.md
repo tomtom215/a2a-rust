@@ -55,6 +55,23 @@ The default of eight turns is four more than the two rounds a
 discover-then-query catalogue needs, and small enough that a model which never
 stops calling tools fails in seconds rather than at the executor timeout.
 
+## How many bytes a run holds
+
+Turns and calls per turn are bounded; so are bytes (adversarial review N09,
+2026-11-13):
+
+| Setting | Default | What happens past it |
+|---|---|---|
+| `with_result_limit(bytes)` | 1 MiB (`DEFAULT_RESULT_LIMIT`) | A tool's result is cut at a character boundary and the model is told how many bytes there were and how many it is shown. The tool ran; its receipt holds a digest of the arguments, never the result |
+| `with_request_limit(bytes)` | 8 MiB (`DEFAULT_REQUEST_LIMIT`) | The model request (preamble, conversation, tool catalogue) is not sent; the run ends `LoopError::TooLarge` (failure class `budget-exhausted`) |
+| `with_checkpoint_limit(bytes)` | 32 MiB (`DEFAULT_CHECKPOINT_LIMIT`) | The checkpoint is not written, and the run stops before the step it would have recorded, as for any checkpoint the journal cannot write |
+
+A reply that names two calls with one id is refused before any of its calls
+runs (`LoopError::AmbiguousCalls`): their results could not be told apart. An
+id a provider uses again in a later turn is fine: each call's receipt is kept
+by turn and id. A call that came without an id is given one that no other call
+of the run has.
+
 ## Resuming a run, and approving a call
 
 A run's conversation, its record of calls already answered and its trace live in

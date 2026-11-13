@@ -45,6 +45,7 @@ fn checkpoint(revision: u64) -> RunCheckpoint {
         trace: vec!["transfer [c1]: ran".to_owned()],
         done: HashMap::from([("k".to_owned(), "v".to_owned())]),
         receipts: vec![ActionReceipt {
+            turn: 2,
             call_id: "c1".to_owned(),
             tool: "transfer".to_owned(),
             arguments: "sha256:dd".to_owned(),

@@ -113,7 +113,7 @@ impl RunJournal<'_> {
         if let Some(call) = calls.iter().find(|c| {
             cp.receipts
                 .iter()
-                .any(|r| r.call_id == c.id && r.state == ReceiptState::Started)
+                .any(|r| r.is(cp.turn, &c.id) && r.state == ReceiptState::Started)
         }) && !tool_loop.secret_set
         {
             return Err(LoopError::Indeterminate {

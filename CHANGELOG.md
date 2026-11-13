@@ -1029,6 +1029,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **The tool loop bounds the bytes a run holds** (adversarial review of 2026-11-13, N09). Turns and calls were bounded, and the bundled
+  adapter bounded a provider's response, but a tool's result was kept whole in the conversation, sent again on every later turn and written
+  again in every checkpoint (on the old code a 2 MiB result reached the model whole). Now a result past `ToolLoop::with_result_limit`
+  (default 1 MiB) is cut and the model is told so; a model request past `with_request_limit` (default 8 MiB) is not sent and the run ends
+  `LoopError::TooLarge`; a checkpoint past `with_checkpoint_limit` (default 32 MiB) is not written and the run stops before the step. A
+  deployment whose tools return more than 1 MiB that the model must read sets the limit higher.
 - **A client selects only `1.0` card interfaces, whatever the patch** (adversarial review of 2026-11-13, N11). Any `protocolVersion` with major 1
   counted, so a card listing a `1.1` interface before its `1.0` one was served `A2A-Version: 1.0` at the `1.1` endpoint, which processes a
   request with exactly the `Major.Minor` it names (spec §3.6.2). `1.1`, and any minor but `0`, is now passed over; `1.0.1`, `v1.0` and a bare
@@ -1706,6 +1712,14 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **Two calls with one id, and an id used again, could cross their results and receipts** (adversarial review of 2026-11-13, N08). A reply
+  naming two calls with one id ran both; their results went back under one id, and the journal kept one receipt for both and could answer
+  the second from the first's result on resume. A call that came without an id was given `call-<turn>-<position>` even when the provider had
+  used that name in the same reply. And receipts were found by id alone, so an id used again in a later turn updated the earlier call's
+  receipt and the later call had none. A reply naming one id twice is now refused before any call runs (`LoopError::AmbiguousCalls`), a
+  generated id takes a suffix when the name is taken, and receipts are kept by turn and id (`ActionReceipt::turn`). Reproduced first: on the
+  old code the ambiguous reply ran its calls, the reused id left one receipt, and two results went back under `call-0-1`
+  (`tool_loop/run_tests/limits_and_ids.rs`).
 - **An extended agent card was adopted unverified by a client built from a verified signed card** (adversarial review of 2026-11-13, N10).
   `ClientBuilder::from_signed_card` verified the public card and kept nothing of the keys, so `get_extended_agent_card` adopted an extended
   card's capabilities and security requirements with no signature check. The client now keeps the keys (`ContentKeys`, feature `signing`) and

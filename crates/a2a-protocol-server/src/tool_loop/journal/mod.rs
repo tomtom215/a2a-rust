@@ -139,6 +139,11 @@ pub enum ReceiptState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ActionReceipt {
+    /// The turn whose reply asked for the call. With the id, what names one
+    /// call in a run: a provider may use an id again in a later turn
+    /// (adversarial review N08, 2026-11-13).
+    #[serde(default)]
+    pub turn: usize,
     /// The provider's id for the call.
     pub call_id: String,
     /// The tool.
@@ -147,6 +152,13 @@ pub struct ActionReceipt {
     pub arguments: String,
     /// Where the call stands.
     pub state: ReceiptState,
+}
+
+impl ActionReceipt {
+    /// Whether this is the receipt of call `call_id` of turn `turn`.
+    pub(crate) fn is(&self, turn: usize, call_id: &str) -> bool {
+        self.turn == turn && self.call_id == call_id
+    }
 }
 
 /// A call parked for a person's decision.

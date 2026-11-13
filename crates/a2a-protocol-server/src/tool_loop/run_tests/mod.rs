@@ -242,6 +242,7 @@ mod journal_finish;
 #[cfg(feature = "encryption")]
 mod journal_sealed;
 mod journal_writes;
+mod limits_and_ids;
 mod recovery;
 mod retry;
 mod schema;

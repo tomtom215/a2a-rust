@@ -16,13 +16,13 @@ use super::journaling::{RunJournal, Verdict};
 pub use super::loop_error::LoopError;
 use super::model::{ChatMessage, ChatRequest, ToolCall, ToolModel};
 use super::policy::{CallStatus, TextCallRecovery, ToolPolicy, TraceContent, TrustedIdentity};
-use super::recover;
 use super::retry::ModelRetry;
-use super::run_support::{charge_usage, give_ids, limit_calls};
+use super::run_support::charge_usage;
 use super::schema::ArgumentCheck;
 use super::steering::{Side, before_turn};
 use super::tool::ToolSet;
 use super::trace;
+use super::turn::Turn;
 use crate::rpc_span::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 
 /// The turn bound when none is set.
@@ -60,14 +60,6 @@ pub(super) struct Progress {
     pub(super) done: HashMap<String, String>,
 }
 
-/// What one model reply is.
-enum Turn {
-    /// The answer, and why the model stopped.
-    Answer(String, Option<String>),
-    /// Calls to run, and whether the model wrote them as text.
-    Calls(Vec<ToolCall>, bool),
-}
-
 /// A model, the tools it may call, and the bounded loop between them.
 ///
 /// Each turn sends the preamble, the whole conversation and the whole
@@ -92,6 +84,7 @@ pub struct ToolLoop {
     pub(super) trace_content: TraceContent,
     pub(super) argument_check: ArgumentCheck,
     pub(super) journal: super::journal_codec::JournalHandle,
+    pub(super) byte_limits: super::limits::ByteLimits,
     /// The deployment's own pins, checked on resume.
     pub(super) pin_labels: BTreeMap<String, String>,
     /// Whether the idempotency secret was set, so keys agree across replicas.
@@ -136,6 +129,7 @@ impl ToolLoop {
             trace_content: TraceContent::Full,
             argument_check: ArgumentCheck::Off,
             journal: super::journal_codec::JournalHandle::default(),
+            byte_limits: super::limits::ByteLimits::default(),
             pin_labels: BTreeMap::new(),
             secret_set: false,
             policy: None,
@@ -286,6 +280,7 @@ impl ToolLoop {
                         journal.save((turn, from_text), &progress).await?;
                         (calls, from_text)
                     }
+                    Turn::Ambiguous(id) => return Err(LoopError::AmbiguousCalls { id }),
                 }
             };
             let origin = Origin {
@@ -325,6 +320,13 @@ impl ToolLoop {
         before_turn(budget, side.inbox, &mut progress.messages)?;
         run.inference_call();
         let sink = side.sink(turn + 1);
+        let bytes = super::limits::request_bytes(&self.preamble, &progress.messages, specs);
+        if bytes > self.byte_limits.request {
+            return Err(LoopError::TooLarge {
+                bytes,
+                limit: self.byte_limits.request,
+            });
+        }
         let request = ChatRequest::new(&self.preamble, &progress.messages, specs);
         let reply = self
             .retried_turn(request, cancel, sink.as_ref(), budget)
@@ -353,7 +355,7 @@ impl ToolLoop {
             // Written before the call runs: a call the journal cannot record is
             // not run.
             if journal.enabled() {
-                journal.started(&call, super::journaling::arguments_digest(&call));
+                journal.started(step.0, &call, super::journaling::arguments_digest(&call));
                 journal.save(step, progress).await?;
             }
             match self
@@ -373,11 +375,11 @@ impl ToolLoop {
                         CallStatus::Failed => ReceiptState::Failed,
                         CallStatus::NotRun => ReceiptState::NotRun,
                     };
-                    journal.ended(&call.id, state);
+                    journal.ended(step.0, &call.id, state);
                     journal.save(step, progress).await?;
                 }
                 Err(LoopError::AwaitingApproval(needed)) => {
-                    journal.park(&call, &needed, origin.identity);
+                    journal.park(step.0, &call, &needed, origin.identity);
                     journal.save(step, progress).await?;
                     return Err(LoopError::AwaitingApproval(needed));
                 }
@@ -385,65 +387,6 @@ impl ToolLoop {
             }
         }
         Ok(())
-    }
-
-    /// What a reply is: the calls it asks for, with the assistant turn pushed
-    /// to `messages`, or the answer.
-    fn turn_of(
-        &self,
-        reply: super::model::ModelTurn,
-        turn: usize,
-        names: &[String],
-        side: &Side<'_>,
-        progress: &mut Progress,
-    ) -> Turn {
-        let mut text = reply.text;
-        let mut calls = reply.tool_calls;
-        let mut from_text = false;
-        limit_calls(
-            &mut calls,
-            self.max_calls_per_turn,
-            &mut progress.trace,
-            side.trace,
-        );
-        if calls.is_empty() {
-            let recovered = self.recovered(&text, names);
-            from_text = recovered.is_some();
-            let Some((name, arguments)) = recovered else {
-                return Turn::Answer(text, reply.finish_reason);
-            };
-            // The model wrote the call as text: run it as the call it is, and
-            // keep it in the conversation as one.
-            calls.push(ToolCall::new(
-                format!("recovered-{turn}"),
-                name,
-                arguments.to_string(),
-            ));
-            text.clear();
-        }
-        give_ids(&mut calls, turn);
-        progress.messages.push(ChatMessage::Assistant {
-            text,
-            tool_calls: calls.clone(),
-        });
-        Turn::Calls(calls, from_text)
-    }
-
-    /// The call a reply written as text is, if it is one the loop's
-    /// [`TextCallRecovery`] runs.
-    fn recovered(&self, text: &str, names: &[String]) -> Option<(String, serde_json::Value)> {
-        recover::text_call(text, names).filter(|(name, _)| {
-            let read_only = self.tools.get(name).is_some_and(|t| t.read_only());
-            self.text_recovery.permits(read_only)
-        })
-    }
-
-    /// The line `call` leaves in the caller's trace, as [`TraceContent`] says.
-    fn trace_line(&self, call: &ToolCall, content: &str, status: CallStatus) -> String {
-        match self.trace_content {
-            TraceContent::Full => trace::line(&call.name, &call.arguments, content),
-            TraceContent::Receipt => status.receipt(&call.name, &call.id),
-        }
     }
 
     /// One model turn, in its span, abandoned if `cancel` fires.

@@ -31,7 +31,9 @@
 //! `invalid_response`, `response_too_large`, `configuration`, `_OTHER`); for
 //! a call, `unknown_tool`, `invalid_arguments`, `tool_error`, `tool_fatal`;
 //! for a run, the turn's type when the model failed, `tool_fatal`,
-//! `turn_limit`, `budget_exhausted`, `empty_answer`. `cancelled` on all three
+//! `turn_limit`, `budget_exhausted`, `empty_answer`, `awaiting_approval`,
+//! `journal`, `pin_mismatch`, `indeterminate_call`, `ambiguous_calls`,
+//! `too_large` (`LoopError::error_type`). `cancelled` on all three
 //! is work abandoned before it ended: the token fired, or the future was
 //! dropped.
 //!

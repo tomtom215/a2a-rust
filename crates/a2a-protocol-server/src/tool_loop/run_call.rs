@@ -223,7 +223,13 @@ impl ToolLoop {
             () = cancel.cancelled() => return Err(LoopError::Cancelled),
             result = span.instrument(tool.call(invocation)) => result,
         };
-        Self::settled(result, &span, (&**tool, call, key), done)
+        Self::settled(
+            result,
+            &span,
+            (&**tool, call, key),
+            done,
+            self.byte_limits.result,
+        )
     }
 
     /// What a call that ran returns to the model and records.
@@ -232,7 +238,11 @@ impl ToolLoop {
         span: &GenAiSpan,
         (tool, call, key): (&dyn Tool, &ToolCall, String),
         done: &mut HashMap<String, String>,
+        limit: usize,
     ) -> Result<(String, CallStatus), LoopError> {
+        // What the model is shown, and what an identical call is answered
+        // with later, is bounded (N09).
+        let result = result.map(|output| crate::tool_loop::limits::bound_result(output, limit));
         match result {
             Ok(output) => {
                 span.succeeded();
@@ -243,7 +253,10 @@ impl ToolLoop {
             }
             Err(ToolError::Failed(e)) => {
                 span.failed("tool_error");
-                Ok((format!("error: {e}"), CallStatus::Failed))
+                Ok((
+                    crate::tool_loop::limits::bound_result(format!("error: {e}"), limit),
+                    CallStatus::Failed,
+                ))
             }
             Err(ToolError::Fatal(message)) => {
                 span.failed("tool_fatal");

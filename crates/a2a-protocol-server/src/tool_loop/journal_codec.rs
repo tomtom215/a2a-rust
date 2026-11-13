@@ -19,12 +19,25 @@ use super::journal::{JournalError, RunCheckpoint, SEALED_CHECKPOINT_PREFIX, Step
 type Coded<'a, T> =
     std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, JournalError>> + Send + 'a>>;
 
-/// A loop's journal: where checkpoints go, if anywhere, and what seals them.
-#[derive(Clone, Default)]
+/// A loop's journal: where checkpoints go, if anywhere, what seals them, and
+/// the largest body it writes.
+#[derive(Clone)]
 pub(super) struct JournalHandle {
     pub(super) store: Option<Arc<dyn StepJournal>>,
     #[cfg(feature = "encryption")]
     pub(super) cipher: Option<Arc<dyn crate::store::encrypted::ContentCipher>>,
+    pub(super) max_body: usize,
+}
+
+impl Default for JournalHandle {
+    fn default() -> Self {
+        Self {
+            store: None,
+            #[cfg(feature = "encryption")]
+            cipher: None,
+            max_body: super::limits::DEFAULT_CHECKPOINT_LIMIT,
+        }
+    }
 }
 
 impl std::fmt::Debug for JournalHandle {
@@ -60,6 +73,13 @@ impl JournalHandle {
     ) -> Coded<'a, String> {
         Box::pin(async move {
             let text = super::journal::to_text(checkpoint)?;
+            if text.len() > self.max_body {
+                return Err(JournalError::Store(format!(
+                    "a checkpoint of {} bytes is past the loop's checkpoint limit of {}",
+                    text.len(),
+                    self.max_body
+                )));
+            }
             #[cfg(feature = "encryption")]
             if let Some(cipher) = &self.cipher {
                 use base64::Engine as _;

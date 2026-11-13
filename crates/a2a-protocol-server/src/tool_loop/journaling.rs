@@ -207,13 +207,14 @@ impl<'a> RunJournal<'a> {
 
     /// Notes that `call` is about to run, to be written with the next
     /// checkpoint.
-    pub(super) fn started(&mut self, call: &ToolCall, arguments: String) {
+    pub(super) fn started(&mut self, turn: usize, call: &ToolCall, arguments: String) {
         if self.store.is_none() {
             return;
         }
-        match self.receipts.iter_mut().find(|r| r.call_id == call.id) {
+        match self.receipts.iter_mut().find(|r| r.is(turn, &call.id)) {
             Some(r) => r.state = ReceiptState::Started,
             None => self.receipts.push(ActionReceipt {
+                turn,
                 call_id: call.id.clone(),
                 tool: call.name.clone(),
                 arguments,
@@ -223,8 +224,8 @@ impl<'a> RunJournal<'a> {
     }
 
     /// Notes how `call` ended.
-    pub(super) fn ended(&mut self, call_id: &str, state: ReceiptState) {
-        if let Some(r) = self.receipts.iter_mut().find(|r| r.call_id == call_id) {
+    pub(super) fn ended(&mut self, turn: usize, call_id: &str, state: ReceiptState) {
+        if let Some(r) = self.receipts.iter_mut().find(|r| r.is(turn, call_id)) {
             r.state = state;
         }
         self.pending = None;
@@ -233,11 +234,12 @@ impl<'a> RunJournal<'a> {
     /// Parks the run on `call`.
     pub(super) fn park(
         &mut self,
+        turn: usize,
         call: &ToolCall,
         needed: &ApprovalNeeded,
         identity: Option<&TrustedIdentity>,
     ) {
-        self.ended(&call.id, ReceiptState::AwaitingApproval);
+        self.ended(turn, &call.id, ReceiptState::AwaitingApproval);
         self.pending = Some(PendingApproval {
             call: call.clone(),
             digest: needed.digest.clone(),
