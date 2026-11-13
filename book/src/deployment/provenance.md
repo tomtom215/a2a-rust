@@ -55,6 +55,13 @@ let card = resolve_agent_card_with_options("https://agent.example.com", &options
   caches a card that fails. For a card you hold as JSON,
   `ClientBuilder::from_signed_card(&json, keys)` verifies it as given and
   then builds as `from_card` does. Both since 0.15.
+- **The extended card too:** since 0.16 a client from `from_signed_card` keeps
+  the keys, and `get_extended_agent_card` verifies the extended card's JSON
+  against them before anything is read or adopted from it; a card with no
+  signature, or none that verifies, fails the call and the client keeps what
+  it had. A client built from a card that discovery verified sets the same
+  keys with `ClientBuilder::with_card_signature_keys(keys)`. A client with no
+  card keys checks an extended card's shape only.
 
 - **Algorithms:** ES256 (P-256) and EdDSA (Ed25519). A key is only ever
   tried under the algorithm its type is for.

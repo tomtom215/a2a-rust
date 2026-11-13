@@ -31,8 +31,31 @@ impl crate::client::A2aClient {
     /// configured under no tenant at all — a `TaskNotFound` against a
     /// tenant-partitioned server, and a cross-tenant request against one that
     /// resolves the tenant itself.
-    pub(crate) fn tenant_or_default(&self, requested: Option<String>) -> Option<String> {
-        requested.or_else(|| self.config.tenant.clone())
+    ///
+    /// A tenant the caller names is sent as named, an escape hatch from rule 4
+    /// for a deployment whose tenants are not each a card interface; with
+    /// `ClientBuilder::with_strict_interface_tenant` one other than the
+    /// selected interface's is refused instead (adversarial review N12).
+    ///
+    /// # Errors
+    ///
+    /// [`ClientError::Config`](crate::error::ClientError::Config) for a
+    /// tenant other than the interface's, under the strict mode.
+    pub(crate) fn tenant_or_default(
+        &self,
+        requested: Option<String>,
+    ) -> crate::error::ClientResult<Option<String>> {
+        if self.tenant_policy == crate::client::TenantPolicy::Strict
+            && let Some(named) = &requested
+            && Some(named) != self.config.tenant.as_ref()
+        {
+            return Err(crate::error::ClientError::Config(format!(
+                "this request names tenant {named:?}, and the client holds every request to \
+                 the selected interface's tenant ({:?}; spec §8.3.2)",
+                self.config.tenant
+            )));
+        }
+        Ok(requested.or_else(|| self.config.tenant.clone()))
     }
 }
 
@@ -234,5 +257,77 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Strict interface tenant (adversarial review N12, 2026-11-13): a request
+    /// naming another tenant is refused before the transport is asked, one
+    /// naming the interface's own or none is sent with it.
+    #[tokio::test]
+    async fn the_strict_mode_refuses_another_tenant_before_sending() {
+        let transport = CapturingTransport::default();
+        let client = ClientBuilder::new("http://localhost:1")
+            .with_custom_transport(transport.clone())
+            .with_tenant("acme")
+            .with_strict_interface_tenant()
+            .build()
+            .expect("build client");
+        let err = client
+            .get_task(TaskQueryParams::new("task-1").with_tenant("globex"))
+            .await
+            .expect_err("another tenant was sent");
+        assert!(matches!(err, ClientError::Config(_)), "{err:?}");
+        assert!(
+            client
+                .list_tasks(ListTasksParams::new().with_tenant("globex"))
+                .await
+                .is_err()
+        );
+        assert!(
+            client
+                .create_push_config(push_config(Some("globex")))
+                .await
+                .is_err()
+        );
+        let mut message = a2a_protocol_types::params::MessageSendParams::new(
+            a2a_protocol_types::message::Message::user_text("m-1", "hi"),
+        );
+        message.tenant = Some("globex".to_owned());
+        assert!(client.send_message(message).await.is_err());
+        assert_eq!(transport.calls.lock().expect("calls lock").len(), 0);
+
+        // Its own tenant, or none, goes out with the interface's.
+        let _ = client
+            .get_task(TaskQueryParams::new("task-1").with_tenant("acme"))
+            .await;
+        let _ = client.get_task(TaskQueryParams::new("task-2")).await;
+        let calls = transport.calls.lock().expect("calls lock").clone();
+        assert_eq!(calls.len(), 2);
+        for (_, params) in &calls {
+            assert_eq!(params["tenant"], "acme");
+        }
+    }
+
+    /// A builder made from a card whose tenant was replaced cannot be held to
+    /// the card's: refused at `build`, not later.
+    #[test]
+    fn the_strict_mode_refuses_a_replaced_card_tenant_at_build() {
+        let card = a2a_protocol_types::AgentCard::new(
+            "agent",
+            "1.0.0",
+            a2a_protocol_types::AgentInterface::jsonrpc("http://localhost:1").with_tenant("acme"),
+        );
+        let err = ClientBuilder::from_card(&card)
+            .unwrap()
+            .with_tenant("globex")
+            .with_strict_interface_tenant()
+            .build()
+            .expect_err("a replaced tenant under the strict mode");
+        assert!(err.to_string().contains("with_tenant"), "{err}");
+        // The card's own tenant is fine.
+        ClientBuilder::from_card(&card)
+            .unwrap()
+            .with_strict_interface_tenant()
+            .build()
+            .expect("the card's tenant");
     }
 }

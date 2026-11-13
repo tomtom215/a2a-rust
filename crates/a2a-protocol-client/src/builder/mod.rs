@@ -59,9 +59,15 @@ use crate::transport::Transport;
 /// The major A2A protocol version this client speaks, from
 /// [`A2A_VERSION`](a2a_protocol_types::A2A_VERSION) `"1.0"`.
 ///
-/// Card interfaces advertising another major are not candidates; see
+/// Card interfaces advertising another `Major.Minor` are not candidates; see
 /// `selection`.
 pub(crate) const SUPPORTED_PROTOCOL_MAJOR: u32 = 1;
+
+/// The minor A2A protocol version this client speaks: every request says
+/// `A2A-Version: 1.0`, and a server processes it with the semantics of
+/// exactly that `Major.Minor` (spec §3.6.2), so an interface for `1.1` is not
+/// one this client can use (adversarial review N11, 2026-11-13).
+pub(crate) const SUPPORTED_PROTOCOL_MINOR: u32 = 0;
 
 // ── ClientBuilder ─────────────────────────────────────────────────────────────
 
@@ -116,6 +122,9 @@ pub struct ClientBuilder {
     /// [`build`](Self::build) refuses; a later override the card does resolve
     /// clears it, and a custom transport is the way to supply one's own.
     pub(super) binding_conflict: Option<(String, String)>,
+    /// Whether every request must carry exactly the selected interface's
+    /// tenant ([`with_strict_interface_tenant`](Self::with_strict_interface_tenant)).
+    pub(super) tenant_policy: crate::client::TenantPolicy,
     /// How a bare `host:port` gRPC address is dialled by [`build_grpc`].
     ///
     /// Lives on the builder rather than on [`ClientConfig`] because it is a
@@ -192,6 +201,7 @@ impl ClientBuilder {
             fallback_interfaces: Vec::new(),
             tenant_set: false,
             binding_conflict: None,
+            tenant_policy: crate::client::TenantPolicy::Fill,
             agent: None,
             declared: None,
             extensions: Vec::new(),
@@ -317,6 +327,7 @@ impl ClientBuilder {
             fallback_interfaces: candidates.collect(),
             tenant_set: false,
             binding_conflict: None,
+            tenant_policy: crate::client::TenantPolicy::Fill,
             agent: Some(crate::call_span::agent_identity(card)),
             declared: Some(crate::declared::DeclaredCapabilities::of(
                 &card.capabilities,
@@ -528,7 +539,7 @@ impl ClientBuilder {
                         .to_owned(),
                     format!(
                         "the agent card offers {binding} only for {}, and this SDK speaks A2A \
-                         protocol major {SUPPORTED_PROTOCOL_MAJOR}; choose another binding, or \
+                         protocol {SUPPORTED_PROTOCOL_MAJOR}.{SUPPORTED_PROTOCOL_MINOR}; choose another binding, or \
                          supply your own transport with with_custom_transport",
                         offered.join(", ")
                     ),
@@ -871,7 +882,25 @@ impl ClientBuilder {
     #[cfg(feature = "signing")]
     #[must_use]
     pub fn with_content_keys(mut self, keys: a2a_protocol_types::signing::Jwks) -> Self {
-        self.content = crate::content::ContentKeys::new(keys);
+        self.content = self.content.with_keys(keys);
+        self
+    }
+
+    /// Verifies the agent's **extended** card against `keys` before anything
+    /// is adopted from it (adversarial review N10, 2026-11-13): a card with
+    /// no signature, or none that verifies against a key here, is refused by
+    /// [`A2aClient::get_extended_agent_card`](crate::A2aClient::get_extended_agent_card),
+    /// and the client keeps the capabilities and security requirements it had.
+    ///
+    /// [`from_signed_card`](Self::from_signed_card) sets this with the keys
+    /// the public card was verified against; a client built from a card
+    /// verified by discovery ([`CardFetchOptions::with_signature_keys`](crate::discovery::CardFetchOptions::with_signature_keys))
+    /// sets it here with the same keys. Without it an extended card is
+    /// checked for its shape only, as the public card then was.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub fn with_card_signature_keys(mut self, keys: a2a_protocol_types::signing::Jwks) -> Self {
+        self.content = self.content.with_card_keys(keys);
         self
     }
 
@@ -883,6 +912,29 @@ impl ClientBuilder {
     #[must_use]
     pub fn require_signed_content(mut self) -> Self {
         self.content = self.content.requiring_signatures();
+        self
+    }
+
+    /// Holds every request to spec §8.3.2 rule 4: its `tenant` is exactly the
+    /// one the selected card interface declares, or absent when it declares
+    /// none (adversarial review N12, 2026-11-13).
+    ///
+    /// Without it the client fills a request's `tenant` from the selected
+    /// interface when the request names none, and two escape hatches stay
+    /// open, for a deployment whose tenants are not each a card interface (a
+    /// gateway that routes one URL by tenant): a tenant named on a request
+    /// (`TaskQueryParams::with_tenant` and the like) is sent as named, and
+    /// [`with_tenant`](Self::with_tenant) on a builder made from a card
+    /// replaces the interface's. Each sends a `URL, binding, tenant` triple
+    /// the card does not advertise, which a conforming server may refuse or
+    /// route elsewhere.
+    ///
+    /// With it, a request naming another tenant fails before it is sent with
+    /// [`ClientError::Config`], and [`build`](Self::build) refuses a builder
+    /// made from a card whose tenant was replaced with `with_tenant`.
+    #[must_use]
+    pub const fn with_strict_interface_tenant(mut self) -> Self {
+        self.tenant_policy = crate::client::TenantPolicy::Strict;
         self
     }
 

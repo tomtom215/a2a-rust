@@ -41,6 +41,10 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`ClientBuilder::with_strict_interface_tenant()`** (adversarial review of 2026-11-13, N12): holds every request to spec §8.3.2 rule 4, so
+  a request naming a tenant other than the selected card interface's fails before it is sent (`ClientError::Config`), and `build()` refuses a
+  card builder whose tenant `with_tenant` replaced. Without it both stay escape hatches for a deployment whose tenants are not each a card
+  interface, now documented as such on `with_tenant`.
 - **`PushOutbox::reserve`, `arm`, `release`, `held` and `held_for_task`, `supports_renewal` and `renew`**, `PushOutbox::supports_reservations` (false by default, so an outbox of your own keeps working
   and keeps recording after the event is stored), the `Held` type, and the push outcome `reservation_settled` (`push_outcome::RESERVATION_SETTLED`; the
   metric and its label are in the book). `InMemoryPushOutbox`, `SqlitePushOutbox` and `PostgresPushOutbox` implement them (an outbox that wraps another has to forward each, or the handler uses the trait's default for it); `record` and `reserve` now leave a delivery id that is already in the outbox as it is; the table
@@ -1025,6 +1029,10 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **A client selects only `1.0` card interfaces, whatever the patch** (adversarial review of 2026-11-13, N11). Any `protocolVersion` with major 1
+  counted, so a card listing a `1.1` interface before its `1.0` one was served `A2A-Version: 1.0` at the `1.1` endpoint, which processes a
+  request with exactly the `Major.Minor` it names (spec §3.6.2). `1.1`, and any minor but `0`, is now passed over; `1.0.1`, `v1.0` and a bare
+  `1` still count. A test pinned `1.1-rc1` as compatible; it now pins the opposite, and the old code chose the `1.1` endpoint in the new one.
 - **A NUL character (U+0000) anywhere in a `SendMessage` request is now `InvalidParams` on every store** (hostile campaign, wave 2,
   2026-11-08). PostgreSQL's `jsonb` cannot hold one, so the three PostgreSQL stores answered `-32603` (carrying the database's own message)
   and created no task for a NUL in a text part, filename, URL, media type, metadata key or value, extension or `data` value, while the
@@ -1698,6 +1706,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **An extended agent card was adopted unverified by a client built from a verified signed card** (adversarial review of 2026-11-13, N10).
+  `ClientBuilder::from_signed_card` verified the public card and kept nothing of the keys, so `get_extended_agent_card` adopted an extended
+  card's capabilities and security requirements with no signature check. The client now keeps the keys (`ContentKeys`, feature `signing`) and
+  verifies the extended card's JSON, as received, before reading or adopting anything; `ClientBuilder::with_card_signature_keys(keys)` sets
+  them for a client built from a card discovery verified. Reproduced first: on the old code an unsigned extended card declaring push
+  notifications was adopted (`tests/extended_card_signature.rs`); now it, and a forged one, fail the call and a push call is still refused locally.
 - **A task's ending that was not durably logged and queued could lose the only record that it was owed** (adversarial review of 2026-11-13,
   N05 and N06). The reaper completes a finished task's ending through the stale claim its dead replica left; it took the claim and released it
   whatever happened, so a task it could not read, a log it could not read, an append that failed, or webhook deliveries the outbox had not

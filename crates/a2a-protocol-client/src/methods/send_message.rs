@@ -133,6 +133,7 @@ impl A2aClient {
             return self.send_over_stream(params).await;
         }
 
+        params.tenant = self.tenant_or_default(params.tenant.take())?;
         apply_client_config(&mut params, &self.config);
 
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
@@ -165,6 +166,7 @@ impl A2aClient {
         require_well_formed(&params)?;
         self.require_inline_push_declared(&params, METHOD)?;
 
+        params.tenant = self.tenant_or_default(params.tenant.take())?;
         apply_client_config(&mut params, &self.config);
 
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
