@@ -1698,6 +1698,19 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A task's ending that was not durably logged and queued could lose the only record that it was owed** (adversarial review of 2026-11-13,
+  N05 and N06). The reaper completes a finished task's ending through the stale claim its dead replica left; it took the claim and released it
+  whatever happened, so a task it could not read, a log it could not read, an append that failed, or webhook deliveries the outbox had not
+  durably taken left the task in no later look. And `PushLanes::record_now` answered `true` whenever an outbox was installed, also when the push
+  configs could not be read past their retries or the outbox refused the rows and the event was sent once from memory, so the owner and the
+  reaper then logged the ending and released the claim as if its webhooks were owed nothing. `record_now` now returns
+  `Option<Recorded>` (`Durable`, `NoSubscribers`, `ConfigsUnread`, `FromMemory`; `None` with no outbox) and `append_ending` whether it
+  appended. An ending whose deliveries are not durable is not logged (a log without the ending is what the reaper looks for), and the turn's
+  claim is **kept**, not renewed and not released (`TurnClaim::keep_for_repair`), whether the owner's processor, its blocking collector or the
+  reaper left it owed; once it is stale the reaper's next look tries again. Reproduced first: on the old code each of four one-shot faults
+  (task read, log read, log append, configs unreadable) released the reaper's claim (`handler/claims/reaper/tests/repair.rs`), and the processor
+  logged an ending whose webhooks were never queued (`close_out_tests.rs`); all pass now, each repaired on the next look with the ending logged
+  once and the webhook told.
 - **A journaled run's end was unfenced and came before the task's result, and its checkpoints were a plaintext copy of every run outside
   erasure** (adversarial review of 2026-11-13, N04 and N07; the step journal is new in this release, so its contract changes here).
   `StepJournal::clear(key)` deleted whatever was stored, so a stale invocation's final answer removed a newer invocation's checkpoint; and the

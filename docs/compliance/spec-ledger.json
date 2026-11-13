@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:13165 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:13178 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -986,7 +986,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:205 RequestHandler::on_create_push_config",
     "crates/a2a-protocol-server/src/handler/push_config.rs:73 RequestHandler::validate_and_store_push_config",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:75 deliver_push_bg"
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:108 deliver_push_bg"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/push_config.rs:25 push_config_crud_lifecycle",
@@ -1009,7 +1009,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:73 RequestHandler::validate_and_store_push_config",
     "crates/a2a-protocol-server/src/push/config_store.rs:267 InMemoryPushConfigStore::delete",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:75 deliver_push_bg"
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:108 deliver_push_bg"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/background_processor.rs:151 streaming_mode_push_delivery_with_cooperative_executor",
@@ -3409,8 +3409,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:162 delivery_concurrency",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:188 deliver_to_every_config",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:195 delivery_concurrency",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:221 deliver_to_every_config",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1019 SyncPushJob::run",
     "crates/a2a-protocol-server/src/push/sender.rs:221 PushRetryPolicy::with_max_attempts"
    ],
@@ -3462,7 +3462,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:166 DEFAULT_PUSH_REQUEST_TIMEOUT",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:16 HandlerLimits::default",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:231 deliver_once"
+    "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:264 deliver_once"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:1111 the_default_schedule_starts_every_attempt_inside_the_default_bound",
@@ -9733,7 +9733,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:641 SyncCollector::process_event",
-    "crates/a2a-protocol-server/src/handler/event_processing/mod.rs:195 merge_append",
+    "crates/a2a-protocol-server/src/handler/event_processing/mod.rs:238 merge_append",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:152 process_event_with"
    ],
    "test_evidence": [

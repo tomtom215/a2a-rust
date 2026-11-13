@@ -74,6 +74,9 @@ impl RequestHandler {
         // are scoped to the correct tenant (task_local doesn't propagate
         // across tokio::spawn).
         let tenant = crate::store::tenant::TenantContext::capture();
+        // Kept, not released, if this turn leaves its task's ending owed
+        // (`owing_ending`; adversarial review N05, N06).
+        let repair_claim = links.claim.clone();
 
         // On the handler's tracker: this is what persists the executor's last
         // events and delivers their push notifications, so shutdown waits for
@@ -81,13 +84,16 @@ impl RequestHandler {
         self.in_flight
             .background()
             .spawn(crate::rpc_span::in_child_span(
-            "a2a.process_events",
-            // Boxed before the tenant scope, span and tracker wrap it:
-            // each of them, and tokio's task cell, moved this ~5.6 KB
-            // future by value. Measured, streaming, one worker, jemalloc,
-            // two replicates of 10 interleaved runs: +4.4% and +7% (p
-            // 0.049 and 0.023, Mann-Whitney); no change on two workers.
-            tenant.scope(Box::pin(async move {
+                "a2a.process_events",
+                // Boxed before the tenant scope, span and tracker wrap it:
+                // each of them, and tokio's task cell, moved this ~5.6 KB
+                // future by value. Measured, streaming, one worker, jemalloc,
+                // two replicates of 10 interleaved runs: +4.4% and +7% (p
+                // 0.049 and 0.023, Mann-Whitney); no change on two workers.
+                tenant.scope(Box::pin(async move {
+                    // Boxed: the processor's future is tens of kilobytes, and
+                    // passed by value it is moved into the wrapper's.
+                    super::keeping_claim_if_owed(repair_claim.as_ref(), Box::pin(async move {
                 let super::ProcessorLinks {
                     cancel,
                     gate,
@@ -228,8 +234,10 @@ impl RequestHandler {
                     }
                 }
                 run.close_out().await;
-            })),
-        ));
+              }))
+              .await;
+                })),
+            ));
     }
 }
 

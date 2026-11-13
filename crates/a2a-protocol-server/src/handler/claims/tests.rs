@@ -148,6 +148,7 @@ fn a_claims_debug_names_its_owner_and_not_its_token() {
     let claim = TurnClaim {
         claims: Arc::clone(&claims),
         token: "tok-secret".to_owned(),
+        keep: AtomicBool::new(false),
     };
     let shown = format!("{claim:?}");
     assert_eq!(
@@ -176,6 +177,7 @@ async fn a_dropped_claim_is_released() {
     drop(TurnClaim {
         claims: Arc::clone(&claims),
         token: "tok".to_owned(),
+        keep: AtomicBool::new(false),
     });
     for _ in 0..100 {
         if !store.holds("tok") {
@@ -185,6 +187,41 @@ async fn a_dropped_claim_is_released() {
     }
     assert!(!store.holds("tok"), "Drop releases the claim");
     assert!(claims.held().is_empty());
+}
+
+/// A turn that left its task's ending owed keeps its claim's row for the
+/// reaper, and stops renewing it (N05, N06).
+#[tokio::test]
+async fn a_claim_kept_for_repair_is_not_released_and_not_renewed() {
+    let store = Arc::new(InMemoryTurnClaims::new());
+    let claims = Arc::new(TurnClaims::new(
+        Arc::clone(&store) as Arc<dyn TurnClaimStore>,
+        None,
+        DEFAULT_TURN_CLAIM_TTL,
+        DEFAULT_TURN_CLAIM_RENEWAL,
+    ));
+    assert!(
+        store
+            .claim("", "t", &claims.owner, "tok", DEFAULT_TURN_CLAIM_TTL)
+            .await
+            .unwrap()
+    );
+    hold(&claims, "tok");
+    let claim = TurnClaim {
+        claims: Arc::clone(&claims),
+        token: "tok".to_owned(),
+        keep: AtomicBool::new(false),
+    };
+    claim.keep_for_repair();
+    drop(claim);
+    for _ in 0..100 {
+        tokio::task::yield_now().await;
+    }
+    assert!(store.holds("tok"), "a claim kept for repair was released");
+    assert!(
+        claims.held().is_empty(),
+        "a claim kept for repair is still renewed"
+    );
 }
 
 /// A handler given no replica name owns its claims as the host it runs on,
@@ -444,6 +481,7 @@ fn a_lapse_before_the_executor_has_a_token_stops_it_when_it_gets_one() {
     TurnClaim {
         claims,
         token: "a".to_owned(),
+        keep: AtomicBool::new(false),
     }
     .attach(&cancel, &turn);
     assert!(cancel.is_cancelled(), "stopped on arrival");

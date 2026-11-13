@@ -204,7 +204,10 @@ impl PushLanes {
         let task_id = task_id.clone();
         Some(async move {
             if let Some(outboxed) = lanes.outbox.as_ref() {
-                outbox_worker::record(&lanes, outboxed, &task_id, &events).await;
+                // Queued work: a record that is not durable was logged and
+                // counted where it failed, and a stored event's later
+                // settling is what retries it.
+                let _ = outbox_worker::record(&lanes, outboxed, &task_id, &events).await;
             }
         })
     }
@@ -221,9 +224,11 @@ impl PushLanes {
         self.push_after_store(task_id, event);
     }
 
-    /// Records `event`'s deliveries in the outbox now, and returns `true`
-    /// once they are written; `false`, having done nothing, when the handler
-    /// has no outbox, and the caller sends or queues the event itself.
+    /// Records `event`'s deliveries in the outbox now, and says how that went;
+    /// `None`, having done nothing, when the handler has no outbox, and the
+    /// caller sends or queues the event itself. Only
+    /// [`Recorded::is_durable`] means nothing is owed: anything else leaves
+    /// the caller to keep the intent to notify (N06).
     ///
     /// For a task's ending that no queued event carried (the reaper's, an
     /// executor's panic, a verdict from another writer): called **before** the
@@ -232,16 +237,15 @@ impl PushLanes {
     /// log that has it and a webhook that was never told. The row queues
     /// behind every row of the task that is reserved or waiting, so a webhook
     /// sees the ending after the events that were stored before it.
-    pub async fn record_now(&self, task_id: &TaskId, event: &StreamResponse) -> bool {
-        let Some(lanes) = self.0.as_ref() else {
-            return false;
-        };
-        let Some(outboxed) = lanes.outbox.as_ref() else {
-            return false;
-        };
+    pub async fn record_now(
+        &self,
+        task_id: &TaskId,
+        event: &StreamResponse,
+    ) -> Option<super::Recorded> {
+        let lanes = self.0.as_ref()?;
+        let outboxed = lanes.outbox.as_ref()?;
         self.start_worker();
-        outbox_worker::record(lanes, outboxed, task_id, std::slice::from_ref(event)).await;
-        true
+        Some(outbox_worker::record(lanes, outboxed, task_id, std::slice::from_ref(event)).await)
     }
 
     /// [`push`](Self::push) for an event that is stored and has no

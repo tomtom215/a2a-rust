@@ -25,7 +25,7 @@ use std::sync::Arc;
 /// Records the state of every status notification it is asked to send, and
 /// whether the applied mark had the event stored by then.
 #[derive(Default)]
-struct Pushes(Mutex<Vec<TaskState>>, Arc<AppliedMark>, Mutex<Vec<bool>>);
+pub(super) struct Pushes(Mutex<Vec<TaskState>>, Arc<AppliedMark>, Mutex<Vec<bool>>);
 
 impl PushSender for Pushes {
     fn send<'a>(
@@ -100,9 +100,9 @@ const fn state_of(event: &StreamResponse) -> Option<TaskState> {
 
 pub(super) struct Fixture {
     pub(super) store: InMemoryTaskStore,
-    pushes: Arc<Pushes>,
-    lanes: super::super::PushLanes,
-    limits: HandlerLimits,
+    pub(super) pushes: Arc<Pushes>,
+    pub(super) lanes: super::super::PushLanes,
+    pub(super) limits: HandlerLimits,
     gate: TerminalGate,
     pub(super) cancel: CancellationToken,
 }
