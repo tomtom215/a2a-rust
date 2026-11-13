@@ -33,8 +33,8 @@ impl A2aClient {
     /// a server publishes one by (`AgentCard::validate`), and
     /// [`ClientError::Protocol`] for a card with no signature, or none that
     /// verifies, when the client verifies cards
-    /// ([`ClientBuilder::with_card_signature_keys`](crate::ClientBuilder::with_card_signature_keys),
-    /// set by [`ClientBuilder::from_signed_card`](crate::ClientBuilder::from_signed_card)).
+    /// (`ClientBuilder::with_card_signature_keys`, set by
+    /// `ClientBuilder::from_signed_card`; both need the `signing` feature).
     /// In each case nothing is adopted from it.
     pub async fn get_extended_agent_card(&self) -> ClientResult<AuthenticatedExtendedCardResponse> {
         const METHOD: &str = "GetExtendedAgentCard";
