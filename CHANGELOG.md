@@ -1717,6 +1717,17 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A blocking send on a single-worker runtime could hang until the executor timeout** (server; found 2026-11-13 by the live
+  end-to-end test of an approved, audited tool call, `tests/tool_loop_audit_live.rs`; present since 2026-10-03 and in 0.15.0). On a
+  runtime with one worker (a `current_thread` runtime, every `#[tokio::test]`, or a container limited to one CPU) a blocking send runs
+  its executor in the task that collects its events, and that task stopped polling the executor while it folded an event into the
+  store. An executor holding something the fold needed was then never polled again and never let it go: with `AuditedPolicy` and an
+  audit log on the handler, the executor held the audit chain's lock across a store read while the fold of its own event waited for
+  that lock, and the send hung for the executor timeout, an hour by default, holding the chain's lock for every other writer. The
+  executor is now polled while an event is folded and while the collection closes out. Reproduced first: on the old code a handler
+  whose executor holds a lock its store's `save` takes, across one await, did not answer within 10 s
+  (`handler/messaging/inline_executor_tests.rs`); with the real model the approval test hung in 2 of 3 and 1 of 3 runs of its file.
+
 - **Two calls with one id, and an id used again, could cross their results and receipts** (adversarial review of 2026-11-13, N08). A reply
   naming two calls with one id ran both; their results went back under one id, and the journal kept one receipt for both and could answer
   the second from the first's result on resume. A call that came without an id was given `call-<turn>-<position>` even when the provider had

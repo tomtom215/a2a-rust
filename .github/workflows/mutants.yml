@@ -682,7 +682,7 @@ jobs:
             --profile=mutants \
             --all-features \
             -- --run-ignored all \
-               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or binary(readiness_bar) or binary(tool_loop_strict_live) or binary(terminal_truth_live) or binary(tool_loop_journal_live) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))' \
+               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or binary(readiness_bar) or binary(tool_loop_strict_live) or binary(terminal_truth_live) or binary(tool_loop_journal_live) or binary(tool_loop_review_live) or binary(tool_loop_audit_live) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))' \
                2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
@@ -1174,7 +1174,7 @@ jobs:
               echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
               echo "cargo mutants -p <crate-name> --test-tool=nextest --profile=mutants \\"
               echo "  --all-features -- --run-ignored all \\"
-              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or binary(readiness_bar) or binary(tool_loop_strict_live) or binary(terminal_truth_live) or binary(tool_loop_journal_live) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'"
+              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or binary(readiness_bar) or binary(tool_loop_strict_live) or binary(terminal_truth_live) or binary(tool_loop_journal_live) or binary(tool_loop_review_live) or binary(tool_loop_audit_live) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'"
               echo '```'
             } >> /tmp/final-summary.md
           fi
@@ -1508,7 +1508,7 @@ jobs:
             --profile=mutants \
             --all-features \
             -- --run-ignored all \
-               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or binary(readiness_bar) or binary(tool_loop_strict_live) or binary(terminal_truth_live) or binary(tool_loop_journal_live) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))' \
+               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or binary(readiness_bar) or binary(tool_loop_strict_live) or binary(terminal_truth_live) or binary(tool_loop_journal_live) or binary(tool_loop_review_live) or binary(tool_loop_audit_live) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))' \
                2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
@@ -1671,7 +1671,7 @@ jobs:
               echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
               echo "cargo mutants --file <path-to-file> --test-tool=nextest --profile=mutants \\"
               echo "  --all-features -- --run-ignored all \\"
-              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or binary(readiness_bar) or binary(tool_loop_strict_live) or binary(terminal_truth_live) or binary(tool_loop_journal_live) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'"
+              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or binary(readiness_bar) or binary(tool_loop_strict_live) or binary(terminal_truth_live) or binary(tool_loop_journal_live) or binary(tool_loop_review_live) or binary(tool_loop_audit_live) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'"
               echo '```'
               echo ""
             fi

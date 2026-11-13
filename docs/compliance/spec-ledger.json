@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:13211 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:13222 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -439,7 +439,7 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/message_fold.rs:85 Turn::fold",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:741 InMemoryQueueWriter::write_in_order",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:597 process_folded_message",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:900 SyncCollector::fold_message",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:968 SyncCollector::fold_message",
     "crates/a2a-protocol-server/src/handler/messaging/create.rs:83 continues",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:364 TerminalTracking::repark_if_silent"
    ],
@@ -494,7 +494,7 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/message_fold.rs:85 Turn::fold",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:741 InMemoryQueueWriter::write_in_order",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:597 process_folded_message",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:900 SyncCollector::fold_message"
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:968 SyncCollector::fold_message"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader",
@@ -1415,8 +1415,8 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/mode.rs:23 SendMode::of",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:196 SyncCollector::collect_events",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:320 SyncCollector::run",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:237 SyncCollector::collect_events",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:364 SyncCollector::run",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background"
    ],
    "test_evidence": [
@@ -1436,8 +1436,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:380 SyncCollector::answer",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:415 SyncCollector::fold",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:436 SyncCollector::answer",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:471 SyncCollector::fold",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:202 RequestHandler::respond_blocking"
    ],
    "test_evidence": [
@@ -2010,7 +2010,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/rpc_span/mod.rs:345 ServerSpan::call",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:320 SyncCollector::run",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:364 SyncCollector::run",
     "crates/a2a-protocol-server/src/handler/messaging/execute.rs:431 write_failure_event"
    ],
    "test_evidence": [
@@ -3234,7 +3234,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:641 SyncCollector::process_event",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:709 SyncCollector::process_event",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:152 process_event_with"
    ],
    "test_evidence": [
@@ -3411,7 +3411,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:195 delivery_concurrency",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:221 deliver_to_every_config",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1019 SyncPushJob::run",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1087 SyncPushJob::run",
     "crates/a2a-protocol-server/src/push/sender.rs:221 PushRetryPolicy::with_max_attempts"
    ],
    "test_evidence": [
@@ -3419,8 +3419,8 @@
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/budget.rs:213 the_budget_sets_how_many_deliveries_run_at_once",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/budget.rs:245 delivery_concurrency_fits_the_budget_and_never_drops_a_config",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/mod.rs:66 deliver_push_bg_attempts_every_config_within_the_deadline",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:2439 the_sync_push_budget_is_the_configured_one",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:2382 each_webhook_sees_events_in_order",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:2507 the_sync_push_budget_is_the_configured_one",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:2450 each_webhook_sees_events_in_order",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:818 zero_attempts_still_sends_once"
    ],
    "notes": "Every configured webhook is attempted for every event, on the background and blocking paths. push_delivery_budget now sets concurrency: ceil(configs / (budget / timeout)), at least 1, at most configs (17 at the defaults); events go in order per webhook. Until 2026-10-11 deliveries were sequential and the budget skipped the rest (6 of 100 reached at defaults). PushRetryPolicy max_attempts 0 is taken as 1 (setter and loop). Not covered: a webhook whose single attempt exceeds push_delivery_timeout is cut off, which is an attempt, not a skip.",
@@ -5133,7 +5133,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:234 SyncCollector::collect_then_follow"
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:276 SyncCollector::collect_then_follow"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_required_in_task.rs:107 the_stream_stays_open_across_auth_required_until_the_task_ends",
@@ -9206,7 +9206,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:320 SyncCollector::run",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:364 SyncCollector::run",
     "crates/a2a-protocol-server/src/handler/messaging/mode.rs:23 SendMode::of"
    ],
    "test_evidence": [
@@ -9331,12 +9331,12 @@
     "crates/a2a-protocol-types/src/generated/task.rs:97 TaskStatus",
     "crates/a2a-protocol-types/src/task.rs:265 TaskState::can_transition_to",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:256 TaskStatus::try_from",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:641 SyncCollector::process_event",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:709 SyncCollector::process_event",
     "crates/a2a-protocol-types/src/required.rs:151 check_status",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:93 required_enum"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1243 process_event_invalid_state_transition_returns_error",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1311 process_event_invalid_state_transition_returns_error",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:91 tck_task_state_rejects_invalid",
     "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
     "crates/a2a-protocol-client/tests/received_validation/json.rs:61 a_task_missing_a_required_value_is_refused_on_every_json_binding",
@@ -9486,7 +9486,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:641 SyncCollector::process_event",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:709 SyncCollector::process_event",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:152 process_event_with"
    ],
    "test_evidence": [
@@ -9536,15 +9536,15 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:741 InMemoryQueueWriter::write_in_order",
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:36 check_required_fields",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:152 process_event_with",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:641 SyncCollector::process_event",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:709 SyncCollector::process_event",
     "crates/a2a-protocol-types/src/artifact.rs:117 Artifact::validate",
     "crates/a2a-protocol-types/src/required.rs:193 check_artifact"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1773 an_artifact_update_with_no_parts_is_dropped_appended_or_not",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1550 an_appended_chunk_with_no_parts_is_dropped",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1499 artifact_with_empty_parts_is_dropped_when_not_appending",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1618 an_appended_chunk_with_no_parts_is_dropped",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1567 artifact_with_empty_parts_is_dropped_when_not_appending",
     "crates/a2a-protocol-server/tests/artifact_parts.rs:57 an_artifact_with_no_parts_is_not_streamed",
     "crates/a2a-protocol-server/tests/audit_tests/public_api.rs:129 artifact_validate_rejects_empty_parts",
     "crates/a2a-protocol-client/tests/received_validation/json.rs:61 a_task_missing_a_required_value_is_refused_on_every_json_binding",
@@ -9733,13 +9733,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:641 SyncCollector::process_event",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:709 SyncCollector::process_event",
     "crates/a2a-protocol-server/src/handler/event_processing/mod.rs:238 merge_append",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:152 process_event_with"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1598 artifact_append_merges_into_the_existing_artifact",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1723 artifact_append_targets_the_matching_id_not_another",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1666 artifact_append_merges_into_the_existing_artifact",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1791 artifact_append_targets_the_matching_id_not_another",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1834 append_merges_and_non_append_does_not",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1901 append_merges_into_the_matching_artifact_not_another"
    ],
