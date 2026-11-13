@@ -1,0 +1,192 @@
+[
+ {
+  "id": "N01",
+  "severity": "High",
+  "finding": "Approval identities remain plaintext and can evade erasure reporting",
+  "status": "FIXED",
+  "note": "",
+  "commit": "861187ae",
+  "evidence": "Reproduced first over HTTP+JSON into a SQLite file: the old code stored \"reviewFor\":\"bearer:alice-n01\" and \"approvedBy\":[\"bearer:bob-n01\"] in the clear, and erasure reported in_clear = [] for a reviewFor subject. One classification (audit/privacy/fields.rs) now drives key resolution, sealing, reveal and the in-clear scan; a source scan fails on any detail key in no list. Live (Qwen3-1.7B, llama.cpp 9daa0aa): an approved tool call's audit file named neither person.",
+  "tests": "tests/audit_privacy_approvals.rs; audit/privacy unit tests; tests/tool_loop_audit_live.rs (ignored: needs llama-server)"
+ },
+ {
+  "id": "N02",
+  "severity": "High",
+  "finding": "Approved tools can run without the required durable action audit; healthy records say deny",
+  "status": "FIXED",
+  "note": "",
+  "commit": "dd9502ad",
+  "evidence": "Reproduced first: with the audit store down after parking, the approved call ran with no record; with a healthy store its record said deny. ToolPolicy::approved is called after the digest check, immediately before invocation; AuditedPolicy writes approval_required (pending) and approved (durable, approvedBy sealed). Live: decisions [approval_required, approval_required, approved] in 8 of 8 runs.",
+  "tests": "tool_loop/run_tests/audited_approval.rs; tests/tool_loop_audit_live.rs"
+ },
+ {
+  "id": "N03",
+  "severity": "High",
+  "finding": "Cross-replica key cleanup can erase a fresh audit record's identity key",
+  "status": "FIXED",
+  "note": "Fenced in each shipped store; a third-party AuditStore that keeps the trait's defaults is not atomic across processes, as documented.",
+  "commit": "aa26b2b0",
+  "evidence": "Reproduced first with two logs over one store, one paused at the race: on memory, two SQLite pools and two PostgreSQL pools, all six cases failed on the old code (an unrevealable actor; keys deleted under a hold). append_next_naming, delete_subject_key_unless_named and delete_subject_keys_unless_held fence them; all pass now.",
+  "tests": "audit/privacy/tests/key_lifecycle.rs; audit store contract (stores.rs)"
+ },
+ {
+  "id": "N04",
+  "severity": "High",
+  "finding": "Journal clear is unfenced and occurs before final-result publication",
+  "status": "FIXED",
+  "note": "",
+  "commit": "21d03e00",
+  "evidence": "Reproduced first: a stale invocation published its answer and the newer checkpoint was gone; a replay after completion asked the model again. A final answer is a completed checkpoint under the revision fence; replay returns it without model or tool; clear takes a revision; sweep deletes on schedule. Live: a finished run replayed with 0 model calls and 0 tool calls.",
+  "tests": "tool_loop/run_tests/journal_finish.rs; journal store contract; tests/tool_loop_review_live.rs"
+ },
+ {
+  "id": "N05",
+  "severity": "High",
+  "finding": "Failed terminal repair can delete its only retry marker",
+  "status": "FIXED",
+  "note": "",
+  "commit": "8369649f",
+  "evidence": "Reproduced first: each of four one-shot faults (task read, log read, log append, configs unreadable) released the reaper's claim. The claim is now kept (TurnClaim::keep_for_repair) until the ending is durable; each fault is repaired on the next look.",
+  "tests": "handler/claims/reaper/tests/repair.rs"
+ },
+ {
+  "id": "N06",
+  "severity": "High",
+  "finding": "Outbox helper returns durable success when recording failed",
+  "status": "FIXED",
+  "note": "",
+  "commit": "8369649f",
+  "evidence": "record_now returns Option<Recorded> (Durable, NoSubscribers, ConfigsUnread, FromMemory). Reproduced first: the processor logged an ending whose webhooks were never queued; now the ending is not logged and the claim is kept.",
+  "tests": "close_out_tests.rs; claims/reaper/tests/repair.rs"
+ },
+ {
+  "id": "N07",
+  "severity": "High",
+  "finding": "Durable checkpoints form a separate plaintext store outside erasure, without tenant/subject lifecycle indexing",
+  "status": "FIXED",
+  "note": "Sealing is opt-in (ToolLoop::with_journal_cipher, feature encryption); a person named only inside run content is not found by StepJournal::erase.",
+  "commit": "21d03e00",
+  "evidence": "JournalEntry records RunOwner (tenant, caller, task); runs_of and erase serve access and erasure; bodies sealed and bound to key and revision. Three canaries (prompt, tool arguments, result) absent from the stored body. Live: the SQLite file held neither the prompt nor the tool's result; another key could not open the run; erase removed Alice's run.",
+  "tests": "tool_loop/run_tests/journal_sealed.rs; journal store contract; tests/tool_loop_review_live.rs; tests/tool_loop_audit_live.rs"
+ },
+ {
+  "id": "N08",
+  "severity": "Medium",
+  "finding": "Duplicate model call IDs collapse replay and action receipts",
+  "status": "FIXED",
+  "note": "",
+  "commit": "ac63a18f",
+  "evidence": "Reproduced first: an ambiguous reply ran its calls, a reused id left one receipt, two results went back under call-0-1. Now refused before any call runs (LoopError::AmbiguousCalls); generated ids are unique in the run; receipts keyed by turn and id.",
+  "tests": "tool_loop/run_tests/limits_and_ids.rs"
+ },
+ {
+  "id": "N09",
+  "severity": "Medium",
+  "finding": "Tool results, accumulated history and checkpoints lack aggregate size bounds",
+  "status": "FIXED",
+  "note": "Bounds are bytes, not tokens: a model's context window is not known to the loop.",
+  "commit": "ac63a18f",
+  "evidence": "Reproduced first: a 2,097,152-byte result reached the model whole. Defaults: result 1 MiB (cut, with a note), request 8 MiB (LoopError::TooLarge), checkpoint 32 MiB. Live: with a 2,048-byte limit the model was shown 2,121 of 207,018 bytes (limit plus note) and answered.",
+  "tests": "tool_loop/run_tests/limits_and_ids.rs; tool_loop/limits.rs; tests/tool_loop_review_live.rs"
+ },
+ {
+  "id": "N10",
+  "severity": "Medium",
+  "finding": "Signed-card trust policy is discarded before extended-card adoption",
+  "status": "FIXED",
+  "note": "Without card keys (a client not built from a signed card) the extended card is checked for shape only, as documented.",
+  "commit": "36d894cd",
+  "evidence": "Reproduced first: an unsigned extended card declaring push notifications was adopted. The keys are kept and the extended card verified as received; unsigned and forged cards fail and push stays refused locally.",
+  "tests": "crates/a2a-protocol-client/tests/extended_card_signature.rs"
+ },
+ {
+  "id": "N11",
+  "severity": "Medium",
+  "finding": "Interface negotiation accepts future minors but emits fixed 1.0",
+  "status": "FIXED",
+  "note": "",
+  "commit": "36d894cd",
+  "evidence": "The old code chose a listed 1.1 interface while every request says A2A-Version: 1.0. Selection now requires Major.Minor 1.0 (patch ignored, spec 3.6).",
+  "tests": "client interface-selection tests"
+ },
+ {
+  "id": "N12",
+  "severity": "Low/Medium",
+  "finding": "Explicit tenant overrides can violate the selected card interface's tenant tuple",
+  "status": "FIXED",
+  "note": "Opt-in: ClientBuilder::with_strict_interface_tenant(); the default keeps the documented override for gateways.",
+  "commit": "36d894cd",
+  "evidence": "Strict mode refuses a request naming another tenant before sending (ClientError::Config) and a build that replaced the card's tenant.",
+  "tests": "client methods strict-tenant tests"
+ },
+ {
+  "id": "N13",
+  "severity": "High",
+  "finding": "Release CI is a reduced duplicate of main CI and omits the configuration currently failing",
+  "status": "FIXED",
+  "note": "Not yet exercised by a real tag on GitHub: the workflow steps are proven by the fail-proof harness, not by a release.",
+  "commit": "3f6be5f7",
+  "evidence": "New job ci-evidence (scripts/ci_evidence.py) fails unless the newest completed push or dispatch run of ci.yml for the tagged SHA concluded success with no failed, cancelled or timed-out job; package needs it and writes and verifies release_evidence.py's manifest with the static gates run; both JSON files are attached to the release. Self-test 13 cases with three hand mutants; prove_workflow_gates_fail.py: both new steps PROVEN; whole harness 34 proven, 0 unproven.",
+  "tests": "scripts/ci_evidence.py --self-test; scripts/prove_workflow_gates_fail.py"
+ },
+ {
+  "id": "N14",
+  "severity": "Medium",
+  "finding": "Passing semver job skips the compatibility checks relevant to migration review",
+  "status": "PARTIAL",
+  "note": "Inventory, compile rehearsal and a SQLite data and rollback rehearsal done; PostgreSQL, the other stores, and a rolling two-version deployment were not rehearsed.",
+  "commit": "",
+  "evidence": "migration-inventory.md: cargo-semver-checks 0.51.0 forced to minor (11 failing lints, 39 structs newly non_exhaustive) and a public-only cargo-public-api diff (93 removed or changed items), every one named in the upgrade guide; every v0.15.0 example checked against 0.16 (4 compile unchanged, 39 error sites, all of two documented kinds); 0.15 and 0.16 binaries reading and appending each other's SQLite task and audit files, the chain verifying and every sealed actor revealed both ways.",
+  "tests": "docs/audits/2026-11-13-adversarial-review/migration-inventory.md (method and commands)"
+ },
+ {
+  "id": "N15",
+  "severity": "Medium",
+  "finding": "Mutation aggregation can announce all caught while individual mutant timeouts remain inconclusive",
+  "status": "FIXED",
+  "note": "Verified on synthetic shard reports, not on a GitHub run.",
+  "commit": "01d28c48",
+  "evidence": "The aggregator counted only missed.txt (a timeout-only report exited 0). It now tabulates caught, missed, timed out and unviable, lists the timeouts and fails on them (the same report exits 1; a clean one exits 0).",
+  "tests": "mutants.yml aggregator step, run by hand on synthetic reports"
+ },
+ {
+  "id": "N16",
+  "severity": "Low",
+  "finding": "Streamed model completions globally request Connection: close",
+  "status": "FIXED",
+  "note": "The handshake cost on a remote TLS endpoint was not measured.",
+  "commit": "a0d6300e",
+  "evidence": "Measured on llama.cpp 9daa0aa: llama-server closed the connection after each streamed answer (3 of 3), so the default stays; OpenAiChatModel::with_stream_connection_reuse() opts out per model.",
+  "tests": "tool_loop/openai_tests.rs"
+ },
+ {
+  "id": "CI1",
+  "severity": "High (release gate)",
+  "finding": "Main CI red: two mDNS discovery tests fail on stable macOS, no-default-features",
+  "status": "OPEN",
+  "note": "Diagnosed, not root-caused; no test was skipped or weakened.",
+  "commit": "",
+  "evidence": "In run 43394485744 each test process on macOS found the other process's announcement and not its own; the same job passed at 124b70f4 with identical discovery code; on Linux 0 failures in 160 concurrent-process runs. CONJECTURED: same-process delivery between the separate announcer and browser ServiceDaemons on the macOS runner. N13's gate refuses a release while this job is red.",
+  "tests": "crates/a2a-protocol-discovery (an_announced_agent_is_found_and_its_card_fetched, a_withdrawn_announcement_is_seen_lost)"
+ },
+ {
+  "id": "D1",
+  "severity": "High",
+  "finding": "A blocking send on a single-worker runtime could hang until the executor timeout (found by this work's live tests)",
+  "status": "FIXED",
+  "note": "Present since 2026-10-03 and in 0.15.0.",
+  "commit": "1591c8b6",
+  "evidence": "The collecting task runs the executor inline on one worker and stopped polling it while folding an event; an executor holding the audit chain lock across a store read (AuditedPolicy) waited for the fold, which waited for the lock. Located with markers and a contention backtrace (holder: AuditLog::append in the resumed run; waiter: SyncCollector::fold -> AuditedTaskStore::append_event). Unit test reproduced it first (no answer in 10 s); live approval test, whole file in one process: 5 hangs in 11 runs before (5 of the 11 carried eprintln markers; 4 runs with backtrace capture on every lock all passed and are not counted), 0 in 8 after. The live tests were then split into tool_loop_review_live.rs and tool_loop_audit_live.rs (500-line rule); the approval test now runs in a process of its own, where the hang did not occur before the fix either (6 of 6 isolated runs passed), so the unit test is the regression guard and the live file is not.",
+  "tests": "handler/messaging/inline_executor_tests.rs (an_executor_holding_what_a_fold_needs_is_still_polled); tests/tool_loop_audit_live.rs"
+ },
+ {
+  "id": "D2",
+  "severity": "Low (tests only)",
+  "finding": "Test-only applied-mark gates were keyed by an address a later manager could reuse",
+  "status": "FIXED",
+  "note": "cfg(test) only; no product effect.",
+  "commit": "1591c8b6",
+  "evidence": "streaming/event_queue/manager.rs kept gates in a static keyed by Arc::as_ptr and never removed them, so a later test's manager allocated at a freed address would wait at a gate nobody opens. Keyed by a Weak now, which holds the allocation, and dead gates are pruned.",
+  "tests": "the server library suite"
+ }
+]
