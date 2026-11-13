@@ -202,3 +202,51 @@ fn the_api_key_is_not_in_debug_output() {
         "Debug output does not mark the key redacted"
     );
 }
+
+/// A local endpoint that answers one streamed turn and returns the request
+/// it was sent, headers lowercased.
+async fn one_streamed_turn(model: impl FnOnce(&str) -> OpenAiChatModel) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut buf = vec![0_u8; 16 * 1024];
+        let n = stream.read(&mut buf).await.unwrap();
+        let body = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+        let resp = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(resp.as_bytes()).await.unwrap();
+        String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase()
+    });
+    let model = model(&base);
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let messages = vec![crate::tool_loop::ChatMessage::User("go".to_owned())];
+    let turn = model
+        .complete_streaming(
+            crate::tool_loop::ChatRequest::new("", &messages, &[]),
+            &crate::tool_loop::TextSink::new(1, tx),
+        )
+        .await
+        .unwrap();
+    assert_eq!(turn.text, "hi");
+    server.await.unwrap()
+}
+
+/// By default a streamed turn asks for its connection to be closed, for
+/// llama-server; `with_stream_connection_reuse` leaves it to the pool
+/// (adversarial review N16, 2026-11-13).
+#[tokio::test]
+async fn a_streamed_turn_closes_its_connection_unless_reuse_is_asked_for() {
+    let sent = one_streamed_turn(|base| OpenAiChatModel::new(base, "m").unwrap()).await;
+    assert!(sent.contains("connection: close"), "{sent}");
+    let sent = one_streamed_turn(|base| {
+        OpenAiChatModel::new(base, "m")
+            .unwrap()
+            .with_stream_connection_reuse()
+    })
+    .await;
+    assert!(!sent.contains("connection: close"), "{sent}");
+}

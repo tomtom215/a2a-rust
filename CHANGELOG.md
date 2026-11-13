@@ -41,6 +41,11 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`OpenAiChatModel::with_stream_connection_reuse()`** (adversarial review of 2026-11-13, N16). A streamed turn asked for its connection to
+  be closed (`Connection: close`) on every endpoint, for a llama-server behaviour: it closes the connection after a streamed answer (measured
+  again on llama.cpp `9daa0aa`: three of three reuse attempts found the connection closed). That stays the default, now stated as a
+  per-model setting, and an endpoint that keeps its connections (a hosted provider, a proxy) can reuse them. The cost of the handshake was
+  not measured: only a local endpoint was at hand.
 - **`ClientBuilder::with_strict_interface_tenant()`** (adversarial review of 2026-11-13, N12): holds every request to spec §8.3.2 rule 4, so
   a request naming a tenant other than the selected card interface's fails before it is sent (`ClientError::Config`), and `build()` refuses a
   card builder whose tenant `with_tenant` replaced. Without it both stay escape hatches for a deployment whose tenants are not each a card
