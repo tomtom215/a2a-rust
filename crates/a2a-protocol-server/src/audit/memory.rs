@@ -11,7 +11,10 @@ use a2a_protocol_types::audit::{AuditRecord, Checkpoint};
 use a2a_protocol_types::error::A2aResult;
 use tokio::sync::RwLock;
 
-use super::store::{Appended, AuditStore, BoxFuture, LegalHold, SubjectKey, record_millis};
+use super::store::{
+    Appended, AuditStore, BoxFuture, LegalHold, NamedAppend, Sealer, SubjectKey, record_millis,
+    sid_marker,
+};
 
 #[derive(Default)]
 struct Chain {
@@ -274,6 +277,94 @@ impl AuditStore for InMemoryAuditStore {
                 .get_mut(chain)
                 .and_then(|k| k.remove(lookup))
                 .map(|key| key.sid))
+        })
+    }
+
+    // The three fences take their locks in the one order every method here
+    // uses: holds, then subject keys, then chains.
+
+    /// Under the keys' read lock, which a deletion needs to write: no key
+    /// goes between the check and the store.
+    fn append_next_naming<'a>(
+        &'a self,
+        chain: &'a str,
+        sids: &'a [String],
+        seal: &'a Sealer<'a>,
+    ) -> BoxFuture<'a, A2aResult<NamedAppend>> {
+        Box::pin(async move {
+            let keys = self.subject_keys.read().await;
+            let present = keys.get(chain).map_or(0, |k| {
+                k.values().filter(|key| sids.contains(&key.sid)).count()
+            });
+            if present < sids.len() {
+                return Ok(NamedAppend::KeyGone);
+            }
+            let mut chains = self.chains.write().await;
+            let c = chains.entry(chain.to_owned()).or_default();
+            let head = c
+                .records
+                .last_key_value()
+                .map(|(seq, r)| (*seq, r.hash.clone()));
+            let record = seal(head, None).await?;
+            if c.records.contains_key(&record.seq) {
+                return Ok(NamedAppend::Lost);
+            }
+            c.records.insert(record.seq, record.clone());
+            drop(chains);
+            drop(keys);
+            Ok(NamedAppend::Stored(Box::new(record)))
+        })
+    }
+
+    /// Under the keys' write lock, which an append that names keys needs to
+    /// read.
+    fn delete_subject_key_unless_named<'a>(
+        &'a self,
+        chain: &'a str,
+        lookup: &'a str,
+        sid: &'a str,
+        scanned_through: u64,
+    ) -> BoxFuture<'a, A2aResult<bool>> {
+        Box::pin(async move {
+            let mut keys = self.subject_keys.write().await;
+            let chains = self.chains.read().await;
+            let marker = sid_marker(sid);
+            let named = chains.get(chain).is_some_and(|c| {
+                c.records
+                    .range(scanned_through.saturating_add(1)..)
+                    .any(|(_, r)| serde_json::to_string(r).is_ok_and(|t| t.contains(&marker)))
+            });
+            drop(chains);
+            if named {
+                return Ok(false);
+            }
+            let removed = keys.get_mut(chain).and_then(|k| k.remove(lookup)).is_some();
+            drop(keys);
+            Ok(removed)
+        })
+    }
+
+    /// Under the holds' read lock, which `place_hold` needs to write.
+    fn delete_subject_keys_unless_held<'a>(
+        &'a self,
+        chain: &'a str,
+        lookups: &'a [String],
+    ) -> BoxFuture<'a, A2aResult<Option<Vec<String>>>> {
+        Box::pin(async move {
+            let holds = self.holds.read().await;
+            if holds.contains_key(chain) {
+                return Ok(None);
+            }
+            let mut keys = self.subject_keys.write().await;
+            let sids = keys.get_mut(chain).map_or_else(Vec::new, |k| {
+                lookups
+                    .iter()
+                    .filter_map(|lookup| k.remove(lookup).map(|key| key.sid))
+                    .collect()
+            });
+            drop(keys);
+            drop(holds);
+            Ok(Some(sids))
         })
     }
 }

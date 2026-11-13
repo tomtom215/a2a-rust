@@ -6,67 +6,17 @@
 //! [`AuditStore`] on `SQLite`.
 
 use a2a_protocol_types::audit::{AuditRecord, Checkpoint};
-use a2a_protocol_types::error::{A2aError, A2aResult};
+use a2a_protocol_types::error::A2aResult;
 use sqlx::Row;
 use sqlx::sqlite::SqlitePool;
 
-use super::store::{Appended, AuditStore, BoxFuture, LegalHold, SubjectKey, record_millis};
+use super::store::{
+    Appended, AuditStore, BoxFuture, LegalHold, NamedAppend, Sealer, SubjectKey, record_millis,
+};
 
-const SCHEMA: [&str; 5] = [
-    "CREATE TABLE IF NOT EXISTS a2a_audit_records (
-        chain   TEXT    NOT NULL,
-        seq     INTEGER NOT NULL CHECK (seq > 0),
-        time_ms INTEGER NOT NULL,
-        hash    TEXT    NOT NULL,
-        record  TEXT    NOT NULL,
-        PRIMARY KEY (chain, seq)
-    )",
-    "CREATE TABLE IF NOT EXISTS a2a_audit_checkpoints (
-        chain      TEXT    NOT NULL,
-        seq        INTEGER NOT NULL,
-        kind       TEXT    NOT NULL,
-        checkpoint TEXT    NOT NULL,
-        PRIMARY KEY (chain, seq, kind)
-    )",
-    "CREATE TABLE IF NOT EXISTS a2a_audit_holds (
-        chain     TEXT PRIMARY KEY,
-        reason    TEXT NOT NULL,
-        placed_at TEXT NOT NULL
-    )",
-    "CREATE INDEX IF NOT EXISTS idx_a2a_audit_records_time ON a2a_audit_records(chain, time_ms)",
-    // One row per person per chain, for AuditPrivacy; deleting a row is
-    // what erases that person from the records sealed under its key.
-    "CREATE TABLE IF NOT EXISTS a2a_audit_subject_keys (
-        chain   TEXT NOT NULL,
-        lookup  TEXT NOT NULL,
-        sid     TEXT NOT NULL,
-        wrapped TEXT NOT NULL,
-        PRIMARY KEY (chain, lookup),
-        UNIQUE (chain, sid)
-    )",
-];
-
-fn db(e: &sqlx::Error) -> A2aError {
-    crate::sql_error::sql_error(crate::sql_error::Db::Sqlite, "sqlite audit store", e)
-}
-
-fn json<T: serde::Serialize>(v: &T) -> A2aResult<String> {
-    serde_json::to_string(v).map_err(|e| A2aError::internal(format!("audit serialization: {e}")))
-}
-
-fn parse<T: serde::de::DeserializeOwned>(s: &str) -> A2aResult<T> {
-    serde_json::from_str(s).map_err(|e| A2aError::internal(format!("audit row is not valid: {e}")))
-}
-
-#[allow(clippy::cast_possible_wrap)]
-const fn i64_of(seq: u64) -> i64 {
-    seq as i64
-}
-
-#[allow(clippy::cast_sign_loss)]
-const fn u64_of(seq: i64) -> u64 {
-    seq as u64
-}
+mod fence;
+mod sql;
+use sql::{SCHEMA, db, i64_of, json, parse, u64_of};
 
 /// An [`AuditStore`] in `SQLite` tables `a2a_audit_records`,
 /// `a2a_audit_checkpoints`, `a2a_audit_holds` and `a2a_audit_subject_keys`,
@@ -420,25 +370,42 @@ impl AuditStore for SqliteAuditStore {
             .fetch_optional(&mut *conn)
             .await
             .map_err(|e| db(&e))?;
-            // The row is gone either way, so no outcome of the truncation
-            // fails the call; the two that leave the key's bytes on disk are
-            // logged.
-            match truncate_log(&mut conn).await {
-                Truncation::Done => {}
-                Truncation::KeptByReader => {
-                    trace_warn!(
-                        "audit: a subject key was deleted, but a reader kept the write-ahead \
-                         log from being truncated; its bytes stay there until a later checkpoint"
-                    );
-                }
-                Truncation::Failed => {
-                    trace_warn!(
-                        "audit: a subject key was deleted, but the checkpoint after it failed"
-                    );
-                }
-            }
+            fence::truncate_after_key_deletion(&mut conn).await;
             Ok(row.map(|r| r.get(0)))
         })
+    }
+
+    fn append_next_naming<'a>(
+        &'a self,
+        chain: &'a str,
+        sids: &'a [String],
+        seal: &'a Sealer<'a>,
+    ) -> BoxFuture<'a, A2aResult<NamedAppend>> {
+        Box::pin(fence::append_next_naming(&self.pool, chain, sids, seal))
+    }
+
+    fn delete_subject_key_unless_named<'a>(
+        &'a self,
+        chain: &'a str,
+        lookup: &'a str,
+        sid: &'a str,
+        scanned_through: u64,
+    ) -> BoxFuture<'a, A2aResult<bool>> {
+        Box::pin(fence::delete_key_unless_named(
+            &self.pool,
+            chain,
+            lookup,
+            sid,
+            scanned_through,
+        ))
+    }
+
+    fn delete_subject_keys_unless_held<'a>(
+        &'a self,
+        chain: &'a str,
+        lookups: &'a [String],
+    ) -> BoxFuture<'a, A2aResult<Option<Vec<String>>>> {
+        Box::pin(fence::delete_keys_unless_held(&self.pool, chain, lookups))
     }
 }
 

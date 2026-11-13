@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:13140 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:13151 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -8846,7 +8846,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/audit/log.rs:75 AuditLog"
+    "crates/a2a-protocol-server/src/audit/log.rs:72 AuditLog"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/audit_trail.rs:247 a_cancel_request_names_who_asked",
@@ -8976,7 +8976,7 @@
     "crates/a2a-protocol-server/src/push/tenant_config_store.rs:127 TenantAwareInMemoryPushConfigStore::erase_caller",
     "crates/a2a-protocol-server/src/push/tenant_sqlite_config_store/caller_keys.rs:89 TenantAwareSqlitePushConfigStore::erase_caller",
     "crates/a2a-protocol-server/src/push/tenant_postgres_config_store/caller_keys.rs:89 TenantAwarePostgresPushConfigStore::erase_caller",
-    "crates/a2a-protocol-server/src/audit/privacy/log.rs:128 AuditLog::erase_subject"
+    "crates/a2a-protocol-server/src/audit/privacy/log.rs:134 AuditLog::erase_subject"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/erase_caller.rs:137 erase_caller_removes_a_callers_data_from_the_in_memory_stores",

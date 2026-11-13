@@ -66,6 +66,13 @@ pub mod kind {
     /// A person's audit key was destroyed, erasing them from every record
     /// sealed under it; names only the records' random handle (`sid`).
     pub const SUBJECT_ERASED: &str = "subject.erased";
+    /// An erasure recorded as [`SUBJECT_ERASED`] did not take effect.
+    ///
+    /// A legal hold was placed on the chain, by another writer, after that
+    /// record was written and before the keys were deleted. Names the same
+    /// `sid`s and the erasure's `seq` (`erasedSeq`); the keys are kept, and
+    /// the person's records still open.
+    pub const SUBJECT_ERASURE_REFUSED: &str = "subject.erasure_refused";
     /// A task, with its event log and artifact journal, was deleted through
     /// the audited task store. Names the task and the tenant, never its
     /// content.

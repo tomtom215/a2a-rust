@@ -111,8 +111,14 @@ impl AuditLog {
     /// way can be retried: the key is found again and deleted, and the
     /// erasure recorded once more. Within this process it runs under the
     /// chain's lock, so no append or [`place_hold`](Self::place_hold) of the
-    /// chain interleaves; another replica's can, and a call it records
-    /// afterwards names the person under a new key.
+    /// chain interleaves. Across replicas the store fences it: the keys are
+    /// deleted all together and only while no hold is placed
+    /// ([`AuditStore::delete_subject_keys_unless_held`](crate::audit::AuditStore::delete_subject_keys_unless_held));
+    /// a hold another replica placed after the `subject.erased` record was
+    /// written is answered with a `subject.erasure_refused` record and an
+    /// error, and nothing is erased. Another replica's append that had the
+    /// person's key in hand is refused by the store and makes a new key, so a
+    /// call it records afterwards names the person under that key.
     ///
     /// The person's records stay linkable to each other: each carries the
     /// same random `sid`. Their times, methods and ids say nothing about who
@@ -123,8 +129,8 @@ impl AuditLog {
     /// # Errors
     ///
     /// [`A2aError::invalid_params`] when the log protects nothing, or a
-    /// legal hold is placed on `chain` (release it first; GDPR
-    /// Art. 17(3)(e)); otherwise when the store fails.
+    /// legal hold is placed on `chain`, before or during the erasure (release
+    /// it first; GDPR Art. 17(3)(e)); otherwise when the store fails.
     pub async fn erase_subject(&self, chain: &str, subject: &str, by: &str) -> A2aResult<Erasure> {
         let privacy = self.privacy()?;
         let _guard = self.lock_chain(chain).await;
@@ -153,8 +159,26 @@ impl AuditLog {
         r.actor = Some(Actor::new(by, Some("operator".to_owned())));
         r.detail.insert("sids".to_owned(), sids.clone().into());
         let record = self.append_locked(r).await?;
-        for key in &keys {
-            self.store().delete_subject_key(chain, &key.lookup).await?;
+        // All the keys or none, and only while no hold is placed, read by the
+        // store atomically with the deletion: the check above covers this
+        // process, and another replica can place a hold after it (S8).
+        let lookups: Vec<String> = keys.iter().map(|k| k.lookup.clone()).collect();
+        if self
+            .store()
+            .delete_subject_keys_unless_held(chain, &lookups)
+            .await?
+            .is_none()
+        {
+            let mut r = AuditRecord::new(chain, kind::SUBJECT_ERASURE_REFUSED);
+            r.actor = Some(Actor::new(by, Some("operator".to_owned())));
+            r.detail.insert("sids".to_owned(), sids.into());
+            r.detail.insert("erasedSeq".to_owned(), record.seq.into());
+            self.append_locked(r).await?;
+            return Err(A2aError::invalid_params(format!(
+                "chain {chain:?} was placed under a legal hold while erasing; nothing is erased \
+                 (the erasure recorded at {} is marked refused)",
+                record.seq
+            )));
         }
         Ok(Erasure {
             sids,
@@ -164,12 +188,15 @@ impl AuditLog {
     }
 
     /// Every record of `chain`, a page at a time, to `each`.
-    async fn scan(&self, chain: &str, mut each: impl FnMut(&AuditRecord)) -> A2aResult<()> {
+    ///
+    /// Returns the `seq` of the last record read, `0` when there was none:
+    /// every record stored after the scan has a `seq` above it.
+    async fn scan(&self, chain: &str, mut each: impl FnMut(&AuditRecord)) -> A2aResult<u64> {
         let mut after = 0;
         loop {
             let page = self.store().read(chain, after, SCAN_PAGE).await?;
             let Some(last) = page.last() else {
-                return Ok(());
+                return Ok(after);
             };
             after = last.seq;
             page.iter().for_each(&mut each);
@@ -194,7 +221,10 @@ impl AuditLog {
     /// a person whose every record retention removed, or a key made for a
     /// record that was never stored. Under the chain's lock, so no append in
     /// this process is between making a key and storing its record; another
-    /// replica's can be, and loses that record's names to this.
+    /// replica's can be, and the store fences the two
+    /// ([`AuditStore::delete_subject_key_unless_named`](crate::audit::AuditStore::delete_subject_key_unless_named)):
+    /// the key is kept if that record was stored since the scan, and the
+    /// record is refused, and sealed again under a new key, if not.
     ///
     /// `purge` calls the [`_locked`](Self::drop_unreferenced_keys_locked)
     /// form under the lock it already holds for the chain; this one takes the
@@ -216,27 +246,32 @@ impl AuditLog {
             return Ok(0);
         }
         let mut named: HashSet<String> = HashSet::new();
-        self.scan(chain, |r| {
-            let actor = r.actor.as_ref().map(|a| a.subject.as_str());
-            // Strings, and the strings inside arrays (`actors`).
-            let detail = r.detail.values().flat_map(|v| match v {
-                serde_json::Value::Array(items) => {
-                    items.iter().filter_map(serde_json::Value::as_str).collect()
+        let scanned_through = self
+            .scan(chain, |r| {
+                let actor = r.actor.as_ref().map(|a| a.subject.as_str());
+                // Strings, and the strings inside arrays (`actors`).
+                let detail = r.detail.values().flat_map(|v| match v {
+                    serde_json::Value::Array(items) => {
+                        items.iter().filter_map(serde_json::Value::as_str).collect()
+                    }
+                    v => v.as_str().into_iter().collect::<Vec<_>>(),
+                });
+                for sid in actor.into_iter().chain(detail).filter_map(sid_of) {
+                    named.insert(sid.to_owned());
                 }
-                v => v.as_str().into_iter().collect::<Vec<_>>(),
-            });
-            for sid in actor.into_iter().chain(detail).filter_map(sid_of) {
-                named.insert(sid.to_owned());
-            }
-        })
-        .await?;
+            })
+            .await?;
+        // A key made by another replica for a record it has not yet stored
+        // is named by no record scanned: the store deletes it only if no
+        // record stored since the scan names it, and that replica's append
+        // stores its record only while the key is there, so one of the two
+        // sees the other (adversarial review N03, 2026-11-13).
         let mut deleted = 0;
         for key in keys.iter().filter(|k| !named.contains(&k.sid)) {
             if self
                 .store()
-                .delete_subject_key(chain, &key.lookup)
+                .delete_subject_key_unless_named(chain, &key.lookup, &key.sid, scanned_through)
                 .await?
-                .is_some()
             {
                 deleted += 1;
             }

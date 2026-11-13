@@ -21,6 +21,15 @@ use crate::audit::store::AuditStore;
 pub(in crate::audit) struct Resolved(HashMap<String, (String, Zeroizing<Vec<u8>>)>);
 
 impl Resolved {
+    /// The handles of the keys, one per person, for the store to check are
+    /// still there when it stores the record (`AuditStore::append_next_naming`).
+    pub(in crate::audit) fn sids(&self) -> Vec<String> {
+        let mut sids: Vec<String> = self.0.values().map(|(sid, _)| sid.clone()).collect();
+        sids.sort_unstable();
+        sids.dedup();
+        sids
+    }
+
     /// `person`'s key, which [`AuditPrivacy::resolve`] found for every person
     /// the record names.
     fn key(&self, person: &str) -> A2aResult<&(String, Zeroizing<Vec<u8>>)> {

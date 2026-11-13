@@ -7,7 +7,7 @@
 
 use super::DPO;
 use super::*;
-use crate::audit::store::{Appended, BoxFuture, SubjectKey};
+use crate::audit::store::{Appended, BoxFuture, NamedAppend, SubjectKey, sid_marker};
 use a2a_protocol_types::audit::Checkpoint;
 
 /// What every store keeping subject keys must do.
@@ -48,6 +48,108 @@ async fn subject_key_contract(store: &dyn AuditStore) {
     );
 }
 
+/// The three fences of a key's lifecycle (adversarial review N03, S8): what
+/// each answers, and that a refusal changes nothing. Atomicity is held by
+/// `key_lifecycle.rs`, two replicas over one store.
+async fn fence_contract(store: &dyn AuditStore) {
+    let mut tag = [0_u8; 6];
+    SystemRandom::new().fill(&mut tag).unwrap();
+    let chain = format!("fence-{}", hex(&tag));
+    let chain = chain.as_str();
+    let key = SubjectKey::new("h1:k1", "sid-k1", "w1");
+    assert!(store.put_subject_key(chain, &key).await.unwrap());
+    let seal = |head: Option<(u64, String)>, _ms| {
+        let mut r = AuditRecord::new(chain, kind::HALT);
+        r.seq = head.map_or(1, |(seq, _)| seq + 1);
+        r.detail.insert(
+            "requestedBy".to_owned(),
+            format!("{}x", sid_marker("sid-k1")).into(),
+        );
+        r.hash = format!("h{}", r.seq);
+        Box::pin(std::future::ready(Ok(r))) as BoxFuture<'_, _>
+    };
+    // A record naming a key that is gone is not stored.
+    let gone = vec!["sid-k1".to_owned(), "sid-missing".to_owned()];
+    assert_eq!(
+        store.append_next_naming(chain, &gone, &seal).await.unwrap(),
+        NamedAppend::KeyGone
+    );
+    assert_eq!(store.read(chain, 0, 10).await.unwrap().len(), 0);
+    // One naming keys that are there is.
+    let there = vec!["sid-k1".to_owned()];
+    let NamedAppend::Stored(first) = store
+        .append_next_naming(chain, &there, &seal)
+        .await
+        .unwrap()
+    else {
+        panic!("not stored")
+    };
+    assert_eq!(first.seq, 1);
+    fence_deletes_unless_named(store, chain).await;
+    fence_deletes_unless_held(store, chain).await;
+}
+
+/// The key `sid-k1`, named by the record at 1, is kept by a scan through 0
+/// and deleted by one through 1.
+async fn fence_deletes_unless_named(store: &dyn AuditStore, chain: &str) {
+    assert!(
+        !store
+            .delete_subject_key_unless_named(chain, "h1:k1", "sid-k1", 0)
+            .await
+            .unwrap()
+    );
+    assert!(store.subject_key(chain, "h1:k1").await.unwrap().is_some());
+    assert!(
+        store
+            .delete_subject_key_unless_named(chain, "h1:k1", "sid-k1", 1)
+            .await
+            .unwrap()
+    );
+    assert!(store.subject_key(chain, "h1:k1").await.unwrap().is_none());
+    assert!(
+        !store
+            .delete_subject_key_unless_named(chain, "h1:k1", "sid-k1", 1)
+            .await
+            .unwrap(),
+        "a key that is not there is not deleted"
+    );
+}
+
+/// Under a hold, no key goes; without one, every key named goes at once.
+async fn fence_deletes_unless_held(store: &dyn AuditStore, chain: &str) {
+    let a = SubjectKey::new("h1:a", "sid-a", "wa");
+    let b = SubjectKey::new("h1:b", "sid-b", "wb");
+    assert!(store.put_subject_key(chain, &a).await.unwrap());
+    assert!(store.put_subject_key(chain, &b).await.unwrap());
+    let both = vec!["h1:a".to_owned(), "h1:b".to_owned(), "h1:none".to_owned()];
+    store
+        .place_hold(&LegalHold {
+            chain: chain.to_owned(),
+            reason: "r".to_owned(),
+            placed_at: "2026-11-13T00:00:00Z".to_owned(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .delete_subject_keys_unless_held(chain, &both)
+            .await
+            .unwrap(),
+        None
+    );
+    assert!(store.subject_key(chain, "h1:a").await.unwrap().is_some());
+    assert!(store.subject_key(chain, "h1:b").await.unwrap().is_some());
+    assert!(store.release_hold(chain).await.unwrap());
+    let mut sids = store
+        .delete_subject_keys_unless_held(chain, &both)
+        .await
+        .unwrap()
+        .unwrap();
+    sids.sort();
+    assert_eq!(sids, vec!["sid-a".to_owned(), "sid-b".to_owned()]);
+    assert_eq!(store.subject_keys(chain).await.unwrap().len(), 0);
+}
+
 /// The whole cycle through a log over `store`.
 async fn erases_through(store: Arc<dyn AuditStore>) {
     let log = log_over(Arc::clone(&store));
@@ -72,6 +174,7 @@ async fn erases_through(store: Arc<dyn AuditStore>) {
 #[tokio::test]
 async fn the_in_memory_store_keeps_subject_keys() {
     subject_key_contract(&InMemoryAuditStore::new()).await;
+    fence_contract(&InMemoryAuditStore::new()).await;
     erases_through(Arc::new(InMemoryAuditStore::new())).await;
 }
 
@@ -82,6 +185,7 @@ async fn the_sqlite_store_keeps_subject_keys() {
         .await
         .unwrap();
     subject_key_contract(&store).await;
+    fence_contract(&store).await;
     let store = crate::audit::SqliteAuditStore::new("sqlite::memory:")
         .await
         .unwrap();
@@ -202,6 +306,7 @@ async fn the_postgres_store_keeps_subject_keys() {
     let url = format!("{base}/{name}");
     let store = crate::audit::PostgresAuditStore::new(&url).await.unwrap();
     subject_key_contract(&store).await;
+    fence_contract(&store).await;
     let store = crate::audit::PostgresAuditStore::new(&url).await.unwrap();
     sqlx::query("DELETE FROM a2a_audit_subject_keys")
         .execute(

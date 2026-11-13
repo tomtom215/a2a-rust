@@ -5,7 +5,7 @@
 
 //! The audit log: seals records into per-tenant chains and stores them.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -14,20 +14,17 @@ use a2a_protocol_types::audit::{
 };
 use a2a_protocol_types::error::{A2aError, A2aResult};
 
-use super::store::{AuditStore, BoxFuture};
+#[cfg(feature = "encryption")]
+use super::privacy::Resolved;
+use super::store::{AuditStore, BoxFuture, NamedAppend, Sealer};
+
+mod runs;
+use runs::Runs;
 
 /// How many times an append re-reads the head after losing a race for a
 /// `seq` to another writer before it gives up. Losing more than a handful in
 /// a row means something other than ordinary contention.
 const MAX_APPEND_ATTEMPTS: usize = 8;
-
-/// How many in-flight task runs [`AuditLog`] remembers the caller of.
-///
-/// A run is forgotten when its task reaches a terminal state. One that never
-/// does — its process died — would otherwise be remembered for ever, so the
-/// registry is bounded and forgets the oldest first. A task event whose run
-/// was forgotten is still recorded, with no `runSeq`.
-const MAX_TRACKED_RUNS: usize = 65_536;
 
 /// Read page size when exporting or verifying a whole chain.
 const READ_PAGE: usize = 1_000;
@@ -85,12 +82,6 @@ pub struct AuditLog {
     /// Protects what records say about people; see [`super::AuditPrivacy`].
     #[cfg(feature = "encryption")]
     pub(super) privacy: Option<Arc<super::AuditPrivacy>>,
-}
-
-#[derive(Default)]
-struct Runs {
-    by_task: HashMap<(String, String), u64>,
-    order: VecDeque<(String, String)>,
 }
 
 impl std::fmt::Debug for AuditLog {
@@ -245,14 +236,22 @@ impl AuditLog {
     /// chain's life, so no append pays for it.
     pub(super) async fn append_locked(&self, record: AuditRecord) -> A2aResult<AuditRecord> {
         #[cfg(feature = "encryption")]
-        let resolved = match &self.privacy {
+        let mut resolved = match &self.privacy {
             Some(privacy) => Some(privacy.resolve(&*self.store, &record).await?),
             None => None,
         };
         let mut anchor: Option<Option<Checkpoint>> = None;
-        // Positions lost to another writer; reading the anchor is not one.
+        // Positions lost to another writer, and keys lost to another
+        // replica's cleanup; reading the anchor is neither.
         let mut lost = 0;
         while lost < MAX_APPEND_ATTEMPTS {
+            // The handles of the keys the record will be sealed under: the
+            // store stores it only while every one of them is still there
+            // (adversarial review N03).
+            #[cfg(feature = "encryption")]
+            let sids: Vec<String> = resolved.as_ref().map(Resolved::sids).unwrap_or_default();
+            #[cfg(not(feature = "encryption"))]
+            let sids: Vec<String> = Vec::new();
             let wanted_anchor = AtomicBool::new(false);
             let seal = |head, store_ms| {
                 let sealed = self.seal_next(
@@ -266,15 +265,26 @@ impl AuditLog {
                 );
                 Box::pin(std::future::ready(sealed)) as BoxFuture<'_, _>
             };
-            match self.store.append_next(&record.chain, &seal).await {
-                Ok(Some(sealed)) => {
+            match self.store_next(&record.chain, &sids, &seal).await {
+                Ok(NamedAppend::Stored(sealed)) => {
                     if self.checkpoint_every > 0 && sealed.seq % self.checkpoint_every == 0 {
                         self.sign_checkpoint("checkpoint", &sealed.chain, sealed.seq, &sealed.hash)
                             .await?;
                     }
-                    return Ok(sealed);
+                    return Ok(*sealed);
                 }
-                Ok(None) => lost += 1,
+                Ok(NamedAppend::Lost) => lost += 1,
+                // Another replica deleted a key this record was to be sealed
+                // under, between resolving it and now: nothing was stored.
+                // Resolving again makes a new key, and a record sealed under it
+                // is one its people can be revealed from.
+                Ok(NamedAppend::KeyGone) => {
+                    lost += 1;
+                    #[cfg(feature = "encryption")]
+                    if let Some(privacy) = &self.privacy {
+                        resolved = Some(privacy.resolve(&*self.store, &record).await?);
+                    }
+                }
                 // The chain was empty and its anchor had not been read: the
                 // store has stored nothing and released its connection, so the
                 // anchor is read now and the append made again.
@@ -288,6 +298,24 @@ impl AuditLog {
             "audit append lost the race for chain {:?} {MAX_APPEND_ATTEMPTS} times",
             record.chain
         )))
+    }
+
+    /// Has the store append the next record of `chain`: fenced on the keys
+    /// `sids` when the record is sealed under any.
+    async fn store_next<'a>(
+        &'a self,
+        chain: &'a str,
+        sids: &'a [String],
+        seal: &'a Sealer<'a>,
+    ) -> A2aResult<NamedAppend> {
+        if sids.is_empty() {
+            return self
+                .store
+                .append_next(chain, seal)
+                .await
+                .map(|done| done.map_or(NamedAppend::Lost, |r| NamedAppend::Stored(Box::new(r))));
+        }
+        self.store.append_next_naming(chain, sids, seal).await
     }
 
     /// `template` sealed onto the chain after `head`: its position, the
@@ -304,7 +332,7 @@ impl AuditLog {
     fn seal_next(
         &self,
         template: &AuditRecord,
-        #[cfg(feature = "encryption")] resolved: Option<&super::privacy::Resolved>,
+        #[cfg(feature = "encryption")] resolved: Option<&Resolved>,
         anchor: Option<&Option<Checkpoint>>,
         wanted_anchor: &AtomicBool,
         head: Option<(u64, String)>,
@@ -427,54 +455,5 @@ impl AuditLog {
         let checkpoints = self.store.checkpoints(chain).await?;
         let keys: Vec<TrustedKey> = self.trusted_key().into_iter().collect();
         Ok(verify_chain(&records, &checkpoints, &keys))
-    }
-
-    // ── Run attribution ─────────────────────────────────────────────────────
-
-    pub(crate) fn begin_run(&self, chain: &str, task_id: &str, run_seq: u64) {
-        let mut runs = self
-            .runs
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let key = (chain.to_owned(), task_id.to_owned());
-        if runs.by_task.insert(key.clone(), run_seq).is_none() {
-            runs.order.push_back(key);
-        }
-        while runs.order.len() > MAX_TRACKED_RUNS {
-            if let Some(old) = runs.order.pop_front() {
-                runs.by_task.remove(&old);
-            }
-        }
-        drop(runs);
-    }
-
-    pub(crate) fn run_of(&self, chain: &str, task_id: &str) -> Option<u64> {
-        let runs = self
-            .runs
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        runs.by_task
-            .get(&(chain.to_owned(), task_id.to_owned()))
-            .copied()
-    }
-
-    pub(crate) fn end_run(&self, chain: &str, task_id: &str) {
-        let mut runs = self
-            .runs
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let key = (chain.to_owned(), task_id.to_owned());
-        if runs.by_task.remove(&key).is_some() {
-            runs.order.retain(|k| k != &key);
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn tracked_runs(&self) -> usize {
-        self.runs
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .by_task
-            .len()
     }
 }

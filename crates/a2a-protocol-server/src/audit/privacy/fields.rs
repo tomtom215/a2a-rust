@@ -130,12 +130,13 @@ mod tests {
     /// Keys the server's own records write that name no person: ids, counts,
     /// flags and fixed words. A key added to a record must be put in one of
     /// the lists above or here, by someone who decided which.
-    const NOT_A_PERSON: [&str; 16] = [
+    const NOT_A_PERSON: [&str; 17] = [
         "action",
         "artifactId",
         "callId",
         "decision",
         "delivery",
+        "erasedSeq",
         "partitions",
         "reachedExecutor",
         "requestId",

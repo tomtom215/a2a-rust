@@ -1698,6 +1698,17 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **Across replicas, a key cleanup could delete the key of a record being appended, and an erasure could delete keys under a legal hold**
+  (adversarial review of 2026-11-13, N03; S8 of 2026-11-12). The chain lock is per process. Replica A made a new person's key and, before its
+  append, replica B's key cleanup (which every `purge` runs) found the key unused and deleted it; A then stored a record whose actor could never
+  be revealed, in a chain that verified. And `erase_subject` read the holds and deleted keys later, so a hold B placed in between did not stop
+  it. `AuditStore` gains three fences, overridden atomically by the SQLite store (one statement each) and the PostgreSQL store (under the
+  chain's advisory lock, on the append's own connection): `append_next_naming` stores a record only while its keys exist (`NamedAppend::KeyGone`
+  otherwise, and the log makes a new key and seals again), `delete_subject_key_unless_named` keeps a key that a record stored since the scan
+  names, and `delete_subject_keys_unless_held` deletes all of an erasure's keys or none under a hold, which `erase_subject` answers with a new
+  `subject.erasure_refused` record (`kind::SUBJECT_ERASURE_REFUSED`) and an error. Reproduced first with two logs over one store, one paused at
+  the race, on the in-memory store, two SQLite pools and two PostgreSQL pools (`audit/privacy/tests/key_lifecycle.rs`): all six failed on the
+  old code. The trait defaults are not atomic across processes; a store of your own shared by replicas must override them (ADR 0015 amendment).
 - **A call a person approved could run with no audit record of running, and a healthy store recorded it as denied** (adversarial review of
   2026-11-13, N02). `AuditedPolicy` treated `RequireApproval` as not allowed: it wrote `decision = deny`, ignored whether that write succeeded,
   and, once the run resumed with a matching approval, the loop ran the call with no further record. With the audit store down after the run was

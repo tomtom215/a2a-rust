@@ -30,6 +30,7 @@ which articles it does and does not help with is in the
 | `approval` | the approval gate admits a decision | task, the approver, a digest of the action, `requestId`, `decision`, who asked (`requestedBy`); under a quorum, also `required`, `approvedBy`, `reachedExecutor` |
 | `halt` | an operator halts or resumes | the operator, `action`, `scope` (`all` or `tenant`) and, for a halt, `reason` and the ids of the tasks stopped |
 | `subject.erased` | `erase_subject` destroys a person's key | the operator and the records' random handles (`sids`) |
+| `subject.erasure_refused` | a legal hold was placed by another replica after an erasure's `subject.erased` record and before its keys were deleted; nothing was erased | the operator, the same `sids`, and the `seq` of the `subject.erased` record (`erasedSeq`) |
 | `task.deleted`, `erasure`, `hold.placed`, `hold.released` | see [Erasure of tasks](#erasure-of-tasks-is-on-record-too) and [Retention and legal holds](#retention-and-legal-holds) | the task and its context for `task.deleted`; the operator for the others, with the scope and counts of an `erasure` and the reason of a `hold.placed`. Never content |
 
 Content is recorded as a SHA-256 digest of its canonical JSON, never as
@@ -345,6 +346,14 @@ What erasure does not do, stated in full in ADR 0015's amendment:
   `in_clear`; they cannot be changed without breaking the chain.
 - **Work with an HMAC key you dropped.** Keep each old HMAC key in the ring
   (`with_hmac_key`) for as long as people's keys made under it may exist.
+
+Across replicas sharing a SQLite or PostgreSQL store, an erasure and a
+hold, and a key's cleanup and an append, are ordered by the store: an
+erasure deletes no key once a hold is placed, and a record is never stored
+under a key another replica's cleanup has deleted. A store of your own gets
+this only if it overrides `append_next_naming`,
+`delete_subject_key_unless_named` and `delete_subject_keys_unless_held`
+(ADR 0015, amendment 2026-11-13).
 
 It also costs: an append took 17.6 µs plain and 47.2 µs protected on the
 in-memory store, 296 µs and 521 µs on a SQLite file (ADR 0015 gives the

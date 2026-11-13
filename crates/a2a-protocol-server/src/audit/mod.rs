@@ -100,7 +100,8 @@ pub use privacy::{
 };
 pub use retention::{AuditRetention, Erased, PurgeReport, SIX_MONTHS};
 pub use store::{
-    Appended, AuditStore, BoxFuture, InMemoryAuditStore, LegalHold, Sealer, SubjectKey,
+    Appended, AuditStore, BoxFuture, InMemoryAuditStore, LegalHold, NamedAppend,
+    SEALED_VALUE_PREFIX, Sealer, SubjectKey, sid_marker,
 };
 
 #[cfg(feature = "postgres")]

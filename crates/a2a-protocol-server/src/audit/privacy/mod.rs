@@ -34,7 +34,7 @@ use super::store::{AuditStore, SubjectKey};
 use crate::store::encrypted::ContentCipher;
 
 /// The prefix of a sealed value in a record.
-pub const SEALED_PREFIX: &str = "a2a-sealed:v1:";
+pub const SEALED_PREFIX: &str = super::store::SEALED_VALUE_PREFIX;
 
 /// The prefix of a keyed digest in a record.
 pub const KEYED_DIGEST_PREFIX: &str = "hmac-sha256:";

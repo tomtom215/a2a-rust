@@ -47,6 +47,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 EXCLUDED = {
     "crates/a2a-protocol-server/src/audit/postgres.rs":
         "the audit store's pool, `pg_pool`, keeps sqlx's ping",
+    "crates/a2a-protocol-server/src/audit/postgres/fence.rs":
+        "runs on the audit store's pool (`PostgresAuditStore::pool`), which keeps sqlx's ping",
     "crates/a2a-protocol-server/src/push/postgres_config_store.rs":
         "opens its own pool with sqlx's defaults",
     "crates/a2a-protocol-server/src/push/tenant_postgres_config_store.rs":
