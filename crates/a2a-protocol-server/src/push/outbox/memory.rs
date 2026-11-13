@@ -216,6 +216,26 @@ impl PushOutbox for InMemoryPushOutbox {
         })
     }
 
+    fn extend_hold<'a>(&'a self, reservation: &'a str, hold: Duration) -> OutboxFuture<'a, usize> {
+        Box::pin(async move {
+            let now = Instant::now();
+            let until = now.checked_add(hold).unwrap_or(now);
+            let mut state = self.lock();
+            let mut extended = 0;
+            for row in state.rows.values_mut() {
+                if let Some(held) = row.reservation.as_mut()
+                    && held.id == reservation
+                    && !held.armed
+                {
+                    held.hold_until = until;
+                    extended += 1;
+                }
+            }
+            drop(state);
+            Ok(extended)
+        })
+    }
+
     fn release<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, ()> {
         Box::pin(async move {
             self.lock().rows.retain(|_, row| {

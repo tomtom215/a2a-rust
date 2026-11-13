@@ -19,12 +19,14 @@ which articles it does and does not help with is in the
 
 | Record | When | Carries |
 |---|---|---|
-| `call` | every RPC ends — including ones authentication refused | method, outcome, the caller and how they authenticated, the trace |
+| `call` | every RPC ends — including ones authentication refused | method, outcome, the call's id, the caller and how they authenticated, the trace |
 | `run.started` | an executor starts working on a task | task, context and message ids, digests of the message and each part, the caller, the trace |
 | `task.event` | the agent emits an event and it is stored | its position in the task's event log, the new state, a digest, and which `run.started` it belongs to |
 | `task.cancel_requested` | `CancelTask` reaches a running task | task, the caller, the trace |
 | `task.steered` | a message is accepted into a running task's inbox (ADR 0036) | task and context, the message id, a digest of the message, `delivery` (`inbox` or `handed-off`), the caller, the trace. Not written for a refused message or a replayed retry |
-| `call.started` | a call is admitted, only in [required](#required-mode) mode | method, trace |
+| `call.started` | a call is admitted, only in [required](#required-mode) mode | method, the call's id, trace |
+| `call.unresolved` | [`reconcile_unresolved`](#required-mode) finds a call that was admitted and never ended | the call's id and the `call.started` it closes. The outcome is unknown, not failed |
+| `tool.action` | a tool call is put to an `AuditedPolicy`, before it runs | the tool, the tool call's id, the verdict, a digest of the arguments, the caller, the task. Never the arguments |
 | `approval` | the approval gate admits a decision | task, the approver, a digest of the action, `requestId`, `decision`, who asked (`requestedBy`); under a quorum, also `required`, `approvedBy`, `reachedExecutor` |
 | `halt` | an operator halts or resumes | the operator, `action`, `scope` (`all` or `tenant`) and, for a halt, `reason` and the ids of the tasks stopped |
 | `subject.erased` | `erase_subject` destroys a person's key | the operator and the records' random handles (`sids`) |
@@ -102,9 +104,10 @@ elsewhere), `SqliteAuditStore` with `sqlite`, `PostgresAuditStore` with
 `postgres`. Replicas can share one PostgreSQL store, and they append to a
 tenant's chain one at a time: each append takes a per-chain advisory lock in
 the database, reads the head and stores the next record in one transaction, so
-replicas queue for a chain and none loses a position and retries. That holds
-one connection for the length of an append (and a second while the record is
-sealed, when sealing reads the store), so give the store's pool at least two.
+replicas queue for a chain and none loses a position and retries. An append
+holds one connection for its length and reads nothing else while it does: the
+keys and the anchor a record needs are read first, so appends to different
+chains cannot wait on each other for a connection (adversarial review A2).
 Records are timed by the database's clock, so a chain's times do not run
 backwards when its writers' clocks differ. A store of your own keeps the
 optimistic protocol unless it overrides `AuditStore::append_next`.
@@ -404,7 +407,48 @@ let log = AuditLog::new(Arc::new(InMemoryAuditStore::new())).require_record(true
 
 Each call then writes `call.started` before the handler runs, and is refused
 if that write fails. That record is written before authentication, so it
-names no caller; the `call` record after it does.
+names no caller; the `call` record after it does. Both carry the call's id
+(`CallContext::call_id()`, made by the server, not the caller's `x-request-id`).
+
+Required mode also keeps what the store refuses *after* the call is admitted.
+A `call`, `task.event`, `run.started`, `approval`, `halt` or cancel record the
+store cannot take is held and written when it answers, oldest first, by a task
+the log starts itself, so a failover during a call costs a delay in the chain
+and not a hole in it. Watch `log.pending_outcomes()` (records waiting) and
+`log.outcomes_lost()` (records that did not fit the 1,024-record wait, or that
+a store which still answered reads refused eight times); the second is zero in
+a healthy deployment, and any other value is a record that does not exist.
+A record written late sits after records that came later in time; each says
+what it describes.
+
+The wait is memory. A process that dies with records in it loses them, and a
+chain proves the records it holds are intact, not that none is missing. So run
+reconciliation at start-up and on a schedule:
+
+```rust,no_run
+# use std::time::Duration;
+# use a2a_protocol_server::audit::AuditLog;
+# async fn run(log: &AuditLog) -> Result<(), Box<dyn std::error::Error>> {
+for chain in log.store().chains().await? {
+    // 0: from the start of the chain. The age must exceed your longest
+    // request, because another replica may be serving a call this one cannot see.
+    log.reconcile_unresolved(&chain, 0, Duration::from_mins(10)).await?;
+}
+# Ok(())
+# }
+```
+
+Every `call.started` with no `call` after it, and not running here, gets a
+`call.unresolved` record saying its outcome is unknown. That is what an
+auditor reads in place of nothing. It is safe to run twice and from several
+replicas. Pass the position you last reconciled to as the second argument to
+avoid rereading a long chain.
+
+For an action that must not run unrecorded, install an `AuditedPolicy` on the
+[tool loop](../building-agents/tool-loop/running.md): it writes a `tool.action` record *before*
+each call and does not run a call it cannot record. The signed checkpoints that
+make a rewritten chain detectable are only as good as where they are kept:
+copy them off the machine that signs them.
 
 ## Limits
 

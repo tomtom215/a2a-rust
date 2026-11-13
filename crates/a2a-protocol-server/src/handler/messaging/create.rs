@@ -295,7 +295,16 @@ impl RequestHandler {
         approval: Option<&crate::approval::VerifiedApproval>,
     ) {
         if let (Some(log), Some(approval)) = (&self.audit, approval) {
-            crate::audit::record_approval(log, &*self.metrics, call_ctx, task_id, approval).await;
+            let review_for = self.reviewed_requester(call_ctx);
+            crate::audit::record_approval(
+                log,
+                &*self.metrics,
+                call_ctx,
+                task_id,
+                approval,
+                review_for.as_deref(),
+            )
+            .await;
         }
     }
 

@@ -301,5 +301,5 @@ upstream = "Has a test (tests/compatibility/core_operations/test_error_handling.
 scope = "A card declaring extendedAgentCard with no extended card configured answers ExtendedAgentCardNotConfiguredError (-32007 on JSON-RPC) on all four bindings."
 tests = [
   "crates/a2a-protocol-sdk/tests/binding_equivalence/errors.rs::card_ext_002_a_declared_but_unconfigured_extended_card_is_refused_on_every_binding",
-  "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs::a_declared_card_with_no_extended_card_is_not_configured",
+  "crates/a2a-protocol-server/src/handler/lifecycle/extended_card_tests.rs::a_declared_card_with_no_extended_card_is_not_configured",
 ]

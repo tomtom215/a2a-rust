@@ -13,10 +13,45 @@ use a2a_protocol_types::failure::FailureClass;
 use super::answer::FINISH_REASON_LENGTH;
 use super::model::ModelError;
 
+/// A call a person has to approve before the run can go on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ApprovalNeeded {
+    /// Names the request: the run's journal key, which the decision echoes
+    /// and by which the run is found again.
+    pub request_id: String,
+    /// What the person is shown.
+    pub summary: String,
+    /// The digest of the call ([`call_digest`](super::call_digest)).
+    pub digest: String,
+    /// The tool.
+    pub tool: String,
+    /// The call's id.
+    pub call_id: String,
+}
+
 /// Why a run produced no answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LoopError {
+    /// The run is parked on a call a person has to approve; it is not a
+    /// failure, and the executor ends the turn `input-required`.
+    AwaitingApproval(Box<ApprovalNeeded>),
+    /// The run journal could not be read or written, or was not what the run
+    /// needed. The run stopped before the step it could not record.
+    Journal(String),
+    /// A run begun with one model, tool set or configuration was asked to
+    /// continue under another.
+    PinMismatch(String),
+    /// A call may have run before the replica died, and this loop cannot
+    /// safely run it again: its idempotency secret was not set explicitly, so
+    /// its key would differ on this replica.
+    Indeterminate {
+        /// The tool.
+        tool: String,
+        /// The call's id.
+        call_id: String,
+    },
     /// The model provider failed a turn.
     Model(ModelError),
     /// A tool returned [`ToolError::Fatal`](super::ToolError::Fatal).
@@ -57,6 +92,17 @@ impl fmt::Display for LoopError {
                 "the model asked for tools on all {turns} turns without answering"
             ),
             Self::Cancelled => f.write_str("cancelled"),
+            Self::AwaitingApproval(n) => {
+                write!(f, "waiting for approval of a call to '{}'", n.tool)
+            }
+            Self::Journal(why) => write!(f, "the run journal: {why}"),
+            Self::PinMismatch(why) => f.write_str(why),
+            Self::Indeterminate { tool, call_id } => write!(
+                f,
+                "the call {call_id} to '{tool}' may have run before the replica stopped, and \
+                 its idempotency key is not the same on every replica; set \
+                 with_idempotency_secret to resume it"
+            ),
             Self::Budget(e) => e.fmt(f),
             Self::EmptyAnswer {
                 finish_reason: Some(reason),
@@ -145,6 +191,10 @@ impl LoopError {
             Self::Fatal { .. } => "tool_fatal".to_owned(),
             Self::TurnLimit(_) => "turn_limit".to_owned(),
             Self::Cancelled => "cancelled".to_owned(),
+            Self::AwaitingApproval(_) => "awaiting_approval".to_owned(),
+            Self::Journal(_) => "journal".to_owned(),
+            Self::PinMismatch(_) => "pin_mismatch".to_owned(),
+            Self::Indeterminate { .. } => "indeterminate_call".to_owned(),
             Self::Budget(_) => "budget_exhausted".to_owned(),
             Self::EmptyAnswer { .. } => "empty_answer".to_owned(),
         }
@@ -170,7 +220,13 @@ impl LoopError {
                 Some(FINISH_REASON_CONTENT_FILTER) => FailureClass::PolicyRefusal,
                 _ => FailureClass::Internal,
             },
-            Self::Model(_) | Self::Fatal { .. } | Self::Cancelled => FailureClass::Internal,
+            Self::Model(_)
+            | Self::Fatal { .. }
+            | Self::Cancelled
+            | Self::AwaitingApproval(_)
+            | Self::Journal(_)
+            | Self::PinMismatch(_)
+            | Self::Indeterminate { .. } => FailureClass::Internal,
         }
     }
 }

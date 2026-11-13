@@ -184,6 +184,39 @@ pub trait AuditStore: Send + Sync + 'static {
     /// how many records went.
     fn delete_through<'a>(&'a self, chain: &'a str, seq: u64) -> BoxFuture<'a, A2aResult<u64>>;
 
+    /// [`delete_through`](Self::delete_through), unless a hold is placed on
+    /// `chain`: `None` when one is, with nothing deleted.
+    ///
+    /// **The hold is read atomically with the deletion.** A hold whose
+    /// [`place_hold`](Self::place_hold) returned before this call began is
+    /// always seen by it, and one placed while it runs is either seen or placed
+    /// after the deletion, never in between. Retention reads the holds before
+    /// it decides what to delete and deletes some time later, so a hold placed
+    /// in between must still stop it (adversarial review A1, 2026-11-12).
+    ///
+    /// The default reads [`holds`](Self::holds) and then deletes, which is
+    /// **not** atomic: a store shared between processes must override it with
+    /// a check and a deletion that no hold can come between (a transaction
+    /// that holds the lock `place_hold` takes, as `PostgresAuditStore` does).
+    /// [`AuditLog::purge`](super::AuditLog::purge) serialises the two within
+    /// one log; only the store can do it across replicas.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be read or written.
+    fn delete_through_unless_held<'a>(
+        &'a self,
+        chain: &'a str,
+        seq: u64,
+    ) -> BoxFuture<'a, A2aResult<Option<u64>>> {
+        Box::pin(async move {
+            if self.holds().await?.iter().any(|hold| hold.chain == chain) {
+                return Ok(None);
+            }
+            self.delete_through(chain, seq).await.map(Some)
+        })
+    }
+
     /// Places a hold on `chain`, replacing any reason already given.
     fn place_hold<'a>(&'a self, hold: &'a LegalHold) -> BoxFuture<'a, A2aResult<()>>;
 

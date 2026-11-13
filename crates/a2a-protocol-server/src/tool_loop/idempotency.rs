@@ -61,7 +61,7 @@ pub(super) fn call_key(secret: &Secret, scope: &str, name: &str, arguments: &Val
 /// `value` as JSON with every object's fields sorted by name and no
 /// whitespace. Strings and numbers are written as `serde_json` writes them,
 /// so `1` and `1.0` stay different calls.
-fn canonical(value: &Value, out: &mut String) {
+pub(super) fn canonical(value: &Value, out: &mut String) {
     match value {
         Value::Object(map) => {
             // serde_json's map is sorted already, unless a crate in the

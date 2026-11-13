@@ -38,6 +38,7 @@
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -889,8 +890,37 @@ struct RemoteJwks {
     /// written under `refresh_lock`.
     last_attempt: std::sync::Mutex<Option<std::time::Instant>>,
     refresh_lock: tokio::sync::Mutex<()>,
+    /// How the last fetch that failed ended, and when, so the requests behind
+    /// it are answered with that failure instead of each making a fetch of
+    /// their own (adversarial review R4); read and written under
+    /// `refresh_lock`.
+    last_failure: std::sync::Mutex<Option<FailedFetch>>,
+    /// Requests currently waiting for a refresh, to bound them
+    /// ([`MAX_REFRESH_WAITERS`]).
+    waiting: std::sync::atomic::AtomicUsize,
+    /// The longest one request waits for keys, queueing included
+    /// ([`DEFAULT_JWKS_FETCH_BUDGET`]).
+    fetch_budget: Duration,
     client: JwksHttpClient,
 }
+
+/// A fetch that failed: when, for how long that failure is answered without
+/// fetching again, and the error every request in that time is given.
+struct FailedFetch {
+    at: std::time::Instant,
+    cooldown: Duration,
+    error: A2aError,
+}
+
+/// The most requests that wait for one key refresh at once. A request past it
+/// is refused at once (fail closed, `unavailable`) instead of queueing behind a
+/// fetch that may take its whole budget: the queue was unbounded, and each
+/// waiter held its connection and task until its turn came.
+const MAX_REFRESH_WAITERS: usize = 256;
+
+/// The default bound on one request's wait for keys; see
+/// [`JwtAuthInterceptor::with_jwks_fetch_budget`].
+pub const DEFAULT_JWKS_FETCH_BUDGET: Duration = JWKS_FETCH_BUDGET;
 
 /// The default [`JwtAuthInterceptor::with_jwks_refetch_interval`].
 pub const DEFAULT_JWKS_REFETCH_INTERVAL: Duration = Duration::from_secs(10);
@@ -963,6 +993,9 @@ impl JwtAuthInterceptor {
                 cache: RwLock::new(None),
                 last_attempt: std::sync::Mutex::new(None),
                 refresh_lock: tokio::sync::Mutex::new(()),
+                last_failure: std::sync::Mutex::new(None),
+                waiting: std::sync::atomic::AtomicUsize::new(0),
+                fetch_budget: DEFAULT_JWKS_FETCH_BUDGET,
                 client: build_jwks_client(),
             })),
         }
@@ -995,6 +1028,9 @@ impl JwtAuthInterceptor {
                 cache: RwLock::new(None),
                 last_attempt: std::sync::Mutex::new(None),
                 refresh_lock: tokio::sync::Mutex::new(()),
+                last_failure: std::sync::Mutex::new(None),
+                waiting: std::sync::atomic::AtomicUsize::new(0),
+                fetch_budget: DEFAULT_JWKS_FETCH_BUDGET,
                 client,
             })),
         }
@@ -1069,6 +1105,19 @@ impl JwtAuthInterceptor {
     pub fn with_jwks_refetch_interval(mut self, interval: Duration) -> Self {
         if let KeySource::Remote(ref mut r) = self.keys {
             r.refetch_interval = interval;
+        }
+        self
+    }
+
+    /// Bounds how long one request waits for keys, queueing behind another
+    /// request's fetch included, and each fetch. Default
+    /// [`DEFAULT_JWKS_FETCH_BUDGET`] (30 s). A request whose wait runs out is
+    /// refused, as every request is while the keys cannot be had. No-op for a
+    /// static key set.
+    #[must_use]
+    pub fn with_jwks_fetch_budget(mut self, budget: Duration) -> Self {
+        if let KeySource::Remote(ref mut r) = self.keys {
+            r.fetch_budget = budget;
         }
         self
     }
@@ -1159,18 +1208,107 @@ impl ServerInterceptor for JwtAuthInterceptor {
     }
 }
 
+/// Counts one request waiting for a refresh, and stops counting it when
+/// dropped, whichever way the wait ends.
+struct WaitingGuard<'a>(&'a std::sync::atomic::AtomicUsize);
+
+impl<'a> WaitingGuard<'a> {
+    /// `None` when [`MAX_REFRESH_WAITERS`] are already waiting.
+    fn enter(count: &'a std::sync::atomic::AtomicUsize) -> Option<Self> {
+        if count.fetch_add(1, Ordering::SeqCst) >= MAX_REFRESH_WAITERS {
+            count.fetch_sub(1, Ordering::SeqCst);
+            return None;
+        }
+        Some(Self(count))
+    }
+}
+
+impl Drop for WaitingGuard<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 impl RemoteJwks {
     /// Returns the cached JWKS, fetching when absent or stale.
+    ///
+    /// Requests that find the cache cold or expired queue on one lock, and the
+    /// first to hold it fetches. If that fetch fails, the requests behind it
+    /// are given **its error** and do not fetch, until a jittered cooldown
+    /// (the [refetch interval](JwtAuthInterceptor::with_jwks_refetch_interval))
+    /// has passed: a provider that is down is asked once, not once per request,
+    /// and no request waits through a queue of failing fetches. The wait itself
+    /// is bounded, by the fetch budget and by [`MAX_REFRESH_WAITERS`]. Every
+    /// path stays fail closed: no keys, no validation.
     async fn get(&self) -> A2aResult<Jwks> {
         if let Some(jwks) = self.cached_fresh() {
             return Ok(jwks);
         }
-        let _guard = self.refresh_lock.lock().await;
-        // Re-check after acquiring the lock: another caller may have fetched.
-        if let Some(jwks) = self.cached_fresh() {
-            return Ok(jwks);
+        let _waiting = WaitingGuard::enter(&self.waiting).ok_or_else(|| {
+            A2aError::unavailable("too many requests are waiting for the identity provider's keys")
+        })?;
+        // The fetch is bounded by the budget itself and its failure is shared, so
+        // a waiter ends within about one budget; the second is for the hand-over.
+        let refreshed = tokio::time::timeout(
+            self.fetch_budget.saturating_add(Duration::from_secs(1)),
+            async {
+                let _guard = self.refresh_lock.lock().await;
+                // Re-check after acquiring the lock: another caller may have fetched.
+                if let Some(jwks) = self.cached_fresh() {
+                    return Ok(jwks);
+                }
+                if let Some(error) = self.recent_failure() {
+                    return Err(error);
+                }
+                match self.fetch_and_cache().await {
+                    // A success needs no bookkeeping: the cache is fresh for its
+                    // whole lifetime, which is longer than any cooldown, so a
+                    // failure recorded before it is never read again.
+                    Ok(jwks) => Ok(jwks),
+                    Err(error) => {
+                        self.record_failure(&error);
+                        Err(error)
+                    }
+                }
+            },
+        )
+        .await;
+        refreshed.unwrap_or_else(|_| {
+            Err(A2aError::unavailable(
+                "the identity provider's keys could not be had in time",
+            ))
+        })
+    }
+
+    /// The error of the last failed fetch, while its cooldown lasts.
+    fn recent_failure(&self) -> Option<A2aError> {
+        let failure = self
+            .last_failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        failure
+            .as_ref()
+            .filter(|f| too_soon(f.at.elapsed(), f.cooldown))
+            .map(|f| f.error.clone())
+    }
+
+    /// Remembers a failed fetch for a cooldown of the refetch interval, plus up
+    /// to a fifth of it again so that replicas that failed together do not
+    /// ask together. A zero interval remembers nothing.
+    fn record_failure(&self, error: &A2aError) {
+        if self.refetch_interval.is_zero() {
+            return;
         }
-        self.fetch_and_cache().await
+        let fifth = u32::try_from(uuid::Uuid::new_v4().as_u128() % 200).unwrap_or(0);
+        let cooldown = self.refetch_interval + self.refetch_interval / 1000 * fifth;
+        *self
+            .last_failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(FailedFetch {
+            at: std::time::Instant::now(),
+            cooldown,
+            error: error.clone(),
+        });
     }
 
     /// Fetches the key set again for a token whose key id the cached set
@@ -1232,7 +1370,7 @@ impl RemoteJwks {
                 "JWKS URL is plaintext; keys must be fetched over https (http only to a loopback host)",
             ));
         }
-        let body = http_get_json(&self.client, &self.url, "JWKS").await?;
+        let body = http_get_json(&self.client, &self.url, "JWKS", self.fetch_budget).await?;
         let jwks = Jwks::from_json(&body)?;
         if jwks.is_empty() {
             return Err(A2aError::internal("JWKS endpoint returned no usable keys"));
@@ -1298,7 +1436,12 @@ fn build_jwks_client() -> JwksHttpClient {
     }
 }
 
-async fn http_get_json(client: &JwksHttpClient, url: &str, what: &str) -> A2aResult<Vec<u8>> {
+async fn http_get_json(
+    client: &JwksHttpClient,
+    url: &str,
+    what: &str,
+    budget: Duration,
+) -> A2aResult<Vec<u8>> {
     use http_body_util::BodyExt;
 
     let req = hyper::Request::builder()
@@ -1310,7 +1453,7 @@ async fn http_get_json(client: &JwksHttpClient, url: &str, what: &str) -> A2aRes
 
     // One deadline for the whole fetch — headers *and* body. See
     // JWKS_FETCH_BUDGET for why that is not two.
-    let deadline = tokio::time::Instant::now() + JWKS_FETCH_BUDGET;
+    let deadline = tokio::time::Instant::now() + budget;
 
     let resp = tokio::time::timeout_at(deadline, client.request(req))
         .await
@@ -1372,7 +1515,7 @@ async fn discover(client: &JwksHttpClient, issuer: &str) -> A2aResult<(String, S
         "{}/.well-known/openid-configuration",
         issuer.trim_end_matches('/')
     );
-    let body = http_get_json(client, &url, "OIDC discovery").await?;
+    let body = http_get_json(client, &url, "OIDC discovery", JWKS_FETCH_BUDGET).await?;
     let doc: Discovery = serde_json::from_slice(&body)
         .map_err(|e| A2aError::internal(format!("OIDC discovery returned invalid JSON: {e}")))?;
     let named = doc
@@ -1838,6 +1981,79 @@ mod tests {
         };
         let err = remote.get().await.expect_err("plaintext refused");
         assert!(err.message.contains("https"), "{err}");
+    }
+
+    /// A failed key fetch is remembered for the refetch interval plus up to a
+    /// fifth of it, so replicas that failed together do not ask together: never
+    /// less than the interval, never a fifth or more beyond it, and not always
+    /// the same (adversarial review R4).
+    /// A request waiting for a refresh is counted while it waits and not after:
+    /// a guard that never gives its place back would refuse every request once
+    /// `MAX_REFRESH_WAITERS` had waited, for the life of the process.
+    #[test]
+    fn a_waiting_request_gives_its_place_back_when_it_stops_waiting() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let count = AtomicUsize::new(0);
+        let guard = WaitingGuard::enter(&count).expect("room");
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        drop(guard);
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+
+        let waiting: Vec<_> = (0..MAX_REFRESH_WAITERS)
+            .map(|_| WaitingGuard::enter(&count).expect("room"))
+            .collect();
+        assert!(
+            WaitingGuard::enter(&count).is_none(),
+            "the limit is the limit"
+        );
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            MAX_REFRESH_WAITERS,
+            "a refused request is not counted"
+        );
+        drop(waiting);
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+        assert!(WaitingGuard::enter(&count).is_some(), "room again");
+    }
+
+    #[test]
+    fn a_failed_fetch_is_remembered_for_the_interval_plus_up_to_a_fifth() {
+        let interval = Duration::from_secs(100);
+        let i = JwtAuthInterceptor::from_jwks_url(base_validator(), "https://idp.example/jwks")
+            .with_jwks_refetch_interval(interval);
+        let KeySource::Remote(remote) = &i.keys else {
+            panic!("remote");
+        };
+        let error = A2aError::unavailable("the provider is down");
+        let mut cooldowns = std::collections::BTreeSet::new();
+        for _ in 0..400 {
+            remote.record_failure(&error);
+            let cooldown = remote
+                .last_failure
+                .lock()
+                .unwrap()
+                .as_ref()
+                .expect("recorded")
+                .cooldown;
+            assert!(cooldown >= interval, "{cooldown:?} is under the interval");
+            assert!(
+                cooldown < interval + interval / 5,
+                "{cooldown:?} is a fifth or more beyond the interval"
+            );
+            cooldowns.insert(cooldown);
+        }
+        assert!(
+            cooldowns.len() > 1,
+            "the same cooldown 400 times: no jitter"
+        );
+        // A draw is uniform over a fifth in 200 steps, so 400 draws all within
+        // the lower half have a chance of 0.5^400: the top of the range is
+        // reached, and the step is a thousandth of the interval, not smaller.
+        let longest = *cooldowns.last().expect("a cooldown was recorded");
+        assert!(
+            longest > interval + interval / 10,
+            "{longest:?}: the jitter never passed a tenth of the interval"
+        );
     }
 
     #[tokio::test]

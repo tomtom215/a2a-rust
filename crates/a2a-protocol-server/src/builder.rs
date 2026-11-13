@@ -104,6 +104,9 @@ pub(crate) enum CallerIsolation {
 
 #[cfg(test)]
 mod dead_webhook_tests;
+mod multi_tenant;
+#[cfg(test)]
+mod multi_tenant_tests;
 mod shared_stores;
 mod steering;
 
@@ -185,6 +188,9 @@ pub struct RequestHandlerBuilder {
     tenant_resolver: Option<Arc<dyn TenantResolver>>,
     tenant_config: Option<PerTenantConfig>,
     require_resolved_tenant: bool,
+    /// The deployment asserted the resolver is authorized; see
+    /// `with_authorized_tenant_resolver`.
+    tenant_resolver_authorized: bool,
     tenant_isolation: TenantIsolation,
     caller_isolation: Option<CallerIsolation>,
     inbound_trace_policy: crate::handler::InboundTracePolicy,
@@ -261,6 +267,7 @@ impl RequestHandlerBuilder {
             tenant_resolver: None,
             tenant_config: None,
             require_resolved_tenant: false,
+            tenant_resolver_authorized: false,
             tenant_isolation: TenantIsolation::Required,
             caller_isolation: None,
             inbound_trace_policy: crate::handler::InboundTracePolicy::Continue,
@@ -457,13 +464,22 @@ impl RequestHandlerBuilder {
                 if self.approval_gate.is_none() {
                     self.approval_gate = Some(crate::approval::ApprovalGate::new());
                 }
-                self.with_audit(log)
+                self = self.with_audit(log);
             }
             crate::profile::Profile::Production => {
                 self.profiles.push(crate::profile::ProfileKind::Production);
-                self
+            }
+            crate::profile::Profile::MultiTenant => {
+                self.profiles.push(crate::profile::ProfileKind::MultiTenant);
+                // Named callers unless sharing was chosen on purpose, and a
+                // request no one can place in a tenant is refused.
+                if self.caller_isolation.is_none() {
+                    self.caller_isolation = Some(CallerIsolation::EveryCaller);
+                }
+                self.require_resolved_tenant = true;
             }
         }
+        self
     }
 
     /// Checks approval decisions before the executor sees them: see
@@ -1337,6 +1353,12 @@ impl RequestHandlerBuilder {
         {
             self.check_production()?;
         }
+        if self
+            .profiles
+            .contains(&crate::profile::ProfileKind::MultiTenant)
+        {
+            self.check_multi_tenant()?;
+        }
 
         // Validate executor timeout is not zero.
         if let Some(timeout) = self.executor_timeout
@@ -1615,14 +1637,16 @@ impl RequestHandlerBuilder {
                 "an authenticating interceptor makes this handler isolate tasks by caller \
                  (spec §13.1), and the approval gate needs a caller other than the \
                  requester to answer, who could then never reach the requester's task. \
-                 Call share_tasks_across_callers(), or let requesters answer their own \
+                 Call share_tasks_across_callers(), give the approvers a narrow grant with \
+                 ApprovalGate::with_review_grants(), or let requesters answer their own \
                  runs with ApprovalGate::allowing_self_approval()"
             } else {
                 "isolate_tasks_by_caller keeps every caller from another's tasks, and the \
                  approval gate needs a caller other than the requester to answer, so no \
                  decision could ever be admitted. Call share_tasks_across_callers() \
-                 instead, or let requesters answer their own runs with \
-                 ApprovalGate::allowing_self_approval()"
+                 instead, give the approvers a narrow grant with \
+                 ApprovalGate::with_review_grants(), or let requesters answer their own \
+                 runs with ApprovalGate::allowing_self_approval()"
             };
             return Err(crate::error::ServerError::Config(why.to_owned()));
         }
@@ -1741,6 +1765,7 @@ impl RequestHandlerBuilder {
                         .unwrap_or(DEFAULT_MAX_CONCURRENT_STREAMS),
                 );
                 mgr = mgr.with_metrics(Arc::clone(&self.metrics));
+                mgr = mgr.with_terminal_confirmation(self.handler_limits.terminal_confirmation);
                 if let Some(max) = self.handler_limits.max_buffered_event_bytes {
                     mgr = mgr.with_max_buffered_bytes(max);
                 }
@@ -1942,6 +1967,10 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("tenant_resolver", &self.tenant_resolver.is_some())
             .field("tenant_config", &self.tenant_config)
             .field("require_resolved_tenant", &self.require_resolved_tenant)
+            .field(
+                "tenant_resolver_authorized",
+                &self.tenant_resolver_authorized,
+            )
             .field("tenant_isolation", &self.tenant_isolation)
             .field("caller_isolation", &self.caller_isolation)
             .field("inbound_trace_policy", &self.inbound_trace_policy)

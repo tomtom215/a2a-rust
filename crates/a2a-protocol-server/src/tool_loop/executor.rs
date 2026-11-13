@@ -6,6 +6,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use a2a_protocol_types::approval::ApprovalRequest;
 use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
@@ -128,14 +129,34 @@ impl ToolLoopExecutor {
         prompt: &str,
         trace: &Sink,
     ) -> A2aResult<Result<super::Answer, LoopError>> {
-        let scope = idempotency::task_scope(&ctx.task_id.0, &ctx.message.id.0);
+        // A decision on a call the run is parked on finds that run by the id of the
+        // request, which is the run's journal key; any other message is new work,
+        // keyed by the task and the message it answers.
+        let approval = ctx.approval().filter(|_| self.tool_loop.has_journal());
+        let scope = approval.map_or_else(
+            || idempotency::task_scope(&ctx.task_id.0, &ctx.message.id.0),
+            |a| a.request.request_id.clone(),
+        );
+        let verdict = approval.map(|a| super::journaling::Verdict {
+            digest: a.request.digest.clone(),
+            approved: a.is_approved(),
+            by: a.approver.clone(),
+        });
         let cancel = &ctx.cancellation_token;
         let inbox = if self.steering { ctx.inbox() } else { None };
+        // From the authenticated request, never from what the model wrote.
+        let identity = super::policy::TrustedIdentity {
+            tenant: ctx.tenant().map(str::to_owned),
+            principal: ctx.caller_identity().map(str::to_owned),
+            task: Some(ctx.task_id.0.clone()),
+        };
         if !self.drafts {
             let side = Side {
                 drafts: None,
                 inbox,
                 trace: Some(trace),
+                identity: Some(&identity),
+                approval: verdict.as_ref(),
             };
             return Ok(self
                 .tool_loop
@@ -147,6 +168,8 @@ impl ToolLoopExecutor {
             drafts: Some(&tx),
             inbox,
             trace: Some(trace),
+            identity: Some(&identity),
+            approval: verdict.as_ref(),
         };
         let run = self
             .tool_loop
@@ -180,7 +203,7 @@ impl AgentExecutor for ToolLoopExecutor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let prompt = ctx.message.texts().collect::<Vec<_>>().join("\n");
-            if prompt.trim().is_empty() {
+            if prompt.trim().is_empty() && ctx.approval().is_none() {
                 return Err(A2aError::invalid_params(
                     "the message has no text to answer",
                 ));
@@ -196,6 +219,19 @@ impl AgentExecutor for ToolLoopExecutor {
             match self.run(ctx, &emit, &prompt, &trace).await? {
                 Ok(answer) => complete(ctx, queue, &emit, answer).await,
                 Err(LoopError::Cancelled) => Ok(()),
+                Err(LoopError::AwaitingApproval(needed)) => {
+                    // The calls made so far have run; the caller sees them, and
+                    // then the question. The decision for this digest, from an
+                    // approver the gate admits, is what resumes the run.
+                    send_trace(&emit, &trace).await?;
+                    let question = format!(
+                        "Approval needed before calling '{}': {}",
+                        needed.tool, needed.summary
+                    );
+                    let request =
+                        ApprovalRequest::new(needed.request_id, needed.summary, needed.digest);
+                    emit.request_approval(request, question).await.map(|_| ())
+                }
                 Err(e @ (LoopError::TurnLimit(_) | LoopError::Budget(_))) => {
                     send_trace(&emit, &trace).await?;
                     emit.fail(e.failure_class(), e.to_string()).await

@@ -6,7 +6,7 @@
 //! The audit log: seals records into per-tenant chains and stores them.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
 use a2a_protocol_types::audit::{
@@ -80,6 +80,8 @@ pub struct AuditLog {
     locks: ChainLocks,
     runs: StdMutex<Runs>,
     failures: AtomicU64,
+    /// Records a required log holds for a store that refused them.
+    pub(super) outcomes: super::outcomes::Outcomes,
     /// Protects what records say about people; see [`super::AuditPrivacy`].
     #[cfg(feature = "encryption")]
     pub(super) privacy: Option<Arc<super::AuditPrivacy>>,
@@ -98,6 +100,7 @@ impl std::fmt::Debug for AuditLog {
             .field("checkpoint_every", &self.checkpoint_every)
             .field("require_record", &self.require_record)
             .field("failures", &self.failures.load(Ordering::Relaxed))
+            .field("pending_outcomes", &self.pending_outcomes())
             .finish_non_exhaustive()
     }
 }
@@ -114,6 +117,7 @@ impl AuditLog {
             locks: StdMutex::new(HashMap::new()),
             runs: StdMutex::new(Runs::default()),
             failures: AtomicU64::new(0),
+            outcomes: super::outcomes::Outcomes::default(),
             #[cfg(feature = "encryption")]
             privacy: None,
         }
@@ -228,15 +232,56 @@ impl AuditLog {
 
     /// [`append`](Self::append), for a caller already holding the chain's
     /// lock.
+    ///
+    /// **Everything that reads the store happens before `append_next`**, and
+    /// the sealer it is handed reads nothing: the PostgreSQL store holds one
+    /// connection for the whole of an append, so a read made while sealing
+    /// needed a second, and appends to different chains that each held one
+    /// while waiting for another could exhaust the pool between them
+    /// (adversarial review A2, 2026-11-12). What sealing needs is the keys of
+    /// the people the record names (`AuditPrivacy::resolve`), and, for the
+    /// first record of an empty chain, the latest anchor. The anchor is read
+    /// only when a sealer has found the chain empty, which is once in a
+    /// chain's life, so no append pays for it.
     pub(super) async fn append_locked(&self, record: AuditRecord) -> A2aResult<AuditRecord> {
-        let seal = |head, store_ms| self.seal_next(&record, head, store_ms);
-        for _ in 0..MAX_APPEND_ATTEMPTS {
-            if let Some(sealed) = self.store.append_next(&record.chain, &seal).await? {
-                if self.checkpoint_every > 0 && sealed.seq % self.checkpoint_every == 0 {
-                    self.sign_checkpoint("checkpoint", &sealed.chain, sealed.seq, &sealed.hash)
-                        .await?;
+        #[cfg(feature = "encryption")]
+        let resolved = match &self.privacy {
+            Some(privacy) => Some(privacy.resolve(&*self.store, &record).await?),
+            None => None,
+        };
+        let mut anchor: Option<Option<Checkpoint>> = None;
+        // Positions lost to another writer; reading the anchor is not one.
+        let mut lost = 0;
+        while lost < MAX_APPEND_ATTEMPTS {
+            let wanted_anchor = AtomicBool::new(false);
+            let seal = |head, store_ms| {
+                let sealed = self.seal_next(
+                    &record,
+                    #[cfg(feature = "encryption")]
+                    resolved.as_ref(),
+                    anchor.as_ref(),
+                    &wanted_anchor,
+                    head,
+                    store_ms,
+                );
+                Box::pin(std::future::ready(sealed)) as BoxFuture<'_, _>
+            };
+            match self.store.append_next(&record.chain, &seal).await {
+                Ok(Some(sealed)) => {
+                    if self.checkpoint_every > 0 && sealed.seq % self.checkpoint_every == 0 {
+                        self.sign_checkpoint("checkpoint", &sealed.chain, sealed.seq, &sealed.hash)
+                            .await?;
+                    }
+                    return Ok(sealed);
                 }
-                return Ok(sealed);
+                Ok(None) => lost += 1,
+                // The chain was empty and its anchor had not been read: the
+                // store has stored nothing and released its connection, so the
+                // anchor is read now and the append made again.
+                Err(_) if wanted_anchor.load(Ordering::Relaxed) => {
+                    anchor = Some(self.latest_anchor(&record.chain).await?);
+                }
+                Err(e) => return Err(e),
             }
         }
         Err(A2aError::internal(format!(
@@ -248,39 +293,50 @@ impl AuditLog {
     /// `template` sealed onto the chain after `head`: its position, the
     /// previous record's hash, and the time, which is the store's clock
     /// (`store_ms`, Unix milliseconds) when it gave one and this process's
-    /// otherwise.
+    /// otherwise. **Reads no store**: see [`append_locked`](Self::append_locked).
     ///
     /// An empty chain continues from its latest anchor when retention left one
-    /// and starts at 1 otherwise.
-    fn seal_next<'a>(
-        &'a self,
-        template: &'a AuditRecord,
+    /// and starts at 1 otherwise. `anchor` is that anchor if it has been read;
+    /// when it has not, `wanted_anchor` is set and the sealing fails, for the
+    /// caller to read it and ask again.
+    // `self` is read only where record protection (`encryption`) is built.
+    #[cfg_attr(not(feature = "encryption"), allow(clippy::unused_self))]
+    fn seal_next(
+        &self,
+        template: &AuditRecord,
+        #[cfg(feature = "encryption")] resolved: Option<&super::privacy::Resolved>,
+        anchor: Option<&Option<Checkpoint>>,
+        wanted_anchor: &AtomicBool,
         head: Option<(u64, String)>,
         store_ms: Option<i64>,
-    ) -> BoxFuture<'a, A2aResult<AuditRecord>> {
-        Box::pin(async move {
-            let (seq, prev) = match head {
-                Some((seq, hash)) => (seq + 1, Some(hash)),
-                None => match self.latest_anchor(&template.chain).await? {
-                    Some(anchor) => (anchor.seq + 1, Some(anchor.hash)),
-                    None => (1, None),
-                },
-            };
-            // Each attempt starts from the record as given: protection binds
-            // its sealed values to `seq`, which a lost race changes.
-            #[cfg_attr(not(feature = "encryption"), allow(unused_mut))]
-            let mut record = template.clone();
-            #[cfg(feature = "encryption")]
-            if let Some(privacy) = &self.privacy {
-                privacy.protect(&*self.store, &mut record, seq).await?;
-            }
-            let time = store_ms.map_or_else(
-                a2a_protocol_types::utc_now_iso8601,
-                a2a_protocol_types::unix_millis_to_iso8601,
-            );
-            record.seal(seq, prev, time)?;
-            Ok(record)
-        })
+    ) -> A2aResult<AuditRecord> {
+        let (seq, prev) = match head {
+            Some((seq, hash)) => (seq + 1, Some(hash)),
+            None => match anchor {
+                Some(Some(anchor)) => (anchor.seq + 1, Some(anchor.hash.clone())),
+                Some(None) => (1, None),
+                None => {
+                    wanted_anchor.store(true, Ordering::Relaxed);
+                    return Err(A2aError::internal(
+                        "the chain is empty and its anchor has not been read",
+                    ));
+                }
+            },
+        };
+        // Each attempt starts from the record as given: protection binds
+        // its sealed values to `seq`, which a lost race changes.
+        #[cfg_attr(not(feature = "encryption"), allow(unused_mut))]
+        let mut record = template.clone();
+        #[cfg(feature = "encryption")]
+        if let (Some(privacy), Some(resolved)) = (&self.privacy, resolved) {
+            privacy.protect(resolved, &mut record, seq)?;
+        }
+        let time = store_ms.map_or_else(
+            a2a_protocol_types::utc_now_iso8601,
+            a2a_protocol_types::unix_millis_to_iso8601,
+        );
+        record.seal(seq, prev, time)?;
+        Ok(record)
     }
 
     async fn latest_anchor(&self, chain: &str) -> A2aResult<Option<Checkpoint>> {

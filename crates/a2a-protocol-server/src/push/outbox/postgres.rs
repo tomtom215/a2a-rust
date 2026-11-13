@@ -280,6 +280,26 @@ impl PushOutbox for PostgresPushOutbox {
         })
     }
 
+    fn extend_hold<'a>(&'a self, reservation: &'a str, hold: Duration) -> OutboxFuture<'a, usize> {
+        Box::pin(async move {
+            // Idempotent: a second run moves the same rows to a later time.
+            let extended = pg_retry::retry(self.metrics.as_ref(), || {
+                sqlx::query(
+                    "UPDATE a2a_push_outbox
+                     SET hold_until = now() + make_interval(secs => $2::float8)
+                     WHERE reservation = $1 AND NOT armed",
+                )
+                .bind(reservation)
+                .bind(seconds(hold))
+                .execute(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?
+            .rows_affected();
+            Ok(usize::try_from(extended).unwrap_or(usize::MAX))
+        })
+    }
+
     fn release<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, ()> {
         Box::pin(async move {
             pg_retry::retry(self.metrics.as_ref(), || {

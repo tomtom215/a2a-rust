@@ -65,6 +65,8 @@ pub(super) struct Started {
     /// The turn's claim, which the event consumer holds to its last write
     /// (`handler::claims`).
     pub(super) claim: Option<std::sync::Arc<super::super::claims::TurnClaim>>,
+    /// How far the queue's events are stored, for the consumer that stores them.
+    pub(super) applied: std::sync::Arc<crate::streaming::event_queue::applied::AppliedMark>,
     /// `task` is the row exactly as saved (`basis::based_on`): a new task, or
     /// a continuation built from the read under its claim. Otherwise the save
     /// appended to a history `task` does not carry, so the row is read back.

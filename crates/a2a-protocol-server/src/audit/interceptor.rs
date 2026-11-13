@@ -52,19 +52,34 @@ pub fn record_for(ctx: &CallContext, kind: &str) -> AuditRecord {
     r
 }
 
+/// Counts and reports a record the store refused.
+fn report_failure(log: &AuditLog, metrics: &dyn Metrics, _error: &A2aError) {
+    trace_error!(error = %_error, "audit: a record could not be written");
+    log.note_failure();
+    metrics.on_persistence_error(persistence_operation::AUDIT_APPEND, "audit");
+}
+
 /// Appends `record`; a failure is logged, counted on the log and reported to
 /// `metrics` as `audit_append`, and never propagated.
+///
+/// A [required](AuditLog::require_record) log keeps a record the store
+/// refuses and writes it when the store answers again
+/// ([`AuditLog::pending_outcomes`]); any other log drops it, which is the
+/// documented price of never refusing a call.
 pub async fn append_or_report(
-    log: &AuditLog,
+    log: &Arc<AuditLog>,
     metrics: &dyn Metrics,
     record: AuditRecord,
 ) -> Option<AuditRecord> {
-    match log.append(record).await {
+    let written = if log.is_required() {
+        log.append_required(record).await
+    } else {
+        log.append(record).await
+    };
+    match written {
         Ok(sealed) => Some(sealed),
-        Err(_e) => {
-            trace_error!(error = %_e, "audit: a record could not be written");
-            log.note_failure();
-            metrics.on_persistence_error(persistence_operation::AUDIT_APPEND, "audit");
+        Err(e) => {
+            report_failure(log, metrics, &e);
             None
         }
     }
@@ -79,7 +94,9 @@ pub async fn append_or_report(
 ///
 /// When the log is [required](AuditLog::require_record), `before` also writes
 /// a `call.started` record and refuses the call if it cannot: a call is
-/// never served unrecorded.
+/// never served unrecorded. Its `call` record, which says how the call ended,
+/// is then kept until the store takes it, and both carry the call's id
+/// ([`CallContext::call_id`]) so an end can be matched to its start.
 pub struct AuditInterceptor {
     pub log: Arc<AuditLog>,
     pub metrics: Arc<dyn Metrics>,
@@ -94,17 +111,25 @@ impl ServerInterceptor for AuditInterceptor {
             if !self.log.is_required() {
                 return Ok(());
             }
+            // What the store refused earlier is written before this call is
+            // admitted, so the chain reads in the order things ended.
+            self.log.flush_pending().await;
             let mut r = record_for(ctx, kind::CALL_STARTED);
             r.method = Some(ctx.method().to_owned());
-            if append_or_report(&self.log, &*self.metrics, r)
-                .await
-                .is_some()
-            {
-                Ok(())
-            } else {
-                Err(A2aError::internal(
-                    "the audit log is required and could not record this call",
-                ))
+            r.detail
+                .insert("callId".to_owned(), ctx.call_id().to_owned().into());
+            // Not spooled: a start the store refuses is a call refused.
+            match self.log.append(r).await {
+                Ok(_) => {
+                    self.log.admit(ctx.call_id());
+                    Ok(())
+                }
+                Err(e) => {
+                    report_failure(&self.log, &*self.metrics, &e);
+                    Err(A2aError::internal(
+                        "the audit log is required and could not record this call",
+                    ))
+                }
             }
         })
     }
@@ -124,12 +149,17 @@ impl ServerInterceptor for AuditInterceptor {
         Box::pin(async move {
             let mut r = record_for(ctx, kind::CALL);
             r.method = Some(ctx.method().to_owned());
+            r.detail
+                .insert("callId".to_owned(), ctx.call_id().to_owned().into());
             r.outcome = Some(match outcome {
                 CallOutcome::Succeeded => Outcome::ok(),
                 CallOutcome::Failed(e) => Outcome::error(e.metric_label()),
                 CallOutcome::Cancelled => Outcome::cancelled(),
             });
             let _ = append_or_report(&self.log, &*self.metrics, r).await;
+            // After the record is written or spooled: in between, the call
+            // would be neither in flight nor ended.
+            self.log.end_call(ctx.call_id());
         })
     }
 }

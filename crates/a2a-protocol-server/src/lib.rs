@@ -121,6 +121,7 @@ pub mod audit;
 pub mod auth;
 pub mod builder;
 pub mod call_context;
+mod call_context_peer;
 mod content_check;
 pub mod dispatch;
 pub mod error;
@@ -220,7 +221,7 @@ pub use executor::AgentExecutor;
 pub use executor_helpers::{ArtifactChunk, EventEmitter, boxed_future};
 pub use handler::{
     HaltReport, HaltScope, HandlerLimits, InFlightReport, InboundTracePolicy, LOAD_HEADER,
-    LoadReport, RequestHandler, SendMessageResult, ShutdownReport,
+    LoadReport, RequestHandler, SendMessageResult, ShutdownReport, TerminalConfirmation,
 };
 pub use interceptor::{CallOutcome, ServerInterceptor, ServerInterceptorChain};
 pub use metrics::{ConnectionPoolStats, Metrics, RpcCall};

@@ -90,9 +90,57 @@ pub struct EventQueueManager {
     /// The process-wide budget over buffered event bytes, when there is one
     /// (ADR 0047).
     byte_budget: Option<super::byte_budget::ByteBudget>,
+    /// What a subscriber is told of a terminal event the store did not confirm.
+    terminal_confirmation: crate::handler::TerminalConfirmation,
     /// How many queues the map holds, stored at every change of it, so the
     /// load signal reads it without the map's lock (ADR 0046).
     live: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+/// A test's way of stopping a send at the `applied_mark` await, after its task
+/// is committed: [`EventQueueManager::gate_applied_mark`].
+#[cfg(test)]
+pub struct AppliedMarkGate {
+    /// Notified when a send arrives at the await.
+    pub reached: tokio::sync::Notify,
+    /// Lets the waiting send go.
+    pub open: tokio::sync::Notify,
+}
+
+/// The gates, keyed by the identity of the manager's queue map, so a gate stops
+/// the manager it was made for and no other test's.
+#[cfg(test)]
+static GATES: std::sync::Mutex<Vec<(usize, Arc<AppliedMarkGate>)>> =
+    std::sync::Mutex::new(Vec::new());
+
+#[cfg(test)]
+impl EventQueueManager {
+    fn gate_key(&self) -> usize {
+        Arc::as_ptr(&self.writers) as usize
+    }
+
+    /// Makes every later `applied_mark` of this manager wait to be let go.
+    pub(crate) fn gate_applied_mark(&self) -> Arc<AppliedMarkGate> {
+        let gate = Arc::new(AppliedMarkGate {
+            reached: tokio::sync::Notify::new(),
+            open: tokio::sync::Notify::new(),
+        });
+        GATES
+            .lock()
+            .unwrap()
+            .push((self.gate_key(), Arc::clone(&gate)));
+        gate
+    }
+
+    fn applied_mark_gate(&self) -> Option<Arc<AppliedMarkGate>> {
+        let key = self.gate_key();
+        GATES
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, g)| Arc::clone(g))
+    }
 }
 
 impl std::fmt::Debug for EventQueueManager {
@@ -105,6 +153,7 @@ impl std::fmt::Debug for EventQueueManager {
             .field("max_concurrent_queues", &self.max_concurrent_queues)
             .field("metrics", &self.metrics.is_some())
             .field("byte_budget", &self.byte_budget)
+            .field("terminal_confirmation", &self.terminal_confirmation)
             .field("live", &self.live_queues())
             .finish()
     }
@@ -120,6 +169,7 @@ impl Default for EventQueueManager {
             max_concurrent_queues: None,
             metrics: None,
             byte_budget: None,
+            terminal_confirmation: crate::handler::TerminalConfirmation::Required,
             live: Arc::default(),
         }
     }
@@ -151,6 +201,7 @@ impl EventQueueManager {
             max_concurrent_queues: None,
             metrics: None,
             byte_budget: None,
+            terminal_confirmation: crate::handler::TerminalConfirmation::Required,
             live: Arc::default(),
         }
     }
@@ -174,6 +225,17 @@ impl EventQueueManager {
     #[must_use]
     pub(crate) const fn with_write_timeout(mut self, write_timeout: std::time::Duration) -> Self {
         self.write_timeout = write_timeout;
+        self
+    }
+
+    /// What a subscriber is told of a terminal event the store did not
+    /// confirm (`HandlerLimits::terminal_confirmation`).
+    #[must_use]
+    pub(crate) const fn with_terminal_confirmation(
+        mut self,
+        confirmation: crate::handler::TerminalConfirmation,
+    ) -> Self {
+        self.terminal_confirmation = confirmation;
         self
     }
 
@@ -380,7 +442,10 @@ impl EventQueueManager {
             // gate on a collected writer would hold every terminal event for
             // the full write timeout.
             let writer = match consumer {
-                QueueConsumer::Background => self.observed(writer).with_terminal_gate(),
+                QueueConsumer::Background => self
+                    .observed(writer)
+                    .with_terminal_gate()
+                    .with_terminal_confirmation(self.terminal_confirmation),
                 QueueConsumer::Collector => self.observed(writer).collected(),
             };
             let writer = Arc::new(writer);
@@ -484,6 +549,11 @@ impl EventQueueManager {
         &self,
         task_id: &TaskId,
     ) -> Option<Arc<super::applied::AppliedMark>> {
+        #[cfg(test)]
+        if let Some(gate) = self.applied_mark_gate() {
+            gate.reached.notify_one();
+            gate.open.notified().await;
+        }
         self.writers
             .read()
             .await

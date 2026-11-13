@@ -3,21 +3,26 @@
 
 //! [`ToolLoop`]: model turns and tool calls until the model answers.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::sync::Arc;
 
 use a2a_protocol_types::budget::BudgetHandle;
 use tokio_util::sync::CancellationToken;
 
 use super::answer::Answer;
 use super::idempotency::{self, Secret};
+use super::journal::{ReceiptState, StepJournal};
+use super::journaling::{RunJournal, Verdict};
 pub use super::loop_error::LoopError;
 use super::model::{ChatMessage, ChatRequest, ToolCall, ToolModel};
+use super::policy::{CallStatus, TextCallRecovery, ToolPolicy, TraceContent, TrustedIdentity};
 use super::recover;
 use super::retry::ModelRetry;
-use super::run_support::{charge_usage, give_ids, limit_calls, parse_arguments};
+use super::run_support::{charge_usage, give_ids, limit_calls};
+use super::schema::ArgumentCheck;
 use super::steering::{Side, before_turn};
-use super::tool::{ToolError, ToolInvocation, ToolSet};
+use super::tool::ToolSet;
 use super::trace;
 use crate::rpc_span::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 
@@ -37,27 +42,62 @@ pub const DEFAULT_MAX_TURNS: usize = 8;
 /// 2, W2-LIVE-5).
 pub const DEFAULT_MAX_CALLS_PER_TURN: usize = 64;
 
+/// Where a call came from, for the policy, and what a person has decided.
+#[derive(Clone, Copy)]
+struct Origin<'a> {
+    from_text: bool,
+    identity: Option<&'a TrustedIdentity>,
+    /// The decision on the call the run was parked on, when it is resumed.
+    approval: Option<&'a Verdict>,
+    /// Whether a call that needs approval has a journal to wait in.
+    can_park: bool,
+}
+
+/// A run's conversation, trace and record of answered calls, which a journal
+/// checkpoints.
+pub(super) struct Progress {
+    pub(super) messages: Vec<ChatMessage>,
+    pub(super) trace: Vec<String>,
+    pub(super) done: HashMap<String, String>,
+}
+
+/// What one model reply is.
+enum Turn {
+    /// The answer, and why the model stopped.
+    Answer(String, Option<String>),
+    /// Calls to run, and whether the model wrote them as text.
+    Calls(Vec<ToolCall>, bool),
+}
+
 /// A model, the tools it may call, and the bounded loop between them.
 ///
 /// Each turn sends the preamble, the whole conversation and the whole
 /// catalogue; a reply with calls has them run and their results appended,
 /// and a reply without is the answer. What a call returns goes back to the
 /// model, errors included: an unknown tool, arguments that are not a JSON
-/// object and [`ToolError::Failed`] are each that call's result, because
+/// object and [`ToolError::Failed`](super::ToolError::Failed) are each that call's result, because
 /// that is how a model recovers. Only the provider failing, a
-/// [`ToolError::Fatal`], the turn bound and cancellation end a run.
+/// [`ToolError::Fatal`](super::ToolError::Fatal), the turn bound and cancellation end a run.
 ///
-/// Each call carries an idempotency key ([`ToolInvocation::idempotency_key`],
+/// Each call carries an idempotency key ([`ToolInvocation::idempotency_key`](super::ToolInvocation::idempotency_key),
 /// ADR 0026), and a call identical to one that already succeeded in the run
 /// is answered with the earlier result instead of being run again, unless
 /// its tool is [`read_only`](super::Tool::read_only).
 pub struct ToolLoop {
-    model: Box<dyn ToolModel>,
+    pub(super) model: Box<dyn ToolModel>,
     pub(super) tools: ToolSet,
     pub(super) preamble: String,
-    max_turns: usize,
-    max_calls_per_turn: usize,
-    recover_text_calls: bool,
+    pub(super) max_turns: usize,
+    pub(super) max_calls_per_turn: usize,
+    pub(super) text_recovery: TextCallRecovery,
+    pub(super) trace_content: TraceContent,
+    pub(super) argument_check: ArgumentCheck,
+    pub(super) journal: Option<Arc<dyn StepJournal>>,
+    /// The deployment's own pins, checked on resume.
+    pub(super) pin_labels: BTreeMap<String, String>,
+    /// Whether the idempotency secret was set, so keys agree across replicas.
+    pub(super) secret_set: bool,
+    policy: Option<Box<dyn ToolPolicy>>,
     secret: Secret,
     agent_name: Option<String>,
     meter: GenAiMeter,
@@ -71,7 +111,11 @@ impl fmt::Debug for ToolLoop {
             .field("tools", &self.tools)
             .field("max_turns", &self.max_turns)
             .field("max_calls_per_turn", &self.max_calls_per_turn)
-            .field("recover_text_calls", &self.recover_text_calls)
+            .field("text_recovery", &self.text_recovery)
+            .field("trace_content", &self.trace_content)
+            .field("argument_check", &self.argument_check)
+            .field("journal", &self.journal.is_some())
+            .field("policy", &self.policy.is_some())
             .field("agent_name", &self.agent_name)
             .field("model_retry", &self.model_retry)
             .finish_non_exhaustive()
@@ -89,80 +133,18 @@ impl ToolLoop {
             preamble: String::new(),
             max_turns: DEFAULT_MAX_TURNS,
             max_calls_per_turn: DEFAULT_MAX_CALLS_PER_TURN,
-            recover_text_calls: true,
+            text_recovery: TextCallRecovery::All,
+            trace_content: TraceContent::Full,
+            argument_check: ArgumentCheck::Off,
+            journal: None,
+            pin_labels: BTreeMap::new(),
+            secret_set: false,
+            policy: None,
             secret: idempotency::fresh_secret(),
             agent_name: None,
             meter: GenAiMeter::default(),
             model_retry: None,
         }
-    }
-
-    /// Names the agent this loop is, recorded as `gen_ai.agent.name` on
-    /// the run's metrics.
-    #[must_use]
-    pub fn with_agent_name(mut self, name: impl Into<String>) -> Self {
-        self.agent_name = Some(name.into());
-        self
-    }
-
-    /// Records the loop's metrics (`gen_ai.client.inference.duration` and
-    /// the rest; ADR 0013) to `meter` rather than to the global provider's
-    /// meter, which is looked up each time one is recorded.
-    ///
-    /// Takes the meter by reference since 0.16.0: the instruments are built
-    /// from it once, here, and the meter itself is not kept (audit C-23).
-    #[cfg(feature = "otel")]
-    #[must_use]
-    pub fn with_meter(mut self, meter: &opentelemetry::metrics::Meter) -> Self {
-        self.meter = GenAiMeter::new(meter);
-        self
-    }
-
-    /// Sets the secret idempotency keys are derived under. Each loop draws
-    /// its own by default, so keys differ between processes; replicas that
-    /// set the same secret give the same call in the same scope the same
-    /// key, so a backend deduplicates a call one replica retries after
-    /// another made it. Keep it as secret as a credential: with it, keys
-    /// can be computed from task ids and arguments.
-    #[must_use]
-    pub const fn with_idempotency_secret(mut self, secret: [u8; 32]) -> Self {
-        self.secret = secret;
-        self
-    }
-
-    /// Sets the system preamble every turn is sent with.
-    #[must_use]
-    pub fn with_preamble(mut self, preamble: impl Into<String>) -> Self {
-        self.preamble = preamble.into();
-        self
-    }
-
-    /// Sets how many model turns a run may take. `0` is taken as `1`: a run
-    /// asks the model at least once.
-    #[must_use]
-    pub const fn with_max_turns(mut self, max_turns: usize) -> Self {
-        self.max_turns = if max_turns == 0 { 1 } else { max_turns };
-        self
-    }
-
-    /// Sets how many tool calls one model reply may make; the first this many
-    /// run and the rest are dropped, with a line in the trace saying so. `0` is
-    /// taken as `1`. [`DEFAULT_MAX_CALLS_PER_TURN`] when not set.
-    #[must_use]
-    pub const fn with_max_calls_per_turn(mut self, max_calls: usize) -> Self {
-        self.max_calls_per_turn = if max_calls == 0 { 1 } else { max_calls };
-        self
-    }
-
-    /// Whether a final reply that is exactly one JSON object naming a tool
-    /// in the set — bare, in a code fence, or between `<tool_call>` tags —
-    /// is run as that call rather than returned as the answer. On by
-    /// default: small models write calls as text, and an answer of raw JSON
-    /// helps nobody.
-    #[must_use]
-    pub const fn with_recover_text_calls(mut self, on: bool) -> Self {
-        self.recover_text_calls = on;
-        self
     }
 
     /// The turn bound.
@@ -223,6 +205,10 @@ impl ToolLoop {
     /// different work different scopes: the same call in the same scope has
     /// the same key.
     ///
+    /// With a [journal](Self::with_journal) the scope is also the journal's
+    /// key: running the same scope again resumes the run it left, and two
+    /// pieces of work that share a scope share a checkpoint.
+    ///
     /// # Errors
     ///
     /// As [`run_within`](Self::run_within).
@@ -271,80 +257,189 @@ impl ToolLoop {
     ) -> Result<Answer, LoopError> {
         let specs = self.tools.specs();
         let names = self.tools.names();
-        let mut messages = vec![ChatMessage::User(user_text.to_owned())];
-        let mut trace = Vec::new();
-        // What each call that succeeded returned, by key, for tools that
-        // are not read-only.
-        let mut done = HashMap::new();
+        let (mut journal, restored) =
+            RunJournal::open(self, scope, user_text, &specs, side.approval, side.identity).await?;
+        let (mut progress, first_turn, mut resume, identity) = restored.begin(side.trace);
+        let identity = identity.as_ref().or(side.identity);
 
-        for turn in 0..self.max_turns {
+        for turn in first_turn..self.max_turns {
             if cancel.is_cancelled() {
                 return Err(LoopError::Cancelled);
             }
-            before_turn(budget, side.inbox, &mut messages)?;
-            run.inference_call();
-            let sink = side.sink(turn + 1);
-            let request = ChatRequest::new(&self.preamble, &messages, &specs);
-            let reply = self
-                .retried_turn(request, cancel, sink.as_ref(), budget)
-                .await?;
-            charge_usage(budget, &reply)?;
-
-            let mut text = reply.text;
-            let mut calls = reply.tool_calls;
-            limit_calls(&mut calls, self.max_calls_per_turn, &mut trace, side.trace);
-            if calls.is_empty() {
-                let recovered = if self.recover_text_calls {
-                    recover::text_call(&text, &names)
-                } else {
-                    None
-                };
-                let Some((name, arguments)) = recovered else {
-                    return Answer::from_reply(text, trace, reply.finish_reason);
-                };
-                // The model wrote the call as text: run it as the call it
-                // is, and keep it in the conversation as one.
-                calls.push(ToolCall::new(
-                    format!("recovered-{turn}"),
-                    name,
-                    arguments.to_string(),
-                ));
-                text.clear();
-            }
-            give_ids(&mut calls, turn);
-            messages.push(ChatMessage::Assistant {
-                text,
-                tool_calls: calls.clone(),
-            });
-
-            for call in calls {
-                if cancel.is_cancelled() {
-                    return Err(LoopError::Cancelled);
+            let (calls, from_text) = if let Some(r) = resume.take() {
+                (r.calls, r.recovered)
+            } else {
+                let reply = self
+                    .ask_model(run, turn, cancel, budget, &side, &specs, &mut progress)
+                    .await?;
+                match self.turn_of(reply, turn, &names, &side, &mut progress) {
+                    Turn::Answer(text, finish_reason) => {
+                        let answer = Answer::from_reply(text, progress.trace, finish_reason)?;
+                        journal.clear().await;
+                        return Ok(answer);
+                    }
+                    Turn::Calls(calls, from_text) => {
+                        journal.save((turn, from_text), &progress).await?;
+                        (calls, from_text)
+                    }
                 }
-                let content = self.call(run, &call, cancel, scope, &mut done).await?;
-                let line = trace::line(&call.name, &call.arguments, &content);
-                trace::record(&mut trace, side.trace, line);
-                messages.push(ChatMessage::ToolResult {
-                    call_id: call.id,
-                    name: call.name,
-                    content,
-                });
-            }
+            };
+            let origin = Origin {
+                from_text,
+                identity,
+                approval: side.approval,
+                can_park: journal.enabled(),
+            };
+            let step = (turn, from_text);
+            self.run_calls(
+                run,
+                calls,
+                step,
+                (cancel, scope, origin),
+                &side,
+                &mut progress,
+                &mut journal,
+            )
+            .await?;
         }
         Err(LoopError::TurnLimit(self.max_turns))
     }
 
-    /// The span of `call`, opened as it starts to run.
-    fn tool_span(&self, call: &ToolCall) -> GenAiSpan {
-        let tool = self.tools.get(&call.name);
-        let description = tool.map(|t| t.description());
-        GenAiSpan::tool(
-            &call.name,
-            tool.is_some(),
-            &call.id,
-            description,
-            &self.meter,
-        )
+    /// One model turn: what the caller said since the last is added to the
+    /// conversation, the model is asked, and its usage charged.
+    #[allow(clippy::too_many_arguments)]
+    async fn ask_model(
+        &self,
+        run: &AgentRun,
+        turn: usize,
+        cancel: &CancellationToken,
+        budget: Option<&BudgetHandle>,
+        side: &Side<'_>,
+        specs: &[super::model::ToolSpec],
+        progress: &mut Progress,
+    ) -> Result<super::model::ModelTurn, LoopError> {
+        before_turn(budget, side.inbox, &mut progress.messages)?;
+        run.inference_call();
+        let sink = side.sink(turn + 1);
+        let request = ChatRequest::new(&self.preamble, &progress.messages, specs);
+        let reply = self
+            .retried_turn(request, cancel, sink.as_ref(), budget)
+            .await?;
+        charge_usage(budget, &reply)?;
+        Ok(reply)
+    }
+
+    /// Runs `calls`, one after another, each recorded before it runs and after
+    /// it ends; a call a person has to approve parks the run.
+    #[allow(clippy::too_many_arguments)]
+    async fn run_calls(
+        &self,
+        run: &AgentRun,
+        calls: Vec<ToolCall>,
+        step: (usize, bool),
+        (cancel, scope, origin): (&CancellationToken, &str, Origin<'_>),
+        side: &Side<'_>,
+        progress: &mut Progress,
+        journal: &mut RunJournal<'_>,
+    ) -> Result<(), LoopError> {
+        for call in calls {
+            if cancel.is_cancelled() {
+                return Err(LoopError::Cancelled);
+            }
+            // Written before the call runs: a call the journal cannot record is
+            // not run.
+            if journal.enabled() {
+                journal.started(&call, super::journaling::arguments_digest(&call));
+                journal.save(step, progress).await?;
+            }
+            match self
+                .call(run, &call, cancel, scope, &mut progress.done, origin)
+                .await
+            {
+                Ok((content, status)) => {
+                    let line = self.trace_line(&call, &content, status);
+                    trace::record(&mut progress.trace, side.trace, line);
+                    progress.messages.push(ChatMessage::ToolResult {
+                        call_id: call.id.clone(),
+                        name: call.name.clone(),
+                        content,
+                    });
+                    let state = match status {
+                        CallStatus::Ran => ReceiptState::Ran,
+                        CallStatus::Failed => ReceiptState::Failed,
+                        CallStatus::NotRun => ReceiptState::NotRun,
+                    };
+                    journal.ended(&call.id, state);
+                    journal.save(step, progress).await?;
+                }
+                Err(LoopError::AwaitingApproval(needed)) => {
+                    journal.park(&call, &needed, origin.identity);
+                    journal.save(step, progress).await?;
+                    return Err(LoopError::AwaitingApproval(needed));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+
+    /// What a reply is: the calls it asks for, with the assistant turn pushed
+    /// to `messages`, or the answer.
+    fn turn_of(
+        &self,
+        reply: super::model::ModelTurn,
+        turn: usize,
+        names: &[String],
+        side: &Side<'_>,
+        progress: &mut Progress,
+    ) -> Turn {
+        let mut text = reply.text;
+        let mut calls = reply.tool_calls;
+        let mut from_text = false;
+        limit_calls(
+            &mut calls,
+            self.max_calls_per_turn,
+            &mut progress.trace,
+            side.trace,
+        );
+        if calls.is_empty() {
+            let recovered = self.recovered(&text, names);
+            from_text = recovered.is_some();
+            let Some((name, arguments)) = recovered else {
+                return Turn::Answer(text, reply.finish_reason);
+            };
+            // The model wrote the call as text: run it as the call it is, and
+            // keep it in the conversation as one.
+            calls.push(ToolCall::new(
+                format!("recovered-{turn}"),
+                name,
+                arguments.to_string(),
+            ));
+            text.clear();
+        }
+        give_ids(&mut calls, turn);
+        progress.messages.push(ChatMessage::Assistant {
+            text,
+            tool_calls: calls.clone(),
+        });
+        Turn::Calls(calls, from_text)
+    }
+
+    /// The call a reply written as text is, if it is one the loop's
+    /// [`TextCallRecovery`] runs.
+    fn recovered(&self, text: &str, names: &[String]) -> Option<(String, serde_json::Value)> {
+        recover::text_call(text, names).filter(|(name, _)| {
+            let read_only = self.tools.get(name).is_some_and(|t| t.read_only());
+            self.text_recovery.permits(read_only)
+        })
+    }
+
+    /// The line `call` leaves in the caller's trace, as [`TraceContent`] says.
+    fn trace_line(&self, call: &ToolCall, content: &str, status: CallStatus) -> String {
+        match self.trace_content {
+            TraceContent::Full => trace::line(&call.name, &call.arguments, content),
+            TraceContent::Receipt => status.receipt(&call.name, &call.id),
+        }
     }
 
     /// One model turn, in its span, abandoned if `cancel` fires.
@@ -387,79 +482,12 @@ impl ToolLoop {
             }
         }
     }
-
-    /// Runs one call in its span and returns what goes back to the model.
-    /// Only [`ToolError::Fatal`] and cancellation are errors here. A call
-    /// whose key is in `done` is not run: the earlier result is returned,
-    /// marked, and no span is opened and nothing counted in `run`, since
-    /// nothing ran.
-    async fn call(
-        &self,
-        run: &AgentRun,
-        call: &ToolCall,
-        cancel: &CancellationToken,
-        scope: &str,
-        done: &mut HashMap<String, String>,
-    ) -> Result<String, LoopError> {
-        let tool = self.tools.get(&call.name);
-        let arguments = parse_arguments(&call.arguments);
-        let key = match (&tool, &arguments) {
-            (Some(_), Ok(arguments)) => {
-                idempotency::call_key(&self.secret, scope, &call.name, arguments)
-            }
-            _ => String::new(),
-        };
-        if let Some(earlier) = done.get(&key) {
-            return Ok(format!(
-                "not run again: an identical call already ran in this task and returned: {earlier}"
-            ));
-        }
-        run.tool_call();
-        let span = self.tool_span(call);
-        let Some(tool) = tool else {
-            span.failed("unknown_tool");
-            return Ok(format!(
-                "error: no tool named '{}'; the tools are: {}",
-                call.name,
-                self.tools.names().join(", ")
-            ));
-        };
-        let arguments = match arguments {
-            Ok(arguments) => arguments,
-            Err(e) => {
-                span.failed("invalid_arguments");
-                return Ok(format!("error: {e}"));
-            }
-        };
-        let invocation = ToolInvocation::new(arguments, key.clone());
-        let result = tokio::select! {
-            biased;
-            () = cancel.cancelled() => return Err(LoopError::Cancelled),
-            result = span.instrument(tool.call(invocation)) => result,
-        };
-        match result {
-            Ok(output) => {
-                span.succeeded();
-                if !tool.read_only() {
-                    done.insert(key, output.clone());
-                }
-                Ok(output)
-            }
-            Err(ToolError::Failed(e)) => {
-                span.failed("tool_error");
-                Ok(format!("error: {e}"))
-            }
-            Err(ToolError::Fatal(message)) => {
-                span.failed("tool_fatal");
-                Err(LoopError::Fatal {
-                    tool: call.name.clone(),
-                    message,
-                })
-            }
-        }
-    }
 }
 
+#[path = "run_call.rs"]
+mod call;
+#[path = "run_config.rs"]
+mod config;
 #[path = "run_retried.rs"]
 mod retried;
 

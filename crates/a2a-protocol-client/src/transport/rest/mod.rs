@@ -76,6 +76,31 @@ struct Inner {
     max_response_size: usize,
 }
 
+/// The one place a REST base URL is validated and normalised, for every way a
+/// [`RestTransport`] is made: the JSON-RPC transport's checks, and no trailing
+/// `/`, because a base that kept its slash produced `//message:send`, which the
+/// SDK's server does not route (adversarial review P1). A base path is kept.
+///
+/// # Errors
+///
+/// [`ClientError::InvalidEndpoint`] for an empty URL, one that is not
+/// `http://` or `https://` (or `https://` in a build without TLS), or one
+/// that names no host.
+pub(super) fn canonical_base_url(base_url: &str) -> ClientResult<String> {
+    super::jsonrpc::validate_url(base_url)?;
+    let trimmed = base_url.trim_end_matches('/');
+    let host = trimmed
+        .strip_prefix("http://")
+        .or_else(|| trimmed.strip_prefix("https://"))
+        .unwrap_or_default();
+    if host.is_empty() {
+        return Err(ClientError::InvalidEndpoint(format!(
+            "invalid base URL (no host): {base_url}"
+        )));
+    }
+    Ok(trimmed.to_owned())
+}
+
 impl RestTransport {
     /// Creates a new transport using `base_url` as the root URL.
     ///
@@ -132,21 +157,14 @@ impl RestTransport {
         stream_connect_timeout: Duration,
         connection_timeout: Duration,
     ) -> ClientResult<Self> {
-        let base_url = base_url.into();
-        if base_url.is_empty()
-            || (!base_url.starts_with("http://") && !base_url.starts_with("https://"))
-        {
-            return Err(ClientError::InvalidEndpoint(format!(
-                "invalid base URL: {base_url}"
-            )));
-        }
+        let base_url = canonical_base_url(&base_url.into())?;
 
         let client = crate::transport::default_http_client(connection_timeout);
 
         Ok(Self {
             inner: Arc::new(Inner {
                 client,
-                base_url: base_url.trim_end_matches('/').to_owned(),
+                base_url,
                 request_timeout,
                 stream_connect_timeout,
                 max_response_size: super::DEFAULT_MAX_RESPONSE_SIZE,
@@ -162,8 +180,7 @@ impl RestTransport {
         request_timeout: Duration,
         stream_connect_timeout: Duration,
     ) -> ClientResult<Self> {
-        let base_url = base_url.into();
-        super::jsonrpc::validate_url(&base_url)?;
+        let base_url = canonical_base_url(&base_url.into())?;
         Ok(Self {
             inner: Arc::new(Inner {
                 client,
@@ -246,6 +263,57 @@ impl Transport for RestTransport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every constructor goes through `canonical_base_url`: one rule for the
+    /// public constructors and the builder's (adversarial review P1).
+    #[test]
+    fn one_rule_normalises_the_base_url_for_every_constructor() {
+        for (given, kept) in [
+            ("http://agent.example", "http://agent.example"),
+            ("http://agent.example/", "http://agent.example"),
+            ("http://agent.example///", "http://agent.example"),
+            ("http://agent.example/a2a/", "http://agent.example/a2a"),
+            (
+                "http://agent.example:8080/a2a",
+                "http://agent.example:8080/a2a",
+            ),
+        ] {
+            assert_eq!(canonical_base_url(given).unwrap(), kept, "{given}");
+            let public = RestTransport::new(given).unwrap();
+            let from_builder = RestTransport::from_client(
+                given,
+                crate::transport::default_http_client(Duration::from_secs(1)),
+                Duration::from_secs(1),
+                Duration::from_secs(1),
+            )
+            .unwrap();
+            assert_eq!(public.inner.base_url, kept, "public constructor, {given}");
+            assert_eq!(
+                from_builder.inner.base_url, kept,
+                "builder constructor, {given}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_base_url_that_names_no_host_is_refused() {
+        for bad in [
+            "",
+            "http://",
+            "https:///",
+            "ftp://agent.example",
+            "agent.example",
+            "/a2a",
+        ] {
+            assert!(
+                matches!(
+                    canonical_base_url(bad),
+                    Err(ClientError::InvalidEndpoint(_))
+                ),
+                "{bad:?}"
+            );
+        }
+    }
 
     #[test]
     fn rest_transport_rejects_invalid_url() {

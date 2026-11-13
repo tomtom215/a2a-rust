@@ -258,6 +258,30 @@ pub trait PushOutbox: Send + Sync + 'static {
         })
     }
 
+    /// Extends to `hold` from now the hold of `reservation`, if it is still
+    /// held (not armed, not released): the heartbeat of a reserver that is
+    /// still alive and whose event is still being written (adversarial review
+    /// R3). Returns how many rows it extended; `0` means nothing of it is left
+    /// to extend (it was settled by a replica whose worker saw the hold run
+    /// out, or released).
+    ///
+    /// Without a heartbeat a hold is a wall-clock guess that no write outlasts;
+    /// with one, a worker settles only a reservation whose reserver has stopped
+    /// renewing it, which a live writer, however slow its store, does not.
+    ///
+    /// # Errors
+    ///
+    /// The outbox cannot be written, keeps no reservations, or does not extend
+    /// a hold (the default): the reserver then relies on the hold it set.
+    fn extend_hold<'a>(&'a self, reservation: &'a str, hold: Duration) -> OutboxFuture<'a, usize> {
+        let _ = (reservation, hold);
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+                "this push outbox does not extend the hold of a reservation",
+            ))
+        })
+    }
+
     /// Every reservation of one task that is not armed, whether or not its hold
     /// has run out: for a caller that knows the reserver can write no more, such
     /// as the reaper once it holds the task's turn claim (a store refuses a

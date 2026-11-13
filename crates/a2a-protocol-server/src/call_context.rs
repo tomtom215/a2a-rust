@@ -78,33 +78,9 @@ use std::sync::OnceLock;
 
 use a2a_protocol_types::trace_context::TraceContext;
 
-/// The headers-map key under which a binding records the address of the
-/// connection a call arrived on, as `ip:port`; see [`CallContext::peer_addr`].
-///
-/// A transport of your own that calls the
-/// [`RequestHandler`](crate::RequestHandler) directly sets it in the headers
-/// map it passes.
-pub const PEER_ADDR_KEY: &str = ":peer-addr";
-
-/// The address of the connection a request arrived on, as an HTTP request
-/// extension.
-///
-/// The SDK's servers insert it into each request before dispatching it, and
-/// the dispatchers copy it to [`CallContext::peer_addr`]; see the
-/// [module docs](self).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PeerAddr(pub SocketAddr);
-
-/// The headers-map key under which a binding records the client's
-/// mutual-TLS certificate, standard base64 of its DER encoding; see
-/// [`CallContext::peer_certificate`].
-pub const PEER_CERTIFICATE_KEY: &str = ":peer-certificate";
-
-/// The certificate a client presented in the TLS handshake of the
-/// connection a request arrived on, DER-encoded, as an HTTP request
-/// extension; see the [module docs](self).
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PeerCertificate(pub std::sync::Arc<[u8]>);
+pub use crate::call_context_peer::{
+    PEER_ADDR_KEY, PEER_CERTIFICATE_KEY, PeerAddr, PeerCertificate,
+};
 
 /// Metadata about the current server-side method call.
 ///
@@ -114,6 +90,10 @@ pub struct PeerCertificate(pub std::sync::Arc<[u8]>);
 pub struct CallContext {
     /// The JSON-RPC method name (e.g. `"message/send"`).
     method: String,
+
+    /// A random identifier for this call, fixed when the context is built and
+    /// shared by every clone of it; see [`call_id`](Self::call_id).
+    call_id: String,
 
     /// Who the caller is, once authentication has established it.
     ///
@@ -199,6 +179,7 @@ impl std::fmt::Debug for CallContext {
         names.sort_unstable();
         f.debug_struct("CallContext")
             .field("method", &self.method)
+            .field("call_id", &self.call_id)
             .field("caller_identity", &self.caller_identity)
             .field("auth_scheme", &self.auth_scheme)
             .field("actors", &self.actors)
@@ -381,6 +362,7 @@ impl CallContext {
     pub fn new(method: impl Into<String>) -> Self {
         Self {
             method: method.into(),
+            call_id: uuid::Uuid::new_v4().to_string(),
             caller_identity: OnceLock::new(),
             auth_scheme: OnceLock::new(),
             actors: OnceLock::new(),
@@ -392,6 +374,16 @@ impl CallContext {
             task_id: None,
             received_at: std::time::Instant::now(),
         }
+    }
+
+    /// A random identifier for this call, made by the server when the context
+    /// is built: unlike [`request_id`](Self::request_id), which the caller
+    /// chooses, it is unique to this call and cannot be supplied or repeated by
+    /// a client. The audit log writes it on a call's `call.started` and `call`
+    /// records, so the end of a call can be matched to its start.
+    #[must_use]
+    pub fn call_id(&self) -> &str {
+        &self.call_id
     }
 
     /// When this call context was built, which the handler does as the

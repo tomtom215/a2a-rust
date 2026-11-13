@@ -459,7 +459,11 @@ impl JsonRpcDispatcher {
                 Ok(success_response_bytes(id, &serde_json::json!({})))
             }
             "GetExtendedAgentCard" => {
-                let card = self.handler.on_get_extended_agent_card(headers).await?;
+                let tenant = self.extended_card_tenant(rpc_req, headers).await?;
+                let card = self
+                    .handler
+                    .on_get_extended_agent_card_for_tenant(tenant.as_deref(), headers)
+                    .await?;
                 Ok(success_response_bytes(id, &card))
             }
             other => Err(ServerError::MethodNotFound(other.to_owned())),

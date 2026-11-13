@@ -354,3 +354,62 @@ replicas on PostgreSQL and sends one `SIGKILL` at its `reserve` or its `arm`
 after the kill, before the reaper's ending, in four of four runs; the event not
 stored: never delivered).
 
+## Amendment 2026-11-12: what the review of 2026-11-12 (R1, R2, R3) changed
+
+An independent adversarial review of the merge of 2026-11-12 found three
+places where the reservation protocol above and the terminal gate (ADR 0012)
+told an untruth when a write *failed* rather than when a process *stopped*.
+Each was reproduced by a test seen to fail first, then fixed; the hand mutants
+of each fix and the tests that kill them are in the commit messages.
+
+1. **A failed write does not say whether it was applied (R1, R2).** The state
+   machine now returns `Outcome::StoreFailed` for a store error that is neither
+   a refusal nor a lost claim, apart from `NotPersisted` (an event dropped by a
+   rule). The processor then **reads the store before it says what became of the
+   event**: for a terminal event, whether the task is stored in the state the
+   event names (the write landed, so it is confirmed, its rows armed, its log
+   entry written and its webhooks told once), in another terminal state (another
+   writer finished it: the existing supersede path), or not terminal (not
+   stored); for any reserved event, whether the stored log position reaches its
+   position. Before, a failed write released the reservation (a committed event
+   then lost its webhook) and, for a terminal event, answered the stream's gate
+   with the event as emitted (the stream said `Completed` for a task the store
+   still held `Working`).
+2. **A terminal event the store did not confirm is not delivered as a terminal
+   frame.** The gate carries a verdict, `Ruled(frame)` or `Unconfirmed(error)`;
+   an unconfirmed ending, no answer within the write timeout, and a processor
+   that has stopped all end the stream with `UNAVAILABLE`
+   (`HandlerLimits::terminal_confirmation`, `Required` by default; `BestEffort`
+   keeps the earlier behaviour). Nothing is logged or pushed for an ending the
+   store lacks; `close_out` announces it if the store comes to hold it.
+3. **No log position is stored past a reservation that could not be settled
+   (R2).** The worker's rule, "the stored position reached the event's, so the
+   event was stored", is a statement about that event only if nothing later
+   moved the position. A rejected event (a part bound, an invalid transition, a
+   failed save) whose rows could not be removed (the outbox failed) is kept by
+   its processor, settled again before each event, and until it is settled the
+   processor's folds are written **without** the position scope, so the stored
+   position stays behind it and a worker's later verdict on its rows is
+   "not stored". The cost is that a subscriber's catch-up replays events the
+   snapshot already holds (duplicates, never losses), and that an event in
+   flight when a processor dies in this degraded state is released rather than
+   delivered (a loss, bounded to one event, and only after the outbox has been
+   failing). At most 64 reservations are held this way; past that an event is
+   not reserved and its push is the lane's, after it is stored.
+4. **A live writer keeps its reservation (R3).** `PushOutbox::extend_hold`
+   (implemented by the in-memory, SQLite and PostgreSQL outboxes and tested by
+   the shared contract) lets the processor extend the hold of the reservation
+   its fold is writing every quarter of the hold, for as long as the fold runs.
+   A worker therefore settles only a reservation whose reserver has stopped
+   renewing it. Before, a write that outlasted the hold (a lock stall; the
+   PostgreSQL stores set no statement timeout) had its rows removed as "not
+   stored", and if it then committed and the process died before recording its
+   delivery afresh, a committed event had no delivery row. The hold itself is
+   unchanged (150 s by default) and is now only how long a dead writer's rows
+   wait. **What remains:** a writer that is paused (not dead) longer than the
+   hold, with no turn claim to fence it, and then commits and dies before it
+   records afresh, still loses that one delivery; the claim reaper settles a dead
+   replica's reservations only after it holds the claim, which does fence the
+   writer. An outbox that cannot extend a hold keeps the earlier behaviour
+   (settled as not stored, then recorded afresh).
+

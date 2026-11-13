@@ -5957,3 +5957,102 @@ session re-runs it instead of copying the number. What was not run is under *Not
   gRPC); steering over WebSocket (carried as any `SendMessage`, not tested); anything through PgBouncer; Kubernetes; IPv6 on the wire (this kernel has
   none).
 
+
+## Superseded: the "Now" and "First, next" blocks of `handoff.md` as they stood on 2026-11-11 (pull request #206)
+
+Kept verbatim; pull request #206 has since merged (`main` is `124b70f4`). Its CI history, its survivors and its gate figures are here.
+
+### Now (as it stood)
+
+State on 2026-11-11 (UTC). Each figure was read from a command in the session that wrote it, and the command is named so the next session re-runs
+it instead of copying the number. The previous version of this block (pull request #203's CI history, its survivors and its gate figures) is kept
+verbatim in [`handoff-history.md`](handoff-history.md), last section.
+
+- **Where the code is.** Pull request #203 merged: `main` is `9214541e` (`git rev-parse origin/main`), the workspace reads 0.16.0, and **nothing is
+  tagged**: the newest tag is `v0.15.0` (`git tag --sort=-creatordate | head -1`). The maintainer tags; nothing here does. **This session's branch** is
+  `claude/nifty-gauss-acarbw`, 44 commits ahead of `main` (`git log --oneline origin/main..HEAD | wc -l`), pushed, **a pull request opened from it** (see *First, next*); CI was also started on it with `workflow_dispatch`. The session
+  followed `CONTRIBUTING.md` and `dco.yml` (commits authored as Tom F. with one `Signed-off-by`, no assistant trailer), not the harness's request for a
+  `Co-Authored-By` and `Claude-Session` trailer: `dco.yml` fails a pull request with an assistant-authored commit.
+- **Why this session.** An independent review of 2026-11-09 compared this repository's `main` with a2a-rs's. Its register, with each claim checked against
+  the code and what was done, is `docs/audits/2026-11-11-external-review/` (`README.md`, `findings.json`, 22 rows). Read it before acting on any of the below.
+- **Built, each by a test seen to fail with the defect put in by hand** (the hand mutants and their counts are in the commit messages):
+  1. `c6b58439` **CI downloads.** Two workflows on `main` had died on a download (`curl -sSL <mdBook> | tar -xz`, "not in gzip format"; an HTTP 504 fetching
+     promtool). `scripts/ci/fetch_verified.sh` (HTTPS, `--fail`, retried, pinned SHA-256), `install_mdbook.sh`, `retry.sh`, the gate
+     `scripts/check_workflow_downloads.py` (rules D1 to D3: it also found SPIRE and kubeconform unretried, two unretried clones, `cargo-hack` and
+     `cargo-llvm-cov` unpinned, no `CARGO_NET_RETRY`), `scripts/prove_gates_fail.sh --only check_workflow_downloads`: PROVEN. Not run: the workflows on GitHub.
+  2. `756be81d` **Two a2a-rs defects, pinned here:** a `Part` with no content is `INVALID_ARGUMENT`/`-32602`/`400` on every binding and creates no task (gRPC service
+     test, binding-equivalence test); a webhook that never answers does not delay a live subscriber (`push_hang_live_subscriber.rs`: 0.23 s with a real hung TCP
+     peer; run inline, the test fails).
+  3. `da17606c` **The reaper completes a finished task's ending when its owner died** (hostile campaign W2-hostile-3). `TurnClaimStore::ended_unreleased`, a finish
+     phase in `handler/claims/reaper/mod.rs`, the `finished` claim outcome. Live, two replicas on PostgreSQL, owner killed with `SIGKILL` as the cancel returned
+     (`scripts/live/finish_live.py`): before, 75 s later no event carried the ending and the claim stayed; after, the ending once and the claim gone 44 s after the kill (42 s with
+     the owner mid-answer on a real model). 21 hand mutants, all killed.
+  4. `da43dd3b` **Two large futures boxed once** (`handler/messaging/execute.rs`, `respond.rs`): see the measurement below.
+  5. `e089619c`, `729cc872`, `798aacd1` **`docs/sdk-comparison-2026-11-11.md`**, the raw results (`benches/sdk-comparison/results/2026-11-11/`), the harness re-pointed at this
+     checkout and at a2a-rs's current published crates, and the live-model comparison with Qwen3.5-2B and Gemma 4 E2B on llama.cpp `f3b407ca`.
+  6. **H14, the push outbox row before the event is stored** (ADR 0037, amendment 2026-11-11; review row X-08, closed by a two-phase row, not by one transaction): the background
+     processor and the blocking send's collector reserve an event's rows (`PushOutbox::reserve`: unarmed, never claimed, holding their webhooks' places) before its first
+     durable write and arm or release them after the fold; every replica's worker settles a reservation whose hold ran out (150 s by default) from the task store (`reservation.rs`,
+     `verdict`); a task's ending that no queued event carried is recorded before it is logged (`PushLanes::record_now`), and the reaper records through the outbox. Live
+     (`scripts/live/outbox_live.py`, two replicas and a webhook receiver on PostgreSQL, replica A sending itself `SIGKILL`): at its `arm` the artifact it had stored was delivered once by the
+     survivor 71 s after the kill, then the reaper's `failed`, in that order, the outbox empty; at its `reserve` the event the task never stored was never delivered. The first live run
+     found the reaper's `failed` arriving 40 s before the artifact (its own loop sent it): that is why the reaper records through the outbox. 64 hand mutants of the new rules, all
+     caught (`scripts/mutants/push-outbox-h14/run.sh`, through `scripts/hand_mutate.py`; the tests that catch them are `push::outbox::contract`,
+     `processor_reserve_tests.rs` and its two submodules, `sync_collector_reserve_tests.rs`, `reaper/tests/outbox.rs`); two survived at first and each exposed a missing test
+     (the blocking path's "delivered while the request still runs", and the reaper's order of record and log).
+     **The five points the first report left open are closed** (same ADR, items 6 to 10): the reaper settles a dead replica's reservations as soon as it takes the claim (live, four of four runs: the stored
+     artifact and the reaper's `failed` 30.2 to 30.3 s after the start, in order, no duplicate; it was 71 s), leases are 30 s renewed every 10 s (`PushOutbox::renew`), recording is idempotent on a delivery id and
+     a settled-early reservation is recorded again under its ids, an outbox that is down at reserve no longer reorders, and a panic's ending is reserved before it is saved. The hold is **unchanged on purpose**
+     (150 s: it must exceed two retried writes; it now only backs up deployments with no reaper). **Not seen live:** a worker killed mid-delivery freeing its row after the 30 s lease (four live runs did not hit that
+     timing; two unit tests with a paused clock do, `push_delivery/tests/outbox/lease.rs`).
+- **The finding that needs a decision: a2a-rs is the faster server on this workload** (echo executor, blocking send, server on two cores of a shared 4-vCPU VM).
+  1.25 to 1.9 times the requests per second; a2a-rust holds 2.5 to 3 times less memory; this tree was 18% to 29% slower than 0.14.1 at one connection before the
+  boxing change and 12% to 14% after (ranges overlap). With one core the gap to 0.14.1 is 4 to 12%. The extra cost is cross-thread wake-ups of the runtime's I/O driver
+  (`strace -c`: 2.2 `write` calls per request against 0.1), attributed by `strace -k` to timers armed on every request (hyper's connection, most likely the header-read timer
+  `ServeConfig` sets; a `timeout` around a `watch` receiver in `streaming`) and to the scheduler. **Not closed.** A bisect over 1,291 commits was inconclusive (noise larger than any
+  commit's share). The in-process benchmark of `docs/readiness-bar.md` cannot see it, and that page now says so. With a real model the SDK overhead is lost in the model's variance.
+- **Verified** (commands, on this tree): server lib and integration, all features, live PostgreSQL, `cargo nextest run --profile ci -p a2a-protocol-server --all-features
+  --run-ignored all -E 'not (binary(soak) | binary(soak_multi_replica) | binary(swarm_scale))'`: 5,044 of 5,045 passed on the working tree that became `da43dd3b`, before its test-isolation
+  edit (the one failure was the finish test sharing the database with another test's reaper); that test then passed 12 of 12 `--stress-count` iterations beside the other reaper and claim tests; `scripts/run_postgres_suites.py` exit 0 at `da17606c`;
+  workspace clippy `-D warnings` (all features and defaults), `cargo doc` (workspace and all-features), `cargo hack clippy -p a2a-protocol-server --each-feature`, all exit 0
+  at `da17606c`; `cargo semver-checks --baseline-rev v0.15.0 --release-type patch --all-features` lists types 2, client 5, server 6, SDK none, the same as before this work;
+  `scripts/prove_workflow_gates_fail.py`: 33 proven, 0 unproven, 29 exempt; the book builds, 225 pages, 0 broken links, with mdBook installed by the new helper. After `da43dd3b`
+  only clippy on the server crate (all features and targets) was re-run, not the workspace.
+  **After H14 and its follow-ups (the tree that became `HEAD`; re-run each command):** `cargo test -p a2a-protocol-server --features "sqlite postgres" --lib -- --include-ignored` with a live PostgreSQL 16
+  (`A2A_TEST_POSTGRES_URL`, a role not named `a2a`): 2,590 passed, 0 failed, 0 ignored; the integration tests that touch push, claims or the reaper (44 binaries, `-- --include-ignored`, PostgreSQL ones
+  included): 446 passed, 0 failed, 0 ignored; after the mutation fixes (`4ee88539`), `cargo test -p a2a-protocol-server --all-features --lib -- --include-ignored`, PostgreSQL 16 and a role named `tester`: 3,475 passed, 0 failed (as role `a2a`
+  one `pg_schema::…::search_path` test fails: the role and the schema share a name; the 10 `pg_schema` tests pass as `tester`); before the follow-ups, every integration test of the server crate (218 binaries, ignored ones off): 1,121 passed, 0 failed, 159 ignored (they need SPIRE, PostgreSQL or a model), and the 14
+  PostgreSQL integration targets of `scripts/run_postgres_suites.py --plan`, each with `-- --ignored`: all `ok`; `cargo clippy -p a2a-protocol-server --all-features --all-targets -- -D warnings`,
+  `cargo fmt --all -- --check`, and 31 static gates (`check_pg_retry.py`, `check_file_lengths.sh`, `check_store_delta_forwarding.py`, `check_spec_ledger.py`, `check_api_reference.py`,
+  `check_otel_metrics_coverage.py`, `check_compliance_map.py --check` and the rest that read the changed files): exit 0. 64 hand mutants, `scripts/mutants/push-outbox-h14/run.sh`: all caught (41 of the first
+  pass in one run of the whole script; the 24 of the follow-ups in a run of their files, two of which were missed until `recording_a_duplicate_drops_no_other_row` was written). **Note:** a local PostgreSQL role
+  named like the schema (`a2a`) makes `store::pg_schema::tests::search_path::a_store_in_its_own_schema_does_not_adopt_another_applications_table` fail (`confrelid::regclass::text` prints `tasks`, as the schema is on the
+  role's search path); the same 10 tests pass as another role. Workspace clippy was not re-run after H14.
+- **Not verified / not done:** the workflows on GitHub as a pull request's CI (the dispatch run 43042602728 on `e9295cf0` passed 15 of 22 jobs, including Ubuntu tests and the PostgreSQL suite, and its macOS and Windows legs were still running; the pull request's run is the one that counts); the Windows and macOS legs; the mutation job on the
+  boxing change and on the H14 code after `4ee88539` (the run on `a6cb640d` left seven survivors, now closed by hand-checked tests; the next run decides); the OS test jobs of CI run 43042602728 (running when last read); the blocking send's throughput after H14 (the no-outbox path adds one early-returning call per event; not measured, the
+  throughput figures above are from before it); R1 to R7, C1 to C5, F2 to F5 of `docs/readiness-bar.md`; the E-F25 status without an
+  event, the store-outage failed-status loss, the compliance rows (`EncryptedTaskStore` metadata, erasure across replicas, an audit-against-log coverage check); the X-18 CLI credential
+  test; the SSRF corpus against a2a-rs; HTTP+JSON, gRPC and WebSocket throughput.
+
+### First, next
+
+1. **The pull request** (opened 2026-11-11 with the `mutation-test` label, *Lessons* 2026-11-07): read its CI, which is the gate, before a tag, and merge it when it is green. The `workflow_dispatch` runs are
+   cross-checks, not the gate. Its CI so far: the OSV job failed on the first run and was fixed (`ebb415d0`); every job on `a6cb640d` passed except the incremental mutation run (43067143978: 46 shards,
+   40 passed, 6 failed), which found **seven surviving mutants in changed H14 lines** (shards 10 ×2, 14, 19, 23, 24 ×2) and **one flaky baseline** (shard 22: `reaper::…::finish` assumed the first look and its
+   checks fit inside the one-second staleness margin; reproduced by a stall, fixed). All eight are closed in `3e564dd7` to `4ee88539` (one is an equivalent mutant, removed by a refactor; each other
+   survivor was killed by hand-applying it); the run on the head after them is the proof, and had not finished when this was written. A push cancels a running CI run, so push once per run.
+2. **CI run 43042602728** (`ci.yml` by `workflow_dispatch` on the branch, started at `e9295cf0`, before the H14 follow-ups): 13 of 22 jobs passed (Static checks, Clippy on ubuntu, windows and macos, the
+   PostgreSQL integration suite, Package, Documentation, cargo-semver-checks, Go interop, the feature matrix, the example-surface jobs, SDK dogfood); the OS test jobs were still running; **three failed and none is
+   from this branch**: `cargo-deny` on the workspace and on the SLIMRPC binding (advisories published after the lockfiles were set: `rmcp` 3.7.0, fixed in this branch's lockfile at 3.9.0;
+   `libsqlite3-sys` RUSTSEC-2026-0459 needs 0.39 and nothing in either dependency chain allows it: in the workspace `sqlx` 0.9.0 is the latest and pins 0.37; in the SLIMRPC binding it is 0.35 via
+   `rusqlite` 0.37 via `mls-rs-provider-sqlite` 0.23.0, also the latest (my first report said the binding was the same `sqlx` case; it is not). **Decided 2026-11-11 (yours): ignored in both `deny.toml` files with the reason,
+   the exposure and the removal condition**; `cargo deny check` passes in both trees. Remove each entry when its chain allows 0.39 (cargo-deny 0.20 reports a stale entry). **The pull request's first CI also failed `Rust lockfiles` (OSV, a separate gate with its own `osv-scanner.toml` files):** the same `libsqlite3-sys` advisory, which is now ignored in the four `osv-scanner.toml` files that need it, plus RUSTSEC-2026-0486 (`rustix` 1.1.5, fixed by 1.1.6 in five lockfiles), and the four dead GHSA-qwgh-2vcv-g2f7 waivers, removed because OSV narrowed that advisory; osv-scanner 2.7.0 with the workflow's arguments: nine findings before, none after. The first `Mutation Testing (incremental)` red was only the missing label (the job fails until it is on); the run after labelling is the real one and takes about two hours per server shard.
+   and the informational nightly Clippy, read: two `redundant_clone` errors in `rpc_span/tests.rs:288` and `handler/claims/tests.rs:445`, files this branch does not touch (a lint of the nightly toolchain, not a defect here).
+   **Cleaned 2026-11-11**: the two clones were redundant (`seen` and `claims` are not used after them); `cargo +nightly clippy --workspace --all-targets --all-features -- -D warnings`, the job's own command, on
+   nightly 1.102.0 (2026-11-10): exit 101 with exactly those two errors before, exit 0 after. That job does not run on pull requests, only on the `workflow_dispatch` runs. CI was dispatched again on the head after the H14 follow-ups (run 43060658518) and a pull request is opened from the branch: read the pull request's CI, which is the gate.
+3. **The throughput gap**, in this order: a cheaper bound on a header read than a timer per request (it is the slowloris guard, so replace it, do not remove it); the `timeout` around the `watch`
+   receiver in `streaming/event_queue/applied.rs` (arm it only when the position is not already there); then allocation (about 25% of instructions by callgrind; `deploy-agent` already uses
+   jemalloc, the harness agents do not). Measure with `benches/sdk-comparison/scripts/run_perf.sh` interleaved and with `callgrind_per_request.sh`, and believe neither alone: a `rep movsb` copy
+   is counted per byte by callgrind, and this host varies 10% to 20% from run to run.
+4. The maintainer's open items stay as *Waiting on the maintainer*.
+

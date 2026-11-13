@@ -654,9 +654,17 @@ jobs:
           # consecutive slices were replaced.
           #
           # The -E filter keeps out what `--run-ignored all` would otherwise
-          # run under every mutant without being able to catch one: the soak
-          # and swarm-scale binaries, and `what_protection_costs_an_append`, a
-          # measurement with no assertion that takes about 45s in this build.
+          # run under every mutant without being able to catch one: the soak,
+          # swarm-scale and readiness-bar binaries, and
+          # `what_protection_costs_an_append`, a measurement with no assertion
+          # that takes about 45s in this build. The readiness bar asserts
+          # latency and memory rows that mean something only in a release build
+          # running alone: under this profile with four jobs its R2 row read
+          # 2.21 against a bar of 1.5, and the unmutated baseline failed on it
+          # (PR #209, run 43226741829, every shard). The three `*_live` binaries
+          # that talk to a llama-server are kept out for the same reason from the
+          # other side: they are `#[ignore]`d for want of a server, this job has
+          # none, and so each fails its unmutated baseline (run 43247265028).
           # It met the 45s kill under 394 of the 918 server mutants of
           # PR #178's run 39828884261, and for 245 of them it was the only
           # failure: they were scored caught with the rest of the suite
@@ -674,7 +682,7 @@ jobs:
             --profile=mutants \
             --all-features \
             -- --run-ignored all \
-               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))' \
+               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or binary(readiness_bar) or binary(tool_loop_strict_live) or binary(terminal_truth_live) or binary(tool_loop_journal_live) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))' \
                2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
@@ -1166,7 +1174,7 @@ jobs:
               echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
               echo "cargo mutants -p <crate-name> --test-tool=nextest --profile=mutants \\"
               echo "  --all-features -- --run-ignored all \\"
-              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'"
+              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or binary(readiness_bar) or binary(tool_loop_strict_live) or binary(terminal_truth_live) or binary(tool_loop_journal_live) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'"
               echo '```'
             } >> /tmp/final-summary.md
           fi
@@ -1500,7 +1508,7 @@ jobs:
             --profile=mutants \
             --all-features \
             -- --run-ignored all \
-               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))' \
+               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or binary(readiness_bar) or binary(tool_loop_strict_live) or binary(terminal_truth_live) or binary(tool_loop_journal_live) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))' \
                2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
@@ -1663,7 +1671,7 @@ jobs:
               echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
               echo "cargo mutants --file <path-to-file> --test-tool=nextest --profile=mutants \\"
               echo "  --all-features -- --run-ignored all \\"
-              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'"
+              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or binary(readiness_bar) or binary(tool_loop_strict_live) or binary(terminal_truth_live) or binary(tool_loop_journal_live) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'"
               echo '```'
               echo ""
             fi

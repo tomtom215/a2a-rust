@@ -138,6 +138,7 @@ impl RequestHandler {
             cancel,
             gate,
             claim,
+            applied,
             saved_whole,
         } = started;
         // §3.5.2: a streaming reader holds the log before the processor that
@@ -159,7 +160,7 @@ impl RequestHandler {
             super::super::event_processing::ProcessorLinks {
                 cancel,
                 gate,
-                applied: self.event_queue_manager.applied_mark(&task.id).await,
+                applied: Some(applied),
                 claim,
                 saved_whole,
             },
@@ -209,6 +210,7 @@ impl RequestHandler {
             persistence_rx,
             executor,
             claim,
+            applied,
             saved_whole,
             ..
         } = started;
@@ -236,9 +238,7 @@ impl RequestHandler {
         // executors tracker, since it may run one, so shutdown counts and
         // waits for it; in the tenant and span of this call, which
         // `tokio::spawn` would otherwise not carry.
-        let collector = self
-            .sync_collector()
-            .with_applied(self.event_queue_manager.applied_mark(&task.id).await);
+        let collector = self.sync_collector().with_applied(Some(applied));
         let tenant = crate::store::tenant::TenantContext::capture();
         let mut executor = executor.watch();
         let (answer, collected) = tokio::sync::oneshot::channel();

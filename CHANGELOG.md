@@ -1698,6 +1698,133 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A stream could be told a task completed that the store never recorded as completed** (adversarial review of 2026-11-12, R1). When the write of a
+  terminal status failed (rejected, or the acknowledgement lost) the processor answered the terminal gate with the event as emitted, so the
+  stream said `Completed` while `GetTask` still said `Working`, and, when the write had in fact landed, the reservation was released and
+  its webhook lost. The processor now reads the store back: a terminal state the store holds is confirmed (stream, log and webhook, once);
+  anything else ends the stream with `UNAVAILABLE`, with nothing logged or pushed for an ending the store lacks.
+  `HandlerLimits::with_terminal_confirmation(TerminalConfirmation::BestEffort)` keeps the earlier behaviour. A terminal event with no answer
+  within the write timeout, or after the processor stopped, is treated the same way. See ADR 0037 amendment 2026-11-12.
+  End to end with Qwen3-1.7B on llama.cpp `4fffab6` as the agent behind the tool loop, a real webhook socket and a store that rejects only the `Completed`
+  write (`tests/terminal_truth_live.rs`): healthy, the stream showed `[Working, Completed]`, `GetTask` said `Completed` and the webhook was told `Completed`; with the
+  write rejected, the stream showed `[Working]` and ended `UNAVAILABLE`, `GetTask` said `Working` and no webhook carried `Completed`; under
+  `BestEffort` the stream again said `Completed` while the store held `Working` (the webhook still did not).
+- **A rejected event could be delivered to a webhook by the outbox's recovery** (R2). A reservation for an event the state machine did not store
+  (a part bound, a failed save) whose removal then failed stayed in the outbox, and when a later event moved the stored log position past it,
+  a worker read that as "stored" and armed it. A processor now keeps a reservation it could not settle and stores no position past it, and
+  reads the store after a failed write instead of assuming it failed (an applied write with a lost acknowledgement is delivered, not lost).
+- **A reservation could be settled while its writer was still writing** (R3). `PushOutbox::extend_hold` (new, with a default that reports it
+  unsupported) lets the processor renew the hold while its fold runs; the three built-in outboxes implement it. A custom outbox that keeps
+  reservations should implement it.
+- **A tool-loop deployment had no way to keep tool content from its caller, to stop a JSON example becoming an action, or to authorise a call**
+  (adversarial review T1, T2, T3). `ToolLoop::strict(model, tools)` is the profile: `TextCallRecovery::Off` (a reply written as a call is the answer, not
+  an action; `ReadOnly` and `All` also exist, and `All` stays the default as documented), `TraceContent::Receipt` (the caller's trace is `tool [call id]: ran`,
+  not the arguments and result), and `with_policy(ToolPolicy)`, asked before every call runs, native or recovered, with the request's tenant and caller
+  taken from the authenticated request and never from the model. Run against Qwen3-1.7B on llama.cpp `4fffab6`
+  (`tests/tool_loop_strict_live.rs`): the model chose `transfer_money` itself, the policy refused it, the tool ran 0 times and the trace was
+  `transfer_money [id]: failed`; asked for a JSON example, the strict loop returned it as the answer with an empty trace, and the default loop ran the
+  same text as an action three times (`get_balance`, to the turn bound). **Not done:** a durable approval bound to a call, and a durable step journal (see
+  `docs/audits/2026-11-12-adversarial-review/`); JSON-Schema validation is the next entry.
+- **A tool call's arguments were never checked against the schema the tool advertised** (adversarial review T2). The loop checked that arguments were an
+  object and the tool was in the set; `{"amount": "everything"}` reached a tool whose schema says `amount` is a number. `ToolLoop::with_argument_check(ArgumentCheck)`
+  (default `Off`, so nothing changes unasked; `ToolLoop::strict` uses `Strict`) checks `type`, `enum`, `const`, `properties`, `required`,
+  `additionalProperties`, `items`, the size and bound keywords, `uniqueItems` and `anyOf`/`oneOf`/`allOf`/`not` before the policy is asked and the tool runs, for native,
+  repeated and recovered calls alike; a violation is answered to the model as an error it can correct. It is a checker for the subset tool schemas use, and
+  says so: `Strict` refuses, by name, a call to a tool whose schema uses a keyword it does not implement (`$ref`, `pattern`, `multipleOf`, `if`, `contains`, …),
+  rather than let a constraint go unchecked; `Checked` ignores them. Against Qwen3-1.7B on llama.cpp `4fffab6` (`tests/tool_loop_strict_live.rs`), asked to
+  transfer 500 where the schema caps the amount at 100: the first call was refused (`'/amount': is 500, needs at most 100`), the model retried with 100, the
+  policy then refused the transfer, and the tool ran 0 times. 17 schema tests, 6 loop tests, 27 hand mutants killed (16 before the checker was split into
+  smaller functions, 11 re-run after). No `format` assertion, no `pattern`; numbers compare as `f64`.
+- **`Profile::MultiTenant`, a strict multi-tenant preset, and `RequestHandlerBuilder::with_authorized_tenant_resolver`** (adversarial review, "multi-tenant
+  production policy must be explicit"). `Profile::Production` required authentication but not named callers or strict tenant resolution, so a deployment
+  could serve several tenants with unnamed credentials in a shared partition, a tenant the client chose and no per-tenant budget. The profile applies
+  `isolate_tasks_by_caller()` (unless you chose `share_tasks_across_callers()`) and `require_resolved_tenant()`, and `build()` refuses unless an
+  interceptor authenticates, the resolver was given through `with_authorized_tenant_resolver` (which asserts it names a tenant only from what the server
+  verified or a gateway sets; **the assertion is the deployment's, nothing checks it**), the task and push-config stores partition by tenant (and
+  `accept_unisolated_tenants()` was not called), sharing across callers comes with a tenant-aware store you supply, and every tenant has a concurrency
+  limit. 7 tests, 12 hand mutants killed (two survivors were equivalent logic, which was removed). Not enforced, and said so on the page: retention and
+  erasure schedules, and that the limits are per replica.
+- **A client that disconnected during a send could leave its new task `Submitted` for ever** (found by the readiness bar's churn profile, 2026-11-12). Two windows, both after
+  the task row was saved. (1) The commit guard, which deletes a new task's row when the send is dropped, learned a row existed only when the save *returned*, so a drop while the
+  save was finishing (a database's acknowledgement in flight; in memory, an eviction sweep after the insert) left the row with no executor. The guard now knows before the save
+  starts; removing a row that was never written is a no-op, and a continuation's task is never rolled back. (2) The send read the queue map (`applied_mark().await`, which
+  yields while a queue is made or destroyed) between its commit and the task that stores the executor's events, so a drop there took the event channel with it while the executor
+  ran on; the mark now travels in `Started`. Reproduced first: with 30,000 loopback connections, half dropped before the response, 3 of 6 runs (and 2 of 3 before that) left one
+  task `Submitted` for the whole 120 s read; deterministic tests drop the send at each window (a gate at the await; a store that writes the row and never answers) and failed on
+  the unfixed code. After both fixes 0 of 13 runs left a task. 4 tests, 3 hand mutants killed.
+- **A tool-loop run could not survive its replica, and an approval was not bound to the call it approved** (adversarial review S1 and S7, "task durability does not yet
+  establish durable arbitrary workflows"). `ToolLoop::with_journal(Arc<dyn StepJournal>)` keeps a run's progress: a checkpoint (the conversation, the trace, the calls answered, a
+  receipt per call) after each model reply, before each call and after each; a run begun again under the same key resumes, asks the model only for what comes next and does not
+  repeat a call it already ran. `InMemoryStepJournal`, `SqliteStepJournal` and `PostgresStepJournal`; a write is accepted only as the successor of the revision stored (fencing). The
+  checkpoint pins the model, the preamble, the tool set and the loop's modes plus your own `with_pin` labels, and a resume under other pins fails (`LoopError::PinMismatch`). A call's
+  receipt is written before it runs; one still `Started` on resume is re-run only when `with_idempotency_secret` was set (a key the same on every replica), else the run fails
+  (`LoopError::Indeterminate`); a checkpoint the journal cannot write stops the run before the call (`LoopError::Journal`). `PolicyDecision::RequireApproval` parks the run with
+  `call_digest(tool, arguments, tenant, requester, task)`; a decision for that digest from an approver the gate admits releases that call and no other, the loop re-checking the
+  digest, the tenant and the task itself and asking the policy again (a `Deny` on resume still denies). `ToolLoopExecutor` ends the turn `input-required` with the request and
+  resumes on the decision. Also: `ChatMessage` and `ToolCall` are `Serialize` and `Deserialize`. **Not done:** external effects are still the backend's idempotency (this makes a repeat
+  rare and visible, not impossible); compensation; a journal write per step is a cost, so it is opt-in; a journal row is removed only when its run ends, so a run that never
+  finishes keeps its row until the deployment deletes it (no expiry); this change resumes a run that is *begun again* under the same key and adds no dispatcher that begins an
+  orphaned task again (a search of the server for such a mechanism found none). The first run of the tests found that `ChatMessage` could not be serialized
+  as an internally tagged enum (newtype variants of strings); it is adjacently tagged. 25 unit tests (one against a live PostgreSQL), 3 through the real handler, 3 against a real
+  model served by llama.cpp (Qwen3-1.7B): a run killed inside a call resumes and asks the model once, an approval releases exactly the call the model chose, a refusal runs
+  nothing. 26 hand mutants of the journal and approval code, all killed (3 survived the first set of tests and each got a test of its own).
+- **A required audit log lost the outcome of a call whenever its store refused the write** (adversarial review A3). `require_record` gated admission on
+  `call.started` and nothing after it: a `call` record (how the call ended), `task.event`, `run.started`, `approval`, `halt` or `task.cancel_requested`
+  the store refused was counted and dropped, so a chain held a start with no end and nothing said so (reproduced: `["call.started", "call.started"]`
+  after a store outage, and through a real server, `pending_outcomes() == 0` with the records gone). A required log now keeps a refused record
+  and writes it when the store answers, oldest first, from a task of its own that a dropped caller cannot cancel; the spool is bounded (1,024),
+  and a record that does not fit, or that a store which still answers reads refuses eight times, is counted in `AuditLog::outcomes_lost()`.
+  `call.started` and `call` records now carry the call's id (`CallContext::call_id()`, new, made by the server and not the caller's
+  `x-request-id`), and `AuditLog::unresolved_calls` / `reconcile_unresolved` find the starts a crash left without an end and close them with a
+  `call.unresolved` record (`kind::CALL_UNRESOLVED`; it says the outcome is unknown, not that the call failed). `AuditedPolicy` (`audit` + `tool-loop`) is
+  a `ToolPolicy` that writes a `tool.action` record (tool, call id, verdict, a digest of the arguments, caller, task) *before* a call runs and does
+  not run a call it cannot record. **Not done:** the spool is memory, so a process that dies with records in it loses them (reconciliation makes the
+  gap visible for calls, not for `task.event`s); a result record after a tool ran; off-machine retention of signed checkpoints, which is the deployment's.
+- **An independent approver could reach the requester's task only by sharing every task of the tenant** (adversarial review A4). Under caller isolation the
+  gate's approver sat in another partition, so `build()` refused the gate; the ways out were `share_tasks_across_callers()` (every caller reads and
+  continues every task) or `allowing_self_approval()` (no second pair of eyes). `ApprovalGate::with_review_grants()` (opt-in; needs `with_approvers`)
+  is a third: a named approver who sends `x-a2a-review-for: <requester>` (`REVIEW_FOR_HEADER`) is scoped to the requester's partition for `GetTask`,
+  `SendMessage` and `SendStreamingMessage` only. They read a task only while it waits for a decision (any other is `TaskNotFound`), and may send only
+  an approval decision (any other message is `PermissionDenied`, so they cannot create, steer or continue a task); `ListTasks`, `CancelTask`,
+  `SubscribeToTask` and push configuration are refused with the header. A quorum above 1 can then be met under isolation. The audit `approval` record
+  names the reviewer and carries `reviewFor`. 10 handler tests (12 hand mutants killed) and one over a real HTTP+JSON server.
+  **Not done:** discovery (how an approver learns a task waits) is the application's; there is no list-waiting-approvals method.
+- **A client built from the builder sent `//message:send` to a REST server whenever the base URL ended in `/`** (adversarial review P1). The builder's
+  constructor kept the slash the public constructors removed. One function (`canonical_base_url`) now validates and normalises the base for every
+  way a `RestTransport` is made, and a wire-level test (12 builds: builder, card and transport; root and base path; with and without the slash)
+  asserts the request line the server received.
+- **`with_protocol_binding` could select an interface `from_card` had rejected for its protocol version** (P4). A card listing JSON-RPC `0.3` at
+  `/legacy` before JSON-RPC `1.0` at `/v1` selected `/v1` from `from_card` and `/legacy` from `with_protocol_binding("JSONRPC")`, while the client
+  went on sending version 1 requests. Both paths, and `build_grpc`, now use one selection rule (`selection::compatible_for`), `REST` and `HTTP+JSON`
+  are one binding, and an override the card offers only for another protocol major is a **build error** naming what it offers (use
+  `with_custom_transport` to supply your own).
+- **A tenant named `tasks`, `message` or `extendedAgentCard` did not round-trip over REST** (P2). The client puts the tenant first in the path
+  (`/{tenant}/message:send`), and the server refused to read a first segment named like a route as a tenant. The server now splits the tenant off when
+  the whole path is not itself a route (`strip_tenant_prefix_for`, `is_route`), and the client sends a tenant that collides with a route name
+  (`tasks`, `message`, `message:send`, `message:stream`, `extendedAgentCard`, `tenants`) in the primary binding's form, `?tenant=`, which has no ambiguity.
+  A test makes every operation for eleven tenant spellings on REST and JSON-RPC and asserts the tenant the handler saw.
+- **`GetExtendedAgentCard` dropped the request's tenant and skipped tenant admission** (P3). It was the one operation that did not resolve the tenant: a
+  provider could not tell two tenants of one principal apart, and with `require_resolved_tenant` a request with no resolvable tenant was **served**
+  (reproduced). It now goes through the same resolution, scope and caller partition as `GetTask`, on JSON-RPC, REST, gRPC and SLIMRPC
+  (`RequestHandler::on_get_extended_agent_card_for_tenant`; the old method is the tenant-less case). **Behaviour change:** on a server whose
+  stores do not partition by tenant, a request that names a tenant is now refused as every other operation's is, unless `accept_unisolated_tenants()`.
+- **A bearer header authentication accepted could resolve to another tenant, or none** (R5). `BEARER tok` or `Bearer  tok` authenticated (the
+  authenticator reads the scheme in any case and trims) but the tenant resolver read only `Bearer `/`bearer ` and did not trim, so a task
+  made under one spelling was in a different tenant partition from the same credential in another (reproduced over REST and JSON-RPC; with
+  `require_resolved_tenant`, refused). The resolver now uses the authenticator's parser, `auth::extract_bearer`.
+- **A remote JWKS endpoint that was down was fetched from once per request** (R4). With the key cache cold or expired, callers queued on a lock and each made
+  its own fetch (reproduced: 100 fetches for 100 requests). A failed fetch is now shared with the requests behind it for a jittered cooldown of the
+  refetch interval, a request waits at most about one fetch budget (`JwtAuthInterceptor::with_jwks_fetch_budget`, 30 s by default), and past 256
+  waiters the rest are refused at once; validation stays fail closed.
+- **A legal hold that completed did not stop a purge that had already begun** (A1). `AuditLog::purge` read the holds once and deleted later,
+  without the chain's lock. It now takes each chain's lock, reads the holds afresh, and deletes with the new
+  `AuditStore::delete_through_unless_held`, which the in-memory, SQLite and PostgreSQL stores run atomically with the hold check (PostgreSQL:
+  under the chain's advisory lock, which `place_hold` takes too), so the guarantee holds across replicas. A custom store keeps the default, which
+  is not atomic across processes, and should override it.
+- **Concurrent first appends to different audit chains could exhaust a PostgreSQL pool** (A2). Sealing read the store (the latest anchor of an empty
+  chain, the subject keys of `AuditPrivacy`) while the append held a connection, so N such appends on N connections each waited for another. Sealing
+  now reads nothing: the keys are resolved, and the anchor read when the chain is found empty, before the append begins.
+
 - **A replica lost between storing an event and recording its push rows lost that event's deliveries** (audit H14; independent review of 2026-11-11,
   X-08). The outbox row was written after the event was stored, by the task's lane, so the window was the lane's backlog (up to `push_queue_capacity`,
   1,024 by default, longer behind a slow outbox database), not one write, and the blocking send recorded every event of a request only when the request

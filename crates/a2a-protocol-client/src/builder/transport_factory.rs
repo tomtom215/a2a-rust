@@ -155,6 +155,7 @@ impl ClientBuilder {
                 "connection_timeout must be non-zero".into(),
             ));
         }
+        self.check_binding_override(false)?;
         self.check_max_in_flight()?;
         #[cfg(feature = "tls-rustls")]
         self.check_pool()?;
@@ -274,6 +275,26 @@ impl ClientBuilder {
         )))
     }
 
+    /// Refuses a builder whose explicit binding override the card cannot
+    /// satisfy (see [`ClientBuilder::binding_conflict`]). `grpc` is whether
+    /// the caller is building a gRPC client, which only a conflict over gRPC
+    /// affects: `build_grpc` dials the card's gRPC interface whatever binding
+    /// was named for the HTTP transports.
+    ///
+    /// # Errors
+    ///
+    /// [`ClientError::InvalidEndpoint`] naming the binding and what the card
+    /// offers for it.
+    pub(super) fn check_binding_override(&self, grpc: bool) -> ClientResult<()> {
+        let Some((binding, why)) = &self.binding_conflict else {
+            return Ok(());
+        };
+        if self.transport_override.is_some() || (grpc && binding != crate::config::BINDING_GRPC) {
+            return Ok(());
+        }
+        Err(ClientError::InvalidEndpoint(why.clone()))
+    }
+
     /// Points a builder that came from an agent card at the card's gRPC
     /// interface (audit G-04).
     ///
@@ -294,7 +315,6 @@ impl ClientBuilder {
     /// SDK's protocol major; it says what the card does offer.
     #[cfg(feature = "grpc")]
     pub(super) fn select_grpc_interface(&mut self) -> ClientResult<()> {
-        use super::selection::{canonical_binding, is_compatible};
         use crate::config::BINDING_GRPC;
 
         let chose_grpc = self
@@ -304,10 +324,8 @@ impl ClientBuilder {
         if self.card_interfaces.is_empty() || self.transport_override.is_some() || chose_grpc {
             return Ok(());
         }
-        let Some(grpc) = self.card_interfaces.iter().find(|i| {
-            is_compatible(&i.protocol_version)
-                && canonical_binding(&i.protocol_binding) == Some(BINDING_GRPC)
-        }) else {
+        let Some(grpc) = super::selection::compatible_for(&self.card_interfaces, BINDING_GRPC)
+        else {
             let offered: Vec<String> = self
                 .card_interfaces
                 .iter()
@@ -357,6 +375,7 @@ impl ClientBuilder {
                 "connection_timeout must be non-zero".into(),
             ));
         }
+        self.check_binding_override(true)?;
         self.select_grpc_interface()?;
         // Validated here for the same reason `build()` validates it: this path
         // now uses it. Until 2026-08-19 it did not — `build()` rejected a zero

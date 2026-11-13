@@ -32,6 +32,14 @@ let tool_loop = ToolLoop::new(model, tools)
 | `with_max_turns(n)` | 8 (`DEFAULT_MAX_TURNS`) | How many model turns a run may take. `0` is taken as `1`: a run asks the model at least once |
 | `with_max_calls_per_turn(n)` | 64 (`DEFAULT_MAX_CALLS_PER_TURN`) | How many tool calls one model reply may make. The first `n` run; the rest are dropped, with a line in the trace saying so. `0` is taken as `1` |
 | `with_recover_text_calls(bool)` | on | Whether a final reply that is exactly one JSON object naming a tool in the set (bare, in a code fence, or between `<tool_call>` tags) is run as that call rather than returned as the answer |
+| `with_text_call_recovery(TextCallRecovery)` | `All` | Which tools a reply written as a call may run: `All` (as `with_recover_text_calls(true)`), `ReadOnly` (only a tool that declares `read_only()`), `Off` (never: a requested JSON example stays an example) |
+| `with_trace_content(TraceContent)` | `Full` | What the caller's `tool-trace` artifact holds: `Full` (`name(arguments) -> result`, truncated, **not redacted**) or `Receipt` (`name [call id]: ran`, `failed` or `not run again`: no arguments, no result; the model still sees both) |
+| `with_argument_check(ArgumentCheck)` | `Off` | Whether a call's arguments are checked against the tool's JSON Schema before the policy is asked and the tool runs: `Off` (an object is enough, as before), `Checked` (a violation is answered to the model as an error it can correct, and the tool does not run; a keyword the loop does not implement is ignored) or `Strict` (as `Checked`, and a tool whose schema uses a keyword the loop cannot check is refused by name). Checked: `type`, `enum`, `const`, `properties`, `required`, `additionalProperties`, `items`, `minItems`, `maxItems`, `uniqueItems`, `minLength`, `maxLength`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `minProperties`, `maxProperties`, `anyOf`, `oneOf`, `allOf`, `not`. Not implemented: `$ref`, `pattern`, `patternProperties`, `multipleOf`, `if`/`then`/`else`, `contains`, `prefixItems`, `propertyNames`, `dependentRequired`, `unevaluated*`, a list-form `items`. A tool that needs one of those validates it itself |
+| `with_policy(ToolPolicy)` | none | Asked before **every** call runs (native, recovered from text, repeated after a retry) with the tool, the arguments and the request's tenant and authenticated caller, and able to refuse it; the reason is the call's result as the model sees it. With the `audit` feature, `AuditedPolicy::new(log)` (optionally `.wrapping(your_policy)`) writes a `tool.action` record (tool, call id, verdict, a digest of the arguments, caller, task) to the audit log *before* an allowed call runs and does not run a call it cannot record ([Audit trail](../../deployment/audit.md#required-mode)) |
+| `with_journal(Arc<dyn StepJournal>)` | none | Keeps each run's progress, so a run begun again under the same key (the task and message it answers) **resumes** instead of starting over, and a call a policy says needs approval can wait for it ([Resuming a run, and approving a call](#resuming-a-run-and-approving-a-call)) |
+| `with_pin(name, value)` | none | Adds a pin to every checkpoint (a policy version, a skill bundle digest): a run whose checkpoint carries other pins is refused on resume |
+| `with_idempotency_secret([u8; 32])` | random per loop | The secret call keys are derived under. Set it, to the same value on every replica, if a journaled call may be in flight when a replica dies |
+| `ToolLoop::strict(model, tools)` | — | `new` with `TextCallRecovery::Off`, `TraceContent::Receipt` and `ArgumentCheck::Strict`: for a deployment that takes a tool call to be an action with consequences |
 | `with_idempotency_secret([u8; 32])` | drawn per loop | The secret call keys are derived under; see [Idempotency keys](./tools.md#idempotency-keys) |
 | `with_agent_name(name)` | none | Recorded as `gen_ai.agent.name` on the run's metrics |
 | `with_meter(&Meter)` | the global meter provider | Where the loop's metrics go (`otel` feature); see [Spans and metrics](./telemetry.md) |
@@ -46,6 +54,85 @@ them.
 The default of eight turns is four more than the two rounds a
 discover-then-query catalogue needs, and small enough that a model which never
 stops calling tools fails in seconds rather than at the executor timeout.
+
+## Resuming a run, and approving a call
+
+A run's conversation, its record of calls already answered and its trace live in
+memory. A replica that dies mid-run loses them, and the next attempt asks the
+model afresh and runs every tool it chooses again. With a journal installed that
+changes:
+
+```rust,no_run
+use std::sync::Arc;
+use a2a_protocol_server::tool_loop::{InMemoryStepJournal, ToolLoop, ToolModel, ToolSet};
+# fn build(model: impl ToolModel, tools: ToolSet) -> ToolLoop {
+ToolLoop::new(model, tools)
+    .with_journal(Arc::new(InMemoryStepJournal::new()))
+    // The same on every replica, so a retried call has the same key.
+    .with_idempotency_secret([7; 32])
+    // What a resumed run must still be running under.
+    .with_pin("policy", "2026-11-12")
+# }
+```
+
+`InMemoryStepJournal` is for tests and for a deployment that keeps a run on one
+replica. `SqliteStepJournal` (`sqlite`) and `PostgresStepJournal` (`postgres`)
+keep checkpoints across a restart, the second for every replica sharing the
+database.
+
+* **Resume points.** A checkpoint is written after each model reply, before each
+  call and after each call. A run begun again under the same key restores the
+  conversation, does not ask the model for what it answered, and does not run a
+  call it already ran.
+* **Pins.** A checkpoint records the model's name and digests of the preamble, the
+  tool set (names, descriptions, schemas, read-only flags) and the loop's modes,
+  plus your `with_pin` labels. A run resumed under different pins fails with
+  `LoopError::PinMismatch`, naming which, rather than continuing under a model or a
+  tool set it did not begin with.
+* **Receipts, written first.** A call's receipt (tool, call id, a digest of the
+  arguments, never the arguments) is written *before* the call runs. A call whose
+  receipt still says `Started` on resume may have run. It is re-run only when the
+  idempotency secret was set explicitly, so its key is the same on every replica and
+  your backend can deduplicate; otherwise the run fails with
+  `LoopError::Indeterminate`. **The journal makes a repeat rare and visible. It does
+  not make an external effect exactly-once: that is the backend's idempotency.**
+* **Fail closed.** A checkpoint the journal cannot write stops the run before the
+  call it was about to record (`LoopError::Journal`).
+* **Fencing.** Each checkpoint carries a revision and a write is accepted only as the
+  successor of the one stored, so a replica that lost its claim cannot overwrite a
+  newer run's progress.
+
+Not here: compensation (undoing a call that ran), and retry policy beyond the model
+retry.
+
+### A call that needs a person's approval
+
+A `ToolPolicy` that returns `PolicyDecision::RequireApproval("what the person is
+shown")` stops that call. The run parks in its journal, and the task goes
+`input-required` with an `ApprovalRequest` whose digest is `call_digest(tool,
+arguments, tenant, requester, task)`: the call as an action, in canonical form. The
+decision that releases it is bound to that digest. It releases that call, from that
+requester, in that tenant and task, and not the same call from another requester nor
+another call by the same one.
+
+```text
+alice asks            -> policy: RequireApproval -> task input-required, digest D
+bob decides (digest D)-> the gate checks id, digest and that bob may approve
+                      -> the run resumes from the journal, makes the call it
+                         parked on (read from the journal, not from the decision),
+                         runs the policy again, and answers
+```
+
+The loop checks the digest again itself (it does not rely on the gate alone), refuses
+a decision from another tenant or task, and asks the policy again on resume: an
+approval does not outrank a later `Deny`. A refusal is a result the model sees ("this
+call was not approved by …") and the call never runs. A loop with no journal has
+nowhere to wait: it refuses such a call, as for `Deny`.
+
+It needs an `ApprovalGate` on the handler (`with_approval_gate`): without one, a
+decision in a message is only a claim and `ctx.approval()` is always `None`. With tasks
+isolated by caller, give the approvers a review grant
+(`ApprovalGate::with_review_grants()`, [Human oversight](../../deployment/oversight.md)).
 
 ## What the client sees
 

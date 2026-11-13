@@ -283,6 +283,23 @@ impl PushOutbox for SqlitePushOutbox {
         })
     }
 
+    fn extend_hold<'a>(&'a self, reservation: &'a str, hold: Duration) -> OutboxFuture<'a, usize> {
+        Box::pin(async move {
+            let extended = sqlx::query(concat!(
+                "UPDATE a2a_push_outbox SET hold_ms = ",
+                now_ms!(),
+                " + ?2 WHERE reservation = ?1 AND armed = 0"
+            ))
+            .bind(reservation)
+            .bind(millis(hold))
+            .execute(&self.pool)
+            .await
+            .map_err(|e| to_a2a_error(&e))?
+            .rows_affected();
+            Ok(usize::try_from(extended).unwrap_or(usize::MAX))
+        })
+    }
+
     fn release<'a>(&'a self, reservation: &'a str) -> OutboxFuture<'a, ()> {
         Box::pin(async move {
             sqlx::query("DELETE FROM a2a_push_outbox WHERE reservation = ?1 AND armed = 0")

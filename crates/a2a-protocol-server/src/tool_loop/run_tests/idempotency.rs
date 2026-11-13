@@ -204,3 +204,50 @@ async fn the_executor_scopes_keys_to_the_task_and_the_message() {
         )
     );
 }
+
+/// A decision for a loop that keeps no journal finds no run waiting, so the
+/// executor does not hand it to the loop at all: the message is answered as new
+/// work, its calls keyed by the task and the message and not by the decision's
+/// request id, and the run is not refused for lack of a journal.
+#[tokio::test]
+async fn a_loop_with_no_journal_answers_a_decision_as_new_work() {
+    use a2a_protocol_types::approval::{ApprovalDecision, ApprovalRequest};
+
+    let (restart, _, keys) = restart_tool();
+    let (model, _) = Scripted::new(vec![
+        calls(vec![call("a", "restart", r#"{"service":"billing"}"#)]),
+        text("done"),
+    ]);
+    let executor = ToolLoopExecutor::new(
+        ToolLoop::new(model, tools(vec![restart])).with_idempotency_secret(SECRET),
+    );
+    let request = ApprovalRequest::new("req-1", "restart billing", "sha256:aa");
+    let mut ctx = RequestContext::new(
+        Message::user_text("m-7", "restart billing"),
+        TaskId::new("t-9"),
+        "c-1".to_owned(),
+    );
+    ctx.approval = Some(crate::approval::VerifiedApproval {
+        decision: ApprovalDecision::approve(&request),
+        request,
+        approver: "bob".to_owned(),
+        approvers: vec!["bob".to_owned()],
+        required: 1,
+    });
+    let (writer, _reader) = crate::streaming::event_queue::new_in_memory_queue();
+    crate::AgentExecutor::execute(&executor, &ctx, &writer)
+        .await
+        .unwrap();
+    let keys = keys.lock().unwrap();
+    assert_eq!(keys.len(), 1, "the call ran: the run was not refused");
+    assert_eq!(
+        keys[0],
+        call_key(
+            &SECRET,
+            &task_scope("t-9", "m-7"),
+            "restart",
+            &json!({"service": "billing"})
+        ),
+        "keyed by the task and the message, not by the decision's request id"
+    );
+}

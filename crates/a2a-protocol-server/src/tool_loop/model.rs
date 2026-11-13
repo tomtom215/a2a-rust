@@ -16,10 +16,12 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// One message of the conversation a [`ToolModel`] is given.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "role", content = "body", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum ChatMessage {
     /// An instruction from the operator, beside the preamble.
@@ -45,7 +47,7 @@ pub enum ChatMessage {
 }
 
 /// One call a model asked for.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ToolCall {
     /// The provider's id for the call, which the result must carry back.

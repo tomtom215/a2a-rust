@@ -338,6 +338,65 @@ It does not reach records the caller left in the tenant's shared partition
 one; audit records, which `AuditLog::erase_subject` handles; or copies in
 backups and logs.
 
+## The strict profile
+
+`Profile::MultiTenant` turns the choices above into refusals at `build()`, so
+a handler that serves several tenants cannot be assembled with one of them left
+at its permissive default:
+
+```rust,no_run
+use a2a_protocol_server::profile::Profile;
+use a2a_protocol_server::tenant_config::{PerTenantConfig, TenantLimits};
+use a2a_protocol_server::tenant_resolver::HeaderTenantResolver;
+use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder, agent_executor};
+
+struct Agent;
+agent_executor!(Agent, |_ctx, _queue| async { Ok(()) });
+
+fn handler() -> Result<a2a_protocol_server::RequestHandler, a2a_protocol_server::error::ServerError> {
+    RequestHandlerBuilder::new(Agent)
+        .without_agent_card()
+        .with_profile(Profile::MultiTenant)
+        .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([("token", "alice")]))
+        // A gateway sets this header from the authenticated identity and strips
+        // it from client traffic. Saying so here is the assertion the profile asks for.
+        .with_authorized_tenant_resolver(HeaderTenantResolver::default())
+        .with_tenant_config(
+            PerTenantConfig::default()
+                .with_default(TenantLimits::default().with_max_concurrent_tasks(Some(8))),
+        )
+        .build()
+}
+```
+
+It applies two things: every caller is named (`isolate_tasks_by_caller()`: a
+credential that names nobody is refused, not kept in the tenant's shared
+records), unless you called `share_tasks_across_callers()`, which it leaves as
+your choice; and a request no tenant can be found for is refused
+(`require_resolved_tenant()`), not served from the shared default partition.
+
+`build()` then refuses, naming the fix, unless:
+
+- an interceptor authenticates;
+- the resolver was given with `with_authorized_tenant_resolver`. A resolver
+  given with `with_tenant_resolver` alone is refused: a tenant the client chose
+  isolates nothing. **The assertion is yours.** Nothing in the SDK can check
+  that a gateway strips a header or that a token's signature was verified
+  before its tenant claim was read; the profile makes you state it;
+- the task and push-config stores partition by tenant, and
+  `accept_unisolated_tenants()` was not called;
+- if you chose to share tasks across callers, you supplied a tenant-aware task
+  store (the default for a sharing handler keeps one set of records for every
+  tenant);
+- every tenant, the default and each override, has a concurrency limit
+  (`with_max_concurrent_tasks`). The limit is per replica; see above.
+
+What it leaves to you: whether the resolver is in fact authorized, retention
+and erasure of what the stores hold, a tool-using agent's own strictness
+(`ToolLoop::strict`, `ArgumentCheck`, `AuditedPolicy`), and, for an approver
+who is not the requester, `ApprovalGate::with_review_grants()`
+([Human oversight](./oversight.md)).
+
 ## What is not isolated
 
 * **CPU and memory are shared.** A tenant inside its task limit can still run

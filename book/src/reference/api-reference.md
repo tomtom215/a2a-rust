@@ -399,6 +399,7 @@ are rustdoc's job.
 | `Inbox` | The messages sent to a running turn, oldest first, bounded: `try_recv`, `recv().await`, `len`, `close`; `RequestContext::inbox` is `None` unless steering is on |
 | `Steered` | A steering message as the executor receives it: the `message` and who sent it (`from`) |
 | `HandlerLimits` | Configurable validation limits |
+| `TerminalConfirmation` | What a stream is told of a terminal event the store did not confirm: `Required` (the default) ends the stream with `UNAVAILABLE`; `BestEffort` delivers the event as emitted (`HandlerLimits::terminal_confirmation`) |
 | `InboundTracePolicy` | What this handler does with a `traceparent` an as-yet unauthenticated peer sent (W3C Trace Context §7.2) |
 | `MIN_MESSAGE_ID_LENGTH` | The floor `message.id`'s length bound is never taken below: 36, a hyphenated UUID |
 | `SendMessageResult` | Result of `RequestHandler::on_send_message`: a synchronous response or a streaming reader |

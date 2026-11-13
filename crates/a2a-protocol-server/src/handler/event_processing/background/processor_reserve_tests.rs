@@ -50,15 +50,20 @@ struct Rig {
 
 impl Rig {
     async fn new(stored: TaskState) -> Self {
+        let limits = HandlerLimits::default().with_store_write_retry(Duration::from_secs(1));
+        Self::with(task(stored), limits).await
+    }
+
+    /// The rig over a task as stored, under `limits`.
+    async fn with(stored: Task, limits: HandlerLimits) -> Self {
         let store = Stopping::new();
-        store.inner.save(&task(stored)).await.expect("seed");
+        store.inner.save(&stored).await.expect("seed");
         let configs = Arc::new(InMemoryPushConfigStore::new());
         configs
             .set(TaskPushNotificationConfig::new("t", "https://example.com/hook").with_id("cfg"))
             .await
             .expect("config");
         let outbox = Arc::new(InMemoryPushOutbox::new());
-        let limits = HandlerLimits::default().with_store_write_retry(Duration::from_secs(1));
         let metrics = Arc::new(Outcomes::default());
         let flaky = Arc::new(Flaky::new(Arc::clone(&outbox)));
         let mut senders = Vec::new();
@@ -393,37 +398,6 @@ async fn a_stop_between_a_terminal_save_and_its_log_write_still_delivers_the_end
     assert_eq!(rig.rows().await, 0);
 }
 
-/// A processor that is only slow (not stopped) is not raced past the hold's
-/// end: its reservation was settled as not stored, so when its write does
-/// complete it records the deliveries afresh, and the webhook still hears the
-/// event once.
-#[tokio::test(start_paused = true)]
-async fn a_processor_stalled_past_its_hold_records_afresh_and_the_webhook_hears_once() {
-    let mut rig = Rig::new(TaskState::Working).await;
-    rig.store.stop(Stop::Before);
-    let running = rig.run_on_a(status(1, TaskState::Working));
-    parked(&rig).await;
-
-    rig.wait(hold(&rig) + Duration::from_secs(30)).await;
-    assert_eq!(rig.rows().await, 0, "settled as not stored while it waited");
-
-    rig.store.resume.notify_one();
-    running.await.unwrap();
-    // One of the two replicas' workers delivers the fresh row.
-    let first = tokio::time::timeout(Duration::from_mins(15), async {
-        tokio::select! {
-            seen = rig.a_seen.recv() => seen.unwrap(),
-            seen = rig.b_seen.recv() => seen.unwrap(),
-        }
-    })
-    .await
-    .expect("no delivery within 15 minutes of (paused) time");
-    assert_eq!(first.state, Some(TaskState::Working));
-    rig.wait(Duration::from_secs(30)).await;
-    assert!(rig.a_seen.try_recv().is_err() && rig.b_seen.try_recv().is_err());
-    assert_eq!(rig.rows().await, 0);
-}
-
 /// Without a task store to settle from, nothing is reserved: the lane records
 /// after the store, as before, and one delivery results.
 #[tokio::test(start_paused = true)]
@@ -475,5 +449,13 @@ mod declines;
 mod endings;
 #[path = "processor_reserve_tests/follow_ups.rs"]
 mod follow_ups;
+#[path = "processor_reserve_tests/heartbeat.rs"]
+mod heartbeat;
+#[path = "processor_reserve_tests/rejected_events.rs"]
+mod rejected_events;
 #[path = "processor_reserve_tests/settling.rs"]
 mod settling;
+#[path = "processor_reserve_tests/terminal_truth.rs"]
+mod terminal_truth;
+#[path = "processor_reserve_tests/unsettled.rs"]
+mod unsettled;

@@ -45,7 +45,7 @@ use crate::streaming::build_sse_response;
 use error_response::not_found_response;
 use query::{
     contains_path_traversal, list_push_configs_params, parse_list_tasks_query, parse_query_param,
-    parse_query_param_u32, percent_decode_path, strip_tenant_prefix,
+    parse_query_param_u32, percent_decode_path, strip_tenant_prefix_for,
 };
 use response::{health_response, load_response, ready_response};
 use span::HttpRoute;
@@ -237,7 +237,7 @@ impl RestDispatcher {
         // and config ids are once routed. They were matched raw until
         // 2026-10-12, so an id this SDK's client encoded (a space, `:`, `/`)
         // was looked up encoded and not found. `+` is a literal in a path.
-        let (tenant, rest_path) = strip_tenant_prefix(&path);
+        let (tenant, rest_path) = strip_tenant_prefix_for(method.as_str(), &path);
         let tenant = tenant.map(percent_decode_path);
         let tenant = tenant.as_deref();
 
@@ -502,7 +502,7 @@ impl RestDispatcher {
                     "GetExtendedAgentCard",
                     "/extendedAgentCard",
                     headers,
-                    self.handle_extended_card(headers),
+                    self.handle_extended_card(tenant, headers),
                 )
                 .await
             }
@@ -758,9 +758,14 @@ impl RestDispatcher {
 
     async fn handle_extended_card(
         &self,
+        tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        match self.handler.on_get_extended_agent_card(Some(headers)).await {
+        match self
+            .handler
+            .on_get_extended_agent_card_for_tenant(tenant, Some(headers))
+            .await
+        {
             Ok(card) => extended_card_response(&card, headers),
             Err(e) => server_error_to_response(&e),
         }

@@ -284,10 +284,17 @@ impl RequestHandler {
                 basis::based_on(task, lease_read, continues, claim.is_some());
             writer.bind_state(task.status.state, continues);
             let config = params.configuration.as_ref();
-            Box::pin(self.save_turn(&task, read_at, config, continues, whole)).await?;
+            // Before the save, not after it returns: the row may exist from the
+            // moment the store takes the write, and a send dropped while the
+            // save is still finishing (an acknowledgement in flight, a sweep
+            // after the insert) must have the guard remove it. Marked after, the
+            // row was left `Submitted` with no executor for ever, which the
+            // readiness bar's churn run found (`dropped_send_tests`). Removing a
+            // row that was never written is a no-op.
             if !continues {
                 guard_ref.created_row();
             }
+            Box::pin(self.save_turn(&task, read_at, config, continues, whole)).await?;
 
             // Boxed, and with every local confined to the helper, so this cold
             // branch does not enlarge the send future for every send — inline it
@@ -310,6 +317,10 @@ impl RequestHandler {
 
             let cancel = ctx.cancellation_token.clone();
             let gate = writer.terminal_gate();
+            // Taken here, where the queue's writer is in hand and nothing is awaited:
+            // reading it back from the manager later was an await at which a client
+            // that left took the event channel with it (`dropped_send_tests`).
+            let applied = writer.applied_mark();
             // On a single-worker runtime a blocking send's executor runs in
             // the task that collects its events (see `respond_blocking`):
             // two tasks on one worker cannot run in parallel, so the split
@@ -336,6 +347,7 @@ impl RequestHandler {
                 cancel,
                 gate,
                 claim,
+                applied,
                 saved_whole: whole,
             })
         })

@@ -1,0 +1,272 @@
+[
+ {
+  "id": "R1",
+  "severity": "High",
+  "finding": "Failed terminal persistence can still produce a successful terminal stream event",
+  "status": "FIXED",
+  "note": "",
+  "commit": "839dde5f; live e2e 2146162c",
+  "evidence": "Reproduced first: the stream said Completed while the store held Working. processor/reconcile.rs reads the store back after an ambiguous write; the terminal gate carries a Verdict; HandlerLimits::terminal_confirmation (default Required) ends the stream UNAVAILABLE when the store does not confirm. Real-model end to end (Qwen3-1.7B, llama.cpp 4fffab6, real webhook socket, store rejecting only Completed): stream [Working] then UNAVAILABLE, GetTask Working, no webhook carried Completed; BestEffort restores the old stream/store disagreement.",
+  "tests": "background/processor_reserve_tests/terminal_truth.rs; streaming/event_queue/terminal_gate_tests.rs; tests/terminal_truth_live.rs (3, ignored: need llama-server)"
+ },
+ {
+  "id": "R2",
+  "severity": "High",
+  "finding": "Outbox recovery can deliver an artifact the state machine rejected",
+  "status": "FIXED",
+  "note": "",
+  "commit": "839dde5f",
+  "evidence": "Reproduced first: a rejected append whose reservation release failed was armed by recovery once a later event moved the stored position. A processor now keeps a reservation it could not settle and stores no position past it (Invariant I); a failed write is read back before it is assumed failed.",
+  "tests": "background/processor_reserve_tests/rejected_events.rs; push_delivery verdict tests"
+ },
+ {
+  "id": "R3",
+  "severity": "High (conditional)",
+  "finding": "Reservation expiring during a still-running write can lose a committed event's delivery",
+  "status": "PARTIAL",
+  "note": "Fixed for a live writer (hold renewed while the fold runs). A writer whose process dies mid-write is settled from the task store after the hold, as designed; a longer hold cannot prove an outstanding database operation will never commit.",
+  "commit": "839dde5f",
+  "evidence": "PushOutbox::extend_hold (new, default reports unsupported; memory, SQLite and PostgreSQL implement it) lets the processor renew the hold while its fold runs (heartbeat). Not closed: a writer whose process dies mid-write is still settled from the task store after the hold, which is the designed recovery; a longer hold alone cannot prove an outstanding database operation will never commit (the reviewer's point).",
+  "tests": "processor_reserve_tests/heartbeat.rs; outbox contract tests for extend_hold"
+ },
+ {
+  "id": "A1",
+  "severity": "High",
+  "finding": "In-flight purge can delete historical audit records after a legal hold succeeds",
+  "status": "FIXED",
+  "note": "Single-store atomic hold check and the chain lock. Residual: erase_subject against a hold placed on another replica (S8).",
+  "commit": "ff8c49a8",
+  "evidence": "Reproduced first on memory and SQLite, same log and two logs: records 1 to 3 deleted after a completed hold. Deletion is now hold-checked atomically per store (delete_through_unless_held; advisory lock on PostgreSQL) and purge takes the chain lock.",
+  "tests": "audit/tests/purge_hold_race.rs; tests/postgres_audit_lifecycle.rs"
+ },
+ {
+  "id": "A2",
+  "severity": "High",
+  "finding": "PostgreSQL audit append holds a transaction while sealing queries the same pool",
+  "status": "FIXED",
+  "note": "",
+  "commit": "ff8c49a8",
+  "evidence": "Reproduced first: a pool of 2 timed out. Sealing now reads nothing inside append_next: subject keys and the empty-chain anchor are read before the transaction.",
+  "tests": "tests/postgres_audit_append.rs; audit/append_next_tests.rs"
+ },
+ {
+  "id": "R4",
+  "severity": "Medium",
+  "finding": "Cold/expired JWKS fetch failures are serialised but not shared or backed off",
+  "status": "FIXED",
+  "note": "",
+  "commit": "a8d85432",
+  "evidence": "Reproduced first: 100 requests made 100 fetches against a down endpoint. A failure is shared with the waiters, cooled down, and the waiters are bounded within the fetch deadline.",
+  "tests": "tests/jwks_cold_cache_failures.rs; auth/jwt.rs unit tests"
+ },
+ {
+  "id": "R5",
+  "severity": "Medium",
+  "finding": "Authentication and bearer tenant resolution parse headers differently",
+  "status": "FIXED",
+  "note": "Proven for REST and JSON-RPC; the gRPC and WebSocket clients are not separately tested.",
+  "commit": "a8d85432",
+  "evidence": "Reproduced first: 'BEARER tok' authenticated and its token landed in another tenant. One parser (extract_bearer) serves authentication and tenant resolution.",
+  "tests": "tenant_resolver tests; tests/boundary_matrix"
+ },
+ {
+  "id": "P1",
+  "severity": "Medium",
+  "finding": "Builder-created REST transports keep a trailing slash (double-slash route)",
+  "status": "FIXED",
+  "note": "",
+  "commit": "a8d85432",
+  "evidence": "Reproduced first: the server answered 404 for //message:send. One canonical_base_url serves every way a RestTransport is made; 12 builds assert the request line the server received.",
+  "tests": "client tests/boundary_matrix (REST base URL matrix)"
+ },
+ {
+  "id": "P2",
+  "severity": "Medium",
+  "finding": "Canonical REST tenant paths fail for route-head tenant names",
+  "status": "FIXED",
+  "note": "Proven for the message, task, subscribe and card routes; push-config routes are not covered by the shape predicate's tests.",
+  "commit": "a8d85432",
+  "evidence": "Reproduced first: tenant 'tasks' answered 404. The server routes against full templates (is_route shape predicate), not first segments.",
+  "tests": "dispatch/rest/query.rs tests; tests/boundary_matrix"
+ },
+ {
+  "id": "P3",
+  "severity": "Medium",
+  "finding": "GetExtendedAgentCard discards the request tenant and skips tenant admission",
+  "status": "FIXED",
+  "note": "",
+  "commit": "a8d85432",
+  "evidence": "Reproduced first: the provider received no tenant and strict resolution was bypassed. The tenant flows through admission and the provider on every binding (JSON-RPC, REST, gRPC, SLIMRPC).",
+  "tests": "handler/lifecycle/extended_card_tests.rs"
+ },
+ {
+  "id": "P4",
+  "severity": "Medium",
+  "finding": "with_protocol_binding can undo version filtering",
+  "status": "FIXED",
+  "note": "",
+  "commit": "a8d85432",
+  "evidence": "Reproduced first: an explicit JSON-RPC override selected the 0.3 /legacy interface while sending v1 requests. Both paths and build_grpc use selection::compatible_for.",
+  "tests": "client builder/binding_override_tests.rs"
+ },
+ {
+  "id": "A3",
+  "severity": "Operational",
+  "finding": "Required audit gates admission, not durable completion",
+  "status": "PARTIAL",
+  "note": "Fixed in process: a refused record is kept and written, calls carry an id, a crash's unended starts are reconciled, and a tool call can be recorded before it runs. Not done: the spool is memory, no result record after a tool ran, off-machine checkpoint retention is the deployment's.",
+  "commit": "7b461308",
+  "evidence": "Reproduced first: [call.started, call.started] after a store outage; through a real server pending_outcomes()==0 with the records gone. A required log now spools a refused record and writes it when the store answers (bounded, counted: outcomes_lost), calls carry a server-made call id, unresolved_calls/reconcile_unresolved close starts a crash left unended with call.unresolved, and AuditedPolicy writes tool.action before a call runs and refuses a call it cannot record. NOT done: the spool is memory (a process that dies with records in it loses them; reconciliation covers calls, not task.event); a result record after a tool ran; off-machine retention of signed checkpoints (the deployment's).",
+  "tests": "audit/tests/outcome_durability.rs (9); audit/tests/outcome_reconcile.rs (5); tool_loop/run_tests/audited.rs (6); tests/audit_outcome_durability.rs (real server); 21 hand mutants"
+ },
+ {
+  "id": "A4",
+  "severity": "Product gap",
+  "finding": "Approval separation trades off caller isolation",
+  "status": "FIXED",
+  "note": "Opt-in (with_review_grants). How an approver learns a task is waiting is the application's; there is no list-waiting-approvals method.",
+  "commit": "099acf49",
+  "evidence": "ApprovalGate::with_review_grants(): a named approver sending x-a2a-review-for reaches the requester's partition for GetTask (only while the task waits for a decision) and for SendMessage/SendStreamingMessage (only an approval decision). Other methods are refused with the header; a quorum above 1 is satisfiable under isolation; the approval audit record carries reviewFor. NOT done: a list-waiting-approvals method.",
+  "tests": "handler/review_tests.rs (10); tests/approval_review_grants.rs (real HTTP); 13 hand mutants"
+ },
+ {
+  "id": "T1",
+  "severity": "Default",
+  "finding": "Raw caller-visible tool-trace artifact",
+  "status": "FIXED",
+  "note": "Opt-in (TraceContent::Receipt, ToolLoop::strict). The default is unchanged and documented.",
+  "commit": "d4820f42",
+  "evidence": "Default unchanged (documented). Receipt traces hold tool, call id and outcome, never arguments or results; checked live with Qwen3-1.7B (no canary bytes in the trace).",
+  "tests": "tool_loop/run_tests/strict.rs; tests/tool_loop_strict_live.rs (ignored)"
+ },
+ {
+  "id": "T2",
+  "severity": "Product gap",
+  "finding": "Tool policy/tenant/approval context not integrated into the built-in loop",
+  "status": "FIXED",
+  "note": "",
+  "commit": "d4820f42; 59067c8d; 7b461308; f757caa3",
+  "evidence": "ToolPolicy asked before every call (native, recovered, repeated) with tenant, principal and task from the authenticated request; ArgumentCheck validates arguments against the tool's schema subset before the policy; AuditedPolicy records before it allows. Live: asked to transfer 500 against a cap of 100, the first call was refused, the model retried with 100, the policy refused, the tool ran 0 times. The remaining half, an approval bound to the call's digest, is S7 (f757caa3), on the step journal of S1.",
+  "tests": "tool_loop/run_tests/strict.rs; tool_loop/schema_tests.rs (17); run_tests/schema.rs (6); tests/tool_loop_strict_live.rs; run_tests/journal_approval.rs, journal_binding.rs"
+ },
+ {
+  "id": "T3",
+  "severity": "Default",
+  "finding": "recover_text_calls defaults on",
+  "status": "FIXED",
+  "note": "Opt-in (TextCallRecovery::Off or ReadOnly, ToolLoop::strict). The default is unchanged and documented.",
+  "commit": "d4820f42",
+  "evidence": "Default unchanged (documented). Live: a requested JSON example stayed the answer under strict; the default loop ran the same text as an action three times, to the turn bound.",
+  "tests": "tool_loop/run_tests/strict.rs; tests/tool_loop_strict_live.rs"
+ },
+ {
+  "id": "M1",
+  "severity": "Product gap",
+  "finding": "Production profile does not force named principals, strict tenant resolution, intentional sharing or finite budgets",
+  "status": "FIXED",
+  "note": "New profile. The authorization assertion is the deployment's; retention and erasure schedules and per-replica limits are not enforced by it.",
+  "commit": "ccb09541",
+  "evidence": "Profile::MultiTenant applies caller isolation and strict tenant resolution and refuses build() without an authenticator, an asserted-authorized tenant resolver (with_authorized_tenant_resolver), tenant-partitioned stores, a tenant-aware store when sharing is chosen, and a concurrency limit for every tenant. The authorization assertion is the deployment's; retention/erasure and per-replica limits are not enforced.",
+  "tests": "builder/multi_tenant_tests.rs (7); 12 hand mutants"
+ },
+ {
+  "id": "S1",
+  "severity": "Product gap",
+  "finding": "Durable step journal (resume points, pinned versions, pending approvals, action receipts)",
+  "status": "PARTIAL",
+  "note": "A run begun again under the same key resumes, with pins, receipts, fencing and fail-closed writes, on memory, SQLite and PostgreSQL. Not done: expiry of a journal row whose run never ends, anything that begins an orphaned task again, compensation, and any two-replica test.",
+  "commit": "f757caa3",
+  "evidence": "Control first: with no journal the same death repeats the tool (without_a_journal_the_same_death_repeats_the_call). ToolLoop::with_journal(Arc<dyn StepJournal>) writes a checkpoint (conversation, trace, calls answered, a receipt per call) after each model reply, before each call and after each; a run begun again under the same key resumes and asks the model only for what comes next. Pins: model name, digests of the preamble, tool set and modes, with_pin labels; a resume under other pins is PinMismatch. A receipt is Started before a call runs; on resume it is re-run only when with_idempotency_secret was set, else Indeterminate. A write that cannot be made stops the run before the call; a write is accepted only as the stored revision's successor. Real model (Qwen3-1.7B, llama.cpp 4fffab6): a run killed inside a call over a SQLite file resumed, the model was asked once and the tool's second call carried the first's idempotency key. NOT done: external effects still need the backend's idempotency (a repeat is rare and visible, not impossible); a journal row is removed only when its run ends, so an abandoned run keeps its row (no expiry); nothing here begins an orphaned task again (a search of the server for such a mechanism found none); compensation; fencing was tested against one store in one process, not by two replicas; PostgreSQL ran the contract test only.",
+  "tests": "run_tests/journal.rs (8), journal_writes.rs (2), journal/tests.rs (5, the store contract; the PostgreSQL one needs A2A_TEST_POSTGRES_URL and includes a race of two writers for one revision), journal_approval.rs (7), journal_binding.rs (3); tests/tool_loop_approval_journal.rs (3, real handler); tests/tool_loop_journal_live.rs (3, real model, ignored); 26 hand mutants, all killed"
+ },
+ {
+  "id": "S2",
+  "severity": "Product gap",
+  "finding": "Skill content pinning (manifests over bodies and resources, deployment pins, hashes in audit evidence, revocation)",
+  "status": "OPEN",
+  "note": "",
+  "commit": "",
+  "evidence": "Not started. Resource files are read live from the canonical directory.",
+  "tests": ""
+ },
+ {
+  "id": "S3",
+  "severity": "Scale",
+  "finding": "Fleet-wide inference quota and cost reservation with a declared overshoot bound",
+  "status": "OPEN",
+  "note": "",
+  "commit": "",
+  "evidence": "Not started. The inference limiter is process-local and usage is accounting after the response.",
+  "tests": ""
+ },
+ {
+  "id": "S4",
+  "severity": "Operational",
+  "finding": "Independent visibility of telemetry export failure; collector-outage and cardinality qualification",
+  "status": "OPEN",
+  "note": "Not examined this session.",
+  "commit": "",
+  "evidence": "Not examined: exporter accounting exists (otel/telemetry/counting.rs); the reviewer's point is an observer that works when the exporter does not, and measured overhead under failure.",
+  "tests": ""
+ },
+ {
+  "id": "S5",
+  "severity": "Evidence",
+  "finding": "Measure docs/readiness-bar.md rows R1-R7, C1-C5, F2-F5 and publish failure and recovery evidence",
+  "status": "PARTIAL",
+  "note": "R1 to R4 and C1 to C5 measured over HTTP JSON-RPC under L1, L3 and L4; R5, R6, R7, F1 to F5, L2 and L5 are not, and nothing is measured on two replicas or PostgreSQL.",
+  "commit": "7040632a; ba335f90",
+  "evidence": "tests/readiness_bar/ (an --ignored harness) printed every row MET in three 30 s release runs at ba335f90 (0 errors in about 400,000 requests per run; p99 1.08 to 1.16 ms against a 25 ms bar; 56 to 58 bytes per request against 1,024; fds, tokio tasks, queues and non-terminal tasks back to baseline; R4 refused 12 of 16 with a retry signal and none timed out). Recorded in docs/readiness-bar.md with host, profile, command and spread. Built with LTO off, which is not the published profile.",
+  "tests": "crates/a2a-protocol-server/tests/readiness_bar/ (1 test, ignored)"
+ },
+ {
+  "id": "S6",
+  "severity": "Governance",
+  "finding": "Release evidence manifest tying the source tree to tests, waivers, supported profiles and measured limits",
+  "status": "PARTIAL",
+  "note": "scripts/release_evidence.py generates and verifies a manifest by hand; it is not a gate in release.yml, runs no test suite and signs nothing.",
+  "commit": "0da4c753",
+  "evidence": "generate --commit REV [--run-gates] records the commit and tree, crate versions, MSRV and toolchain, the SHA-256 of each claim-bearing input read from the commit's tree, every advisory waiver with its reason, the deployment profiles and Cargo features, the register's counts, the measured limits (a machine-readable block in docs/readiness-bar.md, each number checked against the prose table), the unreleased breaking changes and each static gate's exit status (not_run unless --run-gates). verify re-reads the inputs and fails on any mismatch, and with --head unless the manifest is for HEAD. --self-test passes 15 checks; generate then verify --head exits 0; a manifest with one input hash changed exits 1. NOT done: wiring into release.yml (it needs the gate inventory and reachability checks to learn it first); a signature; test results (CI's run of the commit holds them).",
+  "tests": "scripts/release_evidence.py --self-test (15 checks)"
+ },
+ {
+  "id": "S7",
+  "severity": "Product gap",
+  "finding": "Approval bound to immutable tool name, arguments, requester and scope in the built-in loop",
+  "status": "FIXED",
+  "note": "For the built-in loop (ToolLoopExecutor and ToolLoop::with_journal). An executor that does its own approval through ctx.approval() binds to whatever it binds.",
+  "commit": "f757caa3",
+  "evidence": "PolicyDecision::RequireApproval parks the run with call_digest(tool, arguments, tenant, requester, task), a SHA-256 over canonical JSON; the request id is the journal key. A decision for that digest releases that call and no other: the loop re-checks the digest, tenant and task itself, and asks the policy again (a Deny on resume still denies). A second call of the same turn that needs approval parks on its own digest. Through the real handler with the approval gate and review grants: approval runs the call once with the arguments in the journal; a decision for another action or from another caller releases nothing; a refusal completes the task and the call never runs. Real model: the model chose transfer_money {account 4417, amount 500}, the task parked with that call's digest, approval ran the tool once with those arguments, a refusal ran it 0 times.",
+  "tests": "run_tests/journal_approval.rs (7); journal_binding.rs (3); tests/tool_loop_approval_journal.rs (3); tests/tool_loop_journal_live.rs (2 of 3); 26 hand mutants of the journal and approval code, all killed"
+ },
+ {
+  "id": "S8",
+  "severity": "Low",
+  "finding": "erase_subject against a legal hold, across replicas (A1 residual)",
+  "status": "OPEN",
+  "note": "",
+  "commit": "",
+  "evidence": "The per-store atomic hold check covers purge; erase_subject's interaction with a hold placed on another replica is not made atomic.",
+  "tests": ""
+ },
+ {
+  "id": "G1",
+  "severity": "Governance",
+  "finding": "main unprotected; protect-main ruleset disabled",
+  "status": "MAINTAINER",
+  "note": "A repository setting; cannot be changed from a session.",
+  "commit": "",
+  "evidence": "A repository setting, not code: enable required status checks, a review policy and protection of workflow files on main. Not changed from this session.",
+  "tests": ""
+ },
+ {
+  "id": "D1",
+  "severity": "High",
+  "finding": "A client that disconnects during a send can leave its new task Submitted for ever (found by S5's churn profile)",
+  "status": "FIXED",
+  "note": "Two windows after the row is saved, both fixed. The harness read after the bar defines C4 (after L3, for 120 s) to find it.",
+  "commit": "ba335f90",
+  "evidence": "Reproduced first: 30,000 loopback connections, half dropped before the response, left one task Submitted for the whole 120 s read in 3 of 6 runs. (1) CommitGuard learned a row existed only when the save returned; (2) the send awaited applied_mark between its commit and the task that stores the executor's events. After both fixes 0 of 13 runs left a task.",
+  "tests": "handler/messaging/dropped_send_tests.rs (4: a gate at the await, a store that writes the row and never answers, a continuation that must not be rolled back, a blocking send dropped after its commit); 3 hand mutants"
+ }
+]

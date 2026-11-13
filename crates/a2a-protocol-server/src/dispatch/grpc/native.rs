@@ -397,13 +397,17 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetExtendedAgentCardRequest>,
     ) -> Result<Response<apb::AgentCard>, Status> {
-        let (headers, ()) = self
-            .admit("GetExtendedAgentCard", request, |_| Ok(()))
+        // The request's one field is the tenant (§8.3.2 rule 4), carried like
+        // every other operation's.
+        let (headers, tenant) = self
+            .admit("GetExtendedAgentCard", request, |r| {
+                Ok(Some(r.tenant).filter(|t| !t.is_empty()))
+            })
             .await?;
         let call = async {
             Ok(self
                 .handler
-                .on_get_extended_agent_card(Some(&headers))
+                .on_get_extended_agent_card_for_tenant(tenant.as_deref(), Some(&headers))
                 .await?)
         };
         self.unary("GetExtendedAgentCard", &headers, call).await
@@ -1053,6 +1057,57 @@ mod tests {
         assert_eq!(
             card.name, "native-grpc-test-agent",
             "a default card would carry an empty name"
+        );
+    }
+
+    /// Adversarial review P3: the request's one field, `tenant`, reaches the
+    /// extended-card provider, as the other operations' tenant reaches theirs.
+    #[tokio::test]
+    async fn the_extended_card_requests_tenant_reaches_the_provider() {
+        struct Provider(Arc<std::sync::Mutex<Vec<Option<String>>>>);
+        impl crate::ExtendedCardProvider for Provider {
+            fn card_for<'a>(
+                &'a self,
+                ctx: &'a crate::call_context::CallContext,
+                configured: &'a AgentCard,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = crate::error::ServerResult<AgentCard>>
+                        + Send
+                        + 'a,
+                >,
+            > {
+                self.0.lock().unwrap().push(ctx.tenant().map(str::to_owned));
+                let card = configured.clone();
+                Box::pin(async move { Ok(card) })
+            }
+        }
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut svc = service();
+        svc.handler = Arc::new(
+            RequestHandlerBuilder::new(NoopExecutor)
+                .with_agent_card(test_card())
+                .with_extended_agent_card(test_card())
+                .with_extended_card_provider(Provider(Arc::clone(&seen)))
+                .with_push_sender(NoopSender)
+                // The stores here do not partition by tenant; the tenant only
+                // has to reach the provider.
+                .accept_unisolated_tenants()
+                .allow_unauthenticated_extended_card()
+                .build()
+                .expect("build"),
+        );
+        for tenant in ["alpha", "", "beta"] {
+            svc.get_extended_agent_card(Request::new(apb::GetExtendedAgentCardRequest {
+                tenant: tenant.to_owned(),
+            }))
+            .await
+            .expect("served");
+        }
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            [Some("alpha".to_owned()), None, Some("beta".to_owned())],
+            "an empty tenant is none, as on every other operation"
         );
     }
 

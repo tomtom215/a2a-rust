@@ -7,10 +7,10 @@
 
 //! The eleven A2A methods, registered on a SLIMRPC server.
 //!
-//! Split from the server type itself because this is the part that grows: it is
-//! one block per method in `spec/v1/slimrpc.md`'s inventory, each decoding a
-//! canonical protobuf request, calling the matching `RequestHandler::on_*`, and
-//! encoding the response.
+//! Split from the server type itself because this is the part that grows: one
+//! block per method in `spec/v1/slimrpc.md`'s inventory, each decoding a canonical
+//! protobuf request, calling the matching `RequestHandler::on_*`, and encoding the
+//! response.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -364,18 +364,16 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
     server.register_unary_unary(
         A2A_SERVICE_NAME,
         method::GET_EXTENDED_AGENT_CARD,
-        move |_req: Pb<pb::GetExtendedAgentCardRequest>, ctx: Context| {
+        move |req: Pb<pb::GetExtendedAgentCardRequest>, ctx: Context| {
             let h = Arc::clone(&h);
             async move {
                 let headers = h.headers(&ctx)?;
-                let card = h.handler.on_get_extended_agent_card(Some(&headers));
-                unary::<_, pb::AgentCard>(
-                    &h.handler,
-                    method::GET_EXTENDED_AGENT_CARD,
-                    &headers,
-                    card,
-                )
-                .await
+                let tenant = Some(req.into_inner().tenant).filter(|t| !t.is_empty());
+                let card = h
+                    .handler
+                    .on_get_extended_agent_card_for_tenant(tenant.as_deref(), Some(&headers));
+                let name = method::GET_EXTENDED_AGENT_CARD;
+                unary::<_, pb::AgentCard>(&h.handler, name, &headers, card).await
             }
         },
     );

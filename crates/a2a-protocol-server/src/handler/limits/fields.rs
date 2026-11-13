@@ -10,6 +10,8 @@
 
 use std::time::Duration;
 
+use super::TerminalConfirmation;
+
 /// Configurable limits for the request handler.
 ///
 /// All fields have sensible defaults. Create with [`HandlerLimits::default()`]
@@ -449,6 +451,20 @@ pub struct HandlerLimits {
     /// pool's `acquire_timeout`, 30 s by default, when no connection can be
     /// had; then the statement). With both defaults, about a minute.
     pub store_write_retry: Duration,
+    /// What a streaming client is told when the store does not confirm a
+    /// terminal event: [`TerminalConfirmation::Required`] (the default) ends
+    /// the stream with an `UNAVAILABLE` error, so no client hears that a task
+    /// finished that the store does not hold as finished;
+    /// [`TerminalConfirmation::BestEffort`] delivers the event as emitted.
+    /// Adversarial review R1, 2026-11-12.
+    ///
+    /// The wait for the store's answer is the event queue's write timeout, the
+    /// longer of five seconds and [`store_write_retry`](Self::store_write_retry).
+    /// A write that lands after the stream was told it was unconfirmed is still
+    /// recorded in the log and told to the task's webhooks, so `GetTask`,
+    /// the log and the webhooks agree with each other; only the stream that
+    /// gave up waiting does not carry it.
+    pub terminal_confirmation: TerminalConfirmation,
     /// The most bytes of events held in event queues at once, across every
     /// task, or `None` (the default) for no bound beyond the per-queue count
     /// and the per-event size (audit H13, ADR 0047).

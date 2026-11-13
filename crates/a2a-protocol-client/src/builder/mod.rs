@@ -35,6 +35,8 @@ pub(crate) mod selection;
 mod transport_factory;
 
 #[cfg(test)]
+mod binding_override_tests;
+#[cfg(test)]
 mod grpc_selection_tests;
 #[cfg(test)]
 mod selection_tests;
@@ -106,6 +108,14 @@ pub struct ClientBuilder {
     /// `with_protocol_binding`, `build_grpc` or a fallback replaced it, or
     /// cleared it).
     pub(super) tenant_set: bool,
+    /// An explicit [`with_protocol_binding`](Self::with_protocol_binding) the
+    /// card cannot satisfy: it advertises the binding, but only for protocol
+    /// versions this SDK does not speak. `(canonical binding, why)`. Making the
+    /// client anyway would pair the new binding with the previous binding's
+    /// endpoint, or with an interface for another protocol, so
+    /// [`build`](Self::build) refuses; a later override the card does resolve
+    /// clears it, and a custom transport is the way to supply one's own.
+    pub(super) binding_conflict: Option<(String, String)>,
     /// How a bare `host:port` gRPC address is dialled by [`build_grpc`].
     ///
     /// Lives on the builder rather than on [`ClientConfig`] because it is a
@@ -181,6 +191,7 @@ impl ClientBuilder {
             card_interfaces: Vec::new(),
             fallback_interfaces: Vec::new(),
             tenant_set: false,
+            binding_conflict: None,
             agent: None,
             declared: None,
             extensions: Vec::new(),
@@ -305,6 +316,7 @@ impl ClientBuilder {
             card_interfaces: card.supported_interfaces.clone(),
             fallback_interfaces: candidates.collect(),
             tenant_set: false,
+            binding_conflict: None,
             agent: Some(crate::call_span::agent_identity(card)),
             declared: Some(crate::declared::DeclaredCapabilities::of(
                 &card.capabilities,
@@ -472,9 +484,9 @@ impl ClientBuilder {
     #[must_use]
     pub fn chosen_interface(&self) -> Option<&AgentInterface> {
         let binding = self.preferred_binding.as_deref()?;
-        self.card_interfaces
-            .iter()
-            .find(|i| i.protocol_binding.eq_ignore_ascii_case(binding) && i.url == self.endpoint)
+        self.card_interfaces.iter().find(|i| {
+            selection::same_binding(&i.protocol_binding, binding) && i.url == self.endpoint
+        })
     }
 
     /// Sets the protocol binding, overriding any derived from the agent card.
@@ -497,15 +509,30 @@ impl ClientBuilder {
     #[must_use]
     pub fn with_protocol_binding(mut self, binding: impl Into<String>) -> Self {
         let binding = binding.into();
-        let resolved = self
-            .card_interfaces
-            .iter()
-            .find(|i| i.protocol_binding.eq_ignore_ascii_case(&binding))
+        // The same selection `from_card` makes: only an interface that speaks
+        // this SDK's protocol major, with `REST` and `HTTP+JSON` one binding.
+        let resolved = selection::compatible_for(&self.card_interfaces, &binding)
             .map(|i| (i.url.clone(), i.tenant.clone()));
+        self.binding_conflict = None;
         if let Some((url, tenant)) = resolved {
             self.endpoint = url;
             if !self.tenant_set {
                 self.config.tenant = tenant;
+            }
+        } else {
+            let offered = selection::offered_for(&self.card_interfaces, &binding);
+            if !offered.is_empty() {
+                self.binding_conflict = Some((
+                    selection::canonical_binding(&binding)
+                        .unwrap_or("")
+                        .to_owned(),
+                    format!(
+                        "the agent card offers {binding} only for {}, and this SDK speaks A2A \
+                         protocol major {SUPPORTED_PROTOCOL_MAJOR}; choose another binding, or \
+                         supply your own transport with with_custom_transport",
+                        offered.join(", ")
+                    ),
+                ));
             }
         }
         self.preferred_binding = Some(binding);

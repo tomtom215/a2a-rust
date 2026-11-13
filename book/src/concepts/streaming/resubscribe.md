@@ -109,8 +109,22 @@ persisted, or the state the store already holds when another writer finished
 the task first — a `CancelTask` handled by another replica, typically. The
 log records the same frame at that position, so a resumed stream ends the way
 the live one did, and a `GetTask` made after reading the terminal frame
-agrees with it. If the store has not answered within the timeout, the frame
-goes out as the agent wrote it, which is how every frame behaved before.
+agrees with it.
+
+When the store's write fails, the failure does not say whether it was applied
+(an acknowledgement is lost as easily as a request), so the server reads the
+task back. If it is stored in the state the frame names, the write landed and
+the frame goes out. Otherwise — the write was refused, the read shows another
+state, the store cannot be read, no answer came within the timeout, or the
+processor had stopped — **the stream ends with an `UNAVAILABLE` error, not a
+terminal frame**: the client is never told a task finished that the store does
+not record as finished, and `GetTask` says what the store holds. Nothing is
+logged or pushed for an ending the store lacks; if its write lands later it is
+logged and pushed then, so the log, the webhooks and `GetTask` agree with one
+another even when the stream that gave up waiting does not carry it.
+`HandlerLimits::with_terminal_confirmation(TerminalConfirmation::BestEffort)`
+restores the earlier behaviour, in which a frame the store had not confirmed
+went out as the agent wrote it.
 
 The trade is latency on that one frame: it now waits for the store write, and
 for the processing of any events queued ahead of it.

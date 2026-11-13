@@ -55,10 +55,15 @@ async fn events_stay_in_order_across_an_outbox_that_was_down_at_reserve() {
 /// A processor stalled past the hold whose event the worker had meanwhile
 /// armed (the write had landed) and had delivered finds nothing to arm, and
 /// records the event again: under the delivery id it had, so the receiver sees
-/// one id twice, which it knows for a retry.
+/// one id twice, which it knows for a retry. Only with an outbox that cannot
+/// extend a hold: with one that can, a live writer's reservation is never
+/// settled under it (`a_processor_stalled_past_its_hold_keeps_its_reservation_and_arms_it`).
 #[tokio::test(start_paused = true)]
 async fn an_event_recorded_again_keeps_its_delivery_id() {
     let mut rig = Rig::new(TaskState::Working).await;
+    rig.flaky
+        .fail_extend
+        .store(true, std::sync::atomic::Ordering::SeqCst);
     rig.store.stop(Stop::AfterThenWait);
     let running = rig.run_on_a(status(1, TaskState::Working));
     parked(&rig).await;

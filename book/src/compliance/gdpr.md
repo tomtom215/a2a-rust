@@ -114,7 +114,12 @@ The map states these limits; plan around them.
   key that sealed it, so losing a key loses the data.
 - **Copies elsewhere.** Tasks delegated to other agents, webhook receivers and
   telemetry back ends are not reached.
-- **Concurrency.** Across replicas, an erasure, a hold and an append are not
+- **Concurrency.** A legal hold and a retention purge are serialised, on one
+  log and across replicas: the store checks the hold in the same step that
+  deletes, so a hold that has completed stops a purge that began before it
+  (adversarial review A1, 2026-11-12). An erasure of a person's key
+  (`erase_subject`) is checked against holds under the chain's lock in one log,
+  but across replicas an erasure and a hold, or an erasure and an append, are not
   serialised ([ADR 0015](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0015-audit-trail.md)).
 
 ## Where to go next
