@@ -1987,6 +1987,35 @@ mod tests {
     /// fifth of it, so replicas that failed together do not ask together: never
     /// less than the interval, never a fifth or more beyond it, and not always
     /// the same (adversarial review R4).
+    /// A request waiting for a refresh is counted while it waits and not after:
+    /// a guard that never gives its place back would refuse every request once
+    /// `MAX_REFRESH_WAITERS` had waited, for the life of the process.
+    #[test]
+    fn a_waiting_request_gives_its_place_back_when_it_stops_waiting() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let count = AtomicUsize::new(0);
+        let guard = WaitingGuard::enter(&count).expect("room");
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        drop(guard);
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+
+        let waiting: Vec<_> = (0..MAX_REFRESH_WAITERS)
+            .map(|_| WaitingGuard::enter(&count).expect("room"))
+            .collect();
+        assert!(
+            WaitingGuard::enter(&count).is_none(),
+            "the limit is the limit"
+        );
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            MAX_REFRESH_WAITERS,
+            "a refused request is not counted"
+        );
+        drop(waiting);
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+        assert!(WaitingGuard::enter(&count).is_some(), "room again");
+    }
+
     #[test]
     fn a_failed_fetch_is_remembered_for_the_interval_plus_up_to_a_fifth() {
         let interval = Duration::from_secs(100);

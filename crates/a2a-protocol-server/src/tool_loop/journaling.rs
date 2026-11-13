@@ -153,10 +153,11 @@ fn unanswered(messages: &[ChatMessage]) -> Vec<ToolCall> {
     else {
         return Vec::new();
     };
-    let ChatMessage::Assistant { tool_calls, .. } = &messages[at] else {
+    let Some((ChatMessage::Assistant { tool_calls, .. }, after)) = messages[at..].split_first()
+    else {
         return Vec::new();
     };
-    let answered: Vec<&str> = messages[at + 1..]
+    let answered: Vec<&str> = after
         .iter()
         .filter_map(|m| match m {
             ChatMessage::ToolResult { call_id, .. } => Some(call_id.as_str()),

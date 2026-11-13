@@ -323,3 +323,27 @@ async fn a_write_that_lost_a_race_has_its_rows_removed_without_asking_the_store(
         assert_eq!(rig.metrics.count(push_outcome::RESERVATION_SETTLED), 0);
     }
 }
+
+/// A write the store applied and then reported as failed (a lost
+/// acknowledgement) did store the event: the collector asks the store, finds
+/// it, and the event is delivered, once. Settled by the fold alone, the rows
+/// would have been removed for an event the store holds.
+#[tokio::test(start_paused = true)]
+async fn a_write_whose_acknowledgement_was_lost_still_delivers_its_event() {
+    let mut rig = Rig::new().await;
+    rig.store
+        .fail_writes(|t| t.status.state == TaskState::Completed, true, None);
+
+    rig.blocking_request(vec![status(TaskState::Completed)])
+        .await
+        .unwrap();
+
+    let told = next(&mut rig.a_seen).await;
+    assert_eq!(told.state, Some(TaskState::Completed));
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    assert!(
+        rig.a_seen.try_recv().is_err() && rig.b_seen.try_recv().is_err(),
+        "once, not again"
+    );
+    assert_eq!(rig.rows().await, 0);
+}

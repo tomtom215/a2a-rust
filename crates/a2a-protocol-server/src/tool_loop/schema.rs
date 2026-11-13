@@ -194,13 +194,11 @@ fn is_type(name: &str, value: &Value) -> bool {
         "array" => value.is_array(),
         "string" => value.is_string(),
         "number" => value.is_number(),
-        "integer" => {
-            value.is_i64()
-                || value.is_u64()
-                || value
-                    .as_f64()
-                    .is_some_and(|f| f.is_finite() && f.fract() == 0.0)
-        }
+        // Every integer a JSON number can hold converts to a finite `f64` with
+        // no fraction, so this one test covers `i64`, `u64` and floats alike.
+        "integer" => value
+            .as_f64()
+            .is_some_and(|f| f.is_finite() && f.fract() == 0.0),
         _ => false,
     }
 }

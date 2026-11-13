@@ -108,6 +108,7 @@ async fn the_in_memory_journal_keeps_the_contract() {
     assert!(journal.is_empty());
     contract(&journal).await;
     assert_eq!(journal.len(), 2);
+    assert!(!journal.is_empty());
 }
 
 #[cfg(feature = "sqlite")]

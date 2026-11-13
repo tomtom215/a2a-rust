@@ -36,6 +36,9 @@ pub struct Flaky {
     pub(super) refuses_next: std::sync::Mutex<u64>,
     /// Records the store has taken.
     pub stored: std::sync::atomic::AtomicUsize,
+    /// Times the store was asked for a chain's head, which every write to it
+    /// begins with: one per attempt, whether the store then takes the record.
+    pub attempts: std::sync::atomic::AtomicUsize,
 }
 
 impl Flaky {
@@ -47,6 +50,7 @@ impl Flaky {
             delay_ms: std::sync::atomic::AtomicU64::new(0),
             refuses_next: std::sync::Mutex::new(0),
             stored: std::sync::atomic::AtomicUsize::new(0),
+            attempts: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -80,6 +84,7 @@ impl Flaky {
 impl AuditStore for Flaky {
     fn head<'a>(&'a self, c: &'a str) -> BoxFuture<'a, A2aResult<Option<(u64, String)>>> {
         Box::pin(async move {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
             self.lag().await;
             self.refuse("")?;
             self.inner.head(c).await
@@ -396,4 +401,27 @@ async fn the_retry_task_ends_once_the_spool_is_empty() {
         !log.retry_task_running(),
         "the retry task is still running with nothing left to retry"
     );
+}
+
+/// A store that stays down is asked less and less often, from a tenth of a
+/// second up to five: a retry every tenth of a second for as long as the
+/// outage lasts would be a load of its own on a store that is struggling.
+#[tokio::test(start_paused = true)]
+async fn a_store_that_stays_down_is_asked_less_and_less_often() {
+    let store = Flaky::new();
+    let audit = interceptor(&store);
+    let log = Arc::clone(&audit.log);
+    store.set_down(true);
+    assert!(log.append_required(rec("", "t0")).await.is_err());
+    tokio::time::sleep(Duration::from_secs(20)).await;
+
+    // The call itself, then retries after 0.1, 0.2, 0.4 ... seconds, 5 at the
+    // longest: about nine asks in twenty seconds, where a fixed tenth of a
+    // second is two hundred.
+    let asked = store.attempts.load(Ordering::SeqCst);
+    assert!(
+        (5..=15).contains(&asked),
+        "{asked} asks of a store that stayed down for twenty seconds"
+    );
+    assert_eq!(log.pending_outcomes(), 1, "and the record is still kept");
 }

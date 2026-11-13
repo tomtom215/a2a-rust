@@ -65,6 +65,9 @@ fn an_integer_is_a_number_with_no_fraction() {
     ok(schema.clone(), json!(-3));
     ok(schema.clone(), json!(3.0));
     ok(schema.clone(), json!(u64::MAX));
+    ok(schema.clone(), json!(i64::MIN));
+    ok(schema.clone(), json!(1e300));
+    bad(schema.clone(), json!(-0.5), "expected integer, got number");
     bad(schema.clone(), json!(3.5), "expected integer, got number");
     bad(schema, json!("3"), "expected integer, got string");
 }
@@ -265,6 +268,26 @@ fn a_refusal_lists_five_and_counts_the_rest() {
         "{why}"
     );
     assert!(why.ends_with("(and 3 more)"), "{why}");
+}
+
+/// An object or array is the constant only when it has the same members and no
+/// others, whichever has more.
+#[test]
+fn a_const_is_not_matched_by_a_value_with_more_or_fewer_members() {
+    for (constant, value) in [
+        (json!({"a": 1}), json!({"a": 1, "b": 2})),
+        (json!({"a": 1, "b": 2}), json!({"a": 1})),
+        (json!([1]), json!([1, 2])),
+        (json!([1, 2]), json!([1])),
+    ] {
+        assert!(
+            checked(&json!({"const": constant}), &value).is_some(),
+            "{constant} accepted {value}"
+        );
+    }
+    for same in [json!({"a": 1, "b": 2}), json!([1, 2])] {
+        assert_eq!(checked(&json!({"const": same}), &same), None, "{same}");
+    }
 }
 
 /// Up to five are listed and nothing more is said: "(and 0 more)" is noise.

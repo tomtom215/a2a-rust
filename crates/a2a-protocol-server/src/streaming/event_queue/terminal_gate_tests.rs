@@ -175,6 +175,32 @@ async fn best_effort_broadcasts_the_event_unchanged_when_no_verdict_arrives() {
     );
 }
 
+/// The opt-out holds for a store that ruled it did not keep the event too: the
+/// event goes out as the executor wrote it, and only `Required` turns the
+/// ruling into an error.
+#[tokio::test]
+async fn best_effort_broadcasts_the_event_unchanged_when_the_store_says_it_kept_nothing() {
+    let (writer, mut reader, mut rx) = new_in_memory_queue_with_persistence(8, 1 << 20, TIMEOUT);
+    let writer = std::sync::Arc::new(
+        writer
+            .with_terminal_gate()
+            .with_terminal_confirmation(crate::handler::TerminalConfirmation::BestEffort),
+    );
+    let gate = writer.terminal_gate().expect("gated");
+    let w = std::sync::Arc::clone(&writer);
+    let write = tokio::spawn(async move { w.write(status(TaskState::Completed)).await });
+    let handed = within(rx.recv()).await.expect("handed over").expect("ok");
+    gate.reject(
+        handed.seq.expect("positioned"),
+        a2a_protocol_types::error::A2aError::unavailable("the store said not now"),
+    );
+    within(write).await.expect("joins").expect("write succeeds");
+    assert_eq!(
+        within(next_state(&mut reader)).await,
+        Some(TaskState::Completed)
+    );
+}
+
 /// The store ruled that it does not hold the event: subscribers are told
 /// that, in either mode's `Required` default, and the gate carries the
 /// processor's own error.

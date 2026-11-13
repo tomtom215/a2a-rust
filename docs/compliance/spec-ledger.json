@@ -2734,8 +2734,8 @@
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:49 write_multiple_events_read_in_order",
     "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:3107 concurrent_clones_deliver_every_position_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate_tests.rs:241 a_held_terminal_event_is_not_overtaken",
-    "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate_tests.rs:274 a_terminal_event_that_waited_for_room_is_not_overtaken",
+    "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate_tests.rs:267 a_held_terminal_event_is_not_overtaken",
+    "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate_tests.rs:300 a_terminal_event_that_waited_for_room_is_not_overtaken",
     "crates/a2a-protocol-sdk/tests/binding_equivalence/results.rs:130 bind_equiv_002_every_binding_delivers_events_in_generation_order"
    ],
    "notes": "One broadcast channel per task, and writes to it take turns from the moment a position is assigned until the event is broadcast (2026-10-13), so writes in flight at once (CancelTask's beside the executor's, a terminal event held for the store's verdict) reach the persistence channel and every stream in position order. Until then a later write could overtake a held terminal event, and on a multi-threaded runtime any two writes could swap. The SSE, gRPC and WebSocket writers forward each stream sequentially.",
@@ -8671,7 +8671,7 @@
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:106 debug_names_no_accepted_credential",
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:135 accepting_and_refusing_logs_no_credential",
     "crates/a2a-protocol-server/tests/credential_rotation.rs:116 an_api_key_is_rotated_and_revoked_while_serving",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:2125 debug_impls_render_type_and_redact_secrets"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:2154 debug_impls_render_type_and_redact_secrets"
    ],
    "notes": "Constant-time comparison, Debug shows counts not keys, identity labels separate from credentials, push secrets redacted. Exception: SQL push-config stores keep credentials plaintext at rest (see 3131). Client: until 2026-10-14 (audit register R17) the derived Debug of ClientRequest, ClientResponse, CardFetchOptions and WebSocketTransportConfig printed header values (the Authorization an auth interceptor adds) and push-config params and results verbatim; they print header names and JSON keys now, never values.",
    "auditor": "F",

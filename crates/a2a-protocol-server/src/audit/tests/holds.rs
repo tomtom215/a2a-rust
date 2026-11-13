@@ -24,6 +24,58 @@ async fn a_legal_hold_stops_purge_until_released() {
     assert_eq!(report.purged.len(), 1);
 }
 
+/// A hold is on one chain: the purge leaves that chain alone and ends the
+/// retention of the others, which a hold read as "some chain has one" would
+/// stop too.
+#[tokio::test]
+async fn a_hold_on_one_chain_does_not_stop_the_purge_of_another() {
+    let store = Arc::new(InMemoryAuditStore::new());
+    for chain in ["held", "free"] {
+        let mut prev = None;
+        for (i, day) in [0_i64, 1, 2, 300].iter().enumerate() {
+            let time = a2a_protocol_types::unix_millis_to_iso8601(Y2026 + day * DAY_MS);
+            let r = sealed(chain, i as u64 + 1, prev.clone(), &time);
+            prev = Some(r.hash.clone());
+            store.append(&r).await.unwrap();
+        }
+    }
+    let log = AuditLog::new(Arc::clone(&store) as Arc<dyn AuditStore>).with_signer(signer(), 0);
+    let retention = AuditRetention::allowing_shorter_than_six_months(Duration::from_hours(24));
+    log.place_hold("held", "litigation 2026-17", "alice")
+        .await
+        .unwrap();
+
+    let report = log.purge(retention, Y2026 + 400 * DAY_MS).await.unwrap();
+
+    assert_eq!(report.held, vec!["held".to_owned()]);
+    assert_eq!(
+        report
+            .purged
+            .iter()
+            .map(|p| p.0.as_str())
+            .collect::<Vec<_>>(),
+        ["free"],
+        "{report:?}"
+    );
+    // The held chain keeps all four records and the hold's own is written
+    // beside them; the free chain is purged through its first three.
+    let held = store.read("held", 0, 100).await.unwrap();
+    let free = store.read("free", 0, 100).await.unwrap();
+    assert!(
+        held.len() >= 4,
+        "the held chain lost records: {}",
+        held.len()
+    );
+    assert_eq!(free.len(), 1, "only the newest of the free chain is left");
+    // Nothing of a purge began on the held chain: no anchor was signed for
+    // records that were never going to be deleted.
+    assert_eq!(
+        store.checkpoints("held").await.unwrap(),
+        Vec::new(),
+        "an anchor was written for a held chain"
+    );
+}
+
 /// Placing and releasing a hold are chain records naming who did it
 /// (GDPR Art. 5(2): the controller shows what was done, and by whom). They
 /// are written whether or not the hold then matters, and a release with
