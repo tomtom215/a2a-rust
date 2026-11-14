@@ -261,3 +261,33 @@ async fn an_ending_reserved_after_the_terminal_was_pushed_is_released_not_armed(
     assert!(rig.a_seen.try_recv().is_err(), "nobody is told twice");
     assert!(rig.b_seen.try_recv().is_err());
 }
+
+/// The same, with no reservation: an ending this processor already pushed is
+/// not recorded in the outbox again, so its webhooks are not told twice.
+#[tokio::test(start_paused = true)]
+async fn an_ending_already_pushed_is_not_recorded_again() {
+    use a2a_protocol_types::task::TaskStatus;
+
+    let mut rig = Rig::new(TaskState::Working).await;
+    let id = TaskId::new("t");
+    let mut run = Processor::new(
+        &id,
+        BackgroundDeps {
+            task_store: &*rig.store,
+            push: &rig.a,
+            limits: &rig.limits,
+            metrics: &crate::metrics::NoopMetrics,
+        },
+        task(TaskState::Working),
+        CancellationToken::new(),
+        None,
+        None,
+    );
+    run.pushed_terminal = true;
+    run.announce(TaskStatus::new(TaskState::Failed), None).await;
+
+    assert_eq!(rig.rows().await, 0, "nothing recorded");
+    rig.wait(hold(&rig) + Duration::from_secs(30)).await;
+    assert!(rig.a_seen.try_recv().is_err(), "nobody is told twice");
+    assert!(rig.b_seen.try_recv().is_err());
+}
