@@ -187,6 +187,12 @@ Whoever holds the private key can rewrite a chain and sign the result, so the
 key is what the records' integrity rests on. Keep it in a secret store, not
 beside the database.
 
+To rotate it, sign a last checkpoint under the old key, restart with the new
+signer under a new `kid`, and give the log the old public key with
+`with_retired_key`: each checkpoint names the `kid` it was signed under, so
+without it `verify` reports the earlier checkpoints as unverifiable. The steps
+are in [Operations Runbooks](./operations.md#rotate-keys).
+
 ## Verifying
 
 ```rust,no_run

@@ -47,6 +47,7 @@ configuration that does not fit it. Profiles combine; none changes a default.
 | A developer's machine, a test, a demo | `LocalDevelopment` | Nothing, except being combined with `Production` or `DurableProduction` |
 | One service whose state must survive a restart | `DurableProduction` | No authenticator; no task store, or one that keeps its tasks in this process; with push declared, a push-config store or push outbox in this process (or none); a halt, lease or audit store in this process |
 | Several replicas, tenants kept apart | `DurableProduction` + `Production` + `MultiTenant` | All of the above, and [below](#the-production-profile), and [multi-tenancy](./multi-tenancy.md)'s |
+| Personal or otherwise regulated data | `RegulatedData`, usually with `DurableProduction` | No authenticator; an audit log that is missing, not required, or without privacy; task content not sealed (`EncryptedTaskStore`) and not declared encrypted at rest; private file URLs accepted; a push sender that allows private addresses or plain HTTP; a missing declaration of trusted proxies, key custody, backups or retention |
 
 "In this process" means a store whose `is_process_local()` answers `true`: the
 in-memory stores, and the SQLite stores over `sqlite::memory:`. The SQLite
@@ -86,6 +87,30 @@ rehearsed restore, the database outliving its host, a tool loop's step journal
 (it belongs to the executor, which the handler cannot see), where the keys of
 encrypted stores are kept, and whether retention jobs are scheduled. Those are
 the deployment's to show.
+
+`RegulatedData` relies on controls no process can see, so it asks the
+deployment to state them, and refuses to build until it has. Each statement is
+carried into the report as *declared, not verified*, beside what was checked, so
+the startup log records what the deployment said it does:
+
+```rust,no_run
+use a2a_protocol_server::profile::{ExternalControl, Profile};
+use a2a_protocol_server::RequestHandlerBuilder;
+
+fn declare(b: RequestHandlerBuilder) -> RequestHandlerBuilder {
+    b.with_profile(Profile::RegulatedData)
+        .declare_external_control(
+            ExternalControl::TrustedProxies,
+            "the ingress at 10.0.0.0/24 sets X-Forwarded-For; nothing else is trusted",
+        )
+        .declare_external_control(ExternalControl::KeyCustody, "KEK in the cloud KMS, rotated yearly")
+        .declare_external_control(ExternalControl::Backups, "nightly to another region; restore rehearsed")
+        .declare_external_control(ExternalControl::Retention, "purge_expired and AuditLog::purge daily")
+}
+```
+
+What it cannot see is listed too: that a declaration is true, what an executor
+or a tool sends out, and any legal duty such as a lawful basis.
 
 ### The production profile
 

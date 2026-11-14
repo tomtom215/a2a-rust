@@ -333,6 +333,20 @@ pub trait TaskStore: Send + Sync + 'static {
         false
     }
 
+    /// Whether this store seals the content of every task before it is
+    /// written, so the database, its backups and its replicas hold no message
+    /// or artifact in the clear.
+    ///
+    /// The default is `false`. `EncryptedTaskStore` (feature `encryption`)
+    /// answers `true`. [`Profile::RegulatedData`](crate::profile::Profile::RegulatedData)
+    /// requires it, or a declaration that the storage is encrypted another way
+    /// ([`ExternalControl::EncryptionAtRest`](crate::profile::ExternalControl::EncryptionAtRest)).
+    ///
+    /// A wrapper that forwards to another store must forward this too.
+    fn seals_content(&self) -> bool {
+        false
+    }
+
     /// Atomically claims `key` for `task_id` on behalf of `message_id`.
     ///
     /// Concurrent claims of one key must resolve to exactly one

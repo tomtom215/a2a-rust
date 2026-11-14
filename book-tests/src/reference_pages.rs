@@ -102,3 +102,6 @@ pub mod page_reference_conformance_testing {}
 
 #[doc = include_str!("../../book/src/reference/conformance-statement.md")]
 pub mod page_reference_conformance_statement {}
+
+#[doc = include_str!("../../book/src/reference/support-matrix.md")]
+pub mod page_reference_support_matrix {}

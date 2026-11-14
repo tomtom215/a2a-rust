@@ -625,46 +625,12 @@ jobs:
 
           echo "::group::Extracting release notes for v$VERSION"
 
-          # Extract everything between ## [VERSION] and the next ## [ heading
-          awk "
-            /^## \[$VERSION\]/ { found=1; next }
-            found && /^## \[/  { exit }
-            found              { print }
-          " CHANGELOG.md > release_notes.md
-
-          if [[ ! -s release_notes.md ]]; then
-            echo "::error::Empty release notes extracted for $VERSION"
-            echo "Ensure CHANGELOG.md has a non-empty ## [$VERSION] section."
-            exit 1
-          fi
-
-          # GitHub refuses a release body over 125,000 characters, and the
-          # 0.15.0 section is about 289,000: `gh release create` would fail
-          # here, before the publish job, with the tag already pushed. A
-          # section over the limit is released as the parts an adopter reads
-          # before upgrading (the opening paragraph, and the Known Limitations,
-          # Breaking Changes, Behaviour Changes, Deprecated and Security
-          # sections), with a link to the whole section at the tag.
-          # CHANGELOG.md itself is not shortened. Behaviour Changes is kept
-          # because a runtime change that needs no code change is the one an
-          # adopter who reads only the release page would otherwise miss.
-          LIMIT=120000
-          if [[ "$(wc -m < release_notes.md)" -gt "$LIMIT" ]]; then
-            echo "::warning::The $VERSION section is $(wc -m < release_notes.md) characters, over the $LIMIT a GitHub release body can carry; releasing its upgrade-critical sections and a link."
-            mv release_notes.md release_notes.full.md
-            {
-              echo "These are the sections to read before upgrading. The full notes for this release are in [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/v${VERSION}/CHANGELOG.md) at this tag."
-              echo ""
-              awk '
-                /^### / { seen = 1; keep = ($0 ~ /^### (Known Limitations|Breaking Changes|Behaviour Changes|Deprecated|Security)$/) }
-                !seen || keep { print }
-              ' release_notes.full.md
-            } > release_notes.md
-            if [[ "$(wc -m < release_notes.md)" -gt "$LIMIT" ]]; then
-              echo "::error::Even the upgrade-critical sections of $VERSION are over $LIMIT characters."
-              exit 1
-            fi
-          fi
+          # The section, or, over the 120,000 characters a GitHub release body
+          # can carry (0.15.0's was about 289,000), its upgrade-critical parts
+          # and a link to the whole: scripts/check_release_tree.py `notes`,
+          # whose self-test (in the validate job) proves what it keeps. CHANGELOG.md
+          # itself is not shortened.
+          python3 scripts/check_release_tree.py notes "$VERSION" "$GITHUB_REPOSITORY" release_notes.md
 
           echo "Release notes preview:"
           cat release_notes.md

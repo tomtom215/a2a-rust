@@ -164,6 +164,44 @@ pub enum Profile {
     /// loop's step journal (the executor's, not the handler's), where keys are
     /// kept, and whether retention jobs are scheduled.
     DurableProduction,
+
+    /// For a deployment that holds personal or otherwise regulated data, and
+    /// must show how it is protected (adversarial review of 2026-11-13: audit
+    /// privacy, URL and egress policy, proxy trust, key management and
+    /// retention).
+    ///
+    /// Applies nothing. Makes `build()` refuse, naming what is missing, unless:
+    /// * an interceptor that authenticates is installed;
+    /// * an audit log is set that is required
+    ///   (`AuditLog::require_record`)
+    ///   and seals what records say about people (`AuditLog::with_privacy`):
+    ///   it needs the `audit` and `encryption` features;
+    /// * the task store seals task content
+    ///   ([`TaskStore::seals_content`](crate::store::TaskStore::seals_content),
+    ///   as `EncryptedTaskStore` does), or the deployment declared
+    ///   [`ExternalControl::EncryptionAtRest`];
+    /// * file URLs naming a private address are refused
+    ///   ([`refuse_private_file_urls`](crate::RequestHandlerBuilder::refuse_private_file_urls));
+    /// * a push sender, when one is set, refuses private addresses and plain
+    ///   HTTP ([`PushSender::allows_private_urls`](crate::push::PushSender::allows_private_urls),
+    ///   [`PushSender::requires_https`](crate::push::PushSender::requires_https));
+    /// * the deployment declared, with
+    ///   [`declare_external_control`](crate::RequestHandlerBuilder::declare_external_control),
+    ///   its [trusted proxies](ExternalControl::TrustedProxies),
+    ///   [key custody](ExternalControl::KeyCustody),
+    ///   [backups](ExternalControl::Backups) and
+    ///   [retention](ExternalControl::Retention). These are carried into
+    ///   [`RequestHandler::profile_report`](crate::RequestHandler::profile_report)
+    ///   as declared, not verified.
+    ///
+    /// It does not require durable stores: combine it with
+    /// [`DurableProduction`](Self::DurableProduction) for that, and with the
+    /// `Auditable` profile (feature `audit`) for signed audit checkpoints and
+    /// an approval gate. `build()` refuses it beside
+    /// [`LocalDevelopment`](Self::LocalDevelopment). What it cannot see: that a
+    /// declaration is true, what an executor or a tool sends out (a tool's own
+    /// egress is the tool's), and lawful basis, purpose or any other legal duty.
+    RegulatedData,
 }
 
 /// Which profiles a builder had applied, for `build()` to check.
@@ -175,11 +213,12 @@ pub(crate) enum ProfileKind {
     MultiTenant,
     LocalDevelopment,
     DurableProduction,
+    RegulatedData,
 }
 
 #[path = "profile_report.rs"]
 mod report;
-pub use report::ProfileReport;
+pub use report::{ExternalControl, ProfileReport};
 
 #[cfg(test)]
 mod production_tests {

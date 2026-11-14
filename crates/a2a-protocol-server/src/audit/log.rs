@@ -72,6 +72,7 @@ impl Drop for ChainGuard<'_> {
 pub struct AuditLog {
     store: Arc<dyn AuditStore>,
     signer: Option<CheckpointSigner>,
+    retired: Vec<TrustedKey>,
     checkpoint_every: u64,
     require_record: bool,
     locks: ChainLocks,
@@ -88,6 +89,7 @@ impl std::fmt::Debug for AuditLog {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AuditLog")
             .field("signer", &self.signer)
+            .field("retired", &self.retired)
             .field("checkpoint_every", &self.checkpoint_every)
             .field("require_record", &self.require_record)
             .field("failures", &self.failures.load(Ordering::Relaxed))
@@ -103,6 +105,7 @@ impl AuditLog {
         Self {
             store,
             signer: None,
+            retired: Vec::new(),
             checkpoint_every: 0,
             require_record: false,
             locks: StdMutex::new(HashMap::new()),
@@ -142,6 +145,21 @@ impl AuditLog {
         self.require_record
     }
 
+    /// Whether what records say about people is sealed
+    /// ([`with_privacy`](Self::with_privacy), feature `encryption`). Always
+    /// `false` without the feature.
+    #[must_use]
+    pub const fn is_private(&self) -> bool {
+        #[cfg(feature = "encryption")]
+        {
+            self.privacy.is_some()
+        }
+        #[cfg(not(feature = "encryption"))]
+        {
+            false
+        }
+    }
+
     /// The store records go to.
     #[must_use]
     pub fn store(&self) -> &Arc<dyn AuditStore> {
@@ -152,6 +170,26 @@ impl AuditLog {
     #[must_use]
     pub fn trusted_key(&self) -> Option<TrustedKey> {
         self.signer.as_ref().map(CheckpointSigner::public_key)
+    }
+
+    /// Also trusts `key` when verifying: the public key of a checkpoint
+    /// signer this log no longer signs with. After a rotation, the chain's
+    /// earlier checkpoints carry the old key's `kid`, and
+    /// [`verify`](Self::verify) reports them unverifiable until it is given.
+    #[must_use]
+    pub fn with_retired_key(mut self, key: TrustedKey) -> Self {
+        self.retired.push(key);
+        self
+    }
+
+    /// The keys [`verify`](Self::verify) trusts: the signer's, then each
+    /// [retired](Self::with_retired_key) one.
+    #[must_use]
+    pub fn trusted_keys(&self) -> Vec<TrustedKey> {
+        self.trusted_key()
+            .into_iter()
+            .chain(self.retired.iter().cloned())
+            .collect()
     }
 
     /// How many records failed to be written since the log was created.
@@ -440,7 +478,8 @@ impl AuditLog {
     }
 
     /// Reads `chain` and its checkpoints back from the store and verifies
-    /// them, trusting this log's own signing key.
+    /// them, trusting this log's signing key and its
+    /// [retired](Self::with_retired_key) ones.
     ///
     /// This checks the store against itself and the key this process holds.
     /// An auditor should verify an export with keys they hold, off this
@@ -453,7 +492,6 @@ impl AuditLog {
     pub async fn verify(&self, chain: &str) -> A2aResult<ChainReport> {
         let records = self.export(chain).await?;
         let checkpoints = self.store.checkpoints(chain).await?;
-        let keys: Vec<TrustedKey> = self.trusted_key().into_iter().collect();
-        Ok(verify_chain(&records, &checkpoints, &keys))
+        Ok(verify_chain(&records, &checkpoints, &self.trusted_keys()))
     }
 }

@@ -24,6 +24,11 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 13.2.4), 2026-10-28.
 
 
+### Upgrading
+
+- **Read the upgrade guide first:** `book/src/reference/upgrading/0.15-to-0.16.md` gives every API break with its migration. The Breaking Changes and Behaviour Changes sections below are the full record, and Added and Fixed are the archive of everything else.
+- **Data:** the task stores add one table (`a2a_task_claims`; schema version 8 to 9 on SQLite, 7 to 9 on PostgreSQL). On PostgreSQL a fleet can be replaced one replica at a time: the database keeps 0.15 and 0.16 replicas off each other's turns, measured against a real 0.15.0 replica. SQLite task and audit files were carried from 0.15 to 0.16 and back in a rehearsal; a rollback on PostgreSQL was not rehearsed. The procedure and its rollback are in `book/src/deployment/operations.md`, and what is supported, at which schema and sealed-format versions, in `book/src/reference/support-matrix.md`.
+
 ### Highlights
 
 - **Action required if you build against the SDK (each breaking item has its migration in `book/src/reference/upgrading/0.15-to-0.16.md`):** `RequestContext.context_id` is a `ContextId`; forty wire structs (`Task`, `Message`, `Part`, `AgentCard`, the update events, the method parameters and responses, the security schemes and flows) are `#[non_exhaustive]`, built with `new` and `with_*`; `AgentCard::new` declares streaming; `a2a-protocol-server` enables `tls-rustls` by default; `sign_agent_card` is removed; configuration errors are `ServerError::Config`/`ClientError::Config`; internal error text is withheld from callers; `JwtValidator` checks `iss` and `aud`; the WebSocket listener refuses browsers unless allowed; `ServeReport` is `#[must_use]`; `tls::HttpsClient` is a struct; `Telemetry` is `#[must_use]` and `install_subscriber()` returns `()`; `OpenAiChatModel` answers a 429 with `ModelError::RateLimited`; every agent card declares the lineage extension.
@@ -37,6 +42,7 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **Serving and API shape:** every listener has one graceful `serve_with_shutdown` and takes `ServeConfig` (the axum router now runs on `Server`), `EventStream` is a `futures_core::Stream`, a one-shot agent answers with `complete_with_text`, and 23 names are deprecated (26 in the release, counting the ones under `### Deprecated` that this package did not add), to be removed no earlier than 0.17.0.
 - **Agent Skills in the tool loop** (`skills` feature, ADR 0035): a directory of `SKILL.md` becomes a catalog in the system prompt, `activate_skill` and a confined `read_skill_file`, and no script is ever run.
 - **Steering a running task** (ADR 0036, opt-in): a message to a `working` task goes into a bounded inbox the executor reads, across replicas through the claim store, with `Delegation::steer` and `steer_all` on the client.
+- **Deployment profiles and operations:** `Profile::DurableProduction`, `Profile::LocalDevelopment` and `Profile::RegulatedData` are checked by `build()`, `RequestHandler::profile_report()` says what was checked, given up and only declared, and the book adds operations runbooks and a support matrix.
 - **Not in this release:** the parts listed under Known Limitations, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
 
 ### Added
@@ -52,6 +58,25 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   gives up, logged at `WARN`, and what no check at startup can establish (backups, the database's availability, a tool loop's step
   journal, key custody, retention jobs). `TaskStore::is_process_local` and `PushOutbox::is_process_local` (default `false`, as on the
   halt, lease, push-config and audit store traits) say which stores are in memory; the bundled wrappers forward it.
+
+- **`Profile::RegulatedData`, and declarations of the controls a process cannot see** (server; adversarial review of 2026-11-13,
+  enterprise asks). `build()` refuses the profile without an authenticating interceptor; without an audit log that is required
+  (`require_record(true)`) and seals what records say about people (`with_privacy`), which needs the `audit` and `encryption`
+  features; without task content sealed by the store (`EncryptedTaskStore`) or declared encrypted at rest; without
+  `refuse_private_file_urls()`; with a push sender that allows private addresses or plain HTTP; and until trusted proxies, key
+  custody, backups and retention are each declared with `declare_external_control(ExternalControl::…, how)`. It is refused beside
+  `LocalDevelopment`. A declaration is a statement for the record, not a check: `ProfileReport::declared` carries it, the report
+  prints it as "declared, not verified", and a blank one is refused under any profile. `TaskStore::seals_content` (default
+  `false`; `EncryptedTaskStore` answers `true`, the audited and traced wrappers forward it) and `AuditLog::is_private` are new.
+- **`AuditLog::with_retired_key` and `AuditLog::trusted_keys`** (server). `AuditLog::verify` trusted only the current signer's key,
+  and a checkpoint is checked under the key its `kid` names, so after a rotation of the checkpoint key the chain's earlier
+  checkpoints were reported unverifiable. A retired public key given with `with_retired_key` is now trusted beside the signer's.
+- **Book: Operations Runbooks and a Support Matrix** (`deployment/operations.md`, `reference/support-matrix.md`). The runbooks are
+  procedures, each naming the calls it makes: erasing one person across the task stores, the step journal and the audit trail;
+  answering an access request; legal holds; retention jobs; halting a tenant or a job; rotating content, HMAC and checkpoint keys;
+  losing the audit store; restoring a backup; and upgrading from 0.15 with its rollback. The support matrix states what 0.16
+  supports and how far each part is qualified (products, protocol bindings, Rust versions, features, databases and schema
+  versions, sealed formats, upgrades, the support window), each with the file it is read from.
 
 - **`OpenAiChatModel::with_stream_connection_reuse()`** (adversarial review of 2026-11-13, N16). A streamed turn asked for its connection to
   be closed (`Connection: close`) on every endpoint, for a llama-server behaviour: it closes the connection after a streamed answer (measured

@@ -29,6 +29,53 @@ pub struct ProfileReport {
     pub disabled: Vec<(&'static str, &'static str)>,
     /// What the profiles rely on that no check at startup can establish.
     pub not_verifiable: Vec<&'static str>,
+    /// What the deployment declared about the controls outside this process
+    /// ([`declare_external_control`](crate::RequestHandlerBuilder::declare_external_control)),
+    /// as declared: nothing here was verified.
+    pub declared: Vec<(ExternalControl, String)>,
+}
+
+/// A control outside this process that a profile relies on and cannot see,
+/// declared with
+/// [`RequestHandlerBuilder::declare_external_control`](crate::RequestHandlerBuilder::declare_external_control).
+///
+/// A declaration is a statement for the record, not a check: it is carried
+/// into [`ProfileReport::declared`] so that what the deployment said it does
+/// is logged beside what the handler checked, and can be compared with the
+/// deployment's evidence. [`Profile::RegulatedData`](crate::profile::Profile::RegulatedData)
+/// refuses to build until each control it relies on has been declared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ExternalControl {
+    /// Which proxies may set forwarded headers (`Forwarded`, `X-Forwarded-For`)
+    /// that a rate limiter or credential throttle reads, or that none do.
+    TrustedProxies,
+    /// Where the key-encryption keys of sealed stores and audit privacy are
+    /// held, who can use them, and how they are rotated.
+    KeyCustody,
+    /// That the databases are backed up, and a restore has been rehearsed.
+    Backups,
+    /// The retention schedule, and the jobs that apply it (`purge_expired`,
+    /// `AuditLog::purge`, `StepJournal::sweep`).
+    Retention,
+    /// That task content is encrypted at rest by the storage itself (the
+    /// database or the disk), in place of `EncryptedTaskStore` (feature
+    /// `encryption`).
+    EncryptionAtRest,
+}
+
+impl ExternalControl {
+    /// A short name for the control, as reports print it.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::TrustedProxies => "trusted proxies",
+            Self::KeyCustody => "key custody",
+            Self::Backups => "backups and restore",
+            Self::Retention => "retention",
+            Self::EncryptionAtRest => "encryption at rest",
+        }
+    }
 }
 
 impl ProfileReport {
@@ -56,6 +103,9 @@ impl std::fmt::Display for ProfileReport {
         }
         for item in &self.not_verifiable {
             writeln!(f, "  not verifiable here: {item}")?;
+        }
+        for (control, how) in &self.declared {
+            writeln!(f, "  declared, not verified: {}: {how}", control.name())?;
         }
         Ok(())
     }

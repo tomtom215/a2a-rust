@@ -75,6 +75,20 @@ const DURABLE_UNSEEN: &[&str] = &[
     "retention jobs (purge_expired, AuditLog::purge, StepJournal::sweep) are scheduled",
 ];
 
+const REGULATED: &[&str] = &[
+    AUTHENTICATED,
+    "the audit log is required and seals what records say about people",
+    "task content is sealed by the store, or declared encrypted at rest",
+    "file URLs naming a private address are refused",
+    "a push sender, when set, refuses private addresses and plain HTTP",
+    "trusted proxies, key custody, backups and retention are declared",
+];
+const REGULATED_UNSEEN: &[&str] = &[
+    "each declaration is true",
+    "what an executor or a tool sends out (a tool's own egress is the tool's)",
+    "lawful basis, purpose, and every other legal duty",
+];
+
 /// What a profile verifies and what it relies on without being able to:
 /// `(name, checked, not verifiable)`.
 const fn guarantees(
@@ -91,6 +105,7 @@ const fn guarantees(
         ProfileKind::MultiTenant => ("MultiTenant", MULTI_TENANT, MULTI_TENANT_UNSEEN),
         ProfileKind::LocalDevelopment => ("LocalDevelopment", &[], &[]),
         ProfileKind::DurableProduction => ("DurableProduction", DURABLE, DURABLE_UNSEEN),
+        ProfileKind::RegulatedData => ("RegulatedData", REGULATED, REGULATED_UNSEEN),
     }
 }
 
@@ -128,11 +143,13 @@ impl RequestHandlerBuilder {
             for (kind, name) in [
                 (ProfileKind::Production, "Production"),
                 (ProfileKind::DurableProduction, "DurableProduction"),
+                (ProfileKind::RegulatedData, "RegulatedData"),
             ] {
                 if self.has_profile(kind) {
                     return Err(ServerError::Config(format!(
-                        "the local-development profile says nothing here has to outlive \
-                         this process, and the {name} profile says it does: apply one"
+                        "the local-development profile is for state that may be lost and \
+                         data that need not be protected, and the {name} profile says \
+                         otherwise: apply one"
                     )));
                 }
             }
@@ -286,6 +303,7 @@ impl RequestHandlerBuilder {
             ProfileReport::add(&mut r.checked, checked);
             ProfileReport::add(&mut r.not_verifiable, unverifiable);
         }
+        r.declared.clone_from(&self.external_controls);
         for (call, lost) in self.hatches_given() {
             // A guarantee a hatch turns off is not also listed as checked.
             if let Some((_, Some(negated))) = HATCHES.iter().find(|(c, _)| *c == call) {

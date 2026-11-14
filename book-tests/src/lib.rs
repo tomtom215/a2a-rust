@@ -170,6 +170,9 @@ pub mod page_deployment_audit {}
 #[doc = include_str!("../../book/src/deployment/oversight.md")]
 pub mod page_deployment_oversight {}
 
+#[doc = include_str!("../../book/src/deployment/operations.md")]
+pub mod page_deployment_operations {}
+
 #[doc = include_str!("../../book/src/deployment/ai-act-classification.md")]
 pub mod page_deployment_ai_act_classification {}
 

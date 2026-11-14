@@ -257,6 +257,10 @@ impl TaskStore for EncryptedTaskStore {
         self.inner.is_process_local()
     }
 
+    fn seals_content(&self) -> bool {
+        true
+    }
+
     fn claim_idempotency_key<'a>(
         &'a self,
         key: &'a str,
