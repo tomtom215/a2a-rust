@@ -241,4 +241,22 @@ mod complete {
             "the audited wrapper does not forward"
         );
     }
+
+    /// The traced wrapper answers as the store it wraps, either way.
+    #[cfg(all(feature = "tracing", feature = "sqlite"))]
+    #[tokio::test]
+    async fn the_traced_wrapper_answers_as_the_store_it_wraps() {
+        use crate::store::SqliteTaskStore;
+        use crate::store::traced::TracedTaskStore;
+        let sqlite = || async { SqliteTaskStore::new("sqlite::memory:").await.unwrap() };
+        let plain = TracedTaskStore::wrap(Arc::new(sqlite().await));
+        assert!(plain.database().is_some(), "not wrapped");
+        assert!(!plain.seals_content());
+        let sealed =
+            TracedTaskStore::wrap(Arc::new(EncryptedTaskStore::new(sqlite().await, cipher())));
+        assert!(
+            sealed.seals_content(),
+            "the traced wrapper does not forward"
+        );
+    }
 }
