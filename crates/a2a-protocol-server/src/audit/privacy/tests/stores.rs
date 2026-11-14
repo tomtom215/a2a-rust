@@ -198,6 +198,18 @@ async fn the_sqlite_store_keeps_subject_keys() {
 #[cfg(feature = "sqlite")]
 #[tokio::test]
 async fn an_erased_key_leaves_no_bytes_in_the_sqlite_files() {
+    erased_key_leaves_no_bytes(false).await;
+}
+
+/// The same through the fenced deletion an erasure under a hold check uses.
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn a_key_erased_unless_held_leaves_no_bytes_in_the_sqlite_files() {
+    erased_key_leaves_no_bytes(true).await;
+}
+
+#[cfg(feature = "sqlite")]
+async fn erased_key_leaves_no_bytes(fenced: bool) {
     let dir = std::env::temp_dir().join(format!(
         "a2a-audit-erase-{}-{}",
         std::process::id(),
@@ -222,7 +234,15 @@ async fn an_erased_key_leaves_no_bytes_in_the_sqlite_files() {
         })
     };
     assert!(holds(key.wrapped.as_bytes()), "the key is on disk before");
-    store.delete_subject_key("c", "h1:aa").await.unwrap();
+    if fenced {
+        let sids = store
+            .delete_subject_keys_unless_held("c", &["h1:aa".to_owned()])
+            .await
+            .unwrap();
+        assert_eq!(sids, Some(vec!["sid-1".to_owned()]));
+    } else {
+        store.delete_subject_key("c", "h1:aa").await.unwrap();
+    }
     assert!(
         !holds(key.wrapped.as_bytes()),
         "the key is on disk after erasure"

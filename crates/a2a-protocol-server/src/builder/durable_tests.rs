@@ -353,6 +353,15 @@ mod sqlite {
             audited.is_process_local(),
             "the audited wrapper does not forward"
         );
+        // And over a store every replica shares, it says so.
+        let shared = crate::audit::AuditedTaskStore {
+            inner: Arc::new(SqliteTaskStore::new(&f.url()).await.unwrap()),
+            ..audited
+        };
+        assert!(
+            !shared.is_process_local(),
+            "the audited wrapper calls a shared store process-local"
+        );
     }
 
     /// An escape hatch is reported with what it gives up.
