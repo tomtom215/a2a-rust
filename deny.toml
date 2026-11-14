@@ -164,7 +164,11 @@ skip = [
     { crate = "convert_case", reason = "derive-macro helper skew in transitive deps" },
     { crate = "core-foundation", reason = "macOS-only; 0.9 vs 0.10 skew in TLS stacks" },
     { crate = "hashbrown", reason = "indexmap generations pull 0.15 and 0.17" },
-    { crate = "itertools", reason = "0.13 vs 0.14 skew across transitive crates" },
+    # `itertools` retired 2026-11-14 on the same warning: one version after
+    # that day's `cargo update`. `prettyplease` added the same day, build
+    # scripts only: prost-build 0.14.6 moved to 0.3, tonic-build 0.14.9 is
+    # still on 0.2. Closes when tonic-build moves.
+    { crate = "prettyplease", reason = "prost-build 0.14.6 on 0.3, tonic-build 0.14.9 on 0.2; build scripts only" },
     # Added 2026-09-10 with the dependency refresh for 0.12. Each is a
     # transition another crate is mid-way through, measured from the full
     # `cargo deny check bans` output on that day:
