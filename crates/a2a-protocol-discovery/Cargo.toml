@@ -25,7 +25,7 @@ categories             = ["network-programming"]
 a2a-protocol-client = { version = "0.16.0", path = "../a2a-protocol-client", default-features = false }
 a2a-protocol-types  = { version = "0.16.0", path = "../a2a-protocol-types" }
 # Pinned: the mDNS wire handling is this crate's whole trust surface.
-mdns-sd             = { version = "=0.21.6", default-features = false, features = ["async"] }
+mdns-sd             = { version = "=0.21.7", default-features = false, features = ["async"] }
 tokio               = { workspace = true }
 
 [dev-dependencies]
