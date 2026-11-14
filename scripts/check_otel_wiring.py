@@ -105,9 +105,12 @@ MAIN_EXEMPT: dict[str, str] = {
         "timings it prints; an exporter would add to them"
     ),
     "scripts/live/replica/src/main.rs": (
-        "the live scripts' measured replica, built against v0.15.0 too, which "
-        "predates this wiring; an exporter would add to the round trips and "
-        "latencies it measures"
+        "the live scripts' measured replica; an exporter would add to the round "
+        "trips and latencies it measures"
+    ),
+    "scripts/live/replica/v015/main.rs": (
+        "the same live replica as of 420c3cb3, built against v0.15.0 for upgrade_live.py; "
+        "a measurement harness against the database, as the replica above"
     ),
     "scripts/live/delegation/src/bin/worker.rs": (
         "the worker of the delegation live proof, whose evidence is the "

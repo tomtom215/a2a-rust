@@ -91,9 +91,9 @@ const TOKEN_BUCKETS: [f64; 14] = [
 const CALL_COUNT_BUCKETS: [f64; 8] = [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0];
 
 /// How many distinct `gen_ai.response.model` values one meter records.
-pub(crate) const MAX_RESPONSE_MODELS: usize = 16;
+const MAX_RESPONSE_MODELS: usize = 16;
 /// The longest `gen_ai.response.model` value recorded as given, in bytes.
-pub(crate) const MAX_RESPONSE_MODEL_LEN: usize = 128;
+const MAX_RESPONSE_MODEL_LEN: usize = 128;
 
 /// Every instrument the loop records to, built from one meter.
 struct Instruments {
