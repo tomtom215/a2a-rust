@@ -54,7 +54,7 @@ yanked    = "deny"
 #   together with a sibling `-wal` file whose page size differs. Local attack: a
 #   party who can write those two files and gets the victim process to open them.
 #   Here it comes in only through `sqlx-sqlite` 0.9.0, which requires
-#   `libsqlite3-sys` 0.37. `cargo update` cannot move it: checked 2026-11-11
+#   `libsqlite3-sys` 0.37. `cargo update` cannot move it: checked 2026-11-14
 #   against crates.io, sqlx and sqlx-sqlite 0.9.0 (released 2026-05-21) are the
 #   latest of each (the only other 0.9 release is 0.9.0-alpha.1, from 2025-10),
 #   and the fix is `libsqlite3-sys` 0.39.0 or newer. Exposure: only builds that
@@ -67,7 +67,7 @@ yanked    = "deny"
 #   or when the stores stop using the bundled copy. cargo-deny 0.20 reports a
 #   stale entry as "advisory not detected", so the fix cannot be missed.
 ignore    = [
-    { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys 0.37 is pinned by sqlx-sqlite 0.9.0, the latest sqlx (checked 2026-11-11); local attack through a crafted database and -wal pair; opt-in `sqlite` feature only; remove when sqlx allows libsqlite3-sys >= 0.39" },
+    { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys 0.37 is pinned by sqlx-sqlite 0.9.0, the latest sqlx (checked 2026-11-14); local attack through a crafted database and -wal pair; opt-in `sqlite` feature only; remove when sqlx allows libsqlite3-sys >= 0.39" },
 ]
 
 # ---------------------------------------------------------------------------
