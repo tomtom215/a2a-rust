@@ -26,6 +26,12 @@
 //! only. `gen_ai.client.operation.duration` is not reported: the conventions
 //! say it "SHOULD NOT be reported for inference operations".
 //!
+//! `gen_ai.response.model` is whatever the provider says answered, so a
+//! meter keeps the first [`MAX_RESPONSE_MODELS`] names it sees and records
+//! any later one, or one over [`MAX_RESPONSE_MODEL_LEN`] bytes, as `_OTHER`:
+//! 200 names made 200 series on each turn instrument before (live campaign
+//! W2-LIVE-9, 2026-11-08). The span keeps the name as given.
+//!
 //! `error.type`, on every instrument that takes it, is one of: for a turn,
 //! [`ModelError::error_type`] (the HTTP status, `timeout`, `transport`,
 //! `invalid_response`, `response_too_large`, `configuration`, `_OTHER`); for
@@ -84,8 +90,16 @@ const TOKEN_BUCKETS: [f64; 14] = [
 /// `gen_ai.invoke_agent.{inference,tool}_calls`.
 const CALL_COUNT_BUCKETS: [f64; 8] = [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0];
 
+/// How many distinct `gen_ai.response.model` values one meter records.
+pub(crate) const MAX_RESPONSE_MODELS: usize = 16;
+/// The longest `gen_ai.response.model` value recorded as given, in bytes.
+pub(crate) const MAX_RESPONSE_MODEL_LEN: usize = 128;
+
 /// Every instrument the loop records to, built from one meter.
 struct Instruments {
+    /// The `gen_ai.response.model` values recorded so far, at most
+    /// [`MAX_RESPONSE_MODELS`].
+    response_models: Mutex<std::collections::HashSet<String>>,
     inference_duration: Histogram<f64>,
     tool_duration: Histogram<f64>,
     /// `gen_ai.client.inference.operation.{input,output}_tokens`.
@@ -104,6 +118,20 @@ impl std::fmt::Debug for Instruments {
 }
 
 impl Instruments {
+    /// `model` as a metric attribute value: as given while it is one of the
+    /// first [`MAX_RESPONSE_MODELS`] seen and no longer than
+    /// [`MAX_RESPONSE_MODEL_LEN`], `_OTHER` otherwise.
+    fn response_model_label(&self, model: &str) -> String {
+        if model.len() <= MAX_RESPONSE_MODEL_LEN
+            && let Ok(mut seen) = self.response_models.lock()
+            && (seen.contains(model) || seen.len() < MAX_RESPONSE_MODELS)
+        {
+            seen.insert(model.to_owned());
+            return model.to_owned();
+        }
+        "_OTHER".to_owned()
+    }
+
     fn build(meter: &Meter) -> Arc<Self> {
         let duration = |name: &'static str| {
             meter
@@ -129,6 +157,7 @@ impl Instruments {
                 .build()
         };
         Arc::new(Self {
+            response_models: Mutex::default(),
             inference_duration: duration("gen_ai.client.inference.duration"),
             tool_duration: duration("gen_ai.execute_tool.duration"),
             operation_tokens: [
@@ -269,7 +298,8 @@ impl Measure {
         let seconds = self.started.elapsed().as_secs_f64();
         let mut attributes = self.attributes.clone();
         if let Some(model) = &outcome.response_model {
-            attributes.push(KeyValue::new("gen_ai.response.model", model.clone()));
+            let label = self.instruments.response_model_label(model);
+            attributes.push(KeyValue::new("gen_ai.response.model", label));
         }
         let usage_attributes = attributes.clone();
         if let Some(error_type) = &outcome.error_type {
